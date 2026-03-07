@@ -2,6 +2,8 @@
 
 Core beliefs driving every decision in The Engineer. Stated once. Referenced always.
 
+These principles manifest as goals in [`goals.md`](goals.md) and inform all design in [`architecture/`](architecture/README.md).
+
 ---
 
 ## Agent-Agnostic Protocol

@@ -1,6 +1,8 @@
 # Task State Machine
 
-Derived from CPU process state management. High-level for now — the Active state has significant internal complexity that will be designed separately.
+Derived from CPU process state management — see [`../philosophy.md`](../philosophy.md) § Derive from Proven Systems.
+
+High-level for now — the Active state has significant internal complexity that will be designed at Layer 2.
 
 ---
 
@@ -48,7 +50,7 @@ Blocked is NOT passive. Before entering Blocked, the agent must:
 - **What's needed**: Exactly what information, decision, or resource will unblock this
 - **What's waiting**: Which specific response or event the agent is waiting for
 
-This mirrors how a real senior engineer handles blockers: exhaust self-service options, ask precise questions, document the state clearly so anyone can see what's happening and help.
+This mirrors how a real senior engineer handles blockers — see [`../goals.md`](../goals.md) § Real Engineer Behavior and § Real-Time Failure Ownership.
 
 ## Internal Phases of Active (TBD)
 

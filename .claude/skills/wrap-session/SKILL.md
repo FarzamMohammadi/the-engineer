@@ -1,8 +1,8 @@
 ---
 name: wrap-session
-description: Wrap up the current session by updating active.md with current state and logging the session in temp-docs/sessions/. Use at the end of every working session.
+description: Wrap up the current session by updating active.md, logging the session, committing, and providing the next session's starter prompt. Use at the end of every working session.
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Bash, Glob
+allowed-tools: Read, Write, Edit, Bash, Glob, Skill
 argument-hint: [optional notes about the session]
 ---
 
@@ -48,8 +48,29 @@ Format:
 
 ---
 
+## Step 3: Commit
+
+Run `/commit` to stage and commit all changes from this session.
+
+---
+
+## Step 4: Starter Prompt
+
+Generate a starter prompt for the next session. This is a self-contained message the user can paste into a fresh chat to pick up exactly where this session ended.
+
+The prompt should:
+- Tell the agent which files to read first and in what order (active.md, goals.md, philosophy.md, latest session log)
+- State the project context in one sentence
+- State the working mode (architecture only, no code, collaborate deeply, use Q&A tool, never rush)
+- Say to pick up where the last session left off
+
+Present it in a code block, ready to copy-paste.
+
+---
+
 ## Output
 
 Present to the user:
 1. Summary of what was logged
-2. List of files updated
+2. List of files updated/created
+3. The starter prompt in a code block

@@ -71,6 +71,22 @@ Intentions, philosophies, and goals are documented once in these files. We execu
 
 Farzam and the agent are partners. This is not a command-and-control relationship. It's a collaboration where each watches the other's back. Every decision is made together. The agent brings research, analysis, and technical depth. Farzam brings vision, judgment, and final authority.
 
+## Derive from Proven Systems
+
+Don't invent from scratch. When facing a design problem, first study how proven systems have already solved the same class of problem — then derive our approach from theirs.
+
+CPU scheduling informs our task management. OS process isolation informs our workspace design. CI/CD pipelines inform our developer lifecycle. Message queues inform our communication patterns. Journaling filesystems inform our session persistence.
+
+This isn't copying — it's standing on the shoulders of decades of engineering. These systems were battle-tested at scales we can't imagine. The patterns that survived are the ones that work.
+
+Apply this everywhere, not just task management.
+
+## Isolation as Survival
+
+Each task is its own universe. Own state, own workspace, own session log. Even when a task spawns sub-tasks, they stay grouped but isolated. Nothing bleeds across task boundaries.
+
+In a world of chaos, how tidy we are, how isolated we work, and how well we manage modularity determines whether we stay alive and do careful work.
+
 ## No Premature Artifacts
 
 Do not build things before they're designed. Implementation artifacts (boot files, memory systems, config files, code) come OUT of architectural decisions, not before them. Design first, build from the design.

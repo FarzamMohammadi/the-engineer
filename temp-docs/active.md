@@ -25,6 +25,7 @@ All work lives in `/temp-docs/`:
   - `overview.md` — high-level components + skeleton/plugin classification
   - `task-states.md` — CPU-derived task state machine
   - `relationships.md` — component relationships, data flow, simulation gaps
+  - `user-flows.md` — concrete user flows from Farzam's perspective (Layer 1.5)
 
 ## Repo Structure
 
@@ -44,7 +45,7 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 4 complete. **Layer 1 is DONE.** Designed the hybrid architecture pattern (OS kernel + event bus + task-as-truth), mapped all component relationships and data flows, validated via simulation. Found 12 gaps for Layer 2.
+Session 5 complete. **Layer 1.5 (User Flows) complete.** All open questions resolved. Validated Layer 1 from Farzam's perspective with 5 concrete user flows. 24 total gaps identified. Major discoveries: two-stage PR review (demo gate), state machine as security boundary (failsafe), DevEx for the Engineer.
 
 Layer 1 completed items:
 - [x] High-level state machine — `task-states.md`
@@ -52,10 +53,13 @@ Layer 1 completed items:
 - [x] Component relationships — `relationships.md`
 - [x] Data flow — `relationships.md`
 
-Moving to **Layer 2: Component Architecture**. Each component gets its own design doc. Priority items from simulation gaps:
-- Task Engine: task hierarchy (parent-child), cascade failure detection
-- Session/Memory: mid-phase checkpointing, cross-task knowledge sharing
-- Orchestrator: fast-path for trivial tasks, parent-task "tech lead" role, proactive status
-- Daemon: scheduling/priority, concurrent task execution
-- Safety Layer: cumulative cost tracking
-- Workspace Manager: multi-repo support
+Layer 1.5 completed items:
+- [x] 5 core user flows — `user-flows.md`
+- [x] 12 new gaps identified (24 total)
+- [x] Key decisions: demo gate, GitHub + Telegram, real-engineer-judgment over policies
+- [x] State machine as security boundary — phase determines allowed actions
+- [x] Phase loopback as formal state transition
+- [x] DevEx for the Engineer — base TUI project + tooling pattern
+- [ ] Finalize gap list and prioritize for Layer 2
+
+Moving to **Layer 2: Component Architecture**. Start with Task Engine (most critical gaps). 24 total gaps to resolve across all components.

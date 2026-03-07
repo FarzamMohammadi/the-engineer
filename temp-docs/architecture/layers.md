@@ -30,6 +30,28 @@ The 10,000-foot view. Components, how they relate, skeleton vs plugins, data flo
 - [`task-states.md`](task-states.md) — CPU-derived state machine
 - [`relationships.md`](relationships.md) — component relationships, data flow, gaps
 
+## Layer 1.5: User Flows — DONE
+
+Validated Layer 1 from the user's perspective. Concrete flows grounded in Farzam's actual setup (GitHub + Telegram).
+
+**Completed:**
+- [x] 5 core user flows designed — [`user-flows.md`](user-flows.md)
+- [x] 12 new gaps identified (24 total)
+- [x] Key discovery: two-stage PR review (demo gate → code review)
+- [x] All open questions resolved
+- [ ] Finalize gap list and prioritize for Layer 2
+
+**Key decisions made:**
+- Two-stage PR review: Draft (demo gate) → Ready (code review). Feedback applies at both stages.
+- Communication: GitHub + Telegram. Telegram for real-time, GitHub for code workflow.
+- Everything is demo-able. Backend gets base TUI project + task-specific extensions in isolated worktrees.
+- State machine as security boundary — phase determines allowed actions (failsafe).
+- Phase loopback as formal state transition — Orchestrator decides, Task Engine enforces.
+- DevEx for the Engineer — invest in tooling that makes the Engineer more effective.
+
+**Documents:**
+- [`user-flows.md`](user-flows.md) — 5 core flows, gap analysis, open questions
+
 ## Layer 2: Component Architecture
 
 Each component designed individually. Interfaces, responsibilities, internal structure.

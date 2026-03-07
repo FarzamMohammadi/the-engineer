@@ -64,8 +64,8 @@ Each component designed individually. Interfaces, responsibilities, internal str
 
 **24 gaps grouped by component. Design order:**
 1. Task Engine (6 gaps) — DONE → [`task-engine.md`](task-engine.md)
-2. Session/Memory (3 gaps: #2, #7, #21)
-3. Daemon/Scheduler (2 gaps: #8, #12)
+2. Session/Memory (3 gaps: #2, #7, #21) — DONE → [`session-memory.md`](session-memory.md)
+3. Daemon/Scheduler (2 gaps: #8, #12) — DONE → [`daemon-scheduler.md`](daemon-scheduler.md)
 4. Safety Layer (3 gaps: #5, #17, #19)
 5. Orchestrator (7 gaps: #1, #4, #10, #15, #16, #18, #23)
 6. Workspace Manager (1 gap: #11)

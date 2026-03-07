@@ -199,3 +199,41 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** The Event Bus audit trail, Session Journal, and Task history together form the data foundation for a comprehensive Engineer Dashboard. Goal: runners of The Engineer can see everything — past work, live status, thorough analytics — in one place, with utmost accuracy and comprehensiveness.
 
 **Rationale:** All the data is already being captured for operational reasons (audit, recovery, queryability). Aggregating it into analytics is a downstream concern that the architecture naturally enables. This vision informs how we capture and structure data at every layer — we keep it rich, structured, and queryable so the dashboard can surface deep insights.
+
+---
+
+## 2026-03-07 — Single-core CPU architecture (concurrency-ready)
+
+**Decision:** The Engineer runs as a single-core CPU: one Active.Working task at a time. When a task is Blocked or Review-Pending, the agent is freed and picks up the next Queued task. All interfaces use abstract capacity (`max_concurrent` config value, default 1) so the architecture can evolve to multi-core without redesign.
+
+**Rationale:** Like Intel's evolution from single-core to multi-core — start simple, prove correctness, then scale. Concurrency adds enormous complexity (race conditions, resource contention, context management). Single-core lets us build and thoroughly test the scheduling, preemption, and checkpoint/resume flows before introducing parallelism. The key insight: design interfaces that don't hardcode "1" so multi-core is a config change, not a rewrite.
+
+**Alternatives rejected:** Configurable concurrency from day one (too much complexity before the basics are proven). Strict sequential with no task-switching (misses the opportunity to work on other tasks while blocked/in-review).
+
+---
+
+## 2026-03-07 — Graceful preemption only
+
+**Decision:** When a higher-priority task arrives, the current task is preempted gracefully: the Orchestrator finishes its current atomic operation (file write, test run, LLM call), creates a checkpoint, then yields. The agent is never interrupted mid-operation.
+
+**Rationale:** Cooperative multitasking is simpler and safer than preemptive. Interrupting mid-operation risks partial writes, broken git state, or incomplete test runs. The trade-off (slight delay before the higher-priority task starts) is acceptable — the maximum delay is one atomic operation, typically seconds. A configurable preemption threshold (default: priority delta >= 20) prevents thrashing on small priority differences.
+
+**Alternatives rejected:** Immediate preemption with rollback (complex, risky — partial state recovery is error-prone). Checkpoint-boundary-only preemption (too coarse — could wait for an entire phase transition, potentially hours).
+
+---
+
+## 2026-03-07 — User-assigned priority with defaults
+
+**Decision:** Task priority is a number (1-100, higher = more important). Users can set it explicitly (labels, commands). When not set, the system assigns sensible defaults based on task signals (bug → 70, feature → 50, critical → 90). Simple aging prevents starvation of low-priority tasks.
+
+**Rationale:** The user should always understand why task X ran before task Y. User-assigned priority is maximally transparent and predictable. Derived/computed priority systems are smarter but opaque — users lose trust when they can't predict scheduling. Defaults handle the common case (most tasks won't have explicit priority), and aging ensures nothing starves.
+
+**Alternatives rejected:** Fully derived priority (computed from signals, opaque to user). Hybrid user + derived (added complexity without clear benefit given single-core simplicity).
+
+---
+
+## 2026-03-07 — Active.Supervising does not consume working slot
+
+**Decision:** When a parent task enters Active.Supervising (monitoring children), it does NOT consume the agent's working slot. Only Active.Working and Active.Integrating consume a slot. This means a child can execute while the parent watches, on a single core.
+
+**Rationale:** Supervising is inherently lightweight — its permission table only allows read, communicate, task-manage, and ask-human. No LLM-heavy work, no code writing, no testing. Holding the working slot while supervising would mean children could never execute (deadlock on a single core). The parent parks itself and wakes up to Active.Integrating only when all children complete.

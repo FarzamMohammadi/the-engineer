@@ -43,9 +43,22 @@ Each task is its own universe — see [`../philosophy.md`](../philosophy.md) § 
 
 ---
 
+## New: Event Bus
+
+Not in the original component list. Emerged during relationship analysis as a structural element, not just a pattern.
+
+| Component | Role | Skeleton or Plugin? |
+|-----------|------|---------------------|
+| **Event Bus** | The nervous system. All inter-component communication flows as events. Every event logged — the event stream IS the audit trail. | Skeleton |
+
+## Relationships & Data Flow
+
+See [`relationships.md`](relationships.md) for:
+- How components connect (hybrid architecture: OS kernel + event bus + task-as-truth)
+- What data flows through the system (10 data types identified)
+- Gaps found via simulation-driven validation (12 gaps for Layer 2)
+
 ## Open Questions
 
-- How do these components connect? What's the flow from trigger to completed PR?
-- Are there components we haven't identified yet?
-- Where do the boundaries between components fall exactly?
-- What data flows between components? (tasks, events, messages, sessions)
+- Are there components we haven't identified yet? (May emerge at Layer 2)
+- Event Bus details: persistence model, ordering guarantees, schema (Layer 2)

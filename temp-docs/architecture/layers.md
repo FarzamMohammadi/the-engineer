@@ -11,19 +11,24 @@ What we're building and why. The north star.
 - `temp-docs/goals.md` — 14 sections defining the destination
 - `temp-docs/philosophy.md` — 11 principles defining how we think
 
-## Layer 1: System Overview — IN PROGRESS
+## Layer 1: System Overview — DONE
 
 The 10,000-foot view. Components, how they relate, skeleton vs plugins, data flow.
 
-**What needs to be completed at this layer:**
-- [ ] Component relationships — what calls what, what depends on what
-- [ ] Skeleton vs plugin classification — sort every component
-- [ ] Data flow — what "things" move through the system (tasks, events, messages, sessions)
-- [ ] High-level state machine — DONE (`task-states.md`)
+**Completed:**
+- [x] High-level state machine — [`task-states.md`](task-states.md)
+- [x] Skeleton vs plugin classification — [`overview.md`](overview.md)
+- [x] Component relationships — [`relationships.md`](relationships.md)
+- [x] Data flow — [`relationships.md`](relationships.md)
+
+**Architecture pattern decided:** Hybrid (OS kernel authority + event bus communication + task-as-truth). See [`relationships.md`](relationships.md).
+
+**12 gaps identified via simulation** that feed into Layer 2. Critical: mid-phase checkpointing, task hierarchy, cross-task knowledge sharing.
 
 **Documents:**
-- [`overview.md`](overview.md) — component list, relationships, skeleton/plugin classification
+- [`overview.md`](overview.md) — component list, skeleton/plugin classification
 - [`task-states.md`](task-states.md) — CPU-derived state machine
+- [`relationships.md`](relationships.md) — component relationships, data flow, gaps
 
 ## Layer 2: Component Architecture
 

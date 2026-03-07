@@ -24,6 +24,7 @@ All work lives in `/temp-docs/`:
   - `decisions.md` — decision log
   - `overview.md` — high-level components + skeleton/plugin classification
   - `task-states.md` — CPU-derived task state machine
+  - `relationships.md` — component relationships, data flow, simulation gaps
 
 ## Repo Structure
 
@@ -43,12 +44,18 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 3 complete. Defined the 6-layer architecture roadmap (`layers.md`). Added skeleton vs plugin classification to all components in `overview.md`. Cross-referenced all docs where needed — every doc now links to its related context.
+Session 4 complete. **Layer 1 is DONE.** Designed the hybrid architecture pattern (OS kernel + event bus + task-as-truth), mapped all component relationships and data flows, validated via simulation. Found 12 gaps for Layer 2.
 
-Currently at **Layer 1: System Overview** with 3 items remaining:
-- [ ] Component relationships — what calls what, what depends on what
-- [ ] Data flow — what "things" move through the system
-- [x] Skeleton vs plugin classification — done (in `overview.md`)
-- [x] High-level state machine — done (`task-states.md`)
+Layer 1 completed items:
+- [x] High-level state machine — `task-states.md`
+- [x] Skeleton vs plugin classification — `overview.md`
+- [x] Component relationships — `relationships.md`
+- [x] Data flow — `relationships.md`
 
-Next session: tackle the remaining Layer 1 items — **component relationships** and **data flow**. Then Layer 1 is complete and we move to Layer 2.
+Moving to **Layer 2: Component Architecture**. Each component gets its own design doc. Priority items from simulation gaps:
+- Task Engine: task hierarchy (parent-child), cascade failure detection
+- Session/Memory: mid-phase checkpointing, cross-task knowledge sharing
+- Orchestrator: fast-path for trivial tasks, parent-task "tech lead" role, proactive status
+- Daemon: scheduling/priority, concurrent task execution
+- Safety Layer: cumulative cost tracking
+- Workspace Manager: multi-repo support

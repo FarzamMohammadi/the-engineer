@@ -13,6 +13,7 @@ We work top-down, layer by layer — see [`layers.md`](layers.md) for the full r
 | [`layers.md`](layers.md) | Architecture layering roadmap — where we are, what's next | Meta |
 | [`overview.md`](overview.md) | Core components and supporting systems | Layer 1 |
 | [`task-states.md`](task-states.md) | CPU-derived task state machine | Layer 1 |
+| [`relationships.md`](relationships.md) | Component relationships, data flow, simulation-validated gaps | Layer 1 |
 | [`decisions.md`](decisions.md) | Architectural decision log | Ongoing |
 
 ## Foundation (Layer 0 — DONE)
@@ -24,10 +25,8 @@ These docs drive all architectural decisions:
 
 ## Current Status
 
-**Layer 1: System Overview — IN PROGRESS**
+**Layer 1: System Overview — DONE**
 
-Remaining at this layer (see [`layers.md`](layers.md)):
-- [ ] Component relationships — what calls what, what depends on what
-- [ ] Skeleton vs plugin classification — sort every component
-- [ ] Data flow — what "things" move through the system
-- [x] High-level state machine — done ([`task-states.md`](task-states.md))
+All items complete. See [`layers.md`](layers.md).
+
+**Next: Layer 2 — Component Architecture** (individual component designs, plugin interfaces, Active state internal phases)

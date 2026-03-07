@@ -16,6 +16,7 @@ We work top-down, layer by layer — see [`layers.md`](layers.md) for the full r
 | [`relationships.md`](relationships.md) | Component relationships, data flow, simulation-validated gaps | Layer 1 |
 | [`user-flows.md`](user-flows.md) | Concrete user flows from Farzam's perspective, validation of Layer 1 | Layer 1.5 |
 | [`task-engine.md`](task-engine.md) | Task Engine design: state machine, hierarchy, permissions | Layer 2 |
+| [`session-memory.md`](session-memory.md) | Session/Memory design: checkpoints, knowledge, queryable journal | Layer 2 |
 | [`decisions.md`](decisions.md) | Architectural decision log | Ongoing |
 
 ## Foundation (Layer 0 — DONE)
@@ -37,7 +38,8 @@ Validated Layer 1 from the user's perspective with 5 concrete flows. 24 total ga
 
 **Layer 2: Component Architecture — IN PROGRESS**
 
-Task Engine design complete. 6 of 24 gaps resolved. Next: Session/Memory.
+Task Engine and Session/Memory designs complete. 9 of 24 gaps resolved. Next: Daemon/Scheduler.
 
 **Documents:**
 - [`task-engine.md`](task-engine.md) — Task Engine design (state machine, hierarchy, permissions)
+- [`session-memory.md`](session-memory.md) — Session/Memory design (checkpoints, knowledge, queryable journal)

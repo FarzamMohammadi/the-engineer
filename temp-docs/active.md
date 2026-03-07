@@ -27,6 +27,7 @@ All work lives in `/temp-docs/`:
   - `relationships.md` — component relationships, data flow, simulation gaps
   - `user-flows.md` — concrete user flows from Farzam's perspective (Layer 1.5)
   - `task-engine.md` — Task Engine Layer 2 design (state machine, hierarchy, permissions)
+  - `session-memory.md` — Session/Memory Layer 2 design (checkpoints, knowledge, queryable journal)
 
 ## Repo Structure
 
@@ -46,7 +47,7 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 6 complete. **Layer 2 (Component Architecture) started.** Gap prioritization complete — 24 gaps grouped by component, Task Engine first. Task Engine design doc complete (6 gaps resolved). 9 decisions made.
+Session 7 complete. **Layer 2 (Component Architecture) in progress.** Task Engine and Session/Memory complete (9/24 gaps resolved). 13 decisions made.
 
 Layer 1 completed items:
 - [x] High-level state machine — `task-states.md`
@@ -65,7 +66,7 @@ Layer 1.5 completed items:
 
 Layer 2 progress:
 - [x] Task Engine — `task-engine.md` (gaps #3, #6, #9, #13, #14, #24 resolved)
-- [ ] Session/Memory (gaps #2, #7, #21)
+- [x] Session/Memory — `session-memory.md` (gaps #2, #7, #21 resolved)
 - [ ] Daemon/Scheduler (gaps #8, #12)
 - [ ] Safety Layer (gaps #5, #17, #19)
 - [ ] Orchestrator (gaps #1, #4, #10, #15, #16, #18, #23)

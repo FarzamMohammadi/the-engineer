@@ -163,3 +163,39 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** 24 gaps grouped by target component. Components designed in dependency order: Task Engine → Session/Memory → Daemon/Scheduler → Safety Layer → Orchestrator → Workspace Manager → Comm Plugins. Gaps are resolved as their component is designed.
 
 **Rationale:** Components have dependencies — Task Engine's state model must be defined before the Daemon can design scheduling, before the Safety Layer can define permission enforcement. Grouping gaps by component and ordering components by dependency ensures each design builds on solid foundations.
+
+---
+
+## 2026-03-07 — Context reconstruction over conversation replay
+
+**Decision:** When resuming a task after preemption, crash, or new session, the system reconstructs context from a compressed checkpoint summary (key findings, open questions, next action), not by replaying the original LLM conversation.
+
+**Rationale:** LLM conversations are expensive, non-deterministic, and full of abandoned exploration paths. A checkpoint summary captures the distilled result — equivalent context without noise. Resume quality depends on summary quality, which is an Orchestrator concern (generating good summaries at checkpoint time). This is fast, cheap, and deterministic.
+
+**Alternatives rejected:** Full conversation replay (expensive, non-deterministic, replays abandoned paths). Hybrid replay (adds complexity as a safety net for a problem better solved by improving summary quality).
+
+---
+
+## 2026-03-07 — Two knowledge scopes: repo + user
+
+**Decision:** Cross-task knowledge has two scopes. Repo-scope: conventions, patterns, and domain knowledge isolated per repository. User-scope: personal preferences and workflow patterns that apply across all repositories. Precedence hierarchy: Repo conventions > User preferences > Agent defaults.
+
+**Rationale:** Repo knowledge comes from the repo itself — its docs, code patterns, and conventions. The Engineer reads and acclimate itself, just like joining any repo. But users also have personal preferences (component style, PR verbosity, testing expectations) that apply everywhere. User-scope captures these as learned observations, not declared config. When repo and user knowledge conflict, repo wins — like CSS specificity.
+
+**Key distinction:** Knowledge (Session/Memory) is dynamic — observed and accumulated over time. Configuration (Safety Layer / system config) is static — explicitly declared by the user. User-scope knowledge is what the Engineer discovers about the user's patterns, not what the user configures.
+
+---
+
+## 2026-03-07 — Session Journal as curated narrative (separate from Event Bus)
+
+**Decision:** The session journal is a curated, human-readable narrative of the Orchestrator's reasoning process, separate from the Event Bus. The Event Bus stores exhaustive system-level events (audit trail). The journal stores meaningful steps from the agent's perspective (working notes).
+
+**Rationale:** Different audiences, different granularity. Event Bus serves debugging, audit, and compliance. Journal serves human queries ("what have you tried?"), context reconstruction, and analytics. Both are needed; neither replaces the other. Together they form the data foundation for a comprehensive Engineer Dashboard.
+
+---
+
+## 2026-03-07 — Engineer Dashboard as analytics vision
+
+**Decision:** The Event Bus audit trail, Session Journal, and Task history together form the data foundation for a comprehensive Engineer Dashboard. Goal: runners of The Engineer can see everything — past work, live status, thorough analytics — in one place, with utmost accuracy and comprehensiveness.
+
+**Rationale:** All the data is already being captured for operational reasons (audit, recovery, queryability). Aggregating it into analytics is a downstream concern that the architecture naturally enables. This vision informs how we capture and structure data at every layer — we keep it rich, structured, and queryable so the dashboard can surface deep insights.

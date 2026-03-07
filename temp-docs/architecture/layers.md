@@ -52,7 +52,7 @@ Validated Layer 1 from the user's perspective. Concrete flows grounded in Farzam
 **Documents:**
 - [`user-flows.md`](user-flows.md) — 5 core flows, gap analysis, open questions
 
-## Layer 2: Component Architecture
+## Layer 2: Component Architecture — IN PROGRESS
 
 Each component designed individually. Interfaces, responsibilities, internal structure.
 
@@ -61,6 +61,20 @@ Each component designed individually. Interfaces, responsibilities, internal str
 - Each supporting system (people directory, workspace manager, session/memory, safety) gets its own design doc
 - The Active state's internal phases get designed here
 - Plugin interfaces defined (what must a trigger implement? a comm channel? an LLM provider?)
+
+**24 gaps grouped by component. Design order:**
+1. Task Engine (6 gaps) — DONE → [`task-engine.md`](task-engine.md)
+2. Session/Memory (3 gaps: #2, #7, #21)
+3. Daemon/Scheduler (2 gaps: #8, #12)
+4. Safety Layer (3 gaps: #5, #17, #19)
+5. Orchestrator (7 gaps: #1, #4, #10, #15, #16, #18, #23)
+6. Workspace Manager (1 gap: #11)
+7. Comm Plugins (2 gaps: #20, #22)
+
+**Key Layer 2 decisions so far:**
+- Review-Pending elevated to top-level state (not sub-state of Active)
+- Action classes (not individual tools) as the unit of permission gating
+- Two-gate model: Task Engine gate (phase legality) → Safety Layer gate (policy compliance)
 
 ## Layer 3: Interactions & Protocols
 

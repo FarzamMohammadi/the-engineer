@@ -135,3 +135,31 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Hybrid approach for backend demos: a maintained base TUI project (wired into foundational things — API calls, auth, data display) that the Engineer extends in an isolated worktree per task. The worktree is throwaway; the base persists and improves. This is the first instance of a broader pattern: invest in the Engineer's DevEx — pre-built infrastructure that makes it more effective.
 
 **Rationale:** Rebuilding a demo TUI from scratch every time is wasteful. A shared base with task-specific extensions gives consistency + isolation. The broader principle: the Engineer is our developer, and we should invest in its tooling just like we would for a human engineer. Only outcomes matter — the better the tooling, the higher the quality of output.
+
+---
+
+## 2026-03-07 — Review-Pending as top-level state
+
+**Decision:** Review-Pending is a top-level state alongside Active and Blocked, not a sub-state of Active. It has two sub-states: Demo (Draft PR) and Code (Ready PR). When feedback arrives, the task transitions back to Active.Working; when approved, it advances (Demo → Code, or Code → Completed).
+
+**Rationale:** Review-Pending is semantically distinct from both Active (the agent isn't working) and Blocked (the task isn't stuck). It's "done for now, pending judgment." Making it top-level gives it its own permission set (minimal — can only read and communicate), enables the scheduler to assign the agent to other work while waiting, and follows the CPU analogy (process waiting for I/O leaves Running state and frees the CPU).
+
+**Alternatives rejected:** Sub-state of Active (muddies permissions — Active would have sub-states with wildly different permission sets, from full write access to read-only).
+
+---
+
+## 2026-03-07 — Action classes as permission unit
+
+**Decision:** The state machine permission gate uses action classes (read, write, test, git-local, git-remote, communicate, merge, deploy, task-manage, ask-human), not individual tools. Each state+sub-state maps to a set of allowed action classes.
+
+**Rationale:** Tools are plugins — new tools are added constantly. Action classes are stable categories that new tools map into. This keeps the permission table maintainable and semantically clear. Two gates: Task Engine (is this action class legal in this phase?) → Safety Layer (is this specific action within policy?).
+
+**Alternatives rejected:** Per-tool permissions (doesn't scale as tools are added/removed, requires updating permission table for every new tool).
+
+---
+
+## 2026-03-07 — Gap prioritization by component
+
+**Decision:** 24 gaps grouped by target component. Components designed in dependency order: Task Engine → Session/Memory → Daemon/Scheduler → Safety Layer → Orchestrator → Workspace Manager → Comm Plugins. Gaps are resolved as their component is designed.
+
+**Rationale:** Components have dependencies — Task Engine's state model must be defined before the Daemon can design scheduling, before the Safety Layer can define permission enforcement. Grouping gaps by component and ordering components by dependency ensures each design builds on solid foundations.

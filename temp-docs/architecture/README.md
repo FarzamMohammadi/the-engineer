@@ -15,6 +15,7 @@ We work top-down, layer by layer — see [`layers.md`](layers.md) for the full r
 | [`task-states.md`](task-states.md) | CPU-derived task state machine | Layer 1 |
 | [`relationships.md`](relationships.md) | Component relationships, data flow, simulation-validated gaps | Layer 1 |
 | [`user-flows.md`](user-flows.md) | Concrete user flows from Farzam's perspective, validation of Layer 1 | Layer 1.5 |
+| [`task-engine.md`](task-engine.md) | Task Engine design: state machine, hierarchy, permissions | Layer 2 |
 | [`decisions.md`](decisions.md) | Architectural decision log | Ongoing |
 
 ## Foundation (Layer 0 — DONE)
@@ -34,4 +35,9 @@ All items complete. See [`layers.md`](layers.md).
 
 Validated Layer 1 from the user's perspective with 5 concrete flows. 24 total gaps identified. Key discoveries: two-stage PR review (demo gate), state machine as security boundary, DevEx for the Engineer.
 
-**Next: Layer 2 — Component Architecture** (individual component designs, plugin interfaces, Active state internal phases)
+**Layer 2: Component Architecture — IN PROGRESS**
+
+Task Engine design complete. 6 of 24 gaps resolved. Next: Session/Memory.
+
+**Documents:**
+- [`task-engine.md`](task-engine.md) — Task Engine design (state machine, hierarchy, permissions)

@@ -26,6 +26,7 @@ All work lives in `/temp-docs/`:
   - `task-states.md` — CPU-derived task state machine
   - `relationships.md` — component relationships, data flow, simulation gaps
   - `user-flows.md` — concrete user flows from Farzam's perspective (Layer 1.5)
+  - `task-engine.md` — Task Engine Layer 2 design (state machine, hierarchy, permissions)
 
 ## Repo Structure
 
@@ -45,7 +46,7 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 5 complete. **Layer 1.5 (User Flows) complete.** All open questions resolved. Validated Layer 1 from Farzam's perspective with 5 concrete user flows. 24 total gaps identified. Major discoveries: two-stage PR review (demo gate), state machine as security boundary (failsafe), DevEx for the Engineer.
+Session 6 complete. **Layer 2 (Component Architecture) started.** Gap prioritization complete — 24 gaps grouped by component, Task Engine first. Task Engine design doc complete (6 gaps resolved). 9 decisions made.
 
 Layer 1 completed items:
 - [x] High-level state machine — `task-states.md`
@@ -60,6 +61,15 @@ Layer 1.5 completed items:
 - [x] State machine as security boundary — phase determines allowed actions
 - [x] Phase loopback as formal state transition
 - [x] DevEx for the Engineer — base TUI project + tooling pattern
-- [ ] Finalize gap list and prioritize for Layer 2
+- [x] Gap prioritization — grouped by component, ordered by dependency
 
-Moving to **Layer 2: Component Architecture**. Start with Task Engine (most critical gaps). 24 total gaps to resolve across all components.
+Layer 2 progress:
+- [x] Task Engine — `task-engine.md` (gaps #3, #6, #9, #13, #14, #24 resolved)
+- [ ] Session/Memory (gaps #2, #7, #21)
+- [ ] Daemon/Scheduler (gaps #8, #12)
+- [ ] Safety Layer (gaps #5, #17, #19)
+- [ ] Orchestrator (gaps #1, #4, #10, #15, #16, #18, #23)
+- [ ] Workspace Manager (gap #11)
+- [ ] Comm Plugins (gaps #20, #22)
+
+**Component design order:** Task Engine → Session/Memory → Daemon/Scheduler → Safety Layer → Orchestrator → Workspace Mgr → Comm Plugins

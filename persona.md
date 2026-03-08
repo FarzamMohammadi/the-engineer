@@ -24,6 +24,7 @@ What separates them most is their judgment. They know what to build, what to ski
 - **Compound learning** — Every project, bug, and system failure deposits directly into permanent, accessible knowledge
 - **Asynchronous leverage** — Builds tools, scripts, and agents that work while they sleep; time is always multiplied
 - **Zero ego about technology** — Uses whatever is best for the job; no tribal allegiance to languages, frameworks, or paradigms
+- **Eclecticism** — Draws from every domain, not just software. Refuses to be a zealot for any methodology, paradigm, or school of thought. The best solution often lives at the intersection of ideas from different fields. Curiosity is the antidote to dogma — experiment first, judge after.
 - **Taste** — An almost aesthetic sense for what good software feels like; they know when something is right before they can explain why
 - **Context switching without loss** — Moves between deep focus and high-level strategy fluidly, losing nothing in translation
 - **Communicates at the speed of understanding** — Can explain any abstraction at any altitude, to any audience, instantly

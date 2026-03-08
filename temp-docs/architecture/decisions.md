@@ -489,3 +489,15 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Read operations (`read` action class) go through Gate 1 (Task Engine permission check) but skip Gate 2 (Safety Layer). This is defense-in-depth: terminal states deny reads via the permission table even though the Orchestrator architecturally shouldn't be running in those states.
 
 **Rationale:** Reads have no side effects — they don't need scope, cost, or autonomy checks from the Safety Layer. But the permission table exists and reads ARE denied in Completed/Failed states, so we enforce it via Gate 1 as a safety net. Skipping Gate 2 for reads avoids unnecessary overhead on the most frequent operation the agent performs.
+
+## 2026-03-08 — LLM fallback for natural language response parsing
+
+**Decision:** When a human responds to a batched question in natural language instead of numbered format (e.g., "Go with JWT and shorter expiry" instead of "1:A 2:B"), the Orchestrator tries structured parsing first, then falls back to LLM to map natural language responses to original questions. This is the only LLM usage in the communication path — the Daemon's query handler (P14) remains LLM-free.
+
+**Rationale:** Real engineers don't force rigid formats on their teammates. Structured parsing is tried first (cheap, fast, deterministic). LLM is used only when structured parsing fails. The cost is minimal (one small LLM call for parsing) and the UX improvement is significant — humans can reply naturally without learning a syntax. The Daemon's query handler stays LLM-free because queries are simpler (keyword matching) and must work even when the Orchestrator/LLM is unavailable.
+
+## 2026-03-08 — Shutdown timeout owned by Daemon config
+
+**Decision:** The `shutdown_timeout` (default: 30 seconds) — how long the Daemon waits for the Orchestrator to checkpoint during graceful shutdown before force-terminating — is a Daemon config parameter, not a Safety Layer config parameter.
+
+**Rationale:** Process lifecycle management is the Daemon's domain. This config lives alongside `tick_interval`, `preemption_timeout`, `stuck_threshold`, and other process-management parameters. The Safety Layer owns timeout policy for human response wait times (reminder, self-unblock, alert thresholds), which are about autonomy and communication cadence — a fundamentally different concern. Shutdown timeout is about operational process management.

@@ -56,17 +56,17 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 16 complete. **Coordination Protocols (P7-P10) drafted.** Action Pipeline Execution, Preemption, Task Resume, and Cost Tracking & Enforcement — all four protocols complete with step sequences, failure paths, and cross-references. Verification pass done: all events, contracts, and state transitions confirmed against source docs. Added `checkPermission()` to Task Engine ops, `auto_resume_on_reset` to Safety Layer config. 2 new decisions (#49, #50).
+Session 17 complete. **All 15 protocols drafted.** Communication Protocols (P11-P14: Blocking & Human Interaction, Question Batching & Response Parsing, Notification Delivery, Status Query) and Resilience Protocol (P15: Crash Recovery & System Restart) — all five protocols complete with step sequences, failure paths, and cross-references. Added `shutdown_timeout` to Daemon config. 2 new decisions (#51, #52). 52 total decisions.
 
-**Next: Session 17 — draft Communication Protocols (P11-P14), then Resilience (P15), then cross-reference matrix.**
+**Next: Session 18 — Error Propagation doc (`error-propagation.md`), then finalize Plugin Contracts, then Lifecycle traces, then mini holistic review.**
 
 Layer 3 work order:
 - [x] Event Catalog — `event-catalog.md` (28 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
 - [x] Plugin Contracts (draft) — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — DRAFT COMPLETE
-- [ ] Protocols — `protocols.md` (15 cross-component interaction protocols) — BATCH 1+2 DRAFTED (P1-P6: Task Lifecycle, P7-P10: Coordination)
+- [x] Protocols — `protocols.md` (15 cross-component interaction protocols) — ALL 15 DRAFTED & VERIFIED (P1-P6: Task Lifecycle, P7-P10: Coordination, P11-P14: Communication, P15: Resilience)
 - [ ] Error Propagation — `error-propagation.md` (failure modes, cascade, recovery)
 - [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
 - [ ] Lifecycle — `lifecycle.md` (3 scenarios traced end-to-end)
 - [ ] Mini holistic review — cross-reference all 5 docs, update Layer 2 docs
 
-Layers 0-2: ALL COMPLETE (see previous session logs for details). 50 total decisions.
+Layers 0-2: ALL COMPLETE (see previous session logs for details). 52 total decisions.

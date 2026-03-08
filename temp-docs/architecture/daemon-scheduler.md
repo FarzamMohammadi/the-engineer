@@ -562,6 +562,7 @@ DaemonState {
     aging_increment:       number     (default: 5)
     aging_interval:        duration   (default: 24 hours)
     aging_cap:             number     (default: 75)
+    shutdown_timeout:      duration   (default: 30 seconds)
   }
 }
 ```

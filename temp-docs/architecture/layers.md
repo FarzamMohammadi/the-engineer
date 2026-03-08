@@ -95,13 +95,13 @@ How components talk to each other. The wiring.
 **Completed:**
 - [x] Event Catalog — [`event-catalog.md`](event-catalog.md) — 28 events, 10 groups, Action Pipeline model
 - [x] Plugin Contracts (draft) — [`plugin-contracts.md`](plugin-contracts.md) — trigger, comm, LLM, tool, git-hosting + Registry + People Directory
-- [ ] Protocols — `protocols.md` — cross-component interaction protocols
+- [ ] Protocols — `protocols.md` — cross-component interaction protocols (P1-P15 drafted, verification pending)
 - [ ] Error Propagation — `error-propagation.md` — failure modes, cascade, recovery
 - [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
 - [ ] Lifecycle — `lifecycle.md` — end-to-end scenario traces
 - [ ] Mini holistic review
 
-**Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47), cost limit auto-resume configurable (Decision #49), reads Gate 1 only (Decision #50). 50 total decisions.
+**Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47), cost limit auto-resume configurable (Decision #49), reads Gate 1 only (Decision #50), LLM fallback for response parsing (Decision #51), shutdown timeout owned by Daemon (Decision #52). 52 total decisions.
 
 ## Layer 4: Implementation Design
 

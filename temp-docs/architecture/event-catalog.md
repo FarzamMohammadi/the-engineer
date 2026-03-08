@@ -719,7 +719,7 @@ A task has exceeded health thresholds without expected progress.
 ```
 payload {
   task_id:         string
-  condition:       "no_journal_entries" | "no_state_transition"
+  condition:       "no_journal_entries" | "no_state_transition" | "orchestrator_crash"
   threshold:       duration        // The configured threshold that was exceeded
   elapsed:         duration        // How long the condition has persisted
   last_activity:   datetime?       // Last journal entry or state transition timestamp

@@ -433,6 +433,10 @@ The Task Engine provides these operations:
 **Permission check (Action Pipeline Gate 1):**
 - `checkPermission(task_id, action_class) → PermissionResult` — check whether an action class is permitted in the task's current state+sub-state. Looks up the permission table (see § State Machine as Permission Gate). Returns `{ allowed: boolean, reason?: string }`. For conditional permissions (e.g., `merge` in Review_Pending.Code requires auto-merge config), evaluates the condition. This is Gate 1 of the Action Pipeline — called by the Orchestrator before every action.
 
+**Query (read-only):**
+- `getBlockedTasksForPerson(person_id) → Task[]` — return all Blocked tasks where `waiting_for` matches the given person. Used by Daemon for inbound message disambiguation (query vs task response -- see P14).
+- `getAllExternalRefs() → { task_id, external_ref, idempotency_key }[]` — return external references for all tasks. Used by Daemon on restart to rebuild the trigger dedup set (see P15).
+
 **Hierarchy:**
 - `attachChildSummary(parent_id, summary: ChildCompletionSummary)` — attach a child's completion summary to the parent's context
 

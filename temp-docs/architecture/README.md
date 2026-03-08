@@ -25,6 +25,7 @@ We work top-down, layer by layer — see [`layers.md`](layers.md) for the full r
 | [`event-bus.md`](event-bus.md) | Event Bus design: event model, delivery guarantees, pre-processing hook, persistence | Layer 2 |
 | [`event-catalog.md`](event-catalog.md) | Event Catalog: 28 event types, Action Pipeline model, schemas | Layer 3 |
 | [`plugin-contracts.md`](plugin-contracts.md) | Plugin Contracts: trigger, comm, LLM, tool, git-hosting + Registry + People Directory | Layer 3 |
+| [`protocols.md`](protocols.md) | Protocols: 15 cross-component interaction protocols (in progress) | Layer 3 |
 | [`decisions.md`](decisions.md) | Architectural decision log | Ongoing |
 
 ## Foundation (Layer 0 — DONE)

@@ -36,6 +36,7 @@ All work lives in `/temp-docs/`:
   - `event-bus.md` — Event Bus Layer 2 design (event model, delivery guarantees, persistence)
   - `event-catalog.md` — Event Catalog Layer 3 (28 events, 10 groups, Action Pipeline)
   - `plugin-contracts.md` — Plugin Contracts Layer 3 (trigger, comm, LLM, tool, git-hosting + Registry + People Directory)
+  - `protocols.md` — Protocols Layer 3 (15 cross-component interaction protocols) — IN PROGRESS
 
 ## Repo Structure
 
@@ -55,14 +56,14 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 14 complete. **Event Catalog reviewed and finalized (28 events, 10 groups). Plugin Contracts drafted.** 6 new decisions (#43-#48). Key architectural principle established: one plugin per adapter, not per platform — modularity and separation of concerns at the integration boundary.
+Session 15 in progress. **Protocols doc started — preamble, conventions, and Task Lifecycle Protocols (P1-P6) drafted.** Refined original 16 protocols to 15 (merged blocking+batching+timeout into one, added System Startup). Confirmed batch-by-category drafting approach.
 
-**Next: Continue Layer 3 — Session 15 begins Protocols (`protocols.md`).**
+**Next: Continue Session 15 — draft Coordination Protocols (P7-P10), then Communication (P11-P14), then Resilience (P15), then cross-reference matrix.**
 
 Layer 3 work order:
 - [x] Event Catalog — `event-catalog.md` (28 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
 - [x] Plugin Contracts (draft) — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — DRAFT COMPLETE
-- [ ] Protocols — `protocols.md` (16 cross-component interaction protocols)
+- [ ] Protocols — `protocols.md` (15 cross-component interaction protocols) — BATCH 1 DRAFTED (P1-P6: Task Lifecycle)
 - [ ] Error Propagation — `error-propagation.md` (failure modes, cascade, recovery)
 - [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
 - [ ] Lifecycle — `lifecycle.md` (3 scenarios traced end-to-end)

@@ -159,15 +159,19 @@ Architecture validated by running three scenarios through the system. Gaps ident
 | 8 | Concurrent task execution | Extreme | High | Daemon/scheduler design |
 | 9 | Cascade failure detection | Extreme | High | Task Engine design |
 | 10 | Parent task as "tech lead" role | Extreme | High | Orchestrator design |
-| 11 | Multi-repo workspace management | Extreme | Medium | Workspace Mgr design |
-| 12 | Scheduling and priority (preemption) | Difficult + Extreme | High | Daemon design |
+| 11 | Multi-repo workspace management | Extreme | Medium | Workspace Mgr design — **RESOLVED** ([`workspace-manager.md`](workspace-manager.md)) |
+| 12 | Scheduling and priority (preemption) | Difficult + Extreme | High | Daemon design — **RESOLVED** ([`daemon-scheduler.md`](daemon-scheduler.md)) |
+
+All 12 Layer 1 gaps resolved at Layer 2.
 
 ---
 
-## Open Questions for Layer 2
+## Open Questions for Layer 3
 
 - How does the Event Bus handle ordering? Are events guaranteed in-order per task?
 - What's the persistence model for the Event Bus? In-memory with flush? Write-ahead log?
-- How does the Orchestrator checkpoint mid-phase for multi-session tasks?
-- What does a Task object actually contain? (Schema design)
-- How do sibling tasks share knowledge without breaking isolation?
+- Full event schemas for all event types across all components
+- Plugin interface contracts (triggers, comm, LLM providers, tools)
+- Cross-component interaction protocols (dispatch, resume, preemption handshake)
+- Git hosting abstraction (GitHub/GitLab/Bitbucket)
+- Cross-repo coordination mechanics (commit ordering, coordinated merge)

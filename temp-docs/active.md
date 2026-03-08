@@ -31,6 +31,8 @@ All work lives in `/temp-docs/`:
   - `daemon-scheduler.md` — Daemon/Scheduler Layer 2 design (scheduling, preemption, capacity, health)
   - `safety-layer.md` — Safety Layer Layer 2 design (cost tracking, scope, autonomy, response timeout)
   - `orchestrator.md` — Orchestrator Layer 2 design (phase pipeline, fast-path, notifications, supervision, question batching)
+  - `workspace-manager.md` — Workspace Manager Layer 2 design (worktrees, branch hierarchy, progressive merge, multi-repo, PR management)
+  - `comm-plugins.md` — Comm Plugins Layer 2 design (status query interface, GitHub state sync, shared contract)
 
 ## Repo Structure
 
@@ -50,7 +52,7 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 10 complete. **Layer 2 (Component Architecture) in progress.** Task Engine, Session/Memory, Daemon/Scheduler, Safety Layer, and Orchestrator complete (21/24 gaps resolved). 32 decisions made. Next: Workspace Manager (gap #11), then Comm Plugins (gaps #20, #22) to finish Layer 2.
+Session 11 complete. **Layer 2 (Component Architecture) DONE.** All 7 components designed. All 24 gaps resolved. 38 decisions made. Post-design review traced all 5 user flows through the new designs — found and fixed 2 gaps (child GitHub issue creation, progressive merge trigger) and 2 inconsistencies. Ready for Layer 3 (Interactions & Protocols).
 
 Layer 1 completed items:
 - [x] High-level state machine — `task-states.md`
@@ -73,7 +75,7 @@ Layer 2 progress:
 - [x] Daemon/Scheduler — `daemon-scheduler.md` (gaps #8, #12 resolved)
 - [x] Safety Layer — `safety-layer.md` (gaps #5, #17, #19 resolved)
 - [x] Orchestrator — `orchestrator.md` (gaps #1, #4, #10, #15, #16, #18, #23 resolved)
-- [ ] Workspace Manager (gap #11)
-- [ ] Comm Plugins (gaps #20, #22)
+- [x] Workspace Manager — `workspace-manager.md` (gap #11 resolved)
+- [x] Comm Plugins — `comm-plugins.md` (gaps #20, #22 resolved)
 
-**Component design order:** Task Engine → Session/Memory → Daemon/Scheduler → Safety Layer → Orchestrator → Workspace Mgr → Comm Plugins
+**Component design order:** Task Engine → Session/Memory → Daemon/Scheduler → Safety Layer → Orchestrator → Workspace Mgr → Comm Plugins (ALL COMPLETE)

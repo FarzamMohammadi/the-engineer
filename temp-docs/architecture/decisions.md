@@ -357,3 +357,53 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Added `task_decomposition` as a new decision category in the Safety Layer's autonomy boundary config, alongside the existing 10 categories (code_style, testing_strategy, etc.). Default level: `always_ask`. This is the 11th default autonomy category.
 
 **Rationale:** Decomposition is a distinct decision type with its own risk profile — it creates new tasks, changes the work structure, and affects project scope. It doesn't fit neatly into existing categories like `architectural` or `refactoring`. A dedicated category gives users fine-grained control over this specific capability.
+
+---
+
+## 2026-03-08 — Git worktrees for task isolation
+
+**Decision:** Use git worktrees (not full clones) for per-task workspace isolation. Each task gets its own worktree sharing the repo's `.git` directory. Worktrees are ephemeral (tied to task lifecycle); branches are the persistent artifacts.
+
+**Rationale:** Worktrees are lightweight, fast to create/destroy, and share the `.git` directory (like OS processes sharing a kernel). In single-core mode, only one task is actively working at a time, but multiple worktrees can coexist on disk (preempted tasks keep their worktrees). Full clones would duplicate the entire `.git` directory for no benefit in our architecture.
+
+---
+
+## 2026-03-08 — Children branch from parent (namespaced)
+
+**Decision:** Child tasks branch from the parent's branch, with namespaced names: `engineer/{parent-id}/{child-id}-{slug}`. Example: `engineer/50-jwt-migration/51-jwt-utils`.
+
+**Rationale:** Namespacing makes the hierarchy visible in branch names. Branching from parent (rather than from main) means children start with the parent's context. Combined with progressive merge, this ensures dependent siblings get prior siblings' actual code.
+
+---
+
+## 2026-03-08 — Progressive merge for child task branches
+
+**Decision:** When a child task completes, its branch is merged into the parent branch immediately — not deferred to Active.Integrating. This means dependent siblings get prior siblings' actual code when they start, because they branch from the (now-updated) parent.
+
+**Rationale:** In the JWT migration example, child #52 (middleware) depends on #51 (JWT utils). If #52 can't access #51's actual code — only a knowledge summary — it can't import the JWT utility functions. Progressive merge solves this naturally: completed work flows into the integration branch (parent), and subsequent children start from there. Active.Integrating becomes lighter — just final verification.
+
+**Alternatives rejected:** All-at-once integration (children can't use each other's code, only knowledge summaries). Direct sibling branching (breaks isolation — children should relate to each other through the parent, not directly).
+
+---
+
+## 2026-03-08 — Multi-repo: interface now, details later
+
+**Decision:** The Workspace Manager defines the multi-repo interface at Layer 2: primary/secondary repo model, same branch name across repos for traceability, Task.workspace extended with `multi_repo` array. Detailed mechanics (cross-repo commit ordering, coordinated PR merge strategy, rollback) are deferred to Layer 3.
+
+**Rationale:** Multi-repo is the extreme case (microservice extraction). The interface must be defined now so the Workspace object schema is complete, but the detailed coordination mechanics involve complex trade-offs (atomic cross-repo operations don't exist in git) that are better resolved with the full interaction protocol context of Layer 3.
+
+---
+
+## 2026-03-08 — Comm plugins are transport, Orchestrator is intelligence
+
+**Decision:** Comm plugins are dumb transport — they send/receive messages and sync state to platforms. All intelligence (query parsing, response composition, notification cadence, disambiguation) lives in the Orchestrator.
+
+**Rationale:** If query parsing lived in each comm plugin, swapping Telegram for Slack would require reimplementing all the intelligence. By keeping comm plugins as pure platform adapters, the Orchestrator's logic works identically regardless of which comm channels are configured. This follows the adapter pattern: consumers interact with the interface, never with the platform directly.
+
+---
+
+## 2026-03-08 — GitHub state sync via Event Bus subscription
+
+**Decision:** The GitHub comm plugin subscribes to `task.state_changed` events on the Event Bus and syncs internal state to GitHub: labels (`engineer:{state}`), milestone comments on issues, child task checklists on parent issues, and optionally project board columns. All sync behaviors are configurable.
+
+**Rationale:** State sync is a natural comm plugin responsibility — it's the GitHub "channel" keeping its representation current. Using Event Bus subscription (rather than having the Task Engine or Orchestrator push to GitHub directly) preserves decoupling — no component needs to know about GitHub labels. The sync is the GitHub plugin's business.

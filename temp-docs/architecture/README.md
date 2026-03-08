@@ -20,6 +20,8 @@ We work top-down, layer by layer — see [`layers.md`](layers.md) for the full r
 | [`daemon-scheduler.md`](daemon-scheduler.md) | Daemon/Scheduler design: scheduling, preemption, capacity, health | Layer 2 |
 | [`safety-layer.md`](safety-layer.md) | Safety Layer design: cost tracking, scope, autonomy, response timeout | Layer 2 |
 | [`orchestrator.md`](orchestrator.md) | Orchestrator design: phase pipeline, fast-path, notifications, supervision, question batching | Layer 2 |
+| [`workspace-manager.md`](workspace-manager.md) | Workspace Manager design: worktrees, branch hierarchy, progressive merge, multi-repo interface, PR management | Layer 2 |
+| [`comm-plugins.md`](comm-plugins.md) | Comm Plugins design: status query interface, GitHub state sync, shared contract | Layer 2 |
 | [`decisions.md`](decisions.md) | Architectural decision log | Ongoing |
 
 ## Foundation (Layer 0 — DONE)
@@ -41,7 +43,7 @@ Validated Layer 1 from the user's perspective with 5 concrete flows. 24 total ga
 
 **Layer 2: Component Architecture — IN PROGRESS**
 
-Task Engine, Session/Memory, Daemon/Scheduler, Safety Layer, and Orchestrator designs complete. 21 of 24 gaps resolved. Next: Workspace Manager.
+All 7 component designs complete. All 24 gaps resolved. Layer 2 complete.
 
 **Documents:**
 - [`task-engine.md`](task-engine.md) — Task Engine design (state machine, hierarchy, permissions)
@@ -49,3 +51,5 @@ Task Engine, Session/Memory, Daemon/Scheduler, Safety Layer, and Orchestrator de
 - [`daemon-scheduler.md`](daemon-scheduler.md) — Daemon/Scheduler design (scheduling, preemption, capacity, health)
 - [`safety-layer.md`](safety-layer.md) — Safety Layer design (cost tracking, scope, autonomy, response timeout)
 - [`orchestrator.md`](orchestrator.md) — Orchestrator design (phase pipeline, fast-path, notifications, supervision, question batching)
+- [`workspace-manager.md`](workspace-manager.md) — Workspace Manager design (worktrees, branch hierarchy, progressive merge, multi-repo, PR management)
+- [`comm-plugins.md`](comm-plugins.md) — Comm Plugins design (status query interface, GitHub state sync, shared contract)

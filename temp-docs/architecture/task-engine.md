@@ -72,6 +72,8 @@ Layer 1 defined 6 states. Layer 1.5 revealed that "waiting for review" is fundam
 | Active.Working | Failed | Unrecoverable error |
 | Active.Working | Queued | Preempted by higher-priority task |
 | Active.Working | Active.Supervising | Task decomposed, children created |
+| Active.Working | Active.Supervising | Merge conflict resolved, children still executing |
+| Active.Supervising | Active.Working | Merge conflict during progressive merge (requires write permissions to resolve) |
 | Active.Supervising | Blocked | Child failure requires human decision |
 | Active.Supervising | Active.Integrating | All children completed |
 | Active.Supervising | Failed | Cascade failure (fail-fast policy) |
@@ -400,7 +402,7 @@ Actions are grouped into classes rather than individual tools. This is stable as
 6. If allowed: pass through to Safety Layer for additional checks (cost, scope, etc.)
 7. If both agree: action proceeds
 
-This is the **two-gate model**: Task Engine gate (is this action legal in this phase?) → Safety Layer gate (is this action within policy?). Both must pass.
+This is the **two-gate model**: Task Engine gate (is this action legal in this state+sub-state?) → Safety Layer gate (is this action within policy?). Both must pass.
 
 ### Permission Reset on Loopback
 
@@ -409,6 +411,84 @@ When the Orchestrator loops back to an earlier phase (e.g., after review feedbac
 2. Permission set resets to Active.Working permissions
 3. The Orchestrator is now back in a state where it can write code, run tests, push — but cannot merge
 4. The transition is recorded in `history` with reason ("loopback: requirements misunderstood per review feedback")
+
+---
+
+## Operations
+
+The Task Engine provides these operations:
+
+**Task lifecycle:**
+- `createTask(params) → Task` — create a new task in Intake state
+- `getTask(task_id) → Task` — read full task object
+- `getTasksByState(state, sub_state?) → Task[]` — query tasks by state
+- `getChildren(parent_id) → Task[]` — get children of a parent task
+
+**State transitions:**
+- `requestTransition(task_id, to_state, to_sub_state?, reason, triggered_by) → TransitionResult` — request a state transition. Validates against state machine. Returns success or rejection with reason. All transitions go through this operation — no component directly mutates task state.
+
+**Field updates:**
+- `updateTaskField(task_id, field, value)` — update non-state fields (phase, workspace, cost, team, etc.). The Orchestrator uses this to update `phase`. Event subscriptions (below) use this to update `workspace` and `cost`.
+
+**Hierarchy:**
+- `attachChildSummary(parent_id, summary: ChildCompletionSummary)` — attach a child's completion summary to the parent's context
+
+---
+
+## Event Subscriptions
+
+The Task Engine subscribes to events from other components to keep the Task object as the single source of truth. These updates happen automatically — other components emit events, the Task Engine reacts.
+
+### Workspace Manager Events
+
+The Workspace Manager is the source of truth for all git/PR state. The Task Engine keeps its `workspace` and `review` fields in sync:
+
+| Event | Task Engine update |
+|-------|-------------------|
+| `workspace.created` | Set `task.workspace.repo`, `task.workspace.branch`, `task.workspace.worktree_path` |
+| `workspace.cleaned` | Clear `task.workspace.worktree_path` |
+| `git.pr_opened` | Set `task.review.pr_number`, `task.review.pr_state = "draft"` (or `"ready"` if not draft) |
+| `git.pr_updated` (draft→ready) | Set `task.review.pr_state = "ready"` |
+| `git.pr_merged` | Set `task.review.pr_state = "merged"` |
+
+### Cost Events
+
+| Event | Task Engine update |
+|-------|-------------------|
+| `cost.incurred` | Accumulate into `task.cost` (filtered by `task_id`): increment `llm_tokens`, `llm_cost_usd`, `compute_time_ms` |
+
+The Safety Layer independently tracks cross-task cost aggregates from the same events. The Task Engine owns per-task cost; the Safety Layer owns aggregate cost.
+
+---
+
+## Progressive Merge on Child Completion
+
+When a child task transitions to Completed, the Task Engine handles progressive merge as part of the child completion lifecycle — infrastructure work, like workspace creation and cleanup.
+
+### Flow
+
+```
+1. Child #51 transitions to Completed
+2. Task Engine checks: does #51 have a parent_workspace?
+3. If yes: calls Workspace Manager.mergeBranch(child_branch, parent_branch)
+4. If merge succeeds:
+   a. Orchestrator generates child completion summary (content is Orchestrator's responsibility)
+   b. Task Engine attaches summary to parent's child_summaries[] via attachChildSummary()
+   c. Task Engine checks: are ALL children now Completed?
+   d. If yes: emits task.children_all_done { parent_task_id, child_ids }
+5. If merge conflict:
+   a. Workspace Manager emits workspace.merge_conflict event
+   b. Parent task transitions Active.Supervising → Active.Working (consumes slot)
+   c. Orchestrator resolves the conflict (has write/git permissions in Working)
+   d. After resolution: parent transitions Active.Working → Active.Supervising (frees slot)
+   e. Flow continues from step 3a
+```
+
+### `task.children_all_done` Emission
+
+The Task Engine is the sole emitter of `task.children_all_done`. When processing a child's transition to Completed, it checks if all siblings are also Completed. If yes, it emits the event. The Daemon subscribes and transitions the parent from Active.Supervising to Active.Integrating.
+
+The Orchestrator's supervision loop reacts to this event — it does NOT independently check whether all children are done.
 
 ---
 

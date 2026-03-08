@@ -75,7 +75,7 @@ No circular dependencies. Everything flows downward.
 | **Event Bus** | Nothing (infrastructure) | Everything |
 | **Safety Layer** | Nothing (pure config eval) | Orchestrator (passive), Event Bus (active interceptor) |
 | **Session/Memory** | Nothing (pure storage) | Task Engine, Orchestrator |
-| **Workspace Manager** | Nothing (pure git ops) | Task Engine |
+| **Workspace Manager** | Safety Layer (passive scope checks), Event Bus | Task Engine |
 | **People Directory** | Nothing (pure config) | Orchestrator |
 
 ---
@@ -166,11 +166,56 @@ All 12 Layer 1 gaps resolved at Layer 2.
 
 ---
 
+## Event Conventions
+
+Established during Layer 2 Holistic Review. The full event catalog and schemas are Layer 3 deliverables, but these conventions apply across all components now.
+
+### Canonical Events with Subscription Filters
+
+Components emit **canonical events**. Subscribers use **filters** to select the events they care about. Shorthand names in component docs are subscription filters, not distinct event types.
+
+**Example:** The Task Engine emits `task.state_changed { task_id, from_state, to_state, from_sub, to_sub, reason, timestamp }`. The Daemon subscribes with a filter: `task.state_changed where to_state == "Completed"`. In documentation, this is written as `task.completed` for brevity -- but it is NOT a separate event type.
+
+### Canonical Event Types
+
+| Emitted by | Canonical event | What it carries |
+|-----------|----------------|-----------------|
+| Task Engine | `task.state_changed` | task_id, from/to state+sub, reason, timestamp |
+| Task Engine | `task.created` | task_id, parent_id?, source trigger |
+| Task Engine | `task.children_all_done` | parent_task_id, child_ids |
+| Task Engine | `task.feedback_received` | task_id, feedback source, content |
+| Orchestrator | `action.requested` | task_id, action_class, details |
+| Orchestrator | `cost.incurred` | task_id, provider, cost details |
+| Safety Layer | `cost.limit_reached` | task_id?, limit_type, current_spend, limit_value |
+| Daemon | `preemption.requested` | target_task_id, reason |
+| Daemon | `trigger.new_event` | trigger source, payload |
+| Daemon | `timeout.reminder` | task_id, stage |
+| Daemon | `timeout.self_unblock_check` | task_id |
+| Daemon | `timeout.alert` | task_id |
+| Orchestrator | `preemption.ready` | task_id, checkpoint_id |
+| Workspace Manager | `workspace.created` | task_id, repo, branch, worktree_path |
+| Workspace Manager | `workspace.cleaned` | task_id |
+| Workspace Manager | `workspace.merge_conflict` | task_id, source_branch, target_branch, conflicting_files |
+| Workspace Manager | `git.committed` | task_id, sha |
+| Workspace Manager | `git.pushed` | task_id, branch |
+| Workspace Manager | `git.pr_opened` | task_id, pr_number, draft |
+| Workspace Manager | `git.pr_updated` | task_id, pr_number, changes |
+| Workspace Manager | `git.pr_merged` | task_id, pr_number |
+| Workspace Manager | `git.merge_completed` | task_id, source_branch, target_branch |
+| Comm Plugin | `comm.message_received` | source plugin, sender, content, timestamp |
+| Comm Plugin | `comm.message_sent` | target, content, task_id? |
+
+### Event Bus Pre-Processing
+
+The Safety Layer registers as a pre-processor on the Event Bus for specific event types (`action.requested`, `cost.incurred`, `git.pushed`, `git.merge`, `deploy.requested`). It gets first look at these events and can veto them before delivery to other subscribers. Vetoed events are still logged. See `safety-layer.md` § Dual Mode.
+
+---
+
 ## Open Questions for Layer 3
 
 - How does the Event Bus handle ordering? Are events guaranteed in-order per task?
 - What's the persistence model for the Event Bus? In-memory with flush? Write-ahead log?
-- Full event schemas for all event types across all components
+- Full event schemas for all event types across all components (building on Event Conventions above)
 - Plugin interface contracts (triggers, comm, LLM providers, tools)
 - Cross-component interaction protocols (dispatch, resume, preemption handshake)
 - Git hosting abstraction (GitHub/GitLab/Bitbucket)

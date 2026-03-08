@@ -70,17 +70,18 @@ Each component designed individually. Interfaces, responsibilities, internal str
 5. Orchestrator (7 gaps: #1, #4, #10, #15, #16, #18, #23) — DONE → [`orchestrator.md`](orchestrator.md)
 6. Workspace Manager (1 gap: #11) — DONE → [`workspace-manager.md`](workspace-manager.md)
 7. Comm Plugins (2 gaps: #20, #22) — DONE → [`comm-plugins.md`](comm-plugins.md)
+8. Event Bus (added during holistic review) — DONE → [`event-bus.md`](event-bus.md)
 
 **All 7 components designed. 24/24 gaps resolved. 38 decisions.**
 
-**Final step: Holistic Review** — review all 7 designs together as one unified system. Cross-component gaps, interface mismatches, terminology consistency, missing handoffs.
+**Holistic Review — DONE.** Reviewed all 7 designs together as one unified system. Found 24 cross-component issues (5 HIGH, 11 MEDIUM, 8 LOW), all resolved. 3 new decisions. Created Event Bus Layer 2 design doc. Established canonical event taxonomy convention. Total decisions: 41.
 
 **Key Layer 2 decisions so far:**
 - Review-Pending elevated to top-level state (not sub-state of Active)
 - Action classes (not individual tools) as the unit of permission gating
 - Two-gate model: Task Engine gate (phase legality) → Safety Layer gate (policy compliance)
 
-## Layer 3: Interactions & Protocols
+## Layer 3: Interactions & Protocols — IN PROGRESS
 
 How components talk to each other. The wiring.
 
@@ -90,6 +91,17 @@ How components talk to each other. The wiring.
 - API contracts between skeleton and plugins
 - Error propagation — how failures flow through the system
 - The full lifecycle of a task as it passes through every component
+
+**Completed:**
+- [x] Event Catalog — [`event-catalog.md`](event-catalog.md) — 28 events, 10 groups, Action Pipeline model
+- [x] Plugin Contracts (draft) — [`plugin-contracts.md`](plugin-contracts.md) — trigger, comm, LLM, tool, git-hosting + Registry + People Directory
+- [ ] Protocols — `protocols.md` — cross-component interaction protocols
+- [ ] Error Propagation — `error-propagation.md` — failure modes, cascade, recovery
+- [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
+- [ ] Lifecycle — `lifecycle.md` — end-to-end scenario traces
+- [ ] Mini holistic review
+
+**Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47). 48 total decisions.
 
 ## Layer 4: Implementation Design
 

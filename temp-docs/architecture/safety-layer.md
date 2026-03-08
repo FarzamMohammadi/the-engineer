@@ -4,6 +4,8 @@ The Safety Layer is the policy enforcement authority for the system. It defines 
 
 Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gaps: #5, #17, #19.
 
+> **Layer 3 Update (Decision #42 — Action Pipeline):** The "Active Interceptor" section below describes the original Event Bus pre-processing model. In Layer 3, this was replaced by Gate 2 in the Action Pipeline — the Safety Layer is now called as a pipeline gate before action execution, not as an Event Bus pre-processor. The Safety Layer's role is unchanged (stateless policy evaluator), but the mechanism is different. See [`event-catalog.md`](event-catalog.md) § Action Pipeline.
+
 ---
 
 ## Proven Systems
@@ -325,6 +327,7 @@ Configurable categories, each mapped to an autonomy level. These are sensible de
 | `breaking_changes` | always_ask | Any change that breaks existing contracts |
 | `external_api` | always_ask | Calling external APIs the codebase doesn't already use |
 | `deployment_config` | always_ask | Changes to deployment, CI/CD, infrastructure config |
+| `task_decomposition` | always_ask | Splitting a task into sub-tasks. See `orchestrator.md` § Decomposition Decision and Approval |
 
 ### Three Autonomy Levels
 
@@ -562,10 +565,13 @@ The Safety Layer provides these operations:
 - `onCostEvent(event: CostEvent)` -- internal, updates accumulators
 - `getCostStatus(task_id?, repo?) -> CostStatus` -- for cost_check queries
 
+**Event emission:**
+- `cost.limit_reached { task_id?, limit_type, current_spend, limit_value, resets_at? }` -- emitted when a cost limit is hit. Distinct from the veto mechanism: the veto prevents further `cost.incurred` events from passing through the Event Bus, while `cost.limit_reached` notifies the Orchestrator to checkpoint and transition the task to Blocked.
+
 **Configuration:**
 - `loadConfig(path) -> SafetyConfig`
 - `reloadConfig()` -- hot-reload without restart
-- `getTimeoutPolicy() -> ResponseTimeoutConfig` -- read by Daemon at startup
+- `getTimeoutPolicy() -> ResponseTimeoutConfig` -- queried by Daemon on each health tick (not cached at startup, so hot-reload is immediately effective)
 
 ---
 

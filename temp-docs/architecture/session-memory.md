@@ -401,8 +401,8 @@ Session/Memory is pure storage. It provides these operations:
 
 ## Open Questions for Layer 3
 
-- **Journal entry generation**: How does the Orchestrator decide what merits a journal entry vs what's too granular? (Orchestrator design)
-- **Context summary quality**: How are checkpoint `context_summary` values generated? LLM self-summarization? Template-based? (Orchestrator design)
+- **Journal entry generation**: ~~How does the Orchestrator decide what merits a journal entry vs what's too granular?~~ **RESOLVED** — see `orchestrator.md` § Journal and Checkpoint Generation. Rule: if someone asking "what have you been doing?" would want to know, it's an entry. Aggregation rule for related low-level actions.
+- **Context summary quality**: ~~How are checkpoint `context_summary` values generated?~~ **RESOLVED** — see `orchestrator.md` § Checkpoint Context Summary. LLM self-summarization with quality validation against current phase outputs.
 - **Knowledge retrieval ranking**: When there are many entries for a repo, how does the Orchestrator determine relevance? Keyword match? Embedding similarity? (Layer 3 or 4)
 - **Storage backend**: File-based? SQLite? Postgres? The schema is backend-agnostic. (Layer 4: Implementation Design)
 - **Session journal compaction**: For very long tasks, the journal could grow large. Summarization of old entries? (Layer 3)

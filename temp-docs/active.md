@@ -33,6 +33,9 @@ All work lives in `/temp-docs/`:
   - `orchestrator.md` — Orchestrator Layer 2 design (phase pipeline, fast-path, notifications, supervision, question batching)
   - `workspace-manager.md` — Workspace Manager Layer 2 design (worktrees, branch hierarchy, progressive merge, multi-repo, PR management)
   - `comm-plugins.md` — Comm Plugins Layer 2 design (status query interface, GitHub state sync, shared contract)
+  - `event-bus.md` — Event Bus Layer 2 design (event model, delivery guarantees, persistence)
+  - `event-catalog.md` — Event Catalog Layer 3 (28 events, 10 groups, Action Pipeline)
+  - `plugin-contracts.md` — Plugin Contracts Layer 3 (trigger, comm, LLM, tool, git-hosting + Registry + People Directory)
 
 ## Repo Structure
 
@@ -52,32 +55,17 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 11 complete. **Layer 2 (Component Architecture) — all 7 components designed individually.** All 24 gaps resolved. 38 decisions made. Post-design review traced all 5 user flows through the new designs — found and fixed 2 gaps and 2 inconsistencies.
+Session 14 complete. **Event Catalog reviewed and finalized (28 events, 10 groups). Plugin Contracts drafted.** 6 new decisions (#43-#48). Key architectural principle established: one plugin per adapter, not per platform — modularity and separation of concerns at the integration boundary.
 
-**Next: Layer 2 Holistic Review** — review all 7 designs together as a unified system. Look for cross-component gaps, interface mismatches, terminology inconsistencies, missing handoffs, and anything that only becomes visible when you see the whole picture. Final polish before Layer 3.
+**Next: Continue Layer 3 — Session 15 begins Protocols (`protocols.md`).**
 
-Layer 1 completed items:
-- [x] High-level state machine — `task-states.md`
-- [x] Skeleton vs plugin classification — `overview.md`
-- [x] Component relationships — `relationships.md`
-- [x] Data flow — `relationships.md`
+Layer 3 work order:
+- [x] Event Catalog — `event-catalog.md` (28 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
+- [x] Plugin Contracts (draft) — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — DRAFT COMPLETE
+- [ ] Protocols — `protocols.md` (16 cross-component interaction protocols)
+- [ ] Error Propagation — `error-propagation.md` (failure modes, cascade, recovery)
+- [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
+- [ ] Lifecycle — `lifecycle.md` (3 scenarios traced end-to-end)
+- [ ] Mini holistic review — cross-reference all 5 docs, update Layer 2 docs
 
-Layer 1.5 completed items:
-- [x] 5 core user flows — `user-flows.md`
-- [x] 12 new gaps identified (24 total)
-- [x] Key decisions: demo gate, GitHub + Telegram, real-engineer-judgment over policies
-- [x] State machine as security boundary — phase determines allowed actions
-- [x] Phase loopback as formal state transition
-- [x] DevEx for the Engineer — base TUI project + tooling pattern
-- [x] Gap prioritization — grouped by component, ordered by dependency
-
-Layer 2 progress:
-- [x] Task Engine — `task-engine.md` (gaps #3, #6, #9, #13, #14, #24 resolved)
-- [x] Session/Memory — `session-memory.md` (gaps #2, #7, #21 resolved)
-- [x] Daemon/Scheduler — `daemon-scheduler.md` (gaps #8, #12 resolved)
-- [x] Safety Layer — `safety-layer.md` (gaps #5, #17, #19 resolved)
-- [x] Orchestrator — `orchestrator.md` (gaps #1, #4, #10, #15, #16, #18, #23 resolved)
-- [x] Workspace Manager — `workspace-manager.md` (gap #11 resolved)
-- [x] Comm Plugins — `comm-plugins.md` (gaps #20, #22 resolved)
-
-**Component design order:** Task Engine → Session/Memory → Daemon/Scheduler → Safety Layer → Orchestrator → Workspace Mgr → Comm Plugins (ALL COMPLETE)
+Layers 0-2: ALL COMPLETE (see previous session logs for details). 48 total decisions.

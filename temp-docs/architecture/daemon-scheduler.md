@@ -37,14 +37,17 @@ The Daemon runs a hybrid loop with two input channels:
 loop {
   1. PROCESS EVENTS
      Drain pending Event Bus events:
-     - task.completed        -> free working slot, evaluate queue
-     - task.blocked          -> free working slot, evaluate queue
-     - task.review_pending   -> free working slot, evaluate queue
-     - task.unblocked        -> task re-enters Queued, evaluate queue
-     - task.feedback_received -> task re-enters Queued (or Active if slot free)
-     - task.created          -> new task in Intake, validate -> Queued
-     - task.children_all_done -> parent transitions Supervising -> Integrating
-     - preemption.ready      -> complete the pending preemption swap
+     (Note: events like "task.completed" are subscription filters on the
+      canonical `task.state_changed` event -- see relationships.md § Event Conventions)
+     - task.state_changed (to=Completed)    -> free working slot, evaluate queue
+     - task.state_changed (to=Blocked)      -> free working slot, evaluate queue
+     - task.state_changed (to=Review_Pending) -> free working slot, evaluate queue
+     - task.state_changed (to=Active, from=Blocked) -> task re-enters Queued, evaluate queue
+     - task.feedback_received               -> task re-enters Queued (or Active if slot free)
+     - task.created                         -> new task in Intake, validate -> Queued
+     - task.children_all_done              -> parent transitions Supervising -> Integrating
+     - preemption.ready                    -> complete the pending preemption swap
+     - comm.message_received               -> route to query handler (see Query Handler below)
 
   2. POLL TRIGGERS
      For each registered trigger (per its configured interval):
@@ -390,17 +393,21 @@ The Daemon watches for anomalies and takes corrective action.
 
 The Daemon queries Session/Memory for the latest journal entry timestamp. If the gap exceeds the threshold, something may be wrong.
 
-### Blocked Timeout Escalation
+### Blocked & Review-Pending Timeout Escalation
 
-Configured per-task or globally. Three stages:
+Timeout thresholds are owned by the Safety Layer (see `safety-layer.md` § Response Timeout Policy). The Daemon **queries** these thresholds from `SafetyLayer.getTimeoutPolicy()` on each health tick -- it does NOT cache them at startup. This ensures Safety Layer config hot-reload is immediately effective.
 
-| Stage | Trigger | Action |
-|-------|---------|--------|
-| Reminder | `blocked_reminder_interval` (default: 4 hours) | Comm plugin sends reminder to human |
-| Self-unblock check | `blocked_self_unblock_threshold` (default: 24 hours) | Orchestrator evaluates if a reasonable default exists. If yes, proposes it. If no, stays blocked. |
-| Alert | `blocked_alert_threshold` (default: 48 hours) | Escalation alert -- task has been blocked too long |
+For Blocked tasks, three stages:
 
-The Daemon tracks these thresholds and emits events when they're crossed. The Orchestrator and Comm plugins handle the actual communication.
+| Stage | Event emitted | Action (handled by Orchestrator/Comm) |
+|-------|---------------|---------------------------------------|
+| Reminder | `timeout.reminder { task_id, stage: "reminder" }` | Comm plugin sends reminder to human |
+| Self-unblock check | `timeout.self_unblock_check { task_id }` | Orchestrator evaluates if a reasonable default exists |
+| Alert | `timeout.alert { task_id, stage: "alert" }` | Escalation alert -- task blocked too long |
+
+For Review-Pending tasks: only `timeout.reminder` events -- the agent cannot self-approve.
+
+The Daemon emits these events on the Event Bus when thresholds are crossed. The Orchestrator and Comm plugins subscribe and handle the actual actions.
 
 ### Crash Recovery
 
@@ -419,6 +426,82 @@ The Daemon itself is the most critical process. If the Daemon crashes:
 - Resumes scheduling
 
 Daemon state is **ephemeral** -- fully reconstructable from Task Engine state. The Daemon stores no data that isn't derivable from the source of truth (Task objects).
+
+---
+
+## Query Handler
+
+The Daemon owns a lightweight query handler that processes `comm.message_received` events at all times -- even when the Orchestrator is busy working on a task. The Orchestrator is never interrupted for queries.
+
+This is not "intelligence" -- it is structured data retrieval and template-based formatting. The Daemon reads from Task Engine and Session/Memory, formats a response, and sends it via the comm plugin. No LLM is involved.
+
+### Query Flow
+
+```
+1. Comm plugin emits Event Bus: comm.message_received { sender, content, ... }
+2. Daemon receives event in its main loop
+3. Daemon disambiguates: query or task response?
+   a. Check: is there a task Blocked with waiting_for matching this sender?
+   b. If yes: route as task response -> forward to Orchestrator (via Event Bus)
+   c. If no: route as query -> handle below
+4. Parse query intent (keyword matching: "status", "progress on #N", "cost", etc.)
+5. Route to data source:
+   - "status" -> Task Engine: getTasksByState(Active, Blocked, Review_Pending, Queued)
+   - "progress on #N" -> Task Engine: getTask(N) + Session/Memory: queryJournal(N)
+   - "why did you decide X" -> Session/Memory: queryJournal(N, type=decision)
+   - "cost" -> Safety Layer: getCostStatus()
+6. Format response using templates
+7. Send via same comm plugin that received the query
+```
+
+### Query Types
+
+| Query pattern | Data source | What's returned |
+|---------------|------------|-----------------|
+| "status" / "what are you doing" | Task Engine (all non-terminal tasks) | Summary of current work |
+| "progress on #N" | Task Engine (state) + Session/Memory (journal) | Detailed task progress |
+| "why did you decide X" | Session/Memory (decision journal entries) | Decision reasoning |
+| "what errors" / "any blockers" | Session/Memory (error entries) + Task Engine (blocked tasks) | Error/blocker list |
+| "cost" / "how much have you spent" | Safety Layer (cost status) | Cost summary |
+
+### Disambiguation: Query vs Task Response
+
+When a `comm.message_received` event arrives and a task IS blocked waiting for this sender, the message is routed as a task response to the Orchestrator -- not handled as a query. If ambiguous, the Daemon asks: "Is this a reply to my question about #47, or a new request?"
+
+---
+
+## Trigger Plugins: PR Review Events
+
+The Daemon's trigger polling is not limited to discovering new work (GitHub issues). Trigger plugins also detect **PR review events** for tasks already in the system.
+
+### GitHub PR Events Trigger
+
+A GitHub trigger plugin polls for PR review activity on PRs associated with active tasks (tasks in Review_Pending state):
+
+```
+GitHubPRTrigger {
+  id:             "github_pr_events"
+  poll_interval:  duration      (default: 30 seconds)
+  poll():         TriggerEvent[]
+
+  // Polls for:
+  // - Review approvals on Draft PRs (demo approval)
+  // - Review approvals on Ready PRs (code approval)
+  // - Review comments / changes requested
+  // - New commits pushed by reviewers (rare but possible)
+}
+```
+
+Events emitted:
+
+| GitHub event | Trigger event type | Task Engine transition |
+|-------------|-------------------|----------------------|
+| Approval on Draft PR | `trigger.pr_review { type: "approved", pr_state: "draft" }` | Review_Pending.Demo → Review_Pending.Code |
+| Approval on Ready PR | `trigger.pr_review { type: "approved", pr_state: "ready" }` | Review_Pending.Code → Completed |
+| Review comment on PR | `trigger.pr_review { type: "comment" }` | Review_Pending → Active.Working |
+| Changes requested | `trigger.pr_review { type: "changes_requested" }` | Review_Pending → Active.Working |
+
+The trigger maps PR numbers to task IDs using the Task Engine's `review.pr_number` field. The Task Engine receives these trigger events and applies the corresponding state transitions.
 
 ---
 
@@ -472,9 +555,9 @@ DaemonState {
     preemption_timeout:    duration   (default: 60 seconds)
     stuck_threshold:       duration   (default: 30 minutes)
     max_active_duration:   duration   (default: 8 hours)
-    blocked_reminder_interval: duration (default: 4 hours)
-    blocked_self_unblock_threshold: duration (default: 24 hours)
-    blocked_alert_threshold: duration (default: 48 hours)
+    // blocked_reminder_interval, blocked_self_unblock_threshold, blocked_alert_threshold
+    // are NOT stored here -- read from SafetyLayer.getTimeoutPolicy() on each health tick.
+    // Single source of truth: Safety Layer config. See safety-layer.md § Response Timeout Policy.
     aging_threshold:       duration   (default: 24 hours)
     aging_increment:       number     (default: 5)
     aging_interval:        duration   (default: 24 hours)

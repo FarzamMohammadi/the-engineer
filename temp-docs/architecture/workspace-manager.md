@@ -240,7 +240,7 @@ Siblings work on separate branches, so conflicts only surface during merge. Two 
 
 **Parallel children (no dependency):** Children #53 and #54 both branch from parent at similar points. They modify different parts of the codebase (by design -- the Orchestrator's decomposition should minimize overlap). During progressive merge, if both modified the same file, the merge reveals the conflict.
 
-**Conflict handling:** The Workspace Manager reports the conflict. The Orchestrator decides how to resolve (using LLM judgment or asking the human). The Workspace Manager applies the resolution mechanically.
+**Conflict handling:** The Workspace Manager emits `workspace.merge_conflict`. The parent task transitions Active.Supervising → Active.Working (consumes a working slot) so the Orchestrator has write/git permissions to resolve the conflict. After resolution, the parent transitions Active.Working → Active.Supervising (frees the slot). The Workspace Manager applies the resolution mechanically. See `task-engine.md` § Progressive Merge on Child Completion.
 
 ### Child PR Strategy
 
@@ -489,7 +489,7 @@ The Workspace Manager provides these operations:
 | **Session/Memory** | Checkpoint's `workspace_ref` (branch + last_commit) is verified via `verifyWorkspace` during resume. Session/Memory doesn't call Workspace Manager directly -- the Orchestrator does during the resume flow. | Indirect (via Orchestrator) |
 | **Safety Layer** | Workspace Manager checks scope before branch operations (passive consultation). Safety Layer's active interceptor can veto `git.push` and `git.merge` events on the Event Bus. | Workspace Manager -> Safety Layer (consultation), Safety Layer -> Event Bus (interception) |
 | **Daemon** | Daemon includes workspace info in Dispatch package (from Task object). Daemon doesn't call Workspace Manager directly. | Indirect (via Task Engine) |
-| **Event Bus** | Workspace Manager emits events: `workspace.created`, `workspace.verified`, `workspace.cleaned`, `git.branch_created`, `git.committed`, `git.pushed`, `git.pr_opened`, `git.pr_updated`, `git.pr_merged`, `git.merge_completed`. These feed the audit trail and can be intercepted by Safety Layer. | Workspace Manager -> Event Bus |
+| **Event Bus** | Workspace Manager emits events: `workspace.created`, `workspace.verified`, `workspace.cleaned`, `workspace.merge_conflict`, `git.branch_created`, `git.committed`, `git.pushed`, `git.pr_opened`, `git.pr_updated`, `git.pr_merged`, `git.merge_completed`. These feed the audit trail and can be intercepted by Safety Layer. Task Engine subscribes to workspace/git events to keep Task object in sync (see `task-engine.md` § Event Subscriptions). | Workspace Manager -> Event Bus |
 
 ### Event Flow Example: Task #47 Dark Mode
 

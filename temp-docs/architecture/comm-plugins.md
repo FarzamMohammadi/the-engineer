@@ -24,8 +24,8 @@ Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gaps: #20, #22.
 | **Message formatting** (platform-specific rendering) | Comm Plugin | Telegram Markdown vs GitHub Markdown vs email HTML |
 | **State sync to external platforms** (labels, comments) | Comm Plugin | Platform-specific representation of internal state |
 | **Inbound message delivery** (routing raw messages into the system) | Comm Plugin | Emits events on Event Bus for other components to handle |
-| Query interpretation (understanding "status" vs task response) | Orchestrator | Intelligence, not transport |
-| Response composition (crafting human-readable answers) | Orchestrator | Requires reasoning about context |
+| Query interpretation (understanding "status" vs task response) | Daemon | Keyword matching, not LLM intelligence — see `daemon-scheduler.md` § Query Handler |
+| Response composition (crafting human-readable answers) | Daemon | Structured data retrieval + template formatting — no LLM needed |
 | Notification cadence (when to notify) | Orchestrator | Milestone-based judgment (already designed in Orchestrator Layer 2) |
 | What to communicate (content decisions) | Orchestrator | Phase-driven reasoning |
 
@@ -135,11 +135,12 @@ The comm plugin handles inbound message delivery. The **Orchestrator** handles i
      content: "status",
      timestamp: ...
    }
-4. Orchestrator (or Daemon, since no task context) receives event
+4. Daemon receives event (the Daemon always handles comm.message_received --
+   the Orchestrator is never interrupted for queries)
 5. Disambiguates: query or task response? (see disambiguation below)
 6. Recognized as query → routes to data sources:
    - "status" → Task Engine: get all active/blocked/review-pending tasks
-7. Composes human-readable response
+7. Composes response using structured data + templates (no LLM needed)
 8. Sends response via same comm plugin:
    "Currently working on 1 task:
     #47 (dark mode toggle) — Active, execution phase. ~60% through.
@@ -165,7 +166,7 @@ When a message arrives, the system checks:
 3. If no → route as query (to query handler)
 4. If ambiguous → ask: "Is this a reply to my question about #47, or a new request?"
 
-**Key design point:** The comm plugin doesn't parse queries. It delivers raw messages. Query parsing is Orchestrator intelligence. This means swapping Telegram for Slack doesn't require reimplementing query parsing.
+**Key design point:** The comm plugin doesn't parse queries. It delivers raw messages. Query parsing is handled by the Daemon's query handler (keyword matching, not LLM intelligence). This means swapping Telegram for Slack doesn't require reimplementing query parsing.
 
 ---
 
@@ -319,9 +320,10 @@ Registry.registerComm({
 | **Orchestrator** | Sends notifications and questions via comm plugins. Receives inbound messages (via Event Bus). Composes all outbound content. Parses queries and composes responses. | Orchestrator -> Comm Plugin (outbound), Comm Plugin -> Event Bus -> Orchestrator (inbound) |
 | **Event Bus** | Comm plugins emit `comm.message_received` for inbound messages. Subscribe to `task.state_changed` for state sync. Subscribe to milestone events for issue comments. All outbound sends are logged as events. | Bidirectional |
 | **Registry** | Comm plugins register at startup. Orchestrator queries Registry for available comm channels. | Comm Plugin -> Registry (registration), Orchestrator -> Registry (lookup) |
-| **Task Engine** | Query handler reads task state for status responses. GitHub sync reads task state for label updates. | Indirect (via Orchestrator or Event Bus) |
-| **Session/Memory** | Query handler reads journal entries for "what have you tried?" and decision queries. | Indirect (via Orchestrator) |
-| **Safety Layer** | Query handler reads cost status for cost queries. | Indirect (via Orchestrator) |
+| **Daemon** | Daemon handles `comm.message_received` events for query routing. Disambiguates query vs task response. Composes responses from Task Engine + Session/Memory data. | Comm Plugin → Event Bus → Daemon (inbound), Daemon → Comm Plugin (responses) |
+| **Task Engine** | Daemon's query handler reads task state for status responses. GitHub sync reads task state for label updates. | Indirect (via Daemon or Event Bus) |
+| **Session/Memory** | Daemon's query handler reads journal entries for "what have you tried?" and decision queries. | Indirect (via Daemon) |
+| **Safety Layer** | Daemon's query handler reads cost status for cost queries. | Indirect (via Daemon) |
 | **People Directory** | Outbound messages use People Directory to resolve contact details (user_id -> platform handle, preferred channel). | Orchestrator -> People Directory -> Comm Plugin |
 
 ---

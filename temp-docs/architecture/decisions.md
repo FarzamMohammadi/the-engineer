@@ -402,8 +402,78 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 
 ---
 
+## 2026-03-08 — Daemon owns query handling (not Orchestrator)
+
+**Decision:** The Daemon handles all incoming `comm.message_received` events for queries (status, history, etc.) at all times. It reads structured data from Task Engine and Session/Memory, formats responses, and sends them via comm plugins. The Orchestrator is never interrupted for queries.
+
+**Rationale:** The Orchestrator is dispatch-only and stateless — it only exists when the Daemon dispatches it for a task. When no task is Active.Working, there's no Orchestrator to handle queries. Even when the Orchestrator IS running, interrupting it for an unrelated status query would break its phase pipeline. The Daemon is always running and can read the same structured data the Orchestrator would. Query handling is reading + formatting, not intelligence.
+
+**Alternatives rejected:** Orchestrator handles queries (breaks stateless/dispatch-only design). Orchestrator interrupted mid-phase for queries (breaks phase pipeline, adds complexity for no benefit).
+
+---
+
+## 2026-03-08 — Merge conflict resolution via temporary state transition
+
+**Decision:** When a merge conflict occurs during progressive merge (child completing into parent branch), the parent task transitions Active.Supervising → Active.Working temporarily (consuming a working slot), resolves the conflict, then transitions Active.Working → Active.Supervising after resolution.
+
+**Rationale:** Active.Supervising forbids write and git permissions — but resolving a merge conflict IS active work (writing files, committing). The temporary transition is semantically honest and uses the existing permission model. No special-case permissions needed.
+
+**Alternatives rejected:** Special merge-conflict permissions for Supervising (creates permission model exception). Defer all merges to Integrating (breaks progressive merge — dependent siblings don't get prior code).
+
+---
+
+## 2026-03-08 — Event Bus gets Layer 2 design doc
+
+**Decision:** The Event Bus gets a lightweight Layer 2 design doc covering: event model (canonical events + subscription filters), delivery guarantees (at-least-once, per-task ordering), Safety Layer pre-processing hook, and persistence (append-only, replayable). Registry and People Directory are simple enough to define at Layer 3.
+
+**Rationale:** All 7 component designs reference the Event Bus — its delivery semantics, pre-processing hook, and subscription model. Without a formal design, these references point to thin air. The Event Bus is infrastructure that every component depends on; it needs its own specification. Registry and People Directory are simpler (key-value stores) and can be defined inline during Layer 3 interaction protocols.
+
+---
+
 ## 2026-03-08 — GitHub state sync via Event Bus subscription
 
 **Decision:** The GitHub comm plugin subscribes to `task.state_changed` events on the Event Bus and syncs internal state to GitHub: labels (`engineer:{state}`), milestone comments on issues, child task checklists on parent issues, and optionally project board columns. All sync behaviors are configurable.
 
 **Rationale:** State sync is a natural comm plugin responsibility — it's the GitHub "channel" keeping its representation current. Using Event Bus subscription (rather than having the Task Engine or Orchestrator push to GitHub directly) preserves decoupling — no component needs to know about GitHub labels. The sync is the GitHub plugin's business.
+
+---
+
+## 2026-03-08 — Action Pipeline replaces Event Bus pre-processing
+
+**Decision:** Replace the Safety Layer's Event Bus pre-processing hook with an Action Pipeline (middleware chain). Derived from auth middleware systems (HTTP middleware chains, Kubernetes admission controllers, Linux DAC + LSM hooks, API gateways). Every side-effecting action flows through: Gate 1 (Task Engine: state+action class legality) → Gate 2 (Safety Layer: scope, cost, autonomy policy) → Execute → Notify (post-action event on Event Bus). The Event Bus becomes pure pub/sub with no synchronous interception. All events are post-action notifications.
+
+**Rationale:** The Layer 2 design had the Safety Layer intercepting events (`git.pushed`, `git.merge`, `deploy.requested`) on the Event Bus synchronously before delivery. This created a timing ambiguity: events named in past tense were intercepted before the action happened. The middleware pattern — proven in HTTP stacks, Kubernetes, Linux security, and API gateways — cleanly separates pre-action checking (pipeline) from post-action notification (events). Defense-in-depth is maintained through two pipeline gates that both must pass. The Event Bus is simplified: no pre-processing, no synchronous delivery, no vetoed event status.
+
+**Alternatives rejected:** (1) Intent events — separate pre-action request events (`git.push_requested`) + completion events (`git.pushed`). Clean but doubles event count. (2) Dual-purpose events — same event serves as both request and notification. Simpler event count but confusing semantics. (3) Pipeline + Event Bus safety net — keep Event Bus pre-processing as belt-and-suspenders. Adds complexity for marginal safety benefit (post-action veto can't undo the action).
+
+## 2026-03-08 — One plugin per adapter, not per platform
+
+**Decision:** Each plugin is an independent adapter implementing exactly one contract. A platform like GitHub provides three separate plugins (GitHubTriggerPlugin, GitHubCommPlugin, GitHubHostingPlugin), each registered independently, each replaceable independently. No multi-contract plugins. Mix and match freely: GitHub triggers + GitLab hosting + Slack comms is a valid configuration.
+
+**Rationale:** The entire point of the plugin architecture is modularity and OSS accessibility. Users must be able to plug in and swap out any individual functionality without affecting others. Separation of concerns at the integration boundary means each adapter does one thing, each contract is focused and testable, and the barrier to building new plugins is low. Consolidating multiple contracts into one plugin would create coupling that defeats the purpose.
+
+**Alternatives rejected:** Multi-contract plugins (one GitHubPlugin implementing Trigger + Comm + Hosting). Simpler to manage as one unit, but creates coupling — can't swap just the comm layer without removing the trigger layer too. Violates separation of concerns.
+
+## 2026-03-08 — Health events formalized as `health.*` group
+
+**Decision:** Add formal `health.stuck_detected` and `health.trigger_failure` events to the Event Catalog. Daemon's health monitoring alerts are first-class events (not just internal operational logging). Subscribers: Comm Plugin (alert owner). Total catalog: 28 events, 10 groups.
+
+**Rationale:** Observability is a core goal. Health anomalies (stuck tasks, failing triggers) should be as observable as any other system event. Making them first-class events ensures they appear in the event stream audit trail and can be routed through any comm plugin.
+
+## 2026-03-08 — Minimal tool contract (safety integration, not behavior prescription)
+
+**Decision:** Tool Plugin contract is minimal: `execute(action, params) -> ToolResult` + action class declaration + side effects reporting. The contract focuses on safety integration (Action Pipeline gating, side effects audit) rather than prescribing tool behavior or capability categories. The agent can self-extend by creating new tools at runtime.
+
+**Rationale:** PI-Inspired Minimalism says "few broad tools, not many narrow ones." Bash is the meta-tool. Over-specifying tool categories (filesystem, network, shell, search) would constrain how the agent composes operations and what tools it can create. The contract needs to integrate with the safety system (action classes → Gate 1, side effects → audit) without dictating tool internals.
+
+## 2026-03-08 — LLM cost reporting is contractual
+
+**Decision:** Every `CompletionResult` from an LLM provider plugin MUST include usage data (tokens_in, tokens_out, and provider-specific cost/remaining data). This is non-negotiable — it is the bridge between LLM providers and the Safety Layer's cost tracking system.
+
+**Rationale:** The cost tracking architecture depends on `cost.incurred` events flowing from every LLM call. The Orchestrator constructs these events from `CompletionResult.usage`. If a provider can't report usage, the safety system can't enforce cost limits. Making this contractual (not optional) ensures every provider — CLI or API — contributes to cost visibility.
+
+## 2026-03-08 — People Directory is skeleton, not plugin
+
+**Decision:** People Directory is a skeleton component (always present, config-driven). It does not register in the Registry. It provides a query interface for looking up people by ID or role, resolving contact info per channel.
+
+**Rationale:** The People Directory is infrastructure that every component depends on (Orchestrator, Task Engine, Comm Plugins, Daemon). It's not swappable or optional — every installation needs to know who to contact. Making it a plugin would add registration overhead for something that's always present. It's analogous to the Event Bus: structural, not variable.

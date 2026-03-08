@@ -436,13 +436,20 @@ When a task enters Active.Supervising, the Orchestrator shifts into tech lead mo
 
 The Orchestrator, while supervising, runs a lightweight event-driven loop:
 
-**On child completion (`task.completed` event for a child):**
+**On child completion (`task.state_changed` where `to=Completed` for a child):**
 
 1. Generate child completion summary (content is the Orchestrator's responsibility)
-2. Attach summary to parent's `child_summaries[]` via Task Engine
-3. Evaluate: are all children done? If yes, signal transition to Active.Integrating
-4. If not all done: check if next eligible children should be queued
+2. Task Engine handles progressive merge and attaches summary (see `task-engine.md` § Progressive Merge on Child Completion)
+3. Task Engine checks all children — if all done, emits `task.children_all_done` (Orchestrator does NOT independently check)
+4. If not all done: Daemon schedules next eligible children per priority queue
 5. Send milestone notification to human (configurable)
+
+**On merge conflict (`workspace.merge_conflict` event during progressive merge):**
+
+1. Parent task transitions Active.Supervising → Active.Working (consumes slot)
+2. Orchestrator resolves the conflict (has write/git permissions in Working state)
+3. Parent task transitions Active.Working → Active.Supervising (frees slot)
+4. Progressive merge continues
 
 **On child failure (`task.failed` event for a child):**
 
@@ -487,7 +494,7 @@ ChildCompletionSummary {
   }]
 
   -- Knowledge for siblings --
-  conventions_established: string[]   (patterns introduced that siblings should follow)
+  patterns_introduced:    string[]   (patterns/conventions introduced that siblings should follow — informal strings, not KnowledgeEntry objects)
   gotchas:             string[]       (problems encountered that siblings should know about)
   decisions_made:      string[]       (decisions that affect remaining work)
 
@@ -581,11 +588,18 @@ The Orchestrator calls `SafetyLayer.evaluate({ type: "should_i_ask", context: { 
 
 When the human approves (or when the Orchestrator has authority):
 
-1. Orchestrator creates child tasks via Task Engine, each with title, description, dependencies, acceptance criteria
-2. Task Engine: Parent transitions Active.Working -> Active.Supervising
-3. Children enter Intake, then Queued
-4. Daemon picks up eligible children per scheduling algorithm
-5. Parent monitors via supervision behavior (see above)
+1. Orchestrator creates child tasks via Task Engine, each with title, description, dependencies, acceptance criteria (gets internal IDs)
+2. Orchestrator creates GitHub issues for each child via GitHub comm plugin:
+   `createIssue(repo, { title, body, parent_issue, labels: ["engineer:queued"] })` → `{ number, url }`
+3. Orchestrator updates each child task's `external_ref` via Task Engine:
+   `updateTaskField(child_id, "external_ref", { type: "github_issue", repo, number })`
+4. GitHub comm plugin adds checklist comment to parent issue: "Decomposed into #51, #52, ..."
+5. Task Engine: Parent transitions Active.Working -> Active.Supervising
+6. Children enter Intake, then Queued
+7. Daemon picks up eligible children per scheduling algorithm
+8. Parent monitors via supervision behavior (see above)
+
+Note: There is a brief window between step 1 (children created in Task Engine) and steps 2-3 (GitHub issues created). If the Daemon schedules a child before its GitHub issue exists, the child works without an `external_ref` temporarily — this is acceptable. The Orchestrator creates GitHub issues promptly after Task Engine creation.
 
 When the human requests changes to the plan:
 
@@ -674,7 +688,7 @@ Dispatch {
 ### New Task Flow (resume_from is null)
 
 ```
-1. Create new session via Session/Memory
+1. Create new session via Session/Memory. Update `task.session_id` via Task Engine.
 2. Load knowledge into context (repo + user, apply precedence: repo > user > defaults)
 3. Enter intake-analysis phase:
    a. Parse task.source_text, task.description, task.acceptance_criteria
@@ -693,7 +707,7 @@ Dispatch {
 ### Resumed Task Flow (resume_from is a Checkpoint)
 
 ```
-1. Create new session via Session/Memory (previous_session_id links to prior)
+1. Create new session via Session/Memory (previous_session_id links to prior). Update `task.session_id` via Task Engine.
 2. Load checkpoint:
    a. Read context_summary -> seed LLM context
    b. Read key_findings -> inject as known facts
@@ -803,7 +817,7 @@ Quality control: The summary is validated against the current phase's outputs. I
 | Component | How Orchestrator Interacts | Direction |
 |-----------|---------------------------|-----------|
 | **Task Engine** | Updates task.phase. Requests state transitions (Working->Blocked, Working->Review_Pending). Reads task state. Creates child tasks for decomposition. Attaches child completion summaries. | Bidirectional via Event Bus |
-| **Session/Memory** | Creates sessions. Appends journal entries. Creates checkpoints. Stores knowledge entries. Queries knowledge on task start. Queries journal for status responses. | Orchestrator -> Session/Memory |
+| **Session/Memory** | Creates sessions (updates task.session_id). Appends journal entries. Creates checkpoints. Stores knowledge entries. Queries knowledge on task start. | Orchestrator -> Session/Memory |
 | **Daemon** | Receives Dispatch package. Responds to preemption.requested by checkpointing and yielding. Receives timeout escalation events. | Daemon -> Orchestrator (dispatch), Orchestrator -> Event Bus (signals) |
 | **Safety Layer** | Passive consultation: should_i_ask (autonomy), can_i (scope), cost_check (budget). Receives veto events from active interceptor. | Orchestrator -> Safety Layer (queries), Safety Layer -> Event Bus (vetoes) |
 | **Registry** | Looks up LLM providers, tools, comm channels. | Orchestrator -> Registry (lookup) |
@@ -851,6 +865,8 @@ OrchestratorRuntime {
 ```
 
 On crash, the Orchestrator loses its runtime state. The Daemon detects the crash, restarts the Orchestrator, and dispatches the task with `resume_from` pointing to the latest checkpoint. The Orchestrator reconstructs everything from the checkpoint and knowledge.
+
+**Single-instance assumption:** The current design assumes one Orchestrator instance handling one task. The runtime state schema (`current_task_id: string?`) is singular. For multi-core evolution (multiple concurrent Orchestrator instances), each instance would be isolated — one instance per task, no shared runtime state. The runtime state is already per-task, so the main gap would be notification deduplication (the `last_notification` map would need per-instance isolation or a shared store). This is a known limitation with a clear evolution path.
 
 ---
 

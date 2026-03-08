@@ -237,3 +237,67 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** When a parent task enters Active.Supervising (monitoring children), it does NOT consume the agent's working slot. Only Active.Working and Active.Integrating consume a slot. This means a child can execute while the parent watches, on a single core.
 
 **Rationale:** Supervising is inherently lightweight — its permission table only allows read, communicate, task-manage, and ask-human. No LLM-heavy work, no code writing, no testing. Holding the working slot while supervising would mean children could never execute (deadlock on a single core). The parent parks itself and wakes up to Active.Integrating only when all children complete.
+
+---
+
+## 2026-03-08 — Safety Layer derives from SELinux/IAM policy engines
+
+**Decision:** The Safety Layer is a stateless policy evaluator, derived from mandatory access control systems (SELinux/AppArmor) and cloud IAM policy engines. It evaluates policies per-action without querying other components for state. Deny-by-default for dangerous operations, allow-by-default for safe operations.
+
+**Rationale:** Proven security systems are stateless evaluators with externally-provided state. SELinux doesn't query the filesystem — the kernel provides context. Similarly, our Safety Layer doesn't query the Task Engine. State flows to it via Event Bus events. This preserves the architectural constraint that Safety Layer depends on nothing.
+
+---
+
+## 2026-03-08 — Cost accumulators internal to Safety Layer (ephemeral)
+
+**Decision:** The Safety Layer maintains its own cost accumulators by subscribing to `cost.incurred` events on the Event Bus. These accumulators are ephemeral — reconstructable from Event Bus history on restart. This gives two independent cost views: per-task on the Task object (Task Engine), cross-task aggregates in Safety Layer.
+
+**Rationale:** Safety Layer must track cumulative cost (Gap #5) without depending on other components. Building accumulators from the event stream preserves independence. Like a billing system that accumulates charges from the event stream independently of the services that generated them. Follows the same ephemerality pattern as the Daemon.
+
+---
+
+## 2026-03-08 — Two LLM provider types with different cost semantics
+
+**Decision:** The cost tracking system accommodates two fundamentally different LLM provider models. CLI-based (Claude Code, Gemini CLI, Codex): subscription limits, rate limits, daily caps — the system tracks usage and stops when limits are hit, reports when limits reset. API-based (OpenRouter, direct API keys): per-token dollar spend against user-defined budgets — the system tracks dollars and enforces budget limits. Both share the same Safety Layer interface.
+
+**Rationale:** Many users will power The Engineer with CLI tools they already have subscriptions for. These have provider-imposed limits, not user-defined budgets. API providers are the opposite — no subscription cap, but every token costs money. The architecture must accommodate both because The Engineer must work with any LLM source.
+
+---
+
+## 2026-03-08 — Cost limit reached = stop (no graduated wind-down)
+
+**Decision:** When a cost limit is reached, the agent simply stops. Checkpoint current state, transition task to Blocked (reason: cost limit), notify the human, wait for limit reset or budget increase. No warning thresholds, no soft/hard limit distinction, no buffer percentages.
+
+**Rationale:** Follows the natural model of CLI subscription tools — when you run out, you stop, and you're told when it resets. For API budgets, the user sets the budget and the agent stops at that number. Simple, predictable, transparent. If the user wants more budget, they increase it.
+
+---
+
+## 2026-03-08 — Response timeout: Safety Layer owns policy, Daemon executes
+
+**Decision:** Response timeout policy (stage definitions, thresholds, actions) is owned by the Safety Layer configuration. The Daemon reads these thresholds from Safety config and handles execution (timer tracking, event emission). Single source of truth — no duplication between Daemon config and Safety config.
+
+**Rationale:** Clean separation of concerns. The Safety Layer defines WHAT happens and WHEN. The Daemon handles the HOW (running timers, checking thresholds, emitting events). This prevents the Daemon from maintaining independent timeout values that could drift from the policy.
+
+---
+
+## 2026-03-08 — Autonomy boundaries by decision category
+
+**Decision:** The autonomy boundary config uses named decision categories (architectural, refactoring, dependencies, breaking changes, etc.) each mapped to one of three autonomy levels: `always_decide` (agent has full authority), `threshold` (agent decides unless a condition is met), `always_ask` (must get human approval). Categories are configurable — users add/remove freely. Per-repo overrides supported.
+
+**Rationale:** Mirrors how real organizations define authority. A tech lead can decide code style but must escalate architectural changes. The three-level model is simple enough to configure but granular enough to express real policies. The category list is not hardcoded — different teams care about different things.
+
+---
+
+## 2026-03-08 — Self-unblock respects autonomy boundaries
+
+**Decision:** When the response timeout's self-unblock stage triggers (default: 24 hours blocked), the Orchestrator checks the autonomy category of the pending decision. If the category is `always_ask`, no self-unblock occurs — only reminders continue. Self-unblock only works for `threshold` or `always_decide` categories where a reasonable default exists.
+
+**Rationale:** `always_ask` means "always ask" — including when the human hasn't responded. The agent should respect this boundary regardless of wait time. Otherwise `always_ask` doesn't truly mean "always." For lower-stakes decisions, self-unblock prevents indefinite stalling while still notifying the human of the default chosen.
+
+---
+
+## 2026-03-08 — Active interceptor: veto-only, vetoed events still logged
+
+**Decision:** The Safety Layer's active interceptor on the Event Bus can only veto events, never modify them. Vetoed events are still recorded in the audit trail with veto reason attached.
+
+**Rationale:** Veto-only keeps the interceptor simple and auditable — no event mutation means the system is easier to reason about. Logging vetoed events is critical: the audit trail must show what was attempted AND what was blocked. If a component tries something out of scope, that attempt itself is valuable audit information.

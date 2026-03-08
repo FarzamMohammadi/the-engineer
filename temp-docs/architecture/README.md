@@ -18,6 +18,7 @@ We work top-down, layer by layer — see [`layers.md`](layers.md) for the full r
 | [`task-engine.md`](task-engine.md) | Task Engine design: state machine, hierarchy, permissions | Layer 2 |
 | [`session-memory.md`](session-memory.md) | Session/Memory design: checkpoints, knowledge, queryable journal | Layer 2 |
 | [`daemon-scheduler.md`](daemon-scheduler.md) | Daemon/Scheduler design: scheduling, preemption, capacity, health | Layer 2 |
+| [`safety-layer.md`](safety-layer.md) | Safety Layer design: cost tracking, scope, autonomy, response timeout | Layer 2 |
 | [`decisions.md`](decisions.md) | Architectural decision log | Ongoing |
 
 ## Foundation (Layer 0 — DONE)
@@ -39,9 +40,10 @@ Validated Layer 1 from the user's perspective with 5 concrete flows. 24 total ga
 
 **Layer 2: Component Architecture — IN PROGRESS**
 
-Task Engine, Session/Memory, and Daemon/Scheduler designs complete. 11 of 24 gaps resolved. Next: Safety Layer.
+Task Engine, Session/Memory, Daemon/Scheduler, and Safety Layer designs complete. 14 of 24 gaps resolved. Next: Orchestrator.
 
 **Documents:**
 - [`task-engine.md`](task-engine.md) — Task Engine design (state machine, hierarchy, permissions)
 - [`session-memory.md`](session-memory.md) — Session/Memory design (checkpoints, knowledge, queryable journal)
 - [`daemon-scheduler.md`](daemon-scheduler.md) — Daemon/Scheduler design (scheduling, preemption, capacity, health)
+- [`safety-layer.md`](safety-layer.md) — Safety Layer design (cost tracking, scope, autonomy, response timeout)

@@ -34,9 +34,10 @@ All work lives in `/temp-docs/`:
   - `workspace-manager.md` — Workspace Manager Layer 2 design (worktrees, branch hierarchy, progressive merge, multi-repo, PR management)
   - `comm-plugins.md` — Comm Plugins Layer 2 design (status query interface, GitHub state sync, shared contract)
   - `event-bus.md` — Event Bus Layer 2 design (event model, delivery guarantees, persistence)
-  - `event-catalog.md` — Event Catalog Layer 3 (28 events, 10 groups, Action Pipeline)
+  - `event-catalog.md` — Event Catalog Layer 3 (29 events, 10 groups, Action Pipeline)
   - `plugin-contracts.md` — Plugin Contracts Layer 3 (trigger, comm, LLM, tool, git-hosting + Registry + People Directory)
-  - `protocols.md` — Protocols Layer 3 (15 cross-component interaction protocols) — IN PROGRESS
+  - `protocols.md` — Protocols Layer 3 (15 cross-component interaction protocols)
+  - `error-propagation.md` — Error Propagation Layer 3 (failure classification, propagation chains, recovery patterns, comm error handling)
 
 ## Repo Structure
 
@@ -56,17 +57,17 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 17 complete. **All 15 protocols drafted.** Communication Protocols (P11-P14: Blocking & Human Interaction, Question Batching & Response Parsing, Notification Delivery, Status Query) and Resilience Protocol (P15: Crash Recovery & System Restart) — all five protocols complete with step sequences, failure paths, and cross-references. Added `shutdown_timeout` to Daemon config. 2 new decisions (#51, #52). 52 total decisions.
+Session 18 complete. **Error Propagation doc drafted.** Failure classification taxonomy (3 axes), component criticality map, 7 error propagation chains, 6 named recovery patterns, comm plugin error handling (resolved Layer 2 deferral). Added `health.config_reload_failed` event (29 total). Resolved plugin-contracts.md fallback chain open question. 6 new decisions (#53-#58). 58 total decisions.
 
-**Next: Session 18 — Error Propagation doc (`error-propagation.md`), then finalize Plugin Contracts, then Lifecycle traces, then mini holistic review.**
+**Next: Session 19 — Finalize Plugin Contracts (incorporate requirements from protocols + error analysis), then Lifecycle traces, then mini holistic review.**
 
 Layer 3 work order:
-- [x] Event Catalog — `event-catalog.md` (28 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
+- [x] Event Catalog — `event-catalog.md` (29 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
 - [x] Plugin Contracts (draft) — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — DRAFT COMPLETE
 - [x] Protocols — `protocols.md` (15 cross-component interaction protocols) — ALL 15 DRAFTED & VERIFIED (P1-P6: Task Lifecycle, P7-P10: Coordination, P11-P14: Communication, P15: Resilience)
-- [ ] Error Propagation — `error-propagation.md` (failure modes, cascade, recovery)
+- [x] Error Propagation — `error-propagation.md` (failure classification, 7 chains, 6 patterns, comm error handling) — COMPLETE
 - [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
 - [ ] Lifecycle — `lifecycle.md` (3 scenarios traced end-to-end)
 - [ ] Mini holistic review — cross-reference all 5 docs, update Layer 2 docs
 
-Layers 0-2: ALL COMPLETE (see previous session logs for details). 52 total decisions.
+Layers 0-2: ALL COMPLETE (see previous session logs for details). 58 total decisions.

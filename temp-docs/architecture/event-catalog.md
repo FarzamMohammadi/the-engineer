@@ -754,6 +754,26 @@ payload {
 
 ---
 
+#### `health.config_reload_failed`
+
+A config hot-reload failed validation. Component continues with previous valid config.
+
+```
+payload {
+  component:       string          // "safety_layer" or "people_directory"
+  config_file:     string          // Path to the config file
+  error:           string          // Validation error message
+  running_config:  string          // "previous" (kept valid config)
+}
+```
+
+**Subscribers:**
+| Subscriber | Why |
+|-----------|-----|
+| Comm Plugin | Alerts human that config reload failed |
+
+---
+
 ### `comm.*` — Communication Events
 
 **Owner:** Comm Plugins
@@ -866,12 +886,12 @@ The Orchestrator receiving events via the Daemon (not direct subscription) keeps
 | `preemption.*` | `requested`, `ready` | Daemon, Orchestrator |
 | `timeout.*` | `reminder`, `self_unblock_check`, `alert` | Daemon |
 | `trigger.*` | `new_event`, `pr_review` | Daemon |
-| `health.*` | `stuck_detected`, `trigger_failure` | Daemon |
+| `health.*` | `stuck_detected`, `trigger_failure`, `config_reload_failed` | Daemon |
 | `workspace.*` | `created`, `verified`, `cleaned`, `merge_conflict` | Workspace Manager |
 | `git.*` | `branch_created`, `committed`, `pushed`, `pr_opened`, `pr_updated`, `pr_merged`, `merge_completed` | Workspace Manager |
 | `comm.*` | `message_received`, `message_sent` | Comm Plugins |
 
-**Total: 28 event types** across 10 groups.
+**Total: 29 event types** across 10 groups.
 
 ---
 

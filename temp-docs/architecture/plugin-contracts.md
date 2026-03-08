@@ -668,4 +668,4 @@ The Action Pipeline (see [`event-catalog.md`](event-catalog.md) § Action Pipeli
 - Secret management implementation (env vars, vault, encrypted config?)
 - Plugin sandboxing (should plugins run in isolated processes for fault isolation?)
 - Config file format (YAML, TOML, JSON) for People Directory and plugin configuration
-- Fallback chains: when primary comm plugin fails, should the system automatically try the next one?
+- ~~Fallback chains: when primary comm plugin fails, should the system automatically try the next one?~~ **Resolved:** Yes. People Directory `contacts[]` is an ordered list per person. System tries channels in order. See [`error-propagation.md`](error-propagation.md) § 5 and Decision #55.

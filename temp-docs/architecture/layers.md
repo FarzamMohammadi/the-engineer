@@ -93,15 +93,15 @@ How components talk to each other. The wiring.
 - The full lifecycle of a task as it passes through every component
 
 **Completed:**
-- [x] Event Catalog — [`event-catalog.md`](event-catalog.md) — 28 events, 10 groups, Action Pipeline model
+- [x] Event Catalog — [`event-catalog.md`](event-catalog.md) — 29 events, 10 groups, Action Pipeline model
 - [x] Plugin Contracts (draft) — [`plugin-contracts.md`](plugin-contracts.md) — trigger, comm, LLM, tool, git-hosting + Registry + People Directory
-- [ ] Protocols — `protocols.md` — cross-component interaction protocols (P1-P15 drafted, verification pending)
-- [ ] Error Propagation — `error-propagation.md` — failure modes, cascade, recovery
+- [x] Protocols — [`protocols.md`](protocols.md) — 15 cross-component interaction protocols (P1-P15 drafted & verified)
+- [x] Error Propagation — [`error-propagation.md`](error-propagation.md) — failure classification, 7 propagation chains, 6 recovery patterns, comm error handling
 - [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
 - [ ] Lifecycle — `lifecycle.md` — end-to-end scenario traces
 - [ ] Mini holistic review
 
-**Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47), cost limit auto-resume configurable (Decision #49), reads Gate 1 only (Decision #50), LLM fallback for response parsing (Decision #51), shutdown timeout owned by Daemon (Decision #52). 52 total decisions.
+**Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47), cost limit auto-resume configurable (Decision #49), reads Gate 1 only (Decision #50), LLM fallback for response parsing (Decision #51), shutdown timeout owned by Daemon (Decision #52), Event Bus down = halt (Decision #53), LLM auto-failover (Decision #54), comm fallback chains (Decision #55), config reload health alert (Decision #56), checkpoint without LLM (Decision #57), GitHub state reconciliation (Decision #58). 58 total decisions.
 
 ## Layer 4: Implementation Design
 

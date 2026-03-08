@@ -501,3 +501,53 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** The `shutdown_timeout` (default: 30 seconds) — how long the Daemon waits for the Orchestrator to checkpoint during graceful shutdown before force-terminating — is a Daemon config parameter, not a Safety Layer config parameter.
 
 **Rationale:** Process lifecycle management is the Daemon's domain. This config lives alongside `tick_interval`, `preemption_timeout`, `stuck_threshold`, and other process-management parameters. The Safety Layer owns timeout policy for human response wait times (reminder, self-unblock, alert thresholds), which are about autonomy and communication cadence — a fundamentally different concern. Shutdown timeout is about operational process management.
+
+---
+
+## 2026-03-08 — Event Bus down = system halt (#53)
+
+**Decision:** If Event Bus storage becomes inaccessible mid-operation, the system halts: checkpoint active tasks, stop accepting new work, alert human. No degraded-continue mode.
+
+**Rationale:** The audit trail is a safety requirement (from `philosophy.md`: full transparency, full auditability). Without Event Bus persistence: cost tracking drifts (Safety Layer accumulators stale), notifications stop, scheduling breaks. The Action Pipeline technically still works (synchronous calls), but cost checks use stale data, risking silent over-spend. Operating without audit guarantees violates the system's integrity contract.
+
+**Alternatives rejected:** Continue degraded (saves progress but risks unaudited actions and unbounded cost). The safety-over-progress principle applies.
+
+---
+
+## 2026-03-08 — LLM provider auto-failover (#54)
+
+**Decision:** When the active LLM provider fails, the Daemon automatically switches to the next provider in a configured priority list. Task continues with the new provider. Cost tracking updates to the new `provider_id`. Human notified of the switch via milestone notification but work doesn't stop.
+
+**Rationale:** LLM provider outages are transient and common. Blocking work and waiting for human intervention every time a provider hiccups creates unnecessary downtime. Auto-failover is what a real engineer would do — switch tools and keep working. The priority list lets users express provider preference (cost, quality, speed) while maintaining continuity. If no fallback is configured, the system degrades gracefully (stuck detection → health alert → human intervention).
+
+---
+
+## 2026-03-08 — Comm plugin fallback chains via People Directory (#55)
+
+**Decision:** People Directory `contacts[]` is an ordered list of channel preferences per person. When sending a message, the system tries channels in order. If the primary channel's comm plugin fails, it tries the next channel. This resolves the open question from `plugin-contracts.md`.
+
+**Rationale:** Reliable communication is critical for blocking questions, alerts, and notifications. Fallback ordering is per-person (not system-wide) because different people have different channel preferences. The ordered list is explicit configuration — no automatic discovery or guessing. Comm plugins remain dumb transport; the fallback logic lives in the Daemon/Orchestrator.
+
+---
+
+## 2026-03-08 — Config reload failure triggers health alert (#56)
+
+**Decision:** When Safety Layer or People Directory config hot-reload fails validation, the component keeps the previous valid config and emits a `health.config_reload_failed` event. Comm Plugin subscribes and alerts the human.
+
+**Rationale:** Stale config is a degraded state — the system operates safely (previous config is valid) but may not reflect intended policy changes. Silent failure would leave the human unaware that their config change didn't take effect. A health event makes the failure visible through the standard alerting path.
+
+---
+
+## 2026-03-08 — Checkpoint without LLM (minimal checkpoint) (#57)
+
+**Decision:** When the LLM provider is unavailable, the Orchestrator creates a minimal checkpoint: phase, workspace state (branch, HEAD SHA), raw phase data, open questions — but without the narrative `context_summary` field (which requires LLM generation). Resume from a minimal checkpoint has degraded quality but is possible — the Orchestrator works from `next_action` and workspace state instead of full narrative context.
+
+**Rationale:** Checkpointing should never be blocked by LLM unavailability. The checkpoint's purpose is resume safety — even a degraded checkpoint is better than no checkpoint. The `context_summary` is the highest-quality resume path, but the other checkpoint fields (phase, key_findings, next_action, workspace state) provide enough signal for the Orchestrator to reconstruct working context. This is the Degrade-and-continue pattern applied to checkpointing.
+
+---
+
+## 2026-03-08 — GitHub state reconciliation on plugin recovery (#58)
+
+**Decision:** When the GitHub comm plugin recovers from an outage, it automatically reconciles state: compares Task Engine state vs GitHub labels for all active tasks, updates mismatched labels, and posts catch-up comments for missed milestones. Reconciliation runs once on recovery, not continuously.
+
+**Rationale:** GitHub state (labels, comments) drifts during comm plugin outages because internal state (Task Engine) is authoritative and continues to change. Without reconciliation, GitHub would show stale labels indefinitely until the next state change for each task. Automatic reconciliation on recovery keeps GitHub in sync without manual intervention. Running once (not continuously) avoids unnecessary API calls during normal operation.

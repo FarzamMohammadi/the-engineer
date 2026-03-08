@@ -477,3 +477,15 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** People Directory is a skeleton component (always present, config-driven). It does not register in the Registry. It provides a query interface for looking up people by ID or role, resolving contact info per channel.
 
 **Rationale:** The People Directory is infrastructure that every component depends on (Orchestrator, Task Engine, Comm Plugins, Daemon). It's not swappable or optional — every installation needs to know who to contact. Making it a plugin would add registration overhead for something that's always present. It's analogous to the Event Bus: structural, not variable.
+
+## 2026-03-08 — Cost limit auto-resume is configurable per limit
+
+**Decision:** Each cost limit can have an `auto_resume_on_reset: boolean` (default: false). When true, tasks blocked by that limit automatically re-enter Queued when the time window resets. When false (default), the task stays Blocked and the human is notified that the limit has reset.
+
+**Rationale:** Balances overnight autonomy (opt-in) with surprise spend prevention (default). Different limits warrant different behavior — a per-task limit reset is low risk, a monthly global reset warrants human awareness. Making it configurable per limit gives users fine-grained control without a one-size-fits-all policy.
+
+## 2026-03-08 — Read operations go through Gate 1 only, skip Gate 2
+
+**Decision:** Read operations (`read` action class) go through Gate 1 (Task Engine permission check) but skip Gate 2 (Safety Layer). This is defense-in-depth: terminal states deny reads via the permission table even though the Orchestrator architecturally shouldn't be running in those states.
+
+**Rationale:** Reads have no side effects — they don't need scope, cost, or autonomy checks from the Safety Layer. But the permission table exists and reads ARE denied in Completed/Failed states, so we enforce it via Gate 1 as a safety net. Skipping Gate 2 for reads avoids unnecessary overhead on the most frequent operation the agent performs.

@@ -101,7 +101,7 @@ How components talk to each other. The wiring.
 - [ ] Lifecycle — `lifecycle.md` — end-to-end scenario traces
 - [ ] Mini holistic review
 
-**Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47). 48 total decisions.
+**Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47), cost limit auto-resume configurable (Decision #49), reads Gate 1 only (Decision #50). 50 total decisions.
 
 ## Layer 4: Implementation Design
 

@@ -56,17 +56,17 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 15 in progress. **Protocols doc started — preamble, conventions, and Task Lifecycle Protocols (P1-P6) drafted.** Refined original 16 protocols to 15 (merged blocking+batching+timeout into one, added System Startup). Confirmed batch-by-category drafting approach.
+Session 16 complete. **Coordination Protocols (P7-P10) drafted.** Action Pipeline Execution, Preemption, Task Resume, and Cost Tracking & Enforcement — all four protocols complete with step sequences, failure paths, and cross-references. Verification pass done: all events, contracts, and state transitions confirmed against source docs. Added `checkPermission()` to Task Engine ops, `auto_resume_on_reset` to Safety Layer config. 2 new decisions (#49, #50).
 
-**Next: Continue Session 15 — draft Coordination Protocols (P7-P10), then Communication (P11-P14), then Resilience (P15), then cross-reference matrix.**
+**Next: Session 17 — draft Communication Protocols (P11-P14), then Resilience (P15), then cross-reference matrix.**
 
 Layer 3 work order:
 - [x] Event Catalog — `event-catalog.md` (28 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
 - [x] Plugin Contracts (draft) — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — DRAFT COMPLETE
-- [ ] Protocols — `protocols.md` (15 cross-component interaction protocols) — BATCH 1 DRAFTED (P1-P6: Task Lifecycle)
+- [ ] Protocols — `protocols.md` (15 cross-component interaction protocols) — BATCH 1+2 DRAFTED (P1-P6: Task Lifecycle, P7-P10: Coordination)
 - [ ] Error Propagation — `error-propagation.md` (failure modes, cascade, recovery)
 - [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
 - [ ] Lifecycle — `lifecycle.md` (3 scenarios traced end-to-end)
 - [ ] Mini holistic review — cross-reference all 5 docs, update Layer 2 docs
 
-Layers 0-2: ALL COMPLETE (see previous session logs for details). 48 total decisions.
+Layers 0-2: ALL COMPLETE (see previous session logs for details). 50 total decisions.

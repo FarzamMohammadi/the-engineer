@@ -430,6 +430,9 @@ The Task Engine provides these operations:
 **Field updates:**
 - `updateTaskField(task_id, field, value)` — update non-state fields (phase, workspace, cost, team, etc.). The Orchestrator uses this to update `phase`. Event subscriptions (below) use this to update `workspace` and `cost`.
 
+**Permission check (Action Pipeline Gate 1):**
+- `checkPermission(task_id, action_class) → PermissionResult` — check whether an action class is permitted in the task's current state+sub-state. Looks up the permission table (see § State Machine as Permission Gate). Returns `{ allowed: boolean, reason?: string }`. For conditional permissions (e.g., `merge` in Review_Pending.Code requires auto-merge config), evaluates the condition. This is Gate 1 of the Action Pipeline — called by the Orchestrator before every action.
+
 **Hierarchy:**
 - `attachChildSummary(parent_id, summary: ChildCompletionSummary)` — attach a child's completion summary to the parent's context
 

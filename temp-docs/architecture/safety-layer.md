@@ -223,12 +223,15 @@ cost_limits: {
   api: {
     per_task: {
       cost_usd:       number?         (default: null -- no per-task limit)
+      auto_resume_on_reset: boolean   (default: false -- Decision #49)
     }
     daily: {
       cost_usd:       number?         (default: null)
+      auto_resume_on_reset: boolean   (default: false)
     }
     monthly: {
       cost_usd:       number?         (default: null)
+      auto_resume_on_reset: boolean   (default: false)
     }
   }
 
@@ -237,6 +240,7 @@ cost_limits: {
     [provider_id]: {
       daily_requests:  number?        (manual cap if provider doesn't report limits)
       daily_tokens:    number?        (manual cap)
+      auto_resume_on_reset: boolean   (default: false)
       // When the CLI tool itself reports rate limiting or exhaustion,
       // the Safety Layer respects it regardless of these settings
     }
@@ -458,14 +462,15 @@ SafetyConfig {
   -- Cost limits --
   cost_limits: {
     api: {
-      per_task:    { cost_usd: number? }
-      daily:       { cost_usd: number? }
-      monthly:     { cost_usd: number? }
+      per_task:    { cost_usd: number?, auto_resume_on_reset: boolean }
+      daily:       { cost_usd: number?, auto_resume_on_reset: boolean }
+      monthly:     { cost_usd: number?, auto_resume_on_reset: boolean }
     }
     cli: {
       [provider_id]: {
         daily_requests: number?
         daily_tokens:   number?
+        auto_resume_on_reset: boolean
       }
     }
   }

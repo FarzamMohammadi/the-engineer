@@ -440,3 +440,481 @@ Child's code merged into parent branch. Parent context updated with child summar
 - Progressive merge means children merge into parent as they complete, not all at once. This gives later siblings access to earlier siblings' code.
 - The cascade failure policy (default: `pause-siblings`) determines what happens when a child fails. Configurable per-task: `pause-siblings`, `continue`, `fail-parent`, `fail-all`. See task-engine.md § Cascade Failure.
 - `Active.Integrating` is where the parent Orchestrator does final work: ensures all children's code works together, runs integration tests, prepares the PR. This may be minimal (children already tested individually) or substantial (cross-child integration issues).
+
+---
+
+## 2. Coordination Protocols
+
+How the system coordinates actions, preemption, resume, and cost enforcement across components.
+
+---
+
+### P7: Action Pipeline Execution
+
+**Trigger:** Orchestrator intends to perform an action (read, write, push, send message, create child task, etc.).
+**Outcome:** Action is executed and post-action event emitted, or action is rejected/deferred to human.
+
+**Participants:**
+
+| Component | Role |
+|-----------|------|
+| Orchestrator | Initiates action intent, handles verdicts |
+| Task Engine | Gate 1 -- validates action class against state+sub-state permission table |
+| Safety Layer | Gate 2 -- evaluates action against policy (scope, cost, autonomy) |
+| Executing Component | Performs the action (Workspace Manager, Comm Plugin, Task Engine, etc.) |
+| Event Bus | Receives post-action notification event |
+
+**Preconditions:**
+- Task is in a non-terminal state
+- Orchestrator has determined it needs to perform an action
+
+#### Steps
+
+**Read-Only Path (Gate 1 only):**
+
+1. **Orchestrator** determines the action class for the intended operation
+2. `[if action class is "read"]` **Orchestrator** calls `→ TaskEngine.checkPermission(task_id, "read")`
+   - Task Engine checks the permission table for current state+sub-state
+   - `[permitted]` Orchestrator executes the read operation directly. No Gate 2, no post-action event. Done.
+   - `[denied]` `⟹ action.rejected` { gate: "task_engine", action_class: "read", reason: "State {state}.{sub} does not permit read" }. Orchestrator receives rejection. Done.
+
+**Side-Effect Path (full pipeline):**
+
+3. **Orchestrator** identifies the action class (`write`, `test`, `git-local`, `git-remote`, `communicate`, `merge`, `deploy`, `task-manage`, `ask-human`) and assembles action details (file path, branch name, message content, etc.)
+
+4. **Gate 1 -- Task Engine:** `→ TaskEngine.checkPermission(task_id, action_class)`
+   - Task Engine looks up current state+sub-state in the permission table (see task-engine.md § Permission Table)
+   - `[denied]` Pipeline halts.
+     - `⟹ action.rejected` { task_id, action_class, gate: "task_engine", reason: "State {state}.{sub} does not permit {action_class}" }
+     - Orchestrator receives rejection. May adjust strategy (e.g., cannot merge in Active.Working -- expected, not a bug).
+     - Done.
+   - `[conditional]` For `merge` in Review_Pending.Code: Gate 1 checks whether auto-merge is configured for this repo. If not configured, denied.
+   - `[permitted]` Continue to Gate 2.
+
+5. **Gate 2 -- Safety Layer:** `→ SafetyLayer.evaluate(safety_query)`
+   - Query type depends on the action:
+     - Scope check (`can_i`): "Can I write to this file?", "Can I push to this branch?"
+     - Autonomy check (`should_i_ask`): "Should I ask about this architectural decision?"
+     - Cost check (`cost_check`): "Am I within budget?" (before cost-bearing actions)
+   - Safety Layer evaluates against loaded policy configuration
+   - Returns `SafetyVerdict` { allowed, action, reason, warnings? }
+
+6. **Verdict: `proceed`** -- Continue to step 9 (Execute).
+   - If verdict includes `warnings` (e.g., "approaching cost limit at 72%"): Orchestrator logs warnings in journal and may adjust behavior (choose cheaper operations)
+
+7. **Verdict: `ask_human`** -- Action deferred pending human approval.
+   - **Orchestrator** formats the question (what it wants to do and why)
+   - **Orchestrator** adds question to batch (see orchestrator.md § Question Batching -- 30s window, max 5 questions)
+   - **Orchestrator** requests: `→ TaskEngine.requestTransition(task_id, "Blocked", reason: "awaiting_human_decision")`
+   - `⟹ task.state_changed` { to_state: "Blocked", reason: "awaiting_human_decision" }
+   - **Orchestrator** sends question batch via `Contract: CommPlugin.sendMessage()` to the appropriate person from `task.team`
+   - Flow continues in P11 (Blocking & Human Interaction -- Batch 3). On human approval, Orchestrator re-enters the pipeline at step 3 with the same action.
+   - Done (for now).
+
+8. **Verdict: `deny`** -- Action permanently rejected by policy.
+   - `⟹ action.rejected` { task_id, action_class, gate: "safety_layer", reason: verdict.reason }
+   - Orchestrator receives denial. Must find an alternative approach (e.g., file is in scope exclusion list -- cannot write to `.env`).
+   - Done.
+
+9. **Execute:** **Orchestrator** calls the appropriate component to perform the action:
+   - File write/delete: Orchestrator writes directly in the worktree
+   - Git commit: `→ WorkspaceManager.commit(task_id, message)`
+   - Git push: `→ WorkspaceManager.push(task_id)`
+   - PR create: `Contract: GitHostingPlugin.createPR(options)` (via Workspace Manager)
+   - Send message: `Contract: CommPlugin.sendMessage(target, message)`
+   - Create child task: `→ TaskEngine.createTask(params)` (see P5)
+   - `[on failure]` Execution error: Orchestrator handles per its phase logic (retry, log, escalate). No event emitted -- the action didn't happen.
+
+10. **Notify:** Executing component emits the post-action event on the Event Bus:
+    - `⟹ git.committed`, `⟹ git.pushed`, `⟹ git.pr_opened`, `⟹ comm.message_sent`, `⟹ task.created`, etc.
+    - These are pure notifications -- async delivery, no interception.
+
+#### Success Outcome
+
+Action executed, post-action event published, audit trail complete. If `ask_human`, task is Blocked and human has been notified (P11 takes over).
+
+#### Failure Paths
+
+| Step | Failure | Handling |
+|------|---------|----------|
+| 2/4 | Gate 1 rejects (state doesn't permit action class) | `action.rejected` event logged. Orchestrator adjusts strategy. Often expected (e.g., merge in Working). |
+| 5 | Safety Layer unavailable | Critical system error. Orchestrator does NOT bypass Gate 2. Fails the action, logs error. If persistent: task transitions to Failed. |
+| 8 | Gate 2 denies (policy violation) | `action.rejected` event logged. Orchestrator must find alternative. If no alternative: may ask human for guidance via `ask-human` action class. |
+| 9 | Execution fails (git error, API error, disk full) | No post-action event emitted (action didn't happen). Orchestrator retries or handles per phase logic. |
+
+#### Notes
+
+- **Pipeline is synchronous.** Steps 3-10 happen in sequence within the Orchestrator's execution flow. Defense in depth requires sequential gates -- no bypass possible.
+- **Per-action, not per-phase.** Within a single phase (e.g., execution), the Orchestrator goes through the pipeline for each side-effect action individually. No batch approval.
+- **Internal bookkeeping skips the pipeline.** Creating checkpoints (`SessionMemory.createCheckpoint`), appending journal entries (`SessionMemory.appendJournal`), and updating the task phase field are always allowed. They are internal record-keeping, not side-effect actions.
+- **No `action.completed` event.** Successful actions emit domain-specific events (`git.pushed`, `git.committed`, etc.). The absence of `action.rejected` plus the presence of the specific event means the action succeeded.
+- **Multiple Safety queries per action.** A single action may require multiple Safety Layer evaluations (e.g., `git push` needs both a scope check and a cost check). The Orchestrator composes queries as needed.
+- **Reads skip Gate 2 (Decision #50).** Read operations have no side effects -- they don't need scope, cost, or autonomy checks from the Safety Layer. Gate 1 provides defense-in-depth for terminal states.
+
+---
+
+### P8: Preemption
+
+**Trigger:** Daemon's scheduling evaluation detects a Queued task with priority delta >= `preemption_threshold` above the current Active.Working task.
+**Outcome:** Current task is checkpointed and moved to Queued; higher-priority task is dispatched.
+
+**Participants:**
+
+| Component | Role |
+|-----------|------|
+| Daemon | Detects preemption condition, issues request, executes the swap |
+| Orchestrator | Receives preemption signal, finishes atomic operation, checkpoints, yields |
+| Session/Memory | Stores preemption checkpoint |
+| Task Engine | Transitions both tasks' states |
+
+**Preconditions:**
+- Task X is Active.Working (consuming a working slot)
+- Task Y is Queued with `Y.priority - X.priority >= preemption_threshold` (default: 20)
+- No preemption already in progress (`pending_preemption` is null)
+
+#### Steps
+
+1. **Daemon** evaluates preemption on scheduling tick (step 3 of daemon loop):
+   - Scans Queued tasks. Finds task Y where `Y.priority - X.priority >= preemption_threshold`
+   - Sets `pending_preemption = { target: X, replacement: Y, requested_at: now(), status: "requested" }`
+2. **Daemon** emits: `⟹ preemption.requested` { target_task_id: X, preempting_task_id: Y, reason: "priority_delta_exceeded", priority_delta }
+3. **Daemon** starts preemption timeout timer: `preemption_timeout` (default: 60 seconds)
+
+4. **Orchestrator** receives `preemption.requested` (Daemon routes the event):
+   - Notes the preemption request internally
+   - Continues its **current atomic operation** to completion:
+     - LLM call in progress: let the response complete
+     - File write in progress: let the write finish
+     - Test run in progress: let tests finish
+     - Git commit in progress: let the commit complete
+   - Does NOT start any new atomic operations after receiving the signal
+
+5. **Orchestrator** creates preemption checkpoint: `→ SessionMemory.createCheckpoint(session_id, checkpoint_data)`
+   - `checkpoint_data`:
+     - `phase`: current phase
+     - `phase_progress`: summary of progress within current phase
+     - `context_summary`: LLM self-summarization of full task context (see orchestrator.md § Checkpoint Context Summary)
+     - `key_findings`: important discoveries so far
+     - `open_questions`: unresolved questions
+     - `next_action`: what the Orchestrator was about to do next
+     - `reason`: "preemption"
+     - `workspace_ref`: { branch, last_commit } -- workspace persists on disk
+
+6. **Orchestrator** logs journal entry: `→ SessionMemory.appendJournal(session_id, { type: "checkpoint_marker", summary: "Preempted for higher-priority task" })`
+7. **Orchestrator** ends session: `→ SessionMemory.endSession(session_id, reason: "preempted")`
+8. **Orchestrator** emits: `⟹ preemption.ready` { task_id: X, checkpoint_id, phase, atomic_op: "completed operation type" }
+
+9. **Daemon** receives `preemption.ready`:
+   - Cancels preemption timeout timer
+   - Updates `pending_preemption.status = "completed"`
+10. **Daemon** transitions task X: `→ TaskEngine.requestTransition(X, "Queued", reason: "preempted")`
+    - `⟹ task.state_changed` { from_state: "Active", from_sub: "Working", to_state: "Queued", reason: "preempted" }
+    - Task X retains checkpoint reference for future resume (P9)
+    - Task X's worktree persists on disk (idle but intact)
+    - Working slot is freed
+11. **Daemon** clears `pending_preemption = null`
+12. **Daemon** dispatches task Y via **P3** (Task Dispatch):
+    - Task Y: Queued → Active.Working
+    - Workspace created (if new) or verified (if Y was previously preempted)
+    - Orchestrator begins working on Y
+
+#### Preemption Timeout Path (safety net)
+
+13. `[if Orchestrator does not emit preemption.ready within preemption_timeout (60s)]`
+    **Daemon** detects timeout:
+    - Logs warning: "Orchestrator did not yield within timeout for task X"
+    - Sends second preemption signal: `⟹ preemption.requested` (same payload)
+    - Starts second timeout window (60 seconds)
+
+14. `[if second timeout also expires]`
+    **Daemon** force-terminates:
+    - Force-terminates the Orchestrator process
+    - Logs error: "Force-terminated Orchestrator for task X -- failed to yield after 2 preemption requests"
+    - Recovers task X from **latest existing checkpoint** (the preemption checkpoint from step 5 was never created -- use last successful checkpoint before the preemption attempt)
+    - `→ TaskEngine.requestTransition(X, "Queued", reason: "preempted_forced")`
+    - `⟹ task.state_changed` { to_state: "Queued", reason: "preempted_forced" }
+    - Any work between the last checkpoint and force-termination is lost
+    - Proceeds to step 12 to dispatch Y
+
+#### Success Outcome
+
+Task X is Queued with a fresh checkpoint, workspace intact on disk. Task Y is Active.Working and executing. Task X will resume later via P9 when capacity is available and its priority is highest.
+
+#### Failure Paths
+
+| Step | Failure | Handling |
+|------|---------|----------|
+| 5 | Checkpoint creation fails | Orchestrator retries once. If persistent: still yields (better to lose context than block higher-priority work), logs critical error. Resume will use last successful checkpoint. |
+| 10 | Task X transition to Queued fails | Should not happen (Active.Working → Queued is valid). Log error, proceed with dispatching Y. Daemon resolves on next health check. |
+| 12 | Task Y dispatch fails | Follow P3 failure paths. X is already Queued and safe. |
+| 13-14 | Orchestrator stuck, force-terminate needed | Work since last checkpoint is lost. Task X returns to Queued with older checkpoint. Alert logged for debugging. |
+
+#### Notes
+
+- **Cooperative, not preemptive.** The Orchestrator decides where the safe yield point is. The Daemon trusts it to yield promptly. The timeout is a safety net for genuinely stuck processes, not the normal mechanism.
+- **One preemption at a time.** While `pending_preemption` is set, the Daemon does not initiate another preemption. This prevents cascading preemption chaos.
+- **Workspace persists.** Task X's worktree stays on disk. When X is eventually resumed (P9), the workspace is verified but not recreated.
+- **Priority aging continues.** While X is Queued after preemption, its priority aging continues. If X ages above Y, X may eventually preempt Y back. The `preemption_threshold` prevents thrashing.
+- **Preempting a child.** If the current Active.Working task is a child, preemption targets the child (it holds the working slot). The parent stays in Active.Supervising.
+- **Connects to P3** (Task Dispatch) for dispatching the replacement task, and to **P9** (Task Resume) for when the preempted task is eventually rescheduled.
+
+---
+
+### P9: Task Resume
+
+**Trigger:** A previously active task is dispatched again after preemption, crash recovery, or a new session.
+**Outcome:** Task is Active.Working with context reconstructed from checkpoint, workspace verified, new session created.
+
+**Participants:**
+
+| Component | Role |
+|-----------|------|
+| Daemon | Identifies resume condition, assembles dispatch package with checkpoint |
+| Task Engine | Transitions state, provides task data |
+| Session/Memory | Provides checkpoint and knowledge, creates new session |
+| Workspace Manager | Verifies workspace integrity |
+| Orchestrator | Receives dispatch, reconstructs context, resumes work |
+
+**Preconditions:**
+- Task has at least one checkpoint from a previous session (or none -- see crash recovery variant)
+- Task is Queued (post-preemption, crash recovery, or re-entry after unblock)
+
+**Three Resume Triggers:**
+
+| Trigger | How task enters Queued | Checkpoint expected? |
+|---------|----------------------|---------------------|
+| Post-preemption | P8 step 10 transitioned to Queued | Yes -- fresh preemption checkpoint |
+| Crash recovery | P1 step 7 detected orphaned Active.Working, transitioned to Queued | Maybe -- last checkpoint before crash. May not reflect latest work. |
+| New session | System restart, task was Queued at shutdown time | Yes -- phase transition or periodic checkpoint from prior session |
+
+#### Steps
+
+1. **Daemon** identifies the task for dispatch (same as P3 step 1 -- priority queue evaluation)
+   - Recognizes this is a resume: `→ SessionMemory.getLatestCheckpoint(task_id)` returns non-null
+
+2. **Daemon** calls `→ TaskEngine.requestTransition(task_id, "Active.Working", reason: "resumed")`
+   - `⟹ task.state_changed` { from_state: "Queued", to_state: "Active", sub: "Working", reason: "resumed" }
+
+3. **Daemon** requests workspace verification: `→ WorkspaceManager.verifyWorkspace(task.workspace)`
+   - Workspace Manager checks: worktree directory exists? Branch ref exists? Expected commit SHA reachable?
+   - `⟹ workspace.verified` { task_id, status, current_commit, recovery_action }
+
+4. **Workspace verification outcomes:**
+
+   4a. `[status: "valid"]` Worktree intact, branch at expected commit. No action needed. Continue to step 5.
+
+   4b. `[status: "recoverable"]` Worktree missing but branch exists (common after crash -- process died but branch persists).
+   - **Workspace Manager** recreates worktree from branch: `git worktree add {path} {branch}`
+   - `⟹ workspace.created` { task_id, repo, branch, worktree_path }
+   - Continue to step 5.
+
+   4c. `[status: "lost"]` Branch deleted or force-pushed over. Workspace is unrecoverable.
+   - `⟹ workspace.verified` { status: "lost" }
+   - **Daemon** transitions task to Failed: `→ TaskEngine.requestTransition(task_id, "Failed", reason: "workspace_lost")`
+   - `⟹ task.state_changed` { to_state: "Failed", reason: "workspace_lost" }
+   - **Comm Plugin** notifies human: "Task X's branch was lost. Cannot resume."
+   - Done (task cannot continue).
+
+5. **Daemon** assembles Dispatch package (same structure as P3 step 5):
+   - `task`: full Task object from Task Engine
+   - `resume_from`: latest checkpoint from `→ SessionMemory.getLatestCheckpoint(task_id)`
+   - `knowledge.repo`: from `→ SessionMemory.queryKnowledge(scope: "repo", repo_scope: task.repo)`
+   - `knowledge.user`: from `→ SessionMemory.queryKnowledge(scope: "user")`
+
+6. **Daemon** hands Dispatch to Orchestrator
+
+7. **Orchestrator** receives Dispatch and detects `resume_from` is not null:
+   - Creates new Session linked to previous: `→ SessionMemory.createSession(task_id, previous_session_id)`
+   - Sets `session.resumed_from_checkpoint` to the checkpoint ID
+
+8. **Orchestrator** performs context reconstruction from checkpoint:
+   - Reads `checkpoint.context_summary` -- seeds the new LLM context window
+   - Injects `checkpoint.key_findings` as known facts
+   - Injects `checkpoint.open_questions` as active threads
+   - Reads `checkpoint.next_action` -- the immediate next step
+   - Optionally scans journal entries after `checkpoint.journal_offset` for additional context
+   - Reads `checkpoint.phase` to determine which phase to resume in
+
+9. **Orchestrator** cross-checks workspace state against checkpoint:
+   - Compares `workspace.current_commit` with `checkpoint.workspace_ref.last_commit`
+   - `[match]` Workspace exactly where checkpoint expected. Resume cleanly.
+   - `[diverged]` Commits exist beyond the checkpoint (possible if crash happened after a commit but before checkpoint was persisted). Orchestrator reviews delta commits (`git log`) to understand what work happened post-checkpoint. Incorporates findings into context.
+
+10. **Orchestrator** logs journal entry: `→ SessionMemory.appendJournal(session_id, { type: "phase_change", summary: "Resumed from checkpoint in {phase} phase. Previous session ended due to {end_reason}." })`
+
+11. **Orchestrator** enters the phase pipeline at `checkpoint.phase`:
+    - If `checkpoint.next_action` describes remaining work in current phase -- continues within phase
+    - If `checkpoint.phase_progress` indicates phase was nearly complete -- may complete phase and transition to next (via P4)
+    - Orchestrator uses judgment to decide whether to redo any work or continue forward
+
+#### Crash Recovery Variant
+
+When the Daemon detects orphaned Active.Working tasks at startup (P1 step 7):
+
+- **Daemon** transitions orphaned task to Queued: `→ TaskEngine.requestTransition(task_id, "Queued", reason: "crash_recovery")`
+- Task enters normal priority queue and is dispatched via P3/P9 when its turn comes
+- `[no checkpoint exists]` Task is dispatched as new (resume_from is null, follows P3 new-task path). Work since creation is lost, but the branch may have commits that provide partial context for the Orchestrator.
+- `[checkpoint from earlier phase]` Some work is lost between checkpoint and crash. The Orchestrator acknowledges this in its journal and may need to redo work. Branch commits help bridge the gap.
+
+#### Success Outcome
+
+Orchestrator is executing at the correct phase with reconstructed context. Workspace is verified. New session is linked to the previous one. Knowledge is loaded (may include new entries from other tasks since last session).
+
+#### Failure Paths
+
+| Step | Failure | Handling |
+|------|---------|----------|
+| 3/4c | Workspace lost (branch deleted) | Task transitions to Failed. Human notified. Cannot resume without the branch. |
+| 5 | Checkpoint data corrupted or missing | Treat as crash with no checkpoint -- restart task from beginning with existing branch as context. |
+| 7 | Session creation fails | Critical error. Orchestrator retries. If persistent: task transitions to Failed. |
+| 8 | Context reconstruction produces incoherent context | Orchestrator detects quality issue. Falls back to minimal context from just `next_action` and workspace state (branch commits). Logs degraded resume. |
+
+#### Notes
+
+- **Context reconstruction, not replay.** The checkpoint's `context_summary` is written to be self-sufficient. A fresh LLM context seeded with this summary can continue work effectively. Summary quality at checkpoint time determines resume quality.
+- **Branch commits as safety net.** Even if the checkpoint narrative is imperfect, the branch's git history provides concrete evidence of what was done. The Orchestrator can `git log` and `git diff` to reconstruct context from the code itself.
+- **Session chain for full history.** The new session links to the previous via `previous_session_id`. To understand full task history: follow the chain backward.
+- **Knowledge may have changed.** Between preemption and resume, other tasks may have stored new knowledge. The dispatch package includes the latest, which may differ from the previous session.
+- **Connects to P3** (Task Dispatch -- resume follows the same dispatch structure), **P8** (Preemption -- post-preemption is the most common resume trigger), **P4** (Phase Transition -- Orchestrator re-enters the phase pipeline), **P1** (System Startup -- crash recovery).
+
+---
+
+### P10: Cost Tracking & Enforcement
+
+**Trigger:** Orchestrator completes an LLM call or other billable operation.
+**Outcome:** Cost is recorded, accumulators updated, and (if limit breached) task is blocked and human is notified.
+
+**Participants:**
+
+| Component | Role |
+|-----------|------|
+| Orchestrator | Emits cost event after every billable operation |
+| Event Bus | Routes cost event to subscribers |
+| Task Engine | Updates per-task cost fields |
+| Safety Layer | Updates ephemeral cost accumulators, checks limits, emits limit_reached if breached |
+| Daemon | Receives limit_reached, transitions affected task(s) to Blocked |
+| Comm Plugin | Sends cost alert to owner |
+
+**Preconditions:**
+- System startup complete (P1), including Safety Layer cost accumulator reconstruction from event replay
+- Orchestrator is executing a task (Active.Working or Active.Integrating)
+
+#### Steps
+
+**Normal Flow (within limits):**
+
+1. **Orchestrator** completes an LLM call via `Contract: LLMProvider.complete(request)`
+   - LLM provider returns `CompletionResult` including `usage` data (tokens_in, tokens_out, spend_usd for API; usage_units, remaining for CLI)
+   - Usage reporting is contractual -- every `CompletionResult` MUST include it (see plugin-contracts.md § LLM Provider)
+
+2. **Orchestrator** emits: `⟹ cost.incurred` { task_id, repo, provider_id, provider_type, operation, tokens_in, tokens_out, spend_usd (API) or usage_units/remaining (CLI) }
+   - One event per billable operation. Not batched.
+
+3. **Event Bus** delivers `cost.incurred` to subscribers (async, at-least-once):
+
+4. **Task Engine** receives `cost.incurred`:
+   - Updates `task.cost` fields: increments `llm_tokens`, `llm_cost_usd`, `compute_time_ms`
+   - Per-task cost visibility on the Task object
+
+5. **Safety Layer** receives `cost.incurred`:
+   - Updates ephemeral cost accumulators:
+     - For API providers: `api_spend.per_task[task_id] += spend_usd`, `api_spend.daily += spend_usd`, `api_spend.monthly += spend_usd`
+     - For CLI providers: `cli_usage[provider_id].requests_used += 1`, `cli_usage[provider_id].tokens_used += usage_units`
+     - If `remaining` reported: updates `cli_usage[provider_id].last_known_remaining`
+     - If `resets_at` reported: updates `cli_usage[provider_id].last_known_reset`
+
+6. **Safety Layer** checks accumulators against configured limits:
+   - For API: compares each accumulator against `cost_limits.api.{per_task, daily, monthly}`
+   - For CLI: compares usage against `cost_limits.cli[provider_id].{daily_requests, daily_tokens}`
+   - Also checks if CLI provider reported `remaining: 0` (provider-imposed exhaustion)
+   - `[all within limits]` No further action. Normal flow. Done.
+   - `[limit breached]` Continue to step 7.
+
+**Limit Breach Flow:**
+
+7. **Safety Layer** identifies the breach:
+   - Determines: limit_type (`per_task` | `per_repo` | `daily_global` | `monthly_global`), current_spend, limit_value, resets_at
+   - `⟹ cost.limit_reached` { task_id (null if global), limit_type, limit_scope, current_spend, limit_value, provider_type, resets_at }
+
+8. **Daemon** receives `cost.limit_reached`:
+   - Determines affected task(s):
+     - `per_task` limit: only the specific task
+     - `per_repo` limit: all active tasks in that repo
+     - `daily_global` or `monthly_global`: ALL Active.Working and Active.Integrating tasks
+
+9. **Daemon** signals the Orchestrator to checkpoint and stop (routes `cost.limit_reached` to the active Orchestrator)
+
+10. **Orchestrator** receives `cost.limit_reached`:
+    - Finishes current atomic operation (same concept as preemption -- complete the in-flight operation)
+    - Creates checkpoint: `→ SessionMemory.createCheckpoint(session_id, { reason: "cost_limit", phase, context_summary, key_findings, open_questions, next_action })`
+    - Logs journal entry: `→ SessionMemory.appendJournal(session_id, { type: "error", summary: "Cost limit reached: {limit_type}. Stopping." })`
+    - Ends session: `→ SessionMemory.endSession(session_id, reason: "cost_limit")`
+
+11. **Daemon** transitions affected task(s): `→ TaskEngine.requestTransition(task_id, "Blocked", reason: "cost_limit_reached")`
+    - `⟹ task.state_changed` { to_state: "Blocked", reason: "cost_limit_reached" }
+    - Task's `blocked` details: { reason: "Cost limit reached", needed: "Budget increase or limit reset", waiting_for: "owner" }
+    - Working slot(s) freed
+
+12. **Comm Plugin** receives `cost.limit_reached` (subscriber):
+    - Sends cost alert to task owner (from `task.team`):
+      - Which limit was hit
+      - Current spend vs. configured limit
+      - When it resets (for time-based limits)
+      - How to resolve (increase budget, wait for reset, or manually unblock)
+
+**Unblocking Flow:**
+
+13. `[human increases budget]`
+    - Human updates cost configuration (config file change or command)
+    - **Safety Layer** detects config change (hot-reload): reloads `cost_limits`, re-evaluates accumulators
+    - Human explicitly unblocks task (via comm channel: "unblock #47" or "resume #47")
+    - **Daemon** routes the message → `→ TaskEngine.requestTransition(task_id, "Queued", reason: "cost_limit_resolved")`
+    - Task resumes via **P9** (Task Resume)
+
+14. `[human explicitly unblocks without changing budget]`
+    - Same as step 13 but with original budget. Task may hit the limit again quickly -- human's choice.
+
+**Time-Based Reset Flow:**
+
+15. `[time-based limit window expires (daily/monthly)]`
+    - **Safety Layer** resets accumulators for the expired window (checked on next `cost.incurred` event or at startup)
+    - **Safety Layer** checks the limit's `auto_resume_on_reset` configuration:
+      - `[auto_resume_on_reset: true]` Safety Layer emits an internal event. Daemon transitions affected tasks: Blocked → Queued. Tasks resume via P9.
+      - `[auto_resume_on_reset: false (default)]` Task stays Blocked. **Comm Plugin** notifies human: "Daily cost limit has reset. Task #47 can be unblocked."
+      - Human explicitly unblocks when ready (step 13).
+
+**Proactive Cost Check (optional):**
+
+16. **Orchestrator** can proactively check cost status before expensive operations:
+    - `→ SafetyLayer.evaluate({ type: "cost_check", context: { task_id, repo } })`
+    - Returns verdict with warnings: `{ allowed: true, warnings: ["task at 72% of per-task limit"] }`
+    - Orchestrator may adjust behavior: use smaller models, batch operations, reduce exploration depth
+    - This is optional proactive behavior, not a required gate in the pipeline
+
+#### Success Outcome (normal flow)
+
+Cost recorded on task and in Safety Layer accumulators. All within limits. Operation continues.
+
+#### Success Outcome (limit breach)
+
+Affected task(s) checkpointed, transitioned to Blocked, human notified with actionable information. No further cost incurred on blocked task(s). Task resumes when human increases budget, explicitly unblocks, or (if configured) limit resets automatically.
+
+#### Failure Paths
+
+| Step | Failure | Handling |
+|------|---------|----------|
+| 2 | Cost event emission fails | Cost under-counted. Safety Layer accumulators drift below actual spend. Log warning. |
+| 4 | Task Engine fails to update cost field | Per-task cost display stale. Non-critical -- Safety Layer is the enforcement authority. |
+| 5 | Safety Layer fails to process cost event | May under-count. If limit is actually exceeded but not detected, spend continues. Log critical warning -- degraded safety. |
+| 10 | Orchestrator fails to checkpoint before blocking | Work since last checkpoint lost when task resumes. Cost enforcement takes priority over work preservation. |
+| 12 | Comm Plugin fails to send alert | Human not notified. Daemon retries. Task is still safely blocked. |
+
+#### Notes
+
+- **Cost limit = stop.** No graduated wind-down, no warning thresholds that reduce permissions. When the limit is hit, stop. Simple, predictable, safe.
+- **Accumulators are ephemeral.** On system restart, Safety Layer replays `cost.incurred` events from Event Bus within relevant time windows (P1 step 4). The Event Bus is the durable store.
+- **Two provider models coexist.** CLI (subscription caps) and API (dollar budgets) flow through the same `cost.incurred` event and accumulator pipeline. Different cost semantics, shared tracking infrastructure.
+- **CLI provider self-reporting.** When a CLI tool reports rate limiting (`remaining: 0`), the Safety Layer treats this as a limit breach even if configured caps weren't reached -- the provider itself has stopped serving.
+- **Global limits affect all tasks.** A `daily_global` breach blocks ALL Active.Working and Active.Integrating tasks, not just the triggering task.
+- **auto_resume_on_reset is per-limit (Decision #49).** Default: false (human must explicitly unblock). Configurable: users who want overnight autonomy can opt in per limit type.
+- **Connects to P7** (Action Pipeline -- cost_check queries during Gate 2), **P8** (Preemption -- checkpoint-then-block mirrors checkpoint-then-yield), **P9** (Task Resume -- blocked tasks resume after unblocking), **P1** (System Startup -- accumulator reconstruction).

@@ -68,8 +68,12 @@ Each component designed individually. Interfaces, responsibilities, internal str
 3. Daemon/Scheduler (2 gaps: #8, #12) — DONE → [`daemon-scheduler.md`](daemon-scheduler.md)
 4. Safety Layer (3 gaps: #5, #17, #19) — DONE → [`safety-layer.md`](safety-layer.md)
 5. Orchestrator (7 gaps: #1, #4, #10, #15, #16, #18, #23) — DONE → [`orchestrator.md`](orchestrator.md)
-6. Workspace Manager (1 gap: #11)
-7. Comm Plugins (2 gaps: #20, #22)
+6. Workspace Manager (1 gap: #11) — DONE → [`workspace-manager.md`](workspace-manager.md)
+7. Comm Plugins (2 gaps: #20, #22) — DONE → [`comm-plugins.md`](comm-plugins.md)
+
+**All 7 components designed. 24/24 gaps resolved. 38 decisions.**
+
+**Final step: Holistic Review** — review all 7 designs together as one unified system. Cross-component gaps, interface mismatches, terminology consistency, missing handoffs.
 
 **Key Layer 2 decisions so far:**
 - Review-Pending elevated to top-level state (not sub-state of Active)

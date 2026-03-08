@@ -52,7 +52,9 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 11 complete. **Layer 2 (Component Architecture) DONE.** All 7 components designed. All 24 gaps resolved. 38 decisions made. Post-design review traced all 5 user flows through the new designs — found and fixed 2 gaps (child GitHub issue creation, progressive merge trigger) and 2 inconsistencies. Ready for Layer 3 (Interactions & Protocols).
+Session 11 complete. **Layer 2 (Component Architecture) — all 7 components designed individually.** All 24 gaps resolved. 38 decisions made. Post-design review traced all 5 user flows through the new designs — found and fixed 2 gaps and 2 inconsistencies.
+
+**Next: Layer 2 Holistic Review** — review all 7 designs together as a unified system. Look for cross-component gaps, interface mismatches, terminology inconsistencies, missing handoffs, and anything that only becomes visible when you see the whole picture. Final polish before Layer 3.
 
 Layer 1 completed items:
 - [x] High-level state machine — `task-states.md`

@@ -301,3 +301,59 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** The Safety Layer's active interceptor on the Event Bus can only veto events, never modify them. Vetoed events are still recorded in the audit trail with veto reason attached.
 
 **Rationale:** Veto-only keeps the interceptor simple and auditable — no event mutation means the system is easier to reason about. Logging vetoed events is critical: the audit trail must show what was attempted AND what was blocked. If a component tries something out of scope, that attempt itself is valuable audit information.
+
+---
+
+## 2026-03-08 — Orchestrator derives from compiler front-end + flight director
+
+**Decision:** The Orchestrator derives from two proven systems. Compiler front-end (multi-pass): phases as passes, each producing structured output (intermediate representation) that feeds the next. Trivial inputs skip passes (fast-path). Flight Director (NASA Mission Control): single coordinator managing specialists, communication cadence, escalation judgments, and delegation while maintaining situational awareness.
+
+**Rationale:** The compiler gives the phase pipeline structure — passes, structured IR between phases, fast-path for trivial inputs. The flight director gives the coordination and communication model — notification cadence, autonomy judgments, tech lead supervision, specialist delegation. Neither alone covers the Orchestrator's full responsibility. The compiler doesn't explain human communication; the flight director doesn't explain how phases produce structured output.
+
+---
+
+## 2026-03-08 — Seven-phase pipeline with structured phase outputs
+
+**Decision:** The Orchestrator runs a seven-phase pipeline: intake-analysis, research, planning, execution, self-review, demo-prep, integration. Each phase produces structured `PhaseOutput` that feeds the next. Phases are Orchestrator-internal — the Task Engine only sees the `phase` string field for observability. Phases have no permission implications beyond the current state+sub-state.
+
+**Rationale:** Compiler-inspired passes with intermediate representation. Intake-analysis is separated from research because it determines complexity and decides which subsequent phases to run — like the lexing pass that classifies input before deeper analysis. Structured output prevents coupling between phases and enables clean loopbacks.
+
+---
+
+## 2026-03-08 — Fast-path for trivial tasks
+
+**Decision:** The Orchestrator detects trivial tasks during intake-analysis and abbreviates the pipeline. Trivial = all of: <=2 files affected, no ambiguity, no new dependencies, no architectural changes, <30 min estimated. Fast-path skips planning, abbreviates self-review, skips demo (PR goes straight to Ready), collapses three notifications into one. All thresholds configurable. Can be disabled entirely.
+
+**Rationale:** Compiler insight: trivial inputs skip passes. A typo fix in README doesn't need a planning phase, demo artifacts, or three separate notifications. The full pipeline is correct for complex tasks but creates unnecessary ceremony for trivial ones. Execution, safety checks, and permission gates are never skipped.
+
+---
+
+## 2026-03-08 — Milestone-based notification as default cadence
+
+**Decision:** The Orchestrator sends notifications at natural milestones (task pickup, draft ready, PR ready, done, blocked, child completion, cascade failure), not on timers. Optional daily digest on top. Noise prevention: deduplication window (5 min), quiet hours, batching window (2 min). Fast-path tasks collapse to one combined message.
+
+**Rationale:** Flight director insight: communicate when meaningful things happen, not on a schedule. Phase transitions are too granular (the human doesn't care that the agent entered "planning" phase). Milestones are the events the human actually wants to know about. Time-based updates are noisy for short tasks and insufficient for long ones. Milestone-based is self-adapting to task duration.
+
+---
+
+## 2026-03-08 — Question batching by default
+
+**Decision:** When the Orchestrator encounters multiple questions during a phase, it batches them into one numbered message with a 30-second accumulation window (max 5 questions). Format: numbered list with options. Human replies with "1:A 2:B" or natural language. Batch flushes on window expiry, blocking need, or max size.
+
+**Rationale:** Fewer interruptions for the human. Questions encountered close together are usually related (same decision space). A single message with three questions is easier to answer than three separate messages. The LLM enables flexible response parsing — humans don't need to follow strict format.
+
+---
+
+## 2026-03-08 — Decomposition approval via Safety Layer autonomy system
+
+**Decision:** Decomposition approval integrates into the Safety Layer's existing autonomy boundary system as a new decision category: `task_decomposition`. Default level: `always_ask`. Three configurable levels: always_ask (always approve before decomposing), threshold (ask only above N children), always_decide (full autonomy). The Orchestrator calls `SafetyLayer.evaluate()` and follows the verdict.
+
+**Rationale:** Decomposition is an autonomy decision — "should I restructure the work?" Using the existing autonomy system avoids a parallel config mechanism. The default (always_ask) matches Farzam's preference from Flow 5 and is the conservative choice. Users wanting maximum autonomy can change it. Single source of truth for all autonomy decisions.
+
+---
+
+## 2026-03-08 — task_decomposition as autonomy decision category
+
+**Decision:** Added `task_decomposition` as a new decision category in the Safety Layer's autonomy boundary config, alongside the existing 10 categories (code_style, testing_strategy, etc.). Default level: `always_ask`. This is the 11th default autonomy category.
+
+**Rationale:** Decomposition is a distinct decision type with its own risk profile — it creates new tasks, changes the work structure, and affects project scope. It doesn't fit neatly into existing categories like `architectural` or `refactoring`. A dedicated category gives users fine-grained control over this specific capability.

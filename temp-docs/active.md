@@ -30,6 +30,7 @@ All work lives in `/temp-docs/`:
   - `session-memory.md` — Session/Memory Layer 2 design (checkpoints, knowledge, queryable journal)
   - `daemon-scheduler.md` — Daemon/Scheduler Layer 2 design (scheduling, preemption, capacity, health)
   - `safety-layer.md` — Safety Layer Layer 2 design (cost tracking, scope, autonomy, response timeout)
+  - `orchestrator.md` — Orchestrator Layer 2 design (phase pipeline, fast-path, notifications, supervision, question batching)
 
 ## Repo Structure
 
@@ -49,7 +50,7 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 9 complete. **Layer 2 (Component Architecture) in progress.** Task Engine, Session/Memory, Daemon/Scheduler, and Safety Layer complete (14/24 gaps resolved). 25 decisions made.
+Session 10 complete. **Layer 2 (Component Architecture) in progress.** Task Engine, Session/Memory, Daemon/Scheduler, Safety Layer, and Orchestrator complete (21/24 gaps resolved). 32 decisions made. Next: Workspace Manager (gap #11), then Comm Plugins (gaps #20, #22) to finish Layer 2.
 
 Layer 1 completed items:
 - [x] High-level state machine — `task-states.md`
@@ -71,7 +72,7 @@ Layer 2 progress:
 - [x] Session/Memory — `session-memory.md` (gaps #2, #7, #21 resolved)
 - [x] Daemon/Scheduler — `daemon-scheduler.md` (gaps #8, #12 resolved)
 - [x] Safety Layer — `safety-layer.md` (gaps #5, #17, #19 resolved)
-- [ ] Orchestrator (gaps #1, #4, #10, #15, #16, #18, #23)
+- [x] Orchestrator — `orchestrator.md` (gaps #1, #4, #10, #15, #16, #18, #23 resolved)
 - [ ] Workspace Manager (gap #11)
 - [ ] Comm Plugins (gaps #20, #22)
 

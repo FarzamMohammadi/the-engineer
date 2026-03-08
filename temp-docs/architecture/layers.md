@@ -66,8 +66,8 @@ Each component designed individually. Interfaces, responsibilities, internal str
 1. Task Engine (6 gaps) — DONE → [`task-engine.md`](task-engine.md)
 2. Session/Memory (3 gaps: #2, #7, #21) — DONE → [`session-memory.md`](session-memory.md)
 3. Daemon/Scheduler (2 gaps: #8, #12) — DONE → [`daemon-scheduler.md`](daemon-scheduler.md)
-4. Safety Layer (3 gaps: #5, #17, #19)
-5. Orchestrator (7 gaps: #1, #4, #10, #15, #16, #18, #23)
+4. Safety Layer (3 gaps: #5, #17, #19) — DONE → [`safety-layer.md`](safety-layer.md)
+5. Orchestrator (7 gaps: #1, #4, #10, #15, #16, #18, #23) — DONE → [`orchestrator.md`](orchestrator.md)
 6. Workspace Manager (1 gap: #11)
 7. Comm Plugins (2 gaps: #20, #22)
 

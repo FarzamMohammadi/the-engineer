@@ -52,6 +52,7 @@ PluginManifest {
   name:            string          // Human-readable: "GitHub Issues Trigger"
   description:     string          // One-line description
   config_schema:   object          // JSON Schema for this plugin's configuration
+  critical:        boolean         // If true, system startup aborts on init failure (default: true)
 }
 
 InitResult {
@@ -83,6 +84,38 @@ PluginError {
 }
 ```
 
+### Plugin Criticality
+
+The `critical` field in the manifest determines startup behavior. If a critical plugin fails `initialize()`, the system aborts startup (P1 step 3, error-propagation Pattern 6: Graceful-halt). Non-critical plugins that fail init are logged and skipped -- the system starts in degraded mode.
+
+Defaults: trigger plugins and the primary comm plugin are critical (the system can't function without work intake and human communication). Secondary comm plugins, tool plugins, and additional LLM providers are non-critical by default. The `critical` field can be overridden in configuration.
+
+### Standard Error Codes
+
+Plugins define error codes in `PluginError.code`. These common codes allow the skeleton to handle errors uniformly:
+
+| Code | Meaning | Retryable? |
+|------|---------|-----------|
+| `auth_failed` | Authentication/authorization failure | No (needs reinitialization) |
+| `rate_limited` | External API rate limit hit | Yes (respect `retry_after`) |
+| `timeout` | Operation timed out | Yes |
+| `network_error` | Network connectivity failure | Yes |
+| `not_found` | Requested resource doesn't exist | No |
+| `conflict` | Conflicting state (e.g., concurrent modification) | Depends on context |
+| `invalid_input` | Bad parameters passed to plugin | No |
+
+Plugin-type-specific codes:
+
+| Code | Plugin Type | Meaning |
+|------|------------|---------|
+| `merge_conflict` | git-hosting | PR has merge conflicts |
+| `branch_not_found` | git-hosting | Branch deleted or doesn't exist |
+| `pr_not_mergeable` | git-hosting | Protection requirements not met |
+| `context_exceeded` | LLM | Prompt exceeds max context window |
+| `quota_exhausted` | LLM | Provider quota or budget exhausted |
+
+Plugins may define additional codes beyond these. The common codes are conventions, not an exhaustive enum.
+
 ### Configuration Contract
 
 Each plugin declares its configuration schema in the manifest (`config_schema`). The Registry validates configuration against this schema at registration time.
@@ -90,6 +123,10 @@ Each plugin declares its configuration schema in the manifest (`config_schema`).
 - **Plugins never read configuration directly** -- they receive validated config via `initialize(config)`
 - **Config hot-reload**: Registry can call `shutdown()` then `initialize(new_config)` for config changes
 - **Secrets**: Sensitive values (API keys, tokens) are referenced by name, resolved by the skeleton's secret manager. Plugins receive resolved values, never secret references.
+
+### Behavior During Event Bus Outage
+
+Plugins do not emit events themselves -- the skeleton emits events post-action (e.g., after `sendMessage()` succeeds, the skeleton emits `comm.message_sent`). When the Event Bus goes down, plugins continue responding to direct calls (`healthCheck()`, `sendMessage()`, etc.) normally. The skeleton detects Event Bus failure and invokes Graceful-halt -- checkpointing active tasks and stopping new work (Decision #53). See [`error-propagation.md`](error-propagation.md) Chain 2.
 
 ---
 
@@ -181,11 +218,38 @@ TriggerEvent {
 - **`poll_interval` is a contract, not a suggestion**: The Daemon respects it. Plugins should set it based on the external API's rate limits and expected event frequency.
 - **`poll()` must be fast**: No heavy processing. Return raw data, let the Daemon and Task Engine handle interpretation.
 
+### Event Types and Metadata Schemas
+
+The `event_type` field in `TriggerEvent` is open-ended -- plugins can define new types. These are the canonical types the skeleton understands:
+
+| event_type | Meaning | Idempotency Key Pattern |
+|-----------|---------|------------------------|
+| `issue_opened` | New issue/ticket created | `{platform}:issue:{repo}:{number}` |
+| `issue_assigned` | Existing issue assigned to The Engineer | `{platform}:issue:{repo}:{number}` |
+| `issue_reopened` | Previously closed issue reopened | `{platform}:issue:{repo}:{number}` |
+| `pr_review_received` | PR review submitted on an Engineer-owned PR | `{platform}:review:{repo}:{pr}:{review_id}` |
+| `manual_create` | Manual task creation via CLI or API | `manual:{timestamp}:{title_hash}` |
+
+For `pr_review_received`, the `metadata` field MUST include:
+
+```
+metadata (for pr_review_received) {
+  task_id:         string          // Task that owns this PR (looked up by PR → branch → task mapping)
+  pr_number:       number
+  review_type:     "approved" | "changes_requested" | "comment"
+  pr_state:        "draft" | "ready"   // Whether PR is still draft or marked ready
+  reviewer:        string          // Platform username of the reviewer
+  comment:         string?         // Review comment text (null for approval-only reviews)
+}
+```
+
+The Daemon translates `pr_review_received` trigger events into `trigger.pr_review` events on the Event Bus (see [`event-catalog.md`](event-catalog.md) § `trigger.pr_review`), which then become `task.feedback_received` events after validation. This keeps the trigger layer cleanly separated from the task lifecycle.
+
 ### Implementations
 
 | Plugin | Source | Notes |
 |--------|--------|-------|
-| GitHubIssuesTrigger | GitHub Issues API | Polls for new/assigned issues. Key: `github:issue:{owner}/{repo}:{number}` |
+| GitHubIssuesTrigger | GitHub Issues API | Polls for new/assigned issues and PR reviews. Key: `github:issue:{owner}/{repo}:{number}` or `github:review:{owner}/{repo}:{pr}:{review_id}` |
 | ManualTrigger | CLI / API | Accepts manual task creation. Key: `manual:{timestamp}:{title_hash}` |
 | *(future)* JiraTrigger | Jira REST API | Polls for assigned tickets |
 | *(future)* LinearTrigger | Linear API | Polls for assigned issues |
@@ -202,7 +266,7 @@ Reference: [`comm-plugins.md`](comm-plugins.md) for the full Layer 2 design incl
 
 ```
 CommPlugin extends Plugin {
-  capabilities:    string[]        // Subset of: "send", "receive", "sync"
+  capabilities:    string[]        // Subset of: "send", "receive", "query", "sync"
 
   -- Outbound --
   sendMessage(target: Target, message: FormattedMessage) -> SendResult
@@ -213,7 +277,7 @@ CommPlugin extends Plugin {
   stopListening() -> void          // Stop receiving messages
 
   -- State Sync (if "sync" capability) --
-  syncTaskState(task_id: string, old_state: string, new_state: string, metadata: object) -> void
+  syncTaskState(task_id: string, old_state: string, new_state: string, metadata: SyncMetadata) -> void
 }
 
 Target {
@@ -236,13 +300,29 @@ SendResult {
   message_id:      string?         // Platform message ID (for reply threading)
   error:           PluginError?
 }
+
+SyncMetadata {
+  task_title:      string          // Human-readable task title
+  external_ref:    string?         // GitHub issue URL, Jira ticket ID, etc.
+  sub_state:       string?         // Sub-state if applicable (e.g., "Demo", "Code" for Review-Pending)
+  reason:          string?         // Why the transition happened (for milestone comments)
+}
+
+InboundMessage {
+  source:          string          // Comm plugin ID that received the message
+  sender:          string          // User identifier on the platform
+  content:         string          // Raw message text
+  timestamp:       datetime
+  reply_to:        string?         // If replying to a previous outbound message
+  platform_metadata: object        // Platform-specific data (chat_id, thread_id, etc.)
+}
 ```
 
 ### Inbound Message Delivery
 
-When a comm plugin receives a message from a human, it emits a `comm.message_received` event on the Event Bus. The Daemon picks this up and routes it (to query handler or to Orchestrator via dispatch).
+When a comm plugin receives a message from a human, it wraps it in an `InboundMessage` and emits a `comm.message_received` event on the Event Bus. The Daemon picks this up and routes it (to query handler or to Orchestrator via dispatch).
 
-The plugin does NOT interpret the message -- it delivers it raw. Interpretation is the Daemon's job (keyword matching for status queries) or the Orchestrator's job (task-related responses).
+The plugin does NOT interpret the message -- it delivers it raw. Interpretation is the Daemon's job (keyword matching for status queries) or the Orchestrator's job (task-related responses). Plugins must not queue messages -- if the plugin is down, messages during downtime are lost. The timeout ladder (P11) handles re-delivery.
 
 ### Platform-Specific Extensions
 
@@ -253,28 +333,95 @@ GitHubCommPlugin extends CommPlugin {
   commentOnIssue(repo: string, issue_number: number, comment: string) -> void
   createIssue(repo: string, options: IssueOptions) -> IssueResult
   updateIssue(repo: string, issue_number: number, updates: IssueUpdates) -> void
+
+  -- State Reconciliation (called once on recovery from outage) --
+  reconcileState(tasks: TaskReconciliationInput[]) -> ReconciliationResult
+}
+
+IssueOptions {
+  title:           string
+  body:            string
+  labels:          string[]?
+  assignees:       string[]?
+  parent_issue:    number?         // Link to parent issue for cross-reference
+}
+
+IssueResult {
+  number:          number          // The created issue number
+  url:             string
+}
+
+IssueUpdates {
+  state:           "open" | "closed"?
+  labels_add:      string[]?       // Labels to add (e.g., "engineer:active")
+  labels_remove:   string[]?       // Labels to remove (e.g., "engineer:queued")
+  body:            string?         // For updating checklists on parent issues
+}
+
+TaskReconciliationInput {
+  task_id:         string
+  external_ref:    string          // GitHub issue URL/number
+  expected_state:  string          // Current internal state (from Task Engine)
+  expected_label:  string          // Expected label: "engineer:active", etc.
+}
+
+ReconciliationResult {
+  reconciled:      number          // How many tasks had mismatched state
+  errors:          ReconciliationError[]
+}
+
+ReconciliationError {
+  task_id:         string
+  reason:          string          // "issue_not_found", "api_error", etc.
 }
 ```
 
-See [`comm-plugins.md`](comm-plugins.md) § Comm Plugin Interface for IssueOptions, IssueResult, and IssueUpdates schemas (defined at Layer 2, unchanged here).
+**State reconciliation** (`reconcileState`): Called once by the skeleton when the GitHubCommPlugin recovers from an outage. The skeleton gathers current task states from the Task Engine and passes them to the plugin. The plugin compares expected labels/comments against GitHub's actual state, fixes mismatches (adds missing labels, posts catch-up comments for missed milestones). Reconciliation is idempotent -- safe to call multiple times. See Decision #58.
 
 ### Capability-Based Loading
 
-Not every comm plugin supports every capability. A Telegram plugin supports "send" and "receive" but not "sync" (no label/issue concept). A GitHub comm plugin supports all three. The skeleton checks capabilities before calling optional methods:
+Not every comm plugin supports every capability:
 
-```
-if plugin.capabilities.includes("sync"):
-  plugin.syncTaskState(...)
-```
+| Capability | Meaning | Example plugins |
+|-----------|---------|-----------------|
+| `send` | Can send outbound messages | All plugins |
+| `receive` | Can receive inbound messages from humans | Telegram, Slack, GitHub |
+| `query` | Persistent connection for real-time status queries | Telegram, Slack |
+| `sync` | Can sync internal state to platform representation | GitHub (labels, project boards) |
+
+A Telegram plugin supports "send", "receive", and "query" but not "sync" (no label/issue concept). A GitHub comm plugin supports all four. The skeleton checks capabilities before calling optional methods.
+
+### State Sync via Event Bus
+
+Comm plugins with the `"sync"` capability subscribe to `task.state_changed` events on the Event Bus at registration time. The skeleton does NOT call `syncTaskState()` directly -- the plugin handles sync autonomously. When the plugin receives a `task.state_changed` event, it invokes its own `syncTaskState()` internally to update the external platform (labels, comments, project boards).
+
+This keeps sync logic inside the plugin and decouples the skeleton from platform-specific sync details. The skeleton only emits events; the plugin decides how to represent state changes on its platform. See [`comm-plugins.md`](comm-plugins.md) § GitHub State Sync and [`event-catalog.md`](event-catalog.md) § `task.state_changed` subscribers.
+
+### Fallback Chain Mechanics
+
+When a `sendMessage()` call fails (after retries per `PluginError.retry_after`), the skeleton -- not the plugin -- drives fallback to alternative channels.
+
+**Flow:**
+1. Skeleton resolves first contact from People Directory `contacts[]` (ordered list per person, Decision #55)
+2. Calls `sendMessage()` on that channel's comm plugin
+3. On failure (retries exhausted), resolves next contact in `contacts[]`
+4. Calls `sendMessage()` on the next channel's comm plugin
+5. Repeat until success or all channels exhausted
+
+Plugins are unaware of fallback -- they simply send or fail. Each `sendMessage()` call is independent; the plugin doesn't know it's a fallback attempt.
+
+**Exception -- `timeout.alert` (48hr escalation):** ALL configured channels for the person are tried in parallel (best-effort on every channel), not sequential fallback. This is the last-resort escalation.
+
+See [`error-propagation.md`](error-propagation.md) § 5 Comm Plugin Error Handling for the full error chain.
 
 ### Implementations
 
 | Plugin | Platform | Capabilities | Notes |
 |--------|----------|-------------|-------|
-| TelegramCommPlugin | Telegram Bot API | send, receive | Real-time notifications and questions |
-| GitHubCommPlugin | GitHub API | send, receive, sync | Issue comments, label sync, checklist management |
-| *(future)* SlackCommPlugin | Slack API | send, receive | Channel/DM messaging |
-| *(future)* EmailCommPlugin | SMTP/IMAP | send, receive | Email notifications |
+| TelegramCommPlugin | Telegram Bot API | send, receive, query | Real-time notifications, questions, and status queries |
+| GitHubCommPlugin | GitHub API | send, receive, sync | Issue comments, label sync, checklist management, state reconciliation |
+| *(future)* SlackCommPlugin | Slack API | send, receive, query | Channel/DM messaging |
+| *(future)* EmailCommPlugin | SMTP/IMAP | send | Email notifications (no real-time receive) |
 
 ---
 
@@ -357,6 +504,12 @@ The Orchestrator wraps usage data from `CompletionResult.usage` into a `cost.inc
 | Provider down | Yes | Report via `PluginError`. Daemon may switch to fallback provider. |
 | Auth failure | No | Fatal error. Plugin needs reinitialization with new credentials. |
 | Malformed response | Yes | Retry once. If persistent, report error. |
+
+### Provider Failover
+
+Provider priority is user configuration -- an ordered list of LLM providers in the system config (not the plugin manifest). The Daemon owns switching logic; plugins are unaware of failover.
+
+When a provider returns a fatal `PluginError` (auth failure, prolonged downtime), the Daemon switches the active provider to the next in the priority list. If the provider fails mid-completion, the same prompt is retried on the next provider. The Orchestrator sees a transparent switch -- it calls `complete()` through the skeleton, which routes to whichever provider is currently active. Cost tracking updates automatically (events reference the new `provider_id`). The human is notified of the switch. See Decision #54.
 
 ### Implementations
 
@@ -451,6 +604,7 @@ Reference: [`workspace-manager.md`](workspace-manager.md) § PR Management for h
 
 ```
 GitHostingPlugin extends Plugin {
+  action_classes:  string[]        // ["git-remote", "merge"] — feeds Action Pipeline Gate 1
 
   -- PR Lifecycle --
   createPR(options: PROptions) -> PRResult
@@ -653,7 +807,7 @@ The Action Pipeline (see [`event-catalog.md`](event-catalog.md) § Action Pipeli
 | Plugin Type | Pipeline Role |
 |-------------|--------------|
 | **Tool** | Executor. Tools are called during the Execute phase. Their `action_classes` declaration feeds Gate 1 (Task Engine permission check). |
-| **Git Hosting** | Executor. Called by Workspace Manager during Execute phase for PR/merge operations (action classes: `git-remote`, `merge`). |
+| **Git Hosting** | Executor. Called by Workspace Manager during Execute phase for PR/merge operations. Declares `action_classes: ["git-remote", "merge"]` in contract, feeding Gate 1. |
 | **LLM Provider** | Not gated. LLM calls are read-only reasoning operations. Cost is tracked post-call via `cost.incurred` events, not pre-gated. |
 | **Comm** | Executor for outbound messages (action class: `communicate`, `ask-human`). Inbound messages bypass the pipeline (they're external input, not agent actions). |
 | **Trigger** | Not gated. Trigger polling is Daemon infrastructure, not agent actions. New work flows through task creation, which IS gated. |

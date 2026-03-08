@@ -57,16 +57,15 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 18 complete. **Error Propagation doc drafted.** Failure classification taxonomy (3 axes), component criticality map, 7 error propagation chains, 6 named recovery patterns, comm plugin error handling (resolved Layer 2 deferral). Added `health.config_reload_failed` event (29 total). Resolved plugin-contracts.md fallback chain open question. 6 new decisions (#53-#58). 58 total decisions.
+Session 19 complete. **Plugin Contracts finalized.** Incorporated requirements from all 15 protocols, error propagation analysis, and event catalog into plugin-contracts.md. 10 targeted edits: plugin criticality, standard error codes, Event Bus outage behavior, trigger event types (incl. PR review metadata), comm plugin inline schemas + reconciliation + state sync via Event Bus + fallback chain mechanics, GitHostingPlugin action_classes, LLM provider failover. No new decisions — all changes incorporated existing decisions. 58 total decisions.
 
-**Next: Session 19 — Finalize Plugin Contracts (incorporate requirements from protocols + error analysis), then Lifecycle traces, then mini holistic review.**
+**Next: Session 20 — Lifecycle traces (`lifecycle.md`), then mini holistic review.**
 
 Layer 3 work order:
 - [x] Event Catalog — `event-catalog.md` (29 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
-- [x] Plugin Contracts (draft) — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — DRAFT COMPLETE
+- [x] Plugin Contracts — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — FINALIZED
 - [x] Protocols — `protocols.md` (15 cross-component interaction protocols) — ALL 15 DRAFTED & VERIFIED (P1-P6: Task Lifecycle, P7-P10: Coordination, P11-P14: Communication, P15: Resilience)
 - [x] Error Propagation — `error-propagation.md` (failure classification, 7 chains, 6 patterns, comm error handling) — COMPLETE
-- [ ] Plugin Contracts (finalize) — incorporate requirements from protocols + error analysis
 - [ ] Lifecycle — `lifecycle.md` (3 scenarios traced end-to-end)
 - [ ] Mini holistic review — cross-reference all 5 docs, update Layer 2 docs
 

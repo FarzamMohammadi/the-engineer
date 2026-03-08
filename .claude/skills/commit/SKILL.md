@@ -67,6 +67,7 @@ Write one sentence that:
 - `fix bug` (too vague)
 - `Updated the thing` (past tense, vague)
 - `Add feature, fix bug, update docs` (multiple things - split it)
+- `Add auth system — OAuth2 + JWT + session management` (details after dash belong in description, not title)
 
 ---
 

@@ -38,6 +38,7 @@ All work lives in `/temp-docs/`:
   - `plugin-contracts.md` — Plugin Contracts Layer 3 (trigger, comm, LLM, tool, git-hosting + Registry + People Directory)
   - `protocols.md` — Protocols Layer 3 (15 cross-component interaction protocols)
   - `error-propagation.md` — Error Propagation Layer 3 (failure classification, propagation chains, recovery patterns, comm error handling)
+  - `lifecycle.md` — Lifecycle Traces Layer 3 (3 end-to-end scenarios, full protocol/event/contract coverage)
 
 ## Repo Structure
 
@@ -57,16 +58,16 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 19 complete. **Plugin Contracts finalized.** Incorporated requirements from all 15 protocols, error propagation analysis, and event catalog into plugin-contracts.md. 10 targeted edits: plugin criticality, standard error codes, Event Bus outage behavior, trigger event types (incl. PR review metadata), comm plugin inline schemas + reconciliation + state sync via Event Bus + fallback chain mechanics, GitHostingPlugin action_classes, LLM provider failover. No new decisions — all changes incorporated existing decisions. 58 total decisions.
+Session 20 complete. **Lifecycle traces drafted.** Three end-to-end scenarios in `lifecycle.md`: (1) Happy Path — simple task through all 7 phases to merged PR, (2) Complex Path — decomposition, preemption, merge conflict, question batching, (3) Resilience Path — cascading failures exercising all 7 error chains and 6 recovery patterns. Full coverage verified: 15/15 protocols, 30/30 events, all plugin contracts, all error chains/patterns. No gaps found. 58 total decisions.
 
-**Next: Session 20 — Lifecycle traces (`lifecycle.md`), then mini holistic review.**
+**Next: Session 21 — Mini holistic review, then Layer 3 complete.**
 
 Layer 3 work order:
 - [x] Event Catalog — `event-catalog.md` (29 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
 - [x] Plugin Contracts — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — FINALIZED
 - [x] Protocols — `protocols.md` (15 cross-component interaction protocols) — ALL 15 DRAFTED & VERIFIED (P1-P6: Task Lifecycle, P7-P10: Coordination, P11-P14: Communication, P15: Resilience)
 - [x] Error Propagation — `error-propagation.md` (failure classification, 7 chains, 6 patterns, comm error handling) — COMPLETE
-- [ ] Lifecycle — `lifecycle.md` (3 scenarios traced end-to-end)
-- [ ] Mini holistic review — cross-reference all 5 docs, update Layer 2 docs
+- [x] Lifecycle — `lifecycle.md` (3 scenarios, 15/15 protocols, 30/30 events, full coverage) — DRAFTED
+- [ ] Mini holistic review — cross-reference all 5 Layer 3 docs + Layer 2 docs
 
 Layers 0-2: ALL COMPLETE (see previous session logs for details). 58 total decisions.

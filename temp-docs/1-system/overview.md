@@ -2,7 +2,7 @@
 
 High-level building blocks of The Engineer. This list is open-ended — we may discover more as we dig deeper.
 
-Part of **Layer 1** — see [`layers.md`](layers.md) for where this fits.
+Part of **Layer 1** — see [`../layers.md`](../layers.md) for where this fits.
 
 ---
 
@@ -22,7 +22,7 @@ Part of **Layer 1** — see [`layers.md`](layers.md) for where this fits.
 | **People Directory** | Who to talk to, their roles, how to reach them, when to contact whom. Config-driven. | Skeleton |
 | **Workspace Manager** | Per-task git isolation. Branches, commits, PRs. Keeps tasks from stepping on each other. | Skeleton |
 | **Session/Memory System** | How the agent persists state, knowledge, and decisions across sessions and tasks. | Skeleton |
-| **Safety Layer** | Guardrails, permissions, boundaries. Configurable per user — see [`../goals.md`](../goals.md) § Configurable Guardrails. | Skeleton (config-driven) |
+| **Safety Layer** | Guardrails, permissions, boundaries. Configurable per user — see [`../0-foundation/goals.md`](../0-foundation/goals.md) § Configurable Guardrails. | Skeleton (config-driven) |
 
 ## Plugins (snap on and off per use case)
 
@@ -35,11 +35,11 @@ Part of **Layer 1** — see [`layers.md`](layers.md) for where this fits.
 | **Workflow phases** | Requirements gathering, code review, etc. | Registry |
 | **Observability backends** | Log files, dashboards, webhooks | Registry |
 
-For the skeleton vs plugin model, see [`../goals.md`](../goals.md) § The Skeleton and Plugins.
+For the skeleton vs plugin model, see [`../0-foundation/goals.md`](../0-foundation/goals.md) § The Skeleton and Plugins.
 
 ## Core Principle: Isolation
 
-Each task is its own universe — see [`../philosophy.md`](../philosophy.md) § Isolation as Survival.
+Each task is its own universe — see [`../0-foundation/philosophy.md`](../0-foundation/philosophy.md) § Isolation as Survival.
 
 ---
 

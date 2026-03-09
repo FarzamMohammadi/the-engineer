@@ -2,7 +2,7 @@
 
 The Orchestrator is the brain of the system. It owns the agent's reasoning, phase management, decision-making, and communication. It does NOT own task state (Task Engine), scheduling (Daemon), persistence (Session/Memory), or policy enforcement (Safety Layer). It coordinates all of them.
 
-Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gaps: #1, #4, #10, #15, #16, #18, #23.
+Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gaps: #1, #4, #10, #15, #16, #18, #23.
 
 ---
 

@@ -2,7 +2,7 @@
 
 What The Engineer achieves. The destination that all architecture must serve.
 
-Driven by the principles in [`philosophy.md`](philosophy.md). Identity defined in [`../persona.md`](../persona.md). Architecture lives in [`architecture/`](architecture/README.md).
+Driven by the principles in [`philosophy.md`](philosophy.md). Identity defined in [`../../persona.md`](../../persona.md). Architecture lives in [`../layers.md`](../layers.md).
 
 ---
 

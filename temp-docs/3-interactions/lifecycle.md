@@ -2,7 +2,7 @@
 
 Three end-to-end scenarios traced through every component. This is the architecture's integration test -- proving that protocols, events, plugin contracts, and error propagation work together as a coherent system.
 
-Part of **Layer 3** -- see [`layers.md`](layers.md). Cross-references all four Layer 3 documents:
+Part of **Layer 3** -- see [`layers.md`](../layers.md). Cross-references all four Layer 3 documents:
 - **[Protocols](protocols.md)** -- the choreography (P1-P15)
 - **[Event Catalog](event-catalog.md)** -- the vocabulary (30 events)
 - **[Plugin Contracts](plugin-contracts.md)** -- the interfaces (5 plugin types + Registry + People Directory)

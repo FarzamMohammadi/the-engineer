@@ -2,7 +2,7 @@
 
 The complete event taxonomy for The Engineer. Every event type, its schema, who emits it, who subscribes, and why. This is the authoritative reference — if an event isn't here, it doesn't exist.
 
-Part of **Layer 3** — see [`layers.md`](layers.md). Built on the event model defined in [`event-bus.md`](event-bus.md).
+Part of **Layer 3** — see [`layers.md`](../layers.md). Built on the event model defined in [`event-bus.md`](../2-components/event-bus.md).
 
 ---
 
@@ -64,7 +64,7 @@ Read-only operations skip the pipeline. Gate 1 (Task Engine) still applies to re
 
 ## Event Envelope
 
-Every event shares a common envelope. Updated from [`event-bus.md`](event-bus.md) § Event Schema — simplified now that pre-processing is removed.
+Every event shares a common envelope. Updated from [`event-bus.md`](../2-components/event-bus.md) § Event Schema — simplified now that pre-processing is removed.
 
 ```
 Event {
@@ -88,7 +88,7 @@ Event {
 
 ### Subscription Filters
 
-Unchanged from [`event-bus.md`](event-bus.md). Subscribers register by event type and optional field filters:
+Unchanged from [`event-bus.md`](../2-components/event-bus.md). Subscribers register by event type and optional field filters:
 
 ```
 Subscription {
@@ -823,7 +823,7 @@ payload {
 
 ## Delivery Model
 
-Unchanged from [`event-bus.md`](event-bus.md), but simplified:
+Unchanged from [`event-bus.md`](../2-components/event-bus.md), but simplified:
 
 ### Ordering
 Events are **ordered per task** (`task_id`). Cross-task events have no ordering guarantee. System events (null `task_id`) are ordered among themselves.

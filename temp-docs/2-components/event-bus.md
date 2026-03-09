@@ -2,9 +2,9 @@
 
 The Event Bus is the nervous system of the architecture. All inter-component communication flows through it. Every event is logged -- the event stream IS the audit trail. It is a **skeleton** component (always present, never swapped).
 
-Part of **Layer 2** -- see [`layers.md`](layers.md). Added during holistic review to formalize what all 7 component designs depend on.
+Part of **Layer 2** -- see [`layers.md`](../layers.md). Added during holistic review to formalize what all 7 component designs depend on.
 
-> **Layer 3 Update (Decision #42 — Action Pipeline):** The Pre-Processing Hook section below and references to `action.requested` are superseded by Layer 3. The Event Bus is now pure pub/sub — no pre-processing, no synchronous interception. Safety checks happen in the Action Pipeline (Gate 1: Task Engine, Gate 2: Safety Layer) before action execution. Events are always post-action notifications. See [`event-catalog.md`](event-catalog.md) § Action Pipeline.
+> **Layer 3 Update (Decision #42 — Action Pipeline):** The Pre-Processing Hook section below and references to `action.requested` are superseded by Layer 3. The Event Bus is now pure pub/sub — no pre-processing, no synchronous interception. Safety checks happen in the Action Pipeline (Gate 1: Task Engine, Gate 2: Safety Layer) before action execution. Events are always post-action notifications. See [`event-catalog.md`](../3-interactions/event-catalog.md) § Action Pipeline.
 
 ---
 
@@ -37,7 +37,7 @@ Part of **Layer 2** -- see [`layers.md`](layers.md). Added during holistic revie
 
 Components emit **canonical events**. Each event type is emitted by exactly one component (single ownership). Subscribers filter by event fields to select what they care about.
 
-See [`relationships.md`](relationships.md) § Event Conventions for the full canonical event table.
+See [`relationships.md`](../1-system/relationships.md) § Event Conventions for the full canonical event table.
 
 ### Event Schema
 

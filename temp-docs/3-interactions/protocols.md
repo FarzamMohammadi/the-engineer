@@ -2,7 +2,7 @@
 
 How components coordinate. The step-by-step choreography of every cross-component interaction in the system.
 
-Part of **Layer 3** -- see [`layers.md`](layers.md). The third leg of the Layer 3 triad:
+Part of **Layer 3** -- see [`layers.md`](../layers.md). The third leg of the Layer 3 triad:
 - **[Event Catalog](event-catalog.md)** defines the vocabulary (what events exist, their schemas)
 - **[Plugin Contracts](plugin-contracts.md)** defines the interfaces (what operations plugins expose)
 - **Protocols (this doc)** defines the choreography (how components use events and interfaces to coordinate)

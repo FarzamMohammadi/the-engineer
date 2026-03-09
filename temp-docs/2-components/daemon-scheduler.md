@@ -2,7 +2,7 @@
 
 The Daemon is the always-running process -- the kernel of the system. It manages what work gets done and when. It owns trigger polling, task scheduling, preemption, capacity management, and health monitoring. It does NOT own task state (Task Engine), reasoning (Orchestrator), or persistence (Session/Memory).
 
-Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gaps: #8, #12.
+Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gaps: #8, #12.
 
 ---
 

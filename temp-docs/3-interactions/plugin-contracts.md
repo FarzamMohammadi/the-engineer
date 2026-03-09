@@ -2,7 +2,7 @@
 
 Every plugin type's interface contract. What plugins must implement, how they register, how they interact with the skeleton. This is the authoritative reference for building plugins -- if a method isn't here, the skeleton doesn't call it.
 
-Part of **Layer 3** -- see [`layers.md`](layers.md). Built on plugin types defined in [`overview.md`](overview.md) and the comm plugin pattern established in [`comm-plugins.md`](comm-plugins.md).
+Part of **Layer 3** -- see [`layers.md`](../layers.md). Built on plugin types defined in [`overview.md`](../1-system/overview.md) and the comm plugin pattern established in [`comm-plugins.md`](../2-components/comm-plugins.md).
 
 ---
 
@@ -190,7 +190,7 @@ Trigger plugins discover new work from external sources and feed it into the sys
 
 **Derived from:** Webhook receivers, message queue consumers, polling adapters.
 
-Reference: [`daemon-scheduler.md`](daemon-scheduler.md) § Trigger Polling for how the Daemon manages trigger plugins.
+Reference: [`daemon-scheduler.md`](../2-components/daemon-scheduler.md) § Trigger Polling for how the Daemon manages trigger plugins.
 
 ```
 TriggerPlugin extends Plugin {
@@ -262,7 +262,7 @@ Comm plugins are the Engineer's voice -- how it communicates with humans through
 
 **Derived from:** Chat bot adapters, notification gateway patterns, webhook receivers.
 
-Reference: [`comm-plugins.md`](comm-plugins.md) for the full Layer 2 design including ownership boundaries, state sync, and query routing.
+Reference: [`comm-plugins.md`](../2-components/comm-plugins.md) for the full Layer 2 design including ownership boundaries, state sync, and query routing.
 
 ```
 CommPlugin extends Plugin {
@@ -397,7 +397,7 @@ A Telegram plugin supports "send", "receive", and "query" but not "sync" (no lab
 
 Comm plugins with the `"sync"` capability subscribe to `task.state_changed` events on the Event Bus at registration time. The skeleton does NOT call `syncTaskState()` directly -- the plugin handles sync autonomously. When the plugin receives a `task.state_changed` event, it invokes its own `syncTaskState()` internally to update the external platform (labels, comments, project boards).
 
-This keeps sync logic inside the plugin and decouples the skeleton from platform-specific sync details. The skeleton only emits events; the plugin decides how to represent state changes on its platform. See [`comm-plugins.md`](comm-plugins.md) § GitHub State Sync and [`event-catalog.md`](event-catalog.md) § `task.state_changed` subscribers.
+This keeps sync logic inside the plugin and decouples the skeleton from platform-specific sync details. The skeleton only emits events; the plugin decides how to represent state changes on its platform. See [`comm-plugins.md`](../2-components/comm-plugins.md) § GitHub State Sync and [`event-catalog.md`](event-catalog.md) § `task.state_changed` subscribers.
 
 ### Fallback Chain Mechanics
 
@@ -433,7 +433,7 @@ LLM provider plugins are the Engineer's thinking engine. They execute reasoning,
 
 **Derived from:** API gateway patterns, multi-backend abstraction layers.
 
-Reference: [`safety-layer.md`](safety-layer.md) § Cost Tracking for the two provider models and cost event schema.
+Reference: [`safety-layer.md`](../2-components/safety-layer.md) § Cost Tracking for the two provider models and cost event schema.
 
 ```
 LLMProvider extends Plugin {
@@ -562,7 +562,7 @@ SideEffect {
 
 Each tool declares which action classes it exercises. This feeds into Gate 1 of the Action Pipeline -- the Task Engine checks whether the current state+sub-state permits the declared action class before the tool executes.
 
-The 10 action classes are defined in [`task-engine.md`](task-engine.md) § Action Classes:
+The 10 action classes are defined in [`task-engine.md`](../2-components/task-engine.md) § Action Classes:
 `read`, `write`, `test`, `git-local`, `git-remote`, `communicate`, `merge`, `deploy`, `task-manage`, `ask-human`
 
 A single tool can exercise multiple action classes (e.g., BashTool exercises `read`, `write`, `test`, `git-local` depending on the command). The pipeline checks the action class of the specific operation, not all classes the tool could theoretically exercise.
@@ -602,7 +602,7 @@ Git-hosting plugins abstract the code hosting platform's API for PR lifecycle, b
 
 **Derived from:** Git forge APIs (GitHub, GitLab, Bitbucket), abstract VCS interfaces.
 
-Reference: [`workspace-manager.md`](workspace-manager.md) § PR Management for how the Workspace Manager calls these operations. Resolves the open question from `workspace-manager.md` line 587: "How does the git hosting plugin interface work for GitLab, Bitbucket?"
+Reference: [`workspace-manager.md`](../2-components/workspace-manager.md) § PR Management for how the Workspace Manager calls these operations. Resolves the open question from `workspace-manager.md` line 587: "How does the git hosting plugin interface work for GitLab, Bitbucket?"
 
 ```
 GitHostingPlugin extends Plugin {
@@ -713,7 +713,7 @@ BranchProtection {
 
 The People Directory is a **skeleton** component (not a plugin). It is always present, config-driven, and does not register in the Registry. It maps people to roles, contact channels, and preferences.
 
-Reference: [`task-engine.md`](task-engine.md) § Task Carries Its Team for how tasks reference people.
+Reference: [`task-engine.md`](../2-components/task-engine.md) § Task Carries Its Team for how tasks reference people.
 
 ```
 PeopleDirectory {
@@ -793,7 +793,7 @@ people:
 
 ### Plugin Types from `overview.md` Not Covered Here
 
-Two plugin types listed in [`overview.md`](overview.md) are not contracted in this document:
+Two plugin types listed in [`overview.md`](../1-system/overview.md) are not contracted in this document:
 
 - **Workflow phases**: These are Orchestrator-internal (phase pipeline is Orchestrator's design). Plugin contract deferred to Layer 4 when we specify how phases are loaded/configured.
 - **Observability backends**: Log/metrics export targets. Plugin contract deferred to Layer 4 when we specify the observability stack.

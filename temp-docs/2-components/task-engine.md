@@ -2,7 +2,7 @@
 
 The Task Engine is the state authority for all work in the system. It owns the task lifecycle, state machine, task hierarchy, and permission gates. The Orchestrator does the thinking; the Task Engine enforces the rules.
 
-Part of **Layer 2** — see [`layers.md`](layers.md). Builds on the Layer 1 state machine in [`task-states.md`](task-states.md). Resolves gaps: #3, #6, #9, #13, #14, #24.
+Part of **Layer 2** — see [`layers.md`](../layers.md). Builds on the Layer 1 state machine in [`task-states.md`](../1-system/task-states.md). Resolves gaps: #3, #6, #9, #13, #14, #24.
 
 ---
 

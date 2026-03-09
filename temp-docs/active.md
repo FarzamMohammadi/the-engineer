@@ -14,44 +14,50 @@ Working method: collaborative, always. Highest level decisions first, then drill
 
 ## Deliverables
 
-All work lives in `/temp-docs/`:
+All work lives in `/temp-docs/`, organized by architectural layer:
 - `active.md` — this file, what we're working on right now
-- `goals.md` — the destination; what The Engineer achieves
-- `philosophy.md` — project beliefs and principles (permanent, say it once)
+- `layers.md` — architecture layering roadmap (see [`layers.md`](layers.md))
+- `decisions.md` — decision log
 - `sessions/` — succinct logs of each work session
-- `architecture/` — all architectural work (see [`architecture/README.md`](architecture/README.md) for full index)
-  - `layers.md` — architecture layering roadmap
-  - `decisions.md` — decision log
+- `0-foundation/` — Layer 0: Goals & Philosophy
+  - `goals.md` — the destination (14 sections)
+  - `philosophy.md` — project beliefs and principles
+- `1-system/` — Layer 1: System Overview
   - `overview.md` — high-level components + skeleton/plugin classification
   - `task-states.md` — CPU-derived task state machine
   - `relationships.md` — component relationships, data flow, simulation gaps
   - `user-flows.md` — concrete user flows from Farzam's perspective (Layer 1.5)
-  - `task-engine.md` — Task Engine Layer 2 design (state machine, hierarchy, permissions)
-  - `session-memory.md` — Session/Memory Layer 2 design (checkpoints, knowledge, queryable journal)
-  - `daemon-scheduler.md` — Daemon/Scheduler Layer 2 design (scheduling, preemption, capacity, health)
-  - `safety-layer.md` — Safety Layer Layer 2 design (cost tracking, scope, autonomy, response timeout)
-  - `orchestrator.md` — Orchestrator Layer 2 design (phase pipeline, fast-path, notifications, supervision, question batching)
-  - `workspace-manager.md` — Workspace Manager Layer 2 design (worktrees, branch hierarchy, progressive merge, multi-repo, PR management)
-  - `comm-plugins.md` — Comm Plugins Layer 2 design (status query interface, GitHub state sync, shared contract)
-  - `event-bus.md` — Event Bus Layer 2 design (event model, delivery guarantees, persistence)
-  - `event-catalog.md` — Event Catalog Layer 3 (30 events, 10 groups, Action Pipeline)
-  - `plugin-contracts.md` — Plugin Contracts Layer 3 (trigger, comm, LLM, tool, git-hosting + Registry + People Directory)
-  - `protocols.md` — Protocols Layer 3 (15 cross-component interaction protocols)
-  - `error-propagation.md` — Error Propagation Layer 3 (failure classification, propagation chains, recovery patterns, comm error handling)
-  - `lifecycle.md` — Lifecycle Traces Layer 3 (3 end-to-end scenarios, full protocol/event/contract coverage)
+- `2-components/` — Layer 2: Component Architecture
+  - `task-engine.md` — Task Engine (state machine, hierarchy, permissions)
+  - `session-memory.md` — Session/Memory (checkpoints, knowledge, queryable journal)
+  - `daemon-scheduler.md` — Daemon/Scheduler (scheduling, preemption, capacity, health)
+  - `safety-layer.md` — Safety Layer (cost tracking, scope, autonomy, response timeout)
+  - `orchestrator.md` — Orchestrator (phase pipeline, fast-path, notifications, supervision)
+  - `workspace-manager.md` — Workspace Manager (worktrees, branch hierarchy, progressive merge)
+  - `comm-plugins.md` — Comm Plugins (status query interface, GitHub state sync)
+  - `event-bus.md` — Event Bus (event model, delivery guarantees, persistence)
+- `3-interactions/` — Layer 3: Interactions & Protocols
+  - `event-catalog.md` — Event Catalog (30 events, 10 groups, Action Pipeline)
+  - `plugin-contracts.md` — Plugin Contracts (trigger, comm, LLM, tool, git-hosting + Registry + People Directory)
+  - `protocols.md` — Protocols (15 cross-component interaction protocols)
+  - `error-propagation.md` — Error Propagation (failure classification, 7 chains, 6 patterns)
+  - `lifecycle.md` — Lifecycle Traces (3 end-to-end scenarios, full coverage)
 
 ## Repo Structure
 
 ```
 the-engineer/
-├── README.md          # Project overview
-├── persona.md         # Identity (stable input to architecture)
-└── temp-docs/         # Our workspace (builders only)
-    ├── active.md      # Current focus (this file)
-    ├── goals.md       # The destination (14 sections)
-    ├── philosophy.md  # Core beliefs (11 principles)
-    ├── sessions/      # Session logs
-    └── architecture/  # All architectural work (see README.md inside)
+├── README.md              # Project overview
+├── persona.md             # Identity (stable input to architecture)
+└── temp-docs/             # Our workspace (builders only)
+    ├── active.md          # Current focus (this file)
+    ├── layers.md          # Architecture layering roadmap
+    ├── decisions.md       # Decision log
+    ├── sessions/          # Session logs
+    ├── 0-foundation/      # Layer 0: Goals & Philosophy
+    ├── 1-system/          # Layer 1: System Overview
+    ├── 2-components/      # Layer 2: Component Architecture
+    └── 3-interactions/    # Layer 3: Interactions & Protocols
 ```
 
 Everything else in the repo will be for The Engineer (the agent) — created AFTER architecture is finalized.

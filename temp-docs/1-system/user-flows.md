@@ -2,7 +2,7 @@
 
 Concrete end-to-end flows from Farzam's perspective. Validates Layer 1 architecture from the user's experience, not just the architect's. Part of **Layer 1.5** — intermediary validation before Layer 2.
 
-See [`layers.md`](layers.md) for where this fits. See [`relationships.md`](relationships.md) for the component architecture these flows trace through.
+See [`../layers.md`](../layers.md) for where this fits. See [`relationships.md`](relationships.md) for the component architecture these flows trace through.
 
 ---
 

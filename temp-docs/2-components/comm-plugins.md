@@ -2,7 +2,7 @@
 
 Comm plugins are the Engineer's voice -- how it communicates with humans through external platforms. They are **plugins** (not skeleton), registered in the Registry. Each comm plugin adapts a specific platform (Telegram, GitHub, email) to a shared contract.
 
-Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gaps: #20, #22.
+Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gaps: #20, #22.
 
 ---
 

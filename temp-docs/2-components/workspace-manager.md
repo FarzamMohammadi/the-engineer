@@ -2,7 +2,7 @@
 
 The Workspace Manager handles per-task git isolation -- branches, worktrees, commits, PRs. It keeps tasks from stepping on each other. It is a pure git operations service: no LLM, no intelligence, no autonomous behavior. Other components tell it what to do; it executes mechanically.
 
-Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gap: #11.
+Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gap: #11.
 
 ---
 

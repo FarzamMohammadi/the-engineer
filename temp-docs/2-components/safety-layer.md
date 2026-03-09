@@ -2,9 +2,9 @@
 
 The Safety Layer is the policy enforcement authority for the system. It defines what the agent is allowed to do (scope, cost, autonomy) and enforces those boundaries through two complementary modes. It does not own task state (Task Engine), phase permissions (Task Engine permission table), or timeout execution (Daemon). It owns the policies that other components enforce.
 
-Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gaps: #5, #17, #19.
+Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gaps: #5, #17, #19.
 
-> **Layer 3 Update (Decision #42 — Action Pipeline):** The "Active Interceptor" section below describes the original Event Bus pre-processing model. In Layer 3, this was replaced by Gate 2 in the Action Pipeline — the Safety Layer is now called as a pipeline gate before action execution, not as an Event Bus pre-processor. The Safety Layer's role is unchanged (stateless policy evaluator), but the mechanism is different. See [`event-catalog.md`](event-catalog.md) § Action Pipeline.
+> **Layer 3 Update (Decision #42 — Action Pipeline):** The "Active Interceptor" section below describes the original Event Bus pre-processing model. In Layer 3, this was replaced by Gate 2 in the Action Pipeline — the Safety Layer is now called as a pipeline gate before action execution, not as an Event Bus pre-processor. The Safety Layer's role is unchanged (stateless policy evaluator), but the mechanism is different. See [`event-catalog.md`](../3-interactions/event-catalog.md) § Action Pipeline.
 
 ---
 

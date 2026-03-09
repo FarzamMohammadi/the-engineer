@@ -1,8 +1,8 @@
 # Component Relationships & Data Flow
 
-How components connect and what moves through the system. Part of **Layer 1** — see [`layers.md`](layers.md).
+How components connect and what moves through the system. Part of **Layer 1** — see [`../layers.md`](../layers.md).
 
-Derived from proven systems — see [`../philosophy.md`](../philosophy.md) § Derive from Proven Systems.
+Derived from proven systems — see [`../0-foundation/philosophy.md`](../0-foundation/philosophy.md) § Derive from Proven Systems.
 
 ---
 
@@ -129,7 +129,7 @@ Knowledge has three scopes, each with different isolation rules:
 | **Sibling-task** | Shared context between sub-tasks of the same parent | Controlled sharing — accessible to siblings, invisible to unrelated tasks |
 | **Cross-project** | Repo-specific patterns, conventions, domain knowledge | Isolated per repo/context — learnings from repo A never pollute repo B |
 
-See [`../goals.md`](../goals.md) § Continuous Growth for the full vision.
+See [`../0-foundation/goals.md`](../0-foundation/goals.md) § Continuous Growth for the full vision.
 
 ---
 
@@ -159,8 +159,8 @@ Architecture validated by running three scenarios through the system. Gaps ident
 | 8 | Concurrent task execution | Extreme | High | Daemon/scheduler design |
 | 9 | Cascade failure detection | Extreme | High | Task Engine design |
 | 10 | Parent task as "tech lead" role | Extreme | High | Orchestrator design |
-| 11 | Multi-repo workspace management | Extreme | Medium | Workspace Mgr design — **RESOLVED** ([`workspace-manager.md`](workspace-manager.md)) |
-| 12 | Scheduling and priority (preemption) | Difficult + Extreme | High | Daemon design — **RESOLVED** ([`daemon-scheduler.md`](daemon-scheduler.md)) |
+| 11 | Multi-repo workspace management | Extreme | Medium | Workspace Mgr design — **RESOLVED** ([`workspace-manager.md`](../2-components/workspace-manager.md)) |
+| 12 | Scheduling and priority (preemption) | Difficult + Extreme | High | Daemon design — **RESOLVED** ([`daemon-scheduler.md`](../2-components/daemon-scheduler.md)) |
 
 All 12 Layer 1 gaps resolved at Layer 2.
 

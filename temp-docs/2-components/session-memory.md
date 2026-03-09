@@ -2,7 +2,7 @@
 
 Session/Memory is the persistence layer for the agent's working context and accumulated knowledge. It does not own task state (Task Engine does that) or raw system events (Event Bus does that). It owns the material the agent needs to resume thinking and the patterns it learns over time.
 
-Part of **Layer 2** -- see [`layers.md`](layers.md). Resolves gaps: #2, #7, #21.
+Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gaps: #2, #7, #21.
 
 ---
 

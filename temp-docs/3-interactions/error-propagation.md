@@ -2,7 +2,7 @@
 
 How failures flow through the system. The cross-cutting view -- not what happens within a single protocol's failure table, but how a failure in component A ripples through B, C, D.
 
-Part of **Layer 3** -- see [`layers.md`](layers.md). Complements:
+Part of **Layer 3** -- see [`layers.md`](../layers.md). Complements:
 - **[Protocols](protocols.md)** -- per-protocol failure tables (51 scenarios across P1-P15)
 - **Layer 2 docs** -- component-level error handling within each component
 

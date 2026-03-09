@@ -376,7 +376,9 @@ ReconciliationError {
 }
 ```
 
-**State reconciliation** (`reconcileState`): Called once by the skeleton when the GitHubCommPlugin recovers from an outage. The skeleton gathers current task states from the Task Engine and passes them to the plugin. The plugin compares expected labels/comments against GitHub's actual state, fixes mismatches (adds missing labels, posts catch-up comments for missed milestones). Reconciliation is idempotent -- safe to call multiple times. See Decision #58.
+**State reconciliation** (`reconcileState`): Called once by the skeleton (Daemon, via P15 step 15) when the GitHubCommPlugin recovers from an outage. The skeleton gathers current task states from the Task Engine and passes them to the plugin. The plugin compares expected labels/comments against GitHub's actual state, fixes mismatches (adds missing labels, posts catch-up comments for missed milestones). Reconciliation is idempotent -- safe to call multiple times. See Decision #58.
+
+> **Terminology:** "State sync" (`syncTaskState`) is reactive -- called on every `task.state_changed` event during normal operation. "State reconciliation" (`reconcileState`) is proactive -- called once after an outage to catch up on missed sync events. Both achieve the same end state; reconciliation is the batch equivalent of sync.
 
 ### Capability-Based Loading
 

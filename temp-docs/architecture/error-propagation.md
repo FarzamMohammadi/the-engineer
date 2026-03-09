@@ -443,7 +443,7 @@ When GitHub API operations (labels, comments, checklists) fail:
 
 1. Retry with backoff (Pattern 2) for transient API errors (rate limits, 5xx)
 2. During extended outage: internal state (Task Engine) is authoritative. GitHub state drifts.
-3. **On recovery: automatic state reconciliation** (Decision #57):
+3. **On recovery: automatic state reconciliation** (Decision #58):
    - GitHub comm plugin compares Task Engine state vs GitHub labels for all active tasks
    - Updates mismatched labels (`engineer:{state}`)
    - Posts catch-up comments for missed milestones
@@ -519,7 +519,7 @@ payload {
 |-----------|-----|
 | Comm Plugin | Alerts human that config reload failed |
 
-This brings the total event catalog to **29 events** across 10 groups.
+This brings the total event catalog to **30 events** across 10 groups.
 
 ---
 

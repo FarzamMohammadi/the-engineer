@@ -76,6 +76,7 @@ The main path from system boot through task completion.
    - Identifies Blocked tasks and restores timeout timers
    - Identifies Active.Supervising tasks and checks child completion status
 8. **Daemon** registers Event Bus subscriptions for: `task.*`, `preemption.ready`, `comm.message_received`, `cost.limit_reached`, `workspace.verified`, `workspace.merge_conflict`, `git.merge_completed`
+   - Note: This is the Daemon's own subscription list (events it routes to the Orchestrator or acts on directly). Other components maintain separate subscriptions — e.g., comm plugins with `sync` capability subscribe to `task.state_changed` for GitHub state sync, and comm plugins subscribe to `health.*` for alerting. The Daemon emits `health.*` and `timeout.*` events but does not subscribe to them.
 9. **Daemon** starts main loop: trigger polling, scheduling evaluation, health monitoring
 
 #### Success Outcome
@@ -1458,6 +1459,9 @@ How the system recovers from crashes, restarts, and degraded states.
 15. **Daemon** evaluates system health after startup:
     - Checks plugin health via `Contract: Plugin.healthCheck()` on all registered plugins
     - `[unhealthy plugins]` Logs warnings. If critical plugins (LLM, primary comm) are unhealthy: block task dispatch until healthy, notify via fallback channel.
+    - `[comm plugin recovered from prior outage]` Triggers state reconciliation:
+      - `→ TaskEngine.getNonTerminalTasks()` returns current task states
+      - `→ GitHubCommPlugin.reconcileState(tasks)` compares internal states against GitHub labels/comments for all active tasks. Fixes mismatches (updates labels, posts catch-up comments). Runs once, idempotently (Decision #58).
 
 ---
 

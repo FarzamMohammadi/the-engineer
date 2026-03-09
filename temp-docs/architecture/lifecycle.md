@@ -4,7 +4,7 @@ Three end-to-end scenarios traced through every component. This is the architect
 
 Part of **Layer 3** -- see [`layers.md`](layers.md). Cross-references all four Layer 3 documents:
 - **[Protocols](protocols.md)** -- the choreography (P1-P15)
-- **[Event Catalog](event-catalog.md)** -- the vocabulary (29 events)
+- **[Event Catalog](event-catalog.md)** -- the vocabulary (30 events)
 - **[Plugin Contracts](plugin-contracts.md)** -- the interfaces (5 plugin types + Registry + People Directory)
 - **[Error Propagation](error-propagation.md)** -- the failure handling (7 chains, 6 patterns)
 
@@ -69,7 +69,7 @@ For protocol mechanics (step-by-step within a single protocol), refer to protoco
 | preemption.requested | - | x | - |
 | preemption.ready | - | x | - |
 | timeout.reminder | - | - | x |
-| timeout.self_unblock_check | - | x | - |
+| timeout.self_unblock_check | - | - | x |
 | timeout.alert | - | - | x |
 | workspace.created | x | x | x |
 | workspace.verified | - | x | x |
@@ -115,7 +115,7 @@ For protocol mechanics (step-by-step within a single protocol), refer to protoco
 | Chain 2: Event Bus Down | - | - | x |
 | Chain 3: Comm Failure During Block | - | - | x |
 | Chain 4: Checkpoint Storage Failure | - | - | x |
-| Chain 5: Cascade Failure | - | x | - |
+| Chain 5: Cascade Failure | - | - | x |
 | Chain 6: Workspace/Git Failure | - | x | x |
 | Chain 7: Config Hot-Reload Failure | - | - | x |
 | Pattern 1: Checkpoint-then-fail | - | - | x |
@@ -650,8 +650,7 @@ The switch to an API provider (dollar-based) changes cost dynamics. After severa
 | 16 | **Daemon** | Starts timeout timers for #60 Blocked state | (P11.7) | - | `→ SafetyLayer.getTimeoutPolicy()` | - |
 | 17 | **Daemon** | 4 hours pass. Reminder threshold reached | (P11.16) | `⟹ timeout.reminder` `{task_id: 60, blocked_since: "...", elapsed: "4h", question_summary: "Cost limit reached"}` | - | - |
 | 18 | **TelegramCommPlugin** | Still down. Reminder send fails. Skeleton falls back to GitHub -- posts reminder comment on issue #60 | - | `⟹ comm.message_sent` `{type: "notification", channel: "github"}` | `Contract: CommPlugin.sendMessage()` (telegram fails, github succeeds) | Pattern 2, Pattern 3 |
-
-**(24-hour self_unblock_check would fire, but cost-blocked tasks don't self-unblock -- they resolve when budget changes. The check fires but takes no action.)**
+| 19 | **Daemon** | 24 hours pass. Self-unblock check threshold reached. Daemon evaluates: cost-blocked tasks cannot self-unblock (requires budget change, not autonomy). Check fires, takes no action | (P11.17) | `⟹ timeout.self_unblock_check` `{task_id: 60, blocked_since: "...", elapsed: "24h", can_self_unblock: false, reason: "cost_limit_block"}` | - | - |
 
 ---
 
@@ -661,32 +660,45 @@ Meanwhile, someone edits the Safety Layer config file (attempting to increase th
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 19 | **Safety Layer** | Detects config file change. Attempts hot-reload. Validation fails (malformed YAML at line 42) | - | - | - | Chain 7 |
-| 20 | **Safety Layer** | Rejects reload. Keeps previous valid config. System continues with old cost limits | - | `⟹ health.config_reload_failed` `{component: "safety_layer", config_file: "safety.yml", error: "YAML parse error at line 42", running_config: "previous"}` | - | Chain 7, Pattern 5 |
-| 21 | **CommPlugin** | Receives `health.config_reload_failed` (subscriber). Sends alert. Telegram still down -- falls back to GitHub | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` (github) | Pattern 3 |
+| 20 | **Safety Layer** | Detects config file change. Attempts hot-reload. Validation fails (malformed YAML at line 42) | - | - | - | Chain 7 |
+| 21 | **Safety Layer** | Rejects reload. Keeps previous valid config. System continues with old cost limits | - | `⟹ health.config_reload_failed` `{component: "safety_layer", config_file: "safety.yml", error: "YAML parse error at line 42", running_config: "previous"}` | - | Chain 7, Pattern 5 |
+| 22 | **CommPlugin** | Receives `health.config_reload_failed` (subscriber). Sends alert. Telegram still down -- falls back to GitHub | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` (github) | Pattern 3 |
 
 **Outcome:** System operates with stale (but valid) policy. Human alerted to fix the config file.
 
 ---
 
-### Part 6: Daemon Crash and Recovery (P15 Scenario B, Pattern 4)
+### Part 6: Stuck Detection (Health Monitoring)
+
+Meanwhile, the Orchestrator for a different task (#55, running on a second working slot) has not progressed in over 2 hours:
+
+| Step | Component | Action | Protocol | Events | Contracts | Error Ref |
+|------|-----------|--------|----------|--------|-----------|-----------|
+| 23 | **Daemon** | Health monitor tick. Detects Orchestrator for task #55 has not emitted any events or checkpoints in 2h15m (stuck threshold: 2h) | - | `⟹ health.stuck_detected` `{task_id: 55, condition: "no_progress", last_activity: "2h15m ago", threshold: "2h"}` | - | - |
+| 24 | **CommPlugin (GitHub)** | Receives `health.stuck_detected` (subscriber). Posts alert on issue #55 | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` | - |
+
+**Outcome:** Human alerted to investigate task #55. Daemon continues monitoring. (Task #55 is unrelated to our main #60 trace -- shown here for `health.stuck_detected` coverage.)
+
+---
+
+### Part 7: Daemon Crash and Recovery (P15 Scenario B, Pattern 4)
 
 The Daemon process crashes unexpectedly (e.g., OOM kill).
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 22 | **Daemon** | CRASHES. Process terminates unexpectedly | - | - | - | - |
-| 23 | **Daemon** | Restarts. Begins P1 (System Startup) from step 1 | (P15.8, P1) | - | - | Pattern 4 |
-| 24 | **Event Bus** | Initializes persistence layer | (P1.2) | - | - | - |
-| 25 | **Registry** | Re-initializes all plugins. TelegramCommPlugin.initialize() -- now succeeds (network recovered during downtime) | (P1.3) | - | `Contract: Plugin.initialize(config)` on each | - |
-| 26 | **Safety Layer** | Reloads policy (still the valid previous config -- bad reload was rejected pre-crash). Replays `cost.incurred` events to rebuild accumulators | (P1.4, P15.11) | (replays `cost.incurred` events) | `→ EventBus.replay({type: "cost.incurred", since: billing_window_start})` | Pattern 4 |
+| 25 | **Daemon** | CRASHES. Process terminates unexpectedly | - | - | - | - |
+| 26 | **Daemon** | Restarts. Begins P1 (System Startup) from step 1 | (P15.8, P1) | - | - | Pattern 4 |
+| 27 | **Event Bus** | Initializes persistence layer | (P1.2) | - | - | - |
+| 28 | **Registry** | Re-initializes all plugins. TelegramCommPlugin.initialize() -- now succeeds (network recovered during downtime) | (P1.3) | - | `Contract: Plugin.initialize(config)` on each | - |
+| 29 | **Safety Layer** | Reloads policy (still the valid previous config -- bad reload was rejected pre-crash). Replays `cost.incurred` events to rebuild accumulators | (P1.4, P15.11) | (replays `cost.incurred` events) | `→ EventBus.replay({type: "cost.incurred", since: billing_window_start})` | Pattern 4 |
 
 **Rebuilt cost accumulators:** `api_spend.per_task[60] = $5.03` (matches pre-crash state exactly -- events are the durable record).
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 27 | **Daemon** | Queries Task Engine for non-terminal tasks. Finds: #60 in Blocked state (cost_limit). No orphaned Active.Working tasks (task was already Blocked before crash) | (P15.9, P1.6-7) | - | `→ TaskEngine.getTasksByState()` | Pattern 4 |
-| 28 | **Daemon** | Rebuilds all ephemeral state from persistent sources | (P15.10) | - | See below | Pattern 4 |
+| 30 | **Daemon** | Queries Task Engine for non-terminal tasks. Finds: #60 in Blocked state (cost_limit), #55 in Active.Working (orphaned -- was running when Daemon crashed). Transitions #55 to Queued with checkpoint | (P15.9, P1.6-7) | `⟹ task.state_changed` `{#55: Active.Working → Queued, reason: "crash_recovery"}` | `→ TaskEngine.getTasksByState()` | Pattern 4 |
+| 31 | **Daemon** | Rebuilds all ephemeral state from persistent sources | (P15.10) | - | See below | Pattern 4 |
 
 **Ephemeral state reconstruction:**
 ```
@@ -701,99 +713,113 @@ Working slot count: 0                               ← from TaskEngine (no Acti
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 29 | **Daemon** | Checks plugin health -- all healthy now (Telegram recovered). Starts main loop. Sends restart notification | (P15.12, 15) | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: Plugin.healthCheck()` on all |
+| 32 | **Daemon** | Checks plugin health -- all healthy now (Telegram recovered). Starts main loop. Sends restart notification | (P15.12, 15) | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: Plugin.healthCheck()` on all |
 | | | | | | `Contract: CommPlugin.sendMessage(target, "System restarted. Resuming operations.")` | |
 
 ---
 
-### Part 7: GitHub State Reconciliation
+### Part 8: GitHub State Reconciliation (Decision #58)
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 30 | **GitHubCommPlugin** | Recovery detected (plugin re-initialized). Runs state reconciliation: compares Task Engine states against GitHub labels for all non-terminal tasks | - | - | `Contract: GitHubCommPlugin.reconcileState([{task_id: 60, external_ref: "issue #60", expected_state: "Blocked", expected_label: "engineer:blocked"}])` | Pattern 5 |
-| 31 | **GitHubCommPlugin** | Finds mismatch: #60 has `engineer:active` on GitHub but should be `engineer:blocked`. Fixes label. Posts catch-up comment about cost limit | - | - | `Contract: GitHubCommPlugin.updateIssue(repo, 60, {labels_add: ["engineer:blocked"], labels_remove: ["engineer:active"]})` | - |
+| 33 | **GitHubCommPlugin** | Recovery detected (plugin re-initialized). Daemon triggers state reconciliation (P15 step 15): compares Task Engine states against GitHub labels for all non-terminal tasks | (P15.15) | - | `Contract: GitHubCommPlugin.reconcileState([{task_id: 60, external_ref: "issue #60", expected_state: "Blocked", expected_label: "engineer:blocked"}])` | Pattern 5 |
+| 34 | **GitHubCommPlugin** | Finds mismatch: #60 has `engineer:active` on GitHub but should be `engineer:blocked`. Fixes label. Posts catch-up comment about cost limit | - | - | `Contract: GitHubCommPlugin.updateIssue(repo, 60, {labels_add: ["engineer:blocked"], labels_remove: ["engineer:active"]})` | - |
 
 **Outcome:** GitHub state now matches internal state. Reconciliation is idempotent -- safe to run multiple times.
 
 ---
 
-### Part 8: Human Unblocks Task (P10, P11)
+### Part 9: Cascade Failure (Chain 5)
+
+Task #55 (the stuck task from Part 6) had been decomposed into children #55A and #55B. After the Daemon crash recovery re-queued it, #55A is dispatched and fails:
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 32 | **TelegramCommPlugin** | Farzam sends "unblock #60" via Telegram (now recovered) | - | `⟹ comm.message_received` `{source: "telegram", sender: "farzam", content: "unblock #60"}` | - | - |
-| 33 | **Daemon** | Receives event. Checks: #60 is Blocked with `waiting_for: "farzam"`. Routes as task response. Processes unblock command | (P11.9, P10.14) | - | `→ TaskEngine.getBlockedTasksForPerson("farzam")` → [#60] | - |
-| 34 | **Daemon** | Cancels timeout timers. Transitions #60: Blocked → Queued | (P10.13-14) | `⟹ task.state_changed` `{Blocked → Queued, reason: "cost_limit_resolved"}` | `→ TaskEngine.requestTransition(60, "Queued", "cost_limit_resolved")` | - |
+| 35 | **Orchestrator** | Working on child #55A. Encounters unrecoverable error (test suite fails repeatedly, exhausts retries). Transitions to Failed | (P4) | `⟹ task.state_changed` `{#55A: Active.Working → Failed, reason: "unrecoverable_test_failure"}` | `→ TaskEngine.requestTransition("55A", "Failed")` | - |
+| 36 | **Task Engine** | Child #55A enters Failed state. Parent #55 has cascade policy: `pause-siblings` (default). Evaluates siblings: #55B is Queued. Transitions #55B → Blocked (cascade) | (P5) | `⟹ task.state_changed` `{#55B: Queued → Blocked, reason: "cascade_pause_sibling_failed"}` | - | Chain 5 |
+| 37 | **Daemon** | Receives child failure and cascade events. Notifies owner: "Task #55A failed. Sibling #55B paused (cascade policy: pause-siblings). Parent #55 waiting for resolution." | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` | Chain 5 |
+
+**Outcome:** Cascade policy prevents wasted work on #55B. Human decides whether to fix #55A's issue and retry, or restructure the decomposition. (Task #55 is a side thread -- our main trace continues with #60.)
 
 ---
 
-### Part 9: Trigger Plugin Failure (Health Monitoring)
+### Part 10: Human Unblocks Task (P10, P11)
+
+| Step | Component | Action | Protocol | Events | Contracts | Error Ref |
+|------|-----------|--------|----------|--------|-----------|-----------|
+| 38 | **TelegramCommPlugin** | Farzam sends "unblock #60" via Telegram (now recovered) | - | `⟹ comm.message_received` `{source: "telegram", sender: "farzam", content: "unblock #60"}` | - | - |
+| 39 | **Daemon** | Receives event. Checks: #60 is Blocked with `waiting_for: "farzam"`. Routes as task response. Processes unblock command | (P11.9, P10.14) | - | `→ TaskEngine.getBlockedTasksForPerson("farzam")` → [#60] | - |
+| 40 | **Daemon** | Cancels timeout timers. Transitions #60: Blocked → Queued | (P10.13-14) | `⟹ task.state_changed` `{Blocked → Queued, reason: "cost_limit_resolved"}` | `→ TaskEngine.requestTransition(60, "Queued", "cost_limit_resolved")` | - |
+
+---
+
+### Part 11: Trigger Plugin Failure (Health Monitoring)
 
 Meanwhile, the GitHub trigger starts failing:
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 35 | **Daemon** | Polls GitHubIssuesTrigger. Returns error. Increments consecutive failure counter: 1 | (P2.1 failure) | - | `Contract: TriggerPlugin.poll()` → `PluginError {code: "rate_limited", retryable: true}` | Pattern 2 |
-| 36 | **Daemon** | Next polls fail. Counter reaches threshold (3) | - | - | `Contract: TriggerPlugin.poll()` (fails x2 more) | - |
-| 37 | **Daemon** | Emits health alert | - | `⟹ health.trigger_failure` `{trigger_id: "github-issues", consecutive_failures: 3, last_error: "rate_limited"}` | - | Pattern 5 |
-| 38 | **CommPlugin (Telegram)** | Receives event (subscriber). Sends alert: "GitHub trigger has failed 3 consecutive polls (rate_limited). Polling continues." | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` | - |
+| 41 | **Daemon** | Polls GitHubIssuesTrigger. Returns error. Increments consecutive failure counter: 1 | (P2.1 failure) | - | `Contract: TriggerPlugin.poll()` → `PluginError {code: "rate_limited", retryable: true}` | Pattern 2 |
+| 42 | **Daemon** | Next polls fail. Counter reaches threshold (3) | - | - | `Contract: TriggerPlugin.poll()` (fails x2 more) | - |
+| 43 | **Daemon** | Emits health alert | - | `⟹ health.trigger_failure` `{trigger_id: "github-issues", consecutive_failures: 3, last_error: "rate_limited"}` | - | Pattern 5 |
+| 44 | **CommPlugin (Telegram)** | Receives event (subscriber). Sends alert: "GitHub trigger has failed 3 consecutive polls (rate_limited). Polling continues." | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` | - |
 
 **Outcome:** Trigger plugin is degraded but continues polling. Human alerted. Next successful poll resets the counter.
 
 ---
 
-### Part 10: Task Resume with Workspace Recovery (P9, Chain 6)
+### Part 12: Task Resume with Workspace Recovery (P9, Chain 6)
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 39 | **Daemon** | Scheduling evaluation: #60 is Queued. Working slot available. Detects resume (checkpoint exists from cost_limit stop) | (P9.1) | - | `→ SessionMemory.getLatestCheckpoint(60)` → checkpoint with `reason: "cost_limit"` | - |
-| 40 | **Daemon** | Transitions: Queued → Active.Working. Requests workspace verification | (P9.2-3) | `⟹ task.state_changed` `{Queued → Active.Working, reason: "resumed"}` | `→ TaskEngine.requestTransition(60, "Active.Working", "resumed")` | - |
+| 45 | **Daemon** | Scheduling evaluation: #60 is Queued. Working slot available. Detects resume (checkpoint exists from cost_limit stop) | (P9.1) | - | `→ SessionMemory.getLatestCheckpoint(60)` → checkpoint with `reason: "cost_limit"` | - |
+| 46 | **Daemon** | Transitions: Queued → Active.Working. Requests workspace verification | (P9.2-3) | `⟹ task.state_changed` `{Queued → Active.Working, reason: "resumed"}` | `→ TaskEngine.requestTransition(60, "Active.Working", "resumed")` | - |
 | | | | | | `→ WorkspaceManager.verifyWorkspace(task.workspace)` | |
-| 41 | **Workspace Manager** | Worktree directory missing (lost when Daemon crashed -- process cleanup). But branch `engineer/60-rate-limiting` exists in git. Recreates worktree from branch | (P9.4b) | `⟹ workspace.verified` `{status: "recoverable", recovery_action: "recreated_from_branch"}` | - | Chain 6 |
+| 47 | **Workspace Manager** | Worktree directory missing (lost when Daemon crashed -- process cleanup). But branch `engineer/60-rate-limiting` exists in git. Recreates worktree from branch | (P9.4b) | `⟹ workspace.verified` `{status: "recoverable", recovery_action: "recreated_from_branch"}` | - | Chain 6 |
 | | | | | `⟹ workspace.created` `{task_id: 60, branch: "engineer/60-rate-limiting"}` | | |
-| 42 | **Daemon** | Assembles Dispatch with checkpoint and knowledge | (P9.5) | - | `→ SessionMemory.getLatestCheckpoint(60)`, `→ SessionMemory.queryKnowledge()` | - |
-| 43 | **Orchestrator** | Context reconstruction. Notes: provider is now openrouter, budget was $5 (human unblocked without increasing -- may hit limit again). Resumes in execution phase | (P9.7-11) | - | `→ SessionMemory.createSession(60, prev_session_id)` | - |
+| 48 | **Daemon** | Assembles Dispatch with checkpoint and knowledge | (P9.5) | - | `→ SessionMemory.getLatestCheckpoint(60)`, `→ SessionMemory.queryKnowledge()` | - |
+| 49 | **Orchestrator** | Context reconstruction. Notes: provider is now openrouter, budget was $5 (human unblocked without increasing -- may hit limit again). Resumes in execution phase | (P9.7-11) | - | `→ SessionMemory.createSession(60, prev_session_id)` | - |
 
 ---
 
-### Part 11: Checkpoint Storage Failure (Chain 4)
+### Part 13: Checkpoint Storage Failure (Chain 4)
 
 During resumed work, the Orchestrator attempts a phase transition checkpoint:
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 44 | **Orchestrator** | Completes execution phase. Attempts phase-boundary checkpoint | (P4.2) | - | `→ SessionMemory.createCheckpoint(session_id, checkpoint_data)` → FAILS (disk full) | Chain 4 |
-| 45 | **Orchestrator** | Retries once | - | - | `→ SessionMemory.createCheckpoint()` → FAILS again | Chain 4 |
-| 46 | **Orchestrator** | Phase transition context: cannot guarantee resume safety. But branch commits are preserved. Logs critical error. Continues working (work is more valuable than stopping, and commits provide recovery path) | - | - | `→ SessionMemory.appendJournal(session_id, {type: "error", summary: "Checkpoint storage failed. Commits preserved. Continuing with degraded resume safety."})` | Chain 4, Pattern 5 |
+| 50 | **Orchestrator** | Completes execution phase. Attempts phase-boundary checkpoint | (P4.2) | - | `→ SessionMemory.createCheckpoint(session_id, checkpoint_data)` → FAILS (disk full) | Chain 4 |
+| 51 | **Orchestrator** | Retries once | - | - | `→ SessionMemory.createCheckpoint()` → FAILS again | Chain 4 |
+| 52 | **Orchestrator** | Phase transition context: cannot guarantee resume safety. But branch commits are preserved. Logs critical error. Continues working (work is more valuable than stopping, and commits provide recovery path) | - | - | `→ SessionMemory.appendJournal(session_id, {type: "error", summary: "Checkpoint storage failed. Commits preserved. Continuing with degraded resume safety."})` | Chain 4, Pattern 5 |
 
 **(In a phase transition context, the Orchestrator may choose to fail the task if checkpoint is critical. Here it continues -- a judgment call. If this were preemption or cost limit, the consequences differ per Chain 4 in error-propagation.md.)**
 
 ---
 
-### Part 12: Push Failure and Retry (Chain 6, Pattern 2)
+### Part 14: Push Failure and Retry (Chain 6, Pattern 2)
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 47 | **Orchestrator** | Pushes branch through Action Pipeline. Gates pass | (P7.3-6) | - | `→ TaskEngine.checkPermission(60, "git-remote")` → permitted | - |
+| 53 | **Orchestrator** | Pushes branch through Action Pipeline. Gates pass | (P7.3-6) | - | `→ TaskEngine.checkPermission(60, "git-remote")` → permitted | - |
 | | | | | | `→ SafetyLayer.evaluate({type: "can_i", action_class: "git-remote"})` → proceed | |
-| 48 | **Workspace Manager** | `git push` fails -- network timeout | (P7.9) | (no event -- action didn't complete) | `→ WorkspaceManager.push(60)` → fails | Chain 6, Pattern 2 |
-| 49 | **Orchestrator** | Retries with backoff: attempt 2 → succeeds | - | `⟹ git.pushed` `{task_id: 60, branch: "engineer/60-rate-limiting"}` | `→ WorkspaceManager.push(60)` → succeeds | Pattern 2 |
+| 54 | **Workspace Manager** | `git push` fails -- network timeout | (P7.9) | (no event -- action didn't complete) | `→ WorkspaceManager.push(60)` → fails | Chain 6, Pattern 2 |
+| 55 | **Orchestrator** | Retries with backoff: attempt 2 → succeeds | - | `⟹ git.pushed` `{task_id: 60, branch: "engineer/60-rate-limiting"}` | `→ WorkspaceManager.push(60)` → succeeds | Pattern 2 |
 
 ---
 
-### Part 13: Action Pipeline Rejection (P7)
+### Part 15: Action Pipeline Rejection (P7)
 
 During self-review, the Orchestrator tries to write to a file outside the repo scope:
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 50 | **Orchestrator** | Attempts to write to `/etc/nginx/rate-limit.conf` (scope violation). Gate 1 passes (write permitted in Active.Working). Gate 2 rejects | (P7.3-8) | `⟹ action.rejected` `{task_id: 60, action_class: "write", gate: "safety_layer", reason: "Path /etc/nginx/rate-limit.conf is outside repo scope acme/api-server"}` | `→ TaskEngine.checkPermission(60, "write")` → permitted | - |
+| 56 | **Orchestrator** | Attempts to write to `/etc/nginx/rate-limit.conf` (scope violation). Gate 1 passes (write permitted in Active.Working). Gate 2 rejects | (P7.3-8) | `⟹ action.rejected` `{task_id: 60, action_class: "write", gate: "safety_layer", reason: "Path /etc/nginx/rate-limit.conf is outside repo scope acme/api-server"}` | `→ TaskEngine.checkPermission(60, "write")` → permitted | - |
 | | | | | | `→ SafetyLayer.evaluate({type: "can_i", action_class: "write", path: "/etc/nginx/rate-limit.conf"})` → `{allowed: false, reason: "outside repo scope"}` | |
-| 51 | **Orchestrator** | Receives denial. Adjusts strategy -- adds nginx config instructions to PR description instead of modifying the file directly. Logs decision | - | - | `→ SessionMemory.appendJournal(session_id, {type: "decision", summary: "Cannot modify nginx config (outside scope). Adding deployment instructions to PR."})` | - |
+| 57 | **Orchestrator** | Receives denial. Adjusts strategy -- adds nginx config instructions to PR description instead of modifying the file directly. Logs decision | - | - | `→ SessionMemory.appendJournal(session_id, {type: "decision", summary: "Cannot modify nginx config (outside scope). Adding deployment instructions to PR."})` | - |
 
 ---
 
-### Part 14: 48-Hour Alert Escalation
+### Part 16: 48-Hour Alert Escalation
 
 If task #60 had remained blocked longer (it didn't -- Farzam unblocked it), the 48-hour alert would fire:
 
@@ -806,25 +832,25 @@ If task #60 had remained blocked longer (it didn't -- Farzam unblocked it), the 
 
 ---
 
-### Part 15: Event Bus Down -- Graceful Halt (Chain 2, Pattern 6)
+### Part 17: Event Bus Down -- Graceful Halt (Chain 2, Pattern 6)
 
 After task #60 resumes and continues working, the Event Bus storage becomes inaccessible:
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 52 | **Event Bus** | Storage becomes inaccessible (disk I/O error) | - | - | - | Chain 2 |
-| 53 | **Daemon** | Detects Event Bus failure (health check or failed event publish) | - | - | - | Chain 2 |
-| 54 | **Daemon** | Initiates graceful halt. Stops trigger polling. Stops scheduling. No new work accepted | (P15.17) | - | - | Pattern 6 |
-| 55 | **Daemon** | Signals Orchestrator to checkpoint and stop (same pattern as preemption/shutdown) | (P15.18) | - | - | Pattern 6 |
-| 56 | **Orchestrator** | Finishes current atomic op. Creates checkpoint via direct Session/Memory call (not via Event Bus -- it's down) | (P15.18) | - | `→ SessionMemory.createCheckpoint(session_id, {reason: "system_halt", phase: "self-review"})` | Pattern 1 |
-| 57 | **Orchestrator** | Ends session | - | - | `→ SessionMemory.endSession(session_id, "system_halt")` | - |
-| 58 | **Daemon** | Transitions #60: Active.Working → Queued. State transition is synchronous (Task Engine call), but `task.state_changed` event cannot be persisted (Event Bus down) | (P15.19) | (`⟹ task.state_changed` -- CANNOT BE DELIVERED) | `→ TaskEngine.requestTransition(60, "Queued", "system_halt")` | Chain 2 |
-| 59 | **Daemon** | Attempts alert. Comm plugins may not receive Event Bus subscriptions, but direct `sendMessage()` calls still work. Also writes to stderr as last resort | - | - | `Contract: CommPlugin.sendMessage(target, "SYSTEM HALT: Event Bus storage failure. Checkpointed all work. Manual intervention required.")` | Pattern 6 |
-| 60 | **Daemon** | System halted. Waits for Event Bus recovery or human intervention. All work checkpointed, all tasks in safe states | - | - | - | Chain 2 |
+| 58 | **Event Bus** | Storage becomes inaccessible (disk I/O error) | - | - | - | Chain 2 |
+| 59 | **Daemon** | Detects Event Bus failure (health check or failed event publish) | - | - | - | Chain 2 |
+| 60 | **Daemon** | Initiates graceful halt. Stops trigger polling. Stops scheduling. No new work accepted | (P15.17) | - | - | Pattern 6 |
+| 61 | **Daemon** | Signals Orchestrator to checkpoint and stop (same pattern as preemption/shutdown) | (P15.18) | - | - | Pattern 6 |
+| 62 | **Orchestrator** | Finishes current atomic op. Creates checkpoint via direct Session/Memory call (not via Event Bus -- it's down) | (P15.18) | - | `→ SessionMemory.createCheckpoint(session_id, {reason: "system_halt", phase: "self-review"})` | Pattern 1 |
+| 63 | **Orchestrator** | Ends session | - | - | `→ SessionMemory.endSession(session_id, "system_halt")` | - |
+| 64 | **Daemon** | Transitions #60: Active.Working → Queued. State transition is synchronous (Task Engine call), but `task.state_changed` event cannot be persisted (Event Bus down) | (P15.19) | (`⟹ task.state_changed` -- CANNOT BE DELIVERED) | `→ TaskEngine.requestTransition(60, "Queued", "system_halt")` | Chain 2 |
+| 65 | **Daemon** | Attempts alert. Comm plugins may not receive Event Bus subscriptions, but direct `sendMessage()` calls still work. Also writes to stderr as last resort | - | - | `Contract: CommPlugin.sendMessage(target, "SYSTEM HALT: Event Bus storage failure. Checkpointed all work. Manual intervention required.")` | Pattern 6 |
+| 66 | **Daemon** | System halted. Waits for Event Bus recovery or human intervention. All work checkpointed, all tasks in safe states | - | - | - | Chain 2 |
 
 **(When Event Bus recovers, Daemon restarts via P15 Scenario C. Task #60 resumes via P9. Cost accumulators rebuilt from Event Bus replay -- any events lost during the brief outage cause minor under-count, logged as warning. Task eventually completes.)**
 
-**Error chains exercised:** Chain 1 (LLM failover), Chain 2 (Event Bus halt), Chain 3 (comm failure during block), Chain 4 (checkpoint storage), Chain 6 (workspace recovery + push failure), Chain 7 (config reload).
+**Error chains exercised:** Chain 1 (LLM failover), Chain 2 (Event Bus halt), Chain 3 (comm failure during block), Chain 4 (checkpoint storage), Chain 5 (cascade failure), Chain 6 (workspace recovery + push failure), Chain 7 (config reload).
 
 **Recovery patterns exercised:** Pattern 1 (checkpoint-then-fail at cost limit and halt), Pattern 2 (retry-with-backoff on comm send, push, trigger poll), Pattern 3 (fallback-channel for cost alert and reminder), Pattern 4 (ephemeral-reconstruction after Daemon crash), Pattern 5 (degrade-and-continue for config reload, trigger failure, checkpoint storage), Pattern 6 (graceful-halt on Event Bus down).
 
@@ -838,7 +864,7 @@ Every protocol appears in at least one scenario. P1 and P14 appear only in Scena
 
 ### Event Coverage: 30/30
 
-All 29 events from the event catalog are emitted in at least one scenario, plus `comm.message_sent` appears across all three. The `timeout.self_unblock_check` event is noted in Scenario 2 context (where the Orchestrator would self-unblock if the autonomy category allowed it -- in this case, `task_decomposition` is `always_ask`, so it can't). The `timeout.alert` is shown as a mechanism note in Scenario 3.
+All 30 events from the event catalog are emitted (with `⟹`) in at least one scenario. `comm.message_sent` appears across all three. `timeout.self_unblock_check` is emitted in Scenario 3 (cost-blocked task, Daemon evaluates but cannot self-unblock). `timeout.alert` is shown as a mechanism note in Scenario 3 (Part 16).
 
 ### Plugin Contract Coverage: Complete
 
@@ -855,7 +881,7 @@ Skeleton components:
 
 ### Error Propagation Coverage: 7/7 chains, 6/6 patterns
 
-All error chains and recovery patterns are exercised in Scenario 3, with Chain 5 (cascade failure) and Chain 6 (merge conflict) additionally covered in Scenario 2.
+All 7 error chains and all 6 recovery patterns are exercised in Scenario 3. Chain 6 (merge conflict) is additionally covered in Scenario 2.
 
 ### Gaps Found
 
@@ -869,12 +895,32 @@ For quick lookup when verifying a specific component's behavior across scenarios
 
 | Component | Scenario 1 Steps | Scenario 2 Steps | Scenario 3 Steps |
 |-----------|-----------------|-----------------|-----------------|
-| Daemon | 1-7, 8-15, 16-22, 38-43 | 1-2, 10, 15-16, 22, 24, 26-28, 32-33, 34-35, 49, 54-55 | 3, 8, 11, 16-18, 22-29, 33-34, 35-38, 40, 53-60 |
-| Task Engine | 13, 17-20, 29, 46, 48, 52, 60, 62, 64 | 1, 2, 18-19, 21, 40, 47, 52-54 | 11, 27, 34, 40, 58 |
-| Orchestrator | 23-37, 44-48, 54-57, 62-67 | 3-9, 14, 17-20, 23, 25, 38-39, 44, 46, 50-51, 56-58 | 1, 5-6, 9-10, 43-51, 55-57 |
-| Safety Layer | 4, 28, 33, 62 | 5, 10 | 7, 19-20, 26 |
-| Event Bus | 2, (all events) | (all events) | 24, 52-53, 58-60 |
-| Session/Memory | 21, 23, 30-32, 66 | 3, 14, 17, 23, 38 | 9-10, 39, 42-43, 56-57 |
-| Workspace Manager | 19, 65 | 24, 36, 40-42, 45, 49, 52 | 41, 48-49 |
-| Registry | 3, 25 | - | 25, 29, 3 |
-| People Directory | 5, 13, 47 | 9, 18 | 14, 30 |
+| Daemon | 1-7, 8-15, 16-22, 38-43 | 1-2, 10, 15-16, 22, 24, 26-28, 32-33, 34-35, 49, 54-55 | 3, 8, 11, 16-19, 23-24, 25-32, 37, 39-44, 46, 59-66 |
+| Task Engine | 13, 17-20, 29, 46, 48, 52, 60, 62, 64 | 1, 2, 18-19, 21, 40, 47, 52-54 | 11, 30, 36, 40, 64 |
+| Orchestrator | 23-37, 44-48, 54-57, 62-67 | 3-9, 14, 17-20, 23, 25, 38-39, 44, 46, 50-51, 56-58 | 1, 5-6, 9-10, 35, 49-57, 62-63 |
+| Safety Layer | 4, 28, 33, 62 | 5, 10 | 7, 20-21, 29 |
+| Event Bus | 2, (all events) | (all events) | 27, 58-59, 64-66 |
+| Session/Memory | 21, 23, 30-32, 66 | 3, 14, 17, 23, 38 | 9-10, 45, 48-49, 62-63 |
+| Workspace Manager | 19, 65 | 24, 36, 40-42, 45, 49, 52 | 47, 54-55 |
+| Registry | 3, 25 | - | 28, 32, 3 |
+| People Directory | 5, 13, 47 | 9, 18 | 14, 33 |
+
+---
+
+## Layer 2 → Layer 3 Reconciliation
+
+Layer 3 refined several Layer 2 designs as interactions between components were formalized. Layer 2 docs capture valid design history; Layer 3 is authoritative where they differ. The event-catalog.md "Changes from Layer 2" section covers the Event Bus model evolution in detail. This table covers all remaining evolutions:
+
+| Evolution | Layer 2 Source | Superseding Layer 3 Doc | Summary |
+|-----------|---------------|------------------------|---------|
+| Event Bus pre-processing → Action Pipeline | event-bus.md §Pre-Processing | event-catalog.md §Action Pipeline | Safety checks moved from Event Bus interceptor to Action Pipeline (Gate 1 + Gate 2). Event Bus is pure pub/sub. |
+| Orchestrator direct subscriptions → Daemon routing | event-bus.md §Subscriptions | event-catalog.md §Subscription Lifecycle, protocols.md P1/P3 | Orchestrator no longer subscribes directly to Event Bus. Daemon routes relevant events as part of dispatch. |
+| CommPlugin callback → event emission | comm-plugins.md §Interface | plugin-contracts.md §CommPlugin | Inbound messages emit `comm.message_received` events via skeleton, replacing direct callback pattern. |
+| Workspace Manager PR ops → Git Hosting Plugin | workspace-manager.md §PR Management | plugin-contracts.md §GitHostingPlugin | PR/branch operations separated into dedicated plugin type. Workspace Manager delegates to Git Hosting Plugin. |
+| Registry formalized as skeleton component | (not in Layer 2) | plugin-contracts.md §Registry | Full registry design: discovery, health checking, lifecycle management, primary plugin designation. |
+| People Directory formalized as skeleton component | (not in Layer 2) | plugin-contracts.md §People Directory | Full People Directory design: contacts schema, fallback chains, role-based lookup. |
+| LLM provider failover | (not in Layer 2) | error-propagation.md Chain 1, plugin-contracts.md §LLMProvider | Auto-failover to next provider in priority list on fatal provider error. |
+| Comm fallback chains | (not in Layer 2) | error-propagation.md Chain 3, plugin-contracts.md §Fallback | People Directory `contacts[]` ordered list drives fallback when primary comm channel fails. |
+| Health events added | (not in Layer 2) | event-catalog.md §health.* | Three health events: `stuck_detected`, `trigger_failure`, `config_reload_failed`. |
+| `action.rejected` event added | (not in Layer 2) | event-catalog.md §action.rejected | Audit trail for Action Pipeline rejections (gate denials). |
+| Plugin criticality concept | (not in Layer 2) | plugin-contracts.md §Plugin Manifest | `critical` field in plugin manifest determines startup/recovery behavior. |

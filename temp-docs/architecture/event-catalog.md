@@ -891,7 +891,7 @@ The Orchestrator receiving events via the Daemon (not direct subscription) keeps
 | `git.*` | `branch_created`, `committed`, `pushed`, `pr_opened`, `pr_updated`, `pr_merged`, `merge_completed` | Workspace Manager |
 | `comm.*` | `message_received`, `message_sent` | Comm Plugins |
 
-**Total: 29 event types** across 10 groups.
+**Total: 30 event types** across 10 groups.
 
 ---
 

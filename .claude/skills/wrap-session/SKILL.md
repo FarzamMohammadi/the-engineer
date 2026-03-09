@@ -12,9 +12,9 @@ End the current session cleanly so the next one picks up without losing a beat.
 
 ---
 
-## Step 1: Update `temp-docs/active.md`
+## Step 1: Update `implementation-docs/active.md`
 
-Read `temp-docs/active.md`, then update the **Status** section to reflect:
+Read `implementation-docs/active.md`, then update the **Status** section to reflect:
 - What was just completed this session
 - What we're doing next session
 - Current state of the overall work
@@ -25,7 +25,7 @@ Keep the rest of active.md intact (Current Focus, What We're Doing, Deliverables
 
 ## Step 2: Log the Session
 
-1. Check `temp-docs/sessions/` for the latest session number
+1. Check `implementation-docs/sessions/` for the latest session number
 2. Create the next sequential file (e.g., `002.md`, `003.md`)
 
 Format:

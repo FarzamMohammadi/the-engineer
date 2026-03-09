@@ -16,7 +16,7 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 
 ## 2026-03-06 — Architecture first, code never (until approved)
 
-**Decision:** All deliverables are documentation and architectural planning. No code until Farzam explicitly approves. Work lives in `temp-docs/`.
+**Decision:** All deliverables are documentation and architectural planning. No code until Farzam explicitly approves. Work lives in `implementation-docs/`.
 
 **Rationale:** This is a massive project that demands every decision be made thoughtfully before implementation. Rushing to code creates rework and architectural debt.
 
@@ -24,9 +24,9 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 
 ---
 
-## 2026-03-06 — temp-docs/ as development workspace
+## 2026-03-06 — implementation-docs/ as development workspace
 
-**Decision:** `temp-docs/` holds all builder-facing documentation: active focus, session logs, philosophies, and architecture. Separate from agent-facing files.
+**Decision:** `implementation-docs/` holds all builder-facing documentation: active focus, session logs, philosophies, and architecture. Separate from agent-facing files.
 
 **Rationale:** Clean separation between what the agent reads and what the builders reference.
 

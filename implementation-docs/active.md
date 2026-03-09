@@ -14,7 +14,7 @@ Working method: collaborative, always. Highest level decisions first, then drill
 
 ## Deliverables
 
-All work lives in `/temp-docs/`, organized by architectural layer:
+All work lives in `/implementation-docs/`, organized by architectural layer:
 - `active.md` — this file, what we're working on right now
 - `layers.md` — architecture layering roadmap (see [`layers.md`](layers.md))
 - `decisions.md` — decision log
@@ -49,7 +49,7 @@ All work lives in `/temp-docs/`, organized by architectural layer:
 the-engineer/
 ├── README.md              # Project overview
 ├── persona.md             # Identity (stable input to architecture)
-└── temp-docs/             # Our workspace (builders only)
+└── implementation-docs/             # Our workspace (builders only)
     ├── active.md          # Current focus (this file)
     ├── layers.md          # Architecture layering roadmap
     ├── decisions.md       # Decision log

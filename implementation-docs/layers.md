@@ -127,4 +127,12 @@ Ready-to-code specifications. No ambiguity left. 63 decisions (#65-#127) across 
 
 ## Layer 5: Implementation
 
-Actual code. Phased rollout. This is where we finally write code — and not a line before.
+Actual code. 16-phase bottom-up build order. 1 decision (#128).
+
+**Session completed:**
+- [x] Session 30: Build order planning (1 decision, #128) → [`build-order.md`](5-build/build-order.md)
+
+**Build phases:** 0 (Bootstrap) → 1 (Schemas) → 2 (DB) → 3 (Config) → 4 (Event Bus) → 5 (Adapters) → 6 (Registry) → 7 (Task Engine) → 8 (Safety + People) → 9 (Action Pipeline) → 10 (Session/Memory + Workspace) → 11 (Orchestrator) → 12 (Daemon — hello world) → 13 (CLI) → 14 (Plugins) → 15 (Integration + E2E)
+
+**Documents:**
+- [`build-order.md`](5-build/build-order.md) — full build order specification with dependency graph

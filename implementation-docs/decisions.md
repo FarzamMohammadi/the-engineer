@@ -1169,3 +1169,19 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Add `src/core/action-pipeline/index.ts` to the project layout. The Action Pipeline is a thin module (~50-100 lines) that orchestrates Gate 1 (Task Engine permission check) and Gate 2 (Safety Layer policy check) before action execution. Owns the `action.rejected` event. Used by Orchestrator and Workspace Manager.
 
 **Rationale:** Holistic review found the Action Pipeline — a central L3 concept with its own event ownership — had no designated module in the L4 project layout. It can't live in the Orchestrator (Workspace Manager also uses it, creating a circular dependency risk) or in a utility file (it owns an event type and has architectural significance). A dedicated thin Core module gives it a proper home without over-engineering.
+
+---
+
+## Layer 5 — Build Order
+
+> Decision #128. Implementation sequence: 16 phases, bottom-up. Schemas and infrastructure first, then components in dependency order, then the daemon that wires everything together.
+
+---
+
+## 2026-03-10 — 16-phase bottom-up build order (#128)
+
+**Decision:** 16 implementation phases in strict dependency order: 0 (Bootstrap) → 1 (Schemas) → 2 (DB) → 3 (Config) → 4 (Event Bus) → 5 (Adapters) → 6 (Registry + test infra) → 7 (Task Engine) → 8 (Safety + People) → 9 (Action Pipeline) → 10 (Session/Memory + Workspace Manager) → 11 (Orchestrator skeleton) → 12 (Daemon + logging = hello world) → 13 (CLI) → 14 (v1 plugins) → 15 (Integration + E2E tests). Each phase produces independently testable output. Unit tests co-located with each phase.
+
+**Rationale:** Bottom-up mirrors compiler bootstrap — build the type system first (schemas), then infrastructure (DB, config, Event Bus), then components in dependency order, then the wiring layer (daemon). Breaks the chicken-and-egg: Action Pipeline (Phase 9) needs Task Engine (7) and Safety Layer (8), both already built. Orchestrator (11) needs everything, but by then everything exists. Hello world at Phase 12 is the natural point where the full stack is wired. Schemas as one phase (pure data, no context-switching). Plugins last (fake plugins sufficient for core testing, real plugins add distracting API complexity). Parallelization: Phases 2+3 independent, Phase 14 (plugins) independent of Phases 6-13.
+
+**Alternatives considered:** Top-down skeleton-first (daemon shell → fill in), but produces a non-functional stub that doesn't test anything. Interleaved plugins (build real plugins alongside core), but adds external API distractions during core development.

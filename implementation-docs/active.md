@@ -68,16 +68,19 @@ the-engineer/
     ├── 1-system/          # Layer 1: System Overview
     ├── 2-components/      # Layer 2: Component Architecture
     ├── 3-interactions/    # Layer 3: Interactions & Protocols
-    └── 4-implementation/  # Layer 4: Implementation Design
+    ├── 4-implementation/  # Layer 4: Implementation Design
+    └── 5-build/           # Layer 5: Build Order & Implementation
 ```
 
-Everything else in the repo will be for The Engineer (the agent) — created AFTER architecture is finalized.
+Everything else in the repo will be for The Engineer (the agent) — created as we implement each phase.
 
 ## Status
 
 **Layers 0-4: ALL COMPLETE. 127 architectural decisions.**
 
-**Holistic Review (Session 29): COMPLETE.** 3 MEDIUM issues found and resolved, 12 items validated correct. Decisions #126-#127 added.
+**Layer 5 — Build Order: COMPLETE.** 16-phase bottom-up implementation sequence designed (Session 30, Decision #128).
+
+- Session 30: Build order planning — DONE. 1 decision (#128).
 
 **Layer 4 — Implementation Design: COMPLETE.** 63 decisions across 6 sessions + holistic review:
 
@@ -89,4 +92,4 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 - Session 28: Testing strategy — DONE. 7 decisions (#119-#125).
 - Session 29: Holistic review — DONE. 2 decisions (#126-#127).
 
-**Next: Layer 5 — Implementation.** Actual code. The architecture is complete. 127 decisions across 5 layers, holistic review passed. Time to build.
+**Next: Phase 0 — Project Bootstrap.** First code. Create the empty project with all tooling configured (package.json, tsconfig, biome, lefthook, vitest). See [`5-build/build-order.md`](5-build/build-order.md).

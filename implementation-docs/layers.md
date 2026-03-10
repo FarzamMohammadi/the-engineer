@@ -54,31 +54,23 @@ Validated Layer 1 from the user's perspective. Concrete flows grounded in Farzam
 **Documents:**
 - [`user-flows.md`](1-system/user-flows.md) — 5 core flows, gap analysis, open questions
 
-## Layer 2: Component Architecture — IN PROGRESS
+## Layer 2: Component Architecture — DONE
 
-Each component designed individually. Interfaces, responsibilities, internal structure.
+Each component designed individually. Interfaces, responsibilities, internal structure. All 8 components designed (including Event Bus). 24/24 gaps resolved. 41 decisions.
 
-**What this layer covers:**
-- Each core component (daemon, orchestrator, registry, task engine) gets its own design doc
-- Each supporting system (people directory, workspace manager, session/memory, safety) gets its own design doc
-- The Active state's internal phases get designed here
-- Plugin interfaces defined (what must a trigger implement? a comm channel? an LLM provider?)
+**Components designed:**
+1. Task Engine → [`task-engine.md`](2-components/task-engine.md)
+2. Session/Memory → [`session-memory.md`](2-components/session-memory.md)
+3. Daemon/Scheduler → [`daemon-scheduler.md`](2-components/daemon-scheduler.md)
+4. Safety Layer → [`safety-layer.md`](2-components/safety-layer.md)
+5. Orchestrator → [`orchestrator.md`](2-components/orchestrator.md)
+6. Workspace Manager → [`workspace-manager.md`](2-components/workspace-manager.md)
+7. Comm Plugins → [`comm-plugins.md`](2-components/comm-plugins.md)
+8. Event Bus → [`event-bus.md`](2-components/event-bus.md)
 
-**24 gaps grouped by component. Design order:**
-1. Task Engine (6 gaps) — DONE → [`task-engine.md`](2-components/task-engine.md)
-2. Session/Memory (3 gaps: #2, #7, #21) — DONE → [`session-memory.md`](2-components/session-memory.md)
-3. Daemon/Scheduler (2 gaps: #8, #12) — DONE → [`daemon-scheduler.md`](2-components/daemon-scheduler.md)
-4. Safety Layer (3 gaps: #5, #17, #19) — DONE → [`safety-layer.md`](2-components/safety-layer.md)
-5. Orchestrator (7 gaps: #1, #4, #10, #15, #16, #18, #23) — DONE → [`orchestrator.md`](2-components/orchestrator.md)
-6. Workspace Manager (1 gap: #11) — DONE → [`workspace-manager.md`](2-components/workspace-manager.md)
-7. Comm Plugins (2 gaps: #20, #22) — DONE → [`comm-plugins.md`](2-components/comm-plugins.md)
-8. Event Bus (added during holistic review) — DONE → [`event-bus.md`](2-components/event-bus.md)
+**Holistic Review — DONE.** 24 cross-component issues found and resolved.
 
-**All 7 components designed. 24/24 gaps resolved. 38 decisions.**
-
-**Holistic Review — DONE.** Reviewed all 7 designs together as one unified system. Found 24 cross-component issues (5 HIGH, 11 MEDIUM, 8 LOW), all resolved. 3 new decisions. Created Event Bus Layer 2 design doc. Established canonical event taxonomy convention. Total decisions: 41.
-
-**Key Layer 2 decisions so far:**
+**Key Layer 2 decisions:**
 - Review-Pending elevated to top-level state (not sub-state of Active)
 - Action classes (not individual tools) as the unit of permission gating
 - Two-gate model: Task Engine gate (phase legality) → Safety Layer gate (policy compliance)
@@ -104,29 +96,33 @@ How components talk to each other. The wiring.
 
 **Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47), cost limit auto-resume configurable (Decision #49), reads Gate 1 only (Decision #50), LLM fallback for response parsing (Decision #51), shutdown timeout owned by Daemon (Decision #52), Event Bus down = halt (Decision #53), LLM auto-failover (Decision #54), comm fallback chains (Decision #55), config reload health alert (Decision #56), checkpoint without LLM (Decision #57), GitHub state reconciliation (Decision #58). 58 total decisions.
 
-## Layer 4: Implementation Design — IN PROGRESS
+## Layer 4: Implementation Design — DONE
 
-Ready-to-code specifications. No ambiguity left.
+Ready-to-code specifications. No ambiguity left. 61 decisions (#65-#125) across 6 sessions.
 
-**What this layer covers:**
-- Technology choices (specific libraries, frameworks, versions)
-- Data structures and schemas
-- File and directory layout (the actual project structure)
-- Configuration format and schema
-- Deployment specifications (Dockerfile, compose, env vars)
-- Testing strategy
-
-**Session plan:**
+**Sessions completed:**
 - [x] Session 23: Foundation — technology stack (10 decisions, #65-#74) → [`foundation.md`](4-implementation/foundation.md)
-- [ ] Session 24: Data structures & schemas
-- [ ] Session 25: Project layout & config format
-- [ ] Session 26: Plugin system & adapter implementation
-- [ ] Session 27: Deployment & operations
-- [ ] Session 28: Testing strategy
+- [x] Session 24: Data structures & schemas (15 decisions, #75-#89) → [`schemas/`](4-implementation/schemas/) (9 files)
+- [x] Session 25: Project layout & config format (12 decisions, #90-#101) → [`layout.md`](4-implementation/layout.md)
+- [x] Session 26: Plugin system & adapter implementation (7 decisions, #102-#108) → [`plugins.md`](4-implementation/plugins.md)
+- [x] Session 27: Deployment & operations (10 decisions, #109-#118) → [`operations.md`](4-implementation/operations.md)
+- [x] Session 28: Testing strategy (7 decisions, #119-#125) → [`testing.md`](4-implementation/testing.md)
+
+**Key Layer 4 decisions:**
+- TypeScript, Node 22 LTS, pnpm, ESM, SQLite (better-sqlite3), Biome, Zod, Vitest
+- Single package with monorepo-ready boundaries, YAML config (multi-file `~/.engineer/config/`)
+- Plugin manifests (`engineer.plugin.yaml`), five-phase loading, abstract class hierarchy
+- Unified data directory (`~/.engineer/`), pino logging, commander CLI, `doctor` health checks
+- Three-tier Vitest configs (unit/integration/e2e), contract compliance suites, boundary enforcement tests
 
 **Documents:**
-- [`foundation.md`](4-implementation/foundation.md) — technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
-- [`openclaw-review.md`](4-implementation/openclaw-review.md) — OpenClaw reference (validated decisions, patterns to adopt)
+- [`foundation.md`](4-implementation/foundation.md) — technology stack
+- [`schemas/`](4-implementation/schemas/) — Zod schemas, SQLite DDL, config schemas (9 files)
+- [`layout.md`](4-implementation/layout.md) — project layout, config system, enforcement pipeline
+- [`plugins.md`](4-implementation/plugins.md) — plugin system design
+- [`operations.md`](4-implementation/operations.md) — deployment & operations
+- [`testing.md`](4-implementation/testing.md) — testing strategy
+- [`openclaw-review.md`](4-implementation/openclaw-review.md) — reference patterns (all high-priority items adopted)
 
 ## Layer 5: Implementation
 

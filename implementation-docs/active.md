@@ -48,7 +48,8 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
   - `layout.md` — Project layout, config system, tsconfig, Biome, git hooks, enforcement pipeline
   - `plugins.md` — Plugin system (manifest, loading, abstract classes, SDK boundary, lifecycle, process safety)
   - `operations.md` — Deployment & operations (data directory, logging, daemon, CLI, doctor, first-run)
-  - `openclaw-review.md` — OpenClaw reference (validated decisions, patterns to adopt)
+  - `testing.md` — Testing strategy (three-tier Vitest, coverage, contract suites, boundary tests)
+  - `openclaw-review.md` — OpenClaw reference (validated decisions, all high-priority patterns adopted)
   - `schemas/` — Data structures & schemas (Zod schemas, SQLite DDL, 9 files)
 - `future-considerations.md` — Deferred decisions (monorepo evolution path)
 
@@ -74,23 +75,17 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Layers 0-3: ALL COMPLETE. 64 architectural decisions.
+**Layers 0-4: ALL COMPLETE. 125 architectural decisions.**
 
 **Reconciliation R14: RESOLVED** — All config schemas concretized in Session 25.
 
-**Layer 4 — Implementation Design: IN PROGRESS.** Broken into 6 focused sessions:
+**Layer 4 — Implementation Design: COMPLETE.** 61 decisions across 6 sessions:
 
-- Session 23: Foundation (technology stack) — DONE. 10 decisions (#65-#74). 74 total.
-- Session 24: Data structures & schemas — DONE. 15 decisions (#75-#89). 89 total.
-- Session 25: Project layout & config format — DONE. 12 decisions (#90-#101). 101 total.
-- Session 26: Plugin system & adapter implementation — DONE. 7 decisions (#102-#108). 108 total.
-- Session 27: Deployment & operations — DONE. 10 decisions (#109-#118). 118 total.
-- Session 28: Testing strategy — NEXT
+- Session 23: Foundation (technology stack) — DONE. 10 decisions (#65-#74).
+- Session 24: Data structures & schemas — DONE. 15 decisions (#75-#89).
+- Session 25: Project layout & config format — DONE. 12 decisions (#90-#101).
+- Session 26: Plugin system & adapter implementation — DONE. 7 decisions (#102-#108).
+- Session 27: Deployment & operations — DONE. 10 decisions (#109-#118).
+- Session 28: Testing strategy — DONE. 7 decisions (#119-#125).
 
-**Technology stack decided:** TypeScript, Node.js 22 LTS, pnpm, ESM, SQLite (better-sqlite3), tsx + tsdown, Biome, Zod, Vitest. Polling-only triggers for v1.
-
-**Project layout decided:** Single package (monorepo-ready boundaries), YAML config (multi-file in `~/.engineer/config/`), lefthook (pre-commit: Biome + tsc, pre-push: Vitest), tsconfig max strictness, Biome `all` preset.
-
-**Plugin system decided:** `engineer.plugin.yaml` manifest per plugin, five-phase loading (discover/validate/order/load/initialize), abstract class hierarchy (BaseAdapter → adapter types), curated SDK boundary (`src/adapters/index.ts`), health state machine (healthy/unhealthy/failed), process safety rules (explicit bash, signal forwarding, workspace confinement, env allowlist, output limits).
-
-**Operations decided:** `~/.engineer/` unified data directory (ENGINEER_HOME override), pino structured logging with rolling files (500MB, 7-day retention), foreground-default daemon with PID file, commander CLI (8 commands: start/stop/status/logs/init/doctor/install/config validate), `doctor` health check (10 categories, pre-flight subset on startup), `engineer init` for template generation.
+**Next: Layer 5 — Implementation.** Actual code. The architecture is complete. 125 decisions across 5 layers. Time to build.

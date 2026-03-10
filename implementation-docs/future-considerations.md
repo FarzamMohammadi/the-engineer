@@ -38,3 +38,44 @@ packages/
 **Tools needed:** pnpm workspaces (already chosen, Decision #67), separate tsconfig per package (tsconfig references), potentially separate Vitest configs per package.
 
 **Pattern reference:** OpenClaw uses `openclaw/plugin-sdk` as a curated re-export package for plugin authors. See [`4-implementation/openclaw-review.md`](4-implementation/openclaw-review.md) § Plugin SDK as curated re-export.
+
+---
+
+## Live Test Tier
+
+**Current state (v1):** All tests run locally with fake plugins. No tests hit real external APIs (GitHub, Telegram, LLM providers).
+
+**When it becomes relevant:** When CI is established and real API integration validation is needed beyond fake-based testing.
+
+**What it enables:** A `vitest.live.config.ts` that runs tests against real external services, gated behind `ENGINEER_LIVE_TESTS=1`. Would run on a schedule (daily/weekly) in CI, not on every PR. Validates that real API responses still match our expectations.
+
+**Migration path:** The test infrastructure (fake plugins, injectable clock) already supports this — live tests would use real plugins instead of fakes, but the same test harness and assertion patterns.
+
+---
+
+## CI Pipeline
+
+**Current state (v1):** Enforcement via local git hooks only (lefthook: pre-commit Biome + tsc, pre-push unit tests).
+
+**When it becomes relevant:** When the project is hosted on GitHub and automated PR validation is needed.
+
+**What it enables:** Full test pipeline on every PR:
+1. `pnpm biome check` (lint + format)
+2. `pnpm tsc --noEmit` (type check)
+3. `pnpm test:coverage` (unit tests + coverage enforcement)
+4. `pnpm test:integration` (integration tests)
+5. `pnpm test:e2e` (e2e tests)
+
+**Migration path:** The three-tier Vitest configs (Decision #119) and coverage thresholds (Decision #121) are ready for CI. Just needs a workflow file (GitHub Actions or equivalent).
+
+---
+
+## Monorepo Test Configuration
+
+**Current state (v1):** Single `vitest.config.ts` at project root. All tests in one package.
+
+**When it becomes relevant:** When the single package is split into `core`, `plugin-sdk`, and individual plugin packages (see Monorepo Evolution above).
+
+**What it enables:** Per-package Vitest configs with `vitest.workspace.ts` orchestration at the root. Each package runs its own unit tests. Integration tests that cross package boundaries live in a top-level `tests/integration/` directory.
+
+**Migration path:** The test directory structure (Decision #120) is designed for this — co-located unit tests move with their source files, cross-cutting tests stay in `test/`. Contract compliance suites (Decision #122) move into the `plugin-sdk` package.

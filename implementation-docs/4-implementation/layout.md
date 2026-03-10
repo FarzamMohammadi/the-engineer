@@ -110,6 +110,14 @@ src/
       config-validate.ts             # engineer config validate
 
   index.ts                           # Entry point
+
+test/                                # Cross-cutting tests + shared infrastructure (Decision #120)
+  integration/                       # Cross-component interaction tests
+  e2e/                               # Full daemon lifecycle tests
+  boundary/                          # Architectural boundary enforcement (Decision #125)
+  fixtures/                          # Test YAML configs, manifests, contract shapes
+  helpers/                           # Mock factories, test DB, fake plugins, contract suites
+  setup.ts                           # Global setup (isolated home, shared registry)
 ```
 
 ### Why This Layout
@@ -362,6 +370,8 @@ lefthook manages pre-commit and pre-push hooks. Go binary — fast startup, no N
 
 ### Decision #101: Enforcement Pipeline (Decision #89 Detailed Design)
 
+*Amended by Decision #119 — pre-push runs unit tests only.*
+
 ```yaml
 # lefthook.yml
 
@@ -376,7 +386,7 @@ pre-commit:
 pre-push:
   commands:
     test:
-      run: pnpm vitest run              # full test suite
+      run: pnpm test                    # unit tests only (< 15s)
 ```
 
 **What each hook enforces:**
@@ -385,7 +395,9 @@ pre-push:
 |------|------|----------------|
 | pre-commit | Biome | Formatting, unused imports, explicit `any`, dead code, style violations |
 | pre-commit | tsc | Type errors, missing properties, wrong argument types, unchecked index access |
-| pre-push | Vitest | Logic errors, broken contracts, regression bugs |
+| pre-push | Vitest (unit) | Logic errors, broken contracts, regression bugs, architectural boundary violations |
+
+Integration and E2E tests run in CI or manually (`pnpm test:integration`, `pnpm test:e2e`). See [`testing.md`](testing.md) for the full testing strategy (Decision #119).
 
 **Critical principle:** The Engineer (the agent) MUST NOT bypass hooks (`--no-verify`). If a hook fails, the agent fixes the issue and retries. This is the core enforcement mechanism from Decision #89 — automated tooling that agents cannot skip.
 

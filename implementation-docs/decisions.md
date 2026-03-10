@@ -1077,3 +1077,73 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** `engineer init` creates `~/.engineer/` directory structure and generates template config files with inline comments for all fields. Generates core configs (all fields commented out) and all built-in plugin configs (required fields uncommented with placeholders). Safe to run multiple times — existing files are not overwritten. `--force` flag to regenerate.
 
 **Rationale:** Template files are the best documentation — the user sees every field with its default and purpose. Generating plugin config templates removes the guesswork of "what do I need to configure?" Safe re-run prevents accidental overwrites of user-edited configs.
+
+---
+
+## 2026-03-09 — Three-tier Vitest configs: unit, integration, e2e (#119)
+
+**Decision:** Three Vitest config files organized by test type. Unit (`vitest.config.ts`), integration (`vitest.integration.config.ts`), e2e (`vitest.e2e.config.ts`). All use `pool: "forks"` globally — `better-sqlite3` native bindings aren't thread-safe, and VM contexts leak mocks (validated by OpenClaw). Shared base `vitest.shared.ts`. Worker scaling: aggressive local, conservative CI. Pre-push hook runs unit tests only (amends Decision #101).
+
+**Rationale:** Test-type tiers match our three architectural boundaries: within a component (unit), across components (integration), full system (e2e). `forks` globally prevents subtle native binding failures. Pre-push stays fast (< 15s).
+
+**Alternatives rejected:** Domain-scoped configs (OpenClaw style — our system is simpler), Vitest workspaces (monorepo concern), two tiers only (missing integration means unit tests grow too complex).
+
+---
+
+## 2026-03-09 — Hybrid test directory: co-located units, separate cross-cutting (#120)
+
+**Decision:** Unit tests co-located with source (`*.test.ts` next to the file they test). Integration, e2e, boundary tests, fixtures, and helpers in a top-level `test/` directory. File naming conventions: `*.test.ts` (unit), `*.integration.test.ts` (integration), `*.e2e.test.ts` (e2e).
+
+**Rationale:** Co-located unit tests are immediately findable. Integration/e2e tests span multiple components and can't belong to any single source file. Shared helpers serve all tiers from one location.
+
+**Alternatives rejected:** Pure co-location (integration tests don't belong next to one component), pure separation (duplicates source tree), `__tests__/` directories (Jest convention, extra nesting).
+
+---
+
+## 2026-03-09 — Coverage: pragmatic exclusion with 70/55 thresholds (#121)
+
+**Decision:** `coverage.all: false` — only files exercised by tests count toward thresholds. 70% lines, 55% branches, 70% functions/statements. Exclude CLI, daemon, plugins, wiring, migrations from coverage (validated by integration/e2e/manual). Focus coverage on schemas, state machines, adapters, safety layer. v8 provider. Manual ratcheting. Adopted from OpenClaw.
+
+**Rationale:** Tests should verify logic, not wiring. `all: false` prevents gaming coverage numbers on hard-to-test process management code. 70/55 is validated by OpenClaw's production codebase. Manual ratcheting avoids the one-way trap of automated tools during legitimate refactoring.
+
+**Alternatives rejected:** `all: true` (forces pointless tests on CLI wiring), per-directory thresholds (too granular), no thresholds (coverage drifts with AI-generated code).
+
+---
+
+## 2026-03-09 — Plugin contract compliance test suites (#122)
+
+**Decision:** Abstract contract test suites — one per adapter type — that verify behavioral expectations TypeScript can't express. Plugin authors import `runTriggerContractSuite()` (etc.) and pass their implementation. Suites test: lifecycle compliance (initialize/healthCheck/shutdown behavior), method contracts (schema-compliant returns, AdapterError wrapping), type-specific rules (idempotency keys, usage reporting, side effects). Mock factories generate schema-compliant defaults via Zod.
+
+**Rationale:** TypeScript ensures type signatures match. But `poll()` returning stable idempotency keys, `initialize()` returning `{ success: false }` instead of throwing, and `complete()` always reporting usage data are behavioral contracts the type system can't enforce. Contract suites catch these at test time.
+
+**Alternatives rejected:** Runtime-only validation (catches types, not behavior), no suites + rely on integration tests (forces plugin authors to stand up Core), interface-only testing (TypeScript already does this).
+
+---
+
+## 2026-03-09 — Integration tests: real Core + fake plugins via Registry (#123)
+
+**Decision:** Integration tests wire real Core components together, with plugins replaced by lightweight fakes registered through the Registry. Shared immutable registry (adopted from OpenClaw) created once in test setup, restored in `afterEach` if overridden. Fakes are minimal complete adapter implementations (not mocks) that pass contract suites. In-memory SQLite per test. Seven integration test categories: plugin loading, trigger polling, task lifecycle, orchestrator flow, config hot-reload, event delivery, health monitoring.
+
+**Rationale:** The Registry is the natural integration seam — production loads real plugins, tests load fakes. Fakes over mocks because fakes exercise real downstream paths; mocks silently pass when misconfigured. Unit tests use `vi.fn()`, integration tests use fakes.
+
+**Alternatives rejected:** Mock everything (verifies mock configuration, not behavior), test against real services (violates local-first/cost-conscious), single God integration test (too slow, hard to diagnose).
+
+---
+
+## 2026-03-09 — E2E: in-process daemon with injectable clock (#124)
+
+**Decision:** E2E tests use an in-process daemon (`createDaemon(config)` returns a controllable `Daemon` object). Injectable clock replaces real timers for deterministic time control. Seven key scenarios mapped to Layer 3 lifecycle traces: happy path, task decomposition, crash recovery, preemption, cost limit breach, plugin failure, graceful shutdown. External dependencies faked (no HTTP). Real git in temp directories.
+
+**Rationale:** In-process daemon gives direct state access, fake plugin injection, synchronous tick control — impossible with a forked process. Injectable clock eliminates timer flakiness. Real git is simpler than reimplementing git semantics.
+
+**Alternatives rejected:** Forked process (no observability, can't inject fakes — useful as future smoke test), Docker-based (overkill, violates cost constraint), record/replay (stale recordings, no failure testing).
+
+---
+
+## 2026-03-09 — Architectural boundary enforcement tests (#125)
+
+**Decision:** A test in `test/boundary/tier-import-rules.test.ts` verifies three-tier import rules: plugins only import from SDK boundary (`src/adapters/index.ts`) and schemas, adapters never import plugins, core never imports plugins directly. Globs `.ts` files per tier, parses import statements, asserts no forbidden cross-tier imports. Adopted from OpenClaw's `check-channel-agnostic-boundaries.test.ts` pattern.
+
+**Rationale:** The SDK boundary is the contract surface for plugins. If a plugin imports Core internals, it creates hidden coupling that breaks on refactoring. This test catches it at unit-test time. Critical for future third-party plugin support.
+
+**Alternatives rejected:** Biome `noRestrictedImports` (per-file, not directory-contextual — can't express "any file in src/plugins/ must not import from src/core/").

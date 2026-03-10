@@ -23,32 +23,32 @@ Where we differ: They use `node:sqlite` (experimental, we chose stable `better-s
 
 ## Patterns to Adopt
 
-### High Priority
+### High Priority — ALL ADOPTED
 
-**1. Plugin manifest as standalone file** → Session 26
-OpenClaw uses `openclaw.plugin.json` per plugin — metadata separate from code. Enables UI generation, enable/disable before loading, config schema validation. Our `PluginManifest` is embedded in code; a standalone file would be better.
+**1. Plugin manifest as standalone file** → **ADOPTED** Session 26 (Decision #102)
+OpenClaw uses `openclaw.plugin.json` per plugin — metadata separate from code. We adopted `engineer.plugin.yaml` per plugin with YAML format matching our config convention.
 
-**2. Multi-tier Vitest configs** → Session 28
-They run 6+ test tiers with smart coverage thresholds (70% lines, 55% branches) and process isolation (`pool: "forks"`). We should adopt: unit, integration, e2e, plugin configs from day 1.
+**2. Multi-tier Vitest configs** → **ADOPTED** Session 28 (Decision #119)
+They run 6+ test tiers with smart coverage thresholds (70% lines, 55% branches) and process isolation (`pool: "forks"`). We adopted three tiers (unit/integration/e2e), same thresholds, `forks` globally. Also adopted `coverage.all: false` and strategic exclusions.
 
-**3. Plugin SDK as curated re-export** → Session 25/26
-OpenClaw exports `openclaw/plugin-sdk` — curated surface for plugin authors. Maps directly to our "accessibility promise." Potential `packages/plugin-sdk/` in our monorepo.
+**3. Plugin SDK as curated re-export** → **ADOPTED** Session 25/26 (Decision #105)
+OpenClaw exports `openclaw/plugin-sdk`. We implemented `src/adapters/index.ts` as the curated SDK boundary. Future extraction to `packages/plugin-sdk/`.
 
-**4. `doctor` health check command** → Session 27
-`openclaw doctor` validates config, ports, tokens, risky configs. 30+ checks. A `the-engineer doctor` command aligns with our health monitoring design.
+**4. `doctor` health check command** → **ADOPTED** Session 27 (Decision #116)
+`openclaw doctor` validates config, ports, tokens, risky configs. We implemented `engineer doctor` with 10 check categories and pre-flight subset on startup.
 
-**5. Process safety hardening** → Session 26
-No `shell: true` for untrusted args. Windows cmd.exe injection prevention. npm/npx special handling. Signal forwarding to child processes. Critical for our BashToolPlugin.
+**5. Process safety hardening** → **ADOPTED** Session 26 (Decision #108)
+No `shell: true`, explicit bash, signal forwarding, workspace confinement, env allowlist, output limits. All five rules adopted.
 
 ### Medium Priority
 
-**6. Rolling file logging** → Session 27
-Daily rolling files (500MB cap, 24h prune), subsystem routing, never blocks on I/O failures. Complements our Event Bus audit trail with operational logging.
+**6. Rolling file logging** → **ADOPTED** Session 27 (Decision #110)
+Daily rolling files (500MB cap, 7-day retention) via pino + pino-roll. Complements Event Bus audit trail.
 
-**7. Config format: evaluate JSON5** → Session 25
-OpenClaw uses JSON5 (comments + trailing commas). Worth evaluating alongside YAML/TOML.
+**7. Config format: evaluate JSON5** → **RESOLVED** Session 25 (Decision #90)
+Evaluated JSON5 alongside YAML/TOML. Chose YAML for deep nesting readability and comments.
 
-**8. Lane-based command queue** → future
+**8. Lane-based command queue** → deferred (post-v1)
 Named queues with configurable concurrency per operation type. Draining pattern for graceful shutdown. Useful when we go multi-task.
 
 ### Low Priority (post-v1)

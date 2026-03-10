@@ -43,14 +43,17 @@ Three proven systems, one architecture:
                  └────────┘ └──────┘ │  └──────┘ └─────┘ │
                                      │                    │
                               ┌──────┴──────┐      ┌─────┴──────────┐
-                              │ORCHESTRATOR │      │    PLUGINS     │
-                              │             │      │                │
-                              │  the brain  │      │ triggers       │
-                              │  (LLM,      │      │ comms          │
-                              │   tools,    │      │ LLM providers  │
-                              │   phases)   │      │ tools          │
-                              └─────────────┘      │ workflow phases│
-                                     │             │ observability  │
+                              │ORCHESTRATOR │      │  ADAPTERS      │
+                              │             │      │  ┌──────────┐ │
+                              │  the brain  │      │  │ Trigger  │ │
+                              │  (LLM,      │──────│  │ Comm     │ │
+                              │   tools,    │      │  │ LLM      │ │
+                              │   phases)   │      │  │ Tool     │ │
+                              └─────────────┘      │  │ GitHost  │ │
+                                                   │  │ ...      │ │
+                                     │             │  └──┬───────┘ │
+                                     │             │  PLUGINS      │
+                                     │             │  (snap in)    │
                               ┌──────┴─────────────┴──────────┐
                               │      SUPPORTING SYSTEMS       │
                               │                               │
@@ -73,7 +76,7 @@ No circular dependencies. Everything flows downward.
 | **Orchestrator** | Registry, People Dir, Safety Layer, Session/Memory, Event Bus | Task Engine (via Daemon) |
 | **Registry** | Nothing (pure lookup) | Daemon, Orchestrator |
 | **Event Bus** | Nothing (infrastructure) | Everything |
-| **Safety Layer** | Nothing (pure config eval) | Orchestrator (passive), Event Bus (active interceptor) |
+| **Safety Layer** | Nothing (pure config eval) | Orchestrator (passive consultation), Action Pipeline (Gate 2) |
 | **Session/Memory** | Nothing (pure storage) | Task Engine, Orchestrator |
 | **Workspace Manager** | Safety Layer (passive scope checks), Event Bus | Task Engine |
 | **People Directory** | Nothing (pure config) | Orchestrator |
@@ -88,19 +91,20 @@ No circular dependencies. Everything flows downward.
 - **Orchestrator → Registry**: "Give me the LLM provider. Give me the tools. Give me the comm channels."
 - **Orchestrator → People Directory**: "Who should I ask about backend architecture on this repo?"
 - **Orchestrator → Safety Layer** (passive): "Can I push to main? Can I send this Slack message?"
-- **Safety Layer → Event Bus** (active): Intercepts events that violate hard limits (cost caps, scope boundaries) before they're processed.
+- **Safety Layer** (Gate 2 in Action Pipeline): Evaluates policy before side-effect actions execute. See Action Pipeline (Decision #42).
 - **Task Engine → Session/Memory**: "Save task #42 state." / "Restore task #42 from last session."
 - **Task Engine → Workspace Manager**: "Set up an isolated workspace for task #42." / "Clean up after completion."
 - **Everyone → Event Bus**: Emit events. Subscribe to events of interest.
 
 ---
 
-## Safety Layer: Dual Mode
+## Safety Layer: Action Pipeline Gate + Passive Consultation
 
 | Mode | Purpose | How it works |
 |------|---------|-------------|
-| **Active (interceptor)** | Hard limits that must never be violated | Subscribes to Event Bus, vetoes events that cross cost caps, scope boundaries, or forbidden actions. Structural — nothing unsafe passes even if a component forgets to check. |
+| **Gate 2 (Action Pipeline)** | Hard limits and policy enforcement | Evaluates every side-effect action before execution. Part of the two-gate Action Pipeline: Gate 1 (Task Engine — state permission) → Gate 2 (Safety Layer — policy check). See [`../3-interactions/event-catalog.md`](../3-interactions/event-catalog.md) § Action Pipeline. |
 | **Passive (consulted)** | Judgment calls that need evaluation | Orchestrator explicitly asks "can I do X?" before acting. For decisions like branch policy, autonomy level, who to contact. |
+| **Event Bus subscriber** | Cost tracking | Subscribes to `cost.incurred` events, maintains ephemeral accumulators, enforces cost limits. |
 
 ---
 
@@ -202,12 +206,12 @@ Components emit **canonical events**. Subscribers use **filters** to select the 
 | Workspace Manager | `git.pr_updated` | task_id, pr_number, changes |
 | Workspace Manager | `git.pr_merged` | task_id, pr_number |
 | Workspace Manager | `git.merge_completed` | task_id, source_branch, target_branch |
-| Comm Plugin | `comm.message_received` | source plugin, sender, content, timestamp |
-| Comm Plugin | `comm.message_sent` | target, content, task_id? |
+| Communication Plugin | `comm.message_received` | source plugin, sender, content, timestamp |
+| Communication Plugin | `comm.message_sent` | target, content, task_id? |
 
-### Event Bus Pre-Processing
+### Action Pipeline (supersedes Event Bus Pre-Processing)
 
-The Safety Layer registers as a pre-processor on the Event Bus for specific event types (`action.requested`, `cost.incurred`, `git.pushed`, `git.merge`, `deploy.requested`). It gets first look at these events and can veto them before delivery to other subscribers. Vetoed events are still logged. See `safety-layer.md` § Dual Mode.
+Safety checks happen in the **Action Pipeline** before actions execute, not through Event Bus pre-processing. The pipeline gates side-effect actions through two sequential checks: Gate 1 (Task Engine — is this action class legal in the current state?) → Gate 2 (Safety Layer — does policy allow this?). Events on the Event Bus are always post-action notifications — pure pub/sub with no interception. See [`../3-interactions/event-catalog.md`](../3-interactions/event-catalog.md) § Action Pipeline and Decision #42.
 
 ---
 

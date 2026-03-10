@@ -551,3 +551,53 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** When the GitHub comm plugin recovers from an outage, it automatically reconciles state: compares Task Engine state vs GitHub labels for all active tasks, updates mismatched labels, and posts catch-up comments for missed milestones. Reconciliation runs once on recovery, not continuously.
 
 **Rationale:** GitHub state (labels, comments) drifts during comm plugin outages because internal state (Task Engine) is authoritative and continues to change. Without reconciliation, GitHub would show stale labels indefinitely until the next state change for each task. Automatic reconciliation on recovery keeps GitHub in sync without manual intervention. Running once (not continuously) avoids unnecessary API calls during normal operation.
+
+---
+
+## 2026-03-08 — Three-tier architecture: Core / Adapter / Plugin (#59)
+
+**Decision:** Formalize the implicit three-tier model: Core (invariant brain and infrastructure — 9 components), Adapter (stable integration contracts at the boundary — 5 types today, open-ended), Plugin (interchangeable implementations that satisfy adapter contracts). This refines the original "skeleton vs plugin" two-tier model by recognizing that adapter contracts are a distinct architectural tier. The adapter tier is open by design — new adapter types can be added as needs evolve without changing Core or existing adapters.
+
+**Rationale:** The three-tier model was already present implicitly — `plugin-contracts.md` used "adapter" 14+ times, Decision #43 is "one plugin per adapter." Formalizing it makes the boundary explicit for contributors: you code against the adapter contract, not against Core internals. This is critical for OSS accessibility — a contributor building a Jira trigger plugin or a Slack communication plugin needs only the adapter contract, not knowledge of the Orchestrator, Task Engine, or Event Bus.
+
+**Alternatives rejected:** (1) Keep two-tier with better docs — misses the conceptual distinction between contract and implementation. (2) Four-tier with separate "infrastructure" tier for Event Bus/Registry — over-segmentation; these are Core.
+
+---
+
+## 2026-03-08 — Explicit adapter naming with full names (#60)
+
+**Decision:** Adapters use full, proper names: TriggerAdapter, CommunicationAdapter, LLMAdapter, ToolAdapter, GitHostingAdapter. Base contract: Adapter. Error contract: AdapterError. Plugins implement adapters: `GitHubTriggerPlugin implements TriggerAdapter`. No abbreviations — clarity from bottom to top.
+
+**Rationale:** Naming must be precise and self-documenting. `CommunicationAdapter`, not `CommAdapter`. When you read the name, you know exactly what it is. This is an architecture designed for long-term maintainability and large OSS contribution — every name should communicate clearly to someone encountering it for the first time.
+
+---
+
+## 2026-03-08 — "Skeleton" terminology evolves to "Core" (#61)
+
+**Decision:** The formal tier name is "Core." Historical docs (Layer 0 foundation) retain "skeleton" with an evolution note pointing to `architecture-tiers.md`. All other docs updated to use "Core."
+
+**Rationale:** "Core" communicates the concept more directly to new contributors. "Skeleton" was effective during early design (skeleton + flesh metaphor) but "Core" is the more standard architectural term (core/periphery, core/adapter/plugin). The evolution is additive — "skeleton" is documented as the original term.
+
+---
+
+## 2026-03-08 — Optional adapter methods via capability gates (#62)
+
+**Decision:** Platform-specific methods that Core calls (reconcileState, commentOnIssue, createIssue, etc.) are optional methods on the adapter contract, gated by the adapter's `capabilities` field. Core checks capability before calling. For CommunicationAdapter: `"sync"` capability requires `syncTaskState()` and `reconcileState()`; `"issue_management"` capability requires `commentOnIssue()`, `createIssue()`, `updateIssue()`.
+
+**Rationale:** Different platforms support different features. A Telegram plugin doesn't have issues or labels — it shouldn't be forced to implement issue management methods. Capability gates let adapters declare what they support and let Core discover it at runtime. This is more maintainable than separate extension interfaces (which would proliferate) and more explicit than duck-typing. Existing plugins that don't declare a new capability are never asked to implement it — making contract evolution non-breaking.
+
+---
+
+## 2026-03-08 — Adapter contracts and plugin implementations co-located (#63)
+
+**Decision:** `adapter-contracts.md` (renamed from `plugin-contracts.md`) contains both adapter contracts (stable interfaces) and plugin implementation documentation. Clear framing distinguishes the two. Not split into separate files.
+
+**Rationale:** "Say it once." A contributor building a new plugin needs both the adapter contract (what to implement) and existing implementation examples (how others did it) in one reading flow. Splitting into `adapter-contracts.md` + `plugin-guide.md` would create duplication and cross-referencing overhead. Clear section headers achieve the separation without file proliferation.
+
+---
+
+## 2026-03-08 — Future adapter types deferred to Layer 4, adapter tier open-ended (#64)
+
+**Decision:** Workflow Phases and Observability Backends (listed in overview.md) do not yet have adapter contracts. Flagged in `architecture-tiers.md` as future adapter types to be defined during Layer 4 (Implementation Design). The adapter tier is explicitly designed as open-ended — new adapter types beyond these two can be added as The Engineer's capabilities evolve.
+
+**Rationale:** Workflow phase contracts depend on Orchestrator implementation details not yet specified. Observability contracts depend on the monitoring stack not yet chosen. Defining placeholder contracts now would be speculative. More importantly, the architecture must not assume these are the only future adapter types — The Engineer's needs will evolve in ways we cannot fully predict. The pattern for adding new adapter types (define contract extending Universal Adapter Contract, register type in Registry) is well-established and low-impact.

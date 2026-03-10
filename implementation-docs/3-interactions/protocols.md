@@ -4,7 +4,7 @@ How components coordinate. The step-by-step choreography of every cross-componen
 
 Part of **Layer 3** -- see [`layers.md`](../layers.md). The third leg of the Layer 3 triad:
 - **[Event Catalog](event-catalog.md)** defines the vocabulary (what events exist, their schemas)
-- **[Plugin Contracts](plugin-contracts.md)** defines the interfaces (what operations plugins expose)
+- **[Adapter Contracts](adapter-contracts.md)** defines the interfaces (what operations plugins expose)
 - **Protocols (this doc)** defines the choreography (how components use events and interfaces to coordinate)
 
 Protocols reference the other two but never redefine them. If a protocol needs a new event or interface method, it belongs in the respective source document.
@@ -26,7 +26,7 @@ Protocols reference the other two but never redefine them. If a protocol needs a
 
 - `(see P7)` means "see Protocol 7: Action Pipeline Execution"
 - `(see event-catalog § event.type)` means "see the event schema in event-catalog.md"
-- `(see plugin-contracts § Type)` means "see the contract in plugin-contracts.md"
+- `(see adapter-contracts § Type)` means "see the contract in adapter-contracts.md"
 - `(see component.md § Section)` means "see the Layer 2 doc"
 
 ---
@@ -63,7 +63,7 @@ The main path from system boot through task completion.
 2. **Event Bus** initializes -- starts persistence layer, begins accepting events and subscriptions
 3. **Registry** loads plugin manifests from configuration
    - For each registered plugin: validates config against `manifest.config_schema`
-   - Calls `Contract: Plugin.initialize(config)` on each plugin in dependency order (triggers last -- they need comm plugins ready for error alerts)
+   - Calls `Contract: Adapter.initialize(config)` on each plugin in dependency order (triggers last -- they need communication plugins ready for error alerts)
    - `[on failure]` If a plugin fails initialization: log error, mark unhealthy, continue with remaining plugins. If a critical plugin fails (LLM provider, primary comm): abort startup, alert via fallback channel
 4. **Safety Layer** loads policy configuration (scope rules, cost limits, autonomy settings)
    - Calls `Event Bus.replay({type: "cost.incurred", since: billing_window_start})` to rebuild cost accumulators
@@ -76,7 +76,7 @@ The main path from system boot through task completion.
    - Identifies Blocked tasks and restores timeout timers
    - Identifies Active.Supervising tasks and checks child completion status
 8. **Daemon** registers Event Bus subscriptions for: `task.*`, `preemption.ready`, `comm.message_received`, `cost.limit_reached`, `workspace.verified`, `workspace.merge_conflict`, `git.merge_completed`
-   - Note: This is the Daemon's own subscription list (events it routes to the Orchestrator or acts on directly). Other components maintain separate subscriptions — e.g., comm plugins with `sync` capability subscribe to `task.state_changed` for GitHub state sync, and comm plugins subscribe to `health.*` for alerting. The Daemon emits `health.*` and `timeout.*` events but does not subscribe to them.
+   - Note: This is the Daemon's own subscription list (events it routes to the Orchestrator or acts on directly). Other components maintain separate subscriptions — e.g., communication plugins with `sync` capability subscribe to `task.state_changed` for GitHub state sync, and communication plugins subscribe to `health.*` for alerting. The Daemon emits `health.*` and `timeout.*` events but does not subscribe to them.
 9. **Daemon** starts main loop: trigger polling, scheduling evaluation, health monitoring
 
 #### Success Outcome
@@ -89,13 +89,13 @@ All plugins healthy, scheduling queue populated, main loop active. System is rea
 |------|---------|----------|
 | 2 | Event Bus storage inaccessible | Abort startup. No event persistence = no audit trail = unsafe to operate. |
 | 3 | Non-critical plugin fails init | Log warning, mark unhealthy in Registry. System operates without that plugin. |
-| 3 | Critical plugin fails init | Abort startup. Alert via stderr/log (comm plugins may not be available). |
+| 3 | Critical plugin fails init | Abort startup. Alert via stderr/log (communication plugins may not be available). |
 | 4 | Cost event replay fails | Safety Layer starts with zero accumulators. Log warning -- cost tracking will under-count until next billing window. |
 | 6 | Task Engine inaccessible | Abort startup. Cannot schedule without task state. |
 
 #### Notes
 
-- Plugin initialization order matters: Event Bus first, then Safety Layer, then comm plugins, then triggers. Triggers may produce events immediately on first poll -- the rest of the system must be ready.
+- Plugin initialization order matters: Event Bus first, then Safety Layer, then communication plugins, then triggers. Triggers may produce events immediately on first poll -- the rest of the system must be ready.
 - On restart after crash, step 7 detects orphaned Active.Working tasks. These feed into P15 (Crash Recovery).
 - Configuration hot-reload is supported after startup -- Safety Layer and People Directory watch their config files. Registry supports plugin hot-swap via `replace()`.
 
@@ -113,7 +113,7 @@ All plugins healthy, scheduling queue populated, main loop active. System is rea
 | Trigger Plugin | Discovers new work from external source |
 | Daemon | Polls trigger, deduplicates, orchestrates creation |
 | Task Engine | Creates and validates the task |
-| Comm Plugin (GitHub) | Syncs external state (labels, comments) |
+| Communication Plugin (GitHub) | Syncs external state (labels, comments) |
 
 **Preconditions:**
 - System startup complete (P1)
@@ -121,8 +121,8 @@ All plugins healthy, scheduling queue populated, main loop active. System is rea
 
 #### Steps
 
-1. **Daemon** calls `Contract: TriggerPlugin.poll()` on each registered trigger at its declared `poll_interval`
-   - Returns `TriggerEvent[]` (see plugin-contracts § TriggerPlugin)
+1. **Daemon** calls `Contract: TriggerAdapter.poll()` on each registered trigger at its declared `poll_interval`
+   - Returns `TriggerEvent[]` (see adapter-contracts § TriggerAdapter)
 2. **Daemon** deduplicates each `TriggerEvent` by `idempotency_key`
    - Checks against known keys (in-memory set, populated at startup from Task Engine's `external_ref` fields)
    - `[skip]` If key already seen: discard silently (idempotent)
@@ -142,7 +142,7 @@ All plugins healthy, scheduling queue populated, main loop active. System is rea
    - `⟹ task.created` (see event-catalog § task.created)
    - `⟹ task.state_changed` { from: "Intake", to: "Queued" }
 6. **Daemon** receives `task.created` → adds task to priority queue
-7. **Comm Plugin (GitHub)** receives `task.created` → adds `engineer:queued` label to the external issue (if GitHub source)
+7. **Communication Plugin (GitHub)** receives `task.created` → adds `engineer:queued` label to the external issue (if GitHub source)
 
 #### Success Outcome
 
@@ -152,9 +152,9 @@ Task exists in Queued state with team populated, workspace not yet created, prio
 
 | Step | Failure | Handling |
 |------|---------|----------|
-| 1 | Trigger plugin throws PluginError | Daemon increments consecutive failure counter. If counter ≥ threshold: `⟹ health.trigger_failure`. Plugin continues to be polled on next interval. |
+| 1 | Trigger plugin throws AdapterError | Daemon increments consecutive failure counter. If counter ≥ threshold: `⟹ health.trigger_failure`. Plugin continues to be polled on next interval. |
 | 4 | Task Engine rejects (invalid repo, constraint violation) | Daemon logs error. Does NOT add to dedup set (so retry is possible if trigger re-emits). |
-| 7 | GitHub API failure | Comm plugin retries per its error handling. Label sync is best-effort -- task creation is not blocked. |
+| 7 | GitHub API failure | Communication plugin retries per its error handling. Label sync is best-effort -- task creation is not blocked. |
 
 #### Notes
 
@@ -311,8 +311,8 @@ Checkpoint persisted, knowledge captured, task phase reflects the new phase, nex
 | Orchestrator | Decides to decompose, defines children, requests approval |
 | Safety Layer | Evaluates autonomy for `task_decomposition` category |
 | Task Engine | Creates child tasks, transitions parent |
-| Comm Plugin (GitHub) | Creates child issues, updates parent issue checklist |
-| Comm Plugin (Telegram) | Sends decomposition notification |
+| Communication Plugin (GitHub) | Creates child issues, updates parent issue checklist |
+| Communication Plugin (Telegram) | Sends decomposition notification |
 | Daemon | Schedules children as slots become available |
 
 **Preconditions:**
@@ -328,7 +328,7 @@ Checkpoint persisted, knowledge captured, task phase reflects the new phase, nex
    - Verdict `deny`: abort decomposition, Orchestrator works on task as monolith
 3. `[if ask_human]` **Orchestrator** sends decomposition plan for approval (enters P11: Blocking flow):
    - Formats plan as numbered list with titles, descriptions, dependency graph
-   - Sends via Comm Plugin to task owner
+   - Sends via Communication Plugin to task owner
    - Task transitions to Blocked (waiting for approval)
    - `[on approval]` Resumes at step 4
    - `[on rejection]` Orchestrator adjusts plan or works as monolith
@@ -337,10 +337,10 @@ Checkpoint persisted, knowledge captured, task phase reflects the new phase, nex
    - Task Engine creates child in Intake → Queued (same as P2 step 5)
    - `⟹ task.created` for each child
 5. **Orchestrator** creates external issues for each child:
-   - `→ CommPlugin(GitHub).createIssue(repo, {title, body, labels: ["engineer:queued"], parent_issue: parent_external_ref})`
+   - `→ CommunicationAdapter(GitHub).createIssue(repo, {title, body, labels: ["engineer:queued"], parent_issue: parent_external_ref})`
    - Updates each child's `external_ref` via `→ TaskEngine.updateTaskField(child_id, "external_ref", issue_url)`
 6. **Orchestrator** updates parent issue with checklist:
-   - `→ CommPlugin(GitHub).commentOnIssue(repo, parent_issue, checklist_comment)` listing all children with links
+   - `→ CommunicationAdapter(GitHub).commentOnIssue(repo, parent_issue, checklist_comment)` listing all children with links
 7. **Task Engine** transitions parent: `Active.Working → Active.Supervising`
    - `⟹ task.state_changed` { from_sub: "Working", to_sub: "Supervising" }
    - Supervising does NOT consume a working slot
@@ -383,7 +383,7 @@ Parent is Supervising (slot freed). Children are Queued with correct dependencie
 | Workspace Manager | Performs the git merge operation |
 | Orchestrator | Generates child completion summary; resolves conflicts if needed |
 | Daemon | Handles parent state transitions, notifies on conflict |
-| Comm Plugin | Notifies on merge conflict |
+| Communication Plugin | Notifies on merge conflict |
 
 **Preconditions:**
 - Child task has just transitioned to Completed
@@ -422,7 +422,7 @@ Parent is Supervising (slot freed). Children are Queued with correct dependencie
     - Resolves conflicts, commits resolution
     - `→ TaskEngine.requestTransition(parent_id, "Active.Supervising")`
     - Slot freed, parent returns to Supervising
-11. **Comm Plugin** receives `workspace.merge_conflict` → notifies owner of conflict occurrence
+11. **Communication Plugin** receives `workspace.merge_conflict` → notifies owner of conflict occurrence
 
 #### Success Outcome
 
@@ -462,7 +462,7 @@ How the system coordinates actions, preemption, resume, and cost enforcement acr
 | Orchestrator | Initiates action intent, handles verdicts |
 | Task Engine | Gate 1 -- validates action class against state+sub-state permission table |
 | Safety Layer | Gate 2 -- evaluates action against policy (scope, cost, autonomy) |
-| Executing Component | Performs the action (Workspace Manager, Comm Plugin, Task Engine, etc.) |
+| Executing Component | Performs the action (Workspace Manager, Communication Plugin, Task Engine, etc.) |
 | Event Bus | Receives post-action notification event |
 
 **Preconditions:**
@@ -508,7 +508,7 @@ How the system coordinates actions, preemption, resume, and cost enforcement acr
    - **Orchestrator** adds question to batch (see orchestrator.md § Question Batching -- 30s window, max 5 questions)
    - **Orchestrator** requests: `→ TaskEngine.requestTransition(task_id, "Blocked", reason: "awaiting_human_decision")`
    - `⟹ task.state_changed` { to_state: "Blocked", reason: "awaiting_human_decision" }
-   - **Orchestrator** sends question batch via `Contract: CommPlugin.sendMessage()` to the appropriate person from `task.team`
+   - **Orchestrator** sends question batch via `Contract: CommunicationAdapter.sendMessage()` to the appropriate person from `task.team`
    - Flow continues in P11 (Blocking & Human Interaction -- Batch 3). On human approval, Orchestrator re-enters the pipeline at step 3 with the same action.
    - Done (for now).
 
@@ -521,8 +521,8 @@ How the system coordinates actions, preemption, resume, and cost enforcement acr
    - File write/delete: Orchestrator writes directly in the worktree
    - Git commit: `→ WorkspaceManager.commit(task_id, message)`
    - Git push: `→ WorkspaceManager.push(task_id)`
-   - PR create: `Contract: GitHostingPlugin.createPR(options)` (via Workspace Manager)
-   - Send message: `Contract: CommPlugin.sendMessage(target, message)`
+   - PR create: `Contract: GitHostingAdapter.createPR(options)` (via Workspace Manager)
+   - Send message: `Contract: CommunicationAdapter.sendMessage(target, message)`
    - Create child task: `→ TaskEngine.createTask(params)` (see P5)
    - `[on failure]` Execution error: Orchestrator handles per its phase logic (retry, log, escalate). No event emitted -- the action didn't happen.
 
@@ -713,7 +713,7 @@ Task X is Queued with a fresh checkpoint, workspace intact on disk. Task Y is Ac
    - `⟹ workspace.verified` { status: "lost" }
    - **Daemon** transitions task to Failed: `→ TaskEngine.requestTransition(task_id, "Failed", reason: "workspace_lost")`
    - `⟹ task.state_changed` { to_state: "Failed", reason: "workspace_lost" }
-   - **Comm Plugin** notifies human: "Task X's branch was lost. Cannot resume."
+   - **Communication Plugin** notifies human: "Task X's branch was lost. Cannot resume."
    - Done (task cannot continue).
 
 5. **Daemon** assembles Dispatch package (same structure as P3 step 5):
@@ -794,7 +794,7 @@ Orchestrator is executing at the correct phase with reconstructed context. Works
 | Task Engine | Updates per-task cost fields |
 | Safety Layer | Updates ephemeral cost accumulators, checks limits, emits limit_reached if breached |
 | Daemon | Receives limit_reached, transitions affected task(s) to Blocked |
-| Comm Plugin | Sends cost alert to owner |
+| Communication Plugin | Sends cost alert to owner |
 
 **Preconditions:**
 - System startup complete (P1), including Safety Layer cost accumulator reconstruction from event replay
@@ -804,9 +804,9 @@ Orchestrator is executing at the correct phase with reconstructed context. Works
 
 **Normal Flow (within limits):**
 
-1. **Orchestrator** completes an LLM call via `Contract: LLMProvider.complete(request)`
+1. **Orchestrator** completes an LLM call via `Contract: LLMAdapter.complete(request)`
    - LLM provider returns `CompletionResult` including `usage` data (tokens_in, tokens_out, spend_usd for API; usage_units, remaining for CLI)
-   - Usage reporting is contractual -- every `CompletionResult` MUST include it (see plugin-contracts.md § LLM Provider)
+   - Usage reporting is contractual -- every `CompletionResult` MUST include it (see adapter-contracts.md § LLM Adapter)
 
 2. **Orchestrator** emits: `⟹ cost.incurred` { task_id, repo, provider_id, provider_type, operation, tokens_in, tokens_out, spend_usd (API) or usage_units/remaining (CLI) }
    - One event per billable operation. Not batched.
@@ -856,7 +856,7 @@ Orchestrator is executing at the correct phase with reconstructed context. Works
     - Task's `blocked` details: { reason: "Cost limit reached", needed: "Budget increase or limit reset", waiting_for: "owner" }
     - Working slot(s) freed
 
-12. **Comm Plugin** receives `cost.limit_reached` (subscriber):
+12. **Communication Plugin** receives `cost.limit_reached` (subscriber):
     - Sends cost alert to task owner (from `task.team`):
       - Which limit was hit
       - Current spend vs. configured limit
@@ -881,7 +881,7 @@ Orchestrator is executing at the correct phase with reconstructed context. Works
     - **Safety Layer** resets accumulators for the expired window (checked on next `cost.incurred` event or at startup)
     - **Safety Layer** checks the limit's `auto_resume_on_reset` configuration:
       - `[auto_resume_on_reset: true]` Safety Layer emits an internal event. Daemon transitions affected tasks: Blocked → Queued. Tasks resume via P9.
-      - `[auto_resume_on_reset: false (default)]` Task stays Blocked. **Comm Plugin** notifies human: "Daily cost limit has reset. Task #47 can be unblocked."
+      - `[auto_resume_on_reset: false (default)]` Task stays Blocked. **Communication Plugin** notifies human: "Daily cost limit has reset. Task #47 can be unblocked."
       - Human explicitly unblocks when ready (step 13).
 
 **Proactive Cost Check (optional):**
@@ -908,7 +908,7 @@ Affected task(s) checkpointed, transitioned to Blocked, human notified with acti
 | 4 | Task Engine fails to update cost field | Per-task cost display stale. Non-critical -- Safety Layer is the enforcement authority. |
 | 5 | Safety Layer fails to process cost event | May under-count. If limit is actually exceeded but not detected, spend continues. Log critical warning -- degraded safety. |
 | 10 | Orchestrator fails to checkpoint before blocking | Work since last checkpoint lost when task resumes. Cost enforcement takes priority over work preservation. |
-| 12 | Comm Plugin fails to send alert | Human not notified. Daemon retries. Task is still safely blocked. |
+| 12 | Communication Plugin fails to send alert | Human not notified. Daemon retries. Task is still safely blocked. |
 
 #### Notes
 
@@ -941,7 +941,7 @@ How the system communicates with humans -- blocking interactions, question manag
 | Safety Layer | Produces `ask_human` verdict (autonomy evaluation), owns timeout policy |
 | Task Engine | Transitions task state (Active.Working ↔ Blocked ↔ Queued) |
 | Daemon | Routes inbound messages, executes timeout timers, transitions on unblock |
-| Comm Plugin | Sends question, delivers response, sends reminders/alerts |
+| Communication Plugin | Sends question, delivers response, sends reminders/alerts |
 | People Directory | Resolves who to contact and on which channel |
 
 **Preconditions:**
@@ -966,7 +966,7 @@ How the system communicates with humans -- blocking interactions, question manag
    - `⟹ task.state_changed` { to_state: "Blocked", reason: "awaiting_human_input" }
    - Working slot freed
 5. **Orchestrator** resolves contact: `→ PeopleDirectory.resolveContact(task.team[role: "owner"], preferred_channel)`
-6. **Orchestrator** sends question batch via `Contract: CommPlugin.sendMessage(target, message)` (see P12 for format)
+6. **Orchestrator** sends question batch via `Contract: CommunicationAdapter.sendMessage(target, message)` (see P12 for format)
    - Records `message_id` from `SendResult` for reply threading
    - `⟹ comm.message_sent` { type: "question", task_id }
 7. **Daemon** receives `task.state_changed` (to Blocked) → starts timeout timer:
@@ -975,12 +975,12 @@ How the system communicates with humans -- blocking interactions, question manag
 
 **Human Response Path:**
 
-8. **Comm Plugin** receives human reply → `⟹ comm.message_received` { sender, content, reply_to?, task_id? }
+8. **Communication Plugin** receives human reply → `⟹ comm.message_received` { sender, content, reply_to?, task_id? }
 9. **Daemon** receives `comm.message_received`:
    - Checks: is there a task Blocked with `waiting_for` matching this sender?
    - `[yes]` Routes as task response (not a query). Continue to step 10.
    - `[no pending question]` Routes to query handler (see P14)
-   - `[ambiguous]` Daemon asks: "Is this a reply to my question about #{task_id}, or a new request?" via `Contract: CommPlugin.sendMessage()`
+   - `[ambiguous]` Daemon asks: "Is this a reply to my question about #{task_id}, or a new request?" via `Contract: CommunicationAdapter.sendMessage()`
 10. **Daemon** forwards response to Orchestrator (routes the `comm.message_received` event)
 11. **Orchestrator** processes the response:
     - Parses response against original questions (see P12 for response parsing)
@@ -997,7 +997,7 @@ How the system communicates with humans -- blocking interactions, question manag
 **Timeout Ladder (if human does not respond):**
 
 16. `[reminder threshold reached]` **Daemon** emits: `⟹ timeout.reminder` { task_id, blocked_since, elapsed, channel, question_summary } (see event-catalog § timeout.reminder)
-    - **Comm Plugin** receives event → sends reminder to human on original channel
+    - **Communication Plugin** receives event → sends reminder to human on original channel
     - `[if repeat configured]` Daemon schedules next reminder at `repeat_interval`
 
 17. `[self_unblock_check threshold reached]` **Daemon** emits: `⟹ timeout.self_unblock_check` { task_id, decision_category, can_self_unblock }
@@ -1007,13 +1007,13 @@ How the system communicates with humans -- blocking interactions, question manag
 
 18. `[self-unblock allowed]` **Orchestrator** receives `timeout.self_unblock_check` with `can_self_unblock: true`:
     - Evaluates whether a reasonable default answer exists
-    - `[reasonable default exists]` Applies default. Sends notification: "Going with {choice} for #{task_id}. Override if you'd prefer otherwise." via `Contract: CommPlugin.sendMessage()`
+    - `[reasonable default exists]` Applies default. Sends notification: "Going with {choice} for #{task_id}. Override if you'd prefer otherwise." via `Contract: CommunicationAdapter.sendMessage()`
     - Logs journal entry: `→ SessionMemory.appendJournal(session_id, { type: "decision", summary: "Self-unblocked: {choice}", detail: "No human response after {elapsed}. Applied default." })`
     - Flow continues at step 13 (cancel timers, unblock)
     - `[no reasonable default]` Stays blocked. Reminders continue.
 
 19. `[alert threshold reached]` **Daemon** emits: `⟹ timeout.alert` { task_id, blocked_since, elapsed, escalation: "all_channels_notified" }
-    - **Comm Plugin** receives event → sends alert to ALL configured channels for the task owner
+    - **Communication Plugin** receives event → sends alert to ALL configured channels for the task owner
     - Task remains Blocked. Alert is informational escalation, not automatic resolution.
 
 #### Success Outcome
@@ -1025,7 +1025,7 @@ Human response received and applied, task unblocked and re-queued for dispatch. 
 | Step | Failure | Handling |
 |------|---------|----------|
 | 4 | State transition rejected (task no longer Active) | Race condition with preemption or cost limit. Orchestrator defers question -- it will be asked when task resumes. |
-| 6 | Comm plugin fails to send question | Daemon retries via alternative channel (if available). Task remains Blocked. Human not notified -- timeout ladder will eventually escalate. |
+| 6 | Communication plugin fails to send question | Daemon retries via alternative channel (if available). Task remains Blocked. Human not notified -- timeout ladder will eventually escalate. |
 | 9 | Disambiguation fails (ambiguous message) | Daemon asks clarifying question. If repeated ambiguity: treat as query (safer default). |
 | 11 | Response parsing fails (unintelligible answer) | Orchestrator asks for clarification: "I didn't understand your response to question 2. Could you clarify?" Returns to step 6. |
 | 18 | Self-unblock produces bad result | Human can override via message at any time. Override triggers re-block and new question flow. |
@@ -1049,7 +1049,7 @@ Human response received and applied, task unblocked and re-queued for dispatch. 
 | Component | Role |
 |-----------|------|
 | Orchestrator | Accumulates questions, formats batch, parses responses |
-| Comm Plugin | Sends formatted batch, delivers human response |
+| Communication Plugin | Sends formatted batch, delivers human response |
 | Daemon | Routes inbound response to Orchestrator |
 
 **Preconditions:**
@@ -1095,7 +1095,7 @@ Human response received and applied, task unblocked and re-queued for dispatch. 
    - Each question gets a sequential number
    - Options are labeled (A), (B), (C) when applicable
    - Reply format hint included at the end
-5. **Orchestrator** sends via `Contract: CommPlugin.sendMessage(target, formatted_message)` (see P11 step 5-6 for target resolution)
+5. **Orchestrator** sends via `Contract: CommunicationAdapter.sendMessage(target, formatted_message)` (see P11 step 5-6 for target resolution)
    - Records: `batch_id`, `message_id` (from SendResult), mapping of `question_number → question_id`
 6. **Orchestrator** enters blocking flow (P11 step 4) if all remaining work depends on answers
 
@@ -1136,7 +1136,7 @@ All blocking questions answered, answers mapped back to original question contex
 
 #### Notes
 
-- **Batching is Orchestrator-internal.** The batch window, accumulation, and parsing all happen within the Orchestrator's execution. The Daemon and comm plugins see a single outbound message and a single inbound response.
+- **Batching is Orchestrator-internal.** The batch window, accumulation, and parsing all happen within the Orchestrator's execution. The Daemon and communication plugins see a single outbound message and a single inbound response.
 - **Informational questions may not block.** If the Orchestrator can continue working while waiting for non-blocking answers, it does. Only when all remaining work depends on answers does the task transition to Blocked.
 - **Single-question batches are fine.** If only one question arises and the batch window expires or blocking is immediate, a batch of 1 is sent. The numbered format is still used for consistency ("1. {question}").
 - **Thread-awareness.** The `message_id` from `SendResult` enables reply threading on platforms that support it (Telegram reply-to, GitHub comment threads). The Daemon uses `reply_to` in `comm.message_received` to correlate responses.
@@ -1157,13 +1157,13 @@ All blocking questions answered, answers mapped back to original question contex
 | Orchestrator | Decides what to notify about, composes content, applies noise prevention |
 | Daemon | Emits health alerts, handles digest scheduling |
 | People Directory | Resolves recipients, provides notification preferences and quiet hours |
-| Comm Plugin | Formats for platform and sends |
-| Comm Plugin (GitHub) | Specialized: label sync, issue comments, checklist updates |
+| Communication Plugin | Formats for platform and sends |
+| Communication Plugin (GitHub) | Specialized: label sync, issue comments, checklist updates |
 | Event Bus | Delivers state change events to notification subscribers |
 
 **Preconditions:**
 - System startup complete (P1)
-- At least one comm plugin registered and healthy
+- At least one communication plugin registered and healthy
 
 #### Steps
 
@@ -1202,12 +1202,12 @@ All blocking questions answered, answers mapped back to original question contex
 
 6. **Orchestrator** resolves channel for each recipient:
    - `→ PeopleDirectory.resolveContact(person_id, channel)` -- uses preferred channel
-   - Sends via `Contract: CommPlugin.sendMessage(target, message)` with appropriate `MessageType`
+   - Sends via `Contract: CommunicationAdapter.sendMessage(target, message)` with appropriate `MessageType`
    - `⟹ comm.message_sent` { type: "milestone" | "notification" | "alert" }
 
 **GitHub State Sync Path (parallel, event-driven):**
 
-7. **Comm Plugin (GitHub)** receives `task.state_changed` event (Event Bus subscription):
+7. **Communication Plugin (GitHub)** receives `task.state_changed` event (Event Bus subscription):
    - Updates label: removes old `engineer:{old_state}`, adds `engineer:{new_state}` via `Contract: GitHubCommPlugin.updateIssue(repo, issue_number, { labels_add, labels_remove })`
    - `[if milestone event]` Adds issue comment with milestone text via `Contract: GitHubCommPlugin.commentOnIssue(repo, issue_number, comment)`
    - `[if child completed]` Updates parent issue checklist: checks off completed child via `Contract: GitHubCommPlugin.updateIssue(parent_repo, parent_issue, { body: updated_checklist })`
@@ -1218,13 +1218,13 @@ All blocking questions answered, answers mapped back to original question contex
    - Queries Task Engine for all non-terminal tasks
    - Queries Safety Layer for cost summary: `→ SafetyLayer.getCostStatus()`
    - Composes digest using template (progress, blockers, upcoming, costs)
-   - Sends via comm plugin on configured digest channel
+   - Sends via communication plugin on configured digest channel
 
 **Health Alert Path:**
 
 9. **Daemon** detects health anomaly (stuck detection, trigger failure):
    - `⟹ health.stuck_detected` or `⟹ health.trigger_failure`
-   - **Comm Plugin** receives event (subscriber) → sends alert to owner
+   - **Communication Plugin** receives event (subscriber) → sends alert to owner
    - Alert type: `MessageType: "alert"` -- bypasses quiet hours, goes to all channels
 
 #### Success Outcome
@@ -1235,14 +1235,14 @@ Notification delivered to the right people on the right channels. GitHub state r
 
 | Step | Failure | Handling |
 |------|---------|----------|
-| 6 | Primary comm plugin fails to send | Try alternative channel for the same recipient (if configured). If all channels fail: log error, notification lost (non-critical -- task state is unaffected). |
-| 7 | GitHub API failure (label/comment) | GitHub comm plugin retries with backoff. State sync is best-effort -- internal state is authoritative. |
+| 6 | Primary communication plugin fails to send | Try alternative channel for the same recipient (if configured). If all channels fail: log error, notification lost (non-critical -- task state is unaffected). |
+| 7 | GitHub API failure (label/comment) | GitHub communication plugin retries with backoff. State sync is best-effort -- internal state is authoritative. |
 | 8 | Digest data query fails | Send partial digest with available data. Include note: "Some data unavailable." |
 
 #### Notes
 
-- **Orchestrator decides, comm plugin delivers.** The Orchestrator owns all notification intelligence (what, when, who). The comm plugin is dumb transport. Swapping Telegram for Slack changes nothing about notification logic.
-- **GitHub sync is independent.** Label and comment updates happen via Event Bus subscription, not Orchestrator-directed. The GitHub comm plugin autonomously keeps GitHub in sync with internal state. This is a different path from direct notifications.
+- **Orchestrator decides, communication plugin delivers.** The Orchestrator owns all notification intelligence (what, when, who). The communication plugin is dumb transport. Swapping Telegram for Slack changes nothing about notification logic.
+- **GitHub sync is independent.** Label and comment updates happen via Event Bus subscription, not Orchestrator-directed. The GitHub communication plugin autonomously keeps GitHub in sync with internal state. This is a different path from direct notifications.
 - **No notification for phase transitions.** Phases are Orchestrator-internal. Humans care about milestones (PR ready, task done), not internal phases (entered "planning").
 - **Fast-path collapse is critical.** A trivial task that completes in 5 minutes should not generate 3 separate notifications. The single combined message is the right behavior.
 - **Connects to P11** (Blocking -- blocked notification is the question itself), **P14** (Status Query -- human can always query instead of waiting for notifications), **P1** (Startup -- notification system must be ready before triggers start).
@@ -1258,7 +1258,7 @@ Notification delivered to the right people on the right channels. GitHub state r
 
 | Component | Role |
 |-----------|------|
-| Comm Plugin | Receives inbound message, sends response |
+| Communication Plugin | Receives inbound message, sends response |
 | Daemon | Receives `comm.message_received`, disambiguates, parses query, composes response |
 | Task Engine | Provides task state data |
 | Session/Memory | Provides journal entries, decision history |
@@ -1267,20 +1267,20 @@ Notification delivered to the right people on the right channels. GitHub state r
 
 **Preconditions:**
 - System startup complete (P1)
-- At least one comm plugin with "receive" capability is registered and listening
+- At least one communication plugin with "receive" capability is registered and listening
 
 #### Steps
 
 **Inbound & Disambiguation:**
 
-1. **Comm Plugin** receives human message → `⟹ comm.message_received` { source, sender, content, reply_to?, platform_metadata }
+1. **Communication Plugin** receives human message → `⟹ comm.message_received` { source, sender, content, reply_to?, platform_metadata }
 2. **Daemon** receives `comm.message_received` event
 3. **Daemon** disambiguates: query or task response?
    - Checks: is there a task Blocked with `waiting_for` matching sender? (queries `→ TaskEngine.getBlockedTasksForPerson(sender)`)
    - `[yes, one task blocked for sender]` Routes as task response to Orchestrator (see P11 step 10). Done (not a query).
    - `[yes, multiple tasks blocked for sender]` Checks `reply_to` field for message threading. If match found, routes to specific task. If no match: asks "Which task is this for? I have questions pending on #{id1} and #{id2}."
    - `[no blocked tasks for sender]` Treat as query. Continue to step 4.
-   - `[ambiguous -- could be either]` Daemon asks: "Is this a reply to my question about #{task_id}, or a new request?" via `Contract: CommPlugin.sendMessage()`. Waits for clarification.
+   - `[ambiguous -- could be either]` Daemon asks: "Is this a reply to my question about #{task_id}, or a new request?" via `Contract: CommunicationAdapter.sendMessage()`. Waits for clarification.
 
 **Query Parsing:**
 
@@ -1335,15 +1335,15 @@ Notification delivered to the right people on the right channels. GitHub state r
      ```
    - Progress is described informally -- approximate language, not formalized percentages
 
-7. **Daemon** sends response via same comm plugin that received the query:
-   - `Contract: CommPlugin.sendMessage(target, formatted_response)` with `MessageType: "status_response"`
+7. **Daemon** sends response via same communication plugin that received the query:
+   - `Contract: CommunicationAdapter.sendMessage(target, formatted_response)` with `MessageType: "status_response"`
    - `⟹ comm.message_sent` { type: "status_response" }
 
 **Unrecognized Query Handling:**
 
 8. `[query_type: unrecognized]` **Daemon** responds with:
    - "I didn't understand that. You can ask me: 'status', 'progress on #N', 'why did you decide X', 'any blockers', or 'cost'."
-   - Sends via same comm plugin
+   - Sends via same communication plugin
 
 #### Success Outcome
 
@@ -1356,14 +1356,14 @@ Human receives accurate, formatted status response within seconds. No LLM call n
 | 3 | Sender not recognized in People Directory | Daemon responds anyway (status is not sensitive). Logs unknown sender for visibility. |
 | 5 | Data source unavailable (Task Engine, Session/Memory, Safety Layer) | Compose partial response with available data. Include note: "Some data unavailable -- {component} unreachable." |
 | 6 | Template rendering fails | Fall back to raw data dump (JSON-like format). Functional but ugly. |
-| 7 | Comm plugin fails to send response | Retry once. If persistent: log error. Human sees no response and may retry. |
+| 7 | Communication plugin fails to send response | Retry once. If persistent: log error. Human sees no response and may retry. |
 
 #### Notes
 
 - **No LLM in the query path.** Status queries are structured data retrieval + template formatting. The Daemon handles this entirely -- fast, cheap, predictable. The Orchestrator is never interrupted for queries.
 - **Query handler runs in the Daemon's event loop.** It processes `comm.message_received` events alongside other event processing. This means queries are answered even when the Orchestrator is busy with a task.
 - **Progress is approximate.** The Daemon does not report explicit percentages. It infers approximate progress from the current phase and describes it in natural language (e.g., "~60% through", "mid-execution"). Phases vary wildly in duration -- formal percentages would create false precision.
-- **Cross-platform consistency.** The same query via Telegram, GitHub comment, or (future) Slack produces the same response content, formatted for the specific platform by the comm plugin's `formatMessage()`.
+- **Cross-platform consistency.** The same query via Telegram, GitHub comment, or (future) Slack produces the same response content, formatted for the specific platform by the communication plugin's `formatMessage()`.
 - **Connects to P11** (Blocking -- disambiguation determines query vs task response), **P13** (Notifications -- queries complement push notifications with pull capability).
 
 ---
@@ -1423,7 +1423,7 @@ How the system recovers from crashes, restarts, and degraded states.
    - Checkpoint from latest `→ SessionMemory.getLatestCheckpoint(task_id)` seeds resume
    - `[checkpoint exists]` Normal resume flow (P9 steps 1-11)
    - `[no checkpoint]` Task dispatched as new. Work since creation may be lost, but branch commits provide partial context.
-7. **Comm Plugin** notifies owner: "Task #{task_id} experienced a crash. Resuming from last checkpoint." (via P13)
+7. **Communication Plugin** notifies owner: "Task #{task_id} experienced a crash. Resuming from last checkpoint." (via P13)
 
 ---
 
@@ -1457,9 +1457,9 @@ How the system recovers from crashes, restarts, and degraded states.
     - `[clean shutdown]` **Graceful Shutdown Flow** (see below) ensures all work is checkpointed. On restart, all tasks have fresh checkpoints. Resume quality is high.
     - `[crash/power loss]` No graceful shutdown. Tasks have only their last successful checkpoint (may be from a phase transition or periodic checkpoint). Some work since last checkpoint is lost.
 15. **Daemon** evaluates system health after startup:
-    - Checks plugin health via `Contract: Plugin.healthCheck()` on all registered plugins
+    - Checks plugin health via `Contract: Adapter.healthCheck()` on all registered plugins
     - `[unhealthy plugins]` Logs warnings. If critical plugins (LLM, primary comm) are unhealthy: block task dispatch until healthy, notify via fallback channel.
-    - `[comm plugin recovered from prior outage]` Triggers state reconciliation:
+    - `[communication plugin recovered from prior outage]` Triggers state reconciliation:
       - `→ TaskEngine.getNonTerminalTasks()` returns current task states
       - `→ GitHubCommPlugin.reconcileState(tasks)` compares internal states against GitHub labels/comments for all active tasks. Fixes mismatches (updates labels, posts catch-up comments). Runs once, idempotently (Decision #58).
 
@@ -1481,8 +1481,8 @@ How the system recovers from crashes, restarts, and degraded states.
     - Active.Supervising tasks remain unchanged (no work to checkpoint)
     - Blocked and Review-Pending tasks remain unchanged
 20. **Registry** shuts down plugins in reverse initialization order:
-    - `Contract: CommPlugin.stopListening()` on each comm plugin with "receive" capability
-    - `Contract: Plugin.shutdown()` on each plugin
+    - `Contract: CommunicationAdapter.stopListening()` on each communication plugin with "receive" capability
+    - `Contract: Adapter.shutdown()` on each plugin
 21. **Event Bus** flushes pending events, closes persistence
 22. **Daemon** exits
 

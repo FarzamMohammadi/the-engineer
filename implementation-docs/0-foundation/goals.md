@@ -134,6 +134,8 @@ The Engineer's architecture is like a modular machine. The skeleton is the core 
 
 The vital pieces that vary by use case are always plugins. The pieces that are universal are always skeleton. This separation is what makes The Engineer usable by anyone.
 
+> **Evolution note:** At Layer 1, this two-tier model was refined into three tiers: **Core** (the skeleton), **Adapters** (stable integration contracts at the boundary), and **Plugins** (interchangeable implementations). See [`../1-system/architecture-tiers.md`](../1-system/architecture-tiers.md).
+
 ## Continuous Growth
 
 The field of software is ungodly vast and always moving. Even a god-tier engineer has room to grow. The Engineer must get better over time — not stay static.

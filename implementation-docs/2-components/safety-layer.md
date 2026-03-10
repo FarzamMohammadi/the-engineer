@@ -35,7 +35,7 @@ The Safety Layer derives from three proven patterns:
 | Per-task cost tracking | Task Engine | On the Task object (`cost` field) |
 | Phase permission table | Task Engine | State+sub-state -> action class mapping |
 | Timeout timer execution | Daemon | Reads thresholds from Safety config, runs timers |
-| Timeout action execution | Orchestrator + Comm plugins | Sends reminders, evaluates self-unblock |
+| Timeout action execution | Orchestrator + Communication plugins | Sends reminders, evaluates self-unblock |
 
 The boundary: Task Engine answers "is this action legal in this phase?" Safety Layer answers "is this action within policy?" Both must agree -- the **two-gate model**.
 
@@ -393,7 +393,7 @@ When the Orchestrator faces a decision:
 |---------|-------|-------------|
 | **Timeout policy** (stages, thresholds, actions) | Safety Layer config | Defines what happens and when |
 | **Timeout execution** (timers, event emission) | Daemon health monitoring | Runs the timers, checks thresholds, emits escalation events |
-| **Timeout actions** (sending reminders, evaluating self-unblock) | Orchestrator + Comm plugins | Receives escalation events and acts |
+| **Timeout actions** (sending reminders, evaluating self-unblock) | Orchestrator + Communication plugins | Receives escalation events and acts |
 
 ### Policy Schema
 

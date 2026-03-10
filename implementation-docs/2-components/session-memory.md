@@ -274,7 +274,7 @@ The session journal's typed entries enable structured queries:
 | "What did you find during research?" | Filter by task_id, phase="research", type=finding | Research findings list |
 | "Who have you talked to?" | Filter by task_id, type=communication | Communication log with targets and content |
 
-Session/Memory provides the structured data and filtering primitives. The Orchestrator / Comm Plugin parses the human's question, maps it to a query, and composes the human-readable answer.
+Session/Memory provides the structured data and filtering primitives. The Orchestrator / Communication Plugin parses the human's question, maps it to a query, and composes the human-readable answer.
 
 ### Journal vs Event Bus
 

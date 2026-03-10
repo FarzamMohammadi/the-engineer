@@ -6,7 +6,7 @@ Part of **Layer 3** -- see [`layers.md`](../layers.md). Complements:
 - **[Protocols](protocols.md)** -- per-protocol failure tables (51 scenarios across P1-P15)
 - **Layer 2 docs** -- component-level error handling within each component
 
-This document adds: failure classification, component criticality, cross-component propagation chains, named recovery patterns, and comm plugin error handling (deferred from Layer 2).
+This document adds: failure classification, component criticality, cross-component propagation chains, named recovery patterns, and communication plugin error handling (deferred from Layer 2).
 
 ---
 
@@ -55,12 +55,12 @@ What happens when each component is unavailable. Only three components are truly
 | **Workspace Manager** | No workspace creation, no commits, no PRs. Reads continue. | Degraded | Isolated | Requires-restart |
 | **Registry** | No plugin discovery. Running plugins continue; new plugins cannot register. | Transparent | None | Self-healing (restart reloads manifests) |
 | **LLM Provider** | Orchestrator cannot reason. Active task stalls. Auto-failover to next provider if configured (Decision #54). | Degraded | Isolated | Self-healing (failover) or Human-resolvable (no fallback) |
-| **Comm Plugin (primary)** | No notifications, no question delivery. Work continues silently. Blocked tasks depend on timeout ladder. | Degraded | System-wide (comms) | Self-healing (retry/restart) |
-| **Comm Plugin (secondary)** | Fallback channel lost. Primary still works. | Transparent | None | Self-healing |
+| **Communication Plugin (primary)** | No notifications, no question delivery. Work continues silently. Blocked tasks depend on timeout ladder. | Degraded | System-wide (comms) | Self-healing (retry/restart) |
+| **Communication Plugin (secondary)** | Fallback channel lost. Primary still works. | Transparent | None | Self-healing |
 | **Trigger Plugin** | No new work discovery from that source. Existing work unaffected. | Degraded | None | Self-healing (retry next interval) |
 | **People Directory** | Cannot resolve contacts. Notifications fail. Task team population fails for new tasks. | Degraded | System-wide (comms) | Requires-restart (config reload) |
 
-**Key insight:** The three skeleton components that are truly fatal are Event Bus, Task Engine, and Daemon. These are the persistent state stores and the process manager. Everything else degrades gracefully -- the architecture's isolation boundaries contain failures to the affected component.
+**Key insight:** The three core components that are truly fatal are Event Bus, Task Engine, and Daemon. These are the persistent state stores and the process manager. Everything else degrades gracefully -- the architecture's isolation boundaries contain failures to the affected component.
 
 ---
 
@@ -72,7 +72,7 @@ How an initial failure cascades through the system. Each chain starts with a roo
 
 ### Chain 1: LLM Provider Down
 
-**Root cause:** LLM provider returns fatal `PluginError` (auth failure, extended outage, rate limit exhaustion).
+**Root cause:** LLM provider returns fatal `AdapterError` (auth failure, extended outage, rate limit exhaustion).
 
 ```
 LLM Provider fails
@@ -89,7 +89,7 @@ LLM Provider fails
       ├─ Daemon stuck detection fires after stuck_threshold (default: 30 min)
       │   (see daemon-scheduler.md § Health Monitoring)
       ├─ ⟹ health.stuck_detected { condition: "no_journal_entries" }
-      ├─ Comm Plugin alerts human
+      ├─ Communication Plugin alerts human
       └─ Task remains Active.Working until provider recovers or human intervenes
 ```
 
@@ -110,7 +110,7 @@ Event Bus storage fails
   ├─ cost.incurred events not delivered to Safety Layer (cost tracking drifts)
   ├─ cost.incurred events not delivered to Task Engine (per-task cost stale)
   ├─ task.state_changed events not delivered to Daemon (scheduling breaks)
-  ├─ task.state_changed events not delivered to Comm Plugins (GitHub labels, notifications stop)
+  ├─ task.state_changed events not delivered to Communication Plugins (GitHub labels, notifications stop)
   │
   ├─ Action Pipeline still works (synchronous calls to Gate 1 + Gate 2)
   │   └─ BUT: cost checks in Gate 2 use stale accumulators (under-count)
@@ -119,7 +119,7 @@ Event Bus storage fails
       ├─ Daemon detects Event Bus health failure
       ├─ Orchestrator checkpoints active task (direct Session/Memory call, not event)
       ├─ Daemon stops accepting new work (no trigger polling)
-      ├─ Alert via fallback channel (stderr/log if comm plugins need Event Bus)
+      ├─ Alert via fallback channel (stderr/log if communication plugins need Event Bus)
       └─ System waits for Event Bus recovery or human intervention
 ```
 
@@ -131,12 +131,12 @@ Event Bus storage fails
 
 ---
 
-### Chain 3: Comm Plugin Failure During Blocking Flow
+### Chain 3: Communication Plugin Failure During Blocking Flow
 
-**Root cause:** Primary comm plugin fails while delivering a blocking question (P11).
+**Root cause:** Primary communication plugin fails while delivering a blocking question (P11).
 
 ```
-Comm plugin fails to send question
+Communication plugin fails to send question
   │
   ├─ Task has already transitioned to Blocked (state is correct)
   ├─ Question not delivered to human
@@ -294,7 +294,7 @@ Config file invalid
   ├─ System continues with stale policy (may not reflect intended changes)
   │
   ├─ ⟹ health.config_reload_failed event (Decision #56)
-  │   └─ Comm Plugin alerts human: "Config reload failed for {component},
+  │   └─ Communication Plugin alerts human: "Config reload failed for {component},
   │      running with previous config. Error: {validation_error}"
   │
   └─ Human fixes config file → next hot-reload succeeds → current config applied
@@ -331,10 +331,10 @@ Named, reusable patterns that recur across the 51 protocol failure scenarios. Id
 
 **When:** Transient failure on an external operation.
 
-**Pattern:** Retry N times with exponential backoff + jitter. Use `PluginError.retryable` and `retry_after` fields as signals. If retries exhausted, escalate (notify human or degrade).
+**Pattern:** Retry N times with exponential backoff + jitter. Use `AdapterError.retryable` and `retry_after` fields as signals. If retries exhausted, escalate (notify human or degrade).
 
 **Instances:**
-- Comm plugin send failure (P11 step 6, P13 step 6)
+- Communication plugin send failure (P11 step 6, P13 step 6)
 - GitHub API failure for labels/comments (P2 step 7, P13 step 7)
 - Trigger poll failure (P2 step 1)
 - Git push failure (P7 step 9)
@@ -369,7 +369,7 @@ Named, reusable patterns that recur across the 51 protocol failure scenarios. Id
 **Instances:**
 - Daemon state on restart (P15 steps 3-12): priority queue, timeout timers, dedup set -- all from Task Engine queries
 - Safety Layer cost accumulators (P1 step 4, P15 step 11): replayed from `cost.incurred` events
-- Registry plugin state: reloaded from manifests + `Plugin.initialize()`
+- Registry plugin state: reloaded from manifests + `Adapter.initialize()`
 - People Directory: reloaded from config file
 
 **Design principle:** If losing it on crash requires reconstruction, it's ephemeral by design, not by accident.
@@ -406,20 +406,20 @@ Named, reusable patterns that recur across the 51 protocol failure scenarios. Id
 
 ---
 
-## 5. Comm Plugin Error Handling
+## 5. Communication Plugin Error Handling
 
-Resolves the explicit deferral from Layer 2 (see `comm-plugins.md` § open questions). Defines how comm plugin failures are handled across all communication flows.
+Resolves the explicit deferral from Layer 2 (see `comm-plugins.md` § open questions). Defines how communication plugin failures are handled across all communication flows.
 
 ### Outbound Message Failure
 
-When `CommPlugin.sendMessage()` fails:
+When `CommunicationAdapter.sendMessage()` fails:
 
-1. Check `PluginError.retryable`:
+1. Check `AdapterError.retryable`:
    - `true`: Retry with backoff (Pattern 2). Max retries configurable per plugin (default: 3). Respect `retry_after`.
    - `false`: Permanent failure for this channel. Try fallback (step 2).
 2. Try fallback channel for the same recipient (Pattern 3):
    - Look up recipient in People Directory `contacts[]` -- ordered by preference
-   - Try next channel's comm plugin
+   - Try next channel's communication plugin
    - If all channels exhausted: message is lost
 3. On permanent loss:
    - Log error with full message context (for audit trail)
@@ -428,11 +428,11 @@ When `CommPlugin.sendMessage()` fails:
 
 ### Inbound Message Failure
 
-When `CommPlugin.startListening()` fails or the listener crashes:
+When `CommunicationAdapter.startListening()` fails or the listener crashes:
 
 1. Registry health check detects unhealthy plugin
-2. Registry attempts `Plugin.initialize()` to restart the listener
-3. **Messages during downtime are lost** -- comm plugins are dumb transport with no queuing (see `comm-plugins.md` design)
+2. Registry attempts `Adapter.initialize()` to restart the listener
+3. **Messages during downtime are lost** -- communication plugins are dumb transport with no queuing (see `comm-plugins.md` design)
 4. Impact: human responses to questions not received, status queries not received
 5. Recovery: plugin restarts via Registry. Messages sent during downtime require human to resend.
 6. The timeout ladder handles the common case: if a human replied but the reply was lost, the reminder stage re-asks the question.
@@ -444,7 +444,7 @@ When GitHub API operations (labels, comments, checklists) fail:
 1. Retry with backoff (Pattern 2) for transient API errors (rate limits, 5xx)
 2. During extended outage: internal state (Task Engine) is authoritative. GitHub state drifts.
 3. **On recovery: automatic state reconciliation** (Decision #58):
-   - GitHub comm plugin compares Task Engine state vs GitHub labels for all active tasks
+   - GitHub communication plugin compares Task Engine state vs GitHub labels for all active tasks
    - Updates mismatched labels (`engineer:{state}`)
    - Posts catch-up comments for missed milestones
    - Reconciliation runs once on plugin recovery, not continuously
@@ -464,7 +464,7 @@ Person {
 }
 ```
 
-When sending a message, the system tries channels in order. This resolves the open question from `plugin-contracts.md` § Open Questions.
+When sending a message, the system tries channels in order. This resolves the open question from `adapter-contracts.md` § Open Questions.
 
 ---
 
@@ -517,7 +517,7 @@ payload {
 **Subscribers:**
 | Subscriber | Why |
 |-----------|-----|
-| Comm Plugin | Alerts human that config reload failed |
+| Communication Plugin | Alerts human that config reload failed |
 
 This brings the total event catalog to **30 events** across 10 groups.
 
@@ -530,5 +530,5 @@ This document establishes cross-cutting failure behavior that resolves open ques
 | Doc | Change | Reason |
 |-----|--------|--------|
 | `event-catalog.md` | Add `health.config_reload_failed` event. Update total to 29. | Decision #56 |
-| `plugin-contracts.md` | Move "Fallback chains" from Open Questions to resolved. Reference this doc and Decision #55. | Resolved by § 5 |
+| `adapter-contracts.md` | Move "Fallback chains" from Open Questions to resolved. Reference this doc and Decision #55. | Resolved by § 5 |
 | `decisions.md` | Add Decisions #53-#58 | New decisions from this analysis |

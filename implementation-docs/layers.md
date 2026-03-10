@@ -13,11 +13,12 @@ What we're building and why. The north star.
 
 ## Layer 1: System Overview — DONE
 
-The 10,000-foot view. Components, how they relate, skeleton vs plugins, data flow.
+The 10,000-foot view. Components, how they relate, three-tier architecture (Core / Adapter / Plugin), data flow.
 
 **Completed:**
 - [x] High-level state machine — [`task-states.md`](1-system/task-states.md)
-- [x] Skeleton vs plugin classification — [`overview.md`](1-system/overview.md)
+- [x] Three-tier architecture — [`architecture-tiers.md`](1-system/architecture-tiers.md)
+- [x] Component inventory — [`overview.md`](1-system/overview.md)
 - [x] Component relationships — [`relationships.md`](1-system/relationships.md)
 - [x] Data flow — [`relationships.md`](1-system/relationships.md)
 
@@ -26,7 +27,8 @@ The 10,000-foot view. Components, how they relate, skeleton vs plugins, data flo
 **12 gaps identified via simulation** that feed into Layer 2. Critical: mid-phase checkpointing, task hierarchy, cross-task knowledge sharing.
 
 **Documents:**
-- [`overview.md`](1-system/overview.md) — component list, skeleton/plugin classification
+- [`architecture-tiers.md`](1-system/architecture-tiers.md) — three-tier model (Core / Adapter / Plugin)
+- [`overview.md`](1-system/overview.md) — component list, tier classification
 - [`task-states.md`](1-system/task-states.md) — CPU-derived state machine
 - [`relationships.md`](1-system/relationships.md) — component relationships, data flow, gaps
 
@@ -88,13 +90,13 @@ How components talk to each other. The wiring.
 **What this layer covers:**
 - Event flow between components
 - Message/data formats
-- API contracts between skeleton and plugins
+- Adapter contracts between Core and plugins
 - Error propagation — how failures flow through the system
 - The full lifecycle of a task as it passes through every component
 
 **Completed:**
 - [x] Event Catalog — [`event-catalog.md`](3-interactions/event-catalog.md) — 30 events, 10 groups, Action Pipeline model
-- [x] Plugin Contracts — [`plugin-contracts.md`](3-interactions/plugin-contracts.md) — trigger, comm, LLM, tool, git-hosting + Registry + People Directory — FINALIZED
+- [x] Adapter Contracts — [`adapter-contracts.md`](3-interactions/adapter-contracts.md) — TriggerAdapter, CommunicationAdapter, LLMAdapter, ToolAdapter, GitHostingAdapter + Registry + People Directory — FINALIZED
 - [x] Protocols — [`protocols.md`](3-interactions/protocols.md) — 15 cross-component interaction protocols (P1-P15)
 - [x] Error Propagation — [`error-propagation.md`](3-interactions/error-propagation.md) — failure classification, 7 propagation chains, 6 recovery patterns, comm error handling
 - [x] Lifecycle — [`lifecycle.md`](3-interactions/lifecycle.md) — 3 end-to-end scenarios, 15/15 protocols, 30/30 events, full coverage — FINALIZED

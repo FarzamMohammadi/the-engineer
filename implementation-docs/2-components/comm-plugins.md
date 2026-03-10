@@ -1,6 +1,6 @@
-# Comm Plugins -- Layer 2 Design
+# Communication Plugins -- Layer 2 Design
 
-Comm plugins are the Engineer's voice -- how it communicates with humans through external platforms. They are **plugins** (not skeleton), registered in the Registry. Each comm plugin adapts a specific platform (Telegram, GitHub, email) to a shared contract.
+Communication plugins are the Engineer's voice -- how it communicates with humans through external platforms. They are **plugins** (not Core), registered in the Registry. Each communication plugin adapts a specific platform (Telegram, GitHub, email) to a shared contract.
 
 Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gaps: #20, #22.
 
@@ -12,31 +12,31 @@ Part of **Layer 2** -- see [`layers.md`](../layers.md). Resolves gaps: #20, #22.
 |---------------|-------------|------------|
 | **Chat bots / CLI parsers** | Command recognition, intent parsing, structured responses to natural language input | Status query interface: recognize human queries ("status", "progress on #47"), route to correct data source, compose response |
 | **Webhook / event sync patterns** | Subscribe to internal state changes, push updates to external systems on each change | GitHub state sync: subscribe to task state events on Event Bus, sync labels/status/comments to GitHub |
-| **Adapter pattern** | Common interface, platform-specific implementations. Consumers interact with the interface, never with the platform directly. | Comm plugin interface: common contract (`sendMessage`, `onMessage`, `syncTaskState`), platform adapters (Telegram, GitHub, email) |
+| **Adapter pattern** | Common interface, platform-specific implementations. Consumers interact with the interface, never with the platform directly. | Communication plugin interface: common contract (`sendMessage`, `onMessage`, `syncTaskState`), platform adapters (Telegram, GitHub, email) |
 
 ---
 
-## What Comm Plugins Own (and Don't)
+## What Communication Plugins Own (and Don't)
 
 | Concern | Owner | Why |
 |---------|-------|-----|
-| **Platform transport** (sending/receiving messages) | Comm Plugin | Platform-specific API calls |
-| **Message formatting** (platform-specific rendering) | Comm Plugin | Telegram Markdown vs GitHub Markdown vs email HTML |
-| **State sync to external platforms** (labels, comments) | Comm Plugin | Platform-specific representation of internal state |
-| **Inbound message delivery** (routing raw messages into the system) | Comm Plugin | Emits events on Event Bus for other components to handle |
+| **Platform transport** (sending/receiving messages) | Communication Plugin | Platform-specific API calls |
+| **Message formatting** (platform-specific rendering) | Communication Plugin | Telegram Markdown vs GitHub Markdown vs email HTML |
+| **State sync to external platforms** (labels, comments) | Communication Plugin | Platform-specific representation of internal state |
+| **Inbound message delivery** (routing raw messages into the system) | Communication Plugin | Emits events on Event Bus for other components to handle |
 | Query interpretation (understanding "status" vs task response) | Daemon | Keyword matching, not LLM intelligence — see `daemon-scheduler.md` § Query Handler |
 | Response composition (crafting human-readable answers) | Daemon | Structured data retrieval + template formatting — no LLM needed |
 | Notification cadence (when to notify) | Orchestrator | Milestone-based judgment (already designed in Orchestrator Layer 2) |
 | What to communicate (content decisions) | Orchestrator | Phase-driven reasoning |
 
-**The boundary:** Comm plugins are dumb transport. The Orchestrator owns all intelligence -- what to say, when to say it, how to interpret incoming messages. Comm plugins handle the mechanical platform interaction. This means swapping Telegram for Slack doesn't require reimplementing query parsing or notification logic.
+**The boundary:** Communication plugins are dumb transport. The Orchestrator owns all intelligence -- what to say, when to say it, how to interpret incoming messages. Communication plugins handle the mechanical platform interaction. This means swapping Telegram for Slack doesn't require reimplementing query parsing or notification logic.
 
 ---
 
-## Comm Plugin Interface (Shared Contract)
+## Communication Plugin Interface (Shared Contract)
 
 ```
-CommPlugin {
+CommunicationAdapter {
   id:           string              (e.g., "telegram", "github", "email")
   platform:     string              (platform identifier)
   capabilities: string[]            ("send", "receive", "query", "sync")
@@ -68,7 +68,7 @@ FormattedMessage {
 }
 
 InboundMessage {
-  source:       string              (comm plugin ID)
+  source:       string              (communication plugin ID)
   sender:       string              (user identifier on the platform)
   content:      string              (raw message text)
   timestamp:    datetime
@@ -99,7 +99,7 @@ IssueUpdates {
 }
 ```
 
-**Note on PR comments:** PR lifecycle operations (including replying to code review comments) are Workspace Manager territory, not comm plugin territory. The comm plugin handles issue-level communication and state sync. See [`workspace-manager.md`](workspace-manager.md) for PR operations.
+**Note on PR comments:** PR lifecycle operations (including replying to code review comments) are Workspace Manager territory, not communication plugin territory. The communication plugin handles issue-level communication and state sync. See [`workspace-manager.md`](workspace-manager.md) for PR operations.
 
 ### Capabilities
 
@@ -122,14 +122,14 @@ When Farzam sends "status" or "what have you tried on 47?" via Telegram, the sys
 
 ### Design: Query Router (Orchestrator-Owned)
 
-The comm plugin handles inbound message delivery. The **Orchestrator** handles interpretation and response composition. This separation keeps comm plugins as dumb transport and the intelligence in the Orchestrator.
+The communication plugin handles inbound message delivery. The **Orchestrator** handles interpretation and response composition. This separation keeps communication plugins as dumb transport and the intelligence in the Orchestrator.
 
 ### Flow
 
 ```
 1. Human sends "status" via Telegram
 2. Telegram comm plugin receives message
-3. Comm plugin emits Event Bus: comm.message_received {
+3. Communication plugin emits Event Bus: comm.message_received {
      source: "telegram",
      sender: "farzam",
      content: "status",
@@ -141,7 +141,7 @@ The comm plugin handles inbound message delivery. The **Orchestrator** handles i
 6. Recognized as query → routes to data sources:
    - "status" → Task Engine: get all active/blocked/review-pending tasks
 7. Composes response using structured data + templates (no LLM needed)
-8. Sends response via same comm plugin:
+8. Sends response via same communication plugin:
    "Currently working on 1 task:
     #47 (dark mode toggle) — Active, execution phase. ~60% through.
     No blockers."
@@ -166,7 +166,7 @@ When a message arrives, the system checks:
 3. If no → route as query (to query handler)
 4. If ambiguous → ask: "Is this a reply to my question about #47, or a new request?"
 
-**Key design point:** The comm plugin doesn't parse queries. It delivers raw messages. Query parsing is handled by the Daemon's query handler (keyword matching, not LLM intelligence). This means swapping Telegram for Slack doesn't require reimplementing query parsing.
+**Key design point:** The communication plugin doesn't parse queries. It delivers raw messages. Query parsing is handled by the Daemon's query handler (keyword matching, not LLM intelligence). This means swapping Telegram for Slack doesn't require reimplementing query parsing.
 
 ---
 
@@ -178,7 +178,7 @@ Internal task state (Active, Blocked, Review-Pending, etc.) should be visible on
 
 ### Design: GitHub Comm Plugin as State Sync Subscriber
 
-The GitHub comm plugin subscribes to task state change events on the Event Bus and syncs state to GitHub. This is a natural extension of the comm plugin -- it's the GitHub "channel" keeping its representation current.
+The GitHub comm plugin subscribes to task state change events on the Event Bus and syncs state to GitHub. This is a natural extension of the communication plugin -- it's the GitHub "channel" keeping its representation current.
 
 ### Sync Targets
 
@@ -274,9 +274,9 @@ github_sync: {
 
 ---
 
-## Comm Plugin Registration
+## Communication Plugin Registration
 
-Comm plugins register in the Registry like all plugins:
+Communication plugins register in the Registry like all plugins:
 
 ```
 Registry.registerComm({
@@ -317,14 +317,14 @@ Registry.registerComm({
 
 | Component | Interaction | Direction |
 |-----------|-------------|-----------|
-| **Orchestrator** | Sends notifications and questions via comm plugins. Receives inbound messages (via Event Bus). Composes all outbound content. Parses queries and composes responses. | Orchestrator -> Comm Plugin (outbound), Comm Plugin -> Event Bus -> Orchestrator (inbound) |
-| **Event Bus** | Comm plugins emit `comm.message_received` for inbound messages. Subscribe to `task.state_changed` for state sync. Subscribe to milestone events for issue comments. All outbound sends are logged as events. | Bidirectional |
-| **Registry** | Comm plugins register at startup. Orchestrator queries Registry for available comm channels. | Comm Plugin -> Registry (registration), Orchestrator -> Registry (lookup) |
-| **Daemon** | Daemon handles `comm.message_received` events for query routing. Disambiguates query vs task response. Composes responses from Task Engine + Session/Memory data. | Comm Plugin → Event Bus → Daemon (inbound), Daemon → Comm Plugin (responses) |
+| **Orchestrator** | Sends notifications and questions via communication plugins. Receives inbound messages (via Event Bus). Composes all outbound content. Parses queries and composes responses. | Orchestrator -> Communication Plugin (outbound), Communication Plugin -> Event Bus -> Orchestrator (inbound) |
+| **Event Bus** | Communication plugins emit `comm.message_received` for inbound messages. Subscribe to `task.state_changed` for state sync. Subscribe to milestone events for issue comments. All outbound sends are logged as events. | Bidirectional |
+| **Registry** | Communication plugins register at startup. Orchestrator queries Registry for available comm channels. | Communication Plugin -> Registry (registration), Orchestrator -> Registry (lookup) |
+| **Daemon** | Daemon handles `comm.message_received` events for query routing. Disambiguates query vs task response. Composes responses from Task Engine + Session/Memory data. | Communication Plugin → Event Bus → Daemon (inbound), Daemon → Communication Plugin (responses) |
 | **Task Engine** | Daemon's query handler reads task state for status responses. GitHub sync reads task state for label updates. | Indirect (via Daemon or Event Bus) |
 | **Session/Memory** | Daemon's query handler reads journal entries for "what have you tried?" and decision queries. | Indirect (via Daemon) |
 | **Safety Layer** | Daemon's query handler reads cost status for cost queries. | Indirect (via Daemon) |
-| **People Directory** | Outbound messages use People Directory to resolve contact details (user_id -> platform handle, preferred channel). | Orchestrator -> People Directory -> Comm Plugin |
+| **People Directory** | Outbound messages use People Directory to resolve contact details (user_id -> platform handle, preferred channel). | Orchestrator -> People Directory -> Communication Plugin |
 
 ---
 
@@ -332,7 +332,7 @@ Registry.registerComm({
 
 | # | Gap | Resolution |
 |---|-----|-----------|
-| 20 | Status query interface | Query Router pattern: comm plugins are dumb transport. Orchestrator parses intent, routes to data sources (Task Engine, Session/Memory, Safety Layer), composes response. Query vs task-response disambiguation via pending question check. |
+| 20 | Status query interface | Query Router pattern: communication plugins are dumb transport. Orchestrator parses intent, routes to data sources (Task Engine, Session/Memory, Safety Layer), composes response. Query vs task-response disambiguation via pending question check. |
 | 22 | GitHub state sync | GitHub comm plugin subscribes to `task.state_changed` events on Event Bus. Syncs labels (`engineer:{state}`), milestone comments on issues, child task checklists, and optionally project board columns. All configurable. |
 
 ---
@@ -342,7 +342,7 @@ Registry.registerComm({
 - **Query parsing sophistication**: Keyword matching? LLM-based intent recognition? How complex can queries get before the system misinterprets? (Layer 3)
 - **Email comm plugin design**: Email is mentioned as the universal fallback. Full design for email-based interaction. (Layer 3)
 - **GitHub project board sync**: Detailed column mapping, card management, board creation. (Layer 3)
-- **Comm plugin error handling**: What if Telegram API is down? Message queuing? Retry with backoff? Fallback to another channel? (Layer 3)
+- **Communication plugin error handling**: What if Telegram API is down? Message queuing? Retry with backoff? Fallback to another channel? (Layer 3)
 - **Multi-channel notification preferences**: Some events to Telegram, some to email? Per-event routing config? (Layer 3)
 - **Message threading**: How does the system maintain conversation threads across messages? Platform-specific threading (Telegram reply, GitHub issue thread, Slack thread). (Layer 3)
 - **Rich media in messages**: Sending images (screenshots), files (logs), formatted tables. Platform-specific rendering capabilities. (Layer 3)

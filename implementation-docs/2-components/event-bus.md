@@ -1,6 +1,6 @@
 # Event Bus -- Layer 2 Design
 
-The Event Bus is the nervous system of the architecture. All inter-component communication flows through it. Every event is logged -- the event stream IS the audit trail. It is a **skeleton** component (always present, never swapped).
+The Event Bus is the nervous system of the architecture. All inter-component communication flows through it. Every event is logged -- the event stream IS the audit trail. It is a **Core** component (always present, never swapped).
 
 Part of **Layer 2** -- see [`layers.md`](../layers.md). Added during holistic review to formalize what all 7 component designs depend on.
 
@@ -185,7 +185,7 @@ getEvents(task_id, since?, until?, type?) -> Event[]   // read events for a task
 | **Daemon** | Subscribes to task state changes, preemption signals, trigger events, `comm.message_received`. Emits preemption and timeout events. |
 | **Orchestrator** | Emits `action.requested`, `cost.incurred`, `preemption.ready`. Subscribes to events for current task. |
 | **Workspace Manager** | Emits `workspace.*` and `git.*` events. |
-| **Comm Plugins** | Emit `comm.message_received`, `comm.message_sent`. Subscribe to `task.state_changed` for state sync (GitHub labels). |
+| **Communication Plugins** | Emit `comm.message_received`, `comm.message_sent`. Subscribe to `task.state_changed` for state sync (GitHub labels). |
 | **Session/Memory** | Does not directly interact with Event Bus. Checkpoints reference `last_event_id` as a pointer for replay correlation. |
 
 ---

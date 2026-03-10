@@ -141,7 +141,7 @@ payload {
 | Subscriber | Why |
 |-----------|-----|
 | Daemon | Adds task to scheduling queue |
-| Comm Plugin (GitHub) | Creates GitHub issue for child tasks, updates parent checklist |
+| Communication Plugin (GitHub) | Creates GitHub issue for child tasks, updates parent checklist |
 
 ---
 
@@ -165,8 +165,8 @@ payload {
 | Subscriber | Why |
 |-----------|-----|
 | Daemon | Updates scheduling queue, triggers dispatch or preemption |
-| Comm Plugin (GitHub) | Syncs labels (`engineer:{state}`), posts milestone comments |
-| Comm Plugin (Telegram) | Sends notification on key transitions (configurable) |
+| Communication Plugin (GitHub) | Syncs labels (`engineer:{state}`), posts milestone comments |
+| Communication Plugin (Telegram) | Sends notification on key transitions (configurable) |
 
 **Note:** Workspace Manager is NOT a subscriber here. Task Engine calls Workspace Manager directly for progressive merge (on child completion) and workspace cleanup (on terminal states), per `task-engine.md` § Task Completion Flow. These are direct component calls, not Event Bus subscriptions.
 
@@ -306,7 +306,7 @@ payload {
 | Subscriber | Why |
 |-----------|-----|
 | Daemon | Transitions affected task(s) to Blocked, notifies human |
-| Comm Plugin | Sends cost alert to owner |
+| Communication Plugin | Sends cost alert to owner |
 
 ---
 
@@ -377,7 +377,7 @@ payload {
 **Subscribers:**
 | Subscriber | Why |
 |-----------|-----|
-| Comm Plugin | Sends reminder to human on the original channel |
+| Communication Plugin | Sends reminder to human on the original channel |
 
 ---
 
@@ -414,7 +414,7 @@ payload {
 **Subscribers:**
 | Subscriber | Why |
 |-----------|-----|
-| Comm Plugin | Sends alert to ALL configured channels |
+| Communication Plugin | Sends alert to ALL configured channels |
 
 ---
 
@@ -550,7 +550,7 @@ payload {
 | Subscriber | Why |
 |-----------|-----|
 | Daemon | Triggers parent state transition (Supervising → Working) for conflict resolution |
-| Comm Plugin | Notifies owner of merge conflict |
+| Communication Plugin | Notifies owner of merge conflict |
 
 ---
 
@@ -637,7 +637,7 @@ payload {
 | Subscriber | Why |
 |-----------|-----|
 | Task Engine | Updates `task.review.pr_number`, `task.review.pr_state` |
-| Comm Plugin (Telegram) | Notifies owner: "PR ready for review" |
+| Communication Plugin (Telegram) | Notifies owner: "PR ready for review" |
 
 ---
 
@@ -658,7 +658,7 @@ payload {
 | Subscriber | Why |
 |-----------|-----|
 | Task Engine | Updates `task.review.pr_state` |
-| Comm Plugin (Telegram) | Notifies on Draft → Ready transition |
+| Communication Plugin (Telegram) | Notifies on Draft → Ready transition |
 
 ---
 
@@ -729,7 +729,7 @@ payload {
 **Subscribers:**
 | Subscriber | Why |
 |-----------|-----|
-| Comm Plugin | Alerts owner that task may be stuck |
+| Communication Plugin | Alerts owner that task may be stuck |
 
 ---
 
@@ -750,7 +750,7 @@ payload {
 **Subscribers:**
 | Subscriber | Why |
 |-----------|-----|
-| Comm Plugin | Alerts owner of trigger integration failure |
+| Communication Plugin | Alerts owner of trigger integration failure |
 
 ---
 
@@ -770,13 +770,13 @@ payload {
 **Subscribers:**
 | Subscriber | Why |
 |-----------|-----|
-| Comm Plugin | Alerts human that config reload failed |
+| Communication Plugin | Alerts human that config reload failed |
 
 ---
 
 ### `comm.*` — Communication Events
 
-**Owner:** Comm Plugins
+**Owner:** Communication Plugins
 
 #### `comm.message_received`
 
@@ -868,7 +868,7 @@ Implementation details (storage format, archive destination) are Layer 4.
 Subscriptions are managed by the Event Bus and persist across Orchestrator sessions:
 - **Daemon** subscribes at system startup, never unsubscribes
 - **Task Engine** subscribes at system startup, never unsubscribes
-- **Comm Plugins** subscribe at registration, unsubscribe at deregistration
+- **Communication Plugins** subscribe at registration, unsubscribe at deregistration
 - **Safety Layer** subscribes at system startup (for `cost.incurred`), never unsubscribes
 - **Orchestrator** does not subscribe directly — the Daemon routes relevant events to the Orchestrator as part of the dispatch protocol
 
@@ -889,7 +889,7 @@ The Orchestrator receiving events via the Daemon (not direct subscription) keeps
 | `health.*` | `stuck_detected`, `trigger_failure`, `config_reload_failed` | Daemon |
 | `workspace.*` | `created`, `verified`, `cleaned`, `merge_conflict` | Workspace Manager |
 | `git.*` | `branch_created`, `committed`, `pushed`, `pr_opened`, `pr_updated`, `pr_merged`, `merge_completed` | Workspace Manager |
-| `comm.*` | `message_received`, `message_sent` | Comm Plugins |
+| `comm.*` | `message_received`, `message_sent` | Communication Plugins |
 
 **Total: 30 event types** across 10 groups.
 

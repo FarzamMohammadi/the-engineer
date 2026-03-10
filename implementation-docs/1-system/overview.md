@@ -8,34 +8,35 @@ Part of **Layer 1** — see [`../layers.md`](../layers.md) for where this fits.
 
 ## Core Components
 
-| Component | Role | Skeleton or Plugin? |
-|-----------|------|---------------------|
-| **Daemon** | The always-running process. Polls triggers, dispatches tasks, manages lifecycle. The heartbeat. | Skeleton |
-| **Orchestrator** | The small core prompt + state machine. Knows what phase the agent is in, loads the right reference docs. The brain. | Skeleton |
-| **Registry** | The modularity layer. Triggers, comms, LLMs, tools all register as plugins. The spine. | Skeleton |
-| **Task Engine** | Manages a task from trigger to completion. Phases, state transitions, parking when waiting for humans. The workflow. See [`task-states.md`](task-states.md). | Skeleton |
+| Component | Role | Tier |
+|-----------|------|------|
+| **Daemon** | The always-running process. Polls triggers, dispatches tasks, manages lifecycle. The heartbeat. | Core |
+| **Orchestrator** | The small core prompt + state machine. Knows what phase the agent is in, loads the right reference docs. The brain. | Core |
+| **Registry** | The modularity layer. Manages adapter/plugin registration, discovery, and lifecycle. The spine. | Core |
+| **Task Engine** | Manages a task from trigger to completion. Phases, state transitions, parking when waiting for humans. The workflow. See [`task-states.md`](task-states.md). | Core |
 
 ## Supporting Systems
 
-| System | Role | Skeleton or Plugin? |
-|--------|------|---------------------|
-| **People Directory** | Who to talk to, their roles, how to reach them, when to contact whom. Config-driven. | Skeleton |
-| **Workspace Manager** | Per-task git isolation. Branches, commits, PRs. Keeps tasks from stepping on each other. | Skeleton |
-| **Session/Memory System** | How the agent persists state, knowledge, and decisions across sessions and tasks. | Skeleton |
-| **Safety Layer** | Guardrails, permissions, boundaries. Configurable per user — see [`../0-foundation/goals.md`](../0-foundation/goals.md) § Configurable Guardrails. | Skeleton (config-driven) |
+| System | Role | Tier |
+|--------|------|------|
+| **People Directory** | Who to talk to, their roles, how to reach them, when to contact whom. Config-driven. | Core |
+| **Workspace Manager** | Per-task git isolation. Branches, commits, PRs. Keeps tasks from stepping on each other. | Core |
+| **Session/Memory System** | How the agent persists state, knowledge, and decisions across sessions and tasks. | Core |
+| **Safety Layer** | Guardrails, permissions, boundaries. Configurable per user — see [`../0-foundation/goals.md`](../0-foundation/goals.md) § Configurable Guardrails. | Core |
 
 ## Plugins (snap on and off per use case)
 
-| Plugin type | Examples | Defined by |
-|-------------|----------|------------|
-| **Triggers** | GitHub Issues, Jira, webhooks, cron | Registry |
-| **Communication channels** | Slack, GitHub Comments, Teams, WhatsApp | Registry |
-| **LLM providers** | Anthropic, OpenAI, Google, Ollama | Registry |
-| **Tools** | Bash, file ops, web search, communicate | Registry |
-| **Workflow phases** | Requirements gathering, code review, etc. | Registry |
-| **Observability backends** | Log files, dashboards, webhooks | Registry |
+| Plugin type | Adapter Contract | Examples |
+|-------------|-----------------|----------|
+| **Triggers** | TriggerAdapter | GitHub Issues, Jira, webhooks, cron |
+| **Communication channels** | CommunicationAdapter | Slack, GitHub Comments, Teams, WhatsApp |
+| **LLM providers** | LLMAdapter | Anthropic, OpenAI, Google, Ollama |
+| **Tools** | ToolAdapter | Bash, file ops, web search, communicate |
+| **Workflow phases** | *(deferred to Layer 4)* | Requirements gathering, code review, etc. |
+| **Observability backends** | *(deferred to Layer 4)* | Log files, dashboards, webhooks |
+| **...** | | New adapter types as needs emerge |
 
-For the skeleton vs plugin model, see [`../0-foundation/goals.md`](../0-foundation/goals.md) § The Skeleton and Plugins.
+Adapter contracts define the stable interfaces plugins must implement. The adapter tier is open-ended — new types can be added without changing Core or existing adapters. See [`adapter-contracts.md`](../3-interactions/adapter-contracts.md) for full specifications and [`architecture-tiers.md`](architecture-tiers.md) for the three-tier model and extensibility design.
 
 ## Core Principle: Isolation
 
@@ -43,13 +44,13 @@ Each task is its own universe — see [`../0-foundation/philosophy.md`](../0-fou
 
 ---
 
-## New: Event Bus
+## Event Bus
 
 Not in the original component list. Emerged during relationship analysis as a structural element, not just a pattern.
 
-| Component | Role | Skeleton or Plugin? |
-|-----------|------|---------------------|
-| **Event Bus** | The nervous system. All inter-component communication flows as events. Every event logged — the event stream IS the audit trail. | Skeleton |
+| Component | Role | Tier |
+|-----------|------|------|
+| **Event Bus** | The nervous system. All inter-component communication flows as events. Every event logged — the event stream IS the audit trail. | Core |
 
 ## Relationships & Data Flow
 

@@ -5,7 +5,7 @@ Three end-to-end scenarios traced through every component. This is the architect
 Part of **Layer 3** -- see [`layers.md`](../layers.md). Cross-references all four Layer 3 documents:
 - **[Protocols](protocols.md)** -- the choreography (P1-P15)
 - **[Event Catalog](event-catalog.md)** -- the vocabulary (30 events)
-- **[Plugin Contracts](plugin-contracts.md)** -- the interfaces (5 plugin types + Registry + People Directory)
+- **[Adapter Contracts](adapter-contracts.md)** -- the interfaces (5 adapter types + Registry + People Directory)
 - **[Error Propagation](error-propagation.md)** -- the failure handling (7 chains, 6 patterns)
 
 ---
@@ -19,7 +19,7 @@ Part of **Layer 3** -- see [`layers.md`](../layers.md). Cross-references all fou
 - `⟹` indicates an async event published to the Event Bus
 - `(P#)` references a protocol in protocols.md (e.g., `(P3)` = Task Dispatch)
 - `[Event: type]` references an event in event-catalog.md
-- `[Contract: Type.method()]` references a plugin contract in plugin-contracts.md
+- `[Contract: Type.method()]` references an adapter contract in adapter-contracts.md
 - `(Chain #)` / `(Pattern #)` references error-propagation.md
 - Steps grouped into **phases** with headers. Each step shows the acting component, what happens, and all cross-references.
 
@@ -92,18 +92,18 @@ For protocol mechanics (step-by-step within a single protocol), refer to protoco
 
 | Contract | S1 | S2 | S3 |
 |----------|:--:|:--:|:--:|
-| Plugin.initialize/healthCheck/shutdown | x | - | x |
-| TriggerPlugin.poll() | x | x | x |
-| CommPlugin.sendMessage() | x | x | x |
-| CommPlugin.startListening/stopListening | x | - | x |
-| CommPlugin.syncTaskState() | x | x | x |
+| Adapter.initialize/healthCheck/shutdown | x | - | x |
+| TriggerAdapter.poll() | x | x | x |
+| CommunicationAdapter.sendMessage() | x | x | x |
+| CommunicationAdapter.startListening/stopListening | x | - | x |
+| CommunicationAdapter.syncTaskState() | x | x | x |
 | GitHubCommPlugin.createIssue/commentOnIssue/updateIssue | x | x | - |
 | GitHubCommPlugin.reconcileState() | - | - | x |
-| LLMProvider.complete() | x | x | x |
-| LLMProvider.getCapabilities() | - | - | x |
-| ToolPlugin.execute() | x | x | - |
-| GitHostingPlugin.createPR/updatePR/mergePR | x | x | - |
-| GitHostingPlugin.getPRStatus/getReviewStatus | x | - | - |
+| LLMAdapter.complete() | x | x | x |
+| LLMAdapter.getCapabilities() | - | - | x |
+| ToolAdapter.execute() | x | x | - |
+| GitHostingAdapter.createPR/updatePR/mergePR | x | x | - |
+| GitHostingAdapter.getPRStatus/getReviewStatus | x | - | - |
 | Registry.getPlugin/getPluginsByType | x | x | x |
 | PeopleDirectory.resolveContact/getPerson | x | x | x |
 
@@ -143,7 +143,7 @@ This is the baseline lifecycle. Every other scenario builds on this foundation.
 |------|-----------|--------|----------|--------|-----------|
 | 1 | **Daemon** | Starts, loads system configuration | (P1.1) | - | - |
 | 2 | **Event Bus** | Initializes persistence layer, begins accepting events and subscriptions | (P1.2) | - | - |
-| 3 | **Registry** | Loads plugin manifests. Initializes in dependency order: Safety Layer, GitHubCommPlugin, TelegramCommPlugin, ClaudeCodeProvider, BashTool, GitHubHostingPlugin, GitHubIssuesTrigger (triggers last) | (P1.3) | - | `Contract: Plugin.initialize(config)` on each |
+| 3 | **Registry** | Loads plugin manifests. Initializes in dependency order: Safety Layer, GitHubCommPlugin, TelegramCommPlugin, ClaudeCodeProvider, BashTool, GitHubHostingPlugin, GitHubIssuesTrigger (triggers last) | (P1.3) | - | `Contract: Adapter.initialize(config)` on each |
 | 4 | **Safety Layer** | Loads policy config (scope rules, cost limits, autonomy). Replays cost events to rebuild accumulators (empty -- fresh system) | (P1.4) | (replays `cost.incurred`) | `→ EventBus.replay()` |
 | 5 | **People Directory** | Loads people config. Farzam: owner+reviewer, contacts: [telegram (primary), github (secondary)], notification_level: milestones | (P1.5) | - | - |
 | 6 | **Daemon** | Queries Task Engine for non-terminal tasks -- none found (fresh system). Empty priority queue | (P1.6-7) | - | `→ TaskEngine.getTasksByState()` |
@@ -157,7 +157,7 @@ System ready. Trigger polling begins.
 
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
-| 8 | **Daemon** | Polls GitHub trigger at its declared `poll_interval` (e.g., 30s) | (P2.1) | - | `Contract: TriggerPlugin.poll()` |
+| 8 | **Daemon** | Polls GitHub trigger at its declared `poll_interval` (e.g., 30s) | (P2.1) | - | `Contract: TriggerAdapter.poll()` |
 | 9 | **GitHubIssuesTrigger** | Returns `TriggerEvent`: `{idempotency_key: "github:issue:acme/webapp:47", event_type: "issue_assigned", title: "Add dark mode toggle to settings page", external_ref: "https://github.com/acme/webapp/issues/47", repo: "acme/webapp", body: "Users want to toggle between light and dark themes..."}` | (P2.1) | - | - |
 | 10 | **Daemon** | Deduplicates by `idempotency_key` -- not in dedup set, not in Task Engine `external_refs`. New work | (P2.2) | - | - |
 | 11 | **Daemon** | Records trigger event for audit | (P2.3) | `⟹ trigger.new_event` `{source: "github_issues", event_type: "issue_assigned", title: "Add dark mode toggle..."}` | - |
@@ -219,8 +219,8 @@ The Orchestrator works through all 7 phases. Each phase follows the same rhythm:
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
 | 24 | **Orchestrator** | Reads issue body and existing settings page code. Read action -- Gate 1 only, no Gate 2 (Decision #50) | (P7.1-2) | - | `→ TaskEngine.checkPermission(47, "read")` → permitted |
-| 25 | **Orchestrator** | Uses BashTool to read files in worktree | (P7.9) | - | `Contract: ToolPlugin.execute("read", {path: "src/pages/Settings.tsx"})` |
-| 26 | **Orchestrator** | Calls LLM to analyze requirements and existing code | - | - | `Contract: LLMProvider.complete({prompt: "Analyze this settings page...", options: {max_tokens: 4096}})` |
+| 25 | **Orchestrator** | Uses BashTool to read files in worktree | (P7.9) | - | `Contract: ToolAdapter.execute("read", {path: "src/pages/Settings.tsx"})` |
+| 26 | **Orchestrator** | Calls LLM to analyze requirements and existing code | - | - | `Contract: LLMAdapter.complete({prompt: "Analyze this settings page...", options: {max_tokens: 4096}})` |
 | 27 | **Orchestrator** | Emits cost event from completion result usage data | (P10.1-2) | `⟹ cost.incurred` `{task_id: 47, provider_id: "claude-code", provider_type: "cli", operation: "analysis", usage_units: 1}` | - |
 | 28 | **Safety Layer** | Receives `cost.incurred`. Updates `cli_usage["claude-code"].requests_used += 1`. Checks against limits -- within bounds | (P10.5-6) | - | - |
 | 29 | **Task Engine** | Receives `cost.incurred`. Updates `task.cost.llm_tokens += tokens_in + tokens_out` | (P10.4) | - | - |
@@ -258,14 +258,14 @@ These phases follow the same pattern. Key actions during execution:
 |------|-----------|--------|----------|--------|-----------|
 | 33 | **Orchestrator** | (execution phase) Writes toggle component. Side-effect -- full Action Pipeline. Gate 1: `write` permitted in Active.Working. Gate 2: scope check -- file is within `acme/webapp` repo boundary | (P7.3-6) | - | `→ TaskEngine.checkPermission(47, "write")` → permitted |
 | | | | | | `→ SafetyLayer.evaluate({type: "can_i", action_class: "write", path: "src/components/ThemeToggle.tsx"})` → `{allowed: true}` |
-| 34 | **Orchestrator** | Writes the file via tool | (P7.9) | - | `Contract: ToolPlugin.execute("file_write", {path: "src/components/ThemeToggle.tsx", content: "..."})` |
+| 34 | **Orchestrator** | Writes the file via tool | (P7.9) | - | `Contract: ToolAdapter.execute("file_write", {path: "src/components/ThemeToggle.tsx", content: "..."})` |
 | | | Side effects reported: `[{type: "file_written", details: {path: "src/components/ThemeToggle.tsx", bytes: 1847}}]` | | | |
 | 35 | **Orchestrator** | Git commit -- side-effect pipeline | (P7.3-10) | `⟹ git.committed` `{task_id: 47, sha: "a1b2c3d", message: "Add ThemeToggle component", files_changed: 1}` | `→ TaskEngine.checkPermission(47, "git-local")` → permitted |
 | | | | | | `→ SafetyLayer.evaluate({type: "can_i", action_class: "git-local"})` → proceed |
 | | | | | | `→ WorkspaceManager.commit(47, "Add ThemeToggle component")` |
 | 36 | **Orchestrator** | Runs tests -- side-effect pipeline | (P7) | - | `→ TaskEngine.checkPermission(47, "test")` → permitted |
 | | | | | | `→ SafetyLayer.evaluate({type: "can_i", action_class: "test"})` → proceed |
-| | | | | | `Contract: ToolPlugin.execute("run_tests", {})` |
+| | | | | | `Contract: ToolAdapter.execute("run_tests", {})` |
 | 37 | **Orchestrator** | Multiple cost events emitted throughout execution and self-review (one per LLM call) | (P10) | `⟹ cost.incurred` (multiple) | - |
 
 ---
@@ -292,7 +292,7 @@ No blockers. No tasks in review. 0 queued.
 
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
-| 43 | **Daemon** | Sends response via Telegram (same channel as query) | (P14.7) | `⟹ comm.message_sent` `{type: "status_response", channel: "telegram"}` | `Contract: CommPlugin.sendMessage(target, message)` |
+| 43 | **Daemon** | Sends response via Telegram (same channel as query) | (P14.7) | `⟹ comm.message_sent` `{type: "status_response", channel: "telegram"}` | `Contract: CommunicationAdapter.sendMessage(target, message)` |
 
 ---
 
@@ -303,10 +303,10 @@ No blockers. No tasks in review. 0 queued.
 | 44 | **Orchestrator** | Enters demo-prep phase. Pushes branch -- side-effect pipeline: Gate 1 (`git-remote` permitted in Working), Gate 2 (scope: branch `engineer/47-dark-mode` is within allowed pattern) | (P7.3-10) | `⟹ git.pushed` `{task_id: 47, branch: "engineer/47-dark-mode", head_sha: "e4f5g6h"}` | `→ TaskEngine.checkPermission(47, "git-remote")` → permitted |
 | | | | | | `→ SafetyLayer.evaluate({type: "can_i", action_class: "git-remote", branch: "engineer/47-dark-mode"})` → proceed |
 | | | | | | `→ WorkspaceManager.push(47)` |
-| 45 | **Orchestrator** | Creates Draft PR -- side-effect pipeline | (P7) | `⟹ git.pr_opened` `{task_id: 47, pr_number: 51, draft: true, title: "Add dark mode toggle to settings page", base_branch: "main", head_branch: "engineer/47-dark-mode"}` | `Contract: GitHostingPlugin.createPR({repo: "acme/webapp", branch: "engineer/47-dark-mode", base: "main", title: "...", body: "...", draft: true, reviewers: ["farzam"]})` |
+| 45 | **Orchestrator** | Creates Draft PR -- side-effect pipeline | (P7) | `⟹ git.pr_opened` `{task_id: 47, pr_number: 51, draft: true, title: "Add dark mode toggle to settings page", base_branch: "main", head_branch: "engineer/47-dark-mode"}` | `Contract: GitHostingAdapter.createPR({repo: "acme/webapp", branch: "engineer/47-dark-mode", base: "main", title: "...", body: "...", draft: true, reviewers: ["farzam"]})` |
 | 46 | **Task Engine** | Receives `git.pr_opened` → updates `task.review = {pr_number: 51, pr_state: "draft"}` | - | - | - |
 | 47 | **Orchestrator** | Sends milestone notification: Draft PR ready | (P13.1-6) | `⟹ comm.message_sent` `{type: "milestone", task_id: 47}` | `→ PeopleDirectory.resolveContact("farzam", "telegram")` |
-| | | Checks Farzam's notification_level ("milestones") -- this qualifies. Checks quiet hours -- outside. Sends | | | `Contract: CommPlugin.sendMessage(target, {content: "Draft PR #51 ready for demo review: Add dark mode toggle to settings page", type: "milestone"})` |
+| | | Checks Farzam's notification_level ("milestones") -- this qualifies. Checks quiet hours -- outside. Sends | | | `Contract: CommunicationAdapter.sendMessage(target, {content: "Draft PR #51 ready for demo review: Add dark mode toggle to settings page", type: "milestone"})` |
 | 48 | **Orchestrator** | Requests transition to Review-Pending.Demo | - | `⟹ task.state_changed` `{task_id: 47, from_state: "Active", from_sub: "Working", to_state: "Review-Pending", to_sub: "Demo"}` | `→ TaskEngine.requestTransition(47, "Review-Pending.Demo")` |
 | 49 | **GitHubCommPlugin** | Receives `task.state_changed` via Event Bus subscription. Autonomous sync: removes `engineer:active`, adds `engineer:review-pending`. Posts milestone comment on issue | (P13.7) | - | `Contract: GitHubCommPlugin.updateIssue(repo, 47, {labels_add: ["engineer:review-pending"], labels_remove: ["engineer:active"]})` |
 | | | | | | `Contract: GitHubCommPlugin.commentOnIssue(repo, 47, "Draft PR #51 ready for demo review")` |
@@ -319,15 +319,15 @@ No blockers. No tasks in review. 0 queued.
 
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
-| 50 | **GitHubIssuesTrigger** | Next poll detects PR review on Draft PR #51: Farzam approves with comment "Looks great! Maybe add a subtle transition animation when toggling" | - | - | `Contract: TriggerPlugin.poll()` |
+| 50 | **GitHubIssuesTrigger** | Next poll detects PR review on Draft PR #51: Farzam approves with comment "Looks great! Maybe add a subtle transition animation when toggling" | - | - | `Contract: TriggerAdapter.poll()` |
 | | | Returns `TriggerEvent` with `event_type: "pr_review_received"`, `metadata: {task_id: 47, pr_number: 51, review_type: "approved", pr_state: "draft", reviewer: "farzam", comment: "Looks great! Maybe add..."}` | | | |
 | 51 | **Daemon** | Emits trigger event, then translates to task feedback | - | `⟹ trigger.pr_review` `{task_id: 47, review_type: "approved", pr_state: "draft", reviewer: "farzam"}` | - |
 | 52 | **Task Engine** | Daemon routes feedback through Task Engine | - | `⟹ task.feedback_received` `{task_id: 47, stage: "demo", feedback_type: "approved", reviewer: "farzam", content: "Looks great! Maybe add..."}` | - |
 | 53 | **Daemon** | Demo approved -- transitions task back to Active.Working to address feedback and mark Ready | - | `⟹ task.state_changed` `{from_state: "Review-Pending", from_sub: "Demo", to_state: "Active", to_sub: "Working"}` | `→ TaskEngine.requestTransition(47, "Active.Working", "demo_approved")` |
-| 54 | **Orchestrator** | Receives feedback. Incorporates animation suggestion. Makes changes, commits, pushes. Cost events for each LLM call | (P7, P10) | `⟹ git.committed`, `⟹ git.pushed`, `⟹ cost.incurred` (multiple) | `Contract: LLMProvider.complete()`, `→ WorkspaceManager.commit()`, `→ WorkspaceManager.push()` |
-| 55 | **Orchestrator** | Updates PR: marks Ready (`draft: false`) | - | `⟹ git.pr_updated` `{task_id: 47, pr_number: 51, draft: false, previous_draft: true, update_type: "marked_ready"}` | `Contract: GitHostingPlugin.updatePR("acme/webapp", 51, {draft: false})` |
+| 54 | **Orchestrator** | Receives feedback. Incorporates animation suggestion. Makes changes, commits, pushes. Cost events for each LLM call | (P7, P10) | `⟹ git.committed`, `⟹ git.pushed`, `⟹ cost.incurred` (multiple) | `Contract: LLMAdapter.complete()`, `→ WorkspaceManager.commit()`, `→ WorkspaceManager.push()` |
+| 55 | **Orchestrator** | Updates PR: marks Ready (`draft: false`) | - | `⟹ git.pr_updated` `{task_id: 47, pr_number: 51, draft: false, previous_draft: true, update_type: "marked_ready"}` | `Contract: GitHostingAdapter.updatePR("acme/webapp", 51, {draft: false})` |
 | 56 | **Orchestrator** | Requests transition to Review-Pending.Code | - | `⟹ task.state_changed` `{to_state: "Review-Pending", to_sub: "Code"}` | `→ TaskEngine.requestTransition(47, "Review-Pending.Code")` |
-| 57 | **Orchestrator** | Sends milestone: PR ready for code review | (P13) | `⟹ comm.message_sent` `{type: "milestone"}` | `Contract: CommPlugin.sendMessage(target, "PR #51 for #47 is ready for code review")` |
+| 57 | **Orchestrator** | Sends milestone: PR ready for code review | (P13) | `⟹ comm.message_sent` `{type: "milestone"}` | `Contract: CommunicationAdapter.sendMessage(target, "PR #51 for #47 is ready for code review")` |
 | 58 | **GitHubCommPlugin** | Autonomous state sync: updates labels, posts milestone comment | (P13.7) | - | `Contract: GitHubCommPlugin.updateIssue()`, `Contract: GitHubCommPlugin.commentOnIssue()` |
 
 ---
@@ -336,19 +336,19 @@ No blockers. No tasks in review. 0 queued.
 
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
-| 59 | **GitHubIssuesTrigger** | Detects code review approval on Ready PR #51 | - | - | `Contract: TriggerPlugin.poll()` |
+| 59 | **GitHubIssuesTrigger** | Detects code review approval on Ready PR #51 | - | - | `Contract: TriggerAdapter.poll()` |
 | 60 | **Daemon** | Processes review: trigger.pr_review → task.feedback_received (stage: "code", approved) | - | `⟹ trigger.pr_review`, `⟹ task.feedback_received` `{stage: "code", feedback_type: "approved"}` | - |
 | 61 | **Daemon** | Transitions: Review-Pending.Code → Active.Working (for integration) | - | `⟹ task.state_changed` `{to_state: "Active", to_sub: "Working", reason: "code_review_approved"}` | `→ TaskEngine.requestTransition()` |
 | 62 | **Orchestrator** | Enters integration phase. Checks auto-merge config for repo. Merge action through pipeline: Gate 1 (`merge` permitted in Active.Working, conditional on auto-merge config -- configured). Gate 2: Safety Layer evaluates merge scope | (P7.3-10) | - | `→ TaskEngine.checkPermission(47, "merge")` → permitted (auto-merge configured) |
 | | | | | | `→ SafetyLayer.evaluate({type: "can_i", action_class: "merge"})` → proceed |
-| 63 | **Orchestrator** | Checks PR is mergeable, then merges | - | - | `Contract: GitHostingPlugin.getPRStatus("acme/webapp", 51)` → `{mergeable: true, checks_passing: true}` |
-| | | | | | `Contract: GitHostingPlugin.getReviewStatus("acme/webapp", 51)` → `{approved: true}` |
-| | | | | `⟹ git.pr_merged` `{task_id: 47, pr_number: 51, merge_strategy: "squash", merge_sha: "x9y8z7", into_branch: "main"}` | `Contract: GitHostingPlugin.mergePR("acme/webapp", 51, "squash")` |
+| 63 | **Orchestrator** | Checks PR is mergeable, then merges | - | - | `Contract: GitHostingAdapter.getPRStatus("acme/webapp", 51)` → `{mergeable: true, checks_passing: true}` |
+| | | | | | `Contract: GitHostingAdapter.getReviewStatus("acme/webapp", 51)` → `{approved: true}` |
+| | | | | `⟹ git.pr_merged` `{task_id: 47, pr_number: 51, merge_strategy: "squash", merge_sha: "x9y8z7", into_branch: "main"}` | `Contract: GitHostingAdapter.mergePR("acme/webapp", 51, "squash")` |
 | 64 | **Task Engine** | Receives `git.pr_merged` → transitions to Completed | - | `⟹ task.state_changed` `{to_state: "Completed"}` | - |
 | 65 | **Workspace Manager** | Terminal state reached -- cleans up worktree. Branch preserved (merged into main, branch ref kept for history) | - | `⟹ workspace.cleaned` `{task_id: 47, branch_preserved: true}` | - |
 | 66 | **Orchestrator** | Final journal entry, ends session | - | - | `→ SessionMemory.appendJournal(session_id, {type: "phase_change", summary: "Task completed. PR #51 merged."})` |
 | | | | | | `→ SessionMemory.endSession(session_id, "completed")` |
-| 67 | **Orchestrator** | Sends completion milestone | (P13) | `⟹ comm.message_sent` `{type: "milestone"}` | `Contract: CommPlugin.sendMessage(target, "Task #47 completed. PR #51 merged into main.")` |
+| 67 | **Orchestrator** | Sends completion milestone | (P13) | `⟹ comm.message_sent` `{type: "milestone"}` | `Contract: CommunicationAdapter.sendMessage(target, "Task #47 completed. PR #51 merged into main.")` |
 | 68 | **GitHubCommPlugin** | Autonomous sync: updates label to `engineer:completed`, closes issue, adds completion comment | (P13.7) | - | `Contract: GitHubCommPlugin.updateIssue(repo, 47, {state: "closed", labels_add: ["engineer:completed"], labels_remove: ["engineer:review-pending"]})` |
 
 **Final state:** Task #47 Completed. PR #51 merged. Issue closed. Worktree cleaned. Session ended. All cost tracked.
@@ -383,9 +383,9 @@ Same pattern as Scenario 1 steps 8-23. Abbreviated:
 
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
-| 1 | **Daemon/Trigger** | Polls, discovers issue #52, deduplicates, creates task via Task Engine | (P2) | `⟹ trigger.new_event`, `⟹ task.created` `{task_id: 52}`, `⟹ task.state_changed` `{Intake→Queued}` | `Contract: TriggerPlugin.poll()`, `→ TaskEngine.createTask()` |
+| 1 | **Daemon/Trigger** | Polls, discovers issue #52, deduplicates, creates task via Task Engine | (P2) | `⟹ trigger.new_event`, `⟹ task.created` `{task_id: 52}`, `⟹ task.state_changed` `{Intake→Queued}` | `Contract: TriggerAdapter.poll()`, `→ TaskEngine.createTask()` |
 | 2 | **Daemon** | Dispatches #52: Queued → Active.Working. Workspace created on branch `engineer/52-oauth2-refactor` | (P3) | `⟹ task.state_changed` `{Queued→Active.Working}`, `⟹ workspace.created`, `⟹ git.branch_created` | `→ WorkspaceManager.createWorkspace()`, `→ SessionMemory.createSession()` |
-| 3 | **Orchestrator** | Works through intake-analysis and research phases. Multiple LLM calls with cost tracking. Discovers scope: 20+ files across auth module | (P4, P10) | `⟹ cost.incurred` (multiple) | `Contract: LLMProvider.complete()`, `→ SessionMemory.createCheckpoint()` x2 |
+| 3 | **Orchestrator** | Works through intake-analysis and research phases. Multiple LLM calls with cost tracking. Discovers scope: 20+ files across auth module | (P4, P10) | `⟹ cost.incurred` (multiple) | `Contract: LLMAdapter.complete()`, `→ SessionMemory.createCheckpoint()` x2 |
 
 ---
 
@@ -419,7 +419,7 @@ Reply with numbers, e.g., '1:A 2:B'
 |------|-----------|--------|----------|--------|-----------|
 | 8 | **Orchestrator** | Transitions to Blocked | (P11.4) | `⟹ task.state_changed` `{Active.Working → Blocked, reason: "awaiting_human_input"}` | `→ TaskEngine.requestTransition(52, "Blocked", "awaiting_human_input")` |
 | 9 | **Orchestrator** | Resolves contact, sends question batch via Telegram | (P11.5-6, P12.5) | `⟹ comm.message_sent` `{type: "question", task_id: 52}` | `→ PeopleDirectory.resolveContact("farzam", "telegram")` |
-| | | | | | `Contract: CommPlugin.sendMessage(target, formatted_batch)` |
+| | | | | | `Contract: CommunicationAdapter.sendMessage(target, formatted_batch)` |
 | 10 | **Daemon** | Receives `task.state_changed` (Blocked). Starts timeout timers: reminder at 4hr, self_unblock_check at 24hr, alert at 48hr | (P11.7) | - | `→ SafetyLayer.getTimeoutPolicy()` |
 
 ---
@@ -464,13 +464,13 @@ Reply with numbers, e.g., '1:A 2:B'
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
 | 24 | **Daemon** | Dispatches Child A. Workspace on branch `engineer/52/52A-oauth2-interface` (branched from parent branch) | (P3) | `⟹ task.state_changed` `{Queued→Active.Working}`, `⟹ workspace.created`, `⟹ git.branch_created` `{branch: "engineer/52/52A-oauth2-interface"}` | `→ WorkspaceManager.createWorkspace(52A, repo, parent_branch: "engineer/52-oauth2-refactor")` |
-| 25 | **Orchestrator** | Works through intake-analysis, research, planning (scope well-defined from parent). Enters execution. Multiple LLM calls | (P4, P10) | `⟹ cost.incurred` (multiple) | `Contract: LLMProvider.complete()` (multiple) |
+| 25 | **Orchestrator** | Works through intake-analysis, research, planning (scope well-defined from parent). Enters execution. Multiple LLM calls | (P4, P10) | `⟹ cost.incurred` (multiple) | `Contract: LLMAdapter.complete()` (multiple) |
 
 **Preemption -- urgent task arrives:**
 
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
-| 26 | **GitHubIssuesTrigger** | Polls, discovers urgent issue #53 "Critical: API auth bypass in production" with label `priority:critical` mapping to priority 95 | (P2) | `⟹ trigger.new_event`, `⟹ task.created` `{task_id: 53, priority: 95}`, `⟹ task.state_changed` `{Intake→Queued}` | `Contract: TriggerPlugin.poll()`, `→ TaskEngine.createTask()` |
+| 26 | **GitHubIssuesTrigger** | Polls, discovers urgent issue #53 "Critical: API auth bypass in production" with label `priority:critical` mapping to priority 95 | (P2) | `⟹ trigger.new_event`, `⟹ task.created` `{task_id: 53, priority: 95}`, `⟹ task.state_changed` `{Intake→Queued}` | `Contract: TriggerAdapter.poll()`, `→ TaskEngine.createTask()` |
 | 27 | **Daemon** | Scheduling tick: #53 (priority 95) vs Child A (priority 50). Delta = 45 ≥ preemption_threshold (20). Initiates preemption | (P8.1) | - | - |
 | 28 | **Daemon** | Emits preemption request. Starts 60s timeout | (P8.2-3) | `⟹ preemption.requested` `{target_task_id: "52A", preempting_task_id: 53, priority_delta: 45}` | - |
 | 29 | **Orchestrator** | Receives preemption signal. Finishes current atomic op (LLM call in progress -- lets it complete). Does not start new ops | (P8.4) | - | - |
@@ -530,7 +530,7 @@ Reply with numbers, e.g., '1:A 2:B'
 | 45 | **Workspace Manager** | Merge now complete | - | `⟹ git.merge_completed` `{task_id: 52, source_branch: "engineer/52/52A-oauth2-interface", target_branch: "engineer/52-oauth2-refactor"}` | - |
 | 46 | **Orchestrator** | Generates Child A completion summary. Attaches to parent context | (P6.5) | - | `→ TaskEngine.attachChildSummary(52, "52A", "Added OAuth2 provider interface: authorize(), callback(), refreshToken(), revokeToken(), getUserProfile(). Tests passing. Adapter pattern for existing middleware.")` |
 | 47 | **Task Engine** | Checks: all children done? No (Child B still Queued). Transitions parent back: Working → Supervising (slot freed) | (P6.6) | `⟹ task.state_changed` `{from_sub: "Working", to_sub: "Supervising"}` | - |
-| 48 | **CommPlugin (Telegram)** | Receives `workspace.merge_conflict` event → notifies Farzam of conflict and resolution | (P6.11, P13) | `⟹ comm.message_sent` `{type: "notification"}` | `Contract: CommPlugin.sendMessage(target, "Merge conflict in #52 (middleware.ts) resolved automatically")` |
+| 48 | **TelegramCommPlugin** | Receives `workspace.merge_conflict` event → notifies Farzam of conflict and resolution | (P6.11, P13) | `⟹ comm.message_sent` `{type: "notification"}` | `Contract: CommunicationAdapter.sendMessage(target, "Merge conflict in #52 (middleware.ts) resolved automatically")` |
 
 **State:** Parent #52 back to Supervising. Child A's code merged into parent branch. Child B now eligible (A is Completed).
 
@@ -575,9 +575,9 @@ Reply with numbers, e.g., '1:A 2:B'
 
 | Step | Component | Action | Protocol | Events | Contracts |
 |------|-----------|--------|----------|--------|-----------|
-| 56 | **Orchestrator** | Parent enters integration phase. Runs integration tests ensuring children's code works together. Pushes combined code. Creates Draft PR | (P4, P7) | `⟹ git.pushed`, `⟹ git.pr_opened` `{task_id: 52, draft: true}` | `Contract: GitHostingPlugin.createPR({draft: true, title: "Refactor auth module to support OAuth2"})` |
+| 56 | **Orchestrator** | Parent enters integration phase. Runs integration tests ensuring children's code works together. Pushes combined code. Creates Draft PR | (P4, P7) | `⟹ git.pushed`, `⟹ git.pr_opened` `{task_id: 52, draft: true}` | `Contract: GitHostingAdapter.createPR({draft: true, title: "Refactor auth module to support OAuth2"})` |
 | 57 | **Orchestrator** | Transitions to Review-Pending.Demo | - | `⟹ task.state_changed` `{Active.Integrating → Review-Pending.Demo}` | `→ TaskEngine.requestTransition()` |
-| 58 | **Orchestrator** | Sends milestone notification | (P13) | `⟹ comm.message_sent` `{type: "milestone"}` | `Contract: CommPlugin.sendMessage()` |
+| 58 | **Orchestrator** | Sends milestone notification | (P13) | `⟹ comm.message_sent` `{type: "milestone"}` | `Contract: CommunicationAdapter.sendMessage()` |
 
 **(Demo review → code review → merge follows Scenario 1's pattern at steps 50-68.)**
 
@@ -589,7 +589,7 @@ Reply with numbers, e.g., '1:A 2:B'
 
 **"Update API rate limiting middleware"**
 
-Task #60 on `acme/api-server` is already in execution phase (system was running, task created and dispatched earlier). A cascade of failures tests every error propagation chain and recovery pattern: LLM failover, cost limit breach, comm plugin failure, config reload failure, Daemon crash, trigger failures, and Event Bus outage.
+Task #60 on `acme/api-server` is already in execution phase (system was running, task created and dispatched earlier). A cascade of failures tests every error propagation chain and recovery pattern: LLM failover, cost limit breach, communication plugin failure, config reload failure, Daemon crash, trigger failures, and Event Bus outage.
 
 This scenario demonstrates that the architecture degrades gracefully, preserves work, and recovers to consistent state.
 
@@ -601,12 +601,12 @@ Task #60 is in Active.Working, execution phase. The Orchestrator calls the LLM f
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 1 | **Orchestrator** | Calls LLM for code generation | - | - | `Contract: LLMProvider.complete({prompt: "Generate rate limiting middleware..."})` | - |
-| 2 | **ClaudeCodeProvider** | Returns fatal error | - | - | Returns `PluginError {code: "auth_failed", retryable: false, severity: "fatal"}` | Chain 1 |
+| 1 | **Orchestrator** | Calls LLM for code generation | - | - | `Contract: LLMAdapter.complete({prompt: "Generate rate limiting middleware..."})` | - |
+| 2 | **ClaudeCodeProvider** | Returns fatal error | - | - | Returns `AdapterError {code: "auth_failed", retryable: false, severity: "fatal"}` | Chain 1 |
 | 3 | **Daemon** | Detects fatal provider error. Checks provider priority list in config: `[claude-code, openrouter]`. Switches active provider to openrouter | - | - | `→ Registry.getPluginsByType("llm_provider")` | Chain 1 (fallback) |
-| 4 | **Daemon** | Retries same prompt on OpenRouterProvider | - | - | `Contract: LLMProvider.complete()` (via openrouter) → succeeds | Chain 1 (transparent) |
+| 4 | **Daemon** | Retries same prompt on OpenRouterProvider | - | - | `Contract: LLMAdapter.complete()` (via openrouter) → succeeds | Chain 1 (transparent) |
 | 5 | **Orchestrator** | Receives completion result transparently (provider switch invisible to Orchestrator). Emits cost event with new provider | (P10.1-2) | `⟹ cost.incurred` `{task_id: 60, provider_id: "openrouter", provider_type: "api", operation: "code_generation", spend_usd: 0.12}` | - | - |
-| 6 | **Orchestrator** | Sends notification about provider switch | (P13) | `⟹ comm.message_sent` `{type: "notification"}` | `Contract: CommPlugin.sendMessage(target, "Switched LLM provider: claude-code → openrouter (auth failure)")` | - |
+| 6 | **Orchestrator** | Sends notification about provider switch | (P13) | `⟹ comm.message_sent` `{type: "notification"}` | `Contract: CommunicationAdapter.sendMessage(target, "Switched LLM provider: claude-code → openrouter (auth failure)")` | - |
 
 **Outcome:** Task continues working with OpenRouter. Cost tracking switches to dollar-based (API type). Farzam notified of switch.
 
@@ -629,14 +629,14 @@ The switch to an API provider (dollar-based) changes cost dynamics. After severa
 
 ---
 
-### Part 3: Comm Plugin Failure During Cost Alert (Chain 3, Patterns 2+3)
+### Part 3: Communication Plugin Failure During Cost Alert (Chain 3, Patterns 2+3)
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 12 | **TelegramCommPlugin** | Receives `cost.limit_reached` (subscriber). Attempts to send alert to Farzam → FAILS | - | - | `Contract: CommPlugin.sendMessage()` → `PluginError {code: "network_error", retryable: true, retry_after: 5s}` | Chain 3 |
-| 13 | **Skeleton** | Retries with backoff: attempt 2 (after 5s) → fails. Attempt 3 (after 10s with jitter) → fails. Max retries exhausted | - | - | `Contract: CommPlugin.sendMessage()` x2 (both fail) | Pattern 2 |
-| 14 | **Skeleton** | Drives fallback: looks up Farzam in People Directory `contacts[]`: [telegram (failed), github, email]. Tries github | - | - | `→ PeopleDirectory.resolveContact("farzam", "github")` | Pattern 3 |
-| | | | | | `Contract: CommPlugin.sendMessage()` (via GitHubCommPlugin) | |
+| 12 | **TelegramCommPlugin** | Receives `cost.limit_reached` (subscriber). Attempts to send alert to Farzam → FAILS | - | - | `Contract: CommunicationAdapter.sendMessage()` → `AdapterError {code: "network_error", retryable: true, retry_after: 5s}` | Chain 3 |
+| 13 | **Core** | Retries with backoff: attempt 2 (after 5s) → fails. Attempt 3 (after 10s with jitter) → fails. Max retries exhausted | - | - | `Contract: CommunicationAdapter.sendMessage()` x2 (both fail) | Pattern 2 |
+| 14 | **Core** | Drives fallback: looks up Farzam in People Directory `contacts[]`: [telegram (failed), github, email]. Tries github | - | - | `→ PeopleDirectory.resolveContact("farzam", "github")` | Pattern 3 |
+| | | | | | `Contract: CommunicationAdapter.sendMessage()` (via GitHubCommPlugin) | |
 | 15 | **GitHubCommPlugin** | Sends cost alert as comment on issue #60: "Cost limit reached: $5.03 / $5.00 per-task limit. Task blocked. Increase budget or reply 'unblock #60'." | - | `⟹ comm.message_sent` `{type: "alert", channel: "github"}` | - | Pattern 3 (success) |
 
 **Outcome:** Alert delivered via fallback channel (GitHub instead of Telegram). Plugins are unaware of fallback -- each just sends or fails.
@@ -649,7 +649,7 @@ The switch to an API provider (dollar-based) changes cost dynamics. After severa
 |------|-----------|--------|----------|--------|-----------|-----------|
 | 16 | **Daemon** | Starts timeout timers for #60 Blocked state | (P11.7) | - | `→ SafetyLayer.getTimeoutPolicy()` | - |
 | 17 | **Daemon** | 4 hours pass. Reminder threshold reached | (P11.16) | `⟹ timeout.reminder` `{task_id: 60, blocked_since: "...", elapsed: "4h", question_summary: "Cost limit reached"}` | - | - |
-| 18 | **TelegramCommPlugin** | Still down. Reminder send fails. Skeleton falls back to GitHub -- posts reminder comment on issue #60 | - | `⟹ comm.message_sent` `{type: "notification", channel: "github"}` | `Contract: CommPlugin.sendMessage()` (telegram fails, github succeeds) | Pattern 2, Pattern 3 |
+| 18 | **TelegramCommPlugin** | Still down. Reminder send fails. Core falls back to GitHub -- posts reminder comment on issue #60 | - | `⟹ comm.message_sent` `{type: "notification", channel: "github"}` | `Contract: CommunicationAdapter.sendMessage()` (telegram fails, github succeeds) | Pattern 2, Pattern 3 |
 | 19 | **Daemon** | 24 hours pass. Self-unblock check threshold reached. Daemon evaluates: cost-blocked tasks cannot self-unblock (requires budget change, not autonomy). Check fires, takes no action | (P11.17) | `⟹ timeout.self_unblock_check` `{task_id: 60, blocked_since: "...", elapsed: "24h", can_self_unblock: false, reason: "cost_limit_block"}` | - | - |
 
 ---
@@ -662,7 +662,7 @@ Meanwhile, someone edits the Safety Layer config file (attempting to increase th
 |------|-----------|--------|----------|--------|-----------|-----------|
 | 20 | **Safety Layer** | Detects config file change. Attempts hot-reload. Validation fails (malformed YAML at line 42) | - | - | - | Chain 7 |
 | 21 | **Safety Layer** | Rejects reload. Keeps previous valid config. System continues with old cost limits | - | `⟹ health.config_reload_failed` `{component: "safety_layer", config_file: "safety.yml", error: "YAML parse error at line 42", running_config: "previous"}` | - | Chain 7, Pattern 5 |
-| 22 | **CommPlugin** | Receives `health.config_reload_failed` (subscriber). Sends alert. Telegram still down -- falls back to GitHub | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` (github) | Pattern 3 |
+| 22 | **Communication Plugin** | Receives `health.config_reload_failed` (subscriber). Sends alert. Telegram still down -- falls back to GitHub | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommunicationAdapter.sendMessage()` (github) | Pattern 3 |
 
 **Outcome:** System operates with stale (but valid) policy. Human alerted to fix the config file.
 
@@ -675,7 +675,7 @@ Meanwhile, the Orchestrator for a different task (#55, running on a second worki
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
 | 23 | **Daemon** | Health monitor tick. Detects Orchestrator for task #55 has not emitted any events or checkpoints in 2h15m (stuck threshold: 2h) | - | `⟹ health.stuck_detected` `{task_id: 55, condition: "no_progress", last_activity: "2h15m ago", threshold: "2h"}` | - | - |
-| 24 | **CommPlugin (GitHub)** | Receives `health.stuck_detected` (subscriber). Posts alert on issue #55 | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` | - |
+| 24 | **GitHubCommPlugin** | Receives `health.stuck_detected` (subscriber). Posts alert on issue #55 | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommunicationAdapter.sendMessage()` | - |
 
 **Outcome:** Human alerted to investigate task #55. Daemon continues monitoring. (Task #55 is unrelated to our main #60 trace -- shown here for `health.stuck_detected` coverage.)
 
@@ -690,7 +690,7 @@ The Daemon process crashes unexpectedly (e.g., OOM kill).
 | 25 | **Daemon** | CRASHES. Process terminates unexpectedly | - | - | - | - |
 | 26 | **Daemon** | Restarts. Begins P1 (System Startup) from step 1 | (P15.8, P1) | - | - | Pattern 4 |
 | 27 | **Event Bus** | Initializes persistence layer | (P1.2) | - | - | - |
-| 28 | **Registry** | Re-initializes all plugins. TelegramCommPlugin.initialize() -- now succeeds (network recovered during downtime) | (P1.3) | - | `Contract: Plugin.initialize(config)` on each | - |
+| 28 | **Registry** | Re-initializes all plugins. TelegramCommPlugin.initialize() -- now succeeds (network recovered during downtime) | (P1.3) | - | `Contract: Adapter.initialize(config)` on each | - |
 | 29 | **Safety Layer** | Reloads policy (still the valid previous config -- bad reload was rejected pre-crash). Replays `cost.incurred` events to rebuild accumulators | (P1.4, P15.11) | (replays `cost.incurred` events) | `→ EventBus.replay({type: "cost.incurred", since: billing_window_start})` | Pattern 4 |
 
 **Rebuilt cost accumulators:** `api_spend.per_task[60] = $5.03` (matches pre-crash state exactly -- events are the durable record).
@@ -713,8 +713,8 @@ Working slot count: 0                               ← from TaskEngine (no Acti
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 32 | **Daemon** | Checks plugin health -- all healthy now (Telegram recovered). Starts main loop. Sends restart notification | (P15.12, 15) | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: Plugin.healthCheck()` on all |
-| | | | | | `Contract: CommPlugin.sendMessage(target, "System restarted. Resuming operations.")` | |
+| 32 | **Daemon** | Checks plugin health -- all healthy now (Telegram recovered). Starts main loop. Sends restart notification | (P15.12, 15) | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: Adapter.healthCheck()` on all |
+| | | | | | `Contract: CommunicationAdapter.sendMessage(target, "System restarted. Resuming operations.")` | |
 
 ---
 
@@ -737,7 +737,7 @@ Task #55 (the stuck task from Part 6) had been decomposed into children #55A and
 |------|-----------|--------|----------|--------|-----------|-----------|
 | 35 | **Orchestrator** | Working on child #55A. Encounters unrecoverable error (test suite fails repeatedly, exhausts retries). Transitions to Failed | (P4) | `⟹ task.state_changed` `{#55A: Active.Working → Failed, reason: "unrecoverable_test_failure"}` | `→ TaskEngine.requestTransition("55A", "Failed")` | - |
 | 36 | **Task Engine** | Child #55A enters Failed state. Parent #55 has cascade policy: `pause-siblings` (default). Evaluates siblings: #55B is Queued. Transitions #55B → Blocked (cascade) | (P5) | `⟹ task.state_changed` `{#55B: Queued → Blocked, reason: "cascade_pause_sibling_failed"}` | - | Chain 5 |
-| 37 | **Daemon** | Receives child failure and cascade events. Notifies owner: "Task #55A failed. Sibling #55B paused (cascade policy: pause-siblings). Parent #55 waiting for resolution." | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` | Chain 5 |
+| 37 | **Daemon** | Receives child failure and cascade events. Notifies owner: "Task #55A failed. Sibling #55B paused (cascade policy: pause-siblings). Parent #55 waiting for resolution." | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommunicationAdapter.sendMessage()` | Chain 5 |
 
 **Outcome:** Cascade policy prevents wasted work on #55B. Human decides whether to fix #55A's issue and retry, or restructure the decomposition. (Task #55 is a side thread -- our main trace continues with #60.)
 
@@ -759,10 +759,10 @@ Meanwhile, the GitHub trigger starts failing:
 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
-| 41 | **Daemon** | Polls GitHubIssuesTrigger. Returns error. Increments consecutive failure counter: 1 | (P2.1 failure) | - | `Contract: TriggerPlugin.poll()` → `PluginError {code: "rate_limited", retryable: true}` | Pattern 2 |
-| 42 | **Daemon** | Next polls fail. Counter reaches threshold (3) | - | - | `Contract: TriggerPlugin.poll()` (fails x2 more) | - |
+| 41 | **Daemon** | Polls GitHubIssuesTrigger. Returns error. Increments consecutive failure counter: 1 | (P2.1 failure) | - | `Contract: TriggerAdapter.poll()` → `AdapterError {code: "rate_limited", retryable: true}` | Pattern 2 |
+| 42 | **Daemon** | Next polls fail. Counter reaches threshold (3) | - | - | `Contract: TriggerAdapter.poll()` (fails x2 more) | - |
 | 43 | **Daemon** | Emits health alert | - | `⟹ health.trigger_failure` `{trigger_id: "github-issues", consecutive_failures: 3, last_error: "rate_limited"}` | - | Pattern 5 |
-| 44 | **CommPlugin (Telegram)** | Receives event (subscriber). Sends alert: "GitHub trigger has failed 3 consecutive polls (rate_limited). Polling continues." | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommPlugin.sendMessage()` | - |
+| 44 | **TelegramCommPlugin** | Receives event (subscriber). Sends alert: "GitHub trigger has failed 3 consecutive polls (rate_limited). Polling continues." | - | `⟹ comm.message_sent` `{type: "alert"}` | `Contract: CommunicationAdapter.sendMessage()` | - |
 
 **Outcome:** Trigger plugin is degraded but continues polling. Human alerted. Next successful poll resets the counter.
 
@@ -828,7 +828,7 @@ If task #60 had remained blocked longer (it didn't -- Farzam unblocked it), the 
 | Step | Component | Action | Protocol | Events | Contracts | Error Ref |
 |------|-----------|--------|----------|--------|-----------|-----------|
 | - | **Daemon** | 48-hour threshold reached | (P11.19) | `⟹ timeout.alert` `{task_id: 60, escalation: "all_channels_notified"}` | - | - |
-| - | **CommPlugin** | Receives event → sends alert on ALL configured channels for Farzam simultaneously (not sequential fallback -- best-effort on every channel) | (P11.19) | `⟹ comm.message_sent` (multiple) | `Contract: CommPlugin.sendMessage()` on telegram, github, email | - |
+| - | **Communication Plugin** | Receives event → sends alert on ALL configured channels for Farzam simultaneously (not sequential fallback -- best-effort on every channel) | (P11.19) | `⟹ comm.message_sent` (multiple) | `Contract: CommunicationAdapter.sendMessage()` on telegram, github, email | - |
 
 ---
 
@@ -845,7 +845,7 @@ After task #60 resumes and continues working, the Event Bus storage becomes inac
 | 62 | **Orchestrator** | Finishes current atomic op. Creates checkpoint via direct Session/Memory call (not via Event Bus -- it's down) | (P15.18) | - | `→ SessionMemory.createCheckpoint(session_id, {reason: "system_halt", phase: "self-review"})` | Pattern 1 |
 | 63 | **Orchestrator** | Ends session | - | - | `→ SessionMemory.endSession(session_id, "system_halt")` | - |
 | 64 | **Daemon** | Transitions #60: Active.Working → Queued. State transition is synchronous (Task Engine call), but `task.state_changed` event cannot be persisted (Event Bus down) | (P15.19) | (`⟹ task.state_changed` -- CANNOT BE DELIVERED) | `→ TaskEngine.requestTransition(60, "Queued", "system_halt")` | Chain 2 |
-| 65 | **Daemon** | Attempts alert. Comm plugins may not receive Event Bus subscriptions, but direct `sendMessage()` calls still work. Also writes to stderr as last resort | - | - | `Contract: CommPlugin.sendMessage(target, "SYSTEM HALT: Event Bus storage failure. Checkpointed all work. Manual intervention required.")` | Pattern 6 |
+| 65 | **Daemon** | Attempts alert. Communication plugins may not receive Event Bus subscriptions, but direct `sendMessage()` calls still work. Also writes to stderr as last resort | - | - | `Contract: CommunicationAdapter.sendMessage(target, "SYSTEM HALT: Event Bus storage failure. Checkpointed all work. Manual intervention required.")` | Pattern 6 |
 | 66 | **Daemon** | System halted. Waits for Event Bus recovery or human intervention. All work checkpointed, all tasks in safe states | - | - | - | Chain 2 |
 
 **(When Event Bus recovers, Daemon restarts via P15 Scenario C. Task #60 resumes via P9. Cost accumulators rebuilt from Event Bus replay -- any events lost during the brief outage cause minor under-count, logged as warning. Task eventually completes.)**
@@ -875,7 +875,7 @@ All 5 plugin types exercised:
 - **Tool**: `execute()` in S1 and S2
 - **Git Hosting**: `createPR/updatePR/mergePR` in S1 and S2, `getPRStatus/getReviewStatus` in S1
 
-Skeleton components:
+Core components:
 - **Registry**: plugin discovery in all scenarios
 - **People Directory**: contact resolution in all scenarios
 
@@ -915,12 +915,12 @@ Layer 3 refined several Layer 2 designs as interactions between components were 
 |-----------|---------------|------------------------|---------|
 | Event Bus pre-processing → Action Pipeline | event-bus.md §Pre-Processing | event-catalog.md §Action Pipeline | Safety checks moved from Event Bus interceptor to Action Pipeline (Gate 1 + Gate 2). Event Bus is pure pub/sub. |
 | Orchestrator direct subscriptions → Daemon routing | event-bus.md §Subscriptions | event-catalog.md §Subscription Lifecycle, protocols.md P1/P3 | Orchestrator no longer subscribes directly to Event Bus. Daemon routes relevant events as part of dispatch. |
-| CommPlugin callback → event emission | comm-plugins.md §Interface | plugin-contracts.md §CommPlugin | Inbound messages emit `comm.message_received` events via skeleton, replacing direct callback pattern. |
-| Workspace Manager PR ops → Git Hosting Plugin | workspace-manager.md §PR Management | plugin-contracts.md §GitHostingPlugin | PR/branch operations separated into dedicated plugin type. Workspace Manager delegates to Git Hosting Plugin. |
-| Registry formalized as skeleton component | (not in Layer 2) | plugin-contracts.md §Registry | Full registry design: discovery, health checking, lifecycle management, primary plugin designation. |
-| People Directory formalized as skeleton component | (not in Layer 2) | plugin-contracts.md §People Directory | Full People Directory design: contacts schema, fallback chains, role-based lookup. |
-| LLM provider failover | (not in Layer 2) | error-propagation.md Chain 1, plugin-contracts.md §LLMProvider | Auto-failover to next provider in priority list on fatal provider error. |
-| Comm fallback chains | (not in Layer 2) | error-propagation.md Chain 3, plugin-contracts.md §Fallback | People Directory `contacts[]` ordered list drives fallback when primary comm channel fails. |
+| CommunicationAdapter callback → event emission | comm-plugins.md §Interface | adapter-contracts.md §CommunicationAdapter | Inbound messages emit `comm.message_received` events via core, replacing direct callback pattern. |
+| Workspace Manager PR ops → Git Hosting Plugin | workspace-manager.md §PR Management | adapter-contracts.md §GitHostingAdapter | PR/branch operations separated into dedicated plugin type. Workspace Manager delegates to Git Hosting Plugin. |
+| Registry formalized as core component | (not in Layer 2) | adapter-contracts.md §Registry | Full registry design: discovery, health checking, lifecycle management, primary plugin designation. |
+| People Directory formalized as core component | (not in Layer 2) | adapter-contracts.md §People Directory | Full People Directory design: contacts schema, fallback chains, role-based lookup. |
+| LLM provider failover | (not in Layer 2) | error-propagation.md Chain 1, adapter-contracts.md §LLMAdapter | Auto-failover to next provider in priority list on fatal provider error. |
+| Communication fallback chains | (not in Layer 2) | error-propagation.md Chain 3, adapter-contracts.md §Fallback | People Directory `contacts[]` ordered list drives fallback when primary communication channel fails. |
 | Health events added | (not in Layer 2) | event-catalog.md §health.* | Three health events: `stuck_detected`, `trigger_failure`, `config_reload_failed`. |
 | `action.rejected` event added | (not in Layer 2) | event-catalog.md §action.rejected | Audit trail for Action Pipeline rejections (gate denials). |
-| Plugin criticality concept | (not in Layer 2) | plugin-contracts.md §Plugin Manifest | `critical` field in plugin manifest determines startup/recovery behavior. |
+| Plugin criticality concept | (not in Layer 2) | adapter-contracts.md §Adapter Manifest | `critical` field in plugin manifest determines startup/recovery behavior. |

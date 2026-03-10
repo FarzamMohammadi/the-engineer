@@ -285,7 +285,7 @@ Users who want full ceremony for every task can set `fast_path.enabled: false`.
 
 ## Notification Model (Gaps #4, #15 -- Resolved)
 
-The Orchestrator owns the decision of **what** and **when** to communicate. Comm plugins own the **how**.
+The Orchestrator owns the decision of **what** and **when** to communicate. Communication plugins own the **how**.
 
 ### Communication Events
 
@@ -752,7 +752,7 @@ When the Daemon triggers `timeout.self_unblock_check` (after blocked_self_unbloc
 5. If verdict allows self-decision:
    a. Evaluate: does a reasonable default exist?
    b. If yes: compose proposal ("Going with {choice} since {reason}. Override if you'd prefer otherwise.")
-   c. Send via comm plugin
+   c. Send via communication plugin
    d. Apply the default choice
    e. Transition task: Blocked -> Active.Working
    f. Log decision in `task.decisions[]` with `decided_by: "agent"`
@@ -824,7 +824,7 @@ Quality control: The summary is validated against the current phase's outputs. I
 | **People Directory** | Looks up who to contact. Reads from task.team[] which references People Directory entries. | Orchestrator -> People Directory (lookup) |
 | **Workspace Manager** | Requests workspace creation (branch, worktree). Commits, pushes. Opens/updates PRs. Cleans up demo artifacts. | Orchestrator -> Workspace Manager |
 | **Event Bus** | Emits all events (action.requested, cost.incurred, comm.sent, etc.). Subscribes to events for current task (feedback, approval, child state changes). | Bidirectional |
-| **Comm Plugins** | Sends messages (questions, status, milestones). Receives human responses. | Orchestrator -> Comm (send), Comm -> Event Bus -> Orchestrator (receive) |
+| **Communication Plugins** | Sends messages (questions, status, milestones). Receives human responses. | Orchestrator -> Comm (send), Comm -> Event Bus -> Orchestrator (receive) |
 
 ---
 
@@ -959,7 +959,7 @@ OrchestratorConfig {
 
 - **LLM context window management**: How does the Orchestrator manage context window size during long phases? Summarization strategies, context pruning, reference doc loading/unloading.
 - **Phase reference doc loading**: Which reference docs are loaded per phase? How? (Injected into system prompt? Tool-accessible files? RAG?)
-- **Comm plugin message formatting**: How do comm plugins format messages for different channels? (Markdown for GitHub, plain text for Telegram? Templates?)
+- **Communication plugin message formatting**: How do communication plugins format messages for different channels? (Markdown for GitHub, plain text for Telegram? Templates?)
 - **Event subscription management**: How does the Orchestrator subscribe to events for its current task and unsubscribe when done? Per-task event filtering.
 - **Complexity assessment calibration**: How does the Orchestrator's complexity assessment improve over time? Feedback loop from actual vs estimated duration?
 - **Multi-question response parsing**: Full spec for parsing batched question responses -- structured and natural language.

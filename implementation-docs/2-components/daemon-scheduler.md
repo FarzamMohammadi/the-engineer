@@ -334,10 +334,10 @@ In multi-core mode, family affinity becomes interesting -- you might dedicate a 
 
 The Daemon discovers new work by polling trigger plugins registered in the Registry.
 
-### Trigger Plugin Interface
+### Trigger Adapter Interface
 
 ```
-TriggerPlugin {
+TriggerAdapter {
   id:             string
   poll_interval:  duration      (how often to poll, e.g., 30 seconds)
   poll():         TriggerEvent[]
@@ -401,13 +401,13 @@ For Blocked tasks, three stages:
 
 | Stage | Event emitted | Action (handled by Orchestrator/Comm) |
 |-------|---------------|---------------------------------------|
-| Reminder | `timeout.reminder { task_id, stage: "reminder" }` | Comm plugin sends reminder to human |
+| Reminder | `timeout.reminder { task_id, stage: "reminder" }` | Communication plugin sends reminder to human |
 | Self-unblock check | `timeout.self_unblock_check { task_id }` | Orchestrator evaluates if a reasonable default exists |
 | Alert | `timeout.alert { task_id, stage: "alert" }` | Escalation alert -- task blocked too long |
 
 For Review-Pending tasks: only `timeout.reminder` events -- the agent cannot self-approve.
 
-The Daemon emits these events on the Event Bus when thresholds are crossed. The Orchestrator and Comm plugins subscribe and handle the actual actions.
+The Daemon emits these events on the Event Bus when thresholds are crossed. The Orchestrator and communication plugins subscribe and handle the actual actions.
 
 ### Crash Recovery
 
@@ -433,12 +433,12 @@ Daemon state is **ephemeral** -- fully reconstructable from Task Engine state. T
 
 The Daemon owns a lightweight query handler that processes `comm.message_received` events at all times -- even when the Orchestrator is busy working on a task. The Orchestrator is never interrupted for queries.
 
-This is not "intelligence" -- it is structured data retrieval and template-based formatting. The Daemon reads from Task Engine and Session/Memory, formats a response, and sends it via the comm plugin. No LLM is involved.
+This is not "intelligence" -- it is structured data retrieval and template-based formatting. The Daemon reads from Task Engine and Session/Memory, formats a response, and sends it via the communication plugin. No LLM is involved.
 
 ### Query Flow
 
 ```
-1. Comm plugin emits Event Bus: comm.message_received { sender, content, ... }
+1. Communication plugin emits Event Bus: comm.message_received { sender, content, ... }
 2. Daemon receives event in its main loop
 3. Daemon disambiguates: query or task response?
    a. Check: is there a task Blocked with waiting_for matching this sender?
@@ -451,7 +451,7 @@ This is not "intelligence" -- it is structured data retrieval and template-based
    - "why did you decide X" -> Session/Memory: queryJournal(N, type=decision)
    - "cost" -> Safety Layer: getCostStatus()
 6. Format response using templates
-7. Send via same comm plugin that received the query
+7. Send via same communication plugin that received the query
 ```
 
 ### Query Types

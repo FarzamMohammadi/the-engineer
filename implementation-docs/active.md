@@ -23,7 +23,8 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
   - `goals.md` — the destination (14 sections)
   - `philosophy.md` — project beliefs and principles
 - `1-system/` — Layer 1: System Overview
-  - `overview.md` — high-level components + skeleton/plugin classification
+  - `architecture-tiers.md` — three-tier model (Core / Adapter / Plugin), extensibility design
+  - `overview.md` — high-level components + tier classification
   - `task-states.md` — CPU-derived task state machine
   - `relationships.md` — component relationships, data flow, simulation gaps
   - `user-flows.md` — concrete user flows from Farzam's perspective (Layer 1.5)
@@ -34,11 +35,11 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
   - `safety-layer.md` — Safety Layer (cost tracking, scope, autonomy, response timeout)
   - `orchestrator.md` — Orchestrator (phase pipeline, fast-path, notifications, supervision)
   - `workspace-manager.md` — Workspace Manager (worktrees, branch hierarchy, progressive merge)
-  - `comm-plugins.md` — Comm Plugins (status query interface, GitHub state sync)
+  - `comm-plugins.md` — Communication Plugins (status query interface, GitHub state sync)
   - `event-bus.md` — Event Bus (event model, delivery guarantees, persistence)
 - `3-interactions/` — Layer 3: Interactions & Protocols
   - `event-catalog.md` — Event Catalog (30 events, 10 groups, Action Pipeline)
-  - `plugin-contracts.md` — Plugin Contracts (trigger, comm, LLM, tool, git-hosting + Registry + People Directory)
+  - `adapter-contracts.md` — Adapter Contracts (TriggerAdapter, CommunicationAdapter, LLMAdapter, ToolAdapter, GitHostingAdapter + Registry + People Directory)
   - `protocols.md` — Protocols (15 cross-component interaction protocols)
   - `error-propagation.md` — Error Propagation (failure classification, 7 chains, 6 patterns)
   - `lifecycle.md` — Lifecycle Traces (3 end-to-end scenarios, full coverage)
@@ -64,16 +65,10 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-Session 21 complete. **Layer 3 COMPLETE.** Mini holistic review found and fixed 10 issues across all 5 Layer 3 docs. All cross-references verified against Layer 2 docs. Layer 2 → Layer 3 evolution documented in lifecycle.md reconciliation table. 58 total decisions (no new architectural decisions — all fixes were corrections and coverage gaps).
+Session 22 complete. **Three-tier architecture formalized (Core / Adapter / Plugin).** This was a cross-cutting change touching 16 files across all layers. Created `architecture-tiers.md` as the canonical three-tier reference with extensibility design. Renamed `plugin-contracts.md` → `adapter-contracts.md` with all interfaces renamed to proper adapter names. Swept "skeleton" → "Core" across all L1-L3 docs. Fixed stale Event Bus pre-processing reference. 6 new decisions (#59-#64). 64 total decisions.
 
-**Next: Layer 4 — Implementation Design.**
+Layers 0-3: ALL COMPLETE. 64 total decisions.
 
-Layer 3 work order:
-- [x] Event Catalog — `event-catalog.md` (30 events, 10 groups, Action Pipeline model) — REVIEWED & FINALIZED
-- [x] Plugin Contracts — `plugin-contracts.md` (trigger, comm, LLM, tool, git-hosting + Registry + People Directory) — FINALIZED
-- [x] Protocols — `protocols.md` (15 cross-component interaction protocols) — ALL 15 DRAFTED & VERIFIED (P1-P6: Task Lifecycle, P7-P10: Coordination, P11-P14: Communication, P15: Resilience)
-- [x] Error Propagation — `error-propagation.md` (failure classification, 7 chains, 6 patterns, comm error handling) — COMPLETE
-- [x] Lifecycle — `lifecycle.md` (3 scenarios, 15/15 protocols, 30/30 events, full coverage) — FINALIZED
-- [x] Mini holistic review — cross-reference all 5 Layer 3 docs + Layer 2 docs — COMPLETE
+**Next: Layer 4 — Implementation Design.** This session completed the last piece of architectural formalization. The three-tier model, adapter naming, and extensibility design are all in place. Layer 4 is ready to begin — technology choices, data structures, file layout, configuration format, testing strategy.
 
-Layers 0-2: ALL COMPLETE. Layer 3: COMPLETE. 58 total decisions.
+**Note:** Three unpushed commits have `Co-Authored-By` lines that need removing before push. Use `git rebase -i` to strip them.

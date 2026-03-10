@@ -12,7 +12,50 @@ Bottom-up, like a compiler bootstrap. Schemas and infrastructure first, then com
 
 **Hello world milestone:** Phase 12 — `createDaemon(config)` boots with fake plugins, ticks, polls a fake trigger, creates a task, dispatches to the orchestrator skeleton.
 
-**Context window management:** Phases 1 and 14 were split to prevent context overflow. Each phase lists its exact reference documents — read only those, not the full spec library.
+**Context window management:** Phases 1 and 14 were split to prevent context overflow. Each phase lists its primary reference documents, but agents should explore freely beyond them.
+
+---
+
+## Session Preparation — Read This First Every Session
+
+Before starting any phase, the implementing agent must understand the project deeply — not just the phase spec, but the intent, philosophy, and architectural reasoning behind every decision.
+
+### Required Reading (Every Session)
+
+1. **`active.md`** — Current status, what just happened, what's next.
+2. **`0-foundation/goals.md`** — The destination. 14 sections defining what The Engineer IS. Every implementation choice must serve these goals.
+3. **`0-foundation/philosophy.md`** — Core beliefs and principles. "What would a real engineer do?" is the lens for every decision. This file defines HOW we build, not just WHAT.
+4. **`sessions/{latest}.md`** — What happened last session, what's next. Continuity matters.
+5. **The current phase section** from this file (`build-order.md`) — Deliverables, architecture connections, reference docs.
+
+### Strongly Recommended Reading (Every Session)
+
+6. **`1-system/architecture-tiers.md`** — The three-tier model (Core / Adapter / Plugin). Every line of code must respect these boundaries. Understand WHY before coding.
+7. **`decisions.md`** — The full decision log (128 decisions). Not every decision is relevant to every phase, but scanning the rationale for nearby decisions prevents re-litigating settled questions and reveals reasoning the phase spec may not repeat.
+
+### Phase-Specific Reading
+
+Each phase section below lists "What To Read" — these are the primary implementation references for that phase. **But they are not exhaustive.** The agent should freely explore other files in `implementation-docs/` when context is needed. The architecture is deeply interconnected — a question about how the Event Bus works may lead you to `2-components/event-bus.md`, `3-interactions/event-catalog.md`, OR `3-interactions/protocols.md` depending on what you need.
+
+### Exploration Guidance
+
+The `implementation-docs/` directory is the single source of truth for all architectural decisions. When implementing, if you encounter ambiguity or need to make a judgment call:
+
+1. **Search `decisions.md`** for relevant decisions — every major choice is logged with rationale and rejected alternatives.
+2. **Read the Layer 2 component doc** for the component you're building — these define behavior, edge cases, and design intent.
+3. **Read the Layer 3 interactions** (protocols, error propagation, lifecycle traces) when you need to understand how components work together.
+4. **Read `0-foundation/philosophy.md`** when you need to make a judgment call that isn't explicitly covered — the principles guide the answer.
+
+Never guess when a document exists that answers the question. Take time to research. Thoroughness over speed — always.
+
+### Working Style
+
+This is a deeply collaborative project. Farzam and the agent are partners. Key principles:
+- **Never assume, always check in** — use Q&A when uncertain.
+- **"What would a real engineer do?"** — apply this lens to every design question.
+- **Full names, no abbreviations** — CommunicationAdapter not CommAdapter. Clarity from bottom to top.
+- **Every decision must pass dual test:** works for v1 AND doesn't block future evolution.
+- **Thoroughness over speed** — we have endless time. Get it right.
 
 ---
 

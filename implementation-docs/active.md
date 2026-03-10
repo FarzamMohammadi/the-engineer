@@ -43,6 +43,8 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
   - `protocols.md` — Protocols (15 cross-component interaction protocols)
   - `error-propagation.md` — Error Propagation (failure classification, 7 chains, 6 patterns)
   - `lifecycle.md` — Lifecycle Traces (3 end-to-end scenarios, full coverage)
+- `4-implementation/` — Layer 4: Implementation Design
+  - `foundation.md` — Technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
 
 ## Repo Structure
 
@@ -58,17 +60,25 @@ the-engineer/
     ├── 0-foundation/      # Layer 0: Goals & Philosophy
     ├── 1-system/          # Layer 1: System Overview
     ├── 2-components/      # Layer 2: Component Architecture
-    └── 3-interactions/    # Layer 3: Interactions & Protocols
+    ├── 3-interactions/    # Layer 3: Interactions & Protocols
+    └── 4-implementation/  # Layer 4: Implementation Design
 ```
 
 Everything else in the repo will be for The Engineer (the agent) — created AFTER architecture is finalized.
 
 ## Status
 
-Session 22 complete. **Three-tier architecture formalized (Core / Adapter / Plugin).** This was a cross-cutting change touching 16 files across all layers. Created `architecture-tiers.md` as the canonical three-tier reference with extensibility design. Renamed `plugin-contracts.md` → `adapter-contracts.md` with all interfaces renamed to proper adapter names. Swept "skeleton" → "Core" across all L1-L3 docs. Fixed stale Event Bus pre-processing reference. 6 new decisions (#59-#64). 64 total decisions.
+Layers 0-3: ALL COMPLETE. 64 architectural decisions.
 
-Layers 0-3: ALL COMPLETE. 64 total decisions.
+**Layer 4 — Implementation Design: IN PROGRESS.** Broken into 6 focused sessions:
 
-**Next: Layer 4 — Implementation Design.** This session completed the last piece of architectural formalization. The three-tier model, adapter naming, and extensibility design are all in place. Layer 4 is ready to begin — technology choices, data structures, file layout, configuration format, testing strategy.
+- Session 23: Foundation (technology stack) — DONE. 10 decisions (#65-#74). 74 total.
+- Session 24: Data structures & schemas — NEXT
+- Session 25: Project layout & config format
+- Session 26: Plugin system & adapter implementation
+- Session 27: Deployment & operations
+- Session 28: Testing strategy
+
+**Technology stack decided:** TypeScript, Node.js 22 LTS, pnpm, ESM, SQLite (better-sqlite3), tsx + tsdown, Biome, Zod, Vitest. Polling-only triggers for v1.
 
 **Note:** Three unpushed commits have `Co-Authored-By` lines that need removing before push. Use `git rebase -i` to strip them.

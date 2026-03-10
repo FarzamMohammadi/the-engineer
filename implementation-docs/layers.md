@@ -104,7 +104,7 @@ How components talk to each other. The wiring.
 
 **Key Layer 3 decisions:** Action Pipeline (Decision #42), one plugin per adapter (Decision #43), health events (Decision #44), minimal tool contract (Decision #45), LLM cost reporting contractual (Decision #46), People Directory is skeleton (Decision #47), cost limit auto-resume configurable (Decision #49), reads Gate 1 only (Decision #50), LLM fallback for response parsing (Decision #51), shutdown timeout owned by Daemon (Decision #52), Event Bus down = halt (Decision #53), LLM auto-failover (Decision #54), comm fallback chains (Decision #55), config reload health alert (Decision #56), checkpoint without LLM (Decision #57), GitHub state reconciliation (Decision #58). 58 total decisions.
 
-## Layer 4: Implementation Design
+## Layer 4: Implementation Design — IN PROGRESS
 
 Ready-to-code specifications. No ambiguity left.
 
@@ -115,6 +115,17 @@ Ready-to-code specifications. No ambiguity left.
 - Configuration format and schema
 - Deployment specifications (Dockerfile, compose, env vars)
 - Testing strategy
+
+**Session plan:**
+- [x] Session 23: Foundation — technology stack (10 decisions, #65-#74) → [`foundation.md`](4-implementation/foundation.md)
+- [ ] Session 24: Data structures & schemas
+- [ ] Session 25: Project layout & config format
+- [ ] Session 26: Plugin system & adapter implementation
+- [ ] Session 27: Deployment & operations
+- [ ] Session 28: Testing strategy
+
+**Documents:**
+- [`foundation.md`](4-implementation/foundation.md) — technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
 
 ## Layer 5: Implementation
 

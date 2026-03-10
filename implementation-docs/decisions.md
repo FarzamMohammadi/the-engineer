@@ -601,3 +601,99 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Workflow Phases and Observability Backends (listed in overview.md) do not yet have adapter contracts. Flagged in `architecture-tiers.md` as future adapter types to be defined during Layer 4 (Implementation Design). The adapter tier is explicitly designed as open-ended — new adapter types beyond these two can be added as The Engineer's capabilities evolve.
 
 **Rationale:** Workflow phase contracts depend on Orchestrator implementation details not yet specified. Observability contracts depend on the monitoring stack not yet chosen. Defining placeholder contracts now would be speculative. More importantly, the architecture must not assume these are the only future adapter types — The Engineer's needs will evolve in ways we cannot fully predict. The pattern for adding new adapter types (define contract extending Universal Adapter Contract, register type in Registry) is well-established and low-impact.
+
+---
+
+## Layer 4 — Implementation Design
+
+> Decisions #65–#74. All choices serve two masters: works for v1 (single user, single process) AND doesn't block future evolution (multi-threaded, multi-user, scaled). Reference project: [OpenClaw](https://github.com/openclaw/openclaw).
+
+---
+
+## 2026-03-09 — TypeScript as primary language (#65)
+
+**Decision:** TypeScript is the primary implementation language for The Engineer.
+
+**Rationale:** Strong type system enforces our 30 event types, 5 adapter contracts, and state machine transitions at compile time. Native event loop matches event-driven architecture. Scales via `worker_threads` for future multi-threading.
+
+**Alternatives rejected:** Python (weaker typing, GIL), Go (weaker plugin/dynamic loading, verbose for nested schemas), Rust (overkill for I/O orchestration system).
+
+---
+
+## 2026-03-09 — Node.js 22 LTS (#66)
+
+**Decision:** Node.js 22 LTS as the runtime. Active LTS through October 2027.
+
+**Rationale:** Native ESM support (stable), `worker_threads` for future parallelism, `node:sqlite` maturing as future built-in option.
+
+---
+
+## 2026-03-09 — pnpm as package manager (#67)
+
+**Decision:** pnpm for package management.
+
+**Rationale:** Fast, disk-efficient, strict dependency resolution catches phantom dependencies. Built-in workspace support for future monorepo. Validated by OpenClaw.
+
+**Alternatives rejected:** npm (slower, less strict), bun (less mature lockfile ecosystem).
+
+---
+
+## 2026-03-09 — ESM only (#68)
+
+**Decision:** ES Modules exclusively. No CommonJS. `"type": "module"` in package.json.
+
+**Rationale:** Modern Node.js standard. Clean dynamic `import()` for plugin loading — critical for our adapter/plugin system. Tree-shaking support for production builds.
+
+---
+
+## 2026-03-09 — SQLite via better-sqlite3 (#69)
+
+**Decision:** SQLite (via `better-sqlite3`) as the storage backend for Task Engine, Event Bus, and Session/Memory.
+
+**Rationale:** Zero-config, embedded, single file. WAL mode for concurrent reads + single writer (matches single-daemon design). Handles millions of rows. Portable — DB file moves with the project. "Design for one person first" (goals.md). Behind interfaces — swappable to PostgreSQL or `node:sqlite` when concurrency demands it. The bottleneck is LLM calls (95%+ of task time), never storage throughput.
+
+**Alternatives rejected:** PostgreSQL (requires server, overkill for single-user), file-based JSON/JSONL (no indexing/transactions), `node:sqlite` built-in (still experimental).
+
+---
+
+## 2026-03-09 — tsx (dev) + tsdown (production builds) (#70)
+
+**Decision:** `tsx` for development (fast TS execution, watch mode), `tsdown` for production builds (optimized bundles via esbuild).
+
+**Rationale:** Development needs speed (tsx runs TS directly). Production needs optimization (tsdown tree-shakes, bundles). Both TypeScript-first, well-maintained. tsdown validated by OpenClaw.
+
+---
+
+## 2026-03-09 — Biome for linting & formatting (#71)
+
+**Decision:** Biome as the single linting and formatting tool.
+
+**Rationale:** Replaces ESLint + Prettier with one tool, one config. Rust-based — 10-100x faster. Prettier-compatible formatter. Growing adoption.
+
+**Alternatives rejected:** oxlint + oxfmt (two separate tools), ESLint + Prettier (slower, more configuration).
+
+---
+
+## 2026-03-09 — Zod for runtime validation (#72)
+
+**Decision:** Zod for runtime validation of event payloads, adapter responses, and config schemas.
+
+**Rationale:** TypeScript types only exist at compile time. At runtime — when events flow through Event Bus, adapters return data, config files load — we need validation. Zod schemas infer TypeScript types automatically (`z.infer<typeof schema>`). Composable, zero dependencies, excellent error messages. De facto standard.
+
+---
+
+## 2026-03-09 — Vitest for testing (#73)
+
+**Decision:** Vitest as the test framework.
+
+**Rationale:** Fast, TypeScript-native (no compilation step for tests). Parallel test execution, built-in coverage via v8. Supports multiple configs (unit, e2e, integration) via workspaces. Jest-compatible API. Validated by OpenClaw.
+
+---
+
+## 2026-03-09 — Polling-only triggers for v1 (#74)
+
+**Decision:** GitHub API polling at configurable intervals for v1. No HTTP server, no webhooks, no exposed ports.
+
+**Rationale:** Zero cost (GitHub free tier: 5,000 req/hr, polling uses ~120 req/hr). Zero infrastructure (runs locally). Simple to develop and debug. 30-second latency is negligible for tasks taking minutes to hours. TriggerAdapter contract already supports adding webhook plugins later without changing Core.
+
+**Alternatives rejected:** Webhooks (requires exposed endpoint, tunnel setup, infrastructure cost). Deferred to future optimization.

@@ -126,6 +126,7 @@ Ready-to-code specifications. No ambiguity left.
 
 **Documents:**
 - [`foundation.md`](4-implementation/foundation.md) — technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
+- [`openclaw-review.md`](4-implementation/openclaw-review.md) — OpenClaw reference (validated decisions, patterns to adopt)
 
 ## Layer 5: Implementation
 

@@ -45,6 +45,7 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
   - `lifecycle.md` — Lifecycle Traces (3 end-to-end scenarios, full coverage)
 - `4-implementation/` — Layer 4: Implementation Design
   - `foundation.md` — Technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
+  - `openclaw-review.md` — OpenClaw reference (validated decisions, patterns to adopt)
 
 ## Repo Structure
 

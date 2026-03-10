@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { PersonSchema } from "./adapters.js";
+
 // ── Daemon Config ───────────────────────────────────────────────────────────────
 // Loaded from daemon.yaml. Startup-only — not hot-reloadable.
 
@@ -311,3 +313,12 @@ export const SafetyConfigSchema = z.object({
   merge: MergePolicySchema.default({}),
 });
 export type SafetyConfig = z.infer<typeof SafetyConfigSchema>;
+
+// ── People Config (people.yaml wrapper) ──────────────────────────────────────────
+// Wraps PersonSchema[] for YAML file structure: `people: [...]`
+// Hot-reloadable — changes take effect without restart.
+
+export const PeopleConfigSchema = z.object({
+  people: z.array(PersonSchema).default([]),
+});
+export type PeopleConfig = z.infer<typeof PeopleConfigSchema>;

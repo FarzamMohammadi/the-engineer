@@ -1,0 +1,7 @@
+tick_interval_ms: "10s"
+preemption_timeout_ms: "2m"
+stuck_threshold_ms: "30m"
+max_active_duration_ms: "8h"
+shutdown_timeout_ms: "1m"
+logging:
+  level: info

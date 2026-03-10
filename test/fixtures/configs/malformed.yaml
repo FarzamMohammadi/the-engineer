@@ -1,0 +1,4 @@
+tick_interval_ms: 5000
+this is broken yaml
+  : missing key
+  "unclosed quote

@@ -1,0 +1,10 @@
+scope:
+  repos:
+    allowed:
+      - "${TEST_REPO_NAME}"
+  external:
+    allowed_domains:
+      - "${TEST_DOMAIN}"
+merge:
+  auto_merge:
+    default: false

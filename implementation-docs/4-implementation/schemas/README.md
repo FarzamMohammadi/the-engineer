@@ -16,6 +16,7 @@ Part of **Layer 4** — see [`../foundation.md`](../foundation.md) for technolog
 | [`adapters.md`](adapters.md) | Universal adapter contract, 5 adapter types, Registry, People Directory | Zod only (not persisted) |
 | [`orchestrator.md`](orchestrator.md) | 7 phase outputs, CommEvent, QuestionBatch, DecompositionPlan | Zod only (serialized into checkpoint JSON) |
 | [`ephemeral.md`](ephemeral.md) | DaemonState, Safety accumulators, Workspace state | In-memory only |
+| [`config.md`](config.md) | DaemonConfig, OrchestratorConfig, WorkspaceConfig (full versions with defaults) | Config files (YAML) |
 | [`sqlite.md`](sqlite.md) | CREATE TABLE statements, indexes, migration approach | DDL reference |
 | [`reconciliation.md`](reconciliation.md) | Gaps found between L2/L3 and concrete schemas | Tracker (resolve before session close) |
 
@@ -159,4 +160,4 @@ Every type in the system belongs to exactly one persistence tier:
 | **SQLite** | `better-sqlite3` database, WAL mode | Task, Event, Session, JournalEntry, Checkpoint, KnowledgeEntry, StateTransition |
 | **Zod only** | Runtime validation + type inference, not persisted directly | Adapter contracts, event payloads (stored as JSON inside events.payload), phase outputs (stored inside checkpoint JSON) |
 | **Ephemeral** | In-memory, rebuilt on startup | DaemonState, Safety accumulators, Event Bus subscriptions |
-| **Config files** | File-based, hot-reloadable (format TBD Session 25) | SafetyConfig, WorkspaceConfig, PeopleDirectory, plugin configs |
+| **Config files** | YAML files in `~/.engineer/config/` (Decision #90-#92). SafetyConfig + PeopleDirectory are hot-reloadable; others startup-only. | DaemonConfig, OrchestratorConfig, SafetyConfig, WorkspaceConfig, PeopleDirectory, plugin configs |

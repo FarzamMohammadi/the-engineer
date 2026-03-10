@@ -817,3 +817,113 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Every code quality rule enforced by automated tooling that cannot be bypassed. Agents (and humans) MUST fix issues because they literally cannot continue.
 
 **Rationale:** AI-driven development insight — agents inadvertently skip formatting, leave unused imports, miss dead code. Leveraging pre-commit hooks (Biome format + type check), pre-push hooks (tests must pass), and Zod runtime validation at boundaries creates non-bypassable enforcement. Detailed tooling design deferred to Sessions 25 (hooks, Biome, tsconfig) and 28 (tests, coverage).
+
+---
+
+## Layer 4 — Project Layout & Config Format
+
+> Decisions #90–#101. Config file system, source directory layout, and enforcement tooling. Every choice supports a single principle: strictest enforcement that doesn't block future evolution.
+
+---
+
+## 2026-03-09 — YAML for all config files (#90)
+
+**Decision:** All config files use YAML (`.yaml` extension). Parser: `yaml` npm package.
+
+**Rationale:** Configs are deeply nested (SafetyConfig has 5 sections with sub-objects) — YAML handles this cleanly. Comments are essential for config files (JSON disqualified). Duration strings like `"4h"` read naturally. Norway problem (`NO` → `false`) is irrelevant — Zod validates every field at load time.
+
+**Alternatives rejected:** JSON5 (OpenClaw uses it, but less readable for deep nesting), TOML (verbose for nested structures), JSON (no comments).
+
+---
+
+## 2026-03-09 — Multi-file config organization (#91)
+
+**Decision:** Separate config files per concern in `~/.engineer/config/`: `daemon.yaml`, `orchestrator.yaml`, `safety.yaml`, `workspace.yaml`, `people.yaml`, plus `plugins/` directory for per-plugin configs.
+
+**Rationale:** Hot-reload precision — the watcher knows exactly which config changed, no need to re-parse everything. Safety and People configs change independently. Plugin configs are naturally per-plugin. 6 files + a plugins directory is manageable.
+
+**Alternatives rejected:** Single `engineer.yaml` with sections (hot-reload must re-parse entire file).
+
+---
+
+## 2026-03-09 — Config location and discovery (#92)
+
+**Decision:** Default config directory: `~/.engineer/config/`. Override via `ENGINEER_CONFIG_DIR` environment variable. Fixed paths — no merging, no layering, no per-project overrides for v1.
+
+**Rationale:** Simplicity for v1 (single user, single machine). Per-project overrides add layering complexity without v1 value. The env var override supports different setups (CI, testing, multiple instances).
+
+---
+
+## 2026-03-09 — Defaults in Zod schemas (#93)
+
+**Decision:** Config defaults live in Zod schemas via `.default()`. Config files only need to specify overrides. Missing config file = system runs with all defaults.
+
+**Rationale:** Single source of truth for defaults (in the schema, not duplicated in template files). Out-of-the-box behavior without requiring config file creation. Zod `.default()` integrates naturally with the validation pipeline.
+
+---
+
+## 2026-03-09 — Hot-reload for safety and people configs (#94)
+
+**Decision:** `safety.yaml` and `people.yaml` are hot-reloadable via `node:fs.watch()` with 500ms debounce. All other configs are startup-only. Plugin configs are not hot-reloadable in v1. Invalid reload → keep previous config, emit alert event.
+
+**Rationale:** Safety and People configs are explicitly designed for hot-reload in L2/L3 (cost limits need adjustment without restart, people contacts change). Daemon/Orchestrator/Workspace configs control system behavior that shouldn't change mid-operation (tick intervals, phase behavior, branch naming). The 500ms debounce handles editor autosave and atomic write patterns.
+
+---
+
+## 2026-03-09 — Config error handling: startup vs hot-reload (#95)
+
+**Decision:** Invalid config on startup = refuse to start with clear Zod error. Missing config on startup = use all Zod defaults. Invalid config on hot-reload = keep previous valid config, emit alert event.
+
+**Rationale:** Startup is the safe place to fail — the system isn't running yet, clear errors help the user fix the issue. Hot-reload must be resilient — a typo in a config edit shouldn't crash a running system with active tasks.
+
+---
+
+## 2026-03-09 — Secrets via environment variables (#96)
+
+**Decision:** Config files reference secrets using `${ENV_VAR_NAME}` syntax. Resolved at load time before Zod validation. Config files never contain actual secrets.
+
+**Rationale:** Config files are safe to version control. Env vars are the standard secret injection mechanism. Missing env var = clear error at load time. No need for encrypted config files or secret management services for v1.
+
+---
+
+## 2026-03-09 — Duration parsing via ms package (#97)
+
+**Decision:** Human-readable duration strings (`"4h"`, `"30s"`, `"2m"`) in config files parsed to milliseconds at load time using the `ms` npm package.
+
+**Rationale:** `ms` is tiny (zero deps, ~50 lines), widely used (~100M weekly downloads), handles all common duration formats. Integrates with Decision #86 (durations as milliseconds internally) — config files are the only place humans write durations in readable format.
+
+---
+
+## 2026-03-09 — tsconfig: maximum strictness (#98)
+
+**Decision:** TypeScript strict mode with additional aggressive flags: `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`. Unused locals/parameters delegated to Biome.
+
+**Rationale:** Decision #89 (strictest enforcement). `noUncheckedIndexedAccess` catches unguarded array/record access — critical for a system with 30 event types and dynamic lookups. `exactOptionalPropertyTypes` distinguishes "key absent" from "key is undefined" — important for our config merging and partial updates. Biome handles unused code checks faster (runs on staged files only in pre-commit).
+
+---
+
+## 2026-03-09 — Biome all preset (#99)
+
+**Decision:** Start with Biome's `all` lint preset (every rule enabled). Carve specific exceptions as needed during implementation. Format: 2-space indent, 100-char lines, trailing commas, semicolons always.
+
+**Rationale:** Decision #89 — start strictest, relax intentionally. `noExplicitAny` is non-negotiable for our contract-heavy architecture. Starting with `all` ensures we don't miss rules; exceptions are documented with rationale.
+
+**Alternatives rejected:** `recommended` + extras (might miss rules we should have).
+
+---
+
+## 2026-03-09 — lefthook for git hooks (#100)
+
+**Decision:** lefthook manages git hooks. Go binary — fast startup, YAML config, parallel command execution.
+
+**Rationale:** No Node.js boot overhead for hook execution (Go binary starts instantly). YAML config aligns with our config format. Parallel execution means Biome and tsc run simultaneously in pre-commit.
+
+**Alternatives rejected:** husky (JS-based, slower startup), simple-git-hooks (no parallel execution).
+
+---
+
+## 2026-03-09 — Enforcement pipeline: pre-commit and pre-push (#101)
+
+**Decision:** Pre-commit (parallel): Biome check on staged files + tsc --noEmit (full type check, incremental). Pre-push: Vitest full test suite. The Engineer (the agent) MUST NOT bypass hooks.
+
+**Rationale:** Detailed design for Decision #89. Type check in pre-commit prevents accumulating type errors across commits (2-5 second cost is worth it). Biome catches formatting and lint instantly. Tests run at push time (slower, but catches logic errors before code leaves the machine). The agent cannot use `--no-verify` — this is the core enforcement mechanism.

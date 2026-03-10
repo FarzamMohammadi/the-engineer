@@ -166,15 +166,20 @@ Gaps found between L2/L3 designs and concrete schemas during Session 24. Each ga
 
 ---
 
-### R14: Config Types Deferred to Session 25
+### R14: Config Types Deferred to Session 25 — RESOLVED
 
 **L2 defined:** Various config schemas across components: Orchestrator notification config (`suppress_window`, `batch_window`, `quiet_hours`, `digest` config), fast-path config, full WorkspaceConfig (with `slug_max_length`, `fetch_before_create`, `default_base_branch`, PR sub-config, cleanup sub-config, `child_pr_strategy`, `multi_repo`).
 
-**Concrete schema:** Safety config types are concretized in [`ephemeral.md`](ephemeral.md). Other component configs (Orchestrator, Workspace Manager, Daemon beyond what's in `DaemonConfig`) are not.
+**Resolved in Session 25:** All config types now concretized in [`config.md`](config.md):
+- **OrchestratorConfig** — 6 sections (fast_path, notification, question_batching, decomposition, demo, phases) with all L2 fields mapped. Durations normalized to `_ms` suffix per Decision #86.
+- **Full WorkspaceConfig** — 10 fields (replaces Session 24's 6-field partial). Added: slug_max_length, fetch_before_create, default_base_branch, pr sub-object, cleanup sub-object, child_pr_strategy, multi_repo sub-object. Removed: branch_pattern (L2 uses implicit convention).
+- **Extended DaemonConfig** — 2 new fields (trigger_poll_interval_ms, seen_keys_ttl_ms) added to the 10-field schema.
+- **SafetyConfig** — Already complete in [`ephemeral.md`](ephemeral.md), no changes needed.
+- **PeopleDirectory** — Already complete in [`adapters.md`](adapters.md), no changes needed.
 
-**Why:** Config schemas are Session 25 scope (Project layout & config format). Session 24 focused on domain data types and persistence schemas. Config files are a separate concern — format (YAML/TOML/JSON), validation, hot-reload mechanism, and default values are all Session 25 topics.
+**Config system design** (format, location, hot-reload, secrets, loading pipeline) documented in [`../layout.md`](../layout.md).
 
-**Status:** Explicitly deferred to Session 25.
+**Status:** RESOLVED in Session 25.
 
 ---
 
@@ -215,7 +220,7 @@ Gaps found between L2/L3 designs and concrete schemas during Session 24. Each ga
 | R11 | ChildCompletionSummary enrichment | Enhancement | 3 fields → 9 fields for integration needs |
 | R12 | Full Workspace object deferred | Scope | Internal WM type, deferred to implementation |
 | R13 | WorkspaceVerification deferred | Scope | Internal return type, event payload is the contract |
-| R14 | Config types deferred | Scope | Session 25 scope (config format & layout) |
+| R14 | Config types deferred | Scope | **RESOLVED** — All configs concretized in config.md (Session 25) |
 | R15 | CostStatus return type | Scope | Derivable from accumulator types, define at implementation |
 | R16 | DaemonHealth.uptime computed | Cosmetic | Computed at runtime, not stored |
 

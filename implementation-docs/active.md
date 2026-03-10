@@ -45,8 +45,10 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
   - `lifecycle.md` — Lifecycle Traces (3 end-to-end scenarios, full coverage)
 - `4-implementation/` — Layer 4: Implementation Design
   - `foundation.md` — Technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
+  - `layout.md` — Project layout, config system, tsconfig, Biome, git hooks, enforcement pipeline
   - `openclaw-review.md` — OpenClaw reference (validated decisions, patterns to adopt)
-  - `schemas/` — Data structures & schemas (Zod schemas, SQLite DDL, 8 files)
+  - `schemas/` — Data structures & schemas (Zod schemas, SQLite DDL, 9 files)
+- `future-considerations.md` — Deferred decisions (monorepo evolution path)
 
 ## Repo Structure
 
@@ -72,15 +74,17 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 Layers 0-3: ALL COMPLETE. 64 architectural decisions.
 
+**Reconciliation R14: RESOLVED** — All config schemas concretized in Session 25.
+
 **Layer 4 — Implementation Design: IN PROGRESS.** Broken into 6 focused sessions:
 
 - Session 23: Foundation (technology stack) — DONE. 10 decisions (#65-#74). 74 total.
 - Session 24: Data structures & schemas — DONE. 15 decisions (#75-#89). 89 total.
-- Session 25: Project layout & config format — NEXT
-- Session 26: Plugin system & adapter implementation
+- Session 25: Project layout & config format — DONE. 12 decisions (#90-#101). 101 total.
+- Session 26: Plugin system & adapter implementation — NEXT
 - Session 27: Deployment & operations
 - Session 28: Testing strategy
 
 **Technology stack decided:** TypeScript, Node.js 22 LTS, pnpm, ESM, SQLite (better-sqlite3), tsx + tsdown, Biome, Zod, Vitest. Polling-only triggers for v1.
 
-**Note:** Three unpushed commits have `Co-Authored-By` lines that need removing before push. Use `git rebase -i` to strip them.
+**Project layout decided:** Single package (monorepo-ready boundaries), YAML config (multi-file in `~/.engineer/config/`), lefthook (pre-commit: Biome + tsc, pre-push: Vitest), tsconfig max strictness, Biome `all` preset.

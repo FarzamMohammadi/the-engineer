@@ -74,6 +74,8 @@ const DaemonHealthSchema = z.object({
 type DaemonHealth = z.infer<typeof DaemonHealthSchema>;
 
 // --- Daemon Config (loaded from config file, not from SQLite) ---
+// SUPERSEDED: Full DaemonConfigSchema with defaults and 2 additional fields
+// is in config.md. This version preserved for DaemonState reference.
 
 const DaemonConfigSchema = z.object({
   tick_interval_ms: z.number().int().positive(),         // default: 5000
@@ -86,6 +88,8 @@ const DaemonConfigSchema = z.object({
   aging_interval_ms: z.number().int().positive(),        // default: 86400000 (24 hours)
   aging_cap: z.number().int().min(1).max(100),           // default: 75
   shutdown_timeout_ms: z.number().int().positive(),      // default: 30000
+  trigger_poll_interval_ms: z.number().int().positive(), // default: 30000 (added Session 25)
+  seen_keys_ttl_ms: z.number().int().positive(),         // default: 86400000 (added Session 25)
 });
 type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 
@@ -345,13 +349,20 @@ const WorktreeInfoSchema = z.object({
 });
 type WorktreeInfo = z.infer<typeof WorktreeInfoSchema>;
 
+// SUPERSEDED: Full WorkspaceConfigSchema with all L2 fields, defaults,
+// and sub-objects (pr, cleanup, multi_repo) is in config.md.
+// This 6-field version was the Session 24 partial — now replaced.
+
 const WorkspaceConfigSchema = z.object({
-  workspace_root: z.string(),                    // default: "~/.engineer/workspaces/"
-  branch_prefix: z.string(),                     // default: "engineer/"
-  branch_pattern: z.string(),                    // default: "{prefix}{issue_number}-{slug}"
-  cleanup_on_complete: z.boolean(),              // default: true
-  keep_failed_branches: z.boolean(),             // default: true (evidence preservation)
-  branch_retention_days: z.number().int().nullable(), // null = delete immediately after merge
+  workspace_root: z.string(),
+  branch_prefix: z.string(),
+  slug_max_length: z.number().int().positive(),
+  fetch_before_create: z.boolean(),
+  default_base_branch: z.string(),
+  pr: z.object({ /* see config.md */ }).passthrough(),
+  cleanup: z.object({ /* see config.md */ }).passthrough(),
+  child_pr_strategy: z.enum(["merge_into_parent", "individual_prs"]),
+  multi_repo: z.object({ /* see config.md */ }).passthrough(),
 });
 type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 

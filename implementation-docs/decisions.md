@@ -983,3 +983,97 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Five rules: (1) Explicit shell via `spawn("bash", ["-c", cmd])`, never `shell: true`. (2) Signal forwarding — SIGTERM/SIGINT to children, SIGKILL on timeout. (3) Workspace confinement — BashToolPlugin sets `cwd` to task workspace. (4) Environment allowlist — PATH, HOME, NODE_ENV, LANG, TERM, git vars, plus configurable `env_passthrough`. (5) Output size limits — default 10MB max stdout/stderr, process terminated on exceed.
 
 **Rationale:** Explicit bash prevents platform-dependent shell behavior (LLM generates bash syntax). Allowlist over denylist prevents accidental secret leakage. Workspace confinement at plugin level, verified by Safety Layer scope rules. Output limits prevent runaway commands from exhausting memory. New dependency: `zod-to-json-schema` for generating manifest JSON Schema from Zod.
+
+---
+
+## Layer 4 — Deployment & Operations
+
+> Decisions #109–#118. How The Engineer runs operationally: data directory, logging, process management, CLI, health checks, and first-run experience. Adopts `doctor` command and rolling file logging from the [OpenClaw review](4-implementation/openclaw-review.md).
+
+---
+
+## 2026-03-09 — Data directory layout: ~/.engineer/ unified root (#109)
+
+**Decision:** All runtime data under `~/.engineer/` with subdirectories: `config/` (existing), `data/` (SQLite), `logs/` (rolling files), `workspaces/` (git worktrees), `run/` (PID file). `ENGINEER_HOME` env var overrides the root. `ENGINEER_CONFIG_DIR` (Decision #92) still works as a specific config override.
+
+**Rationale:** Unified root is one directory to inspect, back up, and remove. Matches Cargo (`~/.cargo/`), Rustup (`~/.rustup/`) patterns. XDG scatters files across 4+ directories — harder to manage, and macOS doesn't follow XDG anyway. Config already lives at `~/.engineer/config/` — extending the pattern.
+
+**Alternatives rejected:** XDG Base Directory spec (scattered, not macOS-friendly), per-component directories outside `~/.engineer/`.
+
+---
+
+## 2026-03-09 — Logging strategy: pino + pino-roll (#110)
+
+**Decision:** Operational logging via pino (structured JSON) with pino-roll (daily rotation, 500MB cap, 7-day retention). Single log file with component tags for subsystem filtering. pino-pretty for `engineer logs` human-readable output. Complementary to Event Bus audit trail — logging is for debugging, Event Bus is for audit.
+
+**Rationale:** pino is 5-10x faster than winston, JSON-native, uses worker-thread transport (never blocks main loop). Single file with structured tags is easier to correlate cross-component than per-component files — filter with `jq`. Logging failure = degraded debugging; Event Bus failure = system halt (Decision #53).
+
+**Alternatives rejected:** winston (heavier, slower), custom rolling (reinventing solved problems), per-component log files (harder to correlate).
+
+---
+
+## 2026-03-09 — Logging configuration in DaemonConfig (#111)
+
+**Decision:** New `logging` section in DaemonConfig: `level` (default "info"), `dir` (default "logs", relative to ENGINEER_HOME), `max_size_bytes` (500MB), `max_files` (7), `console` (false). `dir` supports relative (to ENGINEER_HOME) and absolute paths.
+
+**Rationale:** Logging is a Daemon concern — Daemon owns the logger instance and passes child loggers to components. Defaults produce sensible behavior without any config. `console: true` is useful for development (foreground mode) or when running under OS service managers that capture stdout.
+
+---
+
+## 2026-03-09 — Process management: foreground default, PID file, single instance (#112)
+
+**Decision:** `engineer start` runs foreground by default, `--daemon` flag for background. PID file at `{ENGINEER_HOME}/run/engineer.pid` for daemon tracking. Single instance enforced via PID file with stale detection (check process alive AND is The Engineer). Signal handling: SIGTERM/SIGINT → graceful shutdown (P15), SIGHUP → ignored for v1. Exit codes: 0 (clean), 1 (startup failure), 2 (runtime crash).
+
+**Rationale:** Foreground default is best for development and OS service managers (they handle backgrounding). PID file is simple, well-understood, and the stale detection covers race condition edge cases. Single instance prevents conflicting daemon processes.
+
+**Alternatives rejected:** Advisory file lock (less portable macOS vs Linux), always-background (poor for development).
+
+---
+
+## 2026-03-09 — OS service integration via engineer install (#113)
+
+**Decision:** `engineer install` generates OS-specific service config files and prints registration instructions. macOS: launchd plist at `~/Library/LaunchAgents/com.the-engineer.daemon.plist` (KeepAlive, RunAtLoad false). Linux: systemd user unit at `~/.config/systemd/user/engineer.service` (Restart=on-failure, RestartSec=5). Does NOT auto-register — user runs the commands. Windows out of scope for v1.
+
+**Rationale:** Generate + instructions respects user agency (service registration has implications like start-on-login). No sudo needed (user-level services). OS service managers handle restart-on-crash better than self-healing daemon code. The generated files use paths resolved at generation time.
+
+---
+
+## 2026-03-09 — CLI framework: commander (#114)
+
+**Decision:** commander is the CLI framework. Binary name: `engineer`.
+
+**Rationale:** Most established Node.js CLI framework (26k stars), TypeScript support, auto-generated help, stable API. Used by OpenClaw (validated). Single dependency.
+
+**Alternatives rejected:** citty (newer, less mature), yargs (heavier API), custom (reinventing solved problems).
+
+---
+
+## 2026-03-09 — CLI command inventory: 8 commands for v1 (#115)
+
+**Decision:** Flat command structure. Daemon lifecycle: `start` (foreground default, --daemon), `stop` (--timeout override), `status`, `logs` (pretty default, --json). Setup: `init`, `doctor`, `install`. Config: `config validate`. Global options: `--home`, `--verbose`, `--version`, `--help`.
+
+**Rationale:** Flat structure covers all v1 needs without nesting complexity. Future commands (`task list`, `plugin list`) fit naturally without restructuring. Each command maps to a single clear action.
+
+---
+
+## 2026-03-09 — doctor command: 10 check categories, pre-flight subset (#116)
+
+**Decision:** `engineer doctor` runs 10 check categories: Node.js runtime, data directory, config files, required secrets, database, plugin manifests, GitHub connectivity, Telegram connectivity, workspace, risky config warnings. `engineer start` runs fast pre-flight subset (categories 1-6, no network). Exit codes: 0 (pass), 1 (failure), 2 (warnings only). Actionable failure messages.
+
+**Rationale:** Adopted from OpenClaw's `doctor` pattern. Pre-flight on startup catches config errors before the daemon loop. Full doctor adds network checks for manual validation. Every failure includes remediation steps — the system tells you exactly what to fix.
+
+---
+
+## 2026-03-09 — First-run experience: auto-create, fail-with-instructions (#117)
+
+**Decision:** First-run detection: no `{ENGINEER_HOME}/data/engineer.db`. On first `engineer start`: auto-create directory structure, initialize SQLite database (run migrations), run pre-flight checks, fail with clear instructions if secrets missing. Missing config files = Zod defaults (system works out of the box). No interactive wizard for v1.
+
+**Rationale:** Auto-create directories removes friction. Fail-with-instructions is more debuggable than a wizard. Zod defaults mean the system runs without config files — the user only configures what they want to change. The recommended workflow is: `engineer init` → edit configs → `engineer doctor` → `engineer start`.
+
+---
+
+## 2026-03-09 — engineer init: template generation and directory scaffolding (#118)
+
+**Decision:** `engineer init` creates `~/.engineer/` directory structure and generates template config files with inline comments for all fields. Generates core configs (all fields commented out) and all built-in plugin configs (required fields uncommented with placeholders). Safe to run multiple times — existing files are not overwritten. `--force` flag to regenerate.
+
+**Rationale:** Template files are the best documentation — the user sees every field with its default and purpose. Generating plugin config templates removes the guesswork of "what do I need to configure?" Safe re-run prevents accidental overwrites of user-edited configs.

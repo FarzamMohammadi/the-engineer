@@ -49,6 +49,15 @@ const DaemonConfigSchema = z.object({
   trigger_poll_interval_ms: z.number().int().positive().default(30_000),  // 30 seconds
   seen_keys_ttl_ms: z.number().int().positive().default(86_400_000),     // 24 hours — dedup key retention
 
+  // --- Logging (Decision #111) ---
+  logging: z.object({
+    level: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+    dir: z.string().default("logs"),                                      // relative to ENGINEER_HOME
+    max_size_bytes: z.number().int().positive().default(524_288_000),     // 500MB
+    max_files: z.number().int().positive().default(7),                    // 7-day retention
+    console: z.boolean().default(false),                                  // also log to stdout
+  }).default({}),
+
   // --- Plugin lifecycle (Decision #107) ---
   plugins: z.object({
     dirs: z.array(z.string()).default(["src/plugins"]),                   // plugin discovery paths
@@ -67,6 +76,9 @@ type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 **New field from Session 26:**
 - `plugins` — Plugin lifecycle configuration (Decision #107): discovery paths, health check interval/timeout, failure threshold. See [`../plugins.md`](../plugins.md) § Plugin Lifecycle.
 - `seen_keys_ttl_ms` — How long to remember trigger idempotency keys. Keys older than this are evicted from the in-memory `seen_trigger_keys` map (Decision #74, ephemeral.md).
+
+**New field from Session 27:**
+- `logging` — Logging configuration (Decision #111): log level, directory, rolling file size/retention, console output. See [`../operations.md`](../operations.md) § Logging.
 
 ---
 

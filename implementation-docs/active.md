@@ -47,6 +47,7 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
   - `foundation.md` — Technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
   - `layout.md` — Project layout, config system, tsconfig, Biome, git hooks, enforcement pipeline
   - `plugins.md` — Plugin system (manifest, loading, abstract classes, SDK boundary, lifecycle, process safety)
+  - `operations.md` — Deployment & operations (data directory, logging, daemon, CLI, doctor, first-run)
   - `openclaw-review.md` — OpenClaw reference (validated decisions, patterns to adopt)
   - `schemas/` — Data structures & schemas (Zod schemas, SQLite DDL, 9 files)
 - `future-considerations.md` — Deferred decisions (monorepo evolution path)
@@ -83,11 +84,13 @@ Layers 0-3: ALL COMPLETE. 64 architectural decisions.
 - Session 24: Data structures & schemas — DONE. 15 decisions (#75-#89). 89 total.
 - Session 25: Project layout & config format — DONE. 12 decisions (#90-#101). 101 total.
 - Session 26: Plugin system & adapter implementation — DONE. 7 decisions (#102-#108). 108 total.
-- Session 27: Deployment & operations — NEXT
-- Session 28: Testing strategy
+- Session 27: Deployment & operations — DONE. 10 decisions (#109-#118). 118 total.
+- Session 28: Testing strategy — NEXT
 
 **Technology stack decided:** TypeScript, Node.js 22 LTS, pnpm, ESM, SQLite (better-sqlite3), tsx + tsdown, Biome, Zod, Vitest. Polling-only triggers for v1.
 
 **Project layout decided:** Single package (monorepo-ready boundaries), YAML config (multi-file in `~/.engineer/config/`), lefthook (pre-commit: Biome + tsc, pre-push: Vitest), tsconfig max strictness, Biome `all` preset.
 
 **Plugin system decided:** `engineer.plugin.yaml` manifest per plugin, five-phase loading (discover/validate/order/load/initialize), abstract class hierarchy (BaseAdapter → adapter types), curated SDK boundary (`src/adapters/index.ts`), health state machine (healthy/unhealthy/failed), process safety rules (explicit bash, signal forwarding, workspace confinement, env allowlist, output limits).
+
+**Operations decided:** `~/.engineer/` unified data directory (ENGINEER_HOME override), pino structured logging with rolling files (500MB, 7-day retention), foreground-default daemon with PID file, commander CLI (8 commands: start/stop/status/logs/init/doctor/install/config validate), `doctor` health check (10 categories, pre-flight subset on startup), `engineer init` for template generation.

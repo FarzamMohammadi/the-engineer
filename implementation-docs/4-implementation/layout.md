@@ -97,6 +97,18 @@ src/
     loader.ts                        # YAML parsing + Zod validation + env var resolution
     watcher.ts                       # File watcher for hot-reload (safety.yaml, people.yaml)
 
+  cli/                               # CLI commands (Decision #114-#115)
+    index.ts                         # commander program setup, global options
+    commands/
+      start.ts                       # engineer start
+      stop.ts                        # engineer stop
+      status.ts                      # engineer status
+      logs.ts                        # engineer logs
+      init.ts                        # engineer init
+      doctor.ts                      # engineer doctor
+      install.ts                     # engineer install
+      config-validate.ts             # engineer config validate
+
   index.ts                           # Entry point
 ```
 
@@ -111,6 +123,23 @@ src/
 **Centralized schemas in `src/schemas/`.** All Zod schemas live in one directory. Cross-component types (TaskSchema used by 5+ components) and component-internal types (DaemonState used only by Daemon) are all here. One place to find every type. Matches Session 24's schema directory organization.
 
 **`config/` as its own concern.** The config system (YAML parsing, Zod validation, env var resolution, file watching) is separate from the schemas it validates. `config/loader.ts` uses schemas from `schemas/config.ts`.
+
+---
+
+## Data Directory Layout
+
+### Decision #109: `~/.engineer/` as Unified Root
+
+All runtime data lives under `~/.engineer/`. Override via `ENGINEER_HOME` env var. See [`operations.md`](operations.md) § Data Directory Structure for full details.
+
+```
+~/.engineer/
+  config/           # YAML config files (Decisions #91-#92)
+  data/             # SQLite database (persistent, back up this)
+  logs/             # Rolling log files (auto-pruned)
+  workspaces/       # Git worktrees (ephemeral, per-task)
+  run/              # PID file (ephemeral, recreated on start)
+```
 
 ---
 

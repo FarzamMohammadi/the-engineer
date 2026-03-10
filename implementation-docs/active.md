@@ -2,15 +2,15 @@
 
 ## Current Focus
 
-Architecture and planning ONLY. No code. No project scaffolding. No implementation.
+Implementation. Building The Engineer phase by phase, bottom-up, following the 19-phase build order in `5-build/build-order.md`.
 
-All deliverables are documentation until Farzam explicitly says otherwise.
+All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
 
 ## What We're Doing
 
-Designing The Engineer from the highest level down — making every architectural decision, resolving every uncertainty, and documenting everything before writing a single line of code.
+Implementing The Engineer from the bottom up — schemas and infrastructure first, then components in dependency order, then the daemon that wires everything together. Each phase produces something independently testable.
 
-Working method: collaborative, always. Highest level decisions first, then drill down together. Research, investigate, and discuss until confident. Farzam and the agent complete each other.
+Working method: collaborative, always. Read the architecture deeply before every phase. Research, investigate, and discuss until confident. Farzam and the agent complete each other.
 
 ## Deliverables
 
@@ -76,20 +76,10 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layers 0-4: ALL COMPLETE. 127 architectural decisions.**
+**Architecture: ALL COMPLETE.** Layers 0-5, 128 decisions.
 
-**Layer 5 — Build Order: COMPLETE.** 19-phase bottom-up implementation sequence designed (Session 30, Decision #128).
+**Implementation: IN PROGRESS.**
 
-- Session 30: Build order planning — DONE. 1 decision (#128).
+- Phase 0: Project Bootstrap — **DONE** (Session 31). 12 files: package.json, tsconfig.json, biome.json, lefthook.yml, 4 vitest configs, test/setup.ts, src/index.ts, .gitignore, .node-version. All verification passes.
 
-**Layer 4 — Implementation Design: COMPLETE.** 63 decisions across 6 sessions + holistic review:
-
-- Session 23: Foundation (technology stack) — DONE. 10 decisions (#65-#74).
-- Session 24: Data structures & schemas — DONE. 15 decisions (#75-#89).
-- Session 25: Project layout & config format — DONE. 12 decisions (#90-#101).
-- Session 26: Plugin system & adapter implementation — DONE. 7 decisions (#102-#108).
-- Session 27: Deployment & operations — DONE. 10 decisions (#109-#118).
-- Session 28: Testing strategy — DONE. 7 decisions (#119-#125).
-- Session 29: Holistic review — DONE. 2 decisions (#126-#127).
-
-**Next: Phase 0 — Project Bootstrap.** First code. Create the empty project with all tooling configured (package.json, tsconfig, biome, lefthook, vitest). See [`5-build/build-order.md`](5-build/build-order.md).
+**Next: Phase 1a — Core Data Schemas.** Task, Event, Session/Memory Zod schemas. See [`5-build/build-order.md`](5-build/build-order.md) § Phase 1a.

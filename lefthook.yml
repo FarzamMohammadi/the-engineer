@@ -2,7 +2,8 @@ pre-commit:
   parallel: true
   commands:
     biome-check:
-      run: pnpm biome check --staged
+      glob: "*.{ts,json,jsonc}"
+      run: pnpm biome check --staged --no-errors-on-unmatched
     type-check:
       run: pnpm tsc --noEmit
 

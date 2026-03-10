@@ -1147,3 +1147,25 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Rationale:** The SDK boundary is the contract surface for plugins. If a plugin imports Core internals, it creates hidden coupling that breaks on refactoring. This test catches it at unit-test time. Critical for future third-party plugin support.
 
 **Alternatives rejected:** Biome `noRestrictedImports` (per-file, not directory-contextual — can't express "any file in src/plugins/ must not import from src/core/").
+
+---
+
+## Holistic Review — Session 29
+
+> Decisions #126–#127. Pre-implementation holistic review found 3 MEDIUM issues across all 5 layers. Architecture validated: 30/30 events consistent, 15/15 protocols implementable, 23/23 transitions correct, 16/16 reconciliation items resolved.
+
+---
+
+## 2026-03-09 — Remove `per_repo` from cost limit type enum, normalize naming (#126)
+
+**Decision:** Remove `per_repo` from `cost.limit_reached` event's `limit_type` enum. Rename `daily_global` → `daily` and `monthly_global` → `monthly` to match SafetyConfig naming. Final enum: `["per_task", "daily", "monthly"]`. Update protocols.md P10 accordingly.
+
+**Rationale:** Holistic review found that `per_repo` was a limit type in the event payload but no per-repo cost limit existed in `SafetyConfigSchema`. The event advertised a value that could never be produced. The `_global` suffix was descriptive but redundant — config already scopes these under `api`, making the scope unambiguous. Per-repo cost limits can be added later as a coordinated change across config, event, and protocol.
+
+---
+
+## 2026-03-09 — Action Pipeline as dedicated Core module (#127)
+
+**Decision:** Add `src/core/action-pipeline/index.ts` to the project layout. The Action Pipeline is a thin module (~50-100 lines) that orchestrates Gate 1 (Task Engine permission check) and Gate 2 (Safety Layer policy check) before action execution. Owns the `action.rejected` event. Used by Orchestrator and Workspace Manager.
+
+**Rationale:** Holistic review found the Action Pipeline — a central L3 concept with its own event ownership — had no designated module in the L4 project layout. It can't live in the Orchestrator (Workspace Manager also uses it, creating a circular dependency risk) or in a utility file (it owns an event type and has architectural significance). A dedicated thin Core module gives it a proper home without over-engineering.

@@ -98,7 +98,7 @@ How components talk to each other. The wiring.
 
 ## Layer 4: Implementation Design — DONE
 
-Ready-to-code specifications. No ambiguity left. 61 decisions (#65-#125) across 6 sessions.
+Ready-to-code specifications. No ambiguity left. 63 decisions (#65-#127) across 6 sessions + holistic review.
 
 **Sessions completed:**
 - [x] Session 23: Foundation — technology stack (10 decisions, #65-#74) → [`foundation.md`](4-implementation/foundation.md)
@@ -107,6 +107,7 @@ Ready-to-code specifications. No ambiguity left. 61 decisions (#65-#125) across 
 - [x] Session 26: Plugin system & adapter implementation (7 decisions, #102-#108) → [`plugins.md`](4-implementation/plugins.md)
 - [x] Session 27: Deployment & operations (10 decisions, #109-#118) → [`operations.md`](4-implementation/operations.md)
 - [x] Session 28: Testing strategy (7 decisions, #119-#125) → [`testing.md`](4-implementation/testing.md)
+- [x] Session 29: Holistic review (2 decisions, #126-#127) — 3 MEDIUM issues resolved, 12 items validated correct
 
 **Key Layer 4 decisions:**
 - TypeScript, Node 22 LTS, pnpm, ESM, SQLite (better-sqlite3), Biome, Zod, Vitest

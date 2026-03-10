@@ -834,14 +834,13 @@ Orchestrator is executing at the correct phase with reconstructed context. Works
 **Limit Breach Flow:**
 
 7. **Safety Layer** identifies the breach:
-   - Determines: limit_type (`per_task` | `per_repo` | `daily_global` | `monthly_global`), current_spend, limit_value, resets_at
+   - Determines: limit_type (`per_task` | `daily` | `monthly`), current_spend, limit_value, resets_at
    - `⟹ cost.limit_reached` { task_id (null if global), limit_type, limit_scope, current_spend, limit_value, provider_type, resets_at }
 
 8. **Daemon** receives `cost.limit_reached`:
    - Determines affected task(s):
      - `per_task` limit: only the specific task
-     - `per_repo` limit: all active tasks in that repo
-     - `daily_global` or `monthly_global`: ALL Active.Working and Active.Integrating tasks
+     - `daily` or `monthly` limit: ALL Active.Working and Active.Integrating tasks
 
 9. **Daemon** signals the Orchestrator to checkpoint and stop (routes `cost.limit_reached` to the active Orchestrator)
 
@@ -916,7 +915,7 @@ Affected task(s) checkpointed, transitioned to Blocked, human notified with acti
 - **Accumulators are ephemeral.** On system restart, Safety Layer replays `cost.incurred` events from Event Bus within relevant time windows (P1 step 4). The Event Bus is the durable store.
 - **Two provider models coexist.** CLI (subscription caps) and API (dollar budgets) flow through the same `cost.incurred` event and accumulator pipeline. Different cost semantics, shared tracking infrastructure.
 - **CLI provider self-reporting.** When a CLI tool reports rate limiting (`remaining: 0`), the Safety Layer treats this as a limit breach even if configured caps weren't reached -- the provider itself has stopped serving.
-- **Global limits affect all tasks.** A `daily_global` breach blocks ALL Active.Working and Active.Integrating tasks, not just the triggering task.
+- **Global limits affect all tasks.** A `daily` or `monthly` breach blocks ALL Active.Working and Active.Integrating tasks, not just the triggering task.
 - **auto_resume_on_reset is per-limit (Decision #49).** Default: false (human must explicitly unblock). Configurable: users who want overnight autonomy can opt in per limit type.
 - **Connects to P7** (Action Pipeline -- cost_check queries during Gate 2), **P8** (Preemption -- checkpoint-then-block mirrors checkpoint-then-yield), **P9** (Task Resume -- blocked tasks resume after unblocking), **P1** (System Startup -- accumulator reconstruction).
 

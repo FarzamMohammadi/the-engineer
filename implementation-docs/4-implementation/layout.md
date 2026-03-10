@@ -31,6 +31,8 @@ src/
       index.ts
     people-directory/
       index.ts
+    action-pipeline/                   # Action Pipeline (Gate 1 + Gate 2, Decision #127)
+      index.ts
 
   adapters/                          # Adapter tier (abstract classes + SDK boundary)
     base.ts                          # BaseAdapter abstract class (Decision #104)
@@ -251,8 +253,8 @@ const DaemonConfigSchema = z.object({
 **Mechanism:**
 - `node:fs.watch()` on specific hot-reloadable files (not the entire directory)
 - 500ms debounce to handle rapid saves (editor autosave, atomic write patterns)
-- On valid change: replace in-memory config, emit `config.reloaded` event
-- On invalid change: keep previous config, emit `config.reload_failed` event, alert human
+- On valid change: replace in-memory config, log reload at info level
+- On invalid change: keep previous config, emit `health.config_reload_failed` event, alert human
 
 ### Decision #95: Config Error Handling
 

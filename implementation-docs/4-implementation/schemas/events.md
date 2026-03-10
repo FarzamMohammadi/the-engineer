@@ -210,7 +210,7 @@ type CostIncurredPayload = z.infer<typeof CostIncurredPayloadSchema>;
 // Owner: Safety Layer
 const CostLimitReachedPayloadSchema = z.object({
   task_id: z.string().nullable(),       // null if global limit
-  limit_type: z.enum(["per_task", "per_repo", "daily_global", "monthly_global"]),
+  limit_type: z.enum(["per_task", "daily", "monthly"]),
   limit_scope: z.string().nullable(),
   current_spend: z.number(),
   limit_value: z.number(),

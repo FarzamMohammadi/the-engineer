@@ -4,6 +4,8 @@ The complete event taxonomy for The Engineer. Every event type, its schema, who 
 
 Part of **Layer 3** — see [`layers.md`](../layers.md). Built on the event model defined in [`event-bus.md`](../2-components/event-bus.md).
 
+> **L4 naming note:** Payload field values in this document use conceptual casing (e.g., `"Completed"`, `"git-remote"`). Layer 4 schemas normalize all enum values to `lowercase_snake_case` (e.g., `"completed"`, `"git_remote"`). See [`4-implementation/schemas/`](../4-implementation/schemas/) for authoritative field values.
+
 ---
 
 ## Action Pipeline
@@ -293,8 +295,8 @@ A cost limit has been breached. Safety Layer emits this after processing a `cost
 ```
 payload {
   task_id:         string?         // null if global limit
-  limit_type:      "per_task" | "per_repo" | "daily_global" | "monthly_global"
-  limit_scope:     string?         // Repo name (for per_repo), null otherwise
+  limit_type:      "per_task" | "daily" | "monthly"
+  limit_scope:     string?         // Reserved for future use (e.g., per-repo limits)
   current_spend:   number          // Current accumulated spend/usage
   limit_value:     number          // The configured limit
   provider_type:   "cli" | "api"   // Which provider type hit the limit

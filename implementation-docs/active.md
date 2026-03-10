@@ -75,11 +75,11 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 
 ## Status
 
-**Layers 0-4: ALL COMPLETE. 125 architectural decisions.**
+**Layers 0-4: ALL COMPLETE. 127 architectural decisions.**
 
-**Reconciliation R14: RESOLVED** — All config schemas concretized in Session 25.
+**Holistic Review (Session 29): COMPLETE.** 3 MEDIUM issues found and resolved, 12 items validated correct. Decisions #126-#127 added.
 
-**Layer 4 — Implementation Design: COMPLETE.** 61 decisions across 6 sessions:
+**Layer 4 — Implementation Design: COMPLETE.** 63 decisions across 6 sessions + holistic review:
 
 - Session 23: Foundation (technology stack) — DONE. 10 decisions (#65-#74).
 - Session 24: Data structures & schemas — DONE. 15 decisions (#75-#89).
@@ -87,5 +87,6 @@ Everything else in the repo will be for The Engineer (the agent) — created AFT
 - Session 26: Plugin system & adapter implementation — DONE. 7 decisions (#102-#108).
 - Session 27: Deployment & operations — DONE. 10 decisions (#109-#118).
 - Session 28: Testing strategy — DONE. 7 decisions (#119-#125).
+- Session 29: Holistic review — DONE. 2 decisions (#126-#127).
 
-**Next: Layer 5 — Implementation.** Actual code. The architecture is complete. 125 decisions across 5 layers. Time to build.
+**Next: Layer 5 — Implementation.** Actual code. The architecture is complete. 127 decisions across 5 layers, holistic review passed. Time to build.

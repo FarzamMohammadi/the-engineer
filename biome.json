@@ -22,8 +22,13 @@
         "noConsole": "off",
         "noConsoleLog": "off"
       },
+      "performance": {
+        "noBarrelFile": "off",
+        "noReExportAll": "off"
+      },
       "style": {
-        "noDefaultExport": "off"
+        "noDefaultExport": "off",
+        "useNamingConvention": "off"
       }
     }
   },

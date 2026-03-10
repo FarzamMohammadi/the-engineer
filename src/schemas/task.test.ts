@@ -1,0 +1,486 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  ActionClassSchema,
+  BlockedDetailsSchema,
+  CascadePolicySchema,
+  ChildCompletionSummarySchema,
+  ChildEntrySchema,
+  ExternalRefSchema,
+  PermissionTable,
+  RelatedItemSchema,
+  ReviewStateSchema,
+  StateTransitionSchema,
+  SubStateSchema,
+  TaskDecisionSchema,
+  TaskSchema,
+  TaskStateSchema,
+  TaskWorkspaceSchema,
+  TeamMemberSchema,
+  ValidTransitions,
+} from "./task.js";
+
+// ── Enums ──────────────────────────────────────────────────────────────────────
+
+describe("TaskStateSchema", () => {
+  const validStates = [
+    "intake",
+    "queued",
+    "active",
+    "blocked",
+    "review_pending",
+    "completed",
+    "failed",
+  ];
+
+  it("accepts all 7 valid states", () => {
+    for (const state of validStates) {
+      expect(TaskStateSchema.parse(state)).toBe(state);
+    }
+  });
+
+  it("has exactly 7 values", () => {
+    expect(TaskStateSchema.options).toHaveLength(7);
+  });
+
+  it("rejects invalid values", () => {
+    expect(() => TaskStateSchema.parse("running")).toThrow();
+    expect(() => TaskStateSchema.parse("")).toThrow();
+    expect(() => TaskStateSchema.parse(42)).toThrow();
+  });
+});
+
+describe("SubStateSchema", () => {
+  const validSubStates = ["working", "supervising", "integrating", "demo", "code"];
+
+  it("accepts all 5 valid sub-states", () => {
+    for (const sub of validSubStates) {
+      expect(SubStateSchema.parse(sub)).toBe(sub);
+    }
+  });
+
+  it("has exactly 5 values", () => {
+    expect(SubStateSchema.options).toHaveLength(5);
+  });
+
+  it("rejects invalid values", () => {
+    expect(() => SubStateSchema.parse("review")).toThrow();
+  });
+});
+
+describe("CascadePolicySchema", () => {
+  it("has exactly 4 values", () => {
+    expect(CascadePolicySchema.options).toHaveLength(4);
+  });
+
+  it("accepts all valid values", () => {
+    for (const policy of ["pause_siblings", "fail_fast", "best_effort", "manual"]) {
+      expect(CascadePolicySchema.parse(policy)).toBe(policy);
+    }
+  });
+});
+
+describe("ActionClassSchema", () => {
+  it("has exactly 10 values", () => {
+    expect(ActionClassSchema.options).toHaveLength(10);
+  });
+
+  it("accepts all valid values", () => {
+    const classes = [
+      "read",
+      "write",
+      "test",
+      "git_local",
+      "git_remote",
+      "communicate",
+      "merge",
+      "deploy",
+      "task_manage",
+      "ask_human",
+    ];
+    for (const cls of classes) {
+      expect(ActionClassSchema.parse(cls)).toBe(cls);
+    }
+  });
+});
+
+// ── Sub-schemas ────────────────────────────────────────────────────────────────
+
+describe("ExternalRefSchema", () => {
+  it("parses valid data", () => {
+    const valid = { type: "github_issue", repo: "owner/repo", number: 42 };
+    expect(ExternalRefSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects non-positive number", () => {
+    expect(() =>
+      ExternalRefSchema.parse({ type: "github_issue", repo: "a/b", number: 0 }),
+    ).toThrow();
+    expect(() =>
+      ExternalRefSchema.parse({ type: "github_issue", repo: "a/b", number: -1 }),
+    ).toThrow();
+  });
+
+  it("rejects non-integer number", () => {
+    expect(() =>
+      ExternalRefSchema.parse({ type: "github_issue", repo: "a/b", number: 1.5 }),
+    ).toThrow();
+  });
+
+  it("accepts any string as type (open, not enum)", () => {
+    expect(ExternalRefSchema.parse({ type: "jira_ticket", repo: "a/b", number: 1 })).toBeDefined();
+    expect(ExternalRefSchema.parse({ type: "manual", repo: "a/b", number: 1 })).toBeDefined();
+  });
+});
+
+describe("ChildEntrySchema", () => {
+  it("parses valid data", () => {
+    const valid = { id: "01ABC", state: "active", depends_on: ["01XYZ"] };
+    expect(ChildEntrySchema.parse(valid)).toEqual(valid);
+  });
+
+  it("validates state against TaskState enum", () => {
+    expect(() =>
+      ChildEntrySchema.parse({ id: "01ABC", state: "invalid", depends_on: [] }),
+    ).toThrow();
+  });
+});
+
+describe("TeamMemberSchema", () => {
+  it("parses valid data", () => {
+    const valid = { person_id: "farzam", role: "author", context: "project owner" };
+    expect(TeamMemberSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects invalid role", () => {
+    expect(() =>
+      TeamMemberSchema.parse({ person_id: "x", role: "manager", context: "y" }),
+    ).toThrow();
+  });
+});
+
+describe("RelatedItemSchema", () => {
+  it("parses valid data", () => {
+    const valid = { type: "issue", ref: "#42", relevance: "related bug" };
+    expect(RelatedItemSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects invalid type", () => {
+    expect(() => RelatedItemSchema.parse({ type: "unknown", ref: "x", relevance: "y" })).toThrow();
+  });
+});
+
+describe("TaskDecisionSchema", () => {
+  it("parses valid data", () => {
+    const valid = {
+      what: "Use Zod",
+      why: "Runtime validation",
+      alternatives_considered: ["io-ts", "yup"],
+      decided_by: "human",
+      timestamp: "2026-03-10T12:00:00.000Z",
+    };
+    expect(TaskDecisionSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects invalid timestamp", () => {
+    expect(() =>
+      TaskDecisionSchema.parse({
+        what: "x",
+        why: "y",
+        alternatives_considered: [],
+        decided_by: "agent",
+        timestamp: "not-a-date",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid decided_by", () => {
+    expect(() =>
+      TaskDecisionSchema.parse({
+        what: "x",
+        why: "y",
+        alternatives_considered: [],
+        decided_by: "system",
+        timestamp: "2026-03-10T12:00:00.000Z",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("ChildCompletionSummarySchema", () => {
+  it("parses valid data with nested key_outputs", () => {
+    const valid = {
+      child_id: "01ABC",
+      child_title: "Add auth",
+      summary: "Implemented OAuth flow",
+      key_outputs: [{ type: "file" as const, path: "src/auth.ts", description: "OAuth handler" }],
+      patterns_introduced: ["middleware pattern"],
+      gotchas: ["rate limiting"],
+      decisions_made: ["chose OAuth over API key"],
+      pr_number: 42,
+      branch: "engineer/42-auth",
+      test_status: "passing" as const,
+    };
+    expect(ChildCompletionSummarySchema.parse(valid)).toEqual(valid);
+  });
+
+  it("accepts null pr_number", () => {
+    const valid = {
+      child_id: "01ABC",
+      child_title: "Research",
+      summary: "Done",
+      key_outputs: [],
+      patterns_introduced: [],
+      gotchas: [],
+      decisions_made: [],
+      pr_number: null,
+      branch: "engineer/43-research",
+      test_status: "no_tests" as const,
+    };
+    expect(ChildCompletionSummarySchema.parse(valid)).toEqual(valid);
+  });
+});
+
+describe("TaskWorkspaceSchema", () => {
+  it("parses valid data with nullable worktree_path", () => {
+    expect(
+      TaskWorkspaceSchema.parse({
+        repo: "owner/repo",
+        branch: "engineer/47-dark-mode",
+        worktree_path: null,
+      }),
+    ).toBeDefined();
+
+    expect(
+      TaskWorkspaceSchema.parse({
+        repo: "owner/repo",
+        branch: "engineer/47-dark-mode",
+        worktree_path: "/tmp/worktree",
+      }),
+    ).toBeDefined();
+  });
+});
+
+describe("ReviewStateSchema", () => {
+  it("parses valid data", () => {
+    const valid = {
+      pr_number: 42,
+      pr_state: "draft" as const,
+      demo_artifacts: [
+        { type: "screenshot" as const, location: "/tmp/demo.png", permanent: false },
+      ],
+      feedback_rounds: [{ stage: "demo" as const, comments: ["looks good"], applied: true }],
+    };
+    expect(ReviewStateSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("accepts null pr fields", () => {
+    const valid = {
+      pr_number: null,
+      pr_state: null,
+      demo_artifacts: [],
+      feedback_rounds: [],
+    };
+    expect(ReviewStateSchema.parse(valid)).toEqual(valid);
+  });
+});
+
+describe("BlockedDetailsSchema", () => {
+  it("parses valid data with nested contacted array", () => {
+    const valid = {
+      reason: "Need API credentials",
+      efforts_made: ["Checked docs", "Searched codebase"],
+      contacted: [{ person: "farzam", channel: "telegram", timestamp: "2026-03-10T12:00:00.000Z" }],
+      needed: "AWS credentials for staging",
+      waiting_for: "Farzam to share credentials",
+    };
+    expect(BlockedDetailsSchema.parse(valid)).toEqual(valid);
+  });
+});
+
+// ── TaskSchema ─────────────────────────────────────────────────────────────────
+
+describe("TaskSchema", () => {
+  const minimalTask = {
+    id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    external_ref: null,
+    state: "intake",
+    sub_state: null,
+    phase: null,
+    parent_id: null,
+    children: [],
+    cascade_policy: "pause_siblings",
+    title: "Fix auth bug",
+    description: "Users can't log in",
+    source_text: "Issue body text",
+    acceptance_criteria: ["Users can log in"],
+    team: [],
+    related: [],
+    decisions: [],
+    child_summaries: [],
+    workspace: null,
+    review: null,
+    blocked: null,
+    priority: 50,
+    llm_tokens: 0,
+    llm_cost_usd: 0,
+    compute_time_ms: 0,
+    created_at: "2026-03-10T12:00:00.000Z",
+    started_at: null,
+    completed_at: null,
+    last_transition_at: "2026-03-10T12:00:00.000Z",
+    session_id: null,
+  };
+
+  it("parses a minimal valid task", () => {
+    expect(TaskSchema.parse(minimalTask)).toEqual(minimalTask);
+  });
+
+  it("rejects invalid state", () => {
+    expect(() => TaskSchema.parse({ ...minimalTask, state: "running" })).toThrow();
+  });
+
+  it("rejects missing required fields", () => {
+    const { title: _, ...noTitle } = minimalTask;
+    expect(() => TaskSchema.parse(noTitle)).toThrow();
+  });
+
+  it("rejects invalid timestamp format", () => {
+    expect(() => TaskSchema.parse({ ...minimalTask, created_at: "yesterday" })).toThrow();
+  });
+});
+
+// ── StateTransitionSchema ──────────────────────────────────────────────────────
+
+describe("StateTransitionSchema", () => {
+  it("parses valid transition", () => {
+    const valid = {
+      id: "01ABC",
+      task_id: "01XYZ",
+      from_state: "intake",
+      to_state: "queued",
+      from_sub: null,
+      to_sub: null,
+      reason: "Task validated",
+      timestamp: "2026-03-10T12:00:00.000Z",
+      triggered_by: "task_engine",
+    };
+    expect(StateTransitionSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("validates state enums", () => {
+    expect(() =>
+      StateTransitionSchema.parse({
+        id: "01ABC",
+        task_id: "01XYZ",
+        from_state: "invalid",
+        to_state: "queued",
+        from_sub: null,
+        to_sub: null,
+        reason: "test",
+        timestamp: "2026-03-10T12:00:00.000Z",
+        triggered_by: "test",
+      }),
+    ).toThrow();
+  });
+});
+
+// ── ValidTransitions ───────────────────────────────────────────────────────────
+
+describe("ValidTransitions", () => {
+  it("has exactly 25 entries", () => {
+    expect(ValidTransitions).toHaveLength(25);
+  });
+
+  it("has no duplicate entries", () => {
+    const keys = ValidTransitions.map(
+      (t) =>
+        `${t.from}:${("from_sub" in t ? t.from_sub : undefined) ?? ""}→${t.to}:${("to_sub" in t ? t.to_sub : undefined) ?? ""}`,
+    );
+    const unique = new Set(keys);
+    expect(unique.size).toBe(keys.length);
+  });
+
+  it("terminal states (completed, failed) are never a 'from' state", () => {
+    const fromStates = new Set<string>(ValidTransitions.map((t) => t.from));
+    expect(fromStates.has("completed")).toBe(false);
+    expect(fromStates.has("failed")).toBe(false);
+  });
+
+  it("intake is never a 'to' state", () => {
+    const toStates = new Set<string>(ValidTransitions.map((t) => t.to));
+    expect(toStates.has("intake")).toBe(false);
+  });
+
+  it("active 'from' entries always have from_sub specified", () => {
+    const activeFrom = ValidTransitions.filter((t) => t.from === "active");
+    for (const t of activeFrom) {
+      expect("from_sub" in t ? t.from_sub : undefined).toBeDefined();
+    }
+  });
+
+  it("active 'to' entries always have to_sub specified", () => {
+    const activeTo = ValidTransitions.filter((t) => t.to === "active");
+    for (const t of activeTo) {
+      expect("to_sub" in t ? t.to_sub : undefined).toBeDefined();
+    }
+  });
+});
+
+// ── PermissionTable ────────────────────────────────────────────────────────────
+
+describe("PermissionTable", () => {
+  it("has exactly 10 entries", () => {
+    expect(PermissionTable).toHaveLength(10);
+  });
+
+  it("covers all valid (state, sub_state) pairs", () => {
+    const expectedPairs = [
+      ["intake", null],
+      ["queued", null],
+      ["active", "working"],
+      ["active", "supervising"],
+      ["active", "integrating"],
+      ["review_pending", "demo"],
+      ["review_pending", "code"],
+      ["blocked", null],
+      ["completed", null],
+      ["failed", null],
+    ];
+
+    const actualPairs = PermissionTable.map((e) => [e.state, e.sub_state]);
+    expect(actualPairs).toEqual(expectedPairs);
+  });
+
+  it("completed state has no allowed actions", () => {
+    const completed = PermissionTable.find((e) => e.state === "completed");
+    expect(completed?.allowed).toEqual([]);
+  });
+
+  it("failed state only allows communicate", () => {
+    const failed = PermissionTable.find((e) => e.state === "failed");
+    expect(failed?.allowed).toEqual(["communicate"]);
+  });
+
+  it("active.working has the most permissions", () => {
+    const working = PermissionTable.find((e) => e.state === "active" && e.sub_state === "working");
+    expect(working?.allowed.length).toBeGreaterThan(5);
+  });
+
+  it("review_pending.code has conditional merge permission", () => {
+    const code = PermissionTable.find(
+      (e) => e.state === "review_pending" && e.sub_state === "code",
+    );
+    expect(code?.conditional).toBeDefined();
+    expect(code?.conditional?.merge).toBeDefined();
+  });
+
+  it("all allowed values are valid ActionClass values", () => {
+    const validClasses = new Set(ActionClassSchema.options);
+    for (const entry of PermissionTable) {
+      for (const action of entry.allowed) {
+        expect(validClasses.has(action)).toBe(true);
+      }
+    }
+  });
+});

@@ -28,13 +28,18 @@ const PluginManifestSchema = z.object({
   version: z.string(),                 // semver: "1.0.0"
   name: z.string(),                    // human-readable: "GitHub Issues Trigger"
   description: z.string(),
-  config_schema: z.record(z.unknown()), // JSON Schema for plugin config
-  critical: z.boolean(),               // if true, system aborts on init failure
+  config_schema: z.record(z.unknown()).default({}), // JSON Schema for plugin config (derived from Zod via zod-to-json-schema)
+  critical: z.boolean().default(true), // if true, system aborts on init failure
+  enabled: z.boolean().default(true),  // discovery-time toggle — false = skip entirely (Decision #102)
+  entry: z.string().default("index.ts"), // relative path to plugin's main module (Decision #102)
+  adapter_meta: z.record(z.unknown()).default({}), // type-specific static metadata (Decision #102)
 });
 type PluginManifest = z.infer<typeof PluginManifestSchema>;
 ```
 
 > **Note:** `AdapterType` is extensible — new adapter types will be added as the system evolves. The `z.enum` will grow. The `type` field is the discriminator for adapter-specific behavior.
+>
+> **Session 26 additions:** `enabled`, `entry`, and `adapter_meta` fields added (Decision #102). The manifest is loaded from `engineer.plugin.yaml` per plugin directory. See [`../plugins.md`](../plugins.md) for the full manifest format and loading sequence.
 
 ### InitResult
 
@@ -409,4 +414,25 @@ const ContactInfoSchema = z.object({
   plugin_id: z.string(),              // Registry ID of the comm plugin
 });
 type ContactInfo = z.infer<typeof ContactInfoSchema>;
+```
+
+---
+
+## Plugin Health State (Decision #106)
+
+Tracked by the Registry per registered plugin. See [`../plugins.md`](../plugins.md) § Plugin Lifecycle.
+
+```typescript
+const PluginHealthStateSchema = z.enum(["healthy", "unhealthy", "failed"]);
+type PluginHealthState = z.infer<typeof PluginHealthStateSchema>;
+
+const PluginHealthRecordSchema = z.object({
+  plugin_id: z.string(),
+  state: PluginHealthStateSchema,
+  consecutive_failures: z.number().int().default(0),
+  last_check_at: z.string().datetime().nullable(),
+  last_healthy_at: z.string().datetime().nullable(),
+  last_error: z.string().nullable(),
+});
+type PluginHealthRecord = z.infer<typeof PluginHealthRecordSchema>;
 ```

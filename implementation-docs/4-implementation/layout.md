@@ -32,21 +32,52 @@ src/
     people-directory/
       index.ts
 
-  adapters/                          # Adapter tier (interface definitions only)
-    trigger.ts                       # TriggerAdapter contract
-    communication.ts                 # CommunicationAdapter contract
-    llm.ts                           # LLMAdapter contract
-    tool.ts                          # ToolAdapter contract
-    git-hosting.ts                   # GitHostingAdapter contract
-    index.ts                         # Re-exports — future plugin-sdk boundary
+  adapters/                          # Adapter tier (abstract classes + SDK boundary)
+    base.ts                          # BaseAdapter abstract class (Decision #104)
+    trigger.ts                       # TriggerAdapter abstract class
+    communication.ts                 # CommunicationAdapter abstract class
+    llm.ts                           # LLMAdapter abstract class
+    tool.ts                          # ToolAdapter abstract class
+    git-hosting.ts                   # GitHostingAdapter abstract class
+    errors.ts                        # createAdapterError() helper (Decision #105)
+    index.ts                         # Re-exports — curated plugin SDK boundary (Decision #105)
 
-  plugins/                           # Plugin tier (implementations)
-    github-trigger/                  # TriggerAdapter → GitHub polling
-    telegram-comm/                   # CommunicationAdapter → Telegram
-    github-comm/                     # CommunicationAdapter → GitHub
-    github-hosting/                  # GitHostingAdapter → GitHub
-    claude-code-llm/                 # LLMAdapter → Claude Code CLI
-    bash-tool/                       # ToolAdapter → shell execution
+  plugins/                           # Plugin tier (grouped by adapter type, Decision #103)
+    trigger/
+      github-trigger/                # TriggerAdapter → GitHub polling
+        engineer.plugin.yaml         # Plugin manifest (Decision #102)
+        index.ts                     # createPlugin() factory
+        github-trigger.ts            # Implementation
+        config.ts                    # Zod config schema
+    communication/
+      telegram-comm/                 # CommunicationAdapter → Telegram
+        engineer.plugin.yaml
+        index.ts
+        telegram-comm.ts
+        config.ts
+      github-comm/                   # CommunicationAdapter → GitHub
+        engineer.plugin.yaml
+        index.ts
+        github-comm.ts
+        config.ts
+    llm/
+      claude-code-llm/               # LLMAdapter → Claude Code CLI
+        engineer.plugin.yaml
+        index.ts
+        claude-code-llm.ts
+        config.ts
+    tool/
+      bash-tool/                     # ToolAdapter → shell execution
+        engineer.plugin.yaml
+        index.ts
+        bash-tool.ts
+        config.ts
+    git-hosting/
+      github-hosting/                # GitHostingAdapter → GitHub
+        engineer.plugin.yaml
+        index.ts
+        github-hosting.ts
+        config.ts
 
   schemas/                           # ALL Zod schemas (centralized)
     task.ts                          # Task, StateTransition, TaskState, SubState, etc.
@@ -73,7 +104,9 @@ src/
 
 **Single package for v1.** No pnpm workspaces, no build orchestration, no package versioning. The three tiers (Core / Adapter / Plugin) are directory boundaries, not package boundaries.
 
-**`adapters/index.ts` as the plugin-sdk boundary.** This file re-exports everything a plugin author needs: adapter interfaces, shared schemas, event types. When the system grows to support third-party plugins, this becomes `packages/plugin-sdk/` — a move-and-rename, not a restructure. See [`../future-considerations.md`](../future-considerations.md) for the monorepo evolution path.
+**`adapters/index.ts` as the plugin-sdk boundary.** This file re-exports everything a plugin author needs: adapter abstract classes, shared schemas, event types, error helpers. When the system grows to support third-party plugins, this becomes `packages/plugin-sdk/` — a move-and-rename, not a restructure. See [`../future-considerations.md`](../future-considerations.md) for the monorepo evolution path and [`plugins.md`](plugins.md) for the full SDK surface (Decision #105).
+
+**Plugins grouped by adapter type.** Each plugin lives in `src/plugins/{adapter_type}/{plugin_name}/` with an `engineer.plugin.yaml` manifest, factory function, implementation class, and Zod config schema. Grouping mirrors the adapter contracts in `src/adapters/`, making the relationship visually clear (Decision #103).
 
 **Centralized schemas in `src/schemas/`.** All Zod schemas live in one directory. Cross-component types (TaskSchema used by 5+ components) and component-internal types (DaemonState used only by Daemon) are all here. One place to find every type. Matches Session 24's schema directory organization.
 
@@ -105,7 +138,7 @@ Separate config files per concern. Each component's config lives in its own file
 
 ```
 ~/.engineer/config/
-  daemon.yaml              # Daemon tuning (tick, preemption, aging, trigger polling, shutdown)
+  daemon.yaml              # Daemon tuning (tick, preemption, aging, trigger polling, shutdown, plugin lifecycle)
   orchestrator.yaml        # Fast-path, notification, question batching, decomposition, demo, phases
   safety.yaml              # Cost limits, scope, autonomy, response timeout, merge policy
   workspace.yaml           # Branch naming, PR defaults, cleanup, multi-repo

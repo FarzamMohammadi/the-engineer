@@ -927,3 +927,59 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** Pre-commit (parallel): Biome check on staged files + tsc --noEmit (full type check, incremental). Pre-push: Vitest full test suite. The Engineer (the agent) MUST NOT bypass hooks.
 
 **Rationale:** Detailed design for Decision #89. Type check in pre-commit prevents accumulating type errors across commits (2-5 second cost is worth it). Biome catches formatting and lint instantly. Tests run at push time (slower, but catches logic errors before code leaves the machine). The agent cannot use `--no-verify` — this is the core enforcement mechanism.
+
+---
+
+## 2026-03-09 — Plugin manifest as standalone file: engineer.plugin.yaml (#102)
+
+**Decision:** Each plugin directory contains an `engineer.plugin.yaml` file — metadata separate from code. Universal fields (id, type, version, name, description, critical, enabled, entry) plus nested `adapter_meta` for type-specific static metadata. `enabled` field lives in manifest only. Config schema in manifest is JSON Schema derived from Zod via `zod-to-json-schema`.
+
+**Rationale:** Adopted from OpenClaw pattern. Enables discovery without loading code, enable/disable toggle without code changes, config schema pre-validation, and machine-readable metadata for future tooling. Nested `adapter_meta` keeps universal namespace clean. Zod in code is source of truth for runtime validation; JSON Schema in manifest is the derived representation.
+
+---
+
+## 2026-03-09 — Five-phase plugin loading sequence (#103)
+
+**Decision:** Registry loads plugins in five phases: Discover (scan for engineer.plugin.yaml, skip disabled), Validate (unique IDs, valid type, semver, entry exists), Order (type-based: Communication → LLM → Tool → GitHosting → Trigger), Load (dynamic import, factory function), Initialize (load user config, validate, resolve secrets, call initialize). Discovery path configurable via `plugins.dirs` in daemon.yaml. Plugins grouped by adapter type in directory structure.
+
+**Rationale:** Aligns with P1 startup protocol. Type-based ordering ensures dependencies are ready before dependents (triggers last — they produce work immediately). Factory function export allows async setup and implementation flexibility. YAML manifest is source of truth; Registry injects manifest into plugin instance.
+
+---
+
+## 2026-03-09 — Abstract classes for adapter contracts (#104)
+
+**Decision:** Adapter contracts implemented as abstract class hierarchy: BaseAdapter → {TriggerAdapter, CommunicationAdapter, LLMAdapter, ToolAdapter, GitHostingAdapter}. BaseAdapter provides manifest storage, `hasCapability()`, and template methods (initialize wraps doInitialize, shutdown wraps doShutdown). Plugins export factory function `createPlugin(): Adapter`.
+
+**Rationale:** Abstract classes carry shared implementation (no duplication across plugins), enable `instanceof` checks at runtime (Registry type-safe lookup), and enforce method implementation at compile time. Template method pattern guarantees timing/logging/error handling. Single inheritance constraint is acceptable given Decision #43 (one plugin per adapter).
+
+---
+
+## 2026-03-09 — Plugin SDK boundary: src/adapters/index.ts (#105)
+
+**Decision:** `src/adapters/index.ts` is the curated re-export surface for plugin authors. Exports: BaseAdapter, all 5 adapter abstract classes, all shared types/Zod schemas from schemas/adapters.ts, error helper `createAdapterError()`, and needed event payload types (TaskStateChangedPayload). Does NOT export Core internals, Event Bus APIs, database access, or config system. New files: `base.ts`, `errors.ts`.
+
+**Rationale:** Concrete implementation of the accessibility promise. Plugin authors import everything from one file. This is the future `packages/plugin-sdk/` extraction point. Event payload types are included only where plugins actually need them (comm plugins with sync capability).
+
+---
+
+## 2026-03-09 — Plugin health state machine (#106)
+
+**Decision:** Three health states: healthy → unhealthy (1 failed check) → failed (N consecutive failures, default 3). No automatic re-initialization for v1 — alert human and wait. Per-type failure response: triggers stop polling, LLM triggers failover, comm falls back to next channel. Shutdown in reverse initialization order (triggers first, comm last).
+
+**Rationale:** Simple three-state model covers all cases. Manual recovery for v1 avoids masking underlying issues (expired credentials, service permanently down). Reverse shutdown order keeps communication available for error alerts during shutdown. Staggered health checks prevent burst load.
+
+---
+
+## 2026-03-09 — Plugin lifecycle config in daemon.yaml (#107)
+
+**Decision:** Plugin lifecycle settings in `daemon.yaml` under `plugins` section: `dirs` (discovery paths, default ["src/plugins"]), `health_check_interval_ms` (60s), `health_check_timeout_ms` (5s), `consecutive_failures_threshold` (3). All fields have `.default()` values.
+
+**Rationale:** Lifecycle settings are Daemon concerns (Daemon owns plugin lifecycle via Registry). Configurable discovery path prepares for future third-party plugins without premature complexity. Default thresholds are conservative — 3 consecutive failures before marking failed gives transient issues time to resolve.
+
+---
+
+## 2026-03-09 — Process safety rules for child process spawning (#108)
+
+**Decision:** Five rules: (1) Explicit shell via `spawn("bash", ["-c", cmd])`, never `shell: true`. (2) Signal forwarding — SIGTERM/SIGINT to children, SIGKILL on timeout. (3) Workspace confinement — BashToolPlugin sets `cwd` to task workspace. (4) Environment allowlist — PATH, HOME, NODE_ENV, LANG, TERM, git vars, plus configurable `env_passthrough`. (5) Output size limits — default 10MB max stdout/stderr, process terminated on exceed.
+
+**Rationale:** Explicit bash prevents platform-dependent shell behavior (LLM generates bash syntax). Allowlist over denylist prevents accidental secret leakage. Workspace confinement at plugin level, verified by Safety Layer scope rules. Output limits prevent runaway commands from exhausting memory. New dependency: `zod-to-json-schema` for generating manifest JSON Schema from Zod.

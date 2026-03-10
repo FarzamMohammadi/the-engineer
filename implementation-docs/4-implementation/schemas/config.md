@@ -48,12 +48,24 @@ const DaemonConfigSchema = z.object({
   // --- Trigger polling (Decision #74) ---
   trigger_poll_interval_ms: z.number().int().positive().default(30_000),  // 30 seconds
   seen_keys_ttl_ms: z.number().int().positive().default(86_400_000),     // 24 hours — dedup key retention
+
+  // --- Plugin lifecycle (Decision #107) ---
+  plugins: z.object({
+    dirs: z.array(z.string()).default(["src/plugins"]),                   // plugin discovery paths
+    health_check_interval_ms: z.number().int().positive().default(60_000), // 60 seconds between checks
+    health_check_timeout_ms: z.number().int().positive().default(5_000),  // 5 seconds per health check
+    consecutive_failures_threshold: z.number().int().positive().default(3), // failures before "failed" state
+  }).default({}),
 });
 type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 ```
 
 **New fields vs Session 24:**
 - `trigger_poll_interval_ms` — Default polling interval for TriggerAdapter plugins. Per-plugin overrides possible in plugin config.
+- `seen_keys_ttl_ms` — How long to remember trigger idempotency keys.
+
+**New field from Session 26:**
+- `plugins` — Plugin lifecycle configuration (Decision #107): discovery paths, health check interval/timeout, failure threshold. See [`../plugins.md`](../plugins.md) § Plugin Lifecycle.
 - `seen_keys_ttl_ms` — How long to remember trigger idempotency keys. Keys older than this are evicted from the in-memory `seen_trigger_keys` map (Decision #74, ephemeral.md).
 
 ---

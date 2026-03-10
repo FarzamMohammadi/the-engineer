@@ -835,10 +835,10 @@ The Action Pipeline (see [`event-catalog.md`](event-catalog.md) § Action Pipeli
 
 ## Open Questions for Layer 4
 
-- Plugin packaging format (npm packages, Python packages, standalone binaries, in-process modules?)
-- Plugin discovery beyond explicit registration (auto-discovery from a plugins directory?)
+- ~~Plugin packaging format (npm packages, Python packages, standalone binaries, in-process modules?)~~ **Resolved:** In-process TypeScript modules with `engineer.plugin.yaml` manifest and factory function export. Decision #102, #103. See [`../4-implementation/plugins.md`](../4-implementation/plugins.md).
+- ~~Plugin discovery beyond explicit registration (auto-discovery from a plugins directory?)~~ **Resolved:** Registry scans configurable directories recursively for `engineer.plugin.yaml` files. Decision #103.
 - Plugin versioning and compatibility enforcement (semver ranges? API version negotiation?)
-- Secret management implementation (env vars, vault, encrypted config?)
-- Plugin sandboxing (should plugins run in isolated processes for fault isolation?)
-- Config file format (YAML, TOML, JSON) for People Directory and plugin configuration
+- ~~Secret management implementation (env vars, vault, encrypted config?)~~ **Resolved:** Env vars via `${ENV_VAR_NAME}` syntax in config files, resolved at load time. Decision #96.
+- Plugin sandboxing (should plugins run in isolated processes for fault isolation?) — Deferred. V1 plugins run in-process. Process safety rules (Decision #108) mitigate risks.
+- ~~Config file format (YAML, TOML, JSON) for People Directory and plugin configuration~~ **Resolved:** YAML. Decision #90.
 - ~~Fallback chains: when primary communication plugin fails, should the system automatically try the next one?~~ **Resolved:** Yes. People Directory `contacts[]` is an ordered list per person. System tries channels in order. See [`error-propagation.md`](error-propagation.md) § 5 and Decision #55.

@@ -1,0 +1,12 @@
+pre-commit:
+  parallel: true
+  commands:
+    biome-check:
+      run: pnpm biome check --staged
+    type-check:
+      run: pnpm tsc --noEmit
+
+pre-push:
+  commands:
+    test:
+      run: pnpm test

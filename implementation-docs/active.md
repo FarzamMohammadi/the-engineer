@@ -81,5 +81,6 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 **Implementation: IN PROGRESS.**
 
 - Phase 0: Project Bootstrap — **DONE** (Session 31). 12 files: package.json, tsconfig.json, biome.json, lefthook.yml, 4 vitest configs, test/setup.ts, src/index.ts, .gitignore, .node-version. All verification passes.
+- Phase 1a: Core Data Schemas — **DONE** (Session 32). 7 files in `src/schemas/`: task.ts (4 enums, 12 sub-schemas, TaskSchema, StateTransitionSchema, ValidTransitions 25 rules, PermissionTable 10 entries), events.ts (EventSchema envelope, 30 payload schemas, EventPayloads mapped type, TypedEvent generic, eventPayloadSchemas runtime registry), session-memory.ts (Session, JournalEntry, Checkpoint, KnowledgeEntry, knowledgeId()), 3 test files (126 tests), index.ts barrel. 3 Biome exceptions added (useNamingConvention, noBarrelFile, noReExportAll). All verification passes.
 
-**Next: Phase 1a — Core Data Schemas.** Task, Event, Session/Memory Zod schemas. See [`5-build/build-order.md`](5-build/build-order.md) § Phase 1a.
+**Next: Phase 1b — Integration Schemas.** Adapter contracts, orchestrator outputs, ephemeral state, config schemas. See [`5-build/build-order.md`](5-build/build-order.md) § Phase 1b.

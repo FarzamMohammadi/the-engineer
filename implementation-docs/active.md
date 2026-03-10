@@ -78,7 +78,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 **Layers 0-4: ALL COMPLETE. 127 architectural decisions.**
 
-**Layer 5 — Build Order: COMPLETE.** 16-phase bottom-up implementation sequence designed (Session 30, Decision #128).
+**Layer 5 — Build Order: COMPLETE.** 19-phase bottom-up implementation sequence designed (Session 30, Decision #128).
 
 - Session 30: Build order planning — DONE. 1 decision (#128).
 

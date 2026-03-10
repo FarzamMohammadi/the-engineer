@@ -697,3 +697,123 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Rationale:** Zero cost (GitHub free tier: 5,000 req/hr, polling uses ~120 req/hr). Zero infrastructure (runs locally). Simple to develop and debug. 30-second latency is negligible for tasks taking minutes to hours. TriggerAdapter contract already supports adding webhook plugins later without changing Core.
 
 **Alternatives rejected:** Webhooks (requires exposed endpoint, tunnel setup, infrastructure cost). Deferred to future optimization.
+
+---
+
+## 2026-03-09 — ULID for all entity IDs (#75)
+
+**Decision:** ULID (Universally Unique Lexicographically Sortable Identifier) for all entity IDs. Exception: KnowledgeEntry uses content hash (SHA-256, 32-char hex).
+
+**Rationale:** Time-sortable (`ORDER BY id` = chronological), globally unique, 26-char Crockford Base32. One ID format everywhere reduces cognitive overhead. Knowledge uses content hash because immutability and version tracking are more important than time-ordering — updating a knowledge entry creates a new entry with a new hash.
+
+---
+
+## 2026-03-09 — ISO 8601 strings for all timestamps (#76)
+
+**Decision:** All timestamps stored as ISO 8601 strings (TEXT in SQLite, `z.string().datetime()` in Zod).
+
+**Rationale:** Human-readable in database inspection. SQLite's built-in `datetime()`, `julianday()`, and comparison operators work natively with ISO 8601. Standard across every language and system.
+
+---
+
+## 2026-03-09 — String literal enums, lowercase_snake_case (#77)
+
+**Decision:** All enums are TypeScript string literal unions, stored as TEXT in SQLite. Values use lowercase_snake_case.
+
+**Rationale:** L2 docs used mixed case (`Review_Pending`, `Working`) and hyphens (`pause-siblings`, `git-local`). Normalized to `review_pending`, `working`, `pause_siblings`, `git_local` for TypeScript identifier compatibility and consistency. String literals are readable in database queries — no integer-to-meaning lookup.
+
+---
+
+## 2026-03-09 — Zod-first with mandatory named type aliases (#78)
+
+**Decision:** Zod schemas are the single source of truth. TypeScript types always derived via `z.infer<typeof Schema>`. Named type aliases are mandatory — no anonymous `z.infer` in function signatures.
+
+**Rationale:** Single source of truth prevents type drift. Named aliases provide IDE hover information, error messages, and documentation.
+
+---
+
+## 2026-03-09 — 7 SQLite tables + _meta (#79)
+
+**Decision:** 7 entity tables (tasks, state_transitions, events, sessions, journal_entries, checkpoints, knowledge) plus a `_meta` table for schema versioning and system-level key-value storage.
+
+**Rationale:** Each table corresponds to a domain entity with its own query patterns. _meta provides schema migration tracking and safety accumulator snapshots.
+
+---
+
+## 2026-03-09 — Task cost as real columns (#80)
+
+**Decision:** `llm_tokens` (INTEGER), `llm_cost_usd` (REAL), and `compute_time_ms` (INTEGER) as real columns on the tasks table, not embedded in a JSON cost object.
+
+**Rationale:** Hot-path optimization. These counters are updated on every LLM call. JSON columns require deserializing the entire task row, modifying, and writing back. Real columns allow `UPDATE tasks SET llm_tokens = llm_tokens + ? WHERE id = ?`.
+
+---
+
+## 2026-03-09 — State transitions in separate table (#81)
+
+**Decision:** State transitions stored in a separate `state_transitions` table, not as an embedded `history` array on the Task object (as L2 defined).
+
+**Rationale:** Enables cross-task audit queries (`SELECT * FROM state_transitions WHERE to_state = 'blocked'`). Append-only table is natural for audit trails. Per-task history: `SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp`.
+
+---
+
+## 2026-03-09 — Event payloads as JSON blob + mapped type (#82)
+
+**Decision:** Single `events` table for all 30 event types. Payload stored as JSON TEXT column. Per-type Zod schemas with a mapped type (`EventPayloads["cost.incurred"]`) for type-safe access.
+
+**Rationale:** One table is simpler than 30 tables. JSON payloads are flexible for new event types. The mapped type provides compile-time type safety without a 30-variant discriminated union.
+
+---
+
+## 2026-03-09 — Knowledge: natural key + content hash (#83)
+
+**Decision:** Knowledge entries identified by content hash (`hash(scope + key + body)`, 32-char hex). Stable logical key is `(scope, repo_scope, key)`. Updating a knowledge entry creates a new entry; old entry gets `superseded_by` pointing to the new one.
+
+**Rationale:** Immutable entries with clean audit trail. You can always see what the system used to know. Content hash ensures identical knowledge is never stored twice.
+
+---
+
+## 2026-03-09 — Safety accumulator snapshots in _meta (#84)
+
+**Decision:** Safety Layer cost accumulators are ephemeral (rebuilt from events on startup), but with periodic snapshots stored in `_meta` for fast recovery.
+
+**Rationale:** Pure event replay is an anti-pattern at scale — startup time grows linearly with event volume. Snapshots provide O(1) startup with incremental replay. Full replay is the safe fallback if snapshot is missing or corrupt.
+
+---
+
+## 2026-03-09 — Phase outputs use .safeParse() (#85)
+
+**Decision:** Orchestrator phase outputs validated with Zod `.safeParse()` + fallback handling, not hard `.parse()` gates.
+
+**Rationale:** Phase outputs are LLM-generated. LLM output is unreliable — wrong field names, missing fields, unexpected types. Schemas document the expected shape; the code handles deviations gracefully. Hard parse would crash the pipeline on minor LLM mistakes.
+
+---
+
+## 2026-03-09 — Durations as milliseconds (#86)
+
+**Decision:** All duration values stored as milliseconds (INTEGER in SQLite, `z.number().int()` in TypeScript). Human-readable config values (e.g., `"4h"`, `"30s"`) parsed at config load time only.
+
+**Rationale:** Consistent arithmetic, no runtime parsing. Config files are the only place humans see durations — everywhere else is integers.
+
+---
+
+## 2026-03-09 — Event envelope simplified per L3 (#87)
+
+**Decision:** Event envelope does not include `status` or `veto_reason` fields. L3's Action Pipeline replaced L2's Event Bus pre-processing model. Pipeline rejections are logged as `action.rejected` events.
+
+**Rationale:** L3 superseded L2's design. The Event Bus is pure pub/sub — no pre-processing, no vetoing on the bus itself. Safety checks happen in the Action Pipeline (Gate 2), not on the Event Bus.
+
+---
+
+## 2026-03-09 — Enum values normalized to lowercase_snake_case (#88)
+
+**Decision:** All enum values from L2/L3 normalized to lowercase_snake_case in concrete schemas.
+
+**Rationale:** L2 used mixed conventions (`Review_Pending`, `Working`, `pause-siblings`). Concrete schemas use a single convention: `review_pending`, `working`, `pause_siblings`. Consistency reduces cognitive load and prevents string matching bugs.
+
+---
+
+## 2026-03-09 — Strictest enforcement through tooling (#89)
+
+**Decision:** Every code quality rule enforced by automated tooling that cannot be bypassed. Agents (and humans) MUST fix issues because they literally cannot continue.
+
+**Rationale:** AI-driven development insight — agents inadvertently skip formatting, leave unused imports, miss dead code. Leveraging pre-commit hooks (Biome format + type check), pre-push hooks (tests must pass), and Zod runtime validation at boundaries creates non-bypassable enforcement. Detailed tooling design deferred to Sessions 25 (hooks, Biome, tsconfig) and 28 (tests, coverage).

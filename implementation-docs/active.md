@@ -46,6 +46,7 @@ All work lives in `/implementation-docs/`, organized by architectural layer:
 - `4-implementation/` — Layer 4: Implementation Design
   - `foundation.md` — Technology stack (TypeScript, Node 22, pnpm, SQLite, Biome, Zod, Vitest)
   - `openclaw-review.md` — OpenClaw reference (validated decisions, patterns to adopt)
+  - `schemas/` — Data structures & schemas (Zod schemas, SQLite DDL, 8 files)
 
 ## Repo Structure
 
@@ -74,8 +75,8 @@ Layers 0-3: ALL COMPLETE. 64 architectural decisions.
 **Layer 4 — Implementation Design: IN PROGRESS.** Broken into 6 focused sessions:
 
 - Session 23: Foundation (technology stack) — DONE. 10 decisions (#65-#74). 74 total.
-- Session 24: Data structures & schemas — NEXT
-- Session 25: Project layout & config format
+- Session 24: Data structures & schemas — DONE. 15 decisions (#75-#89). 89 total.
+- Session 25: Project layout & config format — NEXT
 - Session 26: Plugin system & adapter implementation
 - Session 27: Deployment & operations
 - Session 28: Testing strategy

@@ -166,9 +166,13 @@ describe("checkDatabase", () => {
 // ── Category 6: Plugin Manifests ──────────────────────────────────────────
 
 describe("checkPluginManifests", () => {
-  it("warns when no plugin directories exist", () => {
+  it("finds built-in plugins in src/plugins", () => {
+    // checkPluginManifests scans both <engineerHome>/plugins and src/plugins (relative).
+    // Since src/plugins now contains real built-in plugins (bash-tool, claude-code-llm),
+    // it finds them and returns pass instead of warn.
     const result = checkPluginManifests(tempDir);
-    expect(result.checks[0]?.status).toBe("warn");
+    expect(result.checks.length).toBeGreaterThan(0);
+    expect(result.checks.every((c) => c.status === "pass")).toBe(true);
   });
 });
 

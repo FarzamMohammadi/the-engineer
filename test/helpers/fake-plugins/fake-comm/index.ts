@@ -68,6 +68,9 @@ export class FakeCommunicationPlugin extends CommunicationAdapter {
 
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {
     this.initConfig = config;
+    if (config["_force_fail"] === true) {
+      return Promise.resolve({ success: false, message: "Forced failure for testing" });
+    }
     return Promise.resolve({ success: true, message: null });
   }
 

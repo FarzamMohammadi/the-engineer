@@ -6,7 +6,6 @@ import { parse as parseYaml } from "yaml";
 import type { BaseAdapter } from "../../adapters/base.js";
 import {
   type AdapterType,
-  AdapterTypeSchema,
   type InitResult,
   type PluginHealthRecord,
   type PluginHealthState,
@@ -93,7 +92,7 @@ export class Registry {
    */
   async loadFromDirectories(
     dirs: string[],
-    configResolver: ConfigResolver = async () => ({}),
+    configResolver: ConfigResolver = () => Promise.resolve({}),
   ): Promise<void> {
     // Phase 1: Discover
     const discovered = this.discover(dirs);
@@ -171,14 +170,6 @@ export class Registry {
       }
       seenIds.add(manifest.id);
 
-      // Valid adapter type (already parsed by Zod, but explicit check for clarity)
-      const typeResult = AdapterTypeSchema.safeParse(manifest.type);
-      if (!typeResult.success) {
-        const message = `invalid adapter type "${String(manifest.type)}"`;
-        console.error(`Registry: validation failed for "${manifest.id}": ${message}`);
-        throw new Error(`Registry: validation failed for "${manifest.id}": ${message}`);
-      }
-
       // Semver version
       if (!SEMVER_REGEX.test(manifest.version)) {
         const message = `invalid version "${manifest.version}" (must be semver)`;
@@ -221,12 +212,7 @@ export class Registry {
       }
 
       const instance = module.createPlugin();
-      instance.manifest = manifest;
       this.register(manifest, instance);
-
-      console.log(
-        `Registry: loaded plugin "${manifest.id}" (${manifest.type} v${manifest.version})`,
-      );
     }
   }
 
@@ -409,14 +395,9 @@ export class Registry {
    * Updates internal health records and emits events on state transitions.
    */
   async healthCheckAll(): Promise<PluginHealthRecord[]> {
-    const results: PluginHealthRecord[] = [];
-
-    for (const record of this.plugins.values()) {
-      await this.checkPluginHealth(record);
-      results.push({ ...record.health });
-    }
-
-    return results;
+    const records = [...this.plugins.values()];
+    await Promise.allSettled(records.map((r) => this.checkPluginHealth(r)));
+    return records.map((r) => ({ ...r.health }));
   }
 
   /**
@@ -474,7 +455,7 @@ export class Registry {
     let status: { healthy: boolean; message: string | null };
 
     try {
-      status = await Promise.race([record.instance.healthCheck(), this.rejectAfterTimeout()]);
+      status = await this.withTimeout(record.instance.healthCheck());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       status = { healthy: false, message };
@@ -562,11 +543,22 @@ export class Registry {
     // If already "failed", stays "failed" — no repeated events until recovery
   }
 
-  private rejectAfterTimeout(): Promise<never> {
-    return new Promise((_resolve, reject) => {
-      setTimeout(() => {
+  private withTimeout<T>(promise: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
         reject(new Error("health check timeout"));
       }, this.healthCheckTimeoutMs);
+
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
     });
   }
 }

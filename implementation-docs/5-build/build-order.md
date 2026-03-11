@@ -945,6 +945,18 @@ Each plugin: manifest, factory, implementation, config schema, tests (including 
 
 Each plugin passes its contract suite. Plugin-specific tests verify API interaction logic (mock Octokit HTTP responses). Config validation works. Idempotency keys are stable across polls.
 
+### Stubs from Phase 12 (Daemon)
+
+The following TODO stubs in `src/core/daemon/index.ts` must be replaced with real implementations during this phase:
+
+| Location | TODO | What to implement |
+|----------|------|-------------------|
+| Event subscription in `start()` | `TODO: Phase 14b — implement comm.message_received handler (Query Handler)` | Subscribe to `comm.message_received` events. Route to query handler (status, progress, cost queries) or task response. See `daemon-scheduler.md` § Query Handler for full spec. |
+| `processNewTriggerEvent()` | `TODO: Phase 14b — map trigger event external_ref to ExternalRef shape` | Map `TriggerEvent.external_ref` (string URL) to the `ExternalRef` schema shape (`{ type, repo, number }`) when creating tasks. Currently passes `null` for `external_ref`. |
+| Event handling (not yet subscribed) | `TODO: Phase 14b — handle PR review feedback (task re-enters queued)` | Subscribe to `task.feedback_received` event. When PR review feedback arrives, transition the task back to queued for re-work. |
+
+**Cleanup checklist:** After implementing, remove the TODO comments and verify the Daemon correctly handles communication events end-to-end with the new GitHub plugins.
+
 ---
 
 ## Phase 14c: Telegram Plugin
@@ -1021,6 +1033,29 @@ Cross-component integration tests (real Core, fake plugins) and full daemon life
 ### Verification
 
 All integration and E2E tests pass. Happy path runs end-to-end with fake plugins. Crash recovery demonstrates checkpoint + resume. No flakiness (deterministic via fake clock).
+
+### Stubs from Phase 12 (Daemon)
+
+The following TODO stubs in `src/core/daemon/index.ts` must be replaced with real implementations during this phase:
+
+| Location | TODO | What to implement |
+|----------|------|-------------------|
+| `scheduleNext()` | `TODO: Phase 15 — check dependency ordering for child tasks (is_eligible)` | Before scheduling a queued task, check if it has unresolved parent/child dependencies. Skip ineligible tasks. Use `TaskEngine.getChildren()` and task `children` field to determine eligibility. |
+| `checkStuckTasks()` | `TODO: Phase 15 — implement full blocked timeout escalation` | Implement 3-stage blocked timeout escalation: (1) **reminder** — nudge after initial timeout, (2) **self_unblock_check** — ask Orchestrator to attempt self-unblock, (3) **alert** — notify owner via CommunicationAdapter. Query `SafetyLayer.getTimeoutPolicy()` for per-task/per-repo timeout configuration. Currently only emits `health.stuck_detected` events. |
+| `checkStuckTasks()` | `TODO: Phase 15 — implement review_pending timeout reminders` | When a task is in `review_pending` state for too long, send periodic reminders to reviewers via CommunicationAdapter. Use `PeopleDirectory.getReviewers()` to resolve contacts. |
+| Event handling (not yet subscribed) | `TODO: Phase 15 — handle parent task integration when all children complete` | Subscribe to `task.children_all_done` event. When all child tasks of a parent complete, transition the parent task to resume integration work (merge child results). |
+
+**Blocked timeout escalation details (from `daemon-scheduler.md`):**
+
+The current implementation only detects stuck tasks and emits health events. Phase 15 must implement the full 3-stage escalation:
+
+1. **Stage 1 — Reminder** (at `stuck_threshold_ms`): Emit `health.stuck_detected` with condition `no_state_transition`. Log warning. If CommunicationAdapter available, send status update to task owner.
+2. **Stage 2 — Self-unblock check** (at `2 × stuck_threshold_ms`): Ask Orchestrator to attempt self-diagnosis. If the task can self-unblock (e.g., retry a failed API call), transition back to `active.working`. Otherwise escalate.
+3. **Stage 3 — Alert** (at `3 × stuck_threshold_ms` or `max_active_duration_ms`): Transition task to `blocked`. Notify owner and reviewers via CommunicationAdapter. Include diagnostic context (last journal entries, error logs). Consider force-transition to `failed` if no response after additional timeout.
+
+The `SafetyLayer.getTimeoutPolicy()` method returns per-repo/per-task timeout configuration that should override the global `stuck_threshold_ms` when available.
+
+**Cleanup checklist:** After implementing, remove the TODO comments. Verify stuck detection works end-to-end with real CommunicationAdapter plugins in E2E tests.
 
 ---
 

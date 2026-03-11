@@ -208,11 +208,11 @@ describe("Orchestrator", () => {
       const phaseCalls = handle.taskEngine.updateTaskField.mock.calls.filter(
         (call: unknown[]) => (call as string[])[1] === "phase",
       );
-      // 6 phase updates (intake→research, research→planning, ..., demo_prep→integration)
-      // Last phase (integration) doesn't trigger an update to a "next" phase
-      expect(phaseCalls).toHaveLength(6);
+      // 7 phase updates: 1 initial (intake_analysis) + 6 transitions (research through integration)
+      // Last phase (integration) doesn't trigger a transition, but initial set covers intake_analysis
+      expect(phaseCalls).toHaveLength(7);
       const phaseValues = phaseCalls.map((call: unknown[]) => (call as string[])[2]);
-      expect(phaseValues).toEqual(PHASE_SEQUENCE.slice(1));
+      expect(phaseValues).toEqual(PHASE_SEQUENCE);
     });
   });
 

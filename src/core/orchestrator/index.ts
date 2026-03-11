@@ -89,6 +89,9 @@ export class Orchestrator {
   private readonly eventBus: EventBus;
   private readonly registry: Registry;
   private readonly taskEngine: TaskEngine;
+  // Stored for future use: Orchestrator will call consultJudgment() directly
+  // for should_i_ask queries and cost_check pre-flight. Currently Gate 2 runs
+  // through ActionPipeline, so no direct calls in the skeleton.
   private readonly safetyLayer: SafetyLayer;
   private readonly actionPipeline: ActionPipeline;
   private readonly sessionMemory: SessionMemory;
@@ -166,6 +169,11 @@ export class Orchestrator {
     );
     let phases = initialPhases;
 
+    // Set initial task.phase so Daemon can see what phase we're in
+    // biome-ignore lint/style/noNonNullAssertion: startIndex is within bounds (resolveStartState guarantees it)
+    const initialPhase = phases[startIndex]!;
+    this.taskEngine.updateTaskField(taskId, "phase", initialPhase);
+
     // ── Phase loop ─────────────────────────────────────────────────────────
     const priorOutputs = new Map<Phase, PhaseOutput>();
 
@@ -221,7 +229,7 @@ export class Orchestrator {
       "Analyze this task and assess its complexity.",
       `Task title: ${dispatch.task.title}`,
       `Task description: ${dispatch.task.description ?? "None provided"}`,
-      `Repository: ${dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? ""}`,
+      `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
       "Return a JSON object with these fields:",
       "- complexity: one of 'trivial', 'simple', 'moderate', 'complex', 'epic'",
@@ -242,7 +250,7 @@ export class Orchestrator {
     const prompt = [
       "Research the codebase for this task.",
       `Task: ${dispatch.task.title}`,
-      `Repository: ${dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? ""}`,
+      `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
       "Return a JSON object with these fields:",
       "- relevant_files: array of file paths",
@@ -263,7 +271,7 @@ export class Orchestrator {
     const prompt = [
       "Create a technical plan for this task.",
       `Task: ${dispatch.task.title}`,
-      `Repository: ${dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? ""}`,
+      `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
       "Return a JSON object with these fields:",
       "- approach: string describing the technical approach",
@@ -299,7 +307,7 @@ export class Orchestrator {
     const prompt = [
       "Execute the implementation for this task.",
       `Task: ${dispatch.task.title}`,
-      `Repository: ${dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? ""}`,
+      `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
       "Return a JSON object with these fields:",
       "- files_changed: array of file paths modified",
@@ -319,7 +327,7 @@ export class Orchestrator {
     const prompt = [
       "Review the code changes for this task.",
       `Task: ${dispatch.task.title}`,
-      `Repository: ${dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? ""}`,
+      `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
       "Return a JSON object with these fields:",
       "- findings: array of {type, file, description, fixed}",
@@ -338,7 +346,7 @@ export class Orchestrator {
     const prompt = [
       "Prepare demo artifacts and a PR description for this task.",
       `Task: ${dispatch.task.title}`,
-      `Repository: ${dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? ""}`,
+      `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
       "Return a JSON object with these fields:",
       "- artifacts: array of {type, location, permanent}",
@@ -357,7 +365,7 @@ export class Orchestrator {
     const prompt = [
       "Verify integration of all changes for this task.",
       `Task: ${dispatch.task.title}`,
-      `Repository: ${dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? ""}`,
+      `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
       "Return a JSON object with these fields:",
       "- children_verified: array of child task IDs checked",
@@ -386,6 +394,9 @@ export class Orchestrator {
     const checkpoint = dispatch.resume_from;
     const checkpointPhaseIndex = phases.indexOf(checkpoint.phase as Phase);
     const startIndex = checkpointPhaseIndex >= 0 ? checkpointPhaseIndex + 1 : 0;
+
+    // Verify workspace integrity before resuming (Plan step 2)
+    this.workspaceManager.verifyWorkspace(taskId);
 
     this.sessionMemory.addJournalEntry({
       sessionId,
@@ -456,6 +467,11 @@ export class Orchestrator {
       return ["intake_analysis", ...FAST_PATH_PHASES];
     }
     return currentPhases;
+  }
+
+  /** Extract repository identifier from task (workspace or external_ref). */
+  private getTaskRepo(dispatch: Dispatch): string {
+    return dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? "";
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -659,13 +675,15 @@ export class Orchestrator {
     currentPhase: Phase,
     _priorOutputs: Map<Phase, PhaseOutput>,
   ): ExecuteTaskResult {
+    const preemptingId = this.preemptionPayload?.preempting_task_id ?? "unknown";
+
     // Create preemption checkpoint
     const checkpoint = this.sessionMemory.createCheckpoint({
       sessionId,
       taskId,
       phase: currentPhase,
       phaseProgress: `Preempted during ${currentPhase}`,
-      contextSummary: `Task preempted before completing ${currentPhase}`,
+      contextSummary: `Task preempted by ${preemptingId} before completing ${currentPhase}`,
       keyFindings: [],
       openQuestions: [],
       nextAction: `Resume at ${currentPhase}`,
@@ -681,7 +699,7 @@ export class Orchestrator {
       taskId,
       phase: currentPhase,
       type: "checkpoint_marker",
-      summary: "Preempted for higher-priority task",
+      summary: `Preempted by ${preemptingId}`,
       tags: ["preemption"],
     });
 

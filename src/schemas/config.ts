@@ -6,6 +6,9 @@ import { PersonSchema } from "./adapters.js";
 // Loaded from daemon.yaml. Startup-only — not hot-reloadable.
 
 export const DaemonConfigSchema = z.object({
+  // Capacity (concurrency-ready: default 1 = single-core era)
+  max_concurrent: z.number().int().positive().default(1),
+
   // Tick loop
   tick_interval_ms: z.number().int().positive().default(5_000),
 

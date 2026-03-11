@@ -70,6 +70,7 @@ const UPDATABLE_FIELDS = [
   "decisions",
   "child_summaries",
   "acceptance_criteria",
+  "priority",
 ] as const;
 
 /** Fields that can be updated via updateTaskField(). */

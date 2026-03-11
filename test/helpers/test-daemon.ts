@@ -217,6 +217,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
       outcome: "completed",
       phaseOutputs: new Map(),
     } satisfies ExecuteTaskResult),
+    attemptSelfUnblock: vi.fn().mockResolvedValue(false),
   };
 
   // ── SessionMemory mock ────────────────────────────────────────────────
@@ -240,7 +241,37 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
       .fn()
       .mockReturnValue({ allowed: true, action: "proceed", reason: "allowed" }),
     consultJudgment: vi.fn(),
-    getTimeoutPolicy: vi.fn().mockReturnValue({}),
+    getTimeoutPolicy: vi.fn().mockReturnValue({
+      blocked: {
+        stages: [
+          {
+            name: "reminder",
+            after_ms: 14_400_000,
+            action: "send_reminder",
+            repeat: true,
+            repeat_interval_ms: 14_400_000,
+          },
+          {
+            name: "self_unblock_check",
+            after_ms: 28_800_000,
+            action: "evaluate_self_unblock",
+            repeat: null,
+            repeat_interval_ms: null,
+          },
+          {
+            name: "escalation",
+            after_ms: 172_800_000,
+            action: "escalation_alert",
+            repeat: null,
+            repeat_interval_ms: null,
+          },
+        ],
+      },
+      review_pending: {
+        reminder_after_ms: 86_400_000,
+        repeat_interval_ms: 86_400_000,
+      },
+    }),
     getCostStatus: vi.fn().mockReturnValue({}),
     updateConfig: vi.fn(),
   };

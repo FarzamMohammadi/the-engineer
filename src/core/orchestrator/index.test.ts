@@ -5,6 +5,7 @@ import {
   type TestOrchestratorHandle,
   createMockCheckpoint,
   createMockDispatch,
+  createMockTask,
   createTestOrchestrator,
 } from "../../../test/helpers/test-orchestrator.js";
 import { PHASE_SEQUENCE } from "./index.js";
@@ -624,6 +625,161 @@ describe("Orchestrator", () => {
       expect(firstPayload).toHaveProperty("tokens_out", 50);
       expect(firstPayload).toHaveProperty("spend_usd", 0.01);
       expect(firstPayload).toHaveProperty("task_id", "task-001");
+    });
+  });
+
+  // ── attemptSelfUnblock ───────────────────────────────────────────────────
+
+  describe("attemptSelfUnblock", () => {
+    it("returns false when task is not found", async () => {
+      handle.taskEngine.getTask.mockReturnValue(null);
+
+      const result = await handle.orchestrator.attemptSelfUnblock("nonexistent");
+      expect(result).toBe(false);
+    });
+
+    it("returns false when task is not in blocked state", async () => {
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-1", state: "active", sub_state: "working" }),
+      );
+
+      const result = await handle.orchestrator.attemptSelfUnblock("task-1");
+      expect(result).toBe(false);
+    });
+
+    it("returns false when no LLM plugin is available", async () => {
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+      );
+      handle.registry.getPrimaryPlugin.mockReturnValue(null);
+
+      const result = await handle.orchestrator.attemptSelfUnblock("task-1");
+      expect(result).toBe(false);
+    });
+
+    it("returns true when LLM responds with can_resolve: true", async () => {
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({
+          id: "task-1",
+          state: "blocked",
+          sub_state: null,
+          blocked: { reason: "Missing dependency", since: new Date().toISOString() },
+        }),
+      );
+      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.actionPipeline.execute.mockResolvedValue({
+        outcome: "executed",
+        result: {
+          content: JSON.stringify({ can_resolve: true, action: "retry with alternative" }),
+          tool_calls: null,
+          finish_reason: "stop",
+          usage: {
+            tokens_in: 50,
+            tokens_out: 20,
+            spend_usd: 0.005,
+            remaining: null,
+            resets_at: null,
+          },
+        },
+      });
+
+      const result = await handle.orchestrator.attemptSelfUnblock("task-1");
+      expect(result).toBe(true);
+    });
+
+    it("returns false when LLM responds with can_resolve: false", async () => {
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+      );
+      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.actionPipeline.execute.mockResolvedValue({
+        outcome: "executed",
+        result: {
+          content: JSON.stringify({ can_resolve: false, action: "needs human input" }),
+          tool_calls: null,
+          finish_reason: "stop",
+          usage: {
+            tokens_in: 50,
+            tokens_out: 20,
+            spend_usd: 0.005,
+            remaining: null,
+            resets_at: null,
+          },
+        },
+      });
+
+      const result = await handle.orchestrator.attemptSelfUnblock("task-1");
+      expect(result).toBe(false);
+    });
+
+    it("returns false when pipeline rejects the action", async () => {
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+      );
+      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.actionPipeline.execute.mockResolvedValue({
+        outcome: "rejected",
+        reason: "cost limit exceeded",
+      });
+
+      const result = await handle.orchestrator.attemptSelfUnblock("task-1");
+      expect(result).toBe(false);
+    });
+
+    it("returns false on invalid JSON response", async () => {
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+      );
+      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.actionPipeline.execute.mockResolvedValue({
+        outcome: "executed",
+        result: {
+          content: "not valid json",
+          tool_calls: null,
+          finish_reason: "stop",
+          usage: {
+            tokens_in: 50,
+            tokens_out: 20,
+            spend_usd: 0.005,
+            remaining: null,
+            resets_at: null,
+          },
+        },
+      });
+
+      const result = await handle.orchestrator.attemptSelfUnblock("task-1");
+      expect(result).toBe(false);
+    });
+
+    it("uses actionClass read for the LLM call", async () => {
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+      );
+      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.actionPipeline.execute.mockResolvedValue({
+        outcome: "executed",
+        result: {
+          content: JSON.stringify({ can_resolve: false, action: "n/a" }),
+          tool_calls: null,
+          finish_reason: "stop",
+          usage: {
+            tokens_in: 50,
+            tokens_out: 20,
+            spend_usd: 0.005,
+            remaining: null,
+            resets_at: null,
+          },
+        },
+      });
+
+      await handle.orchestrator.attemptSelfUnblock("task-1");
+
+      expect(handle.actionPipeline.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionClass: "read",
+          taskId: "task-1",
+        }),
+      );
     });
   });
 });

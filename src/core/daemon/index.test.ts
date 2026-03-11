@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createMockTriggerPlugin,
@@ -802,6 +802,450 @@ describe("Daemon", () => {
             consecutive_failures: 3,
           }),
         }),
+      );
+    });
+  });
+
+  // ── Child Task Eligibility (isTaskEligible) ──────────────────────────
+
+  describe("child task eligibility", () => {
+    it("schedules top-level tasks (no parent_id)", async () => {
+      handle = createTestDaemon();
+      const task = createMockTask({
+        id: "top-level",
+        state: "queued",
+        sub_state: null,
+        parent_id: null,
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
+
+      await handle.daemon.tick();
+
+      expect(handle.orchestrator.executeTask).toHaveBeenCalled();
+    });
+
+    it("skips child task when parent is not supervising", async () => {
+      handle = createTestDaemon();
+      const child = createMockTask({
+        id: "child-1",
+        state: "queued",
+        sub_state: null,
+        parent_id: "parent-1",
+      });
+      const parent = createMockTask({
+        id: "parent-1",
+        state: "active",
+        sub_state: "working",
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
+      handle.taskEngine.getTask.mockReturnValue(parent);
+
+      await handle.daemon.tick();
+
+      expect(handle.orchestrator.executeTask).not.toHaveBeenCalled();
+    });
+
+    it("schedules child task when parent is supervising", async () => {
+      handle = createTestDaemon();
+      const child = createMockTask({
+        id: "child-1",
+        state: "queued",
+        sub_state: null,
+        parent_id: "parent-1",
+      });
+      const parent = createMockTask({
+        id: "parent-1",
+        state: "active",
+        sub_state: "supervising",
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
+      handle.taskEngine.getTask.mockReturnValue(parent);
+
+      await handle.daemon.tick();
+
+      expect(handle.orchestrator.executeTask).toHaveBeenCalled();
+    });
+
+    it("blocks sibling when pause_siblings and another child is active", async () => {
+      handle = createTestDaemon();
+      const child = createMockTask({
+        id: "child-2",
+        state: "queued",
+        sub_state: null,
+        parent_id: "parent-1",
+      });
+      const parent = createMockTask({
+        id: "parent-1",
+        state: "active",
+        sub_state: "supervising",
+        cascade_policy: "pause_siblings",
+      });
+      const activeSibling = createMockTask({
+        id: "child-1",
+        state: "active",
+        sub_state: "working",
+        parent_id: "parent-1",
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
+      handle.taskEngine.getTask.mockReturnValue(parent);
+      handle.taskEngine.getChildren.mockReturnValue([activeSibling, child]);
+
+      await handle.daemon.tick();
+
+      expect(handle.orchestrator.executeTask).not.toHaveBeenCalled();
+    });
+
+    it("allows child task with orphaned parent (parent not found)", async () => {
+      handle = createTestDaemon();
+      const child = createMockTask({
+        id: "child-orphan",
+        state: "queued",
+        sub_state: null,
+        parent_id: "missing-parent",
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
+      handle.taskEngine.getTask.mockReturnValue(null);
+
+      await handle.daemon.tick();
+
+      expect(handle.orchestrator.executeTask).toHaveBeenCalled();
+    });
+  });
+
+  // ── Blocked Escalation ─────────────────────────────────────────────────
+
+  describe("blocked escalation", () => {
+    it("sends reminder for tasks blocked past reminder threshold", async () => {
+      handle = createTestDaemon();
+      const fourHoursAgo = new Date(handle.clock.now() - 14_400_000 - 1000).toISOString();
+      const blockedTask = createMockTask({
+        id: "blocked-1",
+        state: "blocked",
+        sub_state: null,
+        title: "Stuck task",
+        last_transition_at: fourHoursAgo,
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "blocked") {
+          return [blockedTask];
+        }
+        return [];
+      });
+
+      const owner = { id: "owner-1", name: "Alice", role: "owner", contacts: [] };
+      handle.peopleDirectory.getOwner.mockReturnValue(owner);
+
+      const mockComm = {
+        hasCapability: () => true,
+        formatMessage: (c: string) => c,
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+      };
+      handle.registry.getPluginsByType.mockImplementation((type: string) => {
+        if (type === "communication") {
+          return [mockComm];
+        }
+        return [];
+      });
+
+      await handle.daemon.tick();
+
+      expect(mockComm.sendMessage).toHaveBeenCalledWith(
+        { user_id: "owner-1", channel: null },
+        expect.objectContaining({
+          content: expect.stringContaining("Stuck task"),
+        }),
+      );
+    });
+
+    it("calls attemptSelfUnblock for tasks blocked past self-unblock threshold", async () => {
+      handle = createTestDaemon();
+      const eightHoursAgo = new Date(handle.clock.now() - 28_800_000 - 1000).toISOString();
+      const blockedTask = createMockTask({
+        id: "blocked-2",
+        state: "blocked",
+        sub_state: null,
+        title: "Self-unblock candidate",
+        last_transition_at: eightHoursAgo,
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "blocked") {
+          return [blockedTask];
+        }
+        return [];
+      });
+
+      // No owner = skip reminder, but self-unblock still runs
+      handle.peopleDirectory.getOwner.mockReturnValue(null);
+
+      await handle.daemon.tick();
+
+      expect(handle.orchestrator.attemptSelfUnblock).toHaveBeenCalledWith("blocked-2");
+    });
+
+    it("escalates to failed for tasks blocked past escalation threshold", async () => {
+      handle = createTestDaemon();
+      const twoDaysAgo = new Date(handle.clock.now() - 172_800_000 - 1000).toISOString();
+      const blockedTask = createMockTask({
+        id: "blocked-3",
+        state: "blocked",
+        sub_state: null,
+        title: "Escalation task",
+        last_transition_at: twoDaysAgo,
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "blocked") {
+          return [blockedTask];
+        }
+        return [];
+      });
+      handle.peopleDirectory.getOwner.mockReturnValue(null);
+      handle.peopleDirectory.getReviewers.mockReturnValue([]);
+
+      await handle.daemon.tick();
+
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "blocked-3",
+        "failed",
+        null,
+        "blocked_timeout_escalation",
+        "daemon",
+      );
+    });
+  });
+
+  // ── Review Pending Reminders ───────────────────────────────────────────
+
+  describe("review pending reminders", () => {
+    it("sends reminder for tasks pending review past threshold", async () => {
+      handle = createTestDaemon();
+      const oneDayAgo = new Date(handle.clock.now() - 86_400_000 - 1000).toISOString();
+      const reviewTask = createMockTask({
+        id: "review-1",
+        state: "review_pending",
+        sub_state: "demo",
+        title: "Needs review",
+        last_transition_at: oneDayAgo,
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "review_pending") {
+          return [reviewTask];
+        }
+        return [];
+      });
+
+      const reviewer = { id: "rev-1", name: "Bob", role: "reviewer", contacts: [] };
+      handle.peopleDirectory.getReviewers.mockReturnValue([reviewer]);
+
+      const mockComm = {
+        hasCapability: () => true,
+        formatMessage: (c: string) => c,
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+      };
+      handle.registry.getPluginsByType.mockImplementation((type: string) => {
+        if (type === "communication") {
+          return [mockComm];
+        }
+        return [];
+      });
+
+      await handle.daemon.tick();
+
+      expect(mockComm.sendMessage).toHaveBeenCalledWith(
+        { user_id: "rev-1", channel: null },
+        expect.objectContaining({
+          content: expect.stringContaining("Needs review"),
+        }),
+      );
+    });
+
+    it("does not send reminder before threshold", async () => {
+      handle = createTestDaemon();
+      const recentTime = new Date(handle.clock.now() - 3_600_000).toISOString(); // 1h ago
+      const reviewTask = createMockTask({
+        id: "review-2",
+        state: "review_pending",
+        sub_state: "demo",
+        title: "Too early",
+        last_transition_at: recentTime,
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "review_pending") {
+          return [reviewTask];
+        }
+        return [];
+      });
+
+      const mockComm = {
+        hasCapability: () => true,
+        formatMessage: (c: string) => c,
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+      };
+      handle.registry.getPluginsByType.mockImplementation((type: string) => {
+        if (type === "communication") {
+          return [mockComm];
+        }
+        return [];
+      });
+
+      await handle.daemon.tick();
+
+      expect(mockComm.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("does not repeat reminder within interval", async () => {
+      handle = createTestDaemon();
+      const oneDayAgo = new Date(handle.clock.now() - 86_400_000 - 1000).toISOString();
+      const reviewTask = createMockTask({
+        id: "review-3",
+        state: "review_pending",
+        sub_state: "demo",
+        title: "Repeat check",
+        last_transition_at: oneDayAgo,
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "review_pending") {
+          return [reviewTask];
+        }
+        return [];
+      });
+
+      const reviewer = { id: "rev-1", name: "Bob", role: "reviewer", contacts: [] };
+      handle.peopleDirectory.getReviewers.mockReturnValue([reviewer]);
+
+      const mockComm = {
+        hasCapability: () => true,
+        formatMessage: (c: string) => c,
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+      };
+      handle.registry.getPluginsByType.mockImplementation((type: string) => {
+        if (type === "communication") {
+          return [mockComm];
+        }
+        return [];
+      });
+
+      // First tick — sends reminder
+      await handle.daemon.tick();
+      expect(mockComm.sendMessage).toHaveBeenCalledTimes(1);
+
+      // Second tick without advancing clock — should not repeat
+      mockComm.sendMessage.mockClear();
+      await handle.daemon.tick();
+      expect(mockComm.sendMessage).not.toHaveBeenCalled();
+
+      // Third tick after advancing clock past repeat interval — should send again
+      mockComm.sendMessage.mockClear();
+      handle.clock.advance(86_400_000 + 1000);
+      await handle.daemon.tick();
+      expect(mockComm.sendMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── Children All Done Handler ──────────────────────────────────────────
+
+  describe("children all done handler", () => {
+    it("transitions parent from supervising to integrating and re-dispatches", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+
+      const parent = createMockTask({
+        id: "parent-1",
+        state: "active",
+        sub_state: "supervising",
+      });
+      handle.taskEngine.getTask.mockReturnValue(parent);
+
+      const callback = handle.getSubscriptionCallback("task.children_all_done");
+      expect(callback).toBeDefined();
+
+      callback?.({
+        id: "evt-1",
+        type: "task.children_all_done",
+        source: "task-engine",
+        task_id: "parent-1",
+        sequence: 1,
+        created_at: new Date().toISOString(),
+        payload: {
+          parent_task_id: "parent-1",
+          child_ids: ["child-1", "child-2"],
+          all_succeeded: true,
+          failed_ids: [],
+        },
+      });
+
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "parent-1",
+        "active",
+        "integrating",
+        "children_all_done",
+        "daemon",
+      );
+    });
+
+    it("does nothing when parent is not in supervising state", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+
+      const parent = createMockTask({
+        id: "parent-1",
+        state: "active",
+        sub_state: "working",
+      });
+      handle.taskEngine.getTask.mockReturnValue(parent);
+
+      const callback = handle.getSubscriptionCallback("task.children_all_done");
+      callback?.({
+        id: "evt-2",
+        type: "task.children_all_done",
+        source: "task-engine",
+        task_id: "parent-1",
+        sequence: 2,
+        created_at: new Date().toISOString(),
+        payload: {
+          parent_task_id: "parent-1",
+          child_ids: ["child-1"],
+          all_succeeded: true,
+          failed_ids: [],
+        },
+      });
+
+      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
+        "parent-1",
+        "active",
+        "integrating",
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    it("does nothing when parent task not found", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+
+      handle.taskEngine.getTask.mockReturnValue(null);
+
+      const callback = handle.getSubscriptionCallback("task.children_all_done");
+      callback?.({
+        id: "evt-3",
+        type: "task.children_all_done",
+        source: "task-engine",
+        task_id: "missing-parent",
+        sequence: 3,
+        created_at: new Date().toISOString(),
+        payload: {
+          parent_task_id: "missing-parent",
+          child_ids: ["child-1"],
+          all_succeeded: false,
+          failed_ids: ["child-1"],
+        },
+      });
+
+      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
+        "missing-parent",
+        "active",
+        "integrating",
+        expect.any(String),
+        expect.any(String),
       );
     });
   });

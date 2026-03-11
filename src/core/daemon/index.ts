@@ -11,6 +11,7 @@ import type { Dispatch } from "../../schemas/ephemeral.js";
 import type {
   Event,
   EventPayloads,
+  TaskChildrenAllDonePayload,
   TaskFeedbackReceivedPayload,
   TaskStateChangedPayload,
 } from "../../schemas/events.js";
@@ -192,6 +193,15 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   let pendingPreemption: PendingPreemption | null = null;
   const costLimitTasks: string[] = [];
 
+  // Blocked escalation: tracks which stage each task has reached + last action time
+  const blockedEscalationState = new Map<
+    string,
+    { lastStageIndex: number; lastActionAt: number }
+  >();
+
+  // Review pending reminders: tracks when last reminder was sent per task
+  const reviewReminderTimes = new Map<string, number>();
+
   // ── PID File ───────────────────────────────────────────────────────────
 
   function pidFilePath(): string {
@@ -253,6 +263,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       syncStateToCommPlugin(payload);
     });
 
+    // Subscribe to children_all_done — resume parent task integration
+    eventBus.subscribe("daemon:children-done", "task.children_all_done", (event: Event) => {
+      const payload = event.payload as TaskChildrenAllDonePayload;
+      handleChildrenAllDone(payload);
+    });
+
     // Subscribe to PR review feedback — transition task back to queued for rework
     eventBus.subscribe("daemon:feedback", "task.feedback_received", (event: Event) => {
       const payload = event.payload as TaskFeedbackReceivedPayload;
@@ -280,6 +296,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     eventBus.unsubscribe("daemon:cost");
     eventBus.unsubscribe("daemon:comm");
     eventBus.unsubscribe("daemon:state-sync");
+    eventBus.unsubscribe("daemon:children-done");
     eventBus.unsubscribe("daemon:feedback");
   }
 
@@ -422,6 +439,55 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
   }
 
+  // ── Children All Done ───────────────────────────────────────────────
+
+  function handleChildrenAllDone(payload: TaskChildrenAllDonePayload): void {
+    const parent = taskEngine.getTask(payload.parent_task_id);
+    if (!parent) {
+      logger.warn(
+        { parentTaskId: payload.parent_task_id },
+        "Parent task not found for children_all_done",
+      );
+      return;
+    }
+
+    if (parent.state !== "active" || parent.sub_state !== "supervising") {
+      logger.warn(
+        { parentTaskId: payload.parent_task_id, state: parent.state, subState: parent.sub_state },
+        "Parent not in supervising state for children_all_done",
+      );
+      return;
+    }
+
+    const transition = taskEngine.requestTransition(
+      parent.id,
+      "active",
+      "integrating",
+      "children_all_done",
+      "daemon",
+    );
+
+    if (!transition.success) {
+      logger.error(
+        { parentTaskId: parent.id, reason: transition.reason },
+        "Failed to transition parent to integrating",
+      );
+      return;
+    }
+
+    // Re-dispatch parent for integration phase
+    dispatchTask(parent);
+
+    logger.info(
+      {
+        parentTaskId: parent.id,
+        allSucceeded: payload.all_succeeded,
+        failedIds: payload.failed_ids,
+      },
+      "Parent task resumed for integration after all children completed",
+    );
+  }
+
   // ── Preemption ────────────────────────────────────────────────────────
 
   function evaluatePreemption(now: number): void {
@@ -551,6 +617,39 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     return config.max_concurrent - activeDispatches.size;
   }
 
+  /**
+   * Check if a queued child task is eligible for scheduling.
+   * Top-level tasks (no parent) are always eligible.
+   * Child tasks require their parent to be in active.supervising.
+   * If cascade_policy is pause_siblings, only one child runs at a time.
+   */
+  function isTaskEligible(task: { id: string; parent_id: string | null }): boolean {
+    if (!task.parent_id) {
+      return true;
+    }
+
+    const parent = taskEngine.getTask(task.parent_id);
+    if (!parent) {
+      return true; // Orphaned child — allow scheduling
+    }
+
+    // Parent must be in supervising state for children to run
+    if (parent.state !== "active" || parent.sub_state !== "supervising") {
+      return false;
+    }
+
+    // With pause_siblings policy, only one child can be active at a time
+    if (parent.cascade_policy === "pause_siblings") {
+      const siblings = taskEngine.getChildren(task.parent_id);
+      const activeSibling = siblings.find((s) => s.id !== task.id && s.state === "active");
+      if (activeSibling) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   function scheduleNext(): void {
     const available = getAvailableSlots();
     if (available <= 0) {
@@ -558,9 +657,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
 
     const queuedTasks = taskEngine.getQueuedByPriority();
-    // TODO: Phase 15 — check dependency ordering for child tasks (is_eligible)
+    const eligible = queuedTasks.filter(isTaskEligible);
 
-    const toSchedule = queuedTasks.slice(0, available);
+    const toSchedule = eligible.slice(0, available);
     for (const candidate of toSchedule) {
       dispatchTask(candidate);
     }
@@ -661,10 +760,8 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       checkSingleTaskStuck(taskId, now);
     }
 
-    // TODO: Phase 15 — implement full blocked timeout escalation.
-    // 3-stage: reminder → self_unblock_check → alert, querying
-    // SafetyLayer.getTimeoutPolicy() on each health tick.
-    // Also implement review_pending timeout reminders.
+    checkBlockedEscalation(now);
+    checkReviewPendingReminders(now);
   }
 
   function checkSingleTaskStuck(taskId: string, now: number): void {
@@ -715,6 +812,227 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       },
     } satisfies PublishInput<"health.stuck_detected">);
     logger.warn({ taskId, condition, elapsedMs }, "Stuck task detected");
+  }
+
+  // ── Blocked Timeout Escalation ──────────────────────────────────────
+
+  function checkBlockedEscalation(now: number): void {
+    const blockedTasks = taskEngine.getTasksByState("blocked");
+    const timeoutPolicy = deps.safetyLayer.getTimeoutPolicy();
+    const stages = timeoutPolicy.blocked.stages;
+
+    // Clean up escalation state for tasks no longer blocked
+    for (const taskId of blockedEscalationState.keys()) {
+      if (!blockedTasks.some((t) => t.id === taskId)) {
+        blockedEscalationState.delete(taskId);
+      }
+    }
+
+    for (const task of blockedTasks) {
+      if (!task.last_transition_at) {
+        continue;
+      }
+      const elapsedMs = now - Date.parse(task.last_transition_at);
+      processBlockedStages(task.id, task.title, elapsedMs, stages, now);
+    }
+  }
+
+  function processBlockedStages(
+    taskId: string,
+    taskTitle: string,
+    elapsedMs: number,
+    stages: Array<{
+      name: string;
+      after_ms: number;
+      action: string;
+      repeat: boolean | null;
+      repeat_interval_ms: number | null;
+    }>,
+    now: number,
+  ): void {
+    const state = blockedEscalationState.get(taskId) ?? { lastStageIndex: -1, lastActionAt: 0 };
+
+    for (let i = 0; i < stages.length; i++) {
+      const stage = stages[i];
+      if (!stage || elapsedMs < stage.after_ms) {
+        continue;
+      }
+
+      if (!shouldFireStage(i, stage, state, now)) {
+        continue;
+      }
+
+      executeBlockedStageAction(taskId, taskTitle, stage);
+      blockedEscalationState.set(taskId, { lastStageIndex: i, lastActionAt: now });
+    }
+  }
+
+  /** Check if a stage should fire given the current escalation state. */
+  function shouldFireStage(
+    stageIndex: number,
+    stage: { repeat: boolean | null; repeat_interval_ms: number | null },
+    state: { lastStageIndex: number; lastActionAt: number },
+    now: number,
+  ): boolean {
+    if (stageIndex > state.lastStageIndex) {
+      return true; // New stage not yet reached
+    }
+    // Already processed — only re-fire if repeatable and interval elapsed
+    if (stage.repeat && stage.repeat_interval_ms) {
+      return now - state.lastActionAt >= stage.repeat_interval_ms;
+    }
+    return false;
+  }
+
+  function executeBlockedStageAction(
+    taskId: string,
+    taskTitle: string,
+    stage: { name: string; action: string },
+  ): void {
+    if (stage.action === "send_reminder") {
+      sendBlockedReminder(taskId, taskTitle);
+      logger.info({ taskId, stage: stage.name }, "Blocked task reminder sent");
+    } else if (stage.action === "evaluate_self_unblock") {
+      orchestrator.attemptSelfUnblock(taskId).then(
+        (resolved) => {
+          if (resolved) {
+            taskEngine.requestTransition(taskId, "active", "working", "self_unblocked", "daemon");
+            blockedEscalationState.delete(taskId);
+            logger.info({ taskId }, "Task self-unblocked");
+          } else {
+            logger.info({ taskId }, "Self-unblock check failed — continuing escalation");
+          }
+        },
+        (err) => {
+          logger.error({ taskId, err }, "Self-unblock check error");
+        },
+      );
+    } else if (stage.action === "escalation_alert") {
+      taskEngine.requestTransition(taskId, "failed", null, "blocked_timeout_escalation", "daemon");
+      sendEscalationAlert(taskId, taskTitle);
+      blockedEscalationState.delete(taskId);
+      logger.warn({ taskId, stage: stage.name }, "Blocked task escalated to failed");
+    }
+  }
+
+  function sendBlockedReminder(taskId: string, taskTitle: string): void {
+    const owner = deps.peopleDirectory.getOwner();
+    if (!owner) {
+      return;
+    }
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const content = `Task "${taskTitle}" is still blocked and waiting for attention.`;
+
+    for (const comm of commPlugins) {
+      if (!comm.hasCapability("send")) {
+        continue;
+      }
+      const formatted = comm.formatMessage(content, "notification");
+      comm
+        .sendMessage(
+          { user_id: owner.id, channel: null },
+          { content: formatted, metadata: { task_id: taskId, type: "notification" } },
+        )
+        .catch((err) => {
+          logger.error({ err, taskId }, "Failed to send blocked reminder");
+        });
+    }
+  }
+
+  function sendEscalationAlert(taskId: string, taskTitle: string): void {
+    const owner = deps.peopleDirectory.getOwner();
+    const reviewers = deps.peopleDirectory.getReviewers();
+    const recipients = [...(owner ? [owner] : []), ...reviewers];
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const content = `ALERT: Task "${taskTitle}" has been blocked too long and was transitioned to failed. Please investigate.`;
+
+    for (const person of recipients) {
+      for (const comm of commPlugins) {
+        if (!comm.hasCapability("send")) {
+          continue;
+        }
+        const formatted = comm.formatMessage(content, "alert");
+        comm
+          .sendMessage(
+            { user_id: person.id, channel: null },
+            { content: formatted, metadata: { task_id: taskId, type: "alert" } },
+          )
+          .catch((err) => {
+            logger.error({ err, taskId }, "Failed to send escalation alert");
+          });
+      }
+    }
+  }
+
+  // ── Review Pending Reminders ──────────────────────────────────────────
+
+  function checkReviewPendingReminders(now: number): void {
+    const reviewPendingTasks = taskEngine.getTasksByState("review_pending");
+    const timeoutPolicy = deps.safetyLayer.getTimeoutPolicy();
+    const reviewConfig = timeoutPolicy.review_pending;
+
+    cleanupStaleReminderTimes(reviewPendingTasks);
+
+    for (const task of reviewPendingTasks) {
+      evaluateReviewReminder(task, reviewConfig, now);
+    }
+  }
+
+  function cleanupStaleReminderTimes(activeTasks: Array<{ id: string }>): void {
+    for (const taskId of reviewReminderTimes.keys()) {
+      if (!activeTasks.some((t) => t.id === taskId)) {
+        reviewReminderTimes.delete(taskId);
+      }
+    }
+  }
+
+  function evaluateReviewReminder(
+    task: { id: string; title: string; last_transition_at: string },
+    reviewConfig: { reminder_after_ms: number; repeat_interval_ms: number },
+    now: number,
+  ): void {
+    if (!task.last_transition_at) {
+      return;
+    }
+
+    const elapsedMs = now - Date.parse(task.last_transition_at);
+    if (elapsedMs < reviewConfig.reminder_after_ms) {
+      return;
+    }
+
+    const lastReminder = reviewReminderTimes.get(task.id) ?? 0;
+    if (now - lastReminder < reviewConfig.repeat_interval_ms) {
+      return;
+    }
+
+    sendReviewReminder(task.id, task.title, elapsedMs);
+    reviewReminderTimes.set(task.id, now);
+  }
+
+  function sendReviewReminder(taskId: string, taskTitle: string, elapsedMs: number): void {
+    const reviewers = deps.peopleDirectory.getReviewers();
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const hours = Math.floor(elapsedMs / 3_600_000);
+    const content = `Review reminder: Task "${taskTitle}" has been pending review for ${String(hours)}h.`;
+
+    for (const reviewer of reviewers) {
+      for (const comm of commPlugins) {
+        if (!comm.hasCapability("send")) {
+          continue;
+        }
+        const formatted = comm.formatMessage(content, "notification");
+        comm
+          .sendMessage(
+            { user_id: reviewer.id, channel: null },
+            { content: formatted, metadata: { task_id: taskId, type: "notification" } },
+          )
+          .catch((err) => {
+            logger.error({ err, taskId }, "Failed to send review reminder");
+          });
+      }
+    }
+
+    logger.info({ taskId, hours }, "Review pending reminder sent");
   }
 
   // ── Health Events ─────────────────────────────────────────────────────

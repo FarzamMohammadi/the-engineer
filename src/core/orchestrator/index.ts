@@ -726,6 +726,68 @@ export class Orchestrator {
     return { outcome: "preempted", lastPhase: currentPhase, checkpointId: checkpoint.id };
   }
 
+  /**
+   * Attempt to self-diagnose and resolve a blocked task.
+   *
+   * Called by the Daemon during Stage 2 of blocked timeout escalation.
+   * Makes a lightweight LLM call to assess whether the block can be
+   * automatically resolved. Thin for v1 — Phase 16 adds real prompt
+   * engineering.
+   *
+   * Returns `true` if the block was resolved, `false` otherwise.
+   */
+  async attemptSelfUnblock(taskId: string): Promise<boolean> {
+    const task = this.taskEngine.getTask(taskId);
+    if (!task || task.state !== "blocked") {
+      return false;
+    }
+
+    const llm = this.registry.getPrimaryPlugin<LLMAdapter>("llm");
+    if (!llm) {
+      return false;
+    }
+
+    // Gather recent journal context
+    const entries = this.sessionMemory.queryJournal(taskId);
+    const recentEntries = entries.slice(-5);
+    const blockedReason = task.blocked?.reason ?? "unknown";
+
+    const prompt = [
+      "A task is blocked and needs diagnosis.",
+      `Task: "${task.title}"`,
+      `Blocked reason: ${blockedReason}`,
+      `Recent activity: ${JSON.stringify(recentEntries.map((e) => ({ type: e.type, summary: e.summary })))}`,
+      "",
+      "Can this be automatically resolved? Respond with JSON:",
+      '{ "can_resolve": boolean, "action": "description of resolution or why not" }',
+    ].join("\n");
+
+    try {
+      const pipelineResult = await this.actionPipeline.execute<CompletionResult>({
+        taskId,
+        actionClass: "read",
+        details: { operation: "self_unblock_diagnosis" },
+        requestedBy: "orchestrator",
+        executeFn: () =>
+          llm.complete({
+            prompt,
+            options: { max_tokens: 200, temperature: null, stop: null, tools: null },
+          }),
+      });
+
+      if (pipelineResult.outcome !== "executed") {
+        return false;
+      }
+
+      this.emitCostIncurred(taskId, pipelineResult.result);
+
+      const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean };
+      return parsed.can_resolve === true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Create a session — new for fresh tasks, linked for resumed tasks. */
   private createSession(dispatch: Dispatch) {
     if (dispatch.resume_from) {

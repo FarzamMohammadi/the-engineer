@@ -155,3 +155,24 @@ packages/
 2. Replace all raw string references with the const (e.g., `"queued"` → `TaskState.queued`)
 3. Covers: `src/schemas/task.ts`, `src/schemas/adapters.ts`, `src/schemas/events.ts`, `src/core/task-engine/`, `src/core/registry/`, and all corresponding test files
 4. The `ValidTransitions` and `PermissionTable` const arrays in `task.ts` benefit the most — currently ~80 raw string references
+
+---
+
+## GitHubCommPlugin `receive` Capability
+
+**Current state (v1):** GitHubCommPlugin supports `send`, `sync`, and `issue_management` capabilities. The `receive` capability is omitted.
+
+**What `receive` enables:** People in the People Directory communicating *with* The Engineer via GitHub issue/PR comments mid-flow. This is human-to-agent communication — interrupts, questions, direction, feedback — not triggering (that's TriggerAdapter's domain). Examples: a reviewer commenting "hold off on merging, I want to rethink the API" mid-execution, or the owner asking "what's the status of this?" on a tracked issue.
+
+**Why it's deferred:** The full inbound communication flow requires several pieces that haven't been collaboratively designed yet:
+1. **People Directory auth check** — inbound messages must be authenticated against the directory. Only recognized people can communicate with The Engineer.
+2. **Message routing** — how inbound messages reach the Daemon/Orchestrator. The Daemon subscribes to `comm.message_received` events (Phase 14b implemented the query handler for this), but routing mid-flow messages to the correct active Orchestrator phase is a deeper design question (see "Mid-Phase Communication Interrupt Handling" above).
+3. **Polling vs. webhooks** — receiving GitHub comments requires either polling issue/PR comment timelines or setting up GitHub webhooks. Decision #74 chose polling-only for triggers; the same question applies to inbound communication.
+
+**When it becomes relevant:** When the system handles real tasks with human oversight — people wanting to steer, interrupt, or provide guidance to The Engineer through the same GitHub issues/PRs it's working on.
+
+**Migration path:** The `CommunicationAdapter` base class already defines `receive` as an optional capability with `doReceiveMessages()`. Adding it to GitHubCommPlugin requires:
+1. Implement `doReceiveMessages()` — poll issue/PR comment timelines for new comments from People Directory members
+2. Filter out The Engineer's own comments and non-directory authors
+3. Emit `comm.message_received` events (the Daemon subscription already exists from Phase 14b)
+4. Design interrupt routing in the Orchestrator (see "Mid-Phase Communication Interrupt Handling")

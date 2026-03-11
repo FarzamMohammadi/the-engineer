@@ -952,24 +952,19 @@ Each plugin passes its contract suite. Plugin-specific tests verify API interact
 
 The following TODO stubs in `src/core/daemon/index.ts` must be replaced with real implementations during this phase:
 
-| Location | TODO | What to implement |
-|----------|------|-------------------|
-| Event subscription in `start()` | `TODO: Phase 14b — implement comm.message_received handler (Query Handler)` | Subscribe to `comm.message_received` events. Route to query handler (status, progress, cost queries) or task response. See `daemon-scheduler.md` § Query Handler for full spec. |
-| `processNewTriggerEvent()` | `TODO: Phase 14b — map trigger event external_ref to ExternalRef shape` | Map `TriggerEvent.external_ref` (string URL) to the `ExternalRef` schema shape (`{ type, repo, number }`) when creating tasks. Currently passes `null` for `external_ref`. |
-| Event handling (not yet subscribed) | `TODO: Phase 14b — handle PR review feedback (task re-enters queued)` | Subscribe to `task.feedback_received` event. When PR review feedback arrives, transition the task back to queued for re-work. |
+| Location | TODO | Status |
+|----------|------|--------|
+| Event subscription in `start()` | `comm.message_received` → Query Handler | **DONE** (Session 047) — routes to `handleQuery()` in `src/core/daemon/query-handler.ts` |
+| `processNewTriggerEvent()` | Map `external_ref` URL → `ExternalRef` shape | **DONE** (Session 047) — uses `parseGitHubUrl()` + `toExternalRef()` from `github-shared` |
+| Event handling | `task.feedback_received` → re-queue for rework | **DONE** (Session 047) — `daemon:feedback` subscription transitions task to `queued` on `changes_requested` or `comment` |
+| New subscription | `task.state_changed` → sync labels via comm plugin | **DONE** (Session 047) — `daemon:state-sync` subscription calls `syncTaskState()` on comm plugins with `sync` capability |
 
-**Cleanup checklist:** After implementing, remove the TODO comments and verify the Daemon correctly handles communication events end-to-end with the new GitHub plugins.
+### Stubs from Phase 13 (CLI) — Resolved
 
-### Stubs from Phase 13 (CLI)
-
-The following TODO stubs in CLI source files must be replaced with real implementations during this phase:
-
-| File | Location | TODO | What to implement |
-|------|----------|------|-------------------|
-| `src/cli/commands/doctor.ts` | `checkGitHubConnectivity()` (line ~340) | `TODO: Phase 14b — requires GitHubTriggerPlugin for API token validation` | Validate GitHub API token (rate limit check, auth scope verification) using GitHubTriggerPlugin or Octokit directly. Replace the current warn stub that returns "not yet implemented". |
-| `src/cli/commands/status.ts` | Plugin health section (line ~37) | `TODO: Phase 14b — plugin health requires running daemon IPC` | Show plugin health status in `engineer status` output. Requires either IPC to running daemon or persisting plugin health state to DB. Currently skipped entirely. |
-
-**Cleanup checklist:** After implementing, remove the TODO comments. Verify `engineer doctor` reports real GitHub connectivity results and `engineer status` shows plugin health when daemon is running.
+| File | TODO | Status |
+|------|------|--------|
+| `src/cli/commands/doctor.ts` | GitHub connectivity check | **DONE** (Session 047) — checks `GITHUB_TOKEN` env var presence (sync, no live API call per Decision D4) |
+| `src/cli/commands/status.ts` | Plugin health display | **Deferred to Phase 15** — requires IPC or DB persistence of in-memory plugin health state |
 
 ---
 

@@ -70,6 +70,18 @@ packages/
 
 ---
 
+## Event Bus Runtime Payload Validation
+
+**Current state (v1):** The Event Bus does not validate event payloads at runtime. Publishers are trusted internal components; type safety is enforced at compile time via `PublishInput<T>`. Per event-catalog.md (L3): "Schema validation is a development-time concern (tests), not a runtime concern."
+
+**When it becomes relevant:** When third-party plugins can publish events, or when debugging payload mismatches becomes a recurring issue.
+
+**What it enables:** Optional runtime validation using the `eventPayloadSchemas` registry (already exists in `src/schemas/events.ts`). Could be enabled per-environment (e.g., development mode only) or as a constructor option on `EventBus`.
+
+**Migration path:** The `eventPayloadSchemas` record maps every `EventType` to its Zod schema. Adding validation to `publish()` is a single `safeParse()` call. Performance impact is negligible for development mode; production can skip it.
+
+---
+
 ## Monorepo Test Configuration
 
 **Current state (v1):** Single `vitest.config.ts` at project root. All tests in one package.

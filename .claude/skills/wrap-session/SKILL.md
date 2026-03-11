@@ -1,7 +1,6 @@
 ---
 name: wrap-session
 description: Wrap up the current session by updating active.md, logging the session, committing, and providing the next session's starter prompt. Use at the end of every working session.
-disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Skill
 argument-hint: [optional notes about the session]
 ---

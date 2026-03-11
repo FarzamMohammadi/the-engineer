@@ -1053,38 +1053,26 @@ Cross-component integration tests (real Core, fake plugins) and full daemon life
 
 All integration and E2E tests pass. Happy path runs end-to-end with fake plugins. Crash recovery demonstrates checkpoint + resume. No flakiness (deterministic via fake clock).
 
-### Stubs from Phase 12 (Daemon)
+### Stubs from Phase 12 (Daemon) — DONE (Session 049, Phase 15a)
 
-The following TODO stubs in `src/core/daemon/index.ts` must be replaced with real implementations during this phase:
+All 4 daemon stubs replaced with real implementations:
 
-| Location | TODO | What to implement |
-|----------|------|-------------------|
-| `scheduleNext()` | `TODO: Phase 15 — check dependency ordering for child tasks (is_eligible)` | Before scheduling a queued task, check if it has unresolved parent/child dependencies. Skip ineligible tasks. Use `TaskEngine.getChildren()` and task `children` field to determine eligibility. |
-| `checkStuckTasks()` | `TODO: Phase 15 — implement full blocked timeout escalation` | Implement 3-stage blocked timeout escalation: (1) **reminder** — nudge after initial timeout, (2) **self_unblock_check** — ask Orchestrator to attempt self-unblock, (3) **alert** — notify owner via CommunicationAdapter. Query `SafetyLayer.getTimeoutPolicy()` for per-task/per-repo timeout configuration. Currently only emits `health.stuck_detected` events. |
-| `checkStuckTasks()` | `TODO: Phase 15 — implement review_pending timeout reminders` | When a task is in `review_pending` state for too long, send periodic reminders to reviewers via CommunicationAdapter. Use `PeopleDirectory.getReviewers()` to resolve contacts. |
-| Event handling (not yet subscribed) | `TODO: Phase 15 — handle parent task integration when all children complete` | Subscribe to `task.children_all_done` event. When all child tasks of a parent complete, transition the parent task to resume integration work (merge child results). |
+| Location | What was implemented |
+|----------|---------------------|
+| `scheduleNext()` | `isTaskEligible()` — child task dependency check. Top-level always eligible; children require parent in `active.supervising`; `pause_siblings` cascade policy enforced via `getChildren()`. |
+| `checkStuckTasks()` | `checkBlockedEscalation()` — 3-stage blocked timeout using `SafetyLayer.getTimeoutPolicy().blocked.stages`: send_reminder → evaluate_self_unblock → escalation_alert. `shouldFireStage()` handles repeat logic. `blockedEscalationState` Map tracks stage progress. |
+| `checkStuckTasks()` | `checkReviewPendingReminders()` — periodic reviewer notifications using `getTimeoutPolicy().review_pending`. `reviewReminderTimes` Map prevents re-firing within interval. |
+| Event handling | `handleChildrenAllDone()` — subscribed to `task.children_all_done`. Validates parent in supervising → transitions to integrating → re-dispatches for integration phase. |
 
-### Stubs from Phase 13 (CLI)
+Additionally, `Orchestrator.attemptSelfUnblock(taskId)` added for the self-unblock escalation stage.
 
-The following TODO stub in CLI source files must be replaced with a real implementation during this phase:
+### Stubs from Phase 13 (CLI) — Remaining for Phase 15b
 
 | File | Location | TODO | What to implement |
 |------|----------|------|-------------------|
 | `src/cli/commands/start.ts` | `spawnBackground()` (line ~101) | `TODO: Phase 15 — E2E test for background daemon mode` | Write E2E test that verifies `engineer start --daemon` correctly forks a detached child process, writes PID file, and parent exits cleanly. Test should verify the background process is running and can be stopped with `engineer stop`. |
 
 **Cleanup checklist:** After implementing the E2E test, remove the TODO comment. The implementation itself is complete — only the test is deferred.
-
-**Blocked timeout escalation details (from `daemon-scheduler.md`):**
-
-The current implementation only detects stuck tasks and emits health events. Phase 15 must implement the full 3-stage escalation:
-
-1. **Stage 1 — Reminder** (at `stuck_threshold_ms`): Emit `health.stuck_detected` with condition `no_state_transition`. Log warning. If CommunicationAdapter available, send status update to task owner.
-2. **Stage 2 — Self-unblock check** (at `2 × stuck_threshold_ms`): Ask Orchestrator to attempt self-diagnosis. If the task can self-unblock (e.g., retry a failed API call), transition back to `active.working`. Otherwise escalate.
-3. **Stage 3 — Alert** (at `3 × stuck_threshold_ms` or `max_active_duration_ms`): Transition task to `blocked`. Notify owner and reviewers via CommunicationAdapter. Include diagnostic context (last journal entries, error logs). Consider force-transition to `failed` if no response after additional timeout.
-
-The `SafetyLayer.getTimeoutPolicy()` method returns per-repo/per-task timeout configuration that should override the global `stuck_threshold_ms` when available.
-
-**Cleanup checklist:** After implementing, remove the TODO comments. Verify stuck detection works end-to-end with real CommunicationAdapter plugins in E2E tests.
 
 ---
 

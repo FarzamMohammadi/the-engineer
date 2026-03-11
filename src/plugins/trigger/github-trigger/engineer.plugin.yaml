@@ -1,0 +1,10 @@
+id: github-trigger
+type: trigger
+version: "1.0.0"
+name: GitHub Trigger
+description: Polls GitHub for assigned issues and PR reviews
+critical: true
+enabled: true
+entry: index.ts
+adapter_meta:
+  poll_interval: "30s"

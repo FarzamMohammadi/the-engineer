@@ -1,0 +1,12 @@
+id: github-hosting
+type: git_hosting
+version: "1.0.0"
+name: GitHub Hosting
+description: PR lifecycle management via GitHub API
+critical: true
+enabled: true
+entry: index.ts
+adapter_meta:
+  action_classes:
+    - git-remote
+    - merge

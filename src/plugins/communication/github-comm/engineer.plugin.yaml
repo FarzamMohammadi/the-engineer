@@ -1,0 +1,13 @@
+id: github-comm
+type: communication
+version: "1.0.0"
+name: GitHub Communication
+description: Posts comments and manages labels on GitHub issues/PRs
+critical: false
+enabled: true
+entry: index.ts
+adapter_meta:
+  capabilities:
+    - send
+    - sync
+    - issue_management

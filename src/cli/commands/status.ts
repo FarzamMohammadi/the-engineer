@@ -34,7 +34,7 @@ export function runStatus(engineerHome: string): number {
     showTaskSummary(dbPath);
   }
 
-  // TODO: Phase 14b — plugin health requires running daemon IPC
+  // TODO: Phase 15 — plugin health requires running daemon IPC
   // Plugin health lives in Registry's in-memory state, not in DB.
   // Showing plugin health here requires IPC or DB persistence.
 

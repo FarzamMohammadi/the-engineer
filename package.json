@@ -25,6 +25,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@octokit/rest": "^22.0.1",
     "better-sqlite3": "^11.9.1",
     "commander": "^13.1.0",
     "ms": "^2.1.3",

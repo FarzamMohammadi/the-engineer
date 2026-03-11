@@ -2,11 +2,18 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { join } from "node:path";
 import type { Logger } from "pino";
 
+import type { CommunicationAdapter } from "../../adapters/communication.js";
 import type { TriggerAdapter } from "../../adapters/trigger.js";
+import { parseGitHubUrl, toExternalRef } from "../../plugins/github-shared/index.js";
 import type { TriggerEvent } from "../../schemas/adapters.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
-import type { Event, EventPayloads } from "../../schemas/events.js";
+import type {
+  Event,
+  EventPayloads,
+  TaskFeedbackReceivedPayload,
+  TaskStateChangedPayload,
+} from "../../schemas/events.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
@@ -16,6 +23,7 @@ import type { SafetyLayer } from "../safety-layer/index.js";
 import type { SessionMemory } from "../session-memory/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
+import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 
 // ── Clock ───────────────────────────────────────────────────────────────────
 
@@ -226,19 +234,53 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       }
     });
 
-    // TODO: Phase 14b — implement comm.message_received handler (Query Handler).
-    // When communication plugins exist, route to query handler (status, progress,
-    // cost queries) or task response. See daemon-scheduler.md § Query Handler.
-    eventBus.subscribe("daemon:comm", "comm.message_received", (_event: Event) => {
-      logger.debug(
-        "comm.message_received received — Query Handler not yet implemented (Phase 14b)",
-      );
+    eventBus.subscribe("daemon:comm", "comm.message_received", (event: Event) => {
+      const payload = event.payload as EventPayloads["comm.message_received"];
+      const queryDeps: QueryHandlerDeps = {
+        taskEngine,
+        safetyLayer: deps.safetyLayer,
+        registry,
+        logger,
+      };
+      handleQuery(payload, queryDeps).catch((err) => {
+        logger.error({ err }, "Query handler error");
+      });
+    });
+
+    // Subscribe to task state changes — sync to communication plugins
+    eventBus.subscribe("daemon:state-sync", "task.state_changed", (event: Event) => {
+      const payload = event.payload as TaskStateChangedPayload;
+      syncStateToCommPlugin(payload);
+    });
+
+    // Subscribe to PR review feedback — transition task back to queued for rework
+    eventBus.subscribe("daemon:feedback", "task.feedback_received", (event: Event) => {
+      const payload = event.payload as TaskFeedbackReceivedPayload;
+      if (payload.feedback_type === "changes_requested" || payload.feedback_type === "comment") {
+        try {
+          taskEngine.requestTransition(
+            payload.task_id,
+            "queued",
+            null,
+            `feedback_rework:${payload.feedback_type}`,
+            "daemon",
+          );
+          logger.info(
+            { taskId: payload.task_id, feedbackType: payload.feedback_type },
+            "Task re-queued after review feedback",
+          );
+        } catch (err) {
+          logger.error({ err, taskId: payload.task_id }, "Failed to re-queue task after feedback");
+        }
+      }
     });
   }
 
   function unregisterSubscriptions(): void {
     eventBus.unsubscribe("daemon:cost");
     eventBus.unsubscribe("daemon:comm");
+    eventBus.unsubscribe("daemon:state-sync");
+    eventBus.unsubscribe("daemon:feedback");
   }
 
   // ── Startup: Protocol P1 ──────────────────────────────────────────────
@@ -332,17 +374,52 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     } satisfies PublishInput<"trigger.new_event">);
 
     // Create task: intake → queued
-    // TODO: Phase 14b — map trigger event external_ref to ExternalRef shape
+    const parsed = parseGitHubUrl(event.external_ref);
+    const externalRef = parsed
+      ? toExternalRef(parsed.owner, parsed.repo, parsed.number, parsed.type)
+      : null;
+
     const task = taskEngine.createTask({
       title: event.title,
       repo: event.repo,
       source: event.source,
       description: event.body ?? "",
+      external_ref: externalRef,
     });
 
     taskEngine.requestTransition(task.id, "queued", null, "new_trigger_event", "daemon");
     basePriorities.set(task.id, task.priority);
     logger.info({ taskId: task.id, title: event.title }, "Task created from trigger event");
+  }
+
+  // ── State Sync ──────────────────────────────────────────────────────
+
+  function syncStateToCommPlugin(payload: TaskStateChangedPayload): void {
+    const commPlugins = registry.getPluginsByType("communication");
+    for (const plugin of commPlugins) {
+      const comm = plugin as CommunicationAdapter;
+      if (!comm.hasCapability("sync")) {
+        continue;
+      }
+      const task = taskEngine.getTask(payload.task_id);
+      const externalRef = task?.external_ref
+        ? `https://github.com/${task.external_ref.repo}/issues/${String(task.external_ref.number)}`
+        : null;
+
+      comm
+        .syncTaskState(payload.task_id, payload.from_state, payload.to_state, {
+          task_title: task?.title ?? "",
+          external_ref: externalRef,
+          sub_state: payload.to_sub,
+          reason: payload.reason,
+        })
+        .catch((err) => {
+          logger.error(
+            { err, pluginId: comm.manifest.id, taskId: payload.task_id },
+            "Failed to sync task state to comm plugin",
+          );
+        });
+    }
   }
 
   // ── Preemption ────────────────────────────────────────────────────────

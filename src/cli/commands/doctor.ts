@@ -336,19 +336,46 @@ function validateManifest(manifestPath: string, pluginName: string, checks: Doct
   }
 }
 
-/** Category 7: GitHub connectivity. */
-// TODO: Phase 14b — requires GitHubTriggerPlugin for API token validation
-export function checkGitHubConnectivity(): DoctorCategory {
-  return {
-    category: "GitHub Connectivity",
-    checks: [
-      {
-        label: "GitHub API",
+/** Category 7: GitHub connectivity — check token presence (sync, no live API call). */
+export function checkGitHubConnectivity(configDir?: string): DoctorCategory {
+  const checks: DoctorCheck[] = [];
+
+  // Check GITHUB_TOKEN env var or config file
+  const envToken = process.env["GITHUB_TOKEN"];
+  if (envToken && envToken.length > 0) {
+    checks.push({
+      label: "GitHub token (env)",
+      status: "pass",
+      message: `GITHUB_TOKEN set (${String(envToken.length)} chars)`,
+    });
+  } else if (configDir) {
+    // Check if any plugin config might contain a github_token
+    const pluginConfigPath = join(configDir, "plugins.yaml");
+    if (existsSync(pluginConfigPath)) {
+      checks.push({
+        label: "GitHub token",
         status: "warn",
-        message: "GitHub connectivity check not yet implemented",
-      },
-    ],
-  };
+        message: "GITHUB_TOKEN not in env — check plugins.yaml for github_token config",
+        remedy: "Set GITHUB_TOKEN environment variable or configure github_token in plugins.yaml",
+      });
+    } else {
+      checks.push({
+        label: "GitHub token",
+        status: "warn",
+        message: "No GitHub token found in environment",
+        remedy: "Set GITHUB_TOKEN environment variable",
+      });
+    }
+  } else {
+    checks.push({
+      label: "GitHub token",
+      status: "warn",
+      message: "No GitHub token found in environment",
+      remedy: "Set GITHUB_TOKEN environment variable",
+    });
+  }
+
+  return { category: "GitHub Connectivity", checks };
 }
 
 /** Category 8: Telegram connectivity. */
@@ -465,7 +492,7 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
     checkRequiredSecrets(dirs.config),
     checkDatabase(engineerHome),
     checkPluginManifests(engineerHome),
-    checkGitHubConnectivity(),
+    checkGitHubConnectivity(dirs.config),
     checkTelegramConnectivity(),
     checkWorkspace(engineerHome),
   ];

@@ -179,10 +179,36 @@ describe("checkPluginManifests", () => {
 // ── Category 7 & 8: Connectivity stubs ────────────────────────────────────
 
 describe("checkGitHubConnectivity", () => {
-  it("returns warn stub", () => {
-    const result = checkGitHubConnectivity();
-    expect(result.checks[0]?.status).toBe("warn");
-    expect(result.checks[0]?.message).toContain("not yet implemented");
+  it("returns warn when no token in env", () => {
+    const originalToken = process.env["GITHUB_TOKEN"];
+    // biome-ignore lint/performance/noDelete: delete is required for process.env
+    delete process.env["GITHUB_TOKEN"];
+    try {
+      const result = checkGitHubConnectivity();
+      expect(result.checks[0]?.status).toBe("warn");
+      expect(result.checks[0]?.message).toContain("No GitHub token found");
+    } finally {
+      if (originalToken !== undefined) {
+        process.env["GITHUB_TOKEN"] = originalToken;
+      }
+    }
+  });
+
+  it("returns pass when GITHUB_TOKEN is set", () => {
+    const originalToken = process.env["GITHUB_TOKEN"];
+    process.env["GITHUB_TOKEN"] = "ghp_test1234567890";
+    try {
+      const result = checkGitHubConnectivity();
+      expect(result.checks[0]?.status).toBe("pass");
+      expect(result.checks[0]?.message).toContain("GITHUB_TOKEN set");
+    } finally {
+      if (originalToken !== undefined) {
+        process.env["GITHUB_TOKEN"] = originalToken;
+      } else {
+        // biome-ignore lint/performance/noDelete: delete is required for process.env
+        delete process.env["GITHUB_TOKEN"];
+      }
+    }
   });
 });
 

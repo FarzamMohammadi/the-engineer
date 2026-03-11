@@ -64,7 +64,7 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
 
   // Create bare remote
   execSync(`mkdir -p ${bareRepoDir}`, { stdio: "pipe" });
-  git("init --bare", bareRepoDir);
+  git("init --bare --initial-branch=main", bareRepoDir);
 
   // Clone it to create the primary clone
   execSync(`mkdir -p ${workspaceRoot}`, { stdio: "pipe" });

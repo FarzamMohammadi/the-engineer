@@ -56,6 +56,7 @@ This is a deeply collaborative project. Farzam and the agent are partners. Key p
 - **Full names, no abbreviations** — CommunicationAdapter not CommAdapter. Clarity from bottom to top.
 - **Every decision must pass dual test:** works for v1 AND doesn't block future evolution.
 - **Thoroughness over speed** — we have endless time. Get it right.
+- **Docs ship with features** — every phase that changes user-facing behavior must update `README.md` and/or `docs/` in the same phase. There is no documentation phase. Modularize docs: information lives in one place, referenced everywhere else. Inline only when it genuinely improves speed (e.g., copy-pasteable quick-start). Prefer automation over prose — a working `--help` flag beats a manually maintained table. See [`0-foundation/philosophy.md`](../0-foundation/philosophy.md) § "Documentation as Product."
 
 ---
 

@@ -24,7 +24,7 @@ For the full command reference, options, and first-run walkthrough: **[docs/cli.
 
 ## Principles
 
-See [docs/persona.md](docs/persona.md) for the full identity.
+See [docs/philosophy.md](docs/philosophy.md) for the full rationale, [docs/persona.md](docs/persona.md) for the identity.
 
 - **Agent-agnostic** — any LLM (Claude, GPT, Gemini, local). No vendor lock-in.
 - **Real engineer behavior** — requirements first, questions before code, ambiguity is a hard blocker.

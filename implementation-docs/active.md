@@ -2,7 +2,13 @@
 
 ## Current Focus
 
-Implementation. Building The Engineer phase by phase, bottom-up, following the 19-phase build order in `5-build/build-order.md`.
+**Layer 6: Refinement & Intelligence.** Teaching the machine to think. All infrastructure is complete (Layers 0-5, 1,437 tests). Now installing the intelligence layer — prompts, tool use, sub-agents, context management.
+
+See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
+- [`assessment.md`](6-refinement/assessment.md) — Current state assessment
+- [`gaps.md`](6-refinement/gaps.md) — Gap analysis (8 gaps, prioritized)
+- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D142)
+- [`phase-plan.md`](6-refinement/phase-plan.md) — 8-phase plan with dependencies
 
 All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
 
@@ -116,4 +122,8 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 - Phase 15b: E2E Tests + CLI Cleanup — **DONE** (Session 050). 3 new E2E test files, 1 modified. **3 E2E test files** (17 tests): `test/e2e/daemon-lifecycle.e2e.test.ts` (7 tests — PID file lifecycle, startup/shutdown, graceful drain), `test/e2e/task-happy-path.e2e.test.ts` (5 tests — full 7-phase pipeline, cost events, checkpoints, fast-path, dedup), `test/e2e/crash-recovery.e2e.test.ts` (5 tests — orphan recovery, checkpoint-based resume, multiple orphans, stale PID, journal history preservation). **CLI cleanup**: removed TODO comment from `src/cli/commands/start.ts` `spawnBackground()`. Uses `createIntegrationContext()` + `createDaemon()` for crash recovery (second daemon from same deps). Async dispatch waiting via polling `getState().activeTaskIds`. Crash simulation via direct DB state setup. Total: 1437 tests (1378 unit across 54 files + 42 integration across 6 files + 17 E2E across 3 files). All verification passes (tsc 0 errors, biome 0 errors/warnings, all tests pass).
 
-**Next: Phase 16 — Refinement, Prompt Engineering & Manual Testing (Layer 6).** See [`5-build/build-order.md`](5-build/build-order.md) § Phase 16.
+**Layer 5 Implementation: COMPLETE.** All 15 build phases (0-15b) done. 1,437 tests.
+
+**Layer 6 Phase 6.0 (Assessment & Smoke Test): DONE (Session 051).** Full codebase assessment via 3 parallel exploration agents. 8 gaps identified and prioritized (3 CRITICAL, 2 HIGH, 2 MEDIUM, 1 LOWER). 6 new decisions (D137-D142). Layer 6 directory created with 4 docs (assessment, gaps, decisions, phase-plan). active.md, layers.md, memory updated. Baseline tests verified (1,378 unit pass). Smoke test deferred to next session.
+
+**Next: Phase 6.0 completion (smoke test) + Phase 6.1 (LLM Adapter Evolution).** Set up real repo + GitHub token for smoke test. Then refactor `ClaudeCodeLLMPlugin` for agentic mode (`claude -p` with `--allowedTools`, `--system-prompt`). Evolve `LLMAdapter` interface. Define per-phase tool restrictions.

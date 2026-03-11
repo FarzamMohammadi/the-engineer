@@ -137,21 +137,33 @@ Actual code. 20-phase bottom-up build order. 1 decision (#128).
 **Documents:**
 - [`build-order.md`](5-build/build-order.md) — full build order specification with dependency graph
 
-## Layer 6: Refinement & Prompt Engineering
+## Layer 6: Refinement & Intelligence — IN PROGRESS
 
-Teaching the machine to think. Layers 0–5 designed and built the system. Layer 6 is where it learns to be good at its job.
+Teaching the machine to think. Layers 0–5 designed and built the system. Layer 6 installs the engine.
 
-This layer is fundamentally different: **iterative, empirical, human-driven**. No fixed deliverable list. Farzam runs The Engineer against real repos, observes behavior, and tunes until quality matches the vision in `goals.md`.
+This layer is **iterative, empirical, human-driven** — but structured into 8 phases with clear goals and manual testing between each.
 
-**Starting work areas** (not exhaustive — new areas will emerge from real-world usage):
-- Prompt engineering for all 7 Orchestrator phases
-- Tool definitions and sub-agent patterns (research, code review, testing)
-- LLM context window management and summarization strategies
-- Manual testing against real tasks and repos
-- Quality calibration (complexity assessment, cost estimation, autonomy thresholds)
-- Infrastructure changes, new adapters, and architectural refinements as needed
+**Key decisions (D137-D142):**
+- **D137:** Hybrid LLM architecture — CLI (subscription) AND API (billing) via adapter+plugin. Start with Claude CLI agentic mode.
+- **D138:** Full sub-agent architecture — Claude Code pattern. Main Orchestrator + phase-specific sub-agents with specialized prompts, restricted tools, structured output.
+- **D139:** Iterative development — build each phase, manually test, refine, repeat.
+- **D140:** Smoke test first — baseline behavior before any changes.
+- **D141:** Per-phase tool restrictions — maps to Permission Table. Principle of least privilege at LLM level.
+- **D142:** Prompt templates in TypeScript — separate files, type-safe context injection.
 
-**Phase:** 16 (Refinement, Prompt Engineering & Manual Testing) — ongoing, open-ended, no fixed completion criteria
+**8 phases:**
+1. **6.0** Assessment & Smoke Test (baseline, docs, decisions)
+2. **6.1** LLM Adapter Evolution (agentic mode with tools)
+3. **6.2** Intake & Research Prompts (first two phases intelligent)
+4. **6.3** Planning & Execution Prompts (core work phases)
+5. **6.4** Review, Demo & Integration (complete pipeline)
+6. **6.5** Communication & Feedback (bidirectional human-agent)
+7. **6.6** Decomposition & Multi-Task (task splitting)
+8. **6.7-6.8** E2E Testing & Hardening (validate all user flows, polish)
 
 **Documents:**
+- [`6-refinement/assessment.md`](6-refinement/assessment.md) — Current state assessment
+- [`6-refinement/gaps.md`](6-refinement/gaps.md) — Gap analysis (8 gaps)
+- [`6-refinement/decisions.md`](6-refinement/decisions.md) — Layer 6 decisions
+- [`6-refinement/phase-plan.md`](6-refinement/phase-plan.md) — Phase breakdown with dependencies
 - Phase 16 section in [`build-order.md`](5-build/build-order.md)

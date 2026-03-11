@@ -1,6 +1,6 @@
 # Layer 5: Build Order
 
-Implementation sequence for The Engineer. 19 phases, bottom-up. Each phase builds on the last, dependencies flow forward only. Each phase is scoped to fit in a single agent context window.
+Implementation sequence for The Engineer. 20 phases, bottom-up. Each phase builds on the last, dependencies flow forward only. Phases 0–15 are scoped to fit in a single agent context window. Phase 16 is ongoing and human-driven.
 
 Part of **Layer 5** — see [`../layers.md`](../layers.md). Implements specifications from [`../4-implementation/`](../4-implementation/).
 
@@ -1093,9 +1093,93 @@ The `SafetyLayer.getTimeoutPolicy()` method returns per-repo/per-task timeout co
 
 ---
 
+## Phase 16: Refinement, Prompt Engineering & Manual Testing — Layer 6
+
+### Context
+
+Phases 0–15 build the machine. Phase 16 teaches it to think. This is where The Engineer transitions from "mechanically correct" to "actually good at engineering." The Orchestrator's 7 phase handlers currently have placeholder prompts — thin one-liners that produce structurally valid but intellectually shallow outputs. The tool/sub-agent interface is stubbed. The system runs end-to-end, but it doesn't yet behave like a real engineer.
+
+This phase is fundamentally different from all previous phases: it's **iterative, empirical, and human-driven**. There is no fixed deliverable list or test count. Farzam runs The Engineer against real repos, observes behavior, tunes prompts, adds tools, designs sub-agents, and repeats until the output quality matches the vision in `goals.md`. This is also the start of **Layer 6** in the architecture — the refinement layer.
+
+### Architecture Connection
+
+- Orchestrator phase handlers (`src/core/orchestrator/index.ts`) — prompt construction, LLM calls, output parsing
+- Tool adapter interface — what tools The Engineer can invoke during each phase
+- Sub-agent patterns — how decomposed work (research, code review, testing) is coordinated
+- LLM context window management — what gets loaded per phase, summarization strategies
+- Decision #108 (process safety rules) — tool execution boundaries
+- Orchestrator design (`2-components/orchestrator.md`) — phase pipeline, checkpoint context summaries
+
+### Work Areas (Starting Points, Not Exhaustive)
+
+The areas below are known starting points. This phase is open-ended — new work areas will emerge from manual testing, real-world usage, and evolving understanding of what The Engineer needs. Infrastructure changes, new adapter types, architectural refinements, and entirely unforeseen needs are all in scope.
+
+**1. Prompt Engineering (7 phases)**
+
+Craft real prompts for each Orchestrator phase. Each prompt must:
+- Set the role and constraints for that phase
+- Include relevant context (task description, repo structure, prior phase outputs)
+- Define the expected output format (matching the phase's Zod schema)
+- Handle edge cases (ambiguous tasks, large codebases, multi-language repos)
+
+Phases: intake_analysis, research, planning, execution, self_review, demo_prep, integration.
+
+**2. Tool Definitions & Sub-Agents**
+
+Define the tools The Engineer can use during each phase:
+- File operations (read, write, glob, grep)
+- Git operations (status, diff, log, commit, branch, worktree)
+- Test runners (run tests, parse results)
+- Build tools (typecheck, lint)
+
+Design sub-agent patterns for decomposed work:
+- Research sub-agent: explores codebase, reads docs, summarizes findings
+- Code review sub-agent: reviews changes against style, correctness, security
+- Test sub-agent: writes and runs tests, reports coverage
+
+Define how the Orchestrator communicates available tools to the LLM, how tool results feed back into the conversation, and how sub-agents report back to the parent.
+
+**3. LLM Context Management**
+
+- What reference docs get loaded per phase (repo README, architecture docs, style guides)
+- How prior phase outputs feed into subsequent phases
+- Context window budgeting — what gets summarized vs. included verbatim
+- Checkpoint context summaries (self-summarization prompt from `orchestrator.md`)
+
+**4. Manual Testing & Calibration**
+
+- Run The Engineer against real repos with real tasks
+- Observe: Does it understand the task? Does it research effectively? Does it plan well? Does it write good code? Does it catch its own mistakes in self-review?
+- Tune: complexity assessment accuracy, cost estimation, phase loopback decisions, autonomy thresholds
+- Fix: edge cases, failure modes, prompt injections, context overflow
+
+### Nature of This Phase
+
+Unlike Phases 0–15, this phase has **no fixed scope or completion criteria**. It's an ongoing refinement loop:
+
+1. Run The Engineer on a real task
+2. Observe what it does well and poorly
+3. Adjust prompts, tools, sub-agent patterns, thresholds
+4. Repeat
+
+This phase may spawn new implementation work (new tool plugins, prompt template files, sub-agent infrastructure) that feeds back into the codebase. It's the beginning of the system learning to be good at its job.
+
+### What To Read
+
+- [`../2-components/orchestrator.md`](../2-components/orchestrator.md) — Phase pipeline design, checkpoint summaries, context management open questions
+- [`../0-foundation/goals.md`](../0-foundation/goals.md) — What "good" looks like
+- [`../0-foundation/philosophy.md`](../0-foundation/philosophy.md) — "What would a real engineer do?"
+- Current phase handlers in `src/core/orchestrator/index.ts` — the placeholder prompts to replace
+
+### Verification
+
+No automated verification. Quality is measured by observing The Engineer's behavior on real tasks and comparing against the standards in `goals.md` and `philosophy.md`.
+
+---
+
 ## Resolved Decisions
 
 - **Schema scope:** Split into 1a (core data) + 1b (integration types) for context window management. Pure data, shared conventions.
 - **Plugin timing:** Split into 14a (contract suites + process plugins) + 14b (GitHub, all Octokit) + 14c (Telegram, grammy). Different APIs deserve isolated context.
 - **Hello world:** Phase 12 is natural — bottom-up means each phase is independently testable via unit tests.
-- **Granularity:** 19 total phases. 6 Small, 8 Medium, 5 Large — no phase risks context overflow.
+- **Granularity:** 20 total phases. Phases 0–15: 6 Small, 8 Medium, 5 Large — no phase risks context overflow. Phase 16 is ongoing/iterative.

@@ -127,12 +127,31 @@ Ready-to-code specifications. No ambiguity left. 63 decisions (#65-#127) across 
 
 ## Layer 5: Implementation
 
-Actual code. 19-phase bottom-up build order. 1 decision (#128).
+Actual code. 20-phase bottom-up build order. 1 decision (#128).
 
 **Session completed:**
 - [x] Session 30: Build order planning (1 decision, #128) → [`build-order.md`](5-build/build-order.md)
 
-**Build phases:** 0 (Bootstrap) → 1a (Core Schemas) → 1b (Integration Schemas) → 2 (DB) → 3 (Config) → 4 (Event Bus) → 5 (Adapters) → 6 (Registry) → 7 (Task Engine) → 8 (Safety + People) → 9 (Action Pipeline) → 10 (Session/Memory + Workspace) → 11 (Orchestrator) → 12 (Daemon — hello world) → 13 (CLI) → 14a (Contract + Process Plugins) → 14b (GitHub Plugins) → 14c (Telegram) → 15 (Integration + E2E)
+**Build phases:** 0 (Bootstrap) → 1a (Core Schemas) → 1b (Integration Schemas) → 2 (DB) → 3 (Config) → 4 (Event Bus) → 5 (Adapters) → 6 (Registry) → 7 (Task Engine) → 8 (Safety + People) → 9 (Action Pipeline) → 10 (Session/Memory + Workspace) → 11 (Orchestrator) → 12 (Daemon — hello world) → 13 (CLI) → 14a (Contract + Process Plugins) → 14b (GitHub Plugins) → 14c (Telegram) → 15 (Integration + E2E) → 16 (Refinement — Layer 6)
 
 **Documents:**
 - [`build-order.md`](5-build/build-order.md) — full build order specification with dependency graph
+
+## Layer 6: Refinement & Prompt Engineering
+
+Teaching the machine to think. Layers 0–5 designed and built the system. Layer 6 is where it learns to be good at its job.
+
+This layer is fundamentally different: **iterative, empirical, human-driven**. No fixed deliverable list. Farzam runs The Engineer against real repos, observes behavior, and tunes until quality matches the vision in `goals.md`.
+
+**Starting work areas** (not exhaustive — new areas will emerge from real-world usage):
+- Prompt engineering for all 7 Orchestrator phases
+- Tool definitions and sub-agent patterns (research, code review, testing)
+- LLM context window management and summarization strategies
+- Manual testing against real tasks and repos
+- Quality calibration (complexity assessment, cost estimation, autonomy thresholds)
+- Infrastructure changes, new adapters, and architectural refinements as needed
+
+**Phase:** 16 (Refinement, Prompt Engineering & Manual Testing) — ongoing, open-ended, no fixed completion criteria
+
+**Documents:**
+- Phase 16 section in [`build-order.md`](5-build/build-order.md)

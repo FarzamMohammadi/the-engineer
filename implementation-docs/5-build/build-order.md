@@ -844,6 +844,8 @@ The user interface — 8 commands that make the system operable. Built on comman
 | `src/cli/commands/doctor.ts` | 10 check categories: Node.js runtime, data directory, config files, required secrets, database, plugin manifests, GitHub connectivity, Telegram connectivity, workspace, risky config warnings. Exit codes: 0 (pass), 1 (fail), 2 (warnings). Actionable failure messages with remediation steps. |
 | `src/cli/commands/install.ts` | macOS: generates launchd plist at `~/Library/LaunchAgents/`. Linux: generates systemd unit at `~/.config/systemd/user/`. Prints registration commands for user to run. |
 | `src/cli/commands/config-validate.ts` | Loads all config files via config loader (Phase 3), reports per-file validation results. |
+| `README.md` | Project overview, quick start, CLI command table, architecture summary, development commands. References `docs/cli.md` for full CLI reference. |
+| `docs/cli.md` | Full CLI reference: ENGINEER_HOME resolution, first-run walkthrough, all 8 commands with options/examples/behavior notes, doctor categories table. References source files. |
 
 ### What To Read
 

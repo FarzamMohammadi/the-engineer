@@ -2,20 +2,57 @@
 
 An autonomous software engineering agent that works like a real engineer — not a code generator.
 
-It receives tasks, gathers requirements from real people, researches codebases, plans, executes, self-reviews, and ships pull requests. It runs continuously, listens for triggers, and communicates through real channels like Slack, GitHub, and Teams.
+Receives tasks, gathers requirements, researches codebases, plans, executes, self-reviews, and ships pull requests. Runs continuously as a daemon, listens for triggers, communicates through real channels.
+
+## Get Running
+
+**Prerequisites:** Node.js 22+, pnpm
+
+```bash
+git clone https://github.com/user/the-engineer.git && cd the-engineer
+pnpm install
+
+npx tsx src/index.ts init                # Create ~/.engineer/ with template configs
+# Edit ~/.engineer/config/*.yaml          # Add API keys, repos, preferences
+npx tsx src/index.ts doctor              # Verify health (10 checks)
+npx tsx src/index.ts start               # Start daemon (foreground)
+```
+
+Any command accepts `--home <path>` to use a custom data directory instead of `~/.engineer`.
+
+For the full command reference, options, and first-run walkthrough: **[docs/cli.md](docs/cli.md)**
 
 ## Principles
 
-- **Agent-agnostic** — works with any LLM (Claude, GPT, Gemini, local models). No vendor lock-in.
-- **Real engineer behavior** — gathers requirements, asks questions, clarifies ambiguity before writing a line of code.
-- **Modular everything** — triggers, communication channels, LLM providers, tools, and workflow phases are all pluggable via a registry pattern.
-- **Minimal by design** — inspired by the PI philosophy. Small system prompts, few broad tools, single agent with full context. No framework bloat.
-- **Post-completion rigor** — analysis, refactoring, draft PR, self-review, request reviews, iterate on feedback.
-- **Open source for all** — reliable, robust, trustable, and configurable for any team or individual.
+See [docs/persona.md](docs/persona.md) for the full identity.
+
+- **Agent-agnostic** — any LLM (Claude, GPT, Gemini, local). No vendor lock-in.
+- **Real engineer behavior** — requirements first, questions before code, ambiguity is a hard blocker.
+- **Modular everything** — triggers, communication, LLM, tools, git hosting — all pluggable.
+- **Minimal by design** — small prompts, few broad tools, single agent, no framework bloat.
+- **Post-completion rigor** — self-review, draft PR, feedback loop, iterate.
+
+## Architecture
+
+Three tiers: **Core** (task engine, orchestrator, safety layer, event bus, daemon) → **Adapters** (trigger, communication, LLM, tool, git hosting) → **Plugins** (GitHub, Telegram, Claude, Bash — swappable).
+
+The daemon tick loop: poll triggers → create tasks → schedule by priority → dispatch to orchestrator → 7-phase pipeline → ship PR.
+
+Deep dives live in [`implementation-docs/`](implementation-docs/), organized by architectural layer.
+
+## Development
+
+```bash
+pnpm test             # 1058 unit tests
+pnpm run typecheck    # tsc --noEmit (strict)
+pnpm run lint         # Biome (all rules)
+pnpm run build        # Production build
+npx tsx src/index.ts  # Run CLI in dev mode
+```
 
 ## Status
 
-Architecture and planning phase. No code yet — every decision is being made deliberately before implementation begins.
+Phase 13 of 19 complete. Core built and tested. Next: plugin implementations and integration tests.
 
 ## License
 

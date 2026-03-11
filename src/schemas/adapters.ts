@@ -195,6 +195,12 @@ export type LLMCapabilities = z.infer<typeof LLMCapabilitiesSchema>;
 
 // ── Tool Adapter ────────────────────────────────────────────────────────────────
 
+export const ToolExecutionContextSchema = z.object({
+  workspace_path: z.string(),
+  task_id: z.string(),
+});
+export type ToolExecutionContext = z.infer<typeof ToolExecutionContextSchema>;
+
 export const ToolDescriptionSchema = z.object({
   name: z.string(),
   description: z.string(),

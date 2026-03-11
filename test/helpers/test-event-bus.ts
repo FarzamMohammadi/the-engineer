@@ -1,4 +1,4 @@
-import { EventBus } from "../../src/core/event-bus/index.js";
+import { EventBus, type EventRow, rowToEvent } from "../../src/core/event-bus/index.js";
 import type { Event } from "../../src/schemas/events.js";
 import { type TestDatabaseHandle, createTestDatabase } from "./test-database.js";
 
@@ -32,33 +32,17 @@ export function createTestEventBus(): TestEventBusHandle {
   const testDb: TestDatabaseHandle = createTestDatabase();
   const eventBus = new EventBus(testDb.db);
 
+  const allEventsStmt = testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
+  const eventsByTypeStmt = testDb.db.prepare(
+    "SELECT * FROM events WHERE type = ? ORDER BY sequence",
+  );
+
   return {
     eventBus,
 
     getEmittedEvents(type?: string): Event[] {
-      const stmt = type
-        ? testDb.db.prepare("SELECT * FROM events WHERE type = ? ORDER BY sequence")
-        : testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
-
-      const rows = (type ? stmt.all(type) : stmt.all()) as Array<{
-        id: string;
-        sequence: number;
-        type: string;
-        source: string;
-        task_id: string | null;
-        timestamp: string;
-        payload: string;
-      }>;
-
-      return rows.map((row) => ({
-        id: row.id,
-        sequence: row.sequence,
-        type: row.type,
-        source: row.source,
-        task_id: row.task_id,
-        timestamp: row.timestamp,
-        payload: JSON.parse(row.payload) as Record<string, unknown>,
-      }));
+      const rows = (type ? eventsByTypeStmt.all(type) : allEventsStmt.all()) as EventRow[];
+      return rows.map(rowToEvent);
     },
 
     assertEventEmitted(

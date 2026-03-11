@@ -362,6 +362,33 @@ describe("EventBus", () => {
       // If delivery were async, this would be false
       expect(delivered).toBe(true);
     });
+
+    it("is safe when a subscriber unsubscribes during delivery", () => {
+      setup();
+      const received: Event[] = [];
+      bus.subscribe("self-unsub", "task.created", () => {
+        bus.unsubscribe("self-unsub");
+      });
+      bus.subscribe("after-sub", "task.created", (e) => received.push(e));
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      // "after-sub" must still receive the event despite "self-unsub" mutating the array
+      expect(received).toHaveLength(1);
+    });
   });
 
   // ── Unsubscribe ─────────────────────────────────────────────────────────────

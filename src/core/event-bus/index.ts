@@ -30,7 +30,8 @@ interface SubscriptionRecord {
   callback: EventCallback;
 }
 
-interface EventRow {
+/** Shape of a row read from the `events` table. Exported for test helpers. */
+export interface EventRow {
   id: string;
   sequence: number;
   type: string;
@@ -38,6 +39,21 @@ interface EventRow {
   task_id: string | null;
   timestamp: string;
   payload: string;
+}
+
+// ── Row Mapping ──────────────────────────────────────────────────────────────
+
+/** Convert an `events` table row to an `Event` object (parses JSON payload). */
+export function rowToEvent(row: EventRow): Event {
+  return {
+    id: row.id,
+    sequence: row.sequence,
+    type: row.type,
+    source: row.source,
+    task_id: row.task_id,
+    timestamp: row.timestamp,
+    payload: JSON.parse(row.payload) as Record<string, unknown>,
+  };
 }
 
 // ── Pattern Matching ──────────────────────────────────────────────────────────
@@ -74,7 +90,7 @@ export function matchesPattern(pattern: string, eventType: string): boolean {
  */
 export class EventBus {
   private readonly db: Database.Database;
-  private readonly subscriptions: SubscriptionRecord[] = [];
+  private subscriptions: SubscriptionRecord[] = [];
 
   private readonly insertStmt: Database.Statement;
   private readonly byTaskStmt: Database.Statement;
@@ -147,11 +163,7 @@ export class EventBus {
    * No-op if the subscriber has no subscriptions.
    */
   unsubscribe(subscriberId: string): void {
-    for (let i = this.subscriptions.length - 1; i >= 0; i--) {
-      if (this.subscriptions[i]?.subscriberId === subscriberId) {
-        this.subscriptions.splice(i, 1);
-      }
-    }
+    this.subscriptions = this.subscriptions.filter((s) => s.subscriberId !== subscriberId);
   }
 
   // ── Replay ──────────────────────────────────────────────────────────────────
@@ -164,9 +176,8 @@ export class EventBus {
    * that rebuild state from the event log (e.g., Safety Layer cost accumulators).
    */
   replay(fromSequence: number): void {
-    const rows = this.sinceStmt.all(fromSequence) as EventRow[];
-    for (const row of rows) {
-      this.deliver(this.rowToEvent(row));
+    for (const row of this.sinceStmt.iterate(fromSequence) as IterableIterator<EventRow>) {
+      this.deliver(rowToEvent(row));
     }
   }
 
@@ -175,31 +186,21 @@ export class EventBus {
   /** Get all events for a task, ordered by sequence. */
   getEventsForTask(taskId: string): Event[] {
     const rows = this.byTaskStmt.all(taskId) as EventRow[];
-    return rows.map((row) => this.rowToEvent(row));
+    return rows.map(rowToEvent);
   }
 
   /** Get all events with sequence > the given value, ordered by sequence. */
   getEventsSince(sequence: number): Event[] {
     const rows = this.sinceStmt.all(sequence) as EventRow[];
-    return rows.map((row) => this.rowToEvent(row));
+    return rows.map(rowToEvent);
   }
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
-  private rowToEvent(row: EventRow): Event {
-    return {
-      id: row.id,
-      sequence: row.sequence,
-      type: row.type,
-      source: row.source,
-      task_id: row.task_id,
-      timestamp: row.timestamp,
-      payload: JSON.parse(row.payload) as Record<string, unknown>,
-    };
-  }
-
   private deliver(event: Event): void {
-    for (const sub of this.subscriptions) {
+    // Snapshot: safe if a callback calls subscribe() or unsubscribe() mid-delivery
+    const snapshot = this.subscriptions;
+    for (const sub of snapshot) {
       if (matchesPattern(sub.pattern, event.type)) {
         try {
           sub.callback(event);

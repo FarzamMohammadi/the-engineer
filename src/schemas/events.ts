@@ -56,6 +56,9 @@ export const EventTypeSchema = z.enum([
   "health.stuck_detected",
   "health.trigger_failure",
   "health.config_reload_failed",
+  "health.plugin_unhealthy",
+  "health.plugin_failed",
+  "health.plugin_recovered",
   "comm.message_received",
   "comm.message_sent",
 ]);
@@ -349,6 +352,30 @@ export const HealthConfigReloadFailedPayloadSchema = z.object({
 });
 export type HealthConfigReloadFailedPayload = z.infer<typeof HealthConfigReloadFailedPayloadSchema>;
 
+export const HealthPluginUnhealthyPayloadSchema = z.object({
+  plugin_id: z.string(),
+  plugin_type: z.string(),
+  error: z.string(),
+  consecutive_failures: z.number().int(),
+});
+export type HealthPluginUnhealthyPayload = z.infer<typeof HealthPluginUnhealthyPayloadSchema>;
+
+export const HealthPluginFailedPayloadSchema = z.object({
+  plugin_id: z.string(),
+  plugin_type: z.string(),
+  error: z.string(),
+  consecutive_failures: z.number().int(),
+  threshold: z.number().int(),
+});
+export type HealthPluginFailedPayload = z.infer<typeof HealthPluginFailedPayloadSchema>;
+
+export const HealthPluginRecoveredPayloadSchema = z.object({
+  plugin_id: z.string(),
+  plugin_type: z.string(),
+  previous_state: z.enum(["unhealthy", "failed"]),
+});
+export type HealthPluginRecoveredPayload = z.infer<typeof HealthPluginRecoveredPayloadSchema>;
+
 // comm.*
 
 export const CommMessageReceivedPayloadSchema = z.object({
@@ -401,6 +428,9 @@ export type EventPayloads = {
   "health.stuck_detected": HealthStuckDetectedPayload;
   "health.trigger_failure": HealthTriggerFailurePayload;
   "health.config_reload_failed": HealthConfigReloadFailedPayload;
+  "health.plugin_unhealthy": HealthPluginUnhealthyPayload;
+  "health.plugin_failed": HealthPluginFailedPayload;
+  "health.plugin_recovered": HealthPluginRecoveredPayload;
   "comm.message_received": CommMessageReceivedPayload;
   "comm.message_sent": CommMessageSentPayload;
 };
@@ -443,6 +473,9 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "health.stuck_detected": HealthStuckDetectedPayloadSchema,
   "health.trigger_failure": HealthTriggerFailurePayloadSchema,
   "health.config_reload_failed": HealthConfigReloadFailedPayloadSchema,
+  "health.plugin_unhealthy": HealthPluginUnhealthyPayloadSchema,
+  "health.plugin_failed": HealthPluginFailedPayloadSchema,
+  "health.plugin_recovered": HealthPluginRecoveredPayloadSchema,
   "comm.message_received": CommMessageReceivedPayloadSchema,
   "comm.message_sent": CommMessageSentPayloadSchema,
 };

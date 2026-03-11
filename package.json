@@ -22,7 +22,7 @@
     "build": "tsdown src/index.ts --format esm",
     "dev": "tsx src/index.ts",
     "lint": "biome check --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "better-sqlite3": "^11.9.1",

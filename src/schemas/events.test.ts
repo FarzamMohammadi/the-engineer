@@ -94,11 +94,11 @@ describe("SubscriptionSchema", () => {
 // ── EventTypeSchema ────────────────────────────────────────────────────────────
 
 describe("EventTypeSchema", () => {
-  it("has exactly 30 event types", () => {
-    expect(EventTypeSchema.options).toHaveLength(30);
+  it("has exactly 33 event types", () => {
+    expect(EventTypeSchema.options).toHaveLength(33);
   });
 
-  it("accepts all 30 valid event types", () => {
+  it("accepts all 33 valid event types", () => {
     for (const type of EventTypeSchema.options) {
       expect(EventTypeSchema.parse(type)).toBe(type);
     }
@@ -591,8 +591,8 @@ describe("eventPayloadSchemas", () => {
     }
   });
 
-  it("has exactly 30 entries", () => {
-    expect(Object.keys(eventPayloadSchemas)).toHaveLength(30);
+  it("has exactly 33 entries", () => {
+    expect(Object.keys(eventPayloadSchemas)).toHaveLength(33);
   });
 
   it("every schema can validate an object", () => {

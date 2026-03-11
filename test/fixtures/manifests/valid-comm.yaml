@@ -1,0 +1,12 @@
+id: test-comm
+type: communication
+version: "2.1.0"
+name: Test Communication Plugin
+description: A valid communication manifest for testing
+critical: true
+enabled: true
+entry: index.ts
+adapter_meta:
+  capabilities:
+    - send
+    - receive

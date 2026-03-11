@@ -54,25 +54,35 @@ Each phase: build → manual test → refine → next phase.
 - [ ] Session log
 - [ ] Memory files
 
-### Phase 6.1: LLM Adapter Evolution & Agent Loop
+### Phase 6.1: Agent Loop Engine + LLM Adapter Evolution — Session 052
 
-**Estimated scope:** Medium
+**Status: DONE**
 
-**Changes:**
-1. Evolve `LLMAdapter` interface → `CompletionRequest` gets: `system_prompt`, `allowed_tools`, `output_schema`, `max_turns`
-2. Refactor `ClaudeCodeLLMPlugin` → agentic CLI mode (`-p` without `--print`)
-3. Define tool restriction configs per phase
-4. Update Orchestrator to pass phase-specific context to LLM
+**Decision D143:** The Engineer owns the agent loop. LLMs are inference-only (prompt in, JSON out). Provider-agnostic by design — any LLM that outputs JSON works. No dependency on any provider's agentic features.
 
-**Files:**
-- `src/adapters/llm.ts`
-- `src/schemas/adapters.ts`
-- `src/plugins/llm/claude-code-llm/claude-code-llm.ts`
-- `src/plugins/llm/claude-code-llm/config.ts`
-- `src/core/orchestrator/index.ts`
-- `src/core/orchestrator/tools.ts` (new)
+**Changes (implemented):**
+1. `CompletionRequest` → added `system_prompt` (nullable, backward-compatible)
+2. `AgentAction` discriminated union schema (7 action types + `thinking` field)
+3. `ActionResult` and `PhaseToolConfig` schemas
+4. **`agent-loop.ts`** (NEW) — Pure-function agent loop: prompt → LLM → parse → validate → execute → repeat
+5. **`action-executor.ts`** (NEW) — Maps AgentAction to real operations within worktree (security boundary)
+6. **`phase-tools.ts`** (NEW) — Per-phase tool restrictions (D141 enforcement)
+7. `ClaudeCodeLLMPlugin` → `--system-prompt` flag support
+8. Orchestrator → all 7 phase handlers wired through `runPhaseWithAgentLoop()`
+9. Prior phase output injection (intake→research, research→planning, planning→execution, execution→self_review)
 
-**Manual test:** Call Claude CLI in agentic mode, verify it reads files and returns structured output.
+**Files modified/created:**
+- `src/schemas/adapters.ts` (system_prompt)
+- `src/schemas/orchestrator.ts` (AgentAction, ActionResult, PhaseToolConfig)
+- `src/core/orchestrator/agent-loop.ts` (NEW — the core)
+- `src/core/orchestrator/action-executor.ts` (NEW)
+- `src/core/orchestrator/phase-tools.ts` (NEW)
+- `src/core/orchestrator/index.ts` (wiring)
+- `src/plugins/llm/claude-code-llm/claude-code-llm.ts` (--system-prompt)
+- `test/helpers/test-orchestrator.ts` (updated for agent loop format)
+- 3 new test files + additions to 3 existing test files
+
+**Tests:** 1,442 total (was 1,437). 0 lint errors. 0 new typecheck errors.
 
 ### Phase 6.2: Prompt Engineering — Intake & Research
 
@@ -196,8 +206,8 @@ Update this section as phases complete:
 
 | Phase | Status | Session | Tests After | Notes |
 |-------|--------|---------|------------|-------|
-| 6.0 | IN PROGRESS | 051 | 1437 | Assessment, gaps, decisions |
-| 6.1 | Not started | — | — | — |
+| 6.0 | DONE | 051 | 1437 | Assessment, gaps, decisions (D137-D142) |
+| 6.1 | DONE | 052 | 1442 | Agent loop engine, D143 (Engineer owns the loop) |
 | 6.2 | Not started | — | — | — |
 | 6.3 | Not started | — | — | — |
 | 6.4 | Not started | — | — | — |

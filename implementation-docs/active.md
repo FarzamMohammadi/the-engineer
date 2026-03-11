@@ -2,12 +2,12 @@
 
 ## Current Focus
 
-**Layer 6: Refinement & Intelligence.** Teaching the machine to think. All infrastructure is complete (Layers 0-5, 1,437 tests). Now installing the intelligence layer — prompts, tool use, sub-agents, context management.
+**Layer 6: Refinement & Intelligence.** Teaching the machine to think. All infrastructure is complete (Layers 0-5, 1,437 tests). Agent loop engine built (Phase 6.1, D143). Now installing prompt intelligence — phase-specific prompts that make each phase actually do its job.
 
 See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
 - [`assessment.md`](6-refinement/assessment.md) — Current state assessment
 - [`gaps.md`](6-refinement/gaps.md) — Gap analysis (8 gaps, prioritized)
-- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D142)
+- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D143)
 - [`phase-plan.md`](6-refinement/phase-plan.md) — 8-phase plan with dependencies
 
 All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
@@ -126,4 +126,6 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 **Layer 6 Phase 6.0 (Assessment & Smoke Test): DONE (Session 051).** Full codebase assessment via 3 parallel exploration agents. 8 gaps identified and prioritized (3 CRITICAL, 2 HIGH, 2 MEDIUM, 1 LOWER). 6 new decisions (D137-D142). Layer 6 directory created with 4 docs (assessment, gaps, decisions, phase-plan). active.md, layers.md, memory updated. Baseline tests verified (1,378 unit pass). Smoke test deferred to next session.
 
-**Next: Phase 6.0 completion (smoke test) + Phase 6.1 (LLM Adapter Evolution).** Set up real repo + GitHub token for smoke test. Then refactor `ClaudeCodeLLMPlugin` for agentic mode (`claude -p` with `--allowedTools`, `--system-prompt`). Evolve `LLMAdapter` interface. Define per-phase tool restrictions.
+**Layer 6 Phase 6.1 (Agent Loop Engine): DONE (Session 052).** Pivotal architectural decision D143: The Engineer owns the agent loop, LLMs are inference-only. Built 3 new modules: `agent-loop.ts` (pure-function loop with dependency injection), `action-executor.ts` (maps actions to real ops within worktree), `phase-tools.ts` (per-phase restrictions). Updated all 7 Orchestrator phase handlers. Added `system_prompt` to CompletionRequest. Added `AgentAction` discriminated union (7 actions), `ActionResult`, `PhaseToolConfig` schemas. Prior phase output injection wired. 1,442 tests, 0 lint errors.
+
+**Next: Phase 6.2 (Intake & Research Prompts).** Create prompt template architecture (`src/core/orchestrator/prompts/`). Build system prompt foundation + intake + research prompts. Wire context assembly (README, git log, prior outputs). Manual test: run against real repo, verify research explores codebase and finds relevant files.

@@ -1,0 +1,182 @@
+import { describe, expect, it } from "vitest";
+import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
+import {
+  formatActionReference,
+  formatKnowledge,
+  formatOutputSchema,
+  formatPriorPhaseOutput,
+  section,
+} from "./format.js";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeKnowledgeEntry(overrides: Partial<KnowledgeEntry> = {}): KnowledgeEntry {
+  return {
+    id: "k-001",
+    scope: "repo",
+    repo_scope: "owner/repo",
+    domain: "conventions",
+    key: "test naming",
+    body: "Tests use describe/it blocks with descriptive names",
+    confidence: "observed",
+    evidence: [],
+    created_at: "2026-01-01T00:00:00Z",
+    last_confirmed: "2026-01-01T00:00:00Z",
+    superseded_by: null,
+    source_task_id: "task-001",
+    source_phase: "research",
+    ...overrides,
+  };
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+describe("formatActionReference", () => {
+  it("lists only the requested actions", () => {
+    const result = formatActionReference(["read_file", "done"]);
+    expect(result).toContain("read_file");
+    expect(result).toContain("done");
+    expect(result).not.toContain("write_file");
+    expect(result).not.toContain("run_command");
+  });
+
+  it("includes params descriptions", () => {
+    const result = formatActionReference(["search_content"]);
+    expect(result).toContain("regex");
+    expect(result).toContain("glob");
+  });
+
+  it("handles empty actions array", () => {
+    const result = formatActionReference([]);
+    expect(result).toBe("Available actions:");
+  });
+
+  it("preserves action order", () => {
+    const result = formatActionReference(["run_command", "read_file"]);
+    const runIndex = result.indexOf("run_command");
+    const readIndex = result.indexOf("read_file");
+    expect(runIndex).toBeLessThan(readIndex);
+  });
+});
+
+describe("formatOutputSchema", () => {
+  it("returns intake schema with all required fields", () => {
+    const result = formatOutputSchema("intake_analysis");
+    expect(result).toContain("complexity");
+    expect(result).toContain("estimated_phases");
+    expect(result).toContain("ambiguities");
+    expect(result).toContain("fast_path");
+    expect(result).toContain("decomposition_likely");
+  });
+
+  it("returns research schema with all required fields", () => {
+    const result = formatOutputSchema("research");
+    expect(result).toContain("relevant_files");
+    expect(result).toContain("relevant_modules");
+    expect(result).toContain("conventions");
+    expect(result).toContain("existing_patterns");
+    expect(result).toContain("dependencies");
+  });
+
+  it("returns a schema for every phase", () => {
+    const phases = [
+      "intake_analysis",
+      "research",
+      "planning",
+      "execution",
+      "self_review",
+      "demo_prep",
+      "integration",
+    ] as const;
+    for (const phase of phases) {
+      const result = formatOutputSchema(phase);
+      expect(result.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("formatPriorPhaseOutput", () => {
+  it("formats intake output as readable text", () => {
+    const data = {
+      complexity: "moderate",
+      estimated_phases: ["intake_analysis", "research", "planning", "execution"],
+      ambiguities: ["Which API version?", "Error handling approach unclear"],
+      fast_path: false,
+      decomposition_likely: false,
+    };
+    const result = formatPriorPhaseOutput("intake_analysis", data);
+    expect(result).toContain("Complexity: moderate");
+    expect(result).toContain("Which API version?");
+    expect(result).toContain("Fast path: no");
+  });
+
+  it("formats research output as readable text", () => {
+    const data = {
+      relevant_files: ["src/index.ts", "src/utils.ts"],
+      relevant_modules: ["core", "utils"],
+      conventions: [],
+      existing_patterns: ["Factory pattern for test helpers"],
+      dependencies: ["zod", "vitest"],
+    };
+    const result = formatPriorPhaseOutput("research", data);
+    expect(result).toContain("src/index.ts");
+    expect(result).toContain("Factory pattern for test helpers");
+    expect(result).toContain("zod");
+  });
+
+  it("falls back to JSON for phases without custom formatter", () => {
+    const data = { approach: "Direct implementation" };
+    const result = formatPriorPhaseOutput("planning", data);
+    expect(result).toContain("planning output:");
+    expect(result).toContain("Direct implementation");
+  });
+
+  it("handles empty arrays gracefully", () => {
+    const data = {
+      complexity: "trivial",
+      estimated_phases: [],
+      ambiguities: [],
+      fast_path: true,
+      decomposition_likely: false,
+    };
+    const result = formatPriorPhaseOutput("intake_analysis", data);
+    expect(result).toContain("Complexity: trivial");
+    expect(result).not.toContain("Ambiguities:");
+  });
+});
+
+describe("formatKnowledge", () => {
+  it("returns empty string for no entries", () => {
+    expect(formatKnowledge([])).toBe("");
+  });
+
+  it("formats entries with domain, key, body, and confidence", () => {
+    const entries = [makeKnowledgeEntry()];
+    const result = formatKnowledge(entries);
+    expect(result).toContain("[conventions]");
+    expect(result).toContain("test naming");
+    expect(result).toContain("describe/it blocks");
+    expect(result).toContain("observed");
+  });
+
+  it("formats multiple entries as separate lines", () => {
+    const entries = [
+      makeKnowledgeEntry({ key: "style", body: "Uses Biome for linting" }),
+      makeKnowledgeEntry({
+        domain: "patterns",
+        key: "factory",
+        body: "Factory functions everywhere",
+      }),
+    ];
+    const result = formatKnowledge(entries);
+    const lines = result.split("\n").filter((l) => l.startsWith("- "));
+    expect(lines).toHaveLength(2);
+  });
+});
+
+describe("section", () => {
+  it("wraps content with markdown heading", () => {
+    const result = section("Repository Overview", "Some content here");
+    expect(result).toBe("## Repository Overview\n\nSome content here");
+  });
+});

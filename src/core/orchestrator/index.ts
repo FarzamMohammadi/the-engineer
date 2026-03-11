@@ -25,6 +25,10 @@ import type { WorkspaceManager } from "../workspace-manager/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
+import { gatherRepoContextSafe } from "./prompts/context.js";
+import { buildIntakePrompt } from "./prompts/intake.js";
+import { buildResearchPrompt } from "./prompts/research.js";
+import { buildSystemPrompt } from "./prompts/system.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -228,24 +232,15 @@ export class Orchestrator {
     dispatch: Dispatch,
     _priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
-    const systemPrompt =
-      "You are The Engineer, an autonomous software engineering agent. Analyze tasks with the eye of a senior engineer.";
-    const prompt = [
-      "Analyze this task and assess its complexity.",
-      `Task title: ${dispatch.task.title}`,
-      `Task description: ${dispatch.task.description ?? "None provided"}`,
-      `Repository: ${this.getTaskRepo(dispatch)}`,
-      "",
-      "You may read files and search the codebase to understand the task better.",
-      'When done, respond with {"action": "done", "result": {your analysis}}.',
-      "",
-      "Required result fields:",
-      "- complexity: one of 'trivial', 'simple', 'moderate', 'complex', 'epic'",
-      "- estimated_phases: array of phase names this task needs",
-      "- ambiguities: array of unclear requirements",
-      "- fast_path: boolean, true if this is a trivial task",
-      "- decomposition_likely: boolean, true if task should be split",
-    ].join("\n");
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
+    const systemPrompt = buildSystemPrompt("intake_analysis");
+    const prompt = buildIntakePrompt({
+      task: dispatch.task,
+      repoContext,
+      repoKnowledge: dispatch.knowledge.repo,
+      userKnowledge: dispatch.knowledge.user,
+    });
 
     return this.runPhaseWithAgentLoop("intake_analysis", taskId, systemPrompt, prompt);
   }
@@ -255,27 +250,19 @@ export class Orchestrator {
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
     const intakeData = priorOutputs.get("intake_analysis")?.data as
       | Record<string, unknown>
       | undefined;
-    const systemPrompt =
-      "You are The Engineer, an autonomous software engineering agent. Research codebases thoroughly before making changes.";
-    const prompt = [
-      "Research the codebase for this task.",
-      `Task: ${dispatch.task.title}`,
-      `Repository: ${this.getTaskRepo(dispatch)}`,
-      intakeData ? `Intake analysis: ${JSON.stringify(intakeData)}` : "",
-      "",
-      "Use read_file, search_files, and search_content to explore the codebase.",
-      'When done, respond with {"action": "done", "result": {your findings}}.',
-      "",
-      "Required result fields:",
-      "- relevant_files: array of file paths",
-      "- relevant_modules: array of module names",
-      "- conventions: array of convention objects found",
-      "- existing_patterns: array of pattern descriptions",
-      "- dependencies: array of dependency names",
-    ].join("\n");
+    const systemPrompt = buildSystemPrompt("research");
+    const prompt = buildResearchPrompt({
+      task: dispatch.task,
+      repoContext,
+      intakeOutput: intakeData ?? null,
+      repoKnowledge: dispatch.knowledge.repo,
+      userKnowledge: dispatch.knowledge.user,
+    });
 
     return this.runPhaseWithAgentLoop("research", taskId, systemPrompt, prompt);
   }

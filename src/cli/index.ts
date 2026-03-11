@@ -1,0 +1,146 @@
+import { Command } from "commander";
+
+import { runConfigValidate } from "./commands/config-validate.js";
+import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
+import { runInit } from "./commands/init.js";
+import { runInstall } from "./commands/install.js";
+import { runLogs } from "./commands/logs.js";
+import { runStart } from "./commands/start.js";
+import { runStatus } from "./commands/status.js";
+import { runStop } from "./commands/stop.js";
+import { resolveEngineerHome } from "./home.js";
+
+export const VERSION = "0.0.1";
+
+export const program = new Command()
+  .name("engineer")
+  .description("The Engineer — Autonomous Software Engineering Agent")
+  .version(VERSION)
+  .option("--home <path>", "Override ENGINEER_HOME directory")
+  .option("--verbose", "Enable debug logging");
+
+// ── start ────────────────────────────────────────────────────────────────────
+
+program
+  .command("start")
+  .description("Start the daemon")
+  .option("--daemon", "Run in background")
+  .action(async (options: { daemon?: boolean }) => {
+    const globals = program.opts<{ home?: string; verbose?: boolean }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = await runStart(home, {
+      daemon: options.daemon ?? false,
+      verbose: globals.verbose ?? false,
+    });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── stop ─────────────────────────────────────────────────────────────────────
+
+program
+  .command("stop")
+  .description("Stop the daemon")
+  .option("--timeout <ms>", "Shutdown timeout in milliseconds", "30000")
+  .action(async (options: { timeout: string }) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = await runStop(home, Number.parseInt(options.timeout, 10));
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── status ───────────────────────────────────────────────────────────────────
+
+program
+  .command("status")
+  .description("Show daemon status and task queue")
+  .action(() => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runStatus(home);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── logs ─────────────────────────────────────────────────────────────────────
+
+program
+  .command("logs")
+  .description("View daemon log output")
+  .option("--json", "Show raw JSON instead of pretty-printed output")
+  .option("--lines <n>", "Number of lines to show", "50")
+  .option("--follow", "Follow mode — stream new entries")
+  .action((options: { json?: boolean; lines: string; follow?: boolean }) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runLogs(home, {
+      json: options.json ?? false,
+      lines: Number.parseInt(options.lines, 10),
+      follow: options.follow ?? false,
+    });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── init ─────────────────────────────────────────────────────────────────────
+
+program
+  .command("init")
+  .description("Create directory structure and template config files")
+  .option("--force", "Overwrite existing config files")
+  .action((options: { force?: boolean }) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    runInit(home, { force: options.force ?? false });
+  });
+
+// ── doctor ───────────────────────────────────────────────────────────────────
+
+program
+  .command("doctor")
+  .description("Run health checks on the system")
+  .action(() => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const categories = runAllChecks(home);
+    console.log(formatDoctorResults(categories));
+    const code = computeExitCode(categories);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── install ──────────────────────────────────────────────────────────────────
+
+program
+  .command("install")
+  .description("Generate OS service configuration (launchd/systemd)")
+  .action(() => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runInstall(home);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── config (subcommand) ──────────────────────────────────────────────────────
+
+const configCmd = program.command("config").description("Configuration management");
+
+configCmd
+  .command("validate")
+  .description("Validate all config files")
+  .action(() => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runConfigValidate(home);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });

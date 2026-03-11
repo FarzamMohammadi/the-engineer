@@ -1,5 +1,7 @@
-// TODO (Phase 13): Replace with commander CLI setup (engineer start, stop, status, logs, init, doctor, install, config validate)
+#!/usr/bin/env node
+import { program } from "./cli/index.js";
 
-export const VERSION = "0.0.1";
-
-console.log(`The Engineer v${VERSION}`);
+program.parseAsync(process.argv).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

@@ -1,0 +1,126 @@
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+interface LogsOptions {
+  json: boolean;
+  lines: number;
+  follow: boolean;
+}
+
+/**
+ * Finds the most recent log file in the logs directory.
+ * pino-roll creates files like engineer.log, engineer.log.1, etc.
+ */
+function findLogFile(engineerHome: string): string | null {
+  const logsDir = join(engineerHome, "logs");
+  if (!existsSync(logsDir)) {
+    return null;
+  }
+
+  // pino-roll names the current file "engineer.log"
+  const currentLog = join(logsDir, "engineer.log");
+  if (existsSync(currentLog)) {
+    return currentLog;
+  }
+
+  // Fall back to finding any log file
+  const files = readdirSync(logsDir)
+    .filter((f) => f.startsWith("engineer.log"))
+    .sort()
+    .reverse();
+
+  return files.length > 0 ? join(logsDir, files[0] as string) : null;
+}
+
+/** Read the last N lines from a file. */
+function readLastLines(filePath: string, lineCount: number): string[] {
+  const content = readFileSync(filePath, "utf8");
+  const lines = content.split("\n").filter((line) => line.trim() !== "");
+  return lines.slice(-lineCount);
+}
+
+/** Displays log output. Returns exit code. */
+export function runLogs(engineerHome: string, options: LogsOptions): number {
+  const logFile = findLogFile(engineerHome);
+
+  if (!logFile) {
+    console.log("  No log file found.");
+    console.log(`  Logs are stored in ${join(engineerHome, "logs")}/`);
+    return 0;
+  }
+
+  if (options.follow) {
+    return runFollowMode(logFile, options);
+  }
+
+  return runStaticMode(logFile, options);
+}
+
+function runStaticMode(logFile: string, options: LogsOptions): number {
+  const lines = readLastLines(logFile, options.lines);
+
+  if (options.json) {
+    for (const line of lines) {
+      console.log(line);
+    }
+    return 0;
+  }
+
+  // Format with pino-pretty if available
+  try {
+    formatWithPinoPretty(lines);
+  } catch {
+    // Fall back to raw output if pino-pretty is unavailable
+    for (const line of lines) {
+      console.log(line);
+    }
+  }
+  return 0;
+}
+
+function formatWithPinoPretty(lines: string[]): void {
+  // Use pino-pretty as a spawned process for simplicity
+  const proc = spawn("pino-pretty", [], {
+    stdio: ["pipe", "inherit", "inherit"],
+  });
+
+  for (const line of lines) {
+    proc.stdin.write(`${line}\n`);
+  }
+  proc.stdin.end();
+}
+
+function runFollowMode(logFile: string, options: LogsOptions): number {
+  const tailArgs = ["-f", "-n", String(options.lines), logFile];
+
+  if (options.json) {
+    // Raw JSON follow
+    const tail = spawn("tail", tailArgs, { stdio: "inherit" });
+    tail.on("error", (err) => {
+      console.error(`  Failed to tail log file: ${err.message}`);
+    });
+  } else {
+    // Pipe through pino-pretty
+    const tail = spawn("tail", tailArgs, { stdio: ["inherit", "pipe", "inherit"] });
+    const pretty = spawn("pino-pretty", [], { stdio: ["pipe", "inherit", "inherit"] });
+
+    if (tail.stdout) {
+      tail.stdout.pipe(pretty.stdin);
+    }
+
+    tail.on("error", (err) => {
+      console.error(`  Failed to tail log file: ${err.message}`);
+    });
+    pretty.on("error", () => {
+      // pino-pretty not found — fall back to raw tail
+      const rawTail = spawn("tail", tailArgs, { stdio: "inherit" });
+      rawTail.on("error", (err) => {
+        console.error(`  Failed to tail log file: ${err.message}`);
+      });
+    });
+  }
+
+  // Follow mode keeps the process running — return 0 (won't actually reach this)
+  return 0;
+}

@@ -10,4 +10,4 @@ pre-commit:
 pre-push:
   commands:
     test:
-      run: pnpm test
+      run: pnpm vitest run --no-cache

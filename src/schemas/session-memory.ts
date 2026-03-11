@@ -156,8 +156,9 @@ export function knowledgeId(
 ): string {
   // 128-bit (32 hex chars) — sufficient collision resistance for expected cardinality (thousands, not billions)
   // repo_scope included to isolate knowledge per repository — same content in different repos gets distinct IDs
+  // Null byte separators prevent field-boundary collisions (e.g., key="a:b" vs key="a", body="b:...")
   return createHash("sha256")
-    .update(`${scope}:${repoScope ?? ""}:${key}:${body}`)
+    .update(`${scope}\0${repoScope ?? ""}\0${key}\0${body}`)
     .digest("hex")
     .slice(0, 32);
 }

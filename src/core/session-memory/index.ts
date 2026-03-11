@@ -1,20 +1,20 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
-import type {
-  Checkpoint,
-  CheckpointReason,
-  JournalEntry,
-  JournalEntryType,
-  KnowledgeConfidence,
-  KnowledgeDomain,
-  KnowledgeEntry,
-  KnowledgeEvidence,
-  KnowledgeScope,
-  Session,
-  SessionEndReason,
+import {
+  type Checkpoint,
+  type CheckpointReason,
+  type JournalEntry,
+  type JournalEntryType,
+  type KnowledgeConfidence,
+  type KnowledgeDomain,
+  type KnowledgeEntry,
+  type KnowledgeEvidence,
+  type KnowledgeScope,
+  type Session,
+  type SessionEndReason,
+  knowledgeId,
 } from "../../schemas/session-memory.js";
-import { knowledgeId } from "../../schemas/session-memory.js";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -250,7 +250,6 @@ export class SessionMemory {
   private readonly getActiveKnowledgeRepoStmt: Database.Statement;
   private readonly supersedeKnowledgeStmt: Database.Statement;
   private readonly confirmKnowledgeStmt: Database.Statement;
-  private readonly updateKnowledgeLastConfirmedStmt: Database.Statement;
 
   constructor(db: Database.Database) {
     this.db = db;
@@ -312,10 +311,6 @@ export class SessionMemory {
     this.supersedeKnowledgeStmt = db.prepare("UPDATE knowledge SET superseded_by = ? WHERE id = ?");
 
     this.confirmKnowledgeStmt = db.prepare("UPDATE knowledge SET last_confirmed = ? WHERE id = ?");
-
-    this.updateKnowledgeLastConfirmedStmt = db.prepare(
-      "UPDATE knowledge SET last_confirmed = ? WHERE id = ?",
-    );
   }
 
   // ── Session Lifecycle ──────────────────────────────────────────────────────
@@ -520,7 +515,7 @@ export class SessionMemory {
     // Check if entry already exists (idempotent upsert)
     const existing = this.getKnowledgeByIdStmt.get(id) as KnowledgeEntryRow | undefined;
     if (existing) {
-      this.updateKnowledgeLastConfirmedStmt.run(now, id);
+      this.confirmKnowledgeStmt.run(now, id);
       return rowToKnowledgeEntry({ ...existing, last_confirmed: now });
     }
 

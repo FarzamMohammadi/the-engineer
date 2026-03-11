@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -205,7 +205,6 @@ export class WorkspaceManager {
 
     // Worktree is missing — check if branch still exists
     try {
-      this.gitExec(["rev-parse", "--verify", record.branch], repoCloneDir);
       const currentCommit = this.gitExec(["rev-parse", record.branch], repoCloneDir);
       const result: WorkspaceVerification = {
         status: "recoverable",
@@ -276,7 +275,7 @@ export class WorkspaceManager {
   // ── Private Helpers ────────────────────────────────────────────────────────
 
   private gitExec(args: string[], cwd: string): string {
-    return execSync(`git ${args.join(" ")}`, {
+    return execFileSync("git", args, {
       cwd,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],

@@ -139,3 +139,19 @@ packages/
 **What it enables:** Defined interrupt modes: steer (inject into current phase), queue as followup (process after current phase), collect and coalesce (batch related messages), interrupt (abort current phase, process new input). Pattern reference: OpenClaw's Lane Queue modes (see [`considered-projects/openclaw.md`](considered-projects/openclaw.md) § Lane Queue).
 
 **Migration path:** Define as Orchestrator-level policy, configurable per communication channel. CommunicationAdapter already supports receive capability; add an interrupt routing layer between inbound messages and the active phase.
+
+---
+
+## Enum Constants from Zod Schemas
+
+**Current state (v1):** Zod enum schemas (`TaskStateSchema`, `SubStateSchema`, `PluginHealthStateSchema`, `ActionClassSchema`, etc.) define the valid values, and TypeScript types are derived via `z.infer<>`. However, consuming code references values as raw strings — `"queued"`, `"healthy"`, `"working"`, etc. — scattered across `src/core/task-engine/`, `src/core/registry/`, `src/schemas/task.ts`, and tests.
+
+**When it becomes relevant:** As the codebase grows beyond the current phases and more components reference state values. Raw strings become harder to track, refactor, and autocomplete.
+
+**What it enables:** Zod's `.enum` property provides a const object for free. Exporting `const TaskState = TaskStateSchema.enum` alongside the existing `type TaskState` (TypeScript allows a type and const to share the same name) gives typed constants: `TaskState.intake`, `TaskState.queued`, `TaskState.active`, etc. Zero runtime overhead, full autocomplete, and typo-proof. Same pattern applies to `SubState`, `ActionClass`, `PluginHealthState`, `AdapterType`, `CascadePolicy`, and all other Zod enums in `src/schemas/`.
+
+**Migration path:** Mechanical refactor — no logic changes:
+1. In each schema file, add `export const X = XSchema.enum` for each Zod enum (e.g., `export const TaskState = TaskStateSchema.enum`)
+2. Replace all raw string references with the const (e.g., `"queued"` → `TaskState.queued`)
+3. Covers: `src/schemas/task.ts`, `src/schemas/adapters.ts`, `src/schemas/events.ts`, `src/core/task-engine/`, `src/core/registry/`, and all corresponding test files
+4. The `ValidTransitions` and `PermissionTable` const arrays in `task.ts` benefit the most — currently ~80 raw string references

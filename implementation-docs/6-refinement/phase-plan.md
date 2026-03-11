@@ -84,25 +84,32 @@ Each phase: build → manual test → refine → next phase.
 
 **Tests:** 1,442 total (was 1,437). 0 lint errors. 0 new typecheck errors.
 
-### Phase 6.2: Prompt Engineering — Intake & Research
+### Phase 6.2: Prompt Engineering — Intake & Research — Session 053
 
-**Estimated scope:** Medium-Large
+**Status: DONE**
 
-**Changes:**
-1. Create prompt template architecture (`src/core/orchestrator/prompts/`)
-2. `intake.ts` — System prompt + task context + complexity criteria + output schema
-3. `research.ts` — System prompt + intake output + exploration instructions
-4. `context.ts` — Context assembly (gather README, git log, prior outputs)
-5. Wire intake output → research context
+**Changes (implemented):**
+1. Prompt template architecture in `src/core/orchestrator/prompts/` (6 modules)
+2. `system.ts` — Shared system prompt (identity from persona.md, JSON protocol, per-phase guidance)
+3. `context.ts` — Repo context assembly (README, tree, git log, branch, package.json; sync I/O, graceful degradation)
+4. `format.ts` — Formatting utilities (action reference, output schema, prior phase output, knowledge)
+5. `intake.ts` — Intake prompt builder (task brief, repo overview, knowledge, instructions, iteration budget, output schema)
+6. `research.ts` — Research prompt builder (intake results injection, complexity-adaptive strategy)
+7. Orchestrator `handleIntakeAnalysis` + `handleResearch` wired to prompt builders
 
-**Files:**
-- `src/core/orchestrator/prompts/system.ts` (shared system prompt foundation)
+**Files created:**
+- `src/core/orchestrator/prompts/system.ts`
+- `src/core/orchestrator/prompts/context.ts`
+- `src/core/orchestrator/prompts/format.ts`
 - `src/core/orchestrator/prompts/intake.ts`
 - `src/core/orchestrator/prompts/research.ts`
-- `src/core/orchestrator/context.ts` (new)
-- `src/core/orchestrator/index.ts`
+- `src/core/orchestrator/prompts/index.ts`
+- 5 test files (60 tests)
 
-**Manual test:** Run against real repo, verify research explores codebase and finds relevant files.
+**Files modified:**
+- `src/core/orchestrator/index.ts` (wiring)
+
+**Tests:** 1,502 total (was 1,442). 0 lint errors. 0 type errors.
 
 ### Phase 6.3: Prompt Engineering — Planning & Execution
 
@@ -208,7 +215,7 @@ Update this section as phases complete:
 |-------|--------|---------|------------|-------|
 | 6.0 | DONE | 051 | 1437 | Assessment, gaps, decisions (D137-D142) |
 | 6.1 | DONE | 052 | 1442 | Agent loop engine, D143 (Engineer owns the loop) |
-| 6.2 | Not started | — | — | — |
+| 6.2 | DONE | 053 | 1502 | Prompt template architecture, system/intake/research prompts, context assembly |
 | 6.3 | Not started | — | — | — |
 | 6.4 | Not started | — | — | — |
 | 6.5 | Not started | — | — | — |

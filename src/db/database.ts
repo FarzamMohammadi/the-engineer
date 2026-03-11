@@ -47,6 +47,12 @@ const MIGRATIONS_DIR = path.join(import.meta.dirname, "migrations");
 
 const MIGRATION_FILE_PATTERN = /^(\d+)_.*\.sql$/;
 
+// Matches bare BEGIN/COMMIT/ROLLBACK at statement level (not inside strings or comments).
+// Migration files MUST NOT contain transaction control — the runner wraps each in a transaction.
+const TRANSACTION_STATEMENT_PATTERN = /^\s*(BEGIN|COMMIT|ROLLBACK)\b/im;
+
+const BUSY_TIMEOUT_MS = 5_000;
+
 interface MigrationFile {
   version: number;
   filename: string;
@@ -96,6 +102,17 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
 
   // 4. Apply each migration in its own transaction
   for (const migration of unapplied) {
+    // Guard: migration files must not contain their own transaction control.
+    // The runner wraps each file in a transaction; nested BEGIN/COMMIT would throw.
+    if (TRANSACTION_STATEMENT_PATTERN.test(migration.sql)) {
+      throw new MigrationError(
+        `Migration ${migration.filename} contains transaction statements (BEGIN/COMMIT/ROLLBACK). Migration files must not manage their own transactions — the runner wraps each in one.`,
+        dbPath,
+        migration.filename,
+        migration.version,
+      );
+    }
+
     const applyMigration = db.transaction(() => {
       try {
         db.exec(migration.sql);
@@ -140,13 +157,16 @@ export function createDatabase(dbPath: string): DatabaseHandle {
     );
   }
 
+  // FK enforcement must be set before migrations — per-connection, not persisted
+  db.pragma("foreign_keys = ON");
+
   // Run migrations
   runMigrations(db, dbPath, MIGRATIONS_DIR);
 
-  // Enable WAL mode and pragmas (after migrations, per spec)
+  // WAL mode + pragmas after migrations (per sqlite.md startup flow)
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
-  db.pragma("foreign_keys = ON");
+  db.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
 
   return {
     db,
@@ -163,9 +183,10 @@ export function createDatabase(dbPath: string): DatabaseHandle {
 export function createInMemoryDatabase(): DatabaseHandle {
   const db = new BetterSqlite3(":memory:");
 
-  runMigrations(db, ":memory:", MIGRATIONS_DIR);
-
+  // FK enforcement must be set before migrations — per-connection, not persisted
   db.pragma("foreign_keys = ON");
+
+  runMigrations(db, ":memory:", MIGRATIONS_DIR);
 
   return {
     db,

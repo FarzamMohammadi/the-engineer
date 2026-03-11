@@ -50,8 +50,8 @@ CREATE TABLE tasks (
   completed_at        TEXT,
   last_transition_at  TEXT NOT NULL,
 
-  -- Session link
-  session_id          TEXT                        -- FK to sessions.id
+  -- Session link (nullable — task may not have a session yet)
+  session_id          TEXT REFERENCES sessions(id)
 );
 
 CREATE INDEX idx_tasks_state ON tasks(state);

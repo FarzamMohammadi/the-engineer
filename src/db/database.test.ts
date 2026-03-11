@@ -17,6 +17,7 @@ import type { DatabaseHandle } from "./database.js";
 const CHECK_CONSTRAINT_PATTERN = /CHECK/;
 const FK_CONSTRAINT_PATTERN = /FOREIGN KEY/;
 const UNIQUE_CONSTRAINT_PATTERN = /UNIQUE/;
+const TABLE_NAME_PATTERN = /^[a-z_]+$/;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,10 @@ function getTableNames(handle: DatabaseHandle): string[] {
 }
 
 function getColumnNames(handle: DatabaseHandle, table: string): string[] {
+  // PRAGMA doesn't support parameterized queries, so validate the table name
+  if (!TABLE_NAME_PATTERN.test(table)) {
+    throw new Error(`Invalid table name: ${table}`);
+  }
   const rows = handle.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   return rows.map((r) => r.name);
 }
@@ -170,6 +175,13 @@ describe("createDatabase", () => {
     handle = createDatabase(dbPath);
     const result = handle.db.pragma("foreign_keys") as { foreign_keys: number }[];
     expect(result[0]?.foreign_keys).toBe(1);
+  });
+
+  it("sets busy_timeout for concurrent access", () => {
+    const dbPath = path.join(tmpDir, "test.db");
+    handle = createDatabase(dbPath);
+    const result = handle.db.pragma("busy_timeout") as { timeout: number }[];
+    expect(result[0]?.timeout).toBe(5000);
   });
 
   it("re-opening same database is idempotent", () => {
@@ -682,8 +694,7 @@ describe("error handling", () => {
 });
 
 describe("createInMemoryDatabase as test helper", () => {
-  it("works as the foundation for createTestDatabase()", () => {
-    // This validates the pattern used by test/helpers/test-database.ts
+  it("works as the test database foundation for consuming phases", () => {
     const handle = createInMemoryDatabase();
     expect(handle.db).toBeDefined();
     expect(typeof handle.close).toBe("function");
@@ -695,5 +706,44 @@ describe("createInMemoryDatabase as test helper", () => {
     expect(tables.length).toBeGreaterThanOrEqual(8); // 7 domain + _meta
 
     handle.close();
+  });
+});
+
+describe("foreign key enforcement during migrations", () => {
+  let handle: DatabaseHandle;
+
+  afterEach(() => {
+    handle?.close();
+  });
+
+  it("enforces FK constraints for in-memory databases", () => {
+    handle = createInMemoryDatabase();
+    const result = handle.db.pragma("foreign_keys") as { foreign_keys: number }[];
+    expect(result[0]?.foreign_keys).toBe(1);
+  });
+
+  it("rejects FK violations in in-memory databases", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    // session referencing non-existent task should fail
+    expect(() =>
+      handle.db
+        .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
+        .run("s1", "no-such-task", now),
+    ).toThrow(FK_CONSTRAINT_PATTERN);
+  });
+
+  it("tasks.session_id FK rejects non-existent session", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    expect(() =>
+      handle.db
+        .prepare(
+          "INSERT INTO tasks (id, state, title, session_id, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run("t1", "intake", "Test", "no-such-session", now, now),
+    ).toThrow(FK_CONSTRAINT_PATTERN);
   });
 });

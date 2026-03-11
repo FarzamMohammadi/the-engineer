@@ -1,0 +1,802 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type Database from "better-sqlite3";
+
+import { createInMemoryDatabase } from "../../db/database.js";
+import type { Event } from "../../schemas/events.js";
+import { EventBus, matchesPattern } from "./index.js";
+
+const ULID_PATTERN = /^[0-9A-Z]{26}$/;
+const ISO_8601_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+// ── matchesPattern ────────────────────────────────────────────────────────────
+
+describe("matchesPattern", () => {
+  it("matches exact event type", () => {
+    expect(matchesPattern("task.created", "task.created")).toBe(true);
+  });
+
+  it("does not match different exact type", () => {
+    expect(matchesPattern("task.created", "git.pushed")).toBe(false);
+  });
+
+  it("matches glob with wildcard segment", () => {
+    expect(matchesPattern("task.*", "task.created")).toBe(true);
+    expect(matchesPattern("task.*", "task.state_changed")).toBe(true);
+  });
+
+  it("does not match glob across different groups", () => {
+    expect(matchesPattern("task.*", "git.pushed")).toBe(false);
+  });
+
+  it("does not match glob with wrong segment count", () => {
+    expect(matchesPattern("task.*", "task.state.deep")).toBe(false);
+  });
+
+  it("matches wildcard in first segment", () => {
+    expect(matchesPattern("*.created", "task.created")).toBe(true);
+    expect(matchesPattern("*.created", "workspace.created")).toBe(true);
+  });
+
+  it("does not match wildcard first segment with wrong second segment", () => {
+    expect(matchesPattern("*.created", "task.state_changed")).toBe(false);
+  });
+
+  it("matches universal wildcard *", () => {
+    expect(matchesPattern("*", "task.created")).toBe(true);
+    expect(matchesPattern("*", "git.pushed")).toBe(true);
+    expect(matchesPattern("*", "anything")).toBe(true);
+  });
+});
+
+// ── EventBus ──────────────────────────────────────────────────────────────────
+
+describe("EventBus", () => {
+  let db: Database.Database;
+  let bus: EventBus;
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  function setup(): void {
+    const handle = createInMemoryDatabase();
+    db = handle.db;
+    bus = new EventBus(db);
+  }
+
+  // ── Publish & persist ───────────────────────────────────────────────────────
+
+  describe("publish", () => {
+    it("persists event to database with correct fields", () => {
+      setup();
+      const event = bus.publish({
+        type: "task.created",
+        source: "task_engine",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          parent_id: null,
+          title: "Test task",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "owner/repo",
+        },
+      });
+
+      expect(event.type).toBe("task.created");
+      expect(event.source).toBe("task_engine");
+      expect(event.task_id).toBe("task-1");
+      expect(event.payload).toEqual({
+        task_id: "task-1",
+        parent_id: null,
+        title: "Test task",
+        external_ref: null,
+        source: "manual",
+        priority: 50,
+        repo: "owner/repo",
+      });
+
+      // Verify it's in the DB
+      const row = db.prepare("SELECT * FROM events WHERE id = ?").get(event.id) as {
+        payload: string;
+      };
+      expect(row).toBeDefined();
+      expect(JSON.parse(row.payload)).toEqual(event.payload);
+    });
+
+    it("assigns a ULID id", () => {
+      setup();
+      const event = bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      // ULID is 26 chars, uppercase alphanumeric
+      expect(event.id).toMatch(ULID_PATTERN);
+    });
+
+    it("assigns auto-incremented sequence starting at 1", () => {
+      setup();
+      const e1 = bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+      expect(e1.sequence).toBe(1);
+    });
+
+    it("assigns ISO 8601 timestamp", () => {
+      setup();
+      const event = bus.publish({
+        type: "git.pushed",
+        source: "workspace_manager",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          repo: "owner/repo",
+          branch: "main",
+          remote: "origin",
+          commits: 1,
+          head_sha: "abc123",
+        },
+      });
+
+      // ISO 8601 datetime string
+      expect(() => new Date(event.timestamp)).not.toThrow();
+      expect(event.timestamp).toMatch(ISO_8601_PATTERN);
+    });
+
+    it("handles system events with null task_id", () => {
+      setup();
+      const event = bus.publish({
+        type: "trigger.new_event",
+        source: "daemon",
+        task_id: null,
+        payload: {
+          idempotency_key: "github:issue:42",
+          source: "github_issues",
+          event_type: "issue_opened",
+          external_ref: "https://github.com/owner/repo/issues/42",
+          title: "Fix bug",
+          body: null,
+          repo: "owner/repo",
+          metadata: null,
+        },
+      });
+
+      expect(event.task_id).toBeNull();
+
+      const row = db.prepare("SELECT task_id FROM events WHERE id = ?").get(event.id) as {
+        task_id: string | null;
+      };
+      expect(row.task_id).toBeNull();
+    });
+
+    it("accepts general (untyped) event types for future plugin events", () => {
+      setup();
+      const event = bus.publish({
+        type: "custom.plugin_event",
+        source: "my_plugin",
+        task_id: null,
+        payload: { foo: "bar", count: 42 },
+      });
+
+      expect(event.type).toBe("custom.plugin_event");
+      expect(event.payload).toEqual({ foo: "bar", count: 42 });
+    });
+  });
+
+  // ── Sequence ordering ───────────────────────────────────────────────────────
+
+  describe("sequence ordering", () => {
+    it("assigns monotonically increasing sequences", () => {
+      setup();
+      const events: Event[] = [];
+      for (let i = 0; i < 5; i++) {
+        events.push(
+          bus.publish({
+            type: "git.committed",
+            source: "workspace_manager",
+            task_id: "task-1",
+            payload: {
+              task_id: "task-1",
+              repo: "owner/repo",
+              sha: `sha-${i}`,
+              message: `commit ${i}`,
+              files_changed: 1,
+            },
+          }),
+        );
+      }
+
+      for (let i = 1; i < events.length; i++) {
+        const prev = events[i - 1];
+        const curr = events[i];
+        if (prev && curr) {
+          expect(curr.sequence).toBeGreaterThan(prev.sequence);
+        }
+      }
+    });
+
+    it("sequences are unique", () => {
+      setup();
+      const sequences = new Set<number>();
+      for (let i = 0; i < 10; i++) {
+        const event = bus.publish({
+          type: "git.committed",
+          source: "test",
+          task_id: "task-1",
+          payload: {
+            task_id: "task-1",
+            repo: "r",
+            sha: `s${i}`,
+            message: `m${i}`,
+            files_changed: 1,
+          },
+        });
+        sequences.add(event.sequence);
+      }
+      expect(sequences.size).toBe(10);
+    });
+  });
+
+  // ── Subscriber delivery ─────────────────────────────────────────────────────
+
+  describe("subscriber delivery", () => {
+    it("delivers event to matching subscriber", () => {
+      setup();
+      const received: Event[] = [];
+      bus.subscribe("test-sub", "task.created", (e) => received.push(e));
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      expect(received).toHaveLength(1);
+      expect(received[0]?.type).toBe("task.created");
+    });
+
+    it("delivers to multiple subscribers", () => {
+      setup();
+      const received1: Event[] = [];
+      const received2: Event[] = [];
+      bus.subscribe("sub-1", "task.created", (e) => received1.push(e));
+      bus.subscribe("sub-2", "task.created", (e) => received2.push(e));
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      expect(received1).toHaveLength(1);
+      expect(received2).toHaveLength(1);
+    });
+
+    it("does not deliver to non-matching subscriber", () => {
+      setup();
+      const received: Event[] = [];
+      bus.subscribe("test-sub", "git.pushed", (e) => received.push(e));
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      expect(received).toHaveLength(0);
+    });
+
+    it("delivers synchronously (before publish returns)", () => {
+      setup();
+      let delivered = false;
+      bus.subscribe("test-sub", "task.created", () => {
+        delivered = true;
+      });
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      // If delivery were async, this would be false
+      expect(delivered).toBe(true);
+    });
+  });
+
+  // ── Unsubscribe ─────────────────────────────────────────────────────────────
+
+  describe("unsubscribe", () => {
+    it("stops delivery after unsubscribe", () => {
+      setup();
+      const received: Event[] = [];
+      bus.subscribe("test-sub", "task.created", (e) => received.push(e));
+
+      bus.unsubscribe("test-sub");
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      expect(received).toHaveLength(0);
+    });
+
+    it("removes all subscriptions for a subscriber", () => {
+      setup();
+      const received: Event[] = [];
+      bus.subscribe("test-sub", "task.created", (e) => received.push(e));
+      bus.subscribe("test-sub", "git.pushed", (e) => received.push(e));
+
+      bus.unsubscribe("test-sub");
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+      bus.publish({
+        type: "git.pushed",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          repo: "r",
+          branch: "main",
+          remote: "origin",
+          commits: 1,
+          head_sha: "abc",
+        },
+      });
+
+      expect(received).toHaveLength(0);
+    });
+
+    it("is a no-op for unknown subscriber", () => {
+      setup();
+      expect(() => bus.unsubscribe("nonexistent")).not.toThrow();
+    });
+  });
+
+  // ── Error handling ──────────────────────────────────────────────────────────
+
+  describe("error handling", () => {
+    it("continues delivery to remaining subscribers when one throws", () => {
+      setup();
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {
+        // suppress console.error noise in tests
+      });
+      const received: Event[] = [];
+
+      bus.subscribe("bad-sub", "task.created", () => {
+        throw new Error("subscriber failed");
+      });
+      bus.subscribe("good-sub", "task.created", (e) => received.push(e));
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      expect(received).toHaveLength(1);
+      expect(consoleSpy).toHaveBeenCalledOnce();
+      consoleSpy.mockRestore();
+    });
+
+    it("still returns the event when a subscriber throws", () => {
+      setup();
+      vi.spyOn(console, "error").mockImplementation(() => {
+        // suppress console.error noise in tests
+      });
+
+      bus.subscribe("bad-sub", "task.created", () => {
+        throw new Error("fail");
+      });
+
+      const event = bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      expect(event.id).toBeDefined();
+      expect(event.sequence).toBeGreaterThan(0);
+
+      vi.restoreAllMocks();
+    });
+
+    it("persists event even when subscriber throws", () => {
+      setup();
+      vi.spyOn(console, "error").mockImplementation(() => {
+        // suppress console.error noise in tests
+      });
+
+      bus.subscribe("bad-sub", "task.created", () => {
+        throw new Error("fail");
+      });
+
+      const event = bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      const row = db.prepare("SELECT * FROM events WHERE id = ?").get(event.id);
+      expect(row).toBeDefined();
+
+      vi.restoreAllMocks();
+    });
+
+    it("propagates DB INSERT failure (system halt)", () => {
+      setup();
+      // Close the DB to force an error
+      db.close();
+
+      expect(() =>
+        bus.publish({
+          type: "task.created",
+          source: "test",
+          task_id: null,
+          payload: {
+            task_id: "t",
+            parent_id: null,
+            title: "t",
+            external_ref: null,
+            source: "manual",
+            priority: 50,
+            repo: "r",
+          },
+        }),
+      ).toThrow();
+    });
+  });
+
+  // ── Replay ──────────────────────────────────────────────────────────────────
+
+  describe("replay", () => {
+    it("delivers persisted events to current subscribers in sequence order", () => {
+      setup();
+      // Publish 3 events without subscribers
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          parent_id: null,
+          title: "first",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+      bus.publish({
+        type: "task.state_changed",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          from_state: "intake",
+          from_sub: null,
+          to_state: "queued",
+          to_sub: null,
+          reason: "scheduled",
+          triggered_by: "daemon",
+        },
+      });
+      bus.publish({
+        type: "git.committed",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          repo: "r",
+          sha: "abc",
+          message: "fix",
+          files_changed: 1,
+        },
+      });
+
+      // Now subscribe and replay
+      const received: Event[] = [];
+      bus.subscribe("replay-sub", "task.*", (e) => received.push(e));
+      bus.replay(0);
+
+      // Should get the 2 task.* events in order
+      expect(received).toHaveLength(2);
+      expect(received[0]?.type).toBe("task.created");
+      expect(received[1]?.type).toBe("task.state_changed");
+    });
+
+    it("only replays events after fromSequence", () => {
+      setup();
+      const e1 = bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+      bus.publish({
+        type: "git.committed",
+        source: "test",
+        task_id: "task-1",
+        payload: { task_id: "task-1", repo: "r", sha: "abc", message: "fix", files_changed: 1 },
+      });
+
+      const received: Event[] = [];
+      bus.subscribe("replay-sub", "*", (e) => received.push(e));
+      bus.replay(e1.sequence);
+
+      // Should only get the second event (sequence > e1.sequence)
+      expect(received).toHaveLength(1);
+      expect(received[0]?.type).toBe("git.committed");
+    });
+
+    it("is a no-op when no events match", () => {
+      setup();
+      const received: Event[] = [];
+      bus.subscribe("replay-sub", "*", (e) => received.push(e));
+      bus.replay(0);
+
+      expect(received).toHaveLength(0);
+    });
+
+    it("catches subscriber errors during replay (same as publish)", () => {
+      setup();
+      vi.spyOn(console, "error").mockImplementation(() => {
+        // suppress console.error noise in tests
+      });
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      bus.subscribe("bad-sub", "*", () => {
+        throw new Error("replay fail");
+      });
+
+      expect(() => bus.replay(0)).not.toThrow();
+
+      vi.restoreAllMocks();
+    });
+  });
+
+  // ── Query methods ───────────────────────────────────────────────────────────
+
+  describe("getEventsForTask", () => {
+    it("returns events for the given task_id ordered by sequence", () => {
+      setup();
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+      bus.publish({
+        type: "git.committed",
+        source: "test",
+        task_id: "task-1",
+        payload: { task_id: "task-1", repo: "r", sha: "abc", message: "fix", files_changed: 1 },
+      });
+      // Different task
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: "task-2",
+        payload: {
+          task_id: "task-2",
+          parent_id: null,
+          title: "t2",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      const events = bus.getEventsForTask("task-1");
+      expect(events).toHaveLength(2);
+      expect(events[0]?.type).toBe("task.created");
+      expect(events[1]?.type).toBe("git.committed");
+    });
+
+    it("returns empty array for unknown task_id", () => {
+      setup();
+      const events = bus.getEventsForTask("nonexistent");
+      expect(events).toHaveLength(0);
+    });
+  });
+
+  describe("getEventsSince", () => {
+    it("returns events after the given sequence", () => {
+      setup();
+      const e1 = bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+      bus.publish({
+        type: "git.pushed",
+        source: "test",
+        task_id: "task-1",
+        payload: {
+          task_id: "task-1",
+          repo: "r",
+          branch: "main",
+          remote: "origin",
+          commits: 1,
+          head_sha: "abc",
+        },
+      });
+
+      const events = bus.getEventsSince(e1.sequence);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.type).toBe("git.pushed");
+    });
+
+    it("returns empty array when no events exist after sequence", () => {
+      setup();
+      const e = bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      const events = bus.getEventsSince(e.sequence);
+      expect(events).toHaveLength(0);
+    });
+  });
+});

@@ -91,3 +91,51 @@ packages/
 **What it enables:** Per-package Vitest configs with `vitest.workspace.ts` orchestration at the root. Each package runs its own unit tests. Integration tests that cross package boundaries live in a top-level `tests/integration/` directory.
 
 **Migration path:** The test directory structure (Decision #120) is designed for this — co-located unit tests move with their source files, cross-cutting tests stay in `test/`. Contract compliance suites (Decision #122) move into the `plugin-sdk` package.
+
+---
+
+## Hybrid Semantic Memory Search
+
+**Current state (v1):** Knowledge entries stored in SQLite, queried by structured fields (task, time range). No semantic search.
+
+**When it becomes relevant:** When cross-task learning matures and the system needs to answer "what approach did we use for similar problems?" — queries that require semantic similarity, not exact field matching.
+
+**What it enables:** Hybrid vector (70%) + BM25 keyword (30%) search over knowledge entries and journal, with temporal decay and MMR diversity for result quality. Pattern reference: OpenClaw's memory system (see [`considered-projects/openclaw.md`](considered-projects/openclaw.md) § Memory & Learning).
+
+**Migration path:** Knowledge entries already have structured text fields. Add an embedding column, index with sqlite-vec (or equivalent), implement hybrid scoring. The knowledge table schema supports this without breaking changes.
+
+---
+
+## Context Budget Management
+
+**Current state (v1):** No context window management designed yet. Orchestrator (Phase 11) will invoke LLMs but context budgeting is not specified.
+
+**When it becomes relevant:** Immediately when the Orchestrator is built (Phase 11). Every LLM call burns tokens; context management is the primary cost lever.
+
+**What it enables:** Prompt caching (80-90% cost reduction on supported providers), file truncation caps, on-demand loading (only include what the current phase needs), compaction of stale context. Pattern reference: OpenClaw's context management philosophy — "smarter prompting routinely outperforms larger models with dumb prompting."
+
+**Migration path:** Design into the Orchestrator from Phase 11, not as a bolt-on. LLMAdapter contract already supports token tracking; add context budget as an Orchestrator concern that assembles LLM input per-phase.
+
+---
+
+## Deterministic Sub-Engine for Operational Tasks
+
+**Current state (v1):** All Orchestrator phases are LLM-driven. Appropriate for engineering judgment (research, planning, code review), but wasteful for deterministic sequences (deploy steps, CI commands, test suites).
+
+**When it becomes relevant:** When The Engineer handles operational side-tasks alongside engineering work — deploy sequences, CI/CD orchestration, repetitive multi-step procedures.
+
+**What it enables:** YAML/JSON-defined pipelines for deterministic work: step sequencing, approval gates, resume tokens, retry + error handling. LLM handles creative work; deterministic engine handles plumbing. Pattern reference: OpenClaw's Lobster workflow engine (see [`considered-projects/openclaw.md`](considered-projects/openclaw.md) § Lobster).
+
+**Migration path:** Implement as an optional ToolAdapter plugin. Orchestrator delegates deterministic sub-tasks to the engine; results feed back into the phase pipeline. Does not require Core changes.
+
+---
+
+## Mid-Phase Communication Interrupt Handling
+
+**Current state (v1):** No defined semantics for what happens when a user sends feedback while the agent is mid-phase.
+
+**When it becomes relevant:** When the Orchestrator is running real tasks and users send messages (Telegram, GitHub comments) during execution.
+
+**What it enables:** Defined interrupt modes: steer (inject into current phase), queue as followup (process after current phase), collect and coalesce (batch related messages), interrupt (abort current phase, process new input). Pattern reference: OpenClaw's Lane Queue modes (see [`considered-projects/openclaw.md`](considered-projects/openclaw.md) § Lane Queue).
+
+**Migration path:** Define as Orchestrator-level policy, configurable per communication channel. CommunicationAdapter already supports receive capability; add an interrupt routing layer between inbound messages and the active phase.

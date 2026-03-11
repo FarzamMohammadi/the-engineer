@@ -137,12 +137,12 @@ All plugins healthy, scheduling queue populated, main loop active. System is rea
    - `parent_id`: null (top-level task)
 5. **Task Engine** creates task in `Intake` state
    - Validates fields (repo exists in config, no duplicate external_ref)
-   - Populates `task.team[]` from People Directory (based on repo config and roles)
-   - Transitions: Intake → Queued (automatic -- Intake is transient)
    - `⟹ task.created` (see event-catalog § task.created)
-   - `⟹ task.state_changed` { from: "Intake", to: "Queued" }
-6. **Daemon** receives `task.created` → adds task to priority queue
-7. **Communication Plugin (GitHub)** receives `task.created` → adds `engineer:queued` label to the external issue (if GitHub source)
+6. **Daemon** transitions task: Intake → Queued (explicit — not automatic)
+   - Populates `task.team[]` from People Directory (based on repo config and roles)
+   - Calls `→ TaskEngine.requestTransition(taskId, "queued", ...)`
+   - `⟹ task.state_changed` { from: "intake", to: "queued" }
+8. **Communication Plugin (GitHub)** receives `task.created` → adds `engineer:queued` label to the external issue (if GitHub source)
 
 #### Success Outcome
 

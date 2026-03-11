@@ -547,7 +547,7 @@ The state machine owner. Tasks are the central entity — every operation in the
 
 - The state machine is CPU-derived: [`../1-system/task-states.md`](../1-system/task-states.md).
 - 7 states (intake → queued → active → blocked → review_pending → completed → failed), sub-states (working, supervising, integrating, demo, code).
-- 13 valid transitions defined in `ValidTransitions` from Phase 1a.
+- 25 valid transitions defined in `ValidTransitions` from Phase 1a.
 - Permission table maps (state, sub_state) → allowed ActionClasses — this is Gate 1 of the Action Pipeline.
 - Decision #80: Cost tracking as real columns (llm_tokens, llm_cost_usd, compute_time_ms) for hot-path updates.
 - Decision #81: State transitions in separate table for cross-task audit queries.
@@ -556,8 +556,9 @@ The state machine owner. Tasks are the central entity — every operation in the
 
 | File | Purpose |
 |------|---------|
-| `src/core/task-engine/index.ts` | `TaskEngine` class. Constructor takes `Database` + `EventBus`. **createTask(input):** ULID generation, insert into `tasks` table, emit `task.created` event. **requestTransition(taskId, toState, toSub, reason, triggeredBy):** validate against `ValidTransitions`, update task, insert into `state_transitions` table, emit `task.state_changed`. **checkPermission(taskId, actionClass):** lookup `PermissionTable` by current (state, sub_state), return boolean. This is Gate 1. **getTask(id), getTasksByState(state), getQueuedByPriority():** query methods. **updateTracking(taskId, tokens, costUsd, computeMs):** increment cost columns with `SET llm_tokens = llm_tokens + ?`. |
-| `src/core/task-engine/index.test.ts` | All 13 valid transitions succeed. Invalid transitions rejected with clear error. Permission checks return correct allowed ActionClasses for every (state, sub_state) pair. Task creation assigns ULID and emits event. Cost tracking accumulates correctly (multiple increments). `getQueuedByPriority()` returns highest priority first. State transition is recorded in `state_transitions` table. |
+| `src/core/task-engine/index.ts` | `TaskEngine` class. Constructor takes `Database` + `EventBus`. **createTask(input):** ULID generation, insert into `tasks` table, emit `task.created` event, return task in `intake` (caller transitions to queued). **requestTransition(taskId, toState, toSub, reason, triggeredBy):** validate against `ValidTransitions`, update task, insert into `state_transitions` table, emit `task.state_changed`. **checkPermission(taskId, actionClass):** lookup `PermissionTable` by current (state, sub_state), return `PermissionResult` with conditional metadata. This is Gate 1. **getTask(id), getTasksByState(state), getQueuedByPriority(), getChildren(parentId), getStateHistory(taskId):** query methods. **updateTaskField(taskId, field, value):** generic field updater (phase, workspace, review, blocked, etc.). **updateTracking(taskId, tokens, costUsd, computeMs):** increment cost columns with `SET llm_tokens = llm_tokens + ?`. |
+| `src/core/task-engine/index.test.ts` | All 25 valid transitions succeed. Invalid transitions rejected with clear error. Permission checks return correct allowed ActionClasses for every (state, sub_state) pair. Conditional merge permission returns metadata. Task creation assigns ULID and emits event (no auto-transition). Cost tracking accumulates correctly. `getQueuedByPriority()` returns highest priority first. State transition is recorded in `state_transitions` table. getChildren, getStateHistory, updateTaskField all tested. |
+| `test/helpers/test-task-engine.ts` | `createTestTaskEngine()` helper — engine + eventBus + event query utils + cleanup. |
 
 ### Key Implementation Notes
 
@@ -574,7 +575,7 @@ The state machine owner. Tasks are the central entity — every operation in the
 
 ### Verification
 
-All unit tests pass. Every valid transition works. Every invalid transition is rejected. Permission table covers all state/sub_state combinations. Events emitted on state changes. Cost tracking accumulates.
+All unit tests pass. All 25 valid transitions work. Every invalid transition is rejected. Permission table covers all 10 state/sub_state combinations. Events emitted on state changes. Cost tracking accumulates. No auto-transition (intake→queued is caller-driven, see updated P2).
 
 ### What This Enables
 

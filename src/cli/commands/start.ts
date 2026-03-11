@@ -98,7 +98,6 @@ function spawnBackground(engineerHome: string, verbose: boolean): number {
     args.push("--verbose");
   }
   // Don't pass --daemon to child — it should run in foreground within the detached process
-  // TODO: Phase 15 — E2E test for background daemon mode
 
   const child = spawn(process.execPath, args, {
     detached: true,

@@ -53,26 +53,30 @@ export interface PermissionResult {
   conditional?: string;
 }
 
+/** All fields updatable via updateTaskField(). Single source of truth — type derived from this. */
+const UPDATABLE_FIELDS = [
+  "phase",
+  "cascade_policy",
+  "session_id",
+  "description",
+  "source_text",
+  "external_ref",
+  "workspace",
+  "review",
+  "blocked",
+  "children",
+  "team",
+  "related",
+  "decisions",
+  "child_summaries",
+  "acceptance_criteria",
+] as const;
+
 /** Fields that can be updated via updateTaskField(). */
-export type UpdatableField =
-  | "phase"
-  | "cascade_policy"
-  | "session_id"
-  | "description"
-  | "source_text"
-  | "external_ref"
-  | "workspace"
-  | "review"
-  | "blocked"
-  | "children"
-  | "team"
-  | "related"
-  | "decisions"
-  | "child_summaries"
-  | "acceptance_criteria";
+export type UpdatableField = (typeof UPDATABLE_FIELDS)[number];
 
 /** Shape of a row read from the `tasks` table. */
-export interface TaskRow {
+interface TaskRow {
   id: string;
   external_ref: string | null;
   state: string;
@@ -314,24 +318,7 @@ export class TaskEngine {
 
     // Per-field update statements
     this.updateFieldStmts = new Map();
-    const updatableFields: UpdatableField[] = [
-      "phase",
-      "cascade_policy",
-      "session_id",
-      "description",
-      "source_text",
-      "external_ref",
-      "workspace",
-      "review",
-      "blocked",
-      "children",
-      "team",
-      "related",
-      "decisions",
-      "child_summaries",
-      "acceptance_criteria",
-    ];
-    for (const field of updatableFields) {
+    for (const field of UPDATABLE_FIELDS) {
       this.updateFieldStmts.set(field, db.prepare(`UPDATE tasks SET ${field} = ? WHERE id = ?`));
     }
   }
@@ -348,7 +335,14 @@ export class TaskEngine {
   createTask(input: CreateTaskInput): Task {
     const id = ulid();
     const now = new Date().toISOString();
-    const externalRefJson = input.external_ref ? JSON.stringify(input.external_ref) : null;
+    const priority = input.priority ?? 50;
+    const parentId = input.parent_id ?? null;
+    const cascadePolicy = input.cascade_policy ?? "pause_siblings";
+    const description = input.description ?? "";
+    const sourceText = input.source_text ?? "";
+    const acceptanceCriteria = input.acceptance_criteria ?? [];
+    const externalRef = input.external_ref ?? null;
+    const externalRefJson = externalRef ? JSON.stringify(externalRef) : null;
 
     this.insertTaskStmt.run(
       id,
@@ -356,13 +350,13 @@ export class TaskEngine {
       "intake",
       null, // sub_state
       null, // phase
-      input.parent_id ?? null,
+      parentId,
       "[]", // children
-      input.cascade_policy ?? "pause_siblings",
+      cascadePolicy,
       input.title,
-      input.description ?? "",
-      input.source_text ?? "",
-      JSON.stringify(input.acceptance_criteria ?? []),
+      description,
+      sourceText,
+      JSON.stringify(acceptanceCriteria),
       "[]", // team
       "[]", // related
       "[]", // decisions
@@ -370,7 +364,7 @@ export class TaskEngine {
       null, // workspace
       null, // review
       null, // blocked
-      input.priority ?? 50,
+      priority,
       0, // llm_tokens
       0.0, // llm_cost_usd
       0, // compute_time_ms
@@ -381,26 +375,52 @@ export class TaskEngine {
       null, // session_id
     );
 
-    // Emit task.created event
     this.eventBus.publish({
       type: "task.created",
       source: "task_engine",
       task_id: id,
       payload: {
         task_id: id,
-        parent_id: input.parent_id ?? null,
+        parent_id: parentId,
         title: input.title,
         external_ref: externalRefJson,
         source: input.source,
-        priority: input.priority ?? 50,
+        priority,
         repo: input.repo,
       },
     } satisfies PublishInput<"task.created">);
 
-    const task = this.getTask(id);
-    if (!task) {
-      throw new Error(`TaskEngine: task ${id} not found immediately after creation`);
-    }
+    const task: Task = {
+      id,
+      external_ref: externalRef,
+      state: "intake",
+      sub_state: null,
+      phase: null,
+      parent_id: parentId,
+      children: [],
+      cascade_policy: cascadePolicy,
+      title: input.title,
+      description,
+      source_text: sourceText,
+      acceptance_criteria: acceptanceCriteria,
+      team: [],
+      related: [],
+      decisions: [],
+      child_summaries: [],
+      workspace: null,
+      review: null,
+      blocked: null,
+      priority,
+      llm_tokens: 0,
+      llm_cost_usd: 0,
+      compute_time_ms: 0,
+      created_at: now,
+      started_at: null,
+      completed_at: null,
+      last_transition_at: now,
+      session_id: null,
+    };
+
     return task;
   }
 

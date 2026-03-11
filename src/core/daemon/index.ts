@@ -17,11 +17,18 @@ import type { SessionMemory } from "../session-memory/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
 
-// ── Clock Interface ─────────────────────────────────────────────────────────
+// ── Clock ───────────────────────────────────────────────────────────────────
 
 /** Minimal clock interface for injectable time control. */
 export interface Clock {
   now(): number;
+}
+
+/** Production clock that delegates to Date.now(). */
+export class RealClock implements Clock {
+  now(): number {
+    return Date.now();
+  }
 }
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -167,6 +174,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   let startedAt: string | null = null;
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   let tasksCompleted = 0;
+  const signalHandlers: { signal: string; handler: () => void }[] = [];
 
   const activeDispatches = new Map<string, Promise<ExecuteTaskResult>>();
   const triggerLastPoll = new Map<string, number>();
@@ -248,7 +256,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       }
     }
 
-    // Initialize base priorities for queued tasks (aging)
+    // Initialize base priorities for queued tasks (aging).
+    // Note: after restart, task.priority may already be aged. This means
+    // basePriority captures the current (potentially aged) value, not the
+    // original. This is safe because aging is capped at aging_cap and
+    // computeAgedPriority checks against basePriority, so the worst case
+    // is slightly faster convergence to cap — never exceeds it.
     const queuedTasks = taskEngine.getTasksByState("queued");
     for (const task of queuedTasks) {
       basePriorities.set(task.id, task.priority);
@@ -461,22 +474,26 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     return config.max_concurrent - activeDispatches.size;
   }
 
-  async function scheduleNext(): Promise<void> {
-    if (getAvailableSlots() <= 0) {
+  function scheduleNext(): void {
+    const available = getAvailableSlots();
+    if (available <= 0) {
       return;
     }
 
     const queuedTasks = taskEngine.getQueuedByPriority();
     // TODO: Phase 15 — check dependency ordering for child tasks (is_eligible)
-    const candidate = queuedTasks[0];
-    if (!candidate) {
-      return;
-    }
 
+    const toSchedule = queuedTasks.slice(0, available);
+    for (const candidate of toSchedule) {
+      dispatchTask(candidate);
+    }
+  }
+
+  function dispatchTask(candidate: ReturnType<TaskEngine["getQueuedByPriority"]>[number]): void {
     // Build dispatch package
     const checkpoint = sessionMemory.getLatestCheckpoint(candidate.id);
     const repoKnowledge = candidate.workspace
-      ? sessionMemory.getKnowledge("repo", (candidate.workspace as { repo?: string }).repo)
+      ? sessionMemory.getKnowledge("repo", candidate.workspace.repo)
       : [];
     const userKnowledge = sessionMemory.getKnowledge("user");
 
@@ -653,12 +670,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // ── Cost Limit Processing ─────────────────────────────────────────────
 
   function processCostLimits(): void {
-    while (costLimitTasks.length > 0) {
-      const taskId = costLimitTasks.pop();
-      if (!taskId) {
-        break;
-      }
+    if (costLimitTasks.length === 0) {
+      return;
+    }
 
+    // Drain and clear in one pass (FIFO order)
+    const pending = costLimitTasks.splice(0);
+    for (const taskId of pending) {
       const task = taskEngine.getTask(taskId);
       if (task && task.state === "active") {
         logger.warn({ taskId }, "Task blocked due to cost limit");
@@ -686,7 +704,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     evaluatePreemption(now);
 
     // Step 4: Schedule
-    await scheduleNext();
+    scheduleNext();
 
     // Step 5: Priority aging
     applyPriorityAging(now);
@@ -730,17 +748,16 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       });
     }, config.tick_interval_ms);
 
-    // Signal handling
-    process.on("SIGTERM", () => {
-      stop().catch((error: unknown) => {
-        logger.error({ error }, "Error during SIGTERM shutdown");
-      });
-    });
-    process.on("SIGINT", () => {
-      stop().catch((error: unknown) => {
-        logger.error({ error }, "Error during SIGINT shutdown");
-      });
-    });
+    // Signal handling (tracked for cleanup in stop())
+    for (const signal of ["SIGTERM", "SIGINT"] as const) {
+      const handler = () => {
+        stop().catch((error: unknown) => {
+          logger.error({ error }, `Error during ${signal} shutdown`);
+        });
+      };
+      signalHandlers.push({ signal, handler });
+      process.on(signal, handler);
+    }
 
     logger.info({ startedAt }, "Daemon started — entering main loop");
   }
@@ -771,6 +788,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Unsubscribe from Event Bus
     unregisterSubscriptions();
 
+    // Remove signal handlers
+    for (const { signal, handler } of signalHandlers) {
+      process.removeListener(signal, handler);
+    }
+    signalHandlers.length = 0;
+
     // Remove PID file
     removePidFile();
 
@@ -780,20 +803,16 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   }
 
   async function drainActiveDispatches(): Promise<void> {
-    const shutdownDeadline = clock.now() + config.shutdown_timeout_ms;
     for (const [taskId, promise] of activeDispatches) {
-      const remaining = shutdownDeadline - clock.now();
-      if (remaining > 0) {
-        try {
-          await Promise.race([
-            promise,
-            new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error("shutdown_timeout")), remaining);
-            }),
-          ]);
-        } catch {
-          logger.warn({ taskId }, "Shutdown timeout waiting for task");
-        }
+      try {
+        await Promise.race([
+          promise,
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("shutdown_timeout")), config.shutdown_timeout_ms);
+          }),
+        ]);
+      } catch {
+        logger.warn({ taskId }, "Shutdown timeout waiting for task");
       }
 
       // Transition active tasks to queued

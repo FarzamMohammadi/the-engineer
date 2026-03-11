@@ -1,11 +1,4 @@
-/**
- * Minimal clock interface for injectable time control.
- * The Daemon uses this instead of Date.now() for all time-dependent logic
- * (polling intervals, aging thresholds, stuck detection, TTL expiry).
- */
-export interface Clock {
-  now(): number;
-}
+import type { Clock } from "../../src/core/daemon/index.js";
 
 /**
  * Deterministic clock for testing. Time only advances when explicitly told to.
@@ -28,12 +21,5 @@ export class FakeClock implements Clock {
 
   set(time: number): void {
     this.time = time;
-  }
-}
-
-/** Production clock that delegates to Date.now(). */
-export class RealClock implements Clock {
-  now(): number {
-    return Date.now();
   }
 }

@@ -9,6 +9,9 @@ export interface TestDatabaseHandle {
 /**
  * Creates a fresh in-memory database with all migrations applied.
  * Call `cleanup()` when done to close the connection.
+ *
+ * Thin wrapper over `createInMemoryDatabase()` providing the `{ db, cleanup }`
+ * pattern expected by consuming phase tests (Event Bus, Task Engine, etc.).
  */
 export function createTestDatabase(): TestDatabaseHandle {
   const handle = createInMemoryDatabase();

@@ -90,6 +90,9 @@ const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
 /**
  * Recursively resolves `${ENV_VAR_NAME}` references in string values.
  * Throws `EnvVarError` if a referenced env var is undefined.
+ *
+ * Limitation: there is no escape syntax for literal `${...}` strings.
+ * Any `${...}` pattern is always treated as an env var reference.
  */
 export function resolveEnvVars(obj: unknown, filePath: string): unknown {
   if (typeof obj === "string") {
@@ -348,10 +351,14 @@ export function loadConfigSafe<S extends z.ZodTypeAny>(
  * safety.yaml using conservative defaults).
  */
 export function loadConfigDir(configDir?: string): ConfigDirResult {
-  const dir =
-    configDir ??
-    process.env["ENGINEER_CONFIG_DIR"] ??
-    path.join(os.homedir(), ".engineer", "config");
+  const explicit = configDir ?? process.env["ENGINEER_CONFIG_DIR"];
+  const dir = explicit ?? path.join(os.homedir(), ".engineer", "config");
+
+  // If a config dir was explicitly specified (argument or env var) and doesn't exist, fail loudly.
+  // Default path silently uses Zod defaults — that's expected on first run.
+  if (explicit !== undefined && !fs.existsSync(dir)) {
+    throw new ConfigError(`Config directory does not exist: ${dir}`, dir);
+  }
 
   const warnings: ConfigWarning[] = [];
 

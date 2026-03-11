@@ -2,8 +2,13 @@ import fs from "node:fs";
 
 import type { z } from "zod";
 
+import { ConfigError } from "./loader.js";
 import type { ConfigReloadResult } from "./loader.js";
 import { loadConfigSafe } from "./loader.js";
+
+// ── Constants ────────────────────────────────────────────────────────────────────
+
+const DEBOUNCE_MS = 500;
 
 // ── Config Watcher ───────────────────────────────────────────────────────────────
 
@@ -38,15 +43,29 @@ export function createConfigWatcher<S extends z.ZodTypeAny>(
       clearTimeout(debounceTimer);
     }
 
-    // Debounce: wait 500ms for writes to settle
+    // Debounce: wait for writes to settle (Decision #94)
     debounceTimer = setTimeout(() => {
       if (stopped) {
         return;
       }
       debounceTimer = null;
+
+      // File deletion should be treated as an error, not silently reset to defaults.
+      // This prevents accidental safety config loosening if safety.yaml is deleted.
+      if (!fs.existsSync(filePath)) {
+        onChange({
+          ok: false,
+          error: new ConfigError(
+            `Config file was deleted: ${filePath}. Keeping previous config.`,
+            filePath,
+          ),
+        });
+        return;
+      }
+
       const result = loadConfigSafe(filePath, schema);
       onChange(result);
-    }, 500);
+    }, DEBOUNCE_MS);
   });
 
   return {

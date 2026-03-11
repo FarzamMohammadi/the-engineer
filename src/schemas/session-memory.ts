@@ -149,5 +149,6 @@ export type KnowledgeEntry = z.infer<typeof KnowledgeEntrySchema>;
 // ── Knowledge ID generation ────────────────────────────────────────────────────
 
 export function knowledgeId(scope: string, key: string, body: string): string {
+  // 128-bit (32 hex chars) — sufficient collision resistance for expected cardinality (thousands, not billions)
   return createHash("sha256").update(`${scope}:${key}:${body}`).digest("hex").slice(0, 32);
 }

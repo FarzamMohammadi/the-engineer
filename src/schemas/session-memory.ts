@@ -148,7 +148,16 @@ export type KnowledgeEntry = z.infer<typeof KnowledgeEntrySchema>;
 
 // ── Knowledge ID generation ────────────────────────────────────────────────────
 
-export function knowledgeId(scope: string, key: string, body: string): string {
+export function knowledgeId(
+  scope: string,
+  repoScope: string | null,
+  key: string,
+  body: string,
+): string {
   // 128-bit (32 hex chars) — sufficient collision resistance for expected cardinality (thousands, not billions)
-  return createHash("sha256").update(`${scope}:${key}:${body}`).digest("hex").slice(0, 32);
+  // repo_scope included to isolate knowledge per repository — same content in different repos gets distinct IDs
+  return createHash("sha256")
+    .update(`${scope}:${repoScope ?? ""}:${key}:${body}`)
+    .digest("hex")
+    .slice(0, 32);
 }

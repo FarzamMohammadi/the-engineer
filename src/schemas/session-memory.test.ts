@@ -228,43 +228,60 @@ describe("KnowledgeEntrySchema", () => {
 
 describe("knowledgeId", () => {
   it("returns a 32-character hex string", () => {
-    const id = knowledgeId("repo", "test framework", "Uses Vitest");
+    const id = knowledgeId("repo", "owner/repo", "test framework", "Uses Vitest");
     expect(id).toHaveLength(32);
     expect(id).toMatch(HEX_32);
   });
 
   it("is deterministic (same inputs produce same output)", () => {
-    const id1 = knowledgeId("repo", "key", "body");
-    const id2 = knowledgeId("repo", "key", "body");
+    const id1 = knowledgeId("repo", "owner/repo", "key", "body");
+    const id2 = knowledgeId("repo", "owner/repo", "key", "body");
     expect(id1).toBe(id2);
   });
 
   it("produces different IDs for different inputs", () => {
-    const id1 = knowledgeId("repo", "key", "body1");
-    const id2 = knowledgeId("repo", "key", "body2");
+    const id1 = knowledgeId("repo", "owner/repo", "key", "body1");
+    const id2 = knowledgeId("repo", "owner/repo", "key", "body2");
     expect(id1).not.toBe(id2);
   });
 
   it("different scopes with same key+body produce different IDs", () => {
-    const id1 = knowledgeId("repo", "key", "body");
-    const id2 = knowledgeId("user", "key", "body");
+    const id1 = knowledgeId("repo", "owner/repo", "key", "body");
+    const id2 = knowledgeId("user", null, "key", "body");
     expect(id1).not.toBe(id2);
   });
 
+  it("different repo_scopes with same scope+key+body produce different IDs", () => {
+    const id1 = knowledgeId("repo", "owner/repo-a", "key", "body");
+    const id2 = knowledgeId("repo", "owner/repo-b", "key", "body");
+    expect(id1).not.toBe(id2);
+  });
+
+  it("null repo_scope treated as empty string in hash", () => {
+    const id1 = knowledgeId("user", null, "key", "body");
+    const id2 = knowledgeId("user", null, "key", "body");
+    expect(id1).toBe(id2);
+  });
+
   it("handles empty strings", () => {
-    const id = knowledgeId("", "", "");
+    const id = knowledgeId("", null, "", "");
     expect(id).toHaveLength(32);
     expect(id).toMatch(HEX_32);
   });
 
   it("handles special characters", () => {
-    const id = knowledgeId("repo", "key with spaces & symbols!", "body with\nnewlines\tand\ttabs");
+    const id = knowledgeId(
+      "repo",
+      "owner/repo",
+      "key with spaces & symbols!",
+      "body with\nnewlines\tand\ttabs",
+    );
     expect(id).toHaveLength(32);
     expect(id).toMatch(HEX_32);
   });
 
   it("handles unicode content", () => {
-    const id = knowledgeId("repo", "clé", "données avec émojis 🚀");
+    const id = knowledgeId("repo", "owner/repo", "clé", "données avec émojis 🚀");
     expect(id).toHaveLength(32);
     expect(id).toMatch(HEX_32);
   });

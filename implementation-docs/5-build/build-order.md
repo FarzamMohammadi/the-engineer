@@ -957,6 +957,17 @@ The following TODO stubs in `src/core/daemon/index.ts` must be replaced with rea
 
 **Cleanup checklist:** After implementing, remove the TODO comments and verify the Daemon correctly handles communication events end-to-end with the new GitHub plugins.
 
+### Stubs from Phase 13 (CLI)
+
+The following TODO stubs in CLI source files must be replaced with real implementations during this phase:
+
+| File | Location | TODO | What to implement |
+|------|----------|------|-------------------|
+| `src/cli/commands/doctor.ts` | `checkGitHubConnectivity()` (line ~340) | `TODO: Phase 14b — requires GitHubTriggerPlugin for API token validation` | Validate GitHub API token (rate limit check, auth scope verification) using GitHubTriggerPlugin or Octokit directly. Replace the current warn stub that returns "not yet implemented". |
+| `src/cli/commands/status.ts` | Plugin health section (line ~37) | `TODO: Phase 14b — plugin health requires running daemon IPC` | Show plugin health status in `engineer status` output. Requires either IPC to running daemon or persisting plugin health state to DB. Currently skipped entirely. |
+
+**Cleanup checklist:** After implementing, remove the TODO comments. Verify `engineer doctor` reports real GitHub connectivity results and `engineer status` shows plugin health when daemon is running.
+
 ---
 
 ## Phase 14c: Telegram Plugin
@@ -988,6 +999,16 @@ The Telegram communication plugin. Uses the grammy library for Telegram Bot API.
 ### Verification
 
 Passes communication contract suite. Sends messages via mocked grammy. Config validates correctly. Formatting produces valid Telegram markdown.
+
+### Stubs from Phase 13 (CLI)
+
+The following TODO stub in CLI source files must be replaced with a real implementation during this phase:
+
+| File | Location | TODO | What to implement |
+|------|----------|------|-------------------|
+| `src/cli/commands/doctor.ts` | `checkTelegramConnectivity()` (line ~355) | `TODO: Phase 14c — requires TelegramCommPlugin for bot token validation` | Validate Telegram bot token (getMe API call) and chat ID accessibility using TelegramCommPlugin or grammy directly. Replace the current warn stub that returns "not yet implemented". |
+
+**Cleanup checklist:** After implementing, remove the TODO comment. Verify `engineer doctor` reports real Telegram connectivity results.
 
 ---
 
@@ -1044,6 +1065,16 @@ The following TODO stubs in `src/core/daemon/index.ts` must be replaced with rea
 | `checkStuckTasks()` | `TODO: Phase 15 — implement full blocked timeout escalation` | Implement 3-stage blocked timeout escalation: (1) **reminder** — nudge after initial timeout, (2) **self_unblock_check** — ask Orchestrator to attempt self-unblock, (3) **alert** — notify owner via CommunicationAdapter. Query `SafetyLayer.getTimeoutPolicy()` for per-task/per-repo timeout configuration. Currently only emits `health.stuck_detected` events. |
 | `checkStuckTasks()` | `TODO: Phase 15 — implement review_pending timeout reminders` | When a task is in `review_pending` state for too long, send periodic reminders to reviewers via CommunicationAdapter. Use `PeopleDirectory.getReviewers()` to resolve contacts. |
 | Event handling (not yet subscribed) | `TODO: Phase 15 — handle parent task integration when all children complete` | Subscribe to `task.children_all_done` event. When all child tasks of a parent complete, transition the parent task to resume integration work (merge child results). |
+
+### Stubs from Phase 13 (CLI)
+
+The following TODO stub in CLI source files must be replaced with a real implementation during this phase:
+
+| File | Location | TODO | What to implement |
+|------|----------|------|-------------------|
+| `src/cli/commands/start.ts` | `spawnBackground()` (line ~101) | `TODO: Phase 15 — E2E test for background daemon mode` | Write E2E test that verifies `engineer start --daemon` correctly forks a detached child process, writes PID file, and parent exits cleanly. Test should verify the background process is running and can be stopped with `engineer stop`. |
+
+**Cleanup checklist:** After implementing the E2E test, remove the TODO comment. The implementation itself is complete — only the test is deferred.
 
 **Blocked timeout escalation details (from `daemon-scheduler.md`):**
 

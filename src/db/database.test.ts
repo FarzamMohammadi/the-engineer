@@ -15,6 +15,7 @@ import type { DatabaseHandle } from "./database.js";
 // ── Constants ────────────────────────────────────────────────────────────────────
 
 const CHECK_CONSTRAINT_PATTERN = /CHECK/;
+const FK_CONSTRAINT_PATTERN = /FOREIGN KEY/;
 const UNIQUE_CONSTRAINT_PATTERN = /UNIQUE/;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
@@ -162,6 +163,13 @@ describe("createDatabase", () => {
       expect(tables).toContain(table);
     }
     expect(tables).toContain("_meta");
+  });
+
+  it("enables foreign key enforcement", () => {
+    const dbPath = path.join(tmpDir, "test.db");
+    handle = createDatabase(dbPath);
+    const result = handle.db.pragma("foreign_keys") as { foreign_keys: number }[];
+    expect(result[0]?.foreign_keys).toBe(1);
   });
 
   it("re-opening same database is idempotent", () => {
@@ -466,6 +474,185 @@ describe("table structure", () => {
         )
         .run("st2", "t1", "bogus", "queued", "reason", now, "test"),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
+  });
+});
+
+describe("foreign key enforcement", () => {
+  let handle: DatabaseHandle;
+
+  afterEach(() => {
+    handle?.close();
+  });
+
+  it("rejects state_transition with non-existent task_id", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    expect(() =>
+      handle.db
+        .prepare(
+          `INSERT INTO state_transitions (id, task_id, from_state, to_state, reason, timestamp, triggered_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("st1", "nonexistent", "intake", "queued", "reason", now, "test"),
+    ).toThrow(FK_CONSTRAINT_PATTERN);
+  });
+
+  it("rejects session with non-existent task_id", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    expect(() =>
+      handle.db
+        .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
+        .run("s1", "nonexistent", now),
+    ).toThrow(FK_CONSTRAINT_PATTERN);
+  });
+
+  it("rejects journal_entry with non-existent session_id", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    expect(() =>
+      handle.db
+        .prepare(
+          `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("j1", "nonexistent", "t1", now, "research", "action", "test"),
+    ).toThrow(FK_CONSTRAINT_PATTERN);
+  });
+
+  it("allows valid FK references", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    // Create task
+    handle.db
+      .prepare(
+        "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("t1", "intake", "Test", now, now);
+
+    // Create session referencing task
+    handle.db
+      .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
+      .run("s1", "t1", now);
+
+    // Create journal entry referencing both
+    handle.db
+      .prepare(
+        `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("j1", "s1", "t1", now, "research", "action", "test entry");
+
+    // Verify all exist
+    const journal = handle.db.prepare("SELECT * FROM journal_entries WHERE id = ?").get("j1");
+    expect(journal).toBeDefined();
+  });
+});
+
+describe("JSON default completeness", () => {
+  let handle: DatabaseHandle;
+
+  afterEach(() => {
+    handle?.close();
+  });
+
+  it("tasks: all JSON fields default to '[]'", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    handle.db
+      .prepare(
+        "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("t1", "intake", "Test", now, now);
+
+    const row = handle.db
+      .prepare(
+        "SELECT children, acceptance_criteria, team, related, decisions, child_summaries FROM tasks WHERE id = ?",
+      )
+      .get("t1") as Record<string, string>;
+
+    expect(row["children"]).toBe("[]");
+    expect(row["acceptance_criteria"]).toBe("[]");
+    expect(row["team"]).toBe("[]");
+    expect(row["related"]).toBe("[]");
+    expect(row["decisions"]).toBe("[]");
+    expect(row["child_summaries"]).toBe("[]");
+  });
+
+  it("journal_entries.tags defaults to '[]'", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    // Create parent task and session for FK
+    handle.db
+      .prepare(
+        "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("t1", "intake", "Test", now, now);
+    handle.db
+      .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
+      .run("s1", "t1", now);
+
+    handle.db
+      .prepare(
+        `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("j1", "s1", "t1", now, "research", "action", "test");
+
+    const row = handle.db.prepare("SELECT tags FROM journal_entries WHERE id = ?").get("j1") as {
+      tags: string;
+    };
+    expect(row.tags).toBe("[]");
+  });
+
+  it("checkpoints: key_findings and open_questions default to '[]'", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    handle.db
+      .prepare(
+        "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("t1", "intake", "Test", now, now);
+    handle.db
+      .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
+      .run("s1", "t1", now);
+
+    handle.db
+      .prepare(
+        `INSERT INTO checkpoints (id, session_id, task_id, phase, phase_progress, context_summary, next_action, last_event_id, reason, timestamp, journal_offset)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("c1", "s1", "t1", "research", "50%", "summary", "next", "evt1", "periodic", now, 0);
+
+    const row = handle.db
+      .prepare("SELECT key_findings, open_questions FROM checkpoints WHERE id = ?")
+      .get("c1") as { key_findings: string; open_questions: string };
+    expect(row.key_findings).toBe("[]");
+    expect(row.open_questions).toBe("[]");
+  });
+
+  it("knowledge.evidence defaults to '[]'", () => {
+    handle = createInMemoryDatabase();
+    const now = new Date().toISOString();
+
+    handle.db
+      .prepare(
+        `INSERT INTO knowledge (id, scope, domain, key, body, confidence, created_at, last_confirmed, source_task_id, source_phase)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("hash1", "repo", "patterns", "k", "v", "observed", now, now, "t1", "research");
+
+    const row = handle.db.prepare("SELECT evidence FROM knowledge WHERE id = ?").get("hash1") as {
+      evidence: string;
+    };
+    expect(row.evidence).toBe("[]");
   });
 });
 

@@ -2,9 +2,12 @@ export {
   ConfigError,
   EnvVarError,
   ValidationError,
+  getNumberPaths,
   loadConfig,
   loadConfigDir,
   loadConfigSafe,
+  parseDurations,
+  resolveEnvVars,
 } from "./loader.js";
 
 export type {

@@ -143,9 +143,10 @@ export function createDatabase(dbPath: string): DatabaseHandle {
   // Run migrations
   runMigrations(db, dbPath, MIGRATIONS_DIR);
 
-  // Enable WAL mode (after migrations, per spec)
+  // Enable WAL mode and pragmas (after migrations, per spec)
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
+  db.pragma("foreign_keys = ON");
 
   return {
     db,
@@ -163,6 +164,8 @@ export function createInMemoryDatabase(): DatabaseHandle {
   const db = new BetterSqlite3(":memory:");
 
   runMigrations(db, ":memory:", MIGRATIONS_DIR);
+
+  db.pragma("foreign_keys = ON");
 
   return {
     db,

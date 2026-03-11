@@ -250,4 +250,22 @@ describe("knowledgeId", () => {
     const id2 = knowledgeId("user", "key", "body");
     expect(id1).not.toBe(id2);
   });
+
+  it("handles empty strings", () => {
+    const id = knowledgeId("", "", "");
+    expect(id).toHaveLength(32);
+    expect(id).toMatch(HEX_32);
+  });
+
+  it("handles special characters", () => {
+    const id = knowledgeId("repo", "key with spaces & symbols!", "body with\nnewlines\tand\ttabs");
+    expect(id).toHaveLength(32);
+    expect(id).toMatch(HEX_32);
+  });
+
+  it("handles unicode content", () => {
+    const id = knowledgeId("repo", "clé", "données avec émojis 🚀");
+    expect(id).toHaveLength(32);
+    expect(id).toMatch(HEX_32);
+  });
 });

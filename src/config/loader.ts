@@ -84,6 +84,7 @@ export interface ConfigDirResult {
 
 // ── Env Var Resolution ───────────────────────────────────────────────────────────
 
+const ENV_VAR_TEST = /\$\{[^}]+\}/;
 const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
 
 /**
@@ -92,11 +93,9 @@ const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
  */
 export function resolveEnvVars(obj: unknown, filePath: string): unknown {
   if (typeof obj === "string") {
-    if (!ENV_VAR_PATTERN.test(obj)) {
+    if (!ENV_VAR_TEST.test(obj)) {
       return obj;
     }
-    // Reset lastIndex since we tested above
-    ENV_VAR_PATTERN.lastIndex = 0;
 
     return obj.replace(ENV_VAR_PATTERN, (_match, varName: string) => {
       const value = process.env[varName];

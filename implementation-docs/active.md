@@ -76,7 +76,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Architecture: ALL COMPLETE.** Layers 0-5, 128 decisions.
+**Architecture: ALL COMPLETE.** Layers 0-5, 136 decisions.
 
 **Implementation: IN PROGRESS.**
 
@@ -94,4 +94,6 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 - Phase 7: Task Engine — **DONE** (Session 039). 3 files: `src/core/task-engine/index.ts` (`TaskEngine` class — createTask with no auto-transition (intake, caller transitions to queued), requestTransition with all 25 valid transitions validated, checkPermission returning PermissionResult with conditional metadata for Gate 1, getTask, getTasksByState, getQueuedByPriority, getChildren, getStateHistory, updateTaskField for 15 updatable fields with JSON serialization, updateTracking with atomic SQL increment), `src/core/task-engine/index.test.ts` (79 tests), `test/helpers/test-task-engine.ts` (`createTestTaskEngine()` helper). `isValidTransition()` exported pure function with `subStateMatches()` helper. `rowToTask()` exported for test helper use. Protocol P2 updated (intake→queued is caller-driven). Build order updated (getChildren/updateTaskField/getStateHistory noted as done in Phase 7). Total: 749 tests across 25 test files. All verification passes (tests + typecheck + lint).
 
-**Next: Phase 8 — Safety Layer + People Directory.** Config-driven components with hot-reload. Safety Layer: cost limits, scope enforcement, autonomy verdicts (Gate 2). People Directory: contact resolution. See [`5-build/build-order.md`](5-build/build-order.md) § Phase 8.
+- Phase 8: Safety Layer + People Directory — **DONE** (Session 040). 6 files. **People Directory** (`src/core/people-directory/index.ts`): pure config-driven contact resolution — `getPerson`, `getByRole`, `getOwner`, `getReviewers`, `resolveContact` (channel fallback, `plugin_id` = channel name), `getAll`, `updateConfig`. No DB, no EventBus. 16 tests. **Safety Layer** (`src/core/safety-layer/index.ts`): Gate 2 of Action Pipeline. Two-method API: `evaluateAction()` (repo/branch/file scope + merge policy + cost limits) and `consultJudgment()` (three query types: `can_i`, `should_i_ask`, `cost_check`). Returns `SafetyVerdict { allowed, action, reason, warnings? }`. Cost tracking via `cost.incurred` subscription with `_meta` snapshots + event replay. Daily/monthly UTC window management. `getTimeoutPolicy()` for Daemon. Hot-reload. 65 tests. Exported pure functions: `getDailyWindowStart`, `getMonthlyWindowStart`, `parseThreshold`, `evaluateThreshold`, `matchesPathPattern`. Test helpers: `createTestSafetyLayer()`, `createTestPeopleDirectory()`. 8 new decisions (#129-#136). Total: 830 tests across 27 test files. All verification passes (tests + typecheck + lint, 0 errors, 0 warnings).
+
+**Next: Phase 9 — Action Pipeline.** Thin authorization middleware (~50-100 lines). Gate 1 (Task Engine `checkPermission`) → Gate 2 (Safety Layer `evaluateAction`) → Execute → Notify. See [`5-build/build-order.md`](5-build/build-order.md) § Phase 9.

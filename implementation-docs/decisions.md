@@ -1185,3 +1185,57 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Rationale:** Bottom-up mirrors compiler bootstrap — build the type system first (schemas), then infrastructure (DB, config, Event Bus), then components in dependency order, then the wiring layer (daemon). Breaks the chicken-and-egg: Action Pipeline (Phase 9) needs Task Engine (7) and Safety Layer (8), both already built. Orchestrator (11) needs everything, but by then everything exists. Hello world at Phase 12 is the natural point where the full stack is wired. Phase 1 split into 1a/1b because 2,619 lines of reference + 14 output files risks context overflow — core data model (task, events, session) in 1a, integration types (adapters, orchestrator, config) in 1b. Phase 14 split into 14a/14b/14c because 29 files across 6 different APIs (GitHub, Telegram, Claude CLI, bash) is too much — process-based plugins (14a), GitHub-Octokit plugins (14b), Telegram-grammy (14c). Parallelization: Phases 2+3 independent, Phases 14a/14b/14c independent of Phases 6-13.
 
 **Alternatives considered:** Top-down skeleton-first (daemon shell → fill in), but produces a non-functional stub that doesn't test anything. Interleaved plugins (build real plugins alongside core), but adds external API distractions during core development. Keeping original 16 phases (no splits), but context window analysis showed Phase 1 and Phase 14 genuinely risk overflow.
+
+---
+
+## Phase 8 — Safety Layer + People Directory
+
+## 2026-03-11 — Two-method Safety Layer API (#129)
+
+**Decision:** Split the L2/L3-spec single `evaluate(SafetyQuery)` into two methods: `evaluateAction(taskId, actionClass, details)` for Gate 2 (hard limits checked by Action Pipeline) and `consultJudgment(query: SafetyQuery)` for passive consultation (autonomy decisions queried by Orchestrator). Both return `SafetyVerdict { allowed, action: "proceed"|"ask_human"|"deny", reason, warnings? }`.
+
+**Rationale:** Different callers (Action Pipeline vs Orchestrator), different intent (binary gate check vs nuanced three-way verdict). Splitting makes each method's contract clearer. `consultJudgment` handles three query types internally (`can_i`, `should_i_ask`, `cost_check`).
+
+**Alternatives considered:** Single `evaluate()` as in specs — but overloaded method signature and mixed caller expectations add complexity without benefit.
+
+## 2026-03-11 — Custom matchesPathPattern over glob dependency (#130)
+
+**Decision:** Implement a focused `matchesPathPattern()` (~30 lines) for file/branch glob matching — supports `*` (single segment), `**` (recursive), and literal matching. Separate from EventBus's dot-separated `matchesPattern()`.
+
+**Rationale:** Adding a full glob dependency for a focused use case is overkill. The pattern set is well-defined (`.env*`, `secrets/**`, `engineer/*`).
+
+## 2026-03-11 — Snapshot after every cost event (#131)
+
+**Decision:** Save cost accumulator snapshot to `_meta` after every `cost.incurred` event. No timer, no counter, no configurability.
+
+**Rationale:** Cost events are infrequent (one per LLM call, ~dozens per task). A `_meta` upsert is microseconds. Simple wins.
+
+## 2026-03-11 — UTC midnight/first-of-month for time windows (#132)
+
+**Decision:** Daily cost windows reset at midnight UTC. Monthly windows reset at first-of-month midnight UTC. Deterministic, no configuration.
+
+**Rationale:** UTC eliminates timezone ambiguity. Window rollover detected on every cost event by comparing timestamp against current boundary.
+
+## 2026-03-11 — Simple threshold parser for autonomy (#133)
+
+**Decision:** Parse `"<metric> <op> <value>"` patterns for autonomy thresholds (e.g., `"scope > 5 files"` → metric=scope, op=>, value=5). Unknown thresholds → `ask_human` (fail-safe). Exported as pure functions.
+
+**Rationale:** Sufficient for v1 autonomy rules. Fail-safe default for unparseable thresholds ensures safety. Pure functions enable isolated testing.
+
+## 2026-03-11 — ContactInfo.plugin_id = channel name (#134)
+
+**Decision:** `PeopleDirectory.resolveContact()` sets `ContactInfo.plugin_id` to the contact's channel name (e.g., `"github"`, `"telegram"`). The Orchestrator maps channel names to actual Registry plugin IDs.
+
+**Rationale:** People Directory has no knowledge of the Registry. Clean separation of concerns.
+
+## 2026-03-11 — Include getTimeoutPolicy accessor now (#135)
+
+**Decision:** Add `getTimeoutPolicy(): ResponseTimeout` to Safety Layer now, even though the Daemon (Phase 12) is the consumer.
+
+**Rationale:** Trivial accessor returning `config.response_timeout`. Keeps the Safety Layer interface complete. Protocol P11 references it.
+
+## 2026-03-11 — evaluateAction checks merge policy (#136)
+
+**Decision:** `evaluateAction()` checks `config.merge.auto_merge` when `actionClass === "merge"`. Returns `ask_human` if auto-merge is not enabled for the repo.
+
+**Rationale:** Connects to Task Engine's conditional permission for merge (Decision #3, Session 039). Safety Layer evaluates the condition that Task Engine flags.

@@ -1,0 +1,11 @@
+id: telegram-comm
+type: communication
+version: "1.0.0"
+name: Telegram Communication
+description: Sends notifications via Telegram bot
+critical: false
+enabled: true
+entry: index.ts
+adapter_meta:
+  capabilities:
+    - send

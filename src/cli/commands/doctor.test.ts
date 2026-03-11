@@ -213,10 +213,76 @@ describe("checkGitHubConnectivity", () => {
 });
 
 describe("checkTelegramConnectivity", () => {
-  it("returns warn stub", () => {
-    const result = checkTelegramConnectivity();
-    expect(result.checks[0]?.status).toBe("warn");
-    expect(result.checks[0]?.message).toContain("not yet implemented");
+  it("returns warn when no token in env", () => {
+    const originalToken = process.env["TELEGRAM_BOT_TOKEN"];
+    const originalChatId = process.env["TELEGRAM_CHAT_ID"];
+    // biome-ignore lint/performance/noDelete: delete is required for process.env
+    delete process.env["TELEGRAM_BOT_TOKEN"];
+    // biome-ignore lint/performance/noDelete: delete is required for process.env
+    delete process.env["TELEGRAM_CHAT_ID"];
+    try {
+      const result = checkTelegramConnectivity();
+      const tokenCheck = result.checks.find((c) => c.label === "Telegram bot token");
+      expect(tokenCheck?.status).toBe("warn");
+      expect(tokenCheck?.message).toContain("No Telegram bot token found");
+    } finally {
+      if (originalToken !== undefined) {
+        process.env["TELEGRAM_BOT_TOKEN"] = originalToken;
+      }
+      if (originalChatId !== undefined) {
+        process.env["TELEGRAM_CHAT_ID"] = originalChatId;
+      }
+    }
+  });
+
+  it("returns pass when TELEGRAM_BOT_TOKEN is set", () => {
+    const originalToken = process.env["TELEGRAM_BOT_TOKEN"];
+    process.env["TELEGRAM_BOT_TOKEN"] = "123456:ABC-DEF1234ghIkl-zyx57W2v";
+    try {
+      const result = checkTelegramConnectivity();
+      const tokenCheck = result.checks.find((c) => c.label === "Telegram bot token (env)");
+      expect(tokenCheck?.status).toBe("pass");
+      expect(tokenCheck?.message).toContain("TELEGRAM_BOT_TOKEN set");
+    } finally {
+      if (originalToken !== undefined) {
+        process.env["TELEGRAM_BOT_TOKEN"] = originalToken;
+      } else {
+        // biome-ignore lint/performance/noDelete: delete is required for process.env
+        delete process.env["TELEGRAM_BOT_TOKEN"];
+      }
+    }
+  });
+
+  it("checks TELEGRAM_CHAT_ID separately", () => {
+    const originalChatId = process.env["TELEGRAM_CHAT_ID"];
+    process.env["TELEGRAM_CHAT_ID"] = "-1001234567890";
+    try {
+      const result = checkTelegramConnectivity();
+      const chatIdCheck = result.checks.find((c) => c.label === "Telegram chat ID (env)");
+      expect(chatIdCheck?.status).toBe("pass");
+    } finally {
+      if (originalChatId !== undefined) {
+        process.env["TELEGRAM_CHAT_ID"] = originalChatId;
+      } else {
+        // biome-ignore lint/performance/noDelete: delete is required for process.env
+        delete process.env["TELEGRAM_CHAT_ID"];
+      }
+    }
+  });
+
+  it("warns when TELEGRAM_CHAT_ID is missing", () => {
+    const originalChatId = process.env["TELEGRAM_CHAT_ID"];
+    // biome-ignore lint/performance/noDelete: delete is required for process.env
+    delete process.env["TELEGRAM_CHAT_ID"];
+    try {
+      const result = checkTelegramConnectivity();
+      const chatIdCheck = result.checks.find((c) => c.label === "Telegram chat ID");
+      expect(chatIdCheck?.status).toBe("warn");
+    } finally {
+      if (originalChatId !== undefined) {
+        process.env["TELEGRAM_CHAT_ID"] = originalChatId;
+      }
+    }
   });
 });
 

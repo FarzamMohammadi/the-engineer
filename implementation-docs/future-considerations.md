@@ -176,3 +176,25 @@ packages/
 2. Filter out The Engineer's own comments and non-directory authors
 3. Emit `comm.message_received` events (the Daemon subscription already exists from Phase 14b)
 4. Design interrupt routing in the Orchestrator (see "Mid-Phase Communication Interrupt Handling")
+
+---
+
+## TelegramCommPlugin `receive` Capability
+
+**Current state (v1):** TelegramCommPlugin supports `send` capability only. The `receive` capability is omitted.
+
+**What `receive` enables:** People in the People Directory communicating *with* The Engineer via Telegram messages mid-flow. Same use case as GitHub `receive` — interrupts, questions, direction, feedback — but via Telegram's real-time chat interface.
+
+**Why it's deferred:** Same unresolved design questions as the GitHub `receive` capability:
+1. **People Directory auth check** — inbound messages must be authenticated against the directory. Only recognized people can communicate with The Engineer.
+2. **Message routing** — how inbound messages reach the Daemon/Orchestrator during active task execution (mid-phase interrupt handling).
+3. **Polling lifecycle** — grammy's `bot.start()` runs long-polling in the background. Managing this alongside the Daemon's tick loop requires careful coordination (start on init, stop on shutdown, error recovery).
+
+**When it becomes relevant:** When bidirectional Telegram communication is needed — people wanting to steer, interrupt, or query The Engineer through the same chat where it sends notifications.
+
+**Migration path:** The `CommunicationAdapter` base class already defines `receive` as an optional capability with `doStartListening()`/`doStopListening()`. Adding it to TelegramCommPlugin requires:
+1. Implement `doStartListening()` — call `bot.start()` with grammy's long-polling, wrap inbound messages in `InboundMessage`
+2. Implement `doStopListening()` — call `bot.stop()`
+3. Authenticate inbound messages against People Directory (match Telegram user ID to directory entries)
+4. Emit `comm.message_received` events (the Daemon subscription already exists from Phase 14b)
+5. Design interrupt routing in the Orchestrator (shared with GitHub — see "Mid-Phase Communication Interrupt Handling")

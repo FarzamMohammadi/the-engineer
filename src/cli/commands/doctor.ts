@@ -379,18 +379,62 @@ export function checkGitHubConnectivity(configDir?: string): DoctorCategory {
 }
 
 /** Category 8: Telegram connectivity. */
-// TODO: Phase 14c — requires TelegramCommPlugin for bot token validation
-export function checkTelegramConnectivity(): DoctorCategory {
-  return {
-    category: "Telegram Connectivity",
-    checks: [
-      {
-        label: "Telegram Bot",
+export function checkTelegramConnectivity(configDir?: string): DoctorCategory {
+  const checks: DoctorCheck[] = [];
+
+  // Check TELEGRAM_BOT_TOKEN env var or config file
+  const envToken = process.env["TELEGRAM_BOT_TOKEN"];
+  if (envToken && envToken.length > 0) {
+    checks.push({
+      label: "Telegram bot token (env)",
+      status: "pass",
+      message: `TELEGRAM_BOT_TOKEN set (${String(envToken.length)} chars)`,
+    });
+  } else if (configDir) {
+    const pluginConfigPath = join(configDir, "plugins.yaml");
+    if (existsSync(pluginConfigPath)) {
+      checks.push({
+        label: "Telegram bot token",
         status: "warn",
-        message: "Telegram connectivity check not yet implemented",
-      },
-    ],
-  };
+        message: "TELEGRAM_BOT_TOKEN not in env — check plugins.yaml for bot_token config",
+        remedy:
+          "Set TELEGRAM_BOT_TOKEN environment variable or configure bot_token in plugins.yaml",
+      });
+    } else {
+      checks.push({
+        label: "Telegram bot token",
+        status: "warn",
+        message: "No Telegram bot token found in environment",
+        remedy: "Set TELEGRAM_BOT_TOKEN environment variable",
+      });
+    }
+  } else {
+    checks.push({
+      label: "Telegram bot token",
+      status: "warn",
+      message: "No Telegram bot token found in environment",
+      remedy: "Set TELEGRAM_BOT_TOKEN environment variable",
+    });
+  }
+
+  // Check TELEGRAM_CHAT_ID env var
+  const envChatId = process.env["TELEGRAM_CHAT_ID"];
+  if (envChatId && envChatId.length > 0) {
+    checks.push({
+      label: "Telegram chat ID (env)",
+      status: "pass",
+      message: "TELEGRAM_CHAT_ID set",
+    });
+  } else {
+    checks.push({
+      label: "Telegram chat ID",
+      status: "warn",
+      message: "No Telegram chat ID found in environment",
+      remedy: "Set TELEGRAM_CHAT_ID environment variable or configure chat_id in plugins.yaml",
+    });
+  }
+
+  return { category: "Telegram Connectivity", checks };
 }
 
 /** Category 9: Workspace & git availability. */
@@ -493,7 +537,7 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
     checkDatabase(engineerHome),
     checkPluginManifests(engineerHome),
     checkGitHubConnectivity(dirs.config),
-    checkTelegramConnectivity(),
+    checkTelegramConnectivity(dirs.config),
     checkWorkspace(engineerHome),
   ];
 

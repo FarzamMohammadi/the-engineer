@@ -22,6 +22,9 @@ import type { SafetyLayer } from "../safety-layer/index.js";
 import type { SessionMemory } from "../session-memory/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
+import { executeAction as executeAgentAction } from "./action-executor.js";
+import { type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
+import { getPhaseToolConfig } from "./phase-tools.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -225,13 +228,18 @@ export class Orchestrator {
     dispatch: Dispatch,
     _priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const systemPrompt =
+      "You are The Engineer, an autonomous software engineering agent. Analyze tasks with the eye of a senior engineer.";
     const prompt = [
       "Analyze this task and assess its complexity.",
       `Task title: ${dispatch.task.title}`,
       `Task description: ${dispatch.task.description ?? "None provided"}`,
       `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
-      "Return a JSON object with these fields:",
+      "You may read files and search the codebase to understand the task better.",
+      'When done, respond with {"action": "done", "result": {your analysis}}.',
+      "",
+      "Required result fields:",
       "- complexity: one of 'trivial', 'simple', 'moderate', 'complex', 'epic'",
       "- estimated_phases: array of phase names this task needs",
       "- ambiguities: array of unclear requirements",
@@ -239,20 +247,29 @@ export class Orchestrator {
       "- decomposition_likely: boolean, true if task should be split",
     ].join("\n");
 
-    return this.callLlmAndParse("intake_analysis", taskId, prompt);
+    return this.runPhaseWithAgentLoop("intake_analysis", taskId, systemPrompt, prompt);
   }
 
   private handleResearch(
     taskId: string,
     dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
+    priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const intakeData = priorOutputs.get("intake_analysis")?.data as
+      | Record<string, unknown>
+      | undefined;
+    const systemPrompt =
+      "You are The Engineer, an autonomous software engineering agent. Research codebases thoroughly before making changes.";
     const prompt = [
       "Research the codebase for this task.",
       `Task: ${dispatch.task.title}`,
       `Repository: ${this.getTaskRepo(dispatch)}`,
+      intakeData ? `Intake analysis: ${JSON.stringify(intakeData)}` : "",
       "",
-      "Return a JSON object with these fields:",
+      "Use read_file, search_files, and search_content to explore the codebase.",
+      'When done, respond with {"action": "done", "result": {your findings}}.',
+      "",
+      "Required result fields:",
       "- relevant_files: array of file paths",
       "- relevant_modules: array of module names",
       "- conventions: array of convention objects found",
@@ -260,82 +277,88 @@ export class Orchestrator {
       "- dependencies: array of dependency names",
     ].join("\n");
 
-    return this.callLlmAndParse("research", taskId, prompt);
+    return this.runPhaseWithAgentLoop("research", taskId, systemPrompt, prompt);
   }
 
   private handlePlanning(
     taskId: string,
     dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
+    priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const researchData = priorOutputs.get("research")?.data as Record<string, unknown> | undefined;
+    const systemPrompt =
+      "You are The Engineer, an autonomous software engineering agent. Create thorough, actionable technical plans.";
     const prompt = [
       "Create a technical plan for this task.",
       `Task: ${dispatch.task.title}`,
       `Repository: ${this.getTaskRepo(dispatch)}`,
+      researchData ? `Research findings: ${JSON.stringify(researchData)}` : "",
       "",
-      "Return a JSON object with these fields:",
+      "You may read files to verify your plan is sound.",
+      'When done, respond with {"action": "done", "result": {your plan}}.',
+      "",
+      "Required result fields:",
       "- approach: string describing the technical approach",
       "- file_changes: array of {file, change_type, description}",
       "- risks: array of {risk, mitigation}",
       "- decomposition_plan: null or a decomposition plan object",
     ].join("\n");
 
-    return this.callLlmAndParse("planning", taskId, prompt);
+    return this.runPhaseWithAgentLoop("planning", taskId, systemPrompt, prompt);
   }
 
-  private async handleExecution(
+  private handleExecution(
     taskId: string,
     dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
+    priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
-    // Execution phase: also calls Tool adapter through ActionPipeline
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
-    if (worktreePath) {
-      const tool = this.registry.getPrimaryPlugin<ToolAdapter>("tool");
-      if (tool) {
-        await this.actionPipeline.execute({
-          taskId,
-          actionClass: "write",
-          details: { phase: "execution", action: "tool_execute" },
-          requestedBy: "orchestrator",
-          executeFn: () =>
-            tool.execute("run", {}, { workspace_path: worktreePath, task_id: taskId }),
-        });
-      }
-    }
-
+    const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
+    const systemPrompt =
+      "You are The Engineer, an autonomous software engineering agent. Write clean, tested code. Iterate until tests pass.";
     const prompt = [
       "Execute the implementation for this task.",
       `Task: ${dispatch.task.title}`,
       `Repository: ${this.getTaskRepo(dispatch)}`,
+      planData ? `Plan: ${JSON.stringify(planData)}` : "",
       "",
-      "Return a JSON object with these fields:",
+      "Use write_file, edit_file, and run_command to implement the changes.",
+      "Run tests after making changes. Fix any failures.",
+      'When done, respond with {"action": "done", "result": {your summary}}.',
+      "",
+      "Required result fields:",
       "- files_changed: array of file paths modified",
       "- tests_written: array of test file paths",
       "- test_results: {passed: number, failed: number, skipped: number}",
       "- build_status: 'passing' or 'failing'",
     ].join("\n");
 
-    return this.callLlmAndParse("execution", taskId, prompt);
+    return this.runPhaseWithAgentLoop("execution", taskId, systemPrompt, prompt);
   }
 
   private handleSelfReview(
     taskId: string,
     dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
+    priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const execData = priorOutputs.get("execution")?.data as Record<string, unknown> | undefined;
+    const systemPrompt =
+      "You are The Engineer, an autonomous software engineering agent. Review code with a critical eye. Ship quality matters.";
     const prompt = [
       "Review the code changes for this task.",
       `Task: ${dispatch.task.title}`,
       `Repository: ${this.getTaskRepo(dispatch)}`,
+      execData ? `Execution summary: ${JSON.stringify(execData)}` : "",
       "",
-      "Return a JSON object with these fields:",
+      "Read the changed files and run tests to verify quality.",
+      'When done, respond with {"action": "done", "result": {your review}}.',
+      "",
+      "Required result fields:",
       "- findings: array of {type, file, description, fixed}",
       "- refactoring_applied: array of refactoring descriptions",
       "- quality_assessment: 'ship_it', 'needs_work', or 'fundamental_issues'",
     ].join("\n");
 
-    return this.callLlmAndParse("self_review", taskId, prompt);
+    return this.runPhaseWithAgentLoop("self_review", taskId, systemPrompt, prompt);
   }
 
   private handleDemoPrep(
@@ -343,18 +366,22 @@ export class Orchestrator {
     dispatch: Dispatch,
     _priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const systemPrompt =
+      "You are The Engineer, an autonomous software engineering agent. Prepare clear, comprehensive demo artifacts.";
     const prompt = [
       "Prepare demo artifacts and a PR description for this task.",
       `Task: ${dispatch.task.title}`,
       `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
-      "Return a JSON object with these fields:",
+      'When done, respond with {"action": "done", "result": {your artifacts}}.',
+      "",
+      "Required result fields:",
       "- artifacts: array of {type, location, permanent}",
       "- pr_number: positive integer",
       "- pr_description: string",
     ].join("\n");
 
-    return this.callLlmAndParse("demo_prep", taskId, prompt);
+    return this.runPhaseWithAgentLoop("demo_prep", taskId, systemPrompt, prompt);
   }
 
   private handleIntegration(
@@ -362,19 +389,23 @@ export class Orchestrator {
     dispatch: Dispatch,
     _priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const systemPrompt =
+      "You are The Engineer, an autonomous software engineering agent. Verify integration thoroughly.";
     const prompt = [
       "Verify integration of all changes for this task.",
       `Task: ${dispatch.task.title}`,
       `Repository: ${this.getTaskRepo(dispatch)}`,
       "",
-      "Return a JSON object with these fields:",
+      'When done, respond with {"action": "done", "result": {your verification}}.',
+      "",
+      "Required result fields:",
       "- children_verified: array of child task IDs checked",
       "- integration_tests: {passed: number, failed: number}",
       "- conflicts_found: array of conflict descriptions",
       "- resolution_actions: array of resolution descriptions",
     ].join("\n");
 
-    return this.callLlmAndParse("integration", taskId, prompt);
+    return this.runPhaseWithAgentLoop("integration", taskId, systemPrompt, prompt);
   }
 
   // ── Extracted Helpers (for cognitive complexity) ─────────────────────────────
@@ -523,7 +554,11 @@ export class Orchestrator {
    * Call the LLM adapter through the Action Pipeline.
    * Throws if no LLM plugin is registered or if the pipeline rejects.
    */
-  private async callLlm(prompt: string, taskId: string): Promise<CompletionResult> {
+  private async callLlm(
+    prompt: string,
+    taskId: string,
+    systemPrompt?: string | null,
+  ): Promise<CompletionResult> {
     const llm = this.registry.getPrimaryPlugin<LLMAdapter>("llm");
     if (!llm) {
       throw new Error("Orchestrator: no LLM plugin registered");
@@ -537,6 +572,7 @@ export class Orchestrator {
       executeFn: () =>
         llm.complete({
           prompt,
+          system_prompt: systemPrompt ?? null,
           options: { max_tokens: null, temperature: null, stop: null, tools: null },
         }),
     });
@@ -547,6 +583,91 @@ export class Orchestrator {
     }
 
     return pipelineResult.result;
+  }
+
+  /**
+   * Run a phase using the agent loop (multi-turn LLM + tool execution).
+   *
+   * The Engineer IS the agent: call LLM → parse action → execute tool → repeat.
+   * Falls back to callLlmAndParse if no worktree is available.
+   */
+  private async runPhaseWithAgentLoop(
+    phase: Phase,
+    taskId: string,
+    systemPrompt: string,
+    initialPrompt: string,
+  ): Promise<PhaseOutput> {
+    const toolConfig = getPhaseToolConfig(phase);
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+
+    const toolAdapter = this.registry.getPrimaryPlugin<ToolAdapter>("tool") ?? null;
+
+    const loopResult = await runAgentLoop(
+      {
+        phase,
+        taskId,
+        systemPrompt,
+        initialPrompt,
+        toolConfig,
+        worktreePath,
+      },
+      // Inject LLM call through ActionPipeline
+      (prompt, sysPrompt) => this.callLlm(prompt, taskId, sysPrompt),
+      // Inject action execution
+      (action, wPath) =>
+        executeAgentAction(action, wPath, {
+          actionPipeline: this.actionPipeline,
+          toolAdapter,
+          taskId,
+        }),
+    );
+
+    // Emit cost for the entire loop
+    this.emitAgentLoopCost(taskId, loopResult);
+
+    // Validate output against phase schema
+    return this.validateLoopResult(phase, taskId, loopResult);
+  }
+
+  /** Emit cost.incurred event for an agent loop's accumulated cost. */
+  private emitAgentLoopCost(taskId: string, loopResult: AgentLoopResult): void {
+    this.eventBus.publish({
+      type: "cost.incurred",
+      source: "orchestrator",
+      task_id: taskId,
+      payload: {
+        task_id: taskId,
+        repo: "",
+        provider_id: "llm",
+        provider_type: "api",
+        operation: "agent_loop",
+        tokens_in: loopResult.totalCost.tokens_in,
+        tokens_out: loopResult.totalCost.tokens_out,
+        spend_usd: loopResult.totalCost.spend_usd,
+        usage_units: null,
+        remaining: null,
+      },
+    } satisfies PublishInput<"cost.incurred">);
+  }
+
+  /** Validate agent loop result against phase schema, build PhaseOutput. */
+  private validateLoopResult(
+    phase: Phase,
+    taskId: string,
+    loopResult: AgentLoopResult,
+  ): PhaseOutput {
+    const schema = PHASE_SCHEMAS[phase];
+    const result = schema.safeParse(loopResult.phaseData);
+
+    if (!result.success) {
+      return this.buildFallbackOutput(
+        phase,
+        taskId,
+        `Agent loop output invalid: ${result.error.message} (after ${String(loopResult.iterations)} iterations)`,
+      );
+    }
+
+    return this.buildPhaseOutput(phase, taskId, result.data as Record<string, unknown>, "high", []);
   }
 
   /** Emit a cost.incurred event from LLM completion usage data. */
@@ -771,6 +892,7 @@ export class Orchestrator {
         executeFn: () =>
           llm.complete({
             prompt,
+            system_prompt: null,
             options: { max_tokens: 200, temperature: null, stop: null, tools: null },
           }),
       });

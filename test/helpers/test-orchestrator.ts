@@ -172,10 +172,14 @@ export function createMockCheckpoint(overrides?: Partial<Checkpoint>): Checkpoin
 
 // ── LLM Response Helper ──────────────────────────────────────────────────────
 
-/** Create a CompletionResult with JSON content matching a phase's expected output. */
+/**
+ * Create a CompletionResult with JSON content matching the agent loop format.
+ * Wraps phase data in {"action": "done", "result": {...}} so the agent loop
+ * parses it correctly and terminates on the first iteration.
+ */
 function createLlmResponse(data: Record<string, unknown>): CompletionResult {
   return {
-    content: JSON.stringify(data),
+    content: JSON.stringify({ action: "done", result: data }),
     tool_calls: null,
     finish_reason: "stop",
     usage: {

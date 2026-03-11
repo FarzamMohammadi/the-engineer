@@ -75,6 +75,7 @@ function createManifest(): PluginManifest {
 
 const testRequest: CompletionRequest = {
   prompt: "Hello, world",
+  system_prompt: null,
   options: {
     max_tokens: null,
     temperature: null,

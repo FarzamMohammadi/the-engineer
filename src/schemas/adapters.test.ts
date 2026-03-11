@@ -437,6 +437,23 @@ describe("CompletionRequestSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("system_prompt defaults to null when omitted", () => {
+    const req = CompletionRequestSchema.parse({
+      prompt: "test",
+      options: { max_tokens: null, temperature: null, stop: null, tools: null },
+    });
+    expect(req.system_prompt).toBeNull();
+  });
+
+  it("accepts explicit system_prompt string", () => {
+    const req = CompletionRequestSchema.parse({
+      prompt: "test",
+      system_prompt: "You are a code reviewer.",
+      options: { max_tokens: null, temperature: null, stop: null, tools: null },
+    });
+    expect(req.system_prompt).toBe("You are a code reviewer.");
+  });
 });
 
 describe("CompletionResultSchema", () => {

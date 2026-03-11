@@ -211,3 +211,77 @@ export const SafetyVerdictSchema = z.object({
   warnings: z.array(z.string()).nullable(),
 });
 export type SafetyVerdict = z.infer<typeof SafetyVerdictSchema>;
+
+// ── Agent Loop Types ────────────────────────────────────────────────────────────
+
+/** Actions the LLM can request during the agent loop. Discriminated union on `action`. */
+export const AgentActionSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("read_file"),
+    params: z.object({ path: z.string() }),
+    thinking: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("write_file"),
+    params: z.object({ path: z.string(), content: z.string() }),
+    thinking: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("edit_file"),
+    params: z.object({ path: z.string(), old_string: z.string(), new_string: z.string() }),
+    thinking: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("search_files"),
+    params: z.object({ pattern: z.string(), path: z.string().optional() }),
+    thinking: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("search_content"),
+    params: z.object({
+      pattern: z.string(),
+      path: z.string().optional(),
+      glob: z.string().optional(),
+    }),
+    thinking: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("run_command"),
+    params: z.object({ command: z.string() }),
+    thinking: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("done"),
+    result: z.record(z.unknown()),
+    thinking: z.string().optional(),
+  }),
+]);
+export type AgentAction = z.infer<typeof AgentActionSchema>;
+
+/** All possible action names for type-safe checks. */
+export const AGENT_ACTION_NAMES = [
+  "read_file",
+  "write_file",
+  "edit_file",
+  "search_files",
+  "search_content",
+  "run_command",
+  "done",
+] as const;
+export type AgentActionName = (typeof AGENT_ACTION_NAMES)[number];
+
+/** Result of executing an agent action. */
+export const ActionResultSchema = z.object({
+  success: z.boolean(),
+  output: z.string(),
+  error: z.string().optional(),
+});
+export type ActionResult = z.infer<typeof ActionResultSchema>;
+
+/** Per-phase tool restrictions (maps to D141 Permission Table). */
+export const PhaseToolConfigSchema = z.object({
+  allowed_actions: z.array(z.string()),
+  max_iterations: z.number().int().positive(),
+  action_classes: z.array(z.string()),
+});
+export type PhaseToolConfig = z.infer<typeof PhaseToolConfigSchema>;

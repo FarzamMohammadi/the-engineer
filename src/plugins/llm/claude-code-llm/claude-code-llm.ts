@@ -31,8 +31,13 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
       this.config.model,
       "--max-tokens",
       String(request.options.max_tokens ?? this.config.max_tokens),
-      request.prompt,
     ];
+
+    if (request.system_prompt) {
+      args.push("--system-prompt", request.system_prompt);
+    }
+
+    args.push(request.prompt);
 
     return this.spawnAndParse(args);
   }

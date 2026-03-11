@@ -379,8 +379,9 @@ describe("Orchestrator", () => {
       }
     });
 
-    it("handles schema validation failure with fallback output", async () => {
-      // Set first response to valid JSON but wrong shape
+    it("agent loop recovers from unparseable first response via retry", async () => {
+      // First LLM call returns invalid JSON (no "action" field) — agent loop retries
+      // and the second call returns valid data, so the phase succeeds with high confidence
       let callCount = 0;
       handle.setAllPhaseResponses();
       handle.actionPipeline.execute.mockImplementation(
@@ -414,21 +415,21 @@ describe("Orchestrator", () => {
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
         const intakeOutput = result.phaseOutputs.get("intake_analysis");
-        expect(intakeOutput?.confidence).toBe("low");
+        // Agent loop retries successfully, so confidence is high
+        expect(intakeOutput?.confidence).toBe("high");
       }
     });
 
-    it("fallback output uses default data for the phase", async () => {
-      let callCount = 0;
-      handle.setAllPhaseResponses();
+    it("fallback output when all LLM responses are unparseable", async () => {
+      // Override ALL LLM calls to return non-JSON — agent loop exhausts retries
+      // and returns empty phaseData, which fails schema validation → fallback output
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
-          callCount++;
-          if (callCount === 1 && input.details?.operation === "llm_complete") {
+          if (input.details?.operation === "llm_complete") {
             return {
               outcome: "executed",
               result: {
-                content: "not json",
+                content: "not json at all",
                 tool_calls: null,
                 finish_reason: "stop",
                 usage: {
@@ -451,7 +452,8 @@ describe("Orchestrator", () => {
 
       if (result.outcome === "completed") {
         const intakeOutput = result.phaseOutputs.get("intake_analysis");
-        // Default intake data has fast_path: false, complexity: "moderate"
+        // All LLM calls failed → fallback with low confidence and default data
+        expect(intakeOutput?.confidence).toBe("low");
         expect(intakeOutput?.data).toHaveProperty("fast_path", false);
         expect(intakeOutput?.data).toHaveProperty("complexity", "moderate");
       }
@@ -461,16 +463,17 @@ describe("Orchestrator", () => {
   // ── Action Pipeline Integration ────────────────────────────────────────────
 
   describe("action pipeline integration", () => {
-    it("execution phase uses actionClass 'write' for tool calls", async () => {
+    it("all phases use ActionPipeline for LLM calls", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
       await handle.orchestrator.executeTask(dispatch);
 
-      const writeCalls = handle.actionPipeline.execute.mock.calls.filter(
-        (call: unknown[]) => (call[0] as { actionClass: string }).actionClass === "write",
+      // Agent loop calls LLM through ActionPipeline (actionClass: "read" for inference)
+      const readCalls = handle.actionPipeline.execute.mock.calls.filter(
+        (call: unknown[]) => (call[0] as { actionClass: string }).actionClass === "read",
       );
-      expect(writeCalls.length).toBeGreaterThanOrEqual(1);
+      expect(readCalls.length).toBeGreaterThanOrEqual(7);
     });
 
     it("handles pipeline rejection gracefully in execution phase", async () => {
@@ -620,7 +623,8 @@ describe("Orchestrator", () => {
       const costEvents = handle.eventBus.publish.mock.calls.filter(
         (call: unknown[]) => (call[0] as { type: string }).type === "cost.incurred",
       );
-      const firstPayload = (costEvents[0][0] as { payload: Record<string, unknown> }).payload;
+      // Agent loop emits aggregate cost per phase
+      const firstPayload = (costEvents[0]?.[0] as { payload: Record<string, unknown> }).payload;
       expect(firstPayload).toHaveProperty("tokens_in", 100);
       expect(firstPayload).toHaveProperty("tokens_out", 50);
       expect(firstPayload).toHaveProperty("spend_usd", 0.01);

@@ -91,6 +91,7 @@ describe("createTestRegistry", () => {
     // LLM: returns canned responses
     const result = await fakes.llm.complete({
       prompt: "test",
+      system_prompt: null,
       options: { max_tokens: null, temperature: null, stop: null, tools: null },
     });
     expect(result.content).toBe("Fake LLM response");

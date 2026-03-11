@@ -162,6 +162,7 @@ export type ReconciliationResult = z.infer<typeof ReconciliationResultSchema>;
 
 export const CompletionRequestSchema = z.object({
   prompt: z.string(),
+  system_prompt: z.string().nullable().default(null),
   options: z.object({
     max_tokens: z.number().int().positive().nullable(),
     temperature: z.number().min(0).max(1).nullable(),

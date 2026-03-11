@@ -42,6 +42,17 @@ echo "1.0.42"
 );
 chmodSync(mockCliVersionPath, 0o755);
 
+// Mock CLI that captures args so we can verify --system-prompt is passed
+const mockCliArgsPath = join(mockCliDir, "claude-args");
+writeFileSync(
+  mockCliArgsPath,
+  `#!/bin/bash
+# Echo all args as a JSON array for inspection, then output a valid result
+echo '{"type":"result","subtype":"success","cost_usd":0.001,"result":{"type":"text","text":"'"$*"'"}}'
+`,
+);
+chmodSync(mockCliArgsPath, 0o755);
+
 // ── Shared Setup ────────────────────────────────────────────────────────────
 
 const manifest = PluginManifestSchema.parse({
@@ -144,6 +155,32 @@ describe("ClaudeCodeLLMPlugin", () => {
     const result = await plugin.initialize({ max_tokens: -1 });
     expect(result.success).toBe(false);
     expect(result.message).not.toBeNull();
+  });
+
+  it("passes --system-prompt flag when system_prompt is provided", async () => {
+    const plugin = new ClaudeCodeLLMPlugin();
+    plugin.manifest = manifest;
+    await plugin.initialize({ cli_path: mockCliArgsPath });
+    const result = await plugin.complete({
+      prompt: "test prompt",
+      system_prompt: "You are a helpful assistant.",
+      options: { max_tokens: 1024, temperature: null, stop: null, tools: null },
+    });
+    // The mock CLI echoes all args as the result text
+    expect(result.content).toContain("--system-prompt");
+    expect(result.content).toContain("You are a helpful assistant.");
+  });
+
+  it("omits --system-prompt flag when system_prompt is null", async () => {
+    const plugin = new ClaudeCodeLLMPlugin();
+    plugin.manifest = manifest;
+    await plugin.initialize({ cli_path: mockCliArgsPath });
+    const result = await plugin.complete({
+      prompt: "test prompt",
+      system_prompt: null,
+      options: { max_tokens: 1024, temperature: null, stop: null, tools: null },
+    });
+    expect(result.content).not.toContain("--system-prompt");
   });
 });
 

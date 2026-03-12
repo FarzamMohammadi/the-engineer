@@ -16,26 +16,30 @@ Each phase: build → manual test → refine → next phase.
 | 6.3 | Planning & Execution Prompts | Core work phases functional | 6.2 | DONE |
 | 6.4 | Review, Demo & Integration | Complete prompt pipeline | 6.3 | DONE |
 | 6.7 | E2E Manual Testing (Round 1) | Validate pipeline infrastructure | 6.4 | DONE |
-| 6.5 | Workspace Integration + Wiring | Real repo work, PR creation, notifications | 6.7 | **NEXT** |
-| 6.6 | Decomposition & Multi-Task | Task splitting for large tasks | 6.5 | Not started |
-| 6.8 | Hardening, Observability & OSS Prep | Agent loop logs, cost tracking, polish | 6.5 | Not started |
+| 6.5 | Workspace Integration + Wiring | Real repo work, PR creation, notifications | 6.7 | DONE |
+| 6.6 | Communication Wiring | GitHub issue comments, completion/error/cost notifications | 6.5 | DONE |
+| 6.7b | Decomposition & Multi-Task | Task splitting for large tasks | 6.6 | Not started |
+| 6.8 | Hardening, Observability & OSS Prep | Agent loop logs, cost tracking, polish | 6.6 | Not started |
 
 **Order change note (Phase 6.7):** Originally 6.5 (Communication) and 6.6 (Decomposition) came before E2E testing. We pulled 6.7 forward to validate the infrastructure before adding more features. The E2E test revealed that the pipeline infrastructure is solid, but **workspace integration** is the critical missing piece — not communication or decomposition. Phase 6.5 is now redefined as "Workspace Integration + Wiring" to address the #1 gap before anything else.
+
+**Order change note (Phase 6.6):** Originally "Decomposition & Multi-Task". Redefined as "Communication Wiring" — smaller scope, immediately testable in E2E, completes the notification story. Decomposition pushed to 6.7b.
 
 ---
 
 ## Dependency Graph
 
 ```
-6.0 (Assessment)
-  └─ 6.1 (Agent Loop)
-       └─ 6.2 (Intake + Research Prompts)
-            └─ 6.3 (Planning + Execution Prompts)
-                 └─ 6.4 (Review + Demo + Integration Prompts)
+6.0 (Assessment) ✅
+  └─ 6.1 (Agent Loop) ✅
+       └─ 6.2 (Intake + Research Prompts) ✅
+            └─ 6.3 (Planning + Execution Prompts) ✅
+                 └─ 6.4 (Review + Demo + Integration Prompts) ✅
                       └─ 6.7 (E2E Round 1 — infrastructure validation) ✅
-                           └─ 6.5 (Workspace Integration + Wiring) ← NEXT
-                                ├─ 6.6 (Decomposition)
-                                └─ 6.8 (Hardening & OSS Prep)
+                           └─ 6.5 (Workspace Integration + Wiring) ✅
+                                └─ 6.6 (Communication Wiring) ✅
+                                     ├─ 6.7b (Decomposition)
+                                     └─ 6.8 (Hardening & OSS Prep)
 ```
 
 ---
@@ -160,9 +164,9 @@ First live run against a real GitHub repo with real Claude CLI calls. Validated 
 - Cost tracking gap updated with E2E findings
 - Local dev dashboard idea documented in `future-considerations.md`
 
-### Phase 6.5: Workspace Integration + Wiring — **NEXT**
+### Phase 6.5: Workspace Integration + Wiring — Sessions 057-058
 
-**Status: Not started** (replaces old "Communication & Feedback" — renamed based on E2E findings)
+**Status: DONE**
 
 **Goal:** Make The Engineer do real work. This is where the system goes from "pipeline works" to "actually writes code."
 
@@ -186,7 +190,24 @@ First live run against a real GitHub repo with real Claude CLI calls. Validated 
 
 **Manual test:** Same issue on learnaholic-demo. This time: real worktree, real file changes, real PR, Telegram notification. The full loop.
 
-### Phase 6.6: Decomposition & Multi-Task
+### Phase 6.6: Communication Wiring — Session 059
+
+**Status: DONE**
+
+Dual-channel notifications: personal (Telegram via PeopleDirectory) + public (GitHub issue comments via `commentOnIssue`). Key milestones only — pickup, PR created, completion/error.
+
+**Delivered:**
+- `commentOnSourceIssue()` in Orchestrator — extracts `task.external_ref`, routes to comm plugin with `issue_management` capability
+- `commentOnTaskIssue()` in Daemon — same pattern using `taskEngine.getTask(taskId)`
+- `sendCompletionNotification()` — milestone-type notification to owner on task completion
+- `sendTaskErrorNotification()` — alert-type notification to owner on task error
+- `sendCostLimitNotification()` — alert-type notification to owner on cost limit
+- Wired at 5 trigger points: Orchestrator (pickup + PR creation), Daemon (completion + error + cost limit)
+- All notifications fire-and-forget — errors silently caught, never block pipeline
+
+**Tests:** 1,647 total (was 1,625). 22 new tests across 2 test files.
+
+### Phase 6.7b: Decomposition & Multi-Task
 
 **Status: Not started**
 
@@ -225,6 +246,7 @@ First live run against a real GitHub repo with real Claude CLI calls. Validated 
 | 6.3 | DONE | 054 | 1540 | Planning + execution prompts, full context flow wired |
 | 6.4 | DONE | 055 | 1599 | Self-review + demo-prep + integration prompts, quality gate loopback |
 | 6.7 | DONE | 056 | 1599 | E2E round 1: pipeline infra validated, 4 bugs fixed, workspace gap confirmed |
-| 6.5 | **NEXT** | — | — | Workspace integration, PR creation, notifications — make it real |
-| 6.6 | Not started | — | — | Decomposition (depends on 6.5) |
+| 6.5 | DONE | 057-058 | 1625 | Workspace integration, PR creation, token sanitization, D147-D154 |
+| 6.6 | DONE | 059 | 1647 | Communication wiring: GitHub issue comments + completion/error/cost notifications |
+| 6.7b | Not started | — | — | Decomposition & multi-task |
 | 6.8 | Not started | — | — | Hardening, observability, OSS prep |

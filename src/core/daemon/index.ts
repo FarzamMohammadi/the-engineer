@@ -718,6 +718,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     activeDispatches.delete(taskId);
     tasksCompleted++;
 
+    // Fetch task title before transition (needed for notifications)
+    const task = taskEngine.getTask(taskId);
+    const taskTitle = task?.title ?? taskId;
+
     if (result.outcome === "completed") {
       taskEngine.requestTransition(taskId, "completed", null, "pipeline_completed", "daemon");
       // Workspace cleanup (D153): preserve branch, remove worktree
@@ -726,6 +730,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       } catch {
         logger.warn({ taskId }, "Workspace cleanup failed after completion");
       }
+      // Notify completion — personal channels + GitHub issue comment
+      sendCompletionNotification(taskId, taskTitle);
+      commentOnTaskIssue(taskId, "Task completed successfully.");
       logger.info({ taskId }, "Task completed");
     } else if (result.outcome === "preempted") {
       taskEngine.requestTransition(taskId, "queued", null, "preempted", "daemon");
@@ -734,6 +741,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     } else {
       logger.error({ taskId, phase: result.phase, reason: result.reason }, "Task error");
       taskEngine.requestTransition(taskId, "blocked", null, result.reason, "daemon");
+      // Notify error — personal channels + GitHub issue comment
+      sendTaskErrorNotification(taskId, taskTitle, result.reason);
+      commentOnTaskIssue(taskId, `Task encountered an error: ${result.reason}`);
       // Don't cleanup workspace on error — task might be resumed
     }
   }
@@ -1047,6 +1057,101 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     logger.info({ taskId, hours }, "Review pending reminder sent");
   }
 
+  // ── Task Milestone Notifications ──────────────────────────────────────
+
+  function sendCompletionNotification(taskId: string, taskTitle: string): void {
+    const owner = deps.peopleDirectory.getOwner();
+    if (!owner) {
+      return;
+    }
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const content = `Task "${taskTitle}" completed successfully.`;
+
+    for (const comm of commPlugins) {
+      if (!comm.hasCapability("send")) {
+        continue;
+      }
+      const formatted = comm.formatMessage(content, "milestone");
+      comm
+        .sendMessage(
+          { user_id: owner.id, channel: null },
+          { content: formatted, metadata: { task_id: taskId, type: "milestone" } },
+        )
+        .catch((err) => {
+          logger.error({ err, taskId }, "Failed to send completion notification");
+        });
+    }
+  }
+
+  function sendTaskErrorNotification(taskId: string, taskTitle: string, reason: string): void {
+    const owner = deps.peopleDirectory.getOwner();
+    if (!owner) {
+      return;
+    }
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const content = `Task "${taskTitle}" encountered an error: ${reason}. Status: blocked.`;
+
+    for (const comm of commPlugins) {
+      if (!comm.hasCapability("send")) {
+        continue;
+      }
+      const formatted = comm.formatMessage(content, "alert");
+      comm
+        .sendMessage(
+          { user_id: owner.id, channel: null },
+          { content: formatted, metadata: { task_id: taskId, type: "alert" } },
+        )
+        .catch((err) => {
+          logger.error({ err, taskId }, "Failed to send task error notification");
+        });
+    }
+  }
+
+  function sendCostLimitNotification(taskId: string, taskTitle: string): void {
+    const owner = deps.peopleDirectory.getOwner();
+    if (!owner) {
+      return;
+    }
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const content = `Task "${taskTitle}" blocked — cost limit reached.`;
+
+    for (const comm of commPlugins) {
+      if (!comm.hasCapability("send")) {
+        continue;
+      }
+      const formatted = comm.formatMessage(content, "alert");
+      comm
+        .sendMessage(
+          { user_id: owner.id, channel: null },
+          { content: formatted, metadata: { task_id: taskId, type: "alert" } },
+        )
+        .catch((err) => {
+          logger.error({ err, taskId }, "Failed to send cost limit notification");
+        });
+    }
+  }
+
+  function commentOnTaskIssue(taskId: string, message: string): void {
+    const task = taskEngine.getTask(taskId);
+    if (!task?.external_ref) {
+      return;
+    }
+    const { type, repo, number } = task.external_ref;
+    if (type !== "github_issue" && type !== "github_pr") {
+      return;
+    }
+
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const plugin = commPlugins.find((p) => p.hasCapability("issue_management"));
+    if (!plugin) {
+      return;
+    }
+
+    plugin.commentOnIssue(repo, number, message).catch((err) => {
+      logger.error({ err, taskId }, "Failed to comment on task issue");
+    });
+  }
+
   // ── Health Events ─────────────────────────────────────────────────────
 
   function emitHealthTriggerFailure(pluginId: string, failures: number, error: unknown): void {
@@ -1088,6 +1193,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       if (task && task.state === "active") {
         logger.warn({ taskId }, "Task blocked due to cost limit");
         taskEngine.requestTransition(taskId, "blocked", null, "cost_limit_reached", "daemon");
+        // Notify cost limit — personal channels + GitHub issue comment
+        sendCostLimitNotification(taskId, task.title);
+        commentOnTaskIssue(taskId, "Task blocked \u2014 cost limit reached.");
       }
     }
   }

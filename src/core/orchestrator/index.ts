@@ -209,8 +209,9 @@ export class Orchestrator {
       this.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
     }
 
-    // Notify task pickup (D152)
+    // Notify task pickup (D152) — personal channels + GitHub issue comment
     this.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
+    this.commentOnSourceIssue(dispatch, "Starting work on this issue.");
 
     // ── Determine phase sequence ───────────────────────────────────────────
     const { phases: initialPhases, startIndex } = this.resolveStartState(
@@ -752,6 +753,37 @@ export class Orchestrator {
   }
 
   /**
+   * Post a comment on the source GitHub issue (the issue that triggered this task).
+   *
+   * Uses task.external_ref to find the issue, then routes through the first
+   * comm plugin with "issue_management" capability. Fire-and-forget — errors
+   * are silently caught, never block the pipeline.
+   */
+  private commentOnSourceIssue(dispatch: Dispatch, message: string): void {
+    try {
+      const externalRef = dispatch.task.external_ref;
+      if (
+        !externalRef ||
+        (externalRef.type !== "github_issue" && externalRef.type !== "github_pr")
+      ) {
+        return; // No GitHub issue/PR to comment on
+      }
+
+      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>("communication");
+      const plugin = commPlugins.find((p) => p.hasCapability("issue_management"));
+      if (!plugin) {
+        return; // No plugin with issue_management capability
+      }
+
+      plugin.commentOnIssue(externalRef.repo, externalRef.number, message).catch(() => {
+        // Silent — issue comment failure must never block the pipeline
+      });
+    } catch {
+      // Silent — notification failure must never block the pipeline
+    }
+  }
+
+  /**
    * Commit all changes, push branch, and create a draft PR (D149, D150, D151).
    *
    * Called after demo_prep completes. Deterministic commit ensures all LLM
@@ -866,8 +898,9 @@ export class Orchestrator {
         feedback_rounds: [],
       });
 
-      // Notify PR creation
+      // Notify PR creation — personal channels + GitHub issue comment
       this.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
+      this.commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "pr_creation", error);
     }

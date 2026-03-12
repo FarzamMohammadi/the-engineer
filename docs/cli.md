@@ -53,13 +53,12 @@ Source: [`src/cli/home.ts`](../src/cli/home.ts)
 ## First-Run Walkthrough
 
 ```bash
-# 1. Create directory structure + 11 template config files
-engineer init
+# 1. Scaffold seed configs (one-time per machine)
+engineer prepare
+# Edit seed/config/*.yaml — fill in your real values (repos, handles, tokens)
 
-# 2. Edit configs — at minimum, set API keys and target repos
-#    Core: daemon.yaml, orchestrator.yaml, safety.yaml, workspace.yaml, people.yaml
-#    Plugins: github-trigger.yaml, telegram-comm.yaml, etc.
-vim ~/.engineer/config/daemon.yaml
+# 2. Initialize ~/.engineer/ (uses seed/ automatically)
+engineer init
 
 # 3. Validate configs parse correctly against schemas
 engineer config validate
@@ -72,13 +71,26 @@ engineer start                   # Foreground (recommended for first run)
 engineer start --daemon          # Background (detached process)
 ```
 
+`prepare` creates a gitignored `seed/` directory with all config templates. Edit once, use forever — every future `engineer init` copies from seed automatically.
+
 `init` is safe to run multiple times — it skips existing files unless `--force` is passed.
 
 ## Commands
 
+### prepare
+
+Scaffolds a `seed/` directory in the current working directory with all 11 config templates. Edit these files with your real values (repos, handles, tokens). The `seed/` directory is gitignored — secrets stay local.
+
+```bash
+engineer prepare                 # Create seed/ with all templates
+engineer prepare --force         # Overwrite existing seed files
+```
+
+Every future `engineer init` checks `seed/` first — if a matching config exists there, it copies that instead of the default template. This means `rm -rf ~/.engineer && engineer init` gives you a fully configured system every time.
+
 ### init
 
-Creates the directory structure and writes 11 template config files with commented defaults.
+Creates the directory structure and writes 11 config files. If a `seed/` directory exists (from `engineer prepare`), configs are copied from there instead of using default templates.
 
 ```bash
 engineer init                    # Skip existing files

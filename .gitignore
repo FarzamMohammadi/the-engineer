@@ -22,6 +22,7 @@ coverage/
 # Environment / secrets (track .example files, ignore real ones)
 .env*
 !.env*.example
+seed/
 
 # OS
 .DS_Store

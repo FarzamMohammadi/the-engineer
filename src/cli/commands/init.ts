@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { resolveSubdirs } from "../home.js";
@@ -6,11 +6,13 @@ import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../templates.js";
 
 interface InitOptions {
   force: boolean;
+  seedDir: string;
 }
 
 /** Creates ~/.engineer/ directory structure and template config files. */
 export function runInit(engineerHome: string, options: InitOptions): void {
   const dirs = resolveSubdirs(engineerHome);
+  const hasSeed = existsSync(options.seedDir);
 
   // Create all directories
   const dirPaths = [
@@ -28,10 +30,15 @@ export function runInit(engineerHome: string, options: InitOptions): void {
     console.log(`  Created ${dirPath}/`);
   }
 
+  if (hasSeed) {
+    console.log("");
+    console.log(`  Seed directory found: ${options.seedDir}`);
+  }
+
   console.log("");
   console.log("  Generated config files:");
 
-  // Write template files
+  // Write template files — prefer seed/ over built-in templates
   for (const template of ALL_TEMPLATES) {
     const filePath = join(engineerHome, template.relativePath);
 
@@ -40,10 +47,16 @@ export function runInit(engineerHome: string, options: InitOptions): void {
       continue;
     }
 
+    // Check seed directory first
+    const seedPath = join(options.seedDir, template.relativePath);
+    const fromSeed = hasSeed && existsSync(seedPath);
+    const content = fromSeed ? readFileSync(seedPath, "utf8") : template.content;
+    const source = fromSeed ? "from seed" : "template";
+
     // Ensure parent directory exists (for nested plugin configs)
     mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, template.content, "utf8");
-    console.log(`    ${template.relativePath}`);
+    writeFileSync(filePath, content, "utf8");
+    console.log(`    ${template.relativePath} (${source})`);
   }
 
   // Write example templates (always overwrite — they're references, not user-edited)
@@ -58,6 +71,9 @@ export function runInit(engineerHome: string, options: InitOptions): void {
 
   console.log("");
   console.log("  Next steps:");
+  if (!hasSeed) {
+    console.log("    0. Run `engineer prepare` to create a reusable seed directory");
+  }
   console.log(`    1. Browse examples:    ls ${dirs.examples}/`);
   console.log(`    2. Edit config files:  $EDITOR ${dirs.plugins}/github-trigger.yaml`);
   console.log("    3. Set env variables:  export GITHUB_TOKEN=ghp_...");

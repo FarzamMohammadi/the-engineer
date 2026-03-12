@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { Command } from "commander";
 
 import { runConfigValidate } from "./commands/config-validate.js";
@@ -6,6 +8,7 @@ import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/d
 import { runInit } from "./commands/init.js";
 import { runInstall } from "./commands/install.js";
 import { runLogs } from "./commands/logs.js";
+import { runPrepare } from "./commands/prepare.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
 import { runStop } from "./commands/stop.js";
@@ -88,16 +91,28 @@ program
     }
   });
 
+// ── prepare ──────────────────────────────────────────────────────────────────
+
+program
+  .command("prepare")
+  .description("Scaffold a seed/ directory with config templates for local customization")
+  .option("--force", "Overwrite existing seed files")
+  .action((options: { force?: boolean }) => {
+    const seedDir = join(process.cwd(), "seed");
+    runPrepare(seedDir, { force: options.force ?? false });
+  });
+
 // ── init ─────────────────────────────────────────────────────────────────────
 
 program
   .command("init")
-  .description("Create directory structure and template config files")
+  .description("Create directory structure and config files (uses seed/ if available)")
   .option("--force", "Overwrite existing config files")
   .action((options: { force?: boolean }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
-    runInit(home, { force: options.force ?? false });
+    const seedDir = join(process.cwd(), "seed");
+    runInit(home, { force: options.force ?? false, seedDir });
   });
 
 // ── doctor ───────────────────────────────────────────────────────────────────

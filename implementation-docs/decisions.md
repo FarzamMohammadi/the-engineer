@@ -1254,3 +1254,15 @@ See `6-refinement/decisions.md` for full entries. Summary:
 - **D152:** Milestone notifications via PeopleDirectory — owner resolution + fire-and-forget comm dispatch, channel→plugin name convention.
 - **D153:** Workspace cleanup policy — remove worktree on completion (preserve branch for PR), preserve everything on error (for resume).
 - **D154:** Token sanitization at chokepoints — `sanitizeSecrets()` applied at SessionMemory.addJournalEntry, agent loop history, and agent loop logs. Redacts URL-embedded tokens and known env var values.
+
+---
+
+## 2026-03-12 — Layer 6 Phase 6.9 decisions (D155-D159)
+
+See `6-refinement/decisions.md` for full entries. Summary:
+
+- **D155:** Content-addressable blob store for LLM traces — full prompts/responses stored as SHA-256 hashed files at `~/.engineer/traces/blobs/{hash[0:2]}/{hash}.txt`. DB holds only hash references. Zero bloat, automatic dedup, lazy loading.
+- **D156:** Trace ID correlation — ULID generated per `executeTask()` call, flows through action_traces, phase_metrics, llm_traces. Enables end-to-end request tracing.
+- **D157:** Agent loop callbacks pattern — optional `AgentLoopCallbacks` interface (onActionComplete, onLlmComplete) injected into runAgentLoop. Loop stays pure, no DB dependency.
+- **D158:** Dashboard as separate process — reads SQLite in WAL mode (read-only), works independently of daemon, can view historical data when daemon stopped.
+- **D159:** Hono + single HTML file — zero frontend build, 14KB HTTP framework, dark war room theme. Polling over WebSocket for simplicity.

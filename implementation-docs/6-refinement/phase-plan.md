@@ -18,8 +18,9 @@ Each phase: build → manual test → refine → next phase.
 | 6.7 | E2E Manual Testing (Round 1) | Validate pipeline infrastructure | 6.4 | DONE |
 | 6.5 | Workspace Integration + Wiring | Real repo work, PR creation, notifications | 6.7 | DONE |
 | 6.6 | Communication Wiring | GitHub issue comments, completion/error/cost notifications | 6.5 | DONE |
-| 6.7b | Decomposition & Multi-Task | Task splitting for large tasks | 6.6 | Not started |
-| 6.8 | Hardening, Observability & OSS Prep | Agent loop logs, cost tracking, polish | 6.6 | Not started |
+| 6.7b | Decomposition & Multi-Task | Task splitting for large tasks | 6.6 | DONE |
+| 6.9 | Observability — War Room Dashboard | Internal instrumentation + live dashboard | 6.7b | DONE |
+| 6.8 | Hardening & OSS Prep | E2E hardening, error recovery, CI, polish | 6.9 | Not started |
 
 **Order change note (Phase 6.7):** Originally 6.5 (Communication) and 6.6 (Decomposition) came before E2E testing. We pulled 6.7 forward to validate the infrastructure before adding more features. The E2E test revealed that the pipeline infrastructure is solid, but **workspace integration** is the critical missing piece — not communication or decomposition. Phase 6.5 is now redefined as "Workspace Integration + Wiring" to address the #1 gap before anything else.
 
@@ -38,8 +39,9 @@ Each phase: build → manual test → refine → next phase.
                       └─ 6.7 (E2E Round 1 — infrastructure validation) ✅
                            └─ 6.5 (Workspace Integration + Wiring) ✅
                                 └─ 6.6 (Communication Wiring) ✅
-                                     ├─ 6.7b (Decomposition)
-                                     └─ 6.8 (Hardening & OSS Prep)
+                                     └─ 6.7b (Decomposition) ✅
+                                          └─ 6.9 (Observability — War Room Dashboard) ✅
+                                               └─ 6.8 (Hardening & OSS Prep)
 ```
 
 ---
@@ -207,26 +209,49 @@ Dual-channel notifications: personal (Telegram via PeopleDirectory) + public (Gi
 
 **Tests:** 1,647 total (was 1,625). 22 new tests across 2 test files.
 
-### Phase 6.7b: Decomposition & Multi-Task
+### Phase 6.7b: Decomposition & Multi-Task — Session 060
+
+**Status: DONE**
+
+**Delivered:**
+- `LLMDecompositionPlanSchema` typed in orchestrator schemas
+- `handleDecomposition()` in Orchestrator — child creation, dependency mapping, parent→supervising transition
+- `checkAndEmitChildrenAllDone()` in Daemon — sibling terminal detection, child_summaries population
+- `"decomposed"` outcome + session end reason
+- Workspace parentBranch for child tasks
+- Sequential-only (pause_siblings) for v1
+- Prompt guidance for decomposition in planning
+
+**Tests:** 1,663 total (was 1,647). 16 new tests.
+
+### Phase 6.9: Observability — War Room Dashboard — Session 061
+
+**Status: DONE**
+
+Two sub-phases: 6.9a (Internal Instrumentation) and 6.9b (Dashboard).
+
+**Decisions:** D155-D159 (content-addressable blob store, trace ID correlation, agent loop callbacks, dashboard as separate process, Hono + single HTML file).
+
+**Delivered (6.9a — Internal Instrumentation):**
+- 3 new DB tables: `action_traces`, `phase_metrics`, `llm_traces`
+- Content-addressable blob store at `~/.engineer/traces/blobs/{hash[0:2]}/{hash}.txt` — SHA-256 hashed files, DB holds only hash references (D155)
+- Trace ID correlation — ULID per `executeTask()`, flows through all trace tables (D156)
+- `AgentLoopCallbacks` interface — optional `onActionComplete`/`onLlmComplete` callbacks injected into `runAgentLoop` (D157)
+- Auto-instrumentation wired in Orchestrator and agent loop
+
+**Delivered (6.9b — Dashboard):**
+- Hono HTTP server + single HTML file — zero frontend build (D159)
+- Dark war room theme, polling-based live updates
+- 7 REST endpoints (tasks, task detail, phases, actions, LLM traces, blob content, cost summary)
+- Live task timeline, phase metrics, LLM trace viewer, action log, cost tracking
+- Separate read-only process — works independently of daemon, views historical data (D158)
+
+### Phase 6.8: Hardening & OSS Prep
 
 **Status: Not started**
 
-**Changes:**
-1. Planning detects large tasks → decomposition plan
-2. Orchestrator creates child tasks
-3. Parent → Active.Supervising
-4. Integration merges child results
-
-**Manual test:** Large task → decomposes → children execute → parent integrates.
-
-### Phase 6.8: Hardening, Observability & OSS Prep
-
-**Status: Not started**
-
-**Scope (informed by 6.7 findings):**
-- **Agent loop observability** — `agent_iterations` table or structured journal entries for debugging LLM back-and-forth
-- **Cost tracking** — Dual-mode: API adapters report real cost, CLI adapters report call count + error signals
-- **Local dev dashboard** — Docker Compose with Datasette + Grafana (see `future-considerations.md`)
+**Scope:**
+- **E2E hardening round 3** — Live decomposition test, multi-task validation
 - **Context budgeting** — Token optimization, prompt size management
 - **Error recovery** — Retry logic, graceful degradation
 - **CI pipeline** — GitHub Actions workflow
@@ -248,5 +273,6 @@ Dual-channel notifications: personal (Telegram via PeopleDirectory) + public (Gi
 | 6.7 | DONE | 056 | 1599 | E2E round 1: pipeline infra validated, 4 bugs fixed, workspace gap confirmed |
 | 6.5 | DONE | 057-058 | 1625 | Workspace integration, PR creation, token sanitization, D147-D154 |
 | 6.6 | DONE | 059 | 1647 | Communication wiring: GitHub issue comments + completion/error/cost notifications |
-| 6.7b | Not started | — | — | Decomposition & multi-task |
-| 6.8 | Not started | — | — | Hardening, observability, OSS prep |
+| 6.7b | DONE | 060 | 1663 | Decomposition & multi-task pipeline |
+| 6.9 | DONE | 061 | — | Observability: instrumentation + war room dashboard, D155-D159 |
+| 6.8 | Not started | — | — | Hardening & OSS prep |

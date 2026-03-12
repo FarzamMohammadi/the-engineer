@@ -1,6 +1,7 @@
 import { Command } from "commander";
 
 import { runConfigValidate } from "./commands/config-validate.js";
+import { runDashboard } from "./commands/dashboard.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
 import { runInstall } from "./commands/install.js";
@@ -8,7 +9,7 @@ import { runLogs } from "./commands/logs.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
 import { runStop } from "./commands/stop.js";
-import { resolveEngineerHome } from "./home.js";
+import { resolveEngineerHome, resolveSubdirs } from "./home.js";
 
 export const VERSION = "0.0.1";
 
@@ -127,6 +128,23 @@ program
     if (code !== 0) {
       process.exitCode = code;
     }
+  });
+
+// ── dashboard ───────────────────────────────────────────────────────────────
+
+program
+  .command("dashboard")
+  .description("Open the War Room dashboard")
+  .option("--port <port>", "HTTP port", "3847")
+  .option("--open", "Open browser automatically")
+  .action(async (options: { port: string; open?: boolean }) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const dirs = resolveSubdirs(home);
+    await runDashboard(dirs, {
+      port: Number.parseInt(options.port, 10),
+      open: options.open ?? false,
+    });
   });
 
 // ── config (subcommand) ──────────────────────────────────────────────────────

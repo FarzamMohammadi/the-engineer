@@ -2,12 +2,12 @@
 
 ## Current Focus
 
-**Layer 6: Refinement & Intelligence.** Making The Engineer actually work. Pipeline validated end-to-end — The Engineer created its first real draft PR (#2). Agent loop, prompts, 7-phase pipeline, workspace integration, PR creation, dual-channel notifications, and task decomposition all operational. Next: Phase 6.8 (E2E hardening round 3 + live decomposition test).
+**Layer 6: Refinement & Intelligence.** Making The Engineer actually work. Pipeline validated end-to-end — The Engineer created its first real draft PR (#2). Agent loop, prompts, 7-phase pipeline, workspace integration, PR creation, dual-channel notifications, task decomposition, and observability dashboard all operational. Next: Phase 6.8 (E2E hardening round 3 + live decomposition test).
 
 See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
 - [`assessment.md`](6-refinement/assessment.md) — Current state assessment
 - [`gaps.md`](6-refinement/gaps.md) — Gap analysis (8 gaps, prioritized)
-- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D154)
+- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D159)
 - [`phase-plan.md`](6-refinement/phase-plan.md) — 8-phase plan with dependencies
 
 All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
@@ -142,6 +142,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 **Layer 6 Phase 6.7b (Decomposition & Multi-Task): DONE (Session 060).** Full decomposition pipeline: planning phase detects large tasks → creates child tasks → parent supervises → children run full pipeline → parent integrates. `LLMDecompositionPlanSchema` typed in orchestrator schemas. `handleDecomposition()` in Orchestrator (child creation, dependency mapping, parent→supervising transition). `checkAndEmitChildrenAllDone()` in Daemon (sibling terminal detection, child_summaries population). `"decomposed"` outcome + session end reason. Workspace parentBranch for child tasks. Sequential-only (pause_siblings) for v1. Prompt guidance for decomposition in planning. 1,663 tests total.
 
+**Layer 6 Phase 6.9 (Observability — War Room Dashboard): DONE (Session 061).** Two sub-phases. **6.9a (Internal Instrumentation):** 3 new DB tables (action_traces, phase_metrics, llm_traces), content-addressable blob store for LLM prompts/responses (`~/.engineer/traces/blobs/{hash[0:2]}/{hash}.txt`), trace ID correlation (ULID per executeTask), AgentLoopCallbacks injection pattern, auto-instrumentation in Orchestrator + agent loop. **6.9b (Dashboard):** Hono HTTP server + single HTML file, dark war room theme, 11 API endpoints (system status/health, tasks CRUD/timeline/phases/traces/llm-traces, events with incremental polling, cost metrics, blob content), 5-tab dashboard (Tasks kanban + detail, Events feed, Cost analytics, Traces replay), live daemon heartbeat. `engineer dashboard` CLI command. 24 API tests. Separate read-only process (WAL mode). Polling-based. D155-D159 documented. 1,733 tests total.
+
 Deferred items:
-- Full observability (persisting agent action traces) — separate Layer 6 phase
 - Communication receive capability — separate Layer 6 phase

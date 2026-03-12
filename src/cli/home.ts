@@ -25,6 +25,7 @@ export interface EngineerDirs {
   run: string;
   workspaces: string;
   traces: string;
+  examples: string;
 }
 
 /** Returns all standard subdirectory paths under ENGINEER_HOME. */
@@ -37,5 +38,6 @@ export function resolveSubdirs(engineerHome: string): EngineerDirs {
     run: join(engineerHome, "run"),
     workspaces: join(engineerHome, "workspaces"),
     traces: join(engineerHome, "traces"),
+    examples: join(engineerHome, "example-templates"),
   };
 }

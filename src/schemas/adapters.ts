@@ -330,15 +330,18 @@ export const PersonSchema = z.object({
   name: z.string(),
   roles: z.array(z.string()),
   contacts: z.array(ContactSchema),
-  preferences: z.object({
-    notification_level: NotificationLevelSchema,
-    quiet_hours: z
-      .object({
-        start: z.string(),
-        end: z.string(),
-      })
-      .nullable(),
-  }),
+  preferences: z
+    .object({
+      notification_level: NotificationLevelSchema.default("milestones"),
+      quiet_hours: z
+        .object({
+          start: z.string(),
+          end: z.string(),
+        })
+        .nullable()
+        .default(null),
+    })
+    .default({}),
 });
 export type Person = z.infer<typeof PersonSchema>;
 

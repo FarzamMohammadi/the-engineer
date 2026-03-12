@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { resolveSubdirs } from "../home.js";
-import { ALL_TEMPLATES } from "../templates.js";
+import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../templates.js";
 
 interface InitOptions {
   force: boolean;
@@ -21,6 +21,7 @@ export function runInit(engineerHome: string, options: InitOptions): void {
     dirs.run,
     dirs.workspaces,
     dirs.traces,
+    dirs.examples,
   ];
   for (const dirPath of dirPaths) {
     mkdirSync(dirPath, { recursive: true });
@@ -45,10 +46,21 @@ export function runInit(engineerHome: string, options: InitOptions): void {
     console.log(`    ${template.relativePath}`);
   }
 
+  // Write example templates (always overwrite — they're references, not user-edited)
+  console.log("");
+  console.log("  Example templates (full reference with all fields documented):");
+  for (const example of ALL_EXAMPLE_TEMPLATES) {
+    const filePath = join(engineerHome, example.relativePath);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, example.content, "utf8");
+    console.log(`    ${example.relativePath}`);
+  }
+
   console.log("");
   console.log("  Next steps:");
-  console.log(`    1. Edit config files:  $EDITOR ${dirs.plugins}/github-trigger.yaml`);
-  console.log("    2. Set env variables:  export GITHUB_TOKEN=ghp_...");
-  console.log(`    3. Validate setup:     engineer doctor --home ${engineerHome}`);
-  console.log(`    4. Start:              engineer start --home ${engineerHome}`);
+  console.log(`    1. Browse examples:    ls ${dirs.examples}/`);
+  console.log(`    2. Edit config files:  $EDITOR ${dirs.plugins}/github-trigger.yaml`);
+  console.log("    3. Set env variables:  export GITHUB_TOKEN=ghp_...");
+  console.log("    4. Validate setup:     engineer doctor");
+  console.log("    5. Start:              engineer start");
 }

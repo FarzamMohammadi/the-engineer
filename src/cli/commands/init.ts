@@ -13,7 +13,15 @@ export function runInit(engineerHome: string, options: InitOptions): void {
   const dirs = resolveSubdirs(engineerHome);
 
   // Create all directories
-  const dirPaths = [dirs.config, dirs.plugins, dirs.data, dirs.logs, dirs.run, dirs.workspaces];
+  const dirPaths = [
+    dirs.config,
+    dirs.plugins,
+    dirs.data,
+    dirs.logs,
+    dirs.run,
+    dirs.workspaces,
+    dirs.traces,
+  ];
   for (const dirPath of dirPaths) {
     mkdirSync(dirPath, { recursive: true });
     console.log(`  Created ${dirPath}/`);

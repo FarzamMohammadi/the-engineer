@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { ulid } from "ulid";
 import type { ZodType } from "zod";
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
@@ -22,6 +23,7 @@ import {
 import type { ChildEntry } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { ObservabilityStore } from "../observability/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
@@ -29,7 +31,7 @@ import type { SessionMemory } from "../session-memory/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
-import { type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
+import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
 import { gatherRepoContextSafe } from "./prompts/context.js";
 import { buildDemoPrepPrompt } from "./prompts/demo-prep.js";
@@ -84,6 +86,7 @@ export interface OrchestratorDependencies {
   sessionMemory: SessionMemory;
   workspaceManager: WorkspaceManager;
   peopleDirectory: PeopleDirectory;
+  observability?: ObservabilityStore;
 }
 
 /** Discriminated union of executeTask outcomes. */
@@ -121,6 +124,11 @@ export class Orchestrator {
   private readonly sessionMemory: SessionMemory;
   private readonly workspaceManager: WorkspaceManager;
   private readonly peopleDirectory: PeopleDirectory;
+  private readonly observability: ObservabilityStore | null;
+  /** Trace ID for the current executeTask() call. Set once per dispatch. */
+  private currentTraceId: string | null = null;
+  /** Session ID for the current executeTask() call. */
+  private currentSessionId: string | null = null;
 
   private preemptionRequested = false;
   private loopbackCount = 0;
@@ -148,6 +156,7 @@ export class Orchestrator {
     this.sessionMemory = deps.sessionMemory;
     this.workspaceManager = deps.workspaceManager;
     this.peopleDirectory = deps.peopleDirectory;
+    this.observability = deps.observability ?? null;
 
     // Subscribe to preemption requests (Protocol P8)
     this.eventBus.subscribe("orchestrator", "preemption.requested", (event: Event) => {
@@ -184,10 +193,12 @@ export class Orchestrator {
   async executeTask(dispatch: Dispatch): Promise<ExecuteTaskResult> {
     const taskId = dispatch.task.id;
     this.loopbackCount = 0;
+    this.currentTraceId = ulid();
 
     // ── Session setup ──────────────────────────────────────────────────────
     const session = this.createSession(dispatch);
     const sessionId = session.id;
+    this.currentSessionId = sessionId;
     this.taskEngine.updateTaskField(taskId, "session_id", sessionId);
 
     // ── Workspace setup (D144) ──────────────────────────────────────────
@@ -1152,8 +1163,29 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const toolConfig = getPhaseToolConfig(phase);
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
-
     const toolAdapter = this.registry.getPrimaryPlugin<ToolAdapter>("tool") ?? null;
+    const traceId = this.currentTraceId;
+    const sessionId = this.currentSessionId;
+
+    // ── Phase metrics: start ─────────────────────────────────────────────
+    const phaseMetricsId =
+      this.observability && traceId && sessionId
+        ? this.observability.createPhaseMetrics({
+            task_id: taskId,
+            session_id: sessionId,
+            trace_id: traceId,
+            phase,
+          })
+        : null;
+    const phaseStart = Date.now();
+
+    // ── Observability callbacks ──────────────────────────────────────────
+    const obsCallbacks =
+      this.observability && traceId && sessionId
+        ? {
+            callbacks: this.buildObservabilityCallbacks(taskId, sessionId, traceId, phase),
+          }
+        : {};
 
     const loopResult = await runAgentLoop(
       {
@@ -1163,6 +1195,7 @@ export class Orchestrator {
         initialPrompt,
         toolConfig,
         worktreePath,
+        ...obsCallbacks,
       },
       // Inject LLM call through ActionPipeline
       (prompt, sysPrompt) => this.callLlm(prompt, taskId, sysPrompt),
@@ -1175,15 +1208,32 @@ export class Orchestrator {
         }),
     );
 
+    // ── Phase metrics: complete ──────────────────────────────────────────
+    if (phaseMetricsId && this.observability) {
+      const phaseDuration = Date.now() - phaseStart;
+      const actionsExecuted = loopResult.actions.length;
+      const actionsFailed = loopResult.actions.filter((a) => a.result && !a.result.success).length;
+      this.observability.completePhaseMetrics(phaseMetricsId, {
+        duration_ms: phaseDuration,
+        llm_iterations: loopResult.iterations,
+        tokens_in: loopResult.totalCost.tokens_in,
+        tokens_out: loopResult.totalCost.tokens_out,
+        spend_usd: loopResult.totalCost.spend_usd,
+        actions_executed: actionsExecuted,
+        actions_failed: actionsFailed,
+        outcome: "completed",
+      });
+    }
+
     // Emit cost for the entire loop
-    this.emitAgentLoopCost(taskId, loopResult);
+    this.emitAgentLoopCost(taskId, phase, loopResult);
 
     // Validate output against phase schema
     return this.validateLoopResult(phase, taskId, loopResult);
   }
 
   /** Emit cost.incurred event for an agent loop's accumulated cost. */
-  private emitAgentLoopCost(taskId: string, loopResult: AgentLoopResult): void {
+  private emitAgentLoopCost(taskId: string, phase: string, loopResult: AgentLoopResult): void {
     this.eventBus.publish({
       type: "cost.incurred",
       source: "orchestrator",
@@ -1193,7 +1243,7 @@ export class Orchestrator {
         repo: "",
         provider_id: "llm",
         provider_type: "api",
-        operation: "agent_loop",
+        operation: `agent_loop:${phase}`,
         tokens_in: loopResult.totalCost.tokens_in,
         tokens_out: loopResult.totalCost.tokens_out,
         spend_usd: loopResult.totalCost.spend_usd,
@@ -1201,6 +1251,61 @@ export class Orchestrator {
         remaining: null,
       },
     } satisfies PublishInput<"cost.incurred">);
+  }
+
+  /** Build observability callbacks for agent loop tracing. */
+  private buildObservabilityCallbacks(
+    taskId: string,
+    sessionId: string,
+    traceId: string,
+    phase: string,
+  ): AgentLoopCallbacks {
+    // biome-ignore lint/style/noNonNullAssertion: caller checks observability is not null
+    const obs = this.observability!;
+    return {
+      onActionComplete: (trace) => {
+        obs.insertActionTrace({
+          task_id: taskId,
+          session_id: sessionId,
+          trace_id: traceId,
+          phase,
+          iteration: trace.iteration,
+          action_type: trace.action_type,
+          action_params: trace.action_params,
+          result_success: trace.result_success,
+          result_output: trace.result_output,
+          result_error: trace.result_error,
+          duration_ms: trace.duration_ms,
+        });
+      },
+      onLlmComplete: (trace) => {
+        // Store prompt and response as blobs
+        const promptRef = trace.prompt_content
+          ? obs.storeBlob(trace.prompt_content)
+          : trace.prompt_ref;
+        const responseRef = trace.response_content
+          ? obs.storeBlob(trace.response_content)
+          : trace.response_ref;
+
+        obs.insertLlmTrace({
+          task_id: taskId,
+          trace_id: traceId,
+          phase,
+          iteration: trace.iteration,
+          prompt_length: trace.prompt_length,
+          response_length: trace.response_length,
+          tokens_in: trace.tokens_in,
+          tokens_out: trace.tokens_out,
+          spend_usd: trace.spend_usd,
+          latency_ms: trace.latency_ms,
+          provider_id: "llm",
+          model_id: null,
+          finish_reason: null,
+          prompt_ref: promptRef,
+          response_ref: responseRef,
+        });
+      },
+    };
   }
 
   /** Validate agent loop result against phase schema, build PhaseOutput. */

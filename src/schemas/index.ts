@@ -5,3 +5,4 @@ export * from "./adapters.js";
 export * from "./orchestrator.js";
 export * from "./config.js";
 export * from "./ephemeral.js";
+export * from "./observability.js";

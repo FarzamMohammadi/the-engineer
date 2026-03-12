@@ -1,4 +1,5 @@
 import type { CompletionResult } from "../../schemas/adapters.js";
+import type { ActionTraceRecord, LlmTraceRecord } from "../../schemas/observability.js";
 import {
   type ActionResult,
   type AgentAction,
@@ -17,6 +18,14 @@ const MAX_HISTORY_WINDOW = 20;
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 
+/** Observability callbacks — optional, keeps the agent loop pure. */
+export interface AgentLoopCallbacks {
+  /** Called after each action is executed with timing and result data. */
+  onActionComplete?: (trace: ActionTraceRecord) => void;
+  /** Called after each LLM completion with timing and token data. */
+  onLlmComplete?: (trace: LlmTraceRecord) => void;
+}
+
 /** Configuration for a single agent loop run. */
 export interface AgentLoopConfig {
   /** Current orchestrator phase. */
@@ -33,6 +42,8 @@ export interface AgentLoopConfig {
   worktreePath: string | null;
   /** Optional logger function for action trace. Defaults to console.log. */
   logger?: (message: string) => void;
+  /** Optional observability callbacks for tracing. */
+  callbacks?: AgentLoopCallbacks;
 }
 
 /** Result of a completed agent loop. */
@@ -84,8 +95,11 @@ export async function runAgentLoop(
     iterations++;
 
     const prompt = buildPrompt(config, history);
+    const llmStart = Date.now();
     const completion = await callLlm(prompt, config.systemPrompt);
+    const llmLatency = Date.now() - llmStart;
     accumulateCost(totalCost, completion);
+    emitLlmCallback(config.callbacks, completion, prompt, llmLatency, iterations);
 
     const action = parseAction(completion.content);
 
@@ -156,13 +170,16 @@ async function executeAndLog(
   const worktreePath = config.worktreePath ?? ".";
   const actionSummary = summarizeAction(action);
   log(`[agent-loop] ${config.phase} iter ${String(iterations)}: ${action.action} ${actionSummary}`);
+  const actionStart = Date.now();
   const result = await execAction(action, worktreePath);
+  const actionDuration = Date.now() - actionStart;
   if (result.success) {
     log(`[agent-loop]   -> OK (${String(result.output.length)} chars)`);
   } else {
     log(`[agent-loop]   -> FAILED: ${sanitizeSecrets(result.error ?? "unknown")}`);
   }
   history.push({ action, result });
+  emitActionCallback(config.callbacks, action, result, actionDuration, iterations);
 }
 
 /** Summarize an action for logging (params only, truncated). */
@@ -194,8 +211,17 @@ async function handleRetry(
 
   log(`[agent-loop] ${config.phase}: retrying after parse failure...`);
   const retryPrompt = buildRetryPrompt(config, history, failedContent);
+  const retryLlmStart = Date.now();
   const retryCompletion = await callLlm(retryPrompt, config.systemPrompt);
+  const retryLlmLatency = Date.now() - retryLlmStart;
   accumulateCost(totalCost, retryCompletion);
+  emitLlmCallback(
+    config.callbacks,
+    retryCompletion,
+    retryPrompt,
+    retryLlmLatency,
+    currentIterations + 1,
+  );
 
   const retryAction = parseAction(retryCompletion.content);
   if (!retryAction) {
@@ -452,4 +478,55 @@ function buildForcedResult(
     actions: history.map((h) => ({ action: h.action, result: h.result })),
     totalCost,
   };
+}
+
+// ── Observability Callbacks ──────────────────────────────────────────────────
+
+/** Emit action trace callback if configured. */
+function emitActionCallback(
+  callbacks: AgentLoopCallbacks | undefined,
+  action: AgentAction,
+  result: ActionResult,
+  durationMs: number,
+  iteration: number,
+): void {
+  if (!callbacks?.onActionComplete) {
+    return;
+  }
+  const params = "params" in action ? action.params : {};
+  callbacks.onActionComplete({
+    action_type: action.action,
+    action_params: JSON.stringify(params),
+    result_success: result.success,
+    result_output: result.output,
+    result_error: result.error ?? null,
+    duration_ms: durationMs,
+    iteration,
+  });
+}
+
+/** Emit LLM trace callback if configured. Passes raw content for blob storage. */
+function emitLlmCallback(
+  callbacks: AgentLoopCallbacks | undefined,
+  completion: CompletionResult,
+  prompt: string,
+  latencyMs: number,
+  iteration: number,
+): void {
+  if (!callbacks?.onLlmComplete) {
+    return;
+  }
+  callbacks.onLlmComplete({
+    prompt_length: prompt.length,
+    response_length: completion.content.length,
+    tokens_in: completion.usage.tokens_in,
+    tokens_out: completion.usage.tokens_out,
+    spend_usd: completion.usage.spend_usd,
+    latency_ms: latencyMs,
+    iteration,
+    prompt_ref: null,
+    response_ref: null,
+    prompt_content: prompt,
+    response_content: completion.content,
+  });
 }

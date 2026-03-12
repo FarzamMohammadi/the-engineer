@@ -177,6 +177,8 @@ export const TaskSchema = z.object({
   child_summaries: z.array(ChildCompletionSummarySchema),
 
   // Workspace
+  repo: z.string().nullable(),
+  clone_url: z.string().nullable(),
   workspace: TaskWorkspaceSchema.nullable(),
 
   // Review

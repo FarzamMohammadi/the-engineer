@@ -165,6 +165,7 @@ export const WorkspaceConfigSchema = z.object({
   slug_max_length: z.number().int().positive().default(30),
   fetch_before_create: z.boolean().default(true),
   default_base_branch: z.string().default("main"),
+  git_token_env: z.string().default("GIT_TOKEN"),
   pr: PrConfigSchema.default({}),
   cleanup: CleanupConfigSchema.default({}),
   child_pr_strategy: z.enum(["merge_into_parent", "individual_prs"]).default("merge_into_parent"),

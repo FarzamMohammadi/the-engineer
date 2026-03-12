@@ -43,8 +43,8 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
   // 3. Research Context (conventions, patterns)
   parts.push(buildResearchSection(ctx.researchOutput));
 
-  // 4. Repository (minimal — LLM has the worktree)
-  const repoSection = buildRepoOverview(ctx.repoContext);
+  // 4. Repository (minimal with plan, detailed without)
+  const repoSection = buildRepoOverview(ctx.repoContext, ctx.planningOutput !== null);
   if (repoSection) {
     parts.push(repoSection);
   }
@@ -121,18 +121,29 @@ function buildResearchSection(researchOutput: Record<string, unknown> | null): s
   return section("Research Context", formatPriorPhaseOutput("research", researchOutput));
 }
 
-function buildRepoOverview(repoContext: RepoContext | null): string | null {
+function buildRepoOverview(repoContext: RepoContext | null, hasPlan: boolean): string | null {
   if (!repoContext) {
     return null;
   }
 
-  // Minimal: branch only. Execution has the worktree — no need to repeat
-  // README, directory tree, or commits. The LLM can explore freely.
-  if (!repoContext.gitBranch) {
-    return null;
+  const lines: string[] = [];
+  if (repoContext.gitBranch) {
+    lines.push(`Branch: ${repoContext.gitBranch}`);
   }
 
-  return section("Repository", `Branch: ${repoContext.gitBranch}`);
+  // When there's a plan, keep it minimal — the LLM can explore freely.
+  // When fast-path (no plan/research), include more context so the LLM knows
+  // what files exist and can make changes without prior exploration.
+  if (!hasPlan) {
+    if (repoContext.packageInfo) {
+      lines.push("", repoContext.packageInfo);
+    }
+    if (repoContext.directoryTree) {
+      lines.push("", "### File Structure", "", repoContext.directoryTree);
+    }
+  }
+
+  return lines.length > 0 ? section("Repository", lines.join("\n")) : null;
 }
 
 function buildKnowledgeSection(
@@ -191,7 +202,15 @@ function buildExecutionStrategy(intakeOutput: Record<string, unknown> | null): s
   if (complexity === "trivial" || complexity === "simple") {
     return section(
       "Execution Strategy",
-      "This is a simple change. Implement it directly, write the test, run it, done. Don't overthink it.",
+      [
+        "This is a simple change. Follow this sequence:",
+        "1. Read the relevant file(s) to understand the current code",
+        "2. Use edit_file or write_file to make the change",
+        "3. Verify the change works (run tests or build if applicable)",
+        "4. Only then say done with files_changed listing what you modified",
+        "",
+        "IMPORTANT: You MUST read and modify actual files before reporting done. Do NOT say done without making changes.",
+      ].join("\n"),
     );
   }
 

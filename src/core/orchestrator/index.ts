@@ -1,4 +1,7 @@
+import { execFileSync } from "node:child_process";
 import type { ZodType } from "zod";
+import type { CommunicationAdapter } from "../../adapters/communication.js";
+import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import type { ToolAdapter } from "../../adapters/tool.js";
 import type { CompletionResult } from "../../schemas/adapters.js";
@@ -17,6 +20,7 @@ import {
 } from "../../schemas/orchestrator.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
 import type { SessionMemory } from "../session-memory/index.js";
@@ -77,6 +81,7 @@ export interface OrchestratorDependencies {
   actionPipeline: ActionPipeline;
   sessionMemory: SessionMemory;
   workspaceManager: WorkspaceManager;
+  peopleDirectory: PeopleDirectory;
 }
 
 /** Discriminated union of executeTask outcomes. */
@@ -112,6 +117,7 @@ export class Orchestrator {
   private readonly actionPipeline: ActionPipeline;
   private readonly sessionMemory: SessionMemory;
   private readonly workspaceManager: WorkspaceManager;
+  private readonly peopleDirectory: PeopleDirectory;
 
   private preemptionRequested = false;
   private loopbackCount = 0;
@@ -138,6 +144,7 @@ export class Orchestrator {
     this.actionPipeline = deps.actionPipeline;
     this.sessionMemory = deps.sessionMemory;
     this.workspaceManager = deps.workspaceManager;
+    this.peopleDirectory = deps.peopleDirectory;
 
     // Subscribe to preemption requests (Protocol P8)
     this.eventBus.subscribe("orchestrator", "preemption.requested", (event: Event) => {
@@ -179,6 +186,32 @@ export class Orchestrator {
     const sessionId = session.id;
     this.taskEngine.updateTaskField(taskId, "session_id", sessionId);
 
+    // ── Workspace setup (D144) ──────────────────────────────────────────
+    if (!dispatch.resume_from) {
+      const repo = dispatch.task.repo;
+      const cloneUrl = dispatch.task.clone_url;
+      if (repo && cloneUrl) {
+        const record = this.workspaceManager.createWorkspace(
+          taskId,
+          repo,
+          dispatch.task.title,
+          undefined,
+          undefined,
+          cloneUrl,
+        );
+        this.taskEngine.updateTaskField(taskId, "workspace", {
+          repo,
+          branch: record.branch,
+          worktree_path: record.worktreePath,
+        });
+      }
+    } else if (dispatch.task.workspace) {
+      this.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
+    }
+
+    // Notify task pickup (D152)
+    this.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
+
     // ── Determine phase sequence ───────────────────────────────────────────
     const { phases: initialPhases, startIndex } = this.resolveStartState(
       dispatch,
@@ -214,8 +247,8 @@ export class Orchestrator {
 
       priorOutputs.set(phase, output);
 
-      // Post-phase processing (fast-path, loopback, transitions)
-      const postResult = this.processPhaseCompletion(
+      // Post-phase processing (fast-path, loopback, transitions, PR creation)
+      const postResult = await this.processPhaseCompletion(
         sessionId,
         taskId,
         phase,
@@ -223,6 +256,7 @@ export class Orchestrator {
         phases,
         i,
         priorOutputs,
+        dispatch,
       );
       if (postResult.loopbackIndex !== null) {
         i = postResult.loopbackIndex;
@@ -470,8 +504,8 @@ export class Orchestrator {
     return { phases, startIndex };
   }
 
-  /** Handle post-phase logic: fast-path, loopback, transitions, preemption. */
-  private processPhaseCompletion(
+  /** Handle post-phase logic: fast-path, loopback, transitions, preemption, PR creation. */
+  private async processPhaseCompletion(
     sessionId: string,
     taskId: string,
     phase: Phase,
@@ -479,11 +513,12 @@ export class Orchestrator {
     currentPhases: Phase[],
     currentIndex: number,
     priorOutputs: Map<Phase, PhaseOutput>,
-  ): {
+    dispatch: Dispatch,
+  ): Promise<{
     phases: Phase[];
     loopbackIndex: number | null;
     preemptionResult: ExecuteTaskResult | null;
-  } {
+  }> {
     let phases = currentPhases;
 
     // Fast-path: after intake_analysis, check if we should skip phases
@@ -504,8 +539,18 @@ export class Orchestrator {
       }
     }
 
+    // After demo_prep: commit, push, create draft PR (D149, D150)
+    if (phase === "demo_prep") {
+      await this.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
+    }
+
     // Protocol P4: Phase transition
     const isLastPhase = currentIndex === phases.length - 1;
+
+    // Fast-path PR: when self_review is the final phase (no demo_prep), still create PR
+    if (phase === "self_review" && isLastPhase) {
+      await this.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
+    }
     // biome-ignore lint/style/noNonNullAssertion: next phase exists when not last
     const nextPhase = isLastPhase ? null : phases[currentIndex + 1]!;
     this.recordPhaseTransition(sessionId, taskId, phase, nextPhase, priorOutputs);
@@ -652,6 +697,195 @@ export class Orchestrator {
     });
   }
 
+  // ── Workspace Integration (D149, D150, D152) ────────────────────────────────
+
+  /**
+   * Send a milestone notification via PeopleDirectory + comm plugins (D152).
+   *
+   * Resolves the owner from PeopleDirectory, then sends to all registered
+   * communication plugins. Fire-and-forget — errors are logged, never block
+   * the pipeline.
+   */
+  private notifyMilestone(dispatch: Dispatch, message: string): void {
+    try {
+      const owner = this.peopleDirectory.getOwner();
+      if (!owner || owner.contacts.length === 0) {
+        return; // No owner or no contacts configured
+      }
+
+      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>("communication");
+      if (commPlugins.length === 0) {
+        return; // No comm plugins registered
+      }
+
+      const taskId = dispatch.task.id;
+
+      // Route by contact channel → matching comm plugin
+      // Contact channel is "telegram", plugin ID is "telegram-comm".
+      // Convention: plugin ID = "{channel}-comm"
+      for (const contact of owner.contacts) {
+        const plugin = commPlugins.find(
+          (p) => p.manifest.id === `${contact.channel}-comm` || p.manifest.id === contact.channel,
+        );
+        if (!plugin) {
+          continue; // No plugin for this channel
+        }
+
+        const target = {
+          user_id: contact.handle,
+          channel: contact.channel,
+        };
+
+        const formatted = {
+          content: plugin.formatMessage(message, "milestone"),
+          metadata: { task_id: taskId, type: "milestone" as const },
+        };
+
+        // Fire-and-forget — catch all errors
+        plugin.sendMessage(target, formatted).catch(() => {
+          // Silent — notification failure must never block the pipeline
+        });
+      }
+    } catch {
+      // Silent — notification failure must never block the pipeline
+    }
+  }
+
+  /**
+   * Commit all changes, push branch, and create a draft PR (D149, D150, D151).
+   *
+   * Called after demo_prep completes. Deterministic commit ensures all LLM
+   * changes are captured. Push via WorkspaceManager (token injection).
+   * PR creation via GitHostingAdapter.
+   */
+  private async commitPushAndCreatePR(
+    sessionId: string,
+    taskId: string,
+    demoPrepOutput: PhaseOutput,
+    dispatch: Dispatch,
+  ): Promise<void> {
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    if (!worktreePath) {
+      return; // No workspace — no PR (e.g., fast-path without repo)
+    }
+
+    const record = this.workspaceManager.getWorkspaceRecord(taskId);
+    if (!record) {
+      return;
+    }
+
+    // 1. Deterministic commit: git add -A && git commit
+    //    Claude Code CLI may have already committed changes via its internal tools,
+    //    so we also check for commits ahead of base to avoid skipping push/PR.
+    let hasNewCommit = false;
+    try {
+      execFileSync("git", ["add", "-A"], {
+        cwd: worktreePath,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      // Check if there are staged changes
+      let hasStagedChanges = false;
+      try {
+        execFileSync("git", ["diff", "--cached", "--quiet"], {
+          cwd: worktreePath,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch {
+        // Non-zero exit = there ARE staged changes
+        hasStagedChanges = true;
+      }
+
+      if (hasStagedChanges) {
+        const commitMessage = `feat: ${dispatch.task.title}\n\nAutomated by The Engineer`;
+        execFileSync("git", ["commit", "-m", commitMessage], {
+          cwd: worktreePath,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        hasNewCommit = true;
+      }
+    } catch (error) {
+      this.logPrStepFailure(sessionId, taskId, "commit", error);
+      return;
+    }
+
+    // Check if branch has commits ahead of base (covers Claude CLI internal commits)
+    if (!hasNewCommit) {
+      try {
+        const aheadCount = execFileSync(
+          "git",
+          ["rev-list", "--count", `origin/${record.baseBranch}..HEAD`],
+          { cwd: worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+        ).trim();
+        if (aheadCount === "0") {
+          return; // Truly no changes — nothing to push or PR
+        }
+      } catch {
+        return; // Can't determine — skip to be safe
+      }
+    }
+
+    // 2. Push via WorkspaceManager (D151 — token injection)
+    try {
+      this.workspaceManager.pushBranch(taskId);
+    } catch (error) {
+      this.logPrStepFailure(sessionId, taskId, "push", error);
+      return;
+    }
+
+    // 3. Create draft PR via GitHostingAdapter
+    const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>("git_hosting");
+    if (!gitHosting) {
+      return; // No hosting plugin — skip PR creation
+    }
+
+    try {
+      const prDescription =
+        (demoPrepOutput.data as { pr_description?: string }).pr_description ??
+        `Automated PR for: ${dispatch.task.title}`;
+
+      const prResult = await gitHosting.createPR({
+        repo: record.repo,
+        branch: record.branch,
+        base: record.baseBranch,
+        title: dispatch.task.title,
+        body: prDescription,
+        draft: true,
+        labels: null,
+        reviewers: null,
+      });
+
+      // Update task review state
+      this.taskEngine.updateTaskField(taskId, "review", {
+        pr_number: prResult.pr_number,
+        pr_state: "draft",
+        demo_artifacts: [],
+        feedback_rounds: [],
+      });
+
+      // Notify PR creation
+      this.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
+    } catch (error) {
+      this.logPrStepFailure(sessionId, taskId, "pr_creation", error);
+    }
+  }
+
+  /** Log a PR workflow step failure to the session journal. */
+  private logPrStepFailure(sessionId: string, taskId: string, step: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.sessionMemory.addJournalEntry({
+      sessionId,
+      taskId,
+      phase: "demo_prep",
+      type: "error",
+      summary: `PR workflow failed at ${step}: ${message}`,
+      tags: ["pr_workflow", step],
+    });
+  }
+
   /** Extract repository identifier from task (workspace or external_ref). */
   private getTaskRepo(dispatch: Dispatch): string {
     return dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? "";
@@ -716,6 +950,9 @@ export class Orchestrator {
       throw new Error("Orchestrator: no LLM plugin registered");
     }
 
+    // Set CWD to worktree so CLI-based plugins load the target repo's context, not the daemon's.
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+
     const pipelineResult = await this.actionPipeline.execute<CompletionResult>({
       taskId,
       actionClass: "read",
@@ -725,7 +962,13 @@ export class Orchestrator {
         llm.complete({
           prompt,
           system_prompt: systemPrompt ?? null,
-          options: { max_tokens: null, temperature: null, stop: null, tools: null },
+          options: {
+            max_tokens: null,
+            temperature: null,
+            stop: null,
+            tools: null,
+            cwd: worktreePath,
+          },
         }),
     });
 

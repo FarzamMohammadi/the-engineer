@@ -105,6 +105,13 @@ describe("parseAction", () => {
     expect(action).toEqual({ action: "done", result: { files_changed: ["a.ts"] } });
   });
 
+  it("normalizes done action with params.result (common LLM mistake)", () => {
+    const action = parseAction(
+      '{"action": "done", "params": {"result": {"complexity": "trivial"}}}',
+    );
+    expect(action).toEqual({ action: "done", result: { complexity: "trivial" } });
+  });
+
   it("preserves optional thinking field", () => {
     const action = parseAction(
       '{"action": "read_file", "params": {"path": "a.ts"}, "thinking": "Need to check this file"}',

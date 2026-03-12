@@ -23,15 +23,28 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
   private activeProcess: ChildProcess | null = null;
 
   protected doComplete(request: CompletionRequest): Promise<CompletionResult> {
-    const args = ["--print", "--output-format", "json", "--model", this.config.model];
+    // --setting-sources user: prevent loading project-level CLAUDE.md and settings
+    // from the CWD — the Engineer provides all context via the prompt.
+    // --dangerously-skip-permissions: required for non-interactive tool use (read/write/bash)
+    // --setting-sources user: prevent loading project-level CLAUDE.md and settings
+    const args = [
+      "--print",
+      "--output-format",
+      "json",
+      "--model",
+      this.config.model,
+      "--setting-sources",
+      "user",
+      "--dangerously-skip-permissions",
+    ];
 
     if (request.system_prompt) {
       args.push("--system-prompt", request.system_prompt);
     }
 
-    args.push(request.prompt);
-
-    return this.spawnAndParse(args);
+    // Prompt is piped via stdin (not as a CLI arg) to avoid OS argument length limits.
+    // The claude CLI reads from stdin when no positional prompt argument is given.
+    return this.spawnAndParse(args, request.prompt, request.options?.cwd ?? undefined);
   }
 
   getCapabilities(): LLMCapabilities {
@@ -95,7 +108,11 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
     return env;
   }
 
-  private spawnAndParse(args: string[]): Promise<CompletionResult> {
+  private spawnAndParse(
+    args: string[],
+    stdinContent?: string,
+    cwd?: string,
+  ): Promise<CompletionResult> {
     return new Promise<CompletionResult>((resolve, reject) => {
       const chunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
@@ -104,6 +121,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         stdio: ["pipe", "pipe", "pipe"],
         timeout: this.config.command_timeout_ms,
         env: this.cleanEnv(),
+        cwd,
       });
 
       this.activeProcess = child;
@@ -157,6 +175,10 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         );
       });
 
+      // Pipe prompt via stdin to avoid OS argument length limits
+      if (stdinContent) {
+        child.stdin?.write(stdinContent);
+      }
       child.stdin?.end();
     });
   }
@@ -170,11 +192,9 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
  * Output is newline-delimited JSON events. We find the final `type: "result"`
  * event and extract content + usage data.
  *
- * Known result shape:
- * ```json
- * { "type": "result", "subtype": "success", "cost_usd": 0.01,
- *   "result": { "type": "text", "text": "..." }, "session_id": "..." }
- * ```
+ * Known result shapes:
+ * - `--print` mode: `{ "type": "result", "subtype": "success", "cost_usd": 0.01, "result": "the text response" }`
+ * - Object mode: `{ "type": "result", "subtype": "success", "result": { "type": "text", "text": "..." } }`
  *
  * Token counts are not yet available from the CLI (upstream GitHub #11917).
  * We set tokens_in/tokens_out to 0 and rely on cost_usd for cost tracking.
@@ -202,8 +222,20 @@ export function parseCliOutput(raw: string): CompletionResult {
     throw new Error(`CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`);
   }
 
-  const resultObj = resultEvent["result"] as Record<string, unknown> | undefined;
-  const content = typeof resultObj?.["text"] === "string" ? resultObj["text"] : "";
+  // The `result` field may be a string (--print mode) or an object with a `text` field.
+  // Handle both formats to support different CLI versions and modes.
+  const rawResult = resultEvent["result"];
+  let content: string;
+  if (typeof rawResult === "string") {
+    content = rawResult;
+  } else if (typeof rawResult === "object" && rawResult !== null && "text" in rawResult) {
+    content =
+      typeof (rawResult as Record<string, unknown>)["text"] === "string"
+        ? ((rawResult as Record<string, unknown>)["text"] as string)
+        : "";
+  } else {
+    content = "";
+  }
   const costUsd = typeof resultEvent["cost_usd"] === "number" ? resultEvent["cost_usd"] : null;
 
   return {

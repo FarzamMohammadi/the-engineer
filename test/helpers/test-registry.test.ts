@@ -74,6 +74,7 @@ describe("createTestRegistry", () => {
         title: "Test issue",
         body: null,
         repo: "test/repo",
+        clone_url: "https://github.com/test/repo.git",
         metadata: null,
       },
     ]);

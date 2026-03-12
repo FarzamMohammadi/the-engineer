@@ -318,6 +318,7 @@ describe("TaskSchema", () => {
     related: [],
     decisions: [],
     child_summaries: [],
+    repo: null,
     workspace: null,
     review: null,
     blocked: null,
@@ -329,6 +330,7 @@ describe("TaskSchema", () => {
     started_at: null,
     completed_at: null,
     last_transition_at: "2026-03-10T12:00:00.000Z",
+    clone_url: null,
     session_id: null,
   };
 

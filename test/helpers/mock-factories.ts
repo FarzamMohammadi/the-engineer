@@ -43,6 +43,7 @@ export function createMockTriggerEvent(overrides?: Partial<TriggerEvent>): Trigg
     title: "Mock issue",
     body: null,
     repo: "test/repo",
+    clone_url: "https://github.com/test/repo.git",
     metadata: null,
     ...overrides,
   });
@@ -96,6 +97,8 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     related: [],
     decisions: [],
     child_summaries: [],
+    repo: null,
+    clone_url: null,
     workspace: null,
     review: null,
     blocked: null,

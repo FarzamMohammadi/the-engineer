@@ -153,6 +153,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     actionPipeline,
     sessionMemory,
     workspaceManager,
+    peopleDirectory,
   });
 
   // 11. Daemon

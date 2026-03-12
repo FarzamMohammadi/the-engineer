@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
 import type { z } from "zod";
 
 import type { WorkspaceConfigSchema } from "../../schemas/config.js";
+import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -60,6 +61,20 @@ export function branchName(prefix: string, taskId: string, slug: string): string
   return `${prefix}${taskId}-${slug}`;
 }
 
+/**
+ * Inject authentication into an HTTPS git URL (D148).
+ *
+ * Replaces `https://` with `https://git:{token}@`. If token is empty or URL
+ * is not HTTPS, returns the URL unchanged. The token is read from an
+ * environment variable at call time — never persisted.
+ */
+export function injectAuth(url: string, token: string): string {
+  if (!(token && url.startsWith("https://"))) {
+    return url;
+  }
+  return url.replace("https://", `https://git:${token}@`);
+}
+
 // ── WorkspaceManager ─────────────────────────────────────────────────────────
 
 /**
@@ -71,10 +86,9 @@ export function branchName(prefix: string, taskId: string, slug: string): string
  *
  * Emits workspace events on the Event Bus at each lifecycle point.
  *
- * **Note:** PR operations (createPR, mergePR, etc.) are not implemented in this
- * phase. They require the GitHostingAdapter via Registry, which is built in
- * Phase 14b. The constructor will accept a Registry parameter when those
- * operations are added.
+ * Authentication: reads the git token from process.env at operation time
+ * via the `git_token_env` config field. The token never appears in config
+ * files, the database, or git remote URLs on disk.
  */
 export class WorkspaceManager {
   private readonly eventBus: EventBus;
@@ -91,14 +105,16 @@ export class WorkspaceManager {
   /**
    * Create an isolated workspace for a task.
    *
-   * Fetches from remote (if configured), creates a named branch from the base,
-   * and sets up a git worktree. Emits `workspace.created`.
+   * If the repo is not yet cloned locally, clones it first using the provided
+   * cloneUrl. Fetches from remote (if configured), creates a named branch
+   * from the base, and sets up a git worktree. Emits `workspace.created`.
    *
    * @param taskId - The task this workspace belongs to
    * @param repo - Repository name (e.g., "owner/repo")
    * @param title - Optional task title for slug generation (defaults to taskId)
    * @param baseBranch - Branch to create from (defaults to config.default_base_branch)
    * @param parentBranch - Parent task's branch (for child tasks, takes precedence over baseBranch)
+   * @param cloneUrl - Unauthenticated clone URL (required if repo not yet cloned)
    */
   createWorkspace(
     taskId: string,
@@ -106,6 +122,7 @@ export class WorkspaceManager {
     title?: string,
     baseBranch?: string,
     parentBranch?: string,
+    cloneUrl?: string,
   ): WorkspaceRecord {
     const resolvedBase = parentBranch ?? baseBranch ?? this.config.default_base_branch;
     const slug = slugify(title ?? taskId, this.config.slug_max_length);
@@ -118,13 +135,17 @@ export class WorkspaceManager {
       `${taskId}-${slug}`,
     );
 
+    // Clone repo if not present (D147)
     if (!existsSync(repoCloneDir)) {
-      throw new Error(`WorkspaceManager: repo clone directory does not exist: ${repoCloneDir}`);
+      if (!cloneUrl) {
+        throw new Error(`WorkspaceManager: repo clone directory does not exist: ${repoCloneDir}`);
+      }
+      this.ensureClone(repo, cloneUrl);
     }
 
     // Fetch latest from remote
     if (this.config.fetch_before_create) {
-      this.gitExec(["fetch", "origin"], repoCloneDir);
+      this.gitExecAuth(["fetch", "origin"], repoCloneDir);
     }
 
     // Determine the ref to branch from
@@ -265,6 +286,82 @@ export class WorkspaceManager {
     } satisfies PublishInput<"workspace.cleaned">);
   }
 
+  // ── Clone & Push ──────────────────────────────────────────────────────────
+
+  /**
+   * Clone a repo if it doesn't exist locally (D147). Idempotent.
+   *
+   * Uses the unauthenticated clone URL + token from env at operation time.
+   * After clone, resets the remote to the unauthenticated URL so the token
+   * is never persisted on disk.
+   */
+  ensureClone(repo: string, cloneUrl: string): string {
+    const repoCloneDir = path.join(this.config.workspace_root, repo);
+
+    if (existsSync(repoCloneDir)) {
+      return repoCloneDir;
+    }
+
+    // Create parent directory
+    mkdirSync(path.dirname(repoCloneDir), { recursive: true });
+
+    // Clone with auth token (transient)
+    const token = this.resolveToken();
+    const authUrl = injectAuth(cloneUrl, token);
+    execFileSync("git", ["clone", authUrl, repoCloneDir], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    // Reset remote to unauthenticated URL — token never persisted on disk
+    this.gitExec(["remote", "set-url", "origin", cloneUrl], repoCloneDir);
+
+    return repoCloneDir;
+  }
+
+  /**
+   * Push the task's branch to remote (D150, D151).
+   *
+   * Pushes to an explicit authenticated URL so the token is never written
+   * to .git/config. Sets upstream tracking.
+   */
+  pushBranch(taskId: string): void {
+    const record = this.workspaces.get(taskId);
+    if (!record) {
+      throw new Error(`WorkspaceManager: no workspace for task ${taskId}`);
+    }
+
+    const token = this.resolveToken();
+    const repoCloneDir = path.join(this.config.workspace_root, record.repo);
+
+    // Get the unauthenticated remote URL
+    const remoteUrl = this.gitExec(["remote", "get-url", "origin"], repoCloneDir);
+
+    // Push with transient auth — explicit URL, not remote name
+    const authUrl = injectAuth(remoteUrl, token);
+    this.gitExec(["push", "-u", authUrl, record.branch], record.worktreePath);
+  }
+
+  /**
+   * Re-register a workspace from persisted task state (for daemon restart).
+   *
+   * Populates the in-memory workspaces map from a task's `workspace` field
+   * so that `getWorktreePath()` and other methods work after restart.
+   */
+  registerExistingWorkspace(taskId: string, workspace: TaskWorkspace): void {
+    if (!workspace.worktree_path) {
+      return;
+    }
+    this.workspaces.set(taskId, {
+      taskId,
+      repo: workspace.repo,
+      branch: workspace.branch,
+      worktreePath: workspace.worktree_path,
+      baseBranch: this.config.default_base_branch,
+      baseCommit: "",
+    });
+  }
+
   // ── Queries ──────────────────────────────────────────────────────────────
 
   /** Get the worktree filesystem path for a task, or null if unknown. */
@@ -272,7 +369,31 @@ export class WorkspaceManager {
     return this.workspaces.get(taskId)?.worktreePath ?? null;
   }
 
+  /** Get the full workspace record for a task, or null if unknown. */
+  getWorkspaceRecord(taskId: string): WorkspaceRecord | null {
+    return this.workspaces.get(taskId) ?? null;
+  }
+
   // ── Private Helpers ────────────────────────────────────────────────────────
+
+  /** Resolve the git token from the environment variable. */
+  private resolveToken(): string {
+    return process.env[this.config.git_token_env] ?? "";
+  }
+
+  /** Run a git command with auth injected into the remote URL for fetch/push. */
+  private gitExecAuth(args: string[], cwd: string): string {
+    const token = this.resolveToken();
+    if (token && (args[0] === "fetch" || args[0] === "push")) {
+      // Get remote URL and inject auth for this operation only
+      const remoteUrl = this.gitExec(["remote", "get-url", "origin"], cwd);
+      const authUrl = injectAuth(remoteUrl, token);
+      // Replace "origin" with the auth URL in the args
+      const authArgs = args.map((a) => (a === "origin" ? authUrl : a));
+      return this.gitExec(authArgs, cwd);
+    }
+    return this.gitExec(args, cwd);
+  }
 
   private gitExec(args: string[], cwd: string): string {
     return execFileSync("git", args, {

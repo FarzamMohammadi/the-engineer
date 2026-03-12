@@ -216,6 +216,7 @@ describe("DispatchSchema", () => {
     related: [],
     decisions: [],
     child_summaries: [],
+    repo: null,
     workspace: null,
     review: null,
     blocked: null,
@@ -227,6 +228,7 @@ describe("DispatchSchema", () => {
     started_at: "2026-03-10T12:01:00.000Z",
     completed_at: null,
     last_transition_at: "2026-03-10T12:01:00.000Z",
+    clone_url: null,
     session_id: "01SESSION",
   };
 

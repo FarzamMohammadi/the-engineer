@@ -30,6 +30,8 @@ CREATE TABLE tasks (
   child_summaries     TEXT NOT NULL DEFAULT '[]', -- JSON: ChildCompletionSummary[]
 
   -- Workspace
+  repo                TEXT,                       -- Repository identifier (e.g. "owner/repo")
+  clone_url           TEXT,                       -- Git clone URL (D148)
   workspace           TEXT,                       -- JSON: TaskWorkspace | null
 
   -- Review

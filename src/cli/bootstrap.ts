@@ -97,6 +97,7 @@ export async function bootstrap(
     actionPipeline,
     sessionMemory,
     workspaceManager,
+    peopleDirectory,
   });
 
   // 12. Daemon

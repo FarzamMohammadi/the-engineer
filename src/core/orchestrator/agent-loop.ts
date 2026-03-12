@@ -30,6 +30,8 @@ export interface AgentLoopConfig {
   toolConfig: PhaseToolConfig;
   /** Worktree path for file operations. Null if no worktree (degraded mode). */
   worktreePath: string | null;
+  /** Optional logger function for action trace. Defaults to console.log. */
+  logger?: (message: string) => void;
 }
 
 /** Result of a completed agent loop. */
@@ -71,6 +73,11 @@ export async function runAgentLoop(
   const history: HistoryEntry[] = [];
   const totalCost = { tokens_in: 0, tokens_out: 0, spend_usd: null as number | null };
   let iterations = 0;
+  const log = config.logger ?? console.log;
+
+  log(
+    `[agent-loop] Starting ${config.phase} (max ${String(config.toolConfig.max_iterations)} iterations, worktree: ${config.worktreePath ?? "none"})`,
+  );
 
   while (iterations < config.toolConfig.max_iterations) {
     iterations++;
@@ -82,6 +89,9 @@ export async function runAgentLoop(
     const action = parseAction(completion.content);
 
     if (!action) {
+      log(
+        `[agent-loop] ${config.phase} iter ${String(iterations)}: UNPARSEABLE response (${String(completion.content.length)} chars): ${completion.content.slice(0, 200)}`,
+      );
       // Unparseable response — retry once with guidance
       const retryResult = await handleRetry(
         config,
@@ -91,6 +101,7 @@ export async function runAgentLoop(
         iterations,
         callLlm,
         execAction,
+        log,
       );
       if (retryResult) {
         return retryResult;
@@ -101,31 +112,66 @@ export async function runAgentLoop(
 
     // Terminal action
     if (action.action === "done") {
+      log(
+        `[agent-loop] ${config.phase} iter ${String(iterations)}: DONE (keys: ${Object.keys(action.result).join(", ")})`,
+      );
       history.push({ action, result: null });
       return buildResult(action.result, iterations, history, totalCost);
     }
 
-    // Validate action against allowed actions
-    if (!config.toolConfig.allowed_actions.includes(action.action)) {
-      history.push({
-        action,
-        result: {
-          success: false,
-          output: "",
-          error: `Action "${action.action}" is not allowed in ${config.phase} phase. Allowed: ${config.toolConfig.allowed_actions.join(", ")}`,
-        },
-      });
-      continue;
-    }
-
-    // Execute action
-    const worktreePath = config.worktreePath ?? ".";
-    const result = await execAction(action, worktreePath);
-    history.push({ action, result });
+    // Validate and execute
+    await executeAndLog(config, action, iterations, history, execAction, log);
   }
 
+  log(`[agent-loop] ${config.phase}: iteration limit reached (${String(iterations)})`);
   // Iteration limit reached — force done
   return buildForcedResult(history, iterations, totalCost);
+}
+
+/** Validate an action against allowed actions, execute it, log result, push to history. */
+async function executeAndLog(
+  config: AgentLoopConfig,
+  action: AgentAction,
+  iterations: number,
+  history: HistoryEntry[],
+  execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
+  log: (message: string) => void,
+): Promise<void> {
+  if (!config.toolConfig.allowed_actions.includes(action.action)) {
+    log(
+      `[agent-loop] ${config.phase} iter ${String(iterations)}: BLOCKED ${action.action} (not allowed)`,
+    );
+    history.push({
+      action,
+      result: {
+        success: false,
+        output: "",
+        error: `Action "${action.action}" is not allowed in ${config.phase} phase. Allowed: ${config.toolConfig.allowed_actions.join(", ")}`,
+      },
+    });
+    return;
+  }
+
+  const worktreePath = config.worktreePath ?? ".";
+  const actionSummary = summarizeAction(action);
+  log(`[agent-loop] ${config.phase} iter ${String(iterations)}: ${action.action} ${actionSummary}`);
+  const result = await execAction(action, worktreePath);
+  if (result.success) {
+    log(`[agent-loop]   -> OK (${String(result.output.length)} chars)`);
+  } else {
+    log(`[agent-loop]   -> FAILED: ${result.error ?? "unknown"}`);
+  }
+  history.push({ action, result });
+}
+
+/** Summarize an action for logging (params only, truncated). */
+function summarizeAction(action: AgentAction): string {
+  if (action.action === "done") {
+    return "";
+  }
+  const params = "params" in action ? action.params : {};
+  const json = JSON.stringify(params);
+  return json.length > 120 ? `${json.slice(0, 120)}...` : json;
 }
 
 // ── Retry Logic ─────────────────────────────────────────────────────────────────
@@ -138,25 +184,31 @@ async function handleRetry(
   currentIterations: number,
   callLlm: (prompt: string, systemPrompt: string) => Promise<CompletionResult>,
   execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
+  log: (message: string) => void,
 ): Promise<AgentLoopResult | null> {
   if (currentIterations >= config.toolConfig.max_iterations) {
+    log(`[agent-loop] ${config.phase}: retry skipped — at iteration limit`);
     return buildForcedResult(history, currentIterations, totalCost);
   }
 
+  log(`[agent-loop] ${config.phase}: retrying after parse failure...`);
   const retryPrompt = buildRetryPrompt(config, history, failedContent);
   const retryCompletion = await callLlm(retryPrompt, config.systemPrompt);
   accumulateCost(totalCost, retryCompletion);
 
   const retryAction = parseAction(retryCompletion.content);
   if (!retryAction) {
+    log(`[agent-loop] ${config.phase}: retry also failed to parse — force done`);
     return buildForcedResult(history, currentIterations + 1, totalCost);
   }
 
   if (retryAction.action === "done") {
+    log(`[agent-loop] ${config.phase}: retry produced done`);
     history.push({ action: retryAction, result: null });
     return buildResult(retryAction.result, currentIterations + 1, history, totalCost);
   }
 
+  log(`[agent-loop] ${config.phase}: retry produced ${retryAction.action}`);
   // Execute the retry action and continue the loop
   const worktreePath = config.worktreePath ?? ".";
   const result = await execAction(retryAction, worktreePath);
@@ -248,8 +300,31 @@ export function parseAction(content: string): AgentAction | null {
     return null;
   }
 
-  const result = AgentActionSchema.safeParse(json);
+  // Normalize common LLM mistake: {"action":"done","params":{"result":{...}}} → {"action":"done","result":{...}}
+  const normalized = normalizeDoneAction(json);
+
+  const result = AgentActionSchema.safeParse(normalized);
   return result.success ? result.data : null;
+}
+
+/** Fix common LLM pattern: wrapping done result in params. */
+function normalizeDoneAction(json: unknown): unknown {
+  if (typeof json !== "object" || json === null) {
+    return json;
+  }
+  const obj = json as Record<string, unknown>;
+  if (
+    obj["action"] === "done" &&
+    !obj["result"] &&
+    typeof obj["params"] === "object" &&
+    obj["params"] !== null
+  ) {
+    const params = obj["params"] as Record<string, unknown>;
+    if (params["result"]) {
+      return { action: "done", result: params["result"], thinking: obj["thinking"] };
+    }
+  }
+  return json;
 }
 
 /**

@@ -47,7 +47,7 @@ const OUTPUT_SCHEMAS: Record<Phase, string> = {
     "- files_changed: array of file paths that were modified",
     "- tests_written: array of test file paths created or modified",
     "- test_results: {passed: number, failed: number, skipped: number}",
-    '- build_status: "passing" or "failing"',
+    '- build_status: "passing", "failing", or "unknown"',
   ].join("\n"),
   self_review: [
     "Required fields in your done result:",

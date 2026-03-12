@@ -220,4 +220,18 @@ describe("parseCliOutput", () => {
     const result = parseCliOutput(raw);
     expect(result.content).toBe("ok");
   });
+
+  it("extracts content when result is a string (--print mode)", () => {
+    const raw =
+      '{"type":"result","subtype":"success","cost_usd":0.05,"result":"{\\"action\\":\\"done\\"}"}\n';
+    const result = parseCliOutput(raw);
+    expect(result.content).toBe('{"action":"done"}');
+    expect(result.usage.spend_usd).toBe(0.05);
+  });
+
+  it("extracts content when result is a plain string without JSON", () => {
+    const raw = '{"type":"result","subtype":"success","result":"Hello world"}\n';
+    const result = parseCliOutput(raw);
+    expect(result.content).toBe("Hello world");
+  });
 });

@@ -74,7 +74,7 @@ export const ExecutionOutputSchema = z.object({
     failed: z.number().int(),
     skipped: z.number().int(),
   }),
-  build_status: z.enum(["passing", "failing"]),
+  build_status: z.enum(["passing", "failing", "unknown"]),
 });
 export type ExecutionOutput = z.infer<typeof ExecutionOutputSchema>;
 

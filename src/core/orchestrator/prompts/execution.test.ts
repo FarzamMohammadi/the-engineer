@@ -176,7 +176,7 @@ describe("buildExecutionPrompt", () => {
       }),
     );
     expect(result).toContain("simple change");
-    expect(result).toContain("Don't overthink");
+    expect(result).toContain("MUST read and modify actual files");
   });
 
   it("adapts strategy for complex tasks", () => {

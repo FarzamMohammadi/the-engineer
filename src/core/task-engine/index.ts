@@ -26,7 +26,7 @@ import type { EventBus, PublishInput } from "../event-bus/index.js";
 /** Input for createTask(). Only caller-provided fields. */
 export interface CreateTaskInput {
   title: string;
-  /** Repo context for the event payload (not stored as a task column). */
+  /** Repository identifier (e.g. "owner/repo"). Stored on the task for workspace creation. */
   repo: string;
   /** Who created this task: "github-trigger", "manual", "decomposition", etc. */
   source: string;
@@ -37,6 +37,8 @@ export interface CreateTaskInput {
   acceptance_criteria?: string[];
   priority?: number;
   cascade_policy?: CascadePolicy;
+  /** Git clone URL for the target repo (D148). */
+  clone_url?: string | null;
 }
 
 /** Result of requestTransition(). */
@@ -71,6 +73,8 @@ const UPDATABLE_FIELDS = [
   "child_summaries",
   "acceptance_criteria",
   "priority",
+  "repo",
+  "clone_url",
 ] as const;
 
 /** Fields that can be updated via updateTaskField(). */
@@ -94,6 +98,8 @@ interface TaskRow {
   related: string;
   decisions: string;
   child_summaries: string;
+  repo: string | null;
+  clone_url: string | null;
   workspace: string | null;
   review: string | null;
   blocked: string | null;
@@ -142,6 +148,8 @@ export function rowToTask(row: TaskRow): Task {
     related: JSON.parse(row.related) as RelatedItem[],
     decisions: JSON.parse(row.decisions) as TaskDecision[],
     child_summaries: JSON.parse(row.child_summaries) as ChildCompletionSummary[],
+    repo: row.repo,
+    clone_url: row.clone_url,
     workspace: row.workspace ? (JSON.parse(row.workspace) as TaskWorkspace) : null,
     review: row.review ? (JSON.parse(row.review) as ReviewState) : null,
     blocked: row.blocked ? (JSON.parse(row.blocked) as BlockedDetails) : null,
@@ -264,7 +272,7 @@ export class TaskEngine {
         parent_id, children, cascade_policy,
         title, description, source_text, acceptance_criteria,
         team, related, decisions, child_summaries,
-        workspace, review, blocked,
+        repo, clone_url, workspace, review, blocked,
         priority, llm_tokens, llm_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
         session_id
@@ -272,8 +280,8 @@ export class TaskEngine {
         ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?
@@ -362,6 +370,8 @@ export class TaskEngine {
       "[]", // related
       "[]", // decisions
       "[]", // child_summaries
+      input.repo, // repo
+      input.clone_url ?? null, // clone_url
       null, // workspace
       null, // review
       null, // blocked
@@ -408,6 +418,8 @@ export class TaskEngine {
       related: [],
       decisions: [],
       child_summaries: [],
+      repo: input.repo,
+      clone_url: input.clone_url ?? null,
       workspace: null,
       review: null,
       blocked: null,

@@ -172,6 +172,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     taskEngine,
     orchestrator,
     sessionMemory,
+    workspaceManager,
     clock,
     logger,
     engineerHome,
@@ -386,6 +387,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
         title: event.title,
         body: event.body,
         repo: event.repo,
+        clone_url: event.clone_url,
         metadata: event.metadata,
       },
     } satisfies PublishInput<"trigger.new_event">);
@@ -402,6 +404,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       source: event.source,
       description: event.body ?? "",
       external_ref: externalRef,
+      clone_url: event.clone_url,
     });
 
     taskEngine.requestTransition(task.id, "queued", null, "new_trigger_event", "daemon");
@@ -717,6 +720,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
     if (result.outcome === "completed") {
       taskEngine.requestTransition(taskId, "completed", null, "pipeline_completed", "daemon");
+      // Workspace cleanup (D153): preserve branch, remove worktree
+      try {
+        workspaceManager.cleanupWorkspace(taskId, true);
+      } catch {
+        logger.warn({ taskId }, "Workspace cleanup failed after completion");
+      }
       logger.info({ taskId }, "Task completed");
     } else if (result.outcome === "preempted") {
       taskEngine.requestTransition(taskId, "queued", null, "preempted", "daemon");
@@ -725,6 +734,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     } else {
       logger.error({ taskId, phase: result.phase, reason: result.reason }, "Task error");
       taskEngine.requestTransition(taskId, "blocked", null, result.reason, "daemon");
+      // Don't cleanup workspace on error — task might be resumed
     }
   }
 

@@ -203,6 +203,7 @@ export const TriggerNewEventPayloadSchema = z.object({
   title: z.string(),
   body: z.string().nullable(),
   repo: z.string(),
+  clone_url: z.string(),
   metadata: z.record(z.unknown()).nullable(),
 });
 export type TriggerNewEventPayload = z.infer<typeof TriggerNewEventPayloadSchema>;

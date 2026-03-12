@@ -7,6 +7,7 @@ import type {
 } from "../../src/core/action-pipeline/index.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
+import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import type { SafetyLayer } from "../../src/core/safety-layer/index.js";
 import type {
@@ -241,6 +242,9 @@ export interface TestOrchestratorHandle {
     createWorkspace: Mock;
     verifyWorkspace: Mock;
     getWorktreePath: Mock;
+    getWorkspaceRecord: Mock;
+    registerExistingWorkspace: Mock;
+    pushBranch: Mock;
     cleanupWorkspace: Mock;
   };
   /** Get the preemption.requested subscriber callback captured from subscribe(). */
@@ -417,10 +421,18 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       recoveryAction: null,
     } satisfies WorkspaceVerification),
     getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree/task-001"),
+    getWorkspaceRecord: vi.fn().mockReturnValue(null),
+    registerExistingWorkspace: vi.fn(),
+    pushBranch: vi.fn(),
     cleanupWorkspace: vi.fn(),
   };
 
   // ── Build Orchestrator ─────────────────────────────────────────────────
+  const peopleDirectory = {
+    getOwner: vi.fn().mockReturnValue(null),
+    resolveContact: vi.fn().mockReturnValue(null),
+  };
+
   const orchestrator = new Orchestrator({
     eventBus: eventBus as unknown as EventBus,
     registry: registry as unknown as Registry,
@@ -429,6 +441,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     actionPipeline: actionPipeline as unknown as ActionPipeline,
     sessionMemory: sessionMemory as unknown as SessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
+    peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────

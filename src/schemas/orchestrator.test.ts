@@ -207,7 +207,7 @@ describe("ExecutionOutputSchema", () => {
   });
 
   it("accepts both build statuses", () => {
-    for (const status of ["passing", "failing"]) {
+    for (const status of ["passing", "failing", "unknown"]) {
       expect(
         ExecutionOutputSchema.parse({
           files_changed: [],

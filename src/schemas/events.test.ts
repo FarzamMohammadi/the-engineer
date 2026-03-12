@@ -337,6 +337,7 @@ describe("TriggerNewEventPayloadSchema", () => {
       title: "Fix auth bug",
       body: "Users can't log in after recent deploy",
       repo: "owner/repo",
+      clone_url: "https://github.com/owner/repo.git",
       metadata: { labels: ["bug", "auth"] },
     };
     expect(TriggerNewEventPayloadSchema.parse(valid)).toEqual(valid);

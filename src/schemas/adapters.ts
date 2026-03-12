@@ -61,6 +61,7 @@ export const TriggerEventSchema = z.object({
   title: z.string(),
   body: z.string().nullable(),
   repo: z.string(),
+  clone_url: z.string(),
   metadata: z.record(z.unknown()).nullable(),
 });
 export type TriggerEvent = z.infer<typeof TriggerEventSchema>;
@@ -168,6 +169,9 @@ export const CompletionRequestSchema = z.object({
     temperature: z.number().min(0).max(1).nullable(),
     stop: z.array(z.string()).nullable(),
     tools: z.array(z.record(z.unknown())).nullable(),
+    /** Working directory for the LLM process. CLI-based plugins use this as CWD
+     *  so the CLI loads the target repo's project context, not the daemon's. */
+    cwd: z.string().nullable().optional(),
   }),
 });
 export type CompletionRequest = z.infer<typeof CompletionRequestSchema>;

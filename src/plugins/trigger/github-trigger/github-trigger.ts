@@ -165,6 +165,7 @@ function mapIssueToEvent(
     title: issue.title,
     body: issue.body ?? null,
     repo: `${owner}/${repo}`,
+    clone_url: `https://github.com/${owner}/${repo}.git`,
     metadata: {
       issue_number: issue.number,
       updated_at: issue.updated_at,

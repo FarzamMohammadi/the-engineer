@@ -225,6 +225,8 @@ describe("table structure", () => {
       "related",
       "decisions",
       "child_summaries",
+      "repo",
+      "clone_url",
       "workspace",
       "review",
       "blocked",

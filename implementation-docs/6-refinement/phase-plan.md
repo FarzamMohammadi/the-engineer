@@ -217,7 +217,7 @@ Update this section as phases complete:
 | 6.1 | DONE | 052 | 1442 | Agent loop engine, D143 (Engineer owns the loop) |
 | 6.2 | DONE | 053 | 1502 | Prompt template architecture, system/intake/research prompts, context assembly |
 | 6.3 | DONE | 054 | 1540 | Planning + execution prompts, planning formatter, full context flow wired |
-| 6.4 | Not started | — | — | — |
+| 6.4 | DONE | 055 | 1599 | Self-review + demo-prep + integration prompts, 3 phase formatters, quality gate loopback |
 | 6.5 | Not started | — | — | — |
 | 6.6 | Not started | — | — | — |
 | 6.7 | Not started | — | — | — |

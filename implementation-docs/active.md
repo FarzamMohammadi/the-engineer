@@ -7,7 +7,7 @@
 See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
 - [`assessment.md`](6-refinement/assessment.md) — Current state assessment
 - [`gaps.md`](6-refinement/gaps.md) — Gap analysis (8 gaps, prioritized)
-- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D143)
+- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D146)
 - [`phase-plan.md`](6-refinement/phase-plan.md) — 8-phase plan with dependencies
 
 All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
@@ -136,12 +136,16 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 **Layer 6 Phase 6.7 (E2E Manual Testing Round 1): DONE (Session 056).** First live run against `FarzamMohammadi/learnaholic-demo`. All 7 phases completed with real Claude CLI. 4 bugs found and fixed: trigger assignee filter, nested Claude session, --max-tokens flag, task completion transition. Critical gap confirmed: no workspace created → LLM operates without repo context. Full findings documented in `6-refinement/phase-plan.md` Phase 6.7 section.
 
-**Next: Phase 6.5 (Workspace Integration + Wiring).** Make The Engineer do real work:
-1. Orchestrator calls `createWorkspace()` before research phase
-2. Wire repo URL from trigger event through dispatch to workspace creation
-3. Real file operations in worktree (agent loop already supports this)
-4. PR creation via GitHostingAdapter at integration phase
-5. Telegram notifications at task pickup and completion
-6. GitHub issue comments and state label sync
+**Layer 6 Phase 6.5 (Workspace Integration + E2E Round 2): IN PROGRESS (Session 057).** The Engineer now produces **real work** end-to-end. First successful draft PR created on `FarzamMohammadi/learnaholic-demo` (PR #2). 5 bugs found and fixed this session:
+1. `build_status: "unknown"` rejected by schema — added to enum
+2. Claude CLI `--print` mode blocked file writes — added `--dangerously-skip-permissions`
+3. `commitPushAndCreatePR` skipped push/PR when Claude CLI committed internally — added `rev-list` ahead-of-base check
+4. GitHub token lacked push access — user regenerated with full permissions
+5. Token leaked in journal entry — noted for security hardening
 
-This is the phase that turns "pipeline works" into "actually writes code and creates PRs."
+Outstanding items for Phase 6.5 completion:
+- Security: sanitize token from journal/log entries
+- Unit tests for `commitPushAndCreatePR` ahead-of-base detection
+- Update Layer 6 decisions doc (D147-D153)
+- Full observability (persisting agent action traces) — deferred to later Layer 6 phase
+- Communication receive capability — deferred

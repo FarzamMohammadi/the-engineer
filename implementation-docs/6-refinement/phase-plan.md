@@ -8,17 +8,19 @@ Each phase: build → manual test → refine → next phase.
 
 ## Phase Overview
 
-| Phase | Name | Goal | Depends On |
-|-------|------|------|------------|
-| 6.0 | Assessment & Smoke Test | Baseline, docs, decisions | — |
-| 6.1 | LLM Adapter Evolution | Agentic mode with tools | 6.0 |
-| 6.2 | Intake & Research Prompts | First two phases intelligent | 6.1 |
-| 6.3 | Planning & Execution Prompts | Core work phases functional | 6.2 |
-| 6.4 | Review, Demo & Integration | Complete pipeline end-to-end | 6.3 |
-| 6.5 | Communication & Feedback | Bidirectional human-agent | 6.4 |
-| 6.6 | Decomposition & Multi-Task | Task splitting for large tasks | 6.3 |
-| 6.7 | End-to-End Manual Testing | Validate all 5 user flows | 6.4 |
-| 6.8 | Hardening & OSS Prep | Push to perfection | 6.7 |
+| Phase | Name | Goal | Depends On | Status |
+|-------|------|------|------------|--------|
+| 6.0 | Assessment & Smoke Test | Baseline, docs, decisions | — | DONE |
+| 6.1 | Agent Loop Engine | Orchestrator-owned agent loop | 6.0 | DONE |
+| 6.2 | Intake & Research Prompts | First two phases intelligent | 6.1 | DONE |
+| 6.3 | Planning & Execution Prompts | Core work phases functional | 6.2 | DONE |
+| 6.4 | Review, Demo & Integration | Complete prompt pipeline | 6.3 | DONE |
+| 6.7 | E2E Manual Testing (Round 1) | Validate pipeline infrastructure | 6.4 | DONE |
+| 6.5 | Workspace Integration + Wiring | Real repo work, PR creation, notifications | 6.7 | **NEXT** |
+| 6.6 | Decomposition & Multi-Task | Task splitting for large tasks | 6.5 | Not started |
+| 6.8 | Hardening, Observability & OSS Prep | Agent loop logs, cost tracking, polish | 6.5 | Not started |
+
+**Order change note (Phase 6.7):** Originally 6.5 (Communication) and 6.6 (Decomposition) came before E2E testing. We pulled 6.7 forward to validate the infrastructure before adding more features. The E2E test revealed that the pipeline infrastructure is solid, but **workspace integration** is the critical missing piece — not communication or decomposition. Phase 6.5 is now redefined as "Workspace Integration + Wiring" to address the #1 gap before anything else.
 
 ---
 
@@ -26,14 +28,14 @@ Each phase: build → manual test → refine → next phase.
 
 ```
 6.0 (Assessment)
-  └─ 6.1 (LLM Adapter)
-       └─ 6.2 (Intake + Research)
-            └─ 6.3 (Planning + Execution)
-                 ├─ 6.4 (Review + Demo + Integration)
-                 │    ├─ 6.5 (Communication)
-                 │    └─ 6.7 (E2E Testing)
-                 │         └─ 6.8 (Hardening)
-                 └─ 6.6 (Decomposition)
+  └─ 6.1 (Agent Loop)
+       └─ 6.2 (Intake + Research Prompts)
+            └─ 6.3 (Planning + Execution Prompts)
+                 └─ 6.4 (Review + Demo + Integration Prompts)
+                      └─ 6.7 (E2E Round 1 — infrastructure validation) ✅
+                           └─ 6.5 (Workspace Integration + Wiring) ← NEXT
+                                ├─ 6.6 (Decomposition)
+                                └─ 6.8 (Hardening & OSS Prep)
 ```
 
 ---
@@ -42,132 +44,151 @@ Each phase: build → manual test → refine → next phase.
 
 ### Phase 6.0: Assessment & Smoke Test — Session 051
 
-**Status: IN PROGRESS**
+**Status: DONE**
 
 - [x] Full codebase assessment (3 parallel exploration agents)
 - [x] Gap analysis (8 gaps identified and prioritized)
 - [x] Design decisions (D137-D142)
 - [x] Layer 6 directory structure created
 - [x] Assessment, gaps, decisions, phase-plan docs written
-- [ ] Smoke test against real repo
-- [ ] Update active.md, layers.md
-- [ ] Session log
-- [ ] Memory files
 
-### Phase 6.1: Agent Loop Engine + LLM Adapter Evolution — Session 052
+### Phase 6.1: Agent Loop Engine — Session 052
 
 **Status: DONE**
 
-**Decision D143:** The Engineer owns the agent loop. LLMs are inference-only (prompt in, JSON out). Provider-agnostic by design — any LLM that outputs JSON works. No dependency on any provider's agentic features.
+**Decision D143:** The Engineer owns the agent loop. LLMs are inference-only (prompt in, JSON out). Provider-agnostic by design.
 
-**Changes (implemented):**
-1. `CompletionRequest` → added `system_prompt` (nullable, backward-compatible)
-2. `AgentAction` discriminated union schema (7 action types + `thinking` field)
-3. `ActionResult` and `PhaseToolConfig` schemas
-4. **`agent-loop.ts`** (NEW) — Pure-function agent loop: prompt → LLM → parse → validate → execute → repeat
-5. **`action-executor.ts`** (NEW) — Maps AgentAction to real operations within worktree (security boundary)
-6. **`phase-tools.ts`** (NEW) — Per-phase tool restrictions (D141 enforcement)
-7. `ClaudeCodeLLMPlugin` → `--system-prompt` flag support
-8. Orchestrator → all 7 phase handlers wired through `runPhaseWithAgentLoop()`
-9. Prior phase output injection (intake→research, research→planning, planning→execution, execution→self_review)
+**Delivered:**
+- `agent-loop.ts` — Pure-function loop: prompt → LLM → parse JSON → validate → execute → repeat
+- `action-executor.ts` — Maps AgentAction to real operations within worktree
+- `phase-tools.ts` — Per-phase tool restrictions (D141 enforcement)
+- `AgentAction` discriminated union schema (7 action types)
+- All 7 Orchestrator phase handlers wired through `runPhaseWithAgentLoop()`
+- Prior phase output injection
 
-**Files modified/created:**
-- `src/schemas/adapters.ts` (system_prompt)
-- `src/schemas/orchestrator.ts` (AgentAction, ActionResult, PhaseToolConfig)
-- `src/core/orchestrator/agent-loop.ts` (NEW — the core)
-- `src/core/orchestrator/action-executor.ts` (NEW)
-- `src/core/orchestrator/phase-tools.ts` (NEW)
-- `src/core/orchestrator/index.ts` (wiring)
-- `src/plugins/llm/claude-code-llm/claude-code-llm.ts` (--system-prompt)
-- `test/helpers/test-orchestrator.ts` (updated for agent loop format)
-- 3 new test files + additions to 3 existing test files
-
-**Tests:** 1,442 total (was 1,437). 0 lint errors. 0 new typecheck errors.
+**Tests:** 1,442 total (was 1,437).
 
 ### Phase 6.2: Prompt Engineering — Intake & Research — Session 053
 
 **Status: DONE**
 
-**Changes (implemented):**
-1. Prompt template architecture in `src/core/orchestrator/prompts/` (6 modules)
-2. `system.ts` — Shared system prompt (identity from persona.md, JSON protocol, per-phase guidance)
-3. `context.ts` — Repo context assembly (README, tree, git log, branch, package.json; sync I/O, graceful degradation)
-4. `format.ts` — Formatting utilities (action reference, output schema, prior phase output, knowledge)
-5. `intake.ts` — Intake prompt builder (task brief, repo overview, knowledge, instructions, iteration budget, output schema)
-6. `research.ts` — Research prompt builder (intake results injection, complexity-adaptive strategy)
-7. Orchestrator `handleIntakeAnalysis` + `handleResearch` wired to prompt builders
+**Delivered:**
+- Prompt template architecture in `src/core/orchestrator/prompts/` (6 modules)
+- `system.ts` — Shared system prompt (identity, JSON protocol, per-phase guidance)
+- `context.ts` — Repo context assembly (README, tree, git log, branch, package.json; graceful degradation)
+- `format.ts` — Formatting utilities (action reference, output schema, prior phase output, knowledge)
+- `intake.ts` — Intake prompt builder
+- `research.ts` — Research prompt builder with complexity-adaptive strategy
 
-**Files created:**
-- `src/core/orchestrator/prompts/system.ts`
-- `src/core/orchestrator/prompts/context.ts`
-- `src/core/orchestrator/prompts/format.ts`
-- `src/core/orchestrator/prompts/intake.ts`
-- `src/core/orchestrator/prompts/research.ts`
-- `src/core/orchestrator/prompts/index.ts`
-- 5 test files (60 tests)
+**Tests:** 1,502 total (was 1,442).
 
-**Files modified:**
-- `src/core/orchestrator/index.ts` (wiring)
+### Phase 6.3: Prompt Engineering — Planning & Execution — Session 054
 
-**Tests:** 1,502 total (was 1,442). 0 lint errors. 0 type errors.
+**Status: DONE**
 
-### Phase 6.3: Prompt Engineering — Planning & Execution
+**Delivered:**
+- `planning.ts` — 10-section prompt with complexity-adaptive strategy
+- `execution.ts` — 10-section prompt with test-fix loop guidance
+- Planning formatter in `format.ts`
+- Full context flow wired: intake→research→planning→execution
 
-**Estimated scope:** Large
+**Tests:** 1,540 total (was 1,502).
 
-**Changes:**
-1. `planning.ts` — Research findings as context, actionable plan output
-2. `execution.ts` — Plan as context, test-fix iteration instructions
-3. Wire research → planning → execution context flow
-4. Workspace integration (all tool work in worktree)
+### Phase 6.4: Prompt Engineering — Review, Demo & Integration — Session 055
 
-**Files:**
-- `src/core/orchestrator/prompts/planning.ts`
-- `src/core/orchestrator/prompts/execution.ts`
-- `src/core/orchestrator/index.ts`
+**Status: DONE**
 
-**Manual test:** Simple task → plan → code → tests pass → commit. Real repo.
+**Delivered:**
+- `self-review.ts` — 10-section, loopback-aware prompt
+- `demo-prep.ts` — 9-section PR narrative prompt
+- `integration.ts` — 9-section prompt with child summaries
+- Self-review quality gate loopback (needs_work → execution, max 3)
+- 3 phase formatters in `format.ts`
+- **Full 7-phase prompt pipeline complete.**
 
-### Phase 6.4: Prompt Engineering — Review, Demo & Integration
+**Tests:** 1,599 total (was 1,540).
 
-**Estimated scope:** Medium
+### Phase 6.7: E2E Manual Testing (Round 1) — Session 056
 
-**Changes:**
-1. `self-review.ts` — Read own diff, quality gates, loopback logic
-2. `demo-prep.ts` — PR description, Draft PR creation
-3. `integration.ts` — Child verification, integration tests
-4. Quality gate: needs_work → loop back to execution
+**Status: DONE**
 
-**Files:**
-- `src/core/orchestrator/prompts/self-review.ts`
-- `src/core/orchestrator/prompts/demo-prep.ts`
-- `src/core/orchestrator/prompts/integration.ts`
-- `src/core/orchestrator/index.ts`
+First live run against a real GitHub repo with real Claude CLI calls. Validated pipeline infrastructure end-to-end. Found and fixed critical bugs. Identified remaining gaps.
 
-**Manual test:** Full pipeline end-to-end. Inspect PR quality.
+**Test setup:**
+- Repo: `FarzamMohammadi/learnaholic-demo` (issue #1 with `engineer` label)
+- Home: `/tmp/engineer-e2e-test/`
+- LLM: Claude CLI (`claude-sonnet-4-20250514`)
+- All 6 plugins initialized (github-trigger, github-comm, github-hosting, telegram-comm, claude-code-llm, bash-tool)
 
-### Phase 6.5: Communication & Feedback Loop
+**Pipeline result:** All 7 phases completed successfully (intake→research→planning→execution→self_review→demo_prep→integration). Session ended with `completed` status. ~18 minutes total.
 
-**Estimated scope:** Medium-Large
+**Bugs found & fixed (3 code fixes):**
+1. **Trigger ignores unassigned issues** — `assignee: "*"` in GitHub API means "only assigned issues". Removed filter from `pollIssues()`. (`github-trigger.ts`)
+2. **Nested Claude session blocked** — `CLAUDECODE` env var inherited by child process. Added `cleanEnv()` method to strip it. (`claude-code-llm.ts`)
+3. **`--max-tokens` not a CLI option** — Claude CLI doesn't support this flag. Removed from `doComplete()` args. (`claude-code-llm.ts`)
 
-**Changes:**
-1. Telegram `receive` capability (grammy long-polling)
-2. Message routing in Daemon
-3. Blocked → question → response → unblock
-4. PR feedback → rework loop
-5. Enhanced query handler
+**Bugs found & fixed (1 daemon logic fix):**
+4. **Task stays `active.working` after completion** — `handleTaskCompletion()` logged "completed" but never called `requestTransition()`. Fixed to transition to `completed`/`queued` on completion/preemption. (`daemon/index.ts`)
 
-**Files:**
-- `src/plugins/communication/telegram-comm/telegram-comm.ts`
-- `src/core/daemon/query-handler.ts`
-- `src/core/daemon/index.ts`
-- `src/core/orchestrator/index.ts`
+**Bugs found & fixed (from prior session, confirmed working):**
+5. Bootstrap not loading plugins — `loadBuiltinPlugins()` added (Session 055)
+6. E2E test format mismatch — `makeResponse()` wraps in `{"action":"done"}` (Session 055)
 
-**Manual test:** Block task, send question via Telegram, respond, task unblocks.
+**Critical gaps confirmed (not yet fixed — Phase 6.5 scope):**
+- **No workspace/worktree created** — LLM runs with zero repo context, can't read/write files
+- **No PR created** — No branch exists, so integration phase can't create a PR
+- **No Telegram notifications** — Orchestrator doesn't call comm plugins at milestones
+- **Cost tracking non-functional** — CLI returns `cost_usd: null`, `tokens_in: 0`
+- **Single-turn agent loop** — LLM returns "done" immediately with no repo context to explore
+- **No state label sync** — GitHub issue labels not updated
+
+**What passed (infrastructure):**
+- GitHub trigger polling → finds issue → creates task ✅
+- State machine: intake → queued → active.working ✅
+- 7-phase pipeline runs sequentially ✅
+- Agent loop: prompt → LLM → parse JSON → next phase ✅
+- Checkpoints at each phase transition ✅
+- Journal entries logged ✅
+- Session lifecycle (start → complete) ✅
+- Cost events emitted (7 total, values null) ✅
+- Daemon tick loop (5s interval) ✅
+- Plugin initialization (all 6) ✅
+- Config loading with env var resolution ✅
+
+**Additional documentation:**
+- Agent loop observability gap documented
+- Cost tracking gap updated with E2E findings
+- Local dev dashboard idea documented in `future-considerations.md`
+
+### Phase 6.5: Workspace Integration + Wiring — **NEXT**
+
+**Status: Not started** (replaces old "Communication & Feedback" — renamed based on E2E findings)
+
+**Goal:** Make The Engineer do real work. This is where the system goes from "pipeline works" to "actually writes code."
+
+**Critical changes (must-have for working system):**
+1. **Workspace creation** — Orchestrator calls `workspaceManager.createWorkspace(taskId, repoUrl, baseBranch)` before first phase that needs repo access. Wire repo URL from trigger event → dispatch → Orchestrator.
+2. **Real tool execution in worktree** — Agent loop passes worktree path to action executor. File reads/writes happen in the correct repo directory.
+3. **Multi-turn agent loop** — With real repo context, LLM will use read_file/write_file/run_command actions before returning "done". The agent loop already supports this — it just needs a real workspace.
+4. **PR creation** — Integration phase calls `GitHostingAdapter.createPR()` with the branch from the workspace.
+5. **Task state completion** — Daemon transitions task to `completed` or `review_pending` after pipeline finishes. (Fixed in 6.7)
+
+**Important changes (high value):**
+6. **Telegram notifications** — Emit `comm.message_sent` events at task pickup, completion, errors. Wire through Orchestrator or Daemon.
+7. **GitHub state sync** — Update issue labels at state transitions. Already wired in Daemon event handler.
+8. **GitHub issue comments** — Post status updates on the issue being worked on.
+
+**Files to modify:**
+- `src/core/orchestrator/index.ts` — workspace creation, PR creation calls
+- `src/core/daemon/index.ts` — repo URL in dispatch, notification wiring
+- `src/core/workspace-manager/index.ts` — may need adjustments for real repos
+- `src/plugins/git-hosting/github-hosting/` — PR creation integration test
+
+**Manual test:** Same issue on learnaholic-demo. This time: real worktree, real file changes, real PR, Telegram notification. The full loop.
 
 ### Phase 6.6: Decomposition & Multi-Task
 
-**Estimated scope:** Medium
+**Status: Not started**
 
 **Changes:**
 1. Planning detects large tasks → decomposition plan
@@ -175,50 +196,35 @@ Each phase: build → manual test → refine → next phase.
 3. Parent → Active.Supervising
 4. Integration merges child results
 
-**Files:**
-- `src/core/orchestrator/index.ts`
-
 **Manual test:** Large task → decomposes → children execute → parent integrates.
 
-### Phase 6.7: End-to-End Manual Testing
+### Phase 6.8: Hardening, Observability & OSS Prep
 
-**Estimated scope:** Variable
+**Status: Not started**
 
-**Test all 5 user flows:**
-1. Happy path (Issue → PR)
-2. Mid-task interaction (Block → question → response)
-3. Feedback loop (PR review → rework)
-4. Decomposition (Large task → children → integration)
-5. Status query ("What's the status?")
-
-**Deliverables:** Bug fixes, prompt refinements, cost analysis, edge case catalog.
-
-### Phase 6.8: Hardening & OSS Prep
-
-**Estimated scope:** Ongoing
-
-- Context budgeting and token optimization
-- Error recovery improvements
-- CI pipeline setup
-- Documentation updates
-- Enum constants refactor
-- Cost optimization
-- README and docs polish
+**Scope (informed by 6.7 findings):**
+- **Agent loop observability** — `agent_iterations` table or structured journal entries for debugging LLM back-and-forth
+- **Cost tracking** — Dual-mode: API adapters report real cost, CLI adapters report call count + error signals
+- **Local dev dashboard** — Docker Compose with Datasette + Grafana (see `future-considerations.md`)
+- **Context budgeting** — Token optimization, prompt size management
+- **Error recovery** — Retry logic, graceful degradation
+- **CI pipeline** — GitHub Actions workflow
+- **Build script** — Auto-copy migrations after `pnpm build` (currently manual)
+- **Enum constants refactor** — `TaskState.queued` instead of `"queued"`
+- **Documentation** — README, setup guide, contributing guide
 
 ---
 
 ## Progress Tracking
 
-Update this section as phases complete:
-
 | Phase | Status | Session | Tests After | Notes |
 |-------|--------|---------|------------|-------|
 | 6.0 | DONE | 051 | 1437 | Assessment, gaps, decisions (D137-D142) |
 | 6.1 | DONE | 052 | 1442 | Agent loop engine, D143 (Engineer owns the loop) |
-| 6.2 | DONE | 053 | 1502 | Prompt template architecture, system/intake/research prompts, context assembly |
-| 6.3 | DONE | 054 | 1540 | Planning + execution prompts, planning formatter, full context flow wired |
-| 6.4 | DONE | 055 | 1599 | Self-review + demo-prep + integration prompts, 3 phase formatters, quality gate loopback |
-| 6.5 | Not started | — | — | — |
-| 6.6 | Not started | — | — | — |
-| 6.7 | Not started | — | — | — |
-| 6.8 | Not started | — | — | — |
+| 6.2 | DONE | 053 | 1502 | Prompt template architecture, system/intake/research prompts |
+| 6.3 | DONE | 054 | 1540 | Planning + execution prompts, full context flow wired |
+| 6.4 | DONE | 055 | 1599 | Self-review + demo-prep + integration prompts, quality gate loopback |
+| 6.7 | DONE | 056 | 1599 | E2E round 1: pipeline infra validated, 4 bugs fixed, workspace gap confirmed |
+| 6.5 | **NEXT** | — | — | Workspace integration, PR creation, notifications — make it real |
+| 6.6 | Not started | — | — | Decomposition (depends on 6.5) |
+| 6.8 | Not started | — | — | Hardening, observability, OSS prep |

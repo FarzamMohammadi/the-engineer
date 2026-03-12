@@ -2,11 +2,15 @@
 
 ## Executive Summary
 
-**Infrastructure: 95% complete. Intelligence: 5% complete.**
+**Infrastructure: 100% complete. Intelligence: 40% complete. Wiring: 60% complete.**
 
-Layers 0-5 built a functioning, well-tested agent framework. 1,437 tests pass across unit, integration, and E2E tiers. All 136 architectural decisions implemented faithfully. The system boots, ticks, polls triggers, creates tasks, dispatches to the Orchestrator, and runs a 7-phase pipeline.
+*Updated after Phase 6.7 E2E testing (Session 056).*
 
-But the Orchestrator — the brain — has placeholder prompts and no tool use. The LLM can't read files, write code, or run tests. Prior phase outputs are literally unused (prefixed with `_`). The system produces structurally valid but intellectually empty output.
+Layers 0-5 built a functioning, well-tested agent framework. 1,599 tests pass. All 143 architectural decisions implemented. The system boots, ticks, polls triggers, creates tasks, dispatches to the Orchestrator, and runs a 7-phase pipeline.
+
+Phase 6.1-6.4 added the intelligence layer: agent loop engine (D143), 7 prompt template modules, phase-specific tool restrictions, prior phase output injection, self-review quality gate loopback.
+
+**Phase 6.7 E2E test (Session 056):** First live run against `FarzamMohammadi/learnaholic-demo` with real Claude CLI. **Result: pipeline infrastructure validated end-to-end.** All 7 phases completed. 4 bugs found and fixed. But the system operates in "hallucination mode" — the LLM generates plausible responses without actually interacting with the target repo, because **no workspace/worktree is ever created**. This is the #1 gap: workspace integration (Phase 6.5).
 
 ---
 
@@ -164,18 +168,23 @@ Everything in `future-considerations.md`:
 
 ## Completeness Scorecard
 
+*Updated after Phase 6.7 E2E testing.*
+
 | Category | % | Notes |
 |----------|---|-------|
-| Architecture & Design | 100% | All layers, all decisions |
+| Architecture & Design | 100% | All layers, 143 decisions |
 | Infrastructure | 100% | Build, test, lint, all working |
-| Core Components | 95% | All 10 implemented |
+| Core Components | 100% | All 10 implemented |
 | Adapter Tier | 100% | All 5 base classes + contracts |
-| Plugins | 100% | All 6 implemented |
-| Orchestrator Logic | 80% | Pipeline works, prompts skeleton |
-| Prompt Engineering | 5% | Placeholder strings |
-| Tool Use | 5% | Single empty call in execution |
-| Knowledge Integration | 20% | Session memory exists, unused by prompts |
-| Communication | 60% | Send works, receive missing |
-| E2E Verification | 70% | Happy path works (with fakes) |
+| Plugins | 100% | All 6 implemented, all initialize in E2E |
+| Agent Loop | 90% | Pure-function loop works, needs multi-turn with real workspace |
+| Prompt Engineering | 80% | All 7 phase prompts built, tested with real LLM in E2E |
+| Workspace Integration | 10% | WorkspaceManager exists but Orchestrator never calls createWorkspace |
+| Tool Execution | 60% | Action executor + security boundary built, but executes in "." (no worktree) |
+| PR Creation | 0% | Integration phase ready but no branch/commits to push |
+| Notifications | 0% | Comm plugins initialized but never called during pipeline |
+| Cost Tracking | 20% | Events fire but values null (CLI limitation) |
+| Communication Receive | 0% | Send only, receive deferred |
+| E2E Verification | 70% | Pipeline completes E2E, but no real repo work done |
 
-**Overall: The car is built. The engine needs to be installed.**
+**Overall: The car is built. The engine is installed. It needs to be connected to the wheels (workspace).**

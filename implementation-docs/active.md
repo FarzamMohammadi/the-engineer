@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-**Layer 6: Refinement & Intelligence.** Teaching the machine to think. All infrastructure is complete (Layers 0-5, 1,437 tests). Agent loop engine built (Phase 6.1, D143). Now installing prompt intelligence — phase-specific prompts that make each phase actually do its job.
+**Layer 6: Refinement & Intelligence.** Making The Engineer actually work. Pipeline infrastructure validated end-to-end (Phase 6.7 E2E test, Session 056). Agent loop, prompts, and 7-phase pipeline all operational with real Claude CLI. The #1 remaining gap is **workspace integration** — the Orchestrator never creates a worktree, so the LLM can't interact with the target repo. Phase 6.5 (Workspace Integration + Wiring) is next.
 
 See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
 - [`assessment.md`](6-refinement/assessment.md) — Current state assessment
@@ -134,4 +134,14 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 **Layer 6 Phase 6.4 (Review, Demo & Integration Prompts): DONE (Session 055).** Built `self-review.ts` (10-section prompt: task brief, original plan, execution summary, prior review findings on loopback, branch context, knowledge, 5-step review checklist, complexity-adaptive + loopback-aware strategy, iteration budget 15, output schema + action reference), `demo-prep.ts` (9-section prompt: task brief, implementation summary, review assessment, original approach for PR narrative, repo context, knowledge, 4-step PR/demo instructions, iteration budget 10, output schema + action reference), `integration.ts` (9-section prompt: task brief, child task summaries with formatted list, parent execution + review, branch context, knowledge, 6-step integration instructions, iteration budget 20, output schema + full action reference). Added 3 phase formatters to `format.ts` (execution, self_review, demo_prep). Self-review quality gate loopback implemented in Orchestrator: `needs_work`/`fundamental_issues` → loop back to execution with findings injected, max 3 loopbacks before human alert via `comm.message_sent`. Fallback outputs (confidence: "low") don't trigger loopback. Extracted `processPhaseCompletion` + `checkSelfReviewLoopback` + `emitLoopbackAlert` helpers for Biome complexity. Full 7-phase prompt pipeline complete. 1,599 tests (59 new), 0 type errors, 0 lint errors.
 
-**Next: Phase 6.5 (Communication & Feedback Loop).** Telegram `receive` capability, message routing in Daemon, blocked→question→response→unblock flow, PR feedback→rework loop, enhanced query handler. Or Phase 6.6 (Decomposition & Multi-Task). Or Phase 6.7 (E2E Manual Testing) — validate all 5 user flows end-to-end.
+**Layer 6 Phase 6.7 (E2E Manual Testing Round 1): DONE (Session 056).** First live run against `FarzamMohammadi/learnaholic-demo`. All 7 phases completed with real Claude CLI. 4 bugs found and fixed: trigger assignee filter, nested Claude session, --max-tokens flag, task completion transition. Critical gap confirmed: no workspace created → LLM operates without repo context. Full findings documented in `6-refinement/phase-plan.md` Phase 6.7 section.
+
+**Next: Phase 6.5 (Workspace Integration + Wiring).** Make The Engineer do real work:
+1. Orchestrator calls `createWorkspace()` before research phase
+2. Wire repo URL from trigger event through dispatch to workspace creation
+3. Real file operations in worktree (agent loop already supports this)
+4. PR creation via GitHostingAdapter at integration phase
+5. Telegram notifications at task pickup and completion
+6. GitHub issue comments and state label sync
+
+This is the phase that turns "pipeline works" into "actually writes code and creates PRs."

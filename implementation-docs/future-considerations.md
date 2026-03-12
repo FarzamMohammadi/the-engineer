@@ -198,3 +198,28 @@ packages/
 3. Authenticate inbound messages against People Directory (match Telegram user ID to directory entries)
 4. Emit `comm.message_received` events (the Daemon subscription already exists from Phase 14b)
 5. Design interrupt routing in the Orchestrator (shared with GitHub — see "Mid-Phase Communication Interrupt Handling")
+
+---
+
+## Local Development Dashboard (Docker Compose)
+
+**Current state (v1):** All observability is via raw SQLite queries and log files. No visual dashboards.
+
+**What it enables:** A `docker-compose.dev.yaml` that spins up local dev tooling for real-time visibility into The Engineer's state:
+1. **Datasette** — instant read-only web UI for the SQLite database (events, tasks, journal, checkpoints). Zero config, browse all tables, run SQL queries in the browser.
+2. **Grafana + SQLite datasource** — dashboards for cost tracking over time, phase duration histograms, event timelines, task state flow (Sankey diagram), error rates.
+3. **Custom audit trail viewer** — lightweight web app showing the event stream as a timeline with filtering by task, event type, and time range. Could be a simple React/Vite app reading from Datasette's JSON API.
+
+**When it becomes relevant:** Now — the system is producing real data (events, journal entries, cost tracking). Visual tooling accelerates debugging and builds confidence in the pipeline.
+
+**Migration path:** No code changes needed. Docker Compose mounts the SQLite DB read-only. Services:
+- `datasette`: `docker run -p 8001:8001 -v /path/to/engineer.db:/data/engineer.db:ro datasetteproject/datasette`
+- `grafana`: Standard Grafana container + SQLite plugin, provisioned dashboards in `docker/grafana/dashboards/`
+- Optional: log viewer (e.g., Dozzle for container logs, or pino-pretty piped to a web viewer)
+
+**Key dashboards to build:**
+- Task lifecycle: state machine flow visualization
+- Cost tracker: cumulative spend per task, per day, per phase
+- Event timeline: filterable stream of all events
+- Phase performance: duration per phase, LLM call count per phase
+- Health: plugin health state history

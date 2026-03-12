@@ -184,3 +184,51 @@ Each phase run:
 - Delegate to Claude CLI agentic mode (`-p --allowedTools`): Provider-specific, no control over iteration, can't use with API-only providers
 - Use provider-specific function/tool calling: Each provider has different tool-call formats, creating adapter complexity
 - No agent loop (single LLM call per phase): Can't handle tasks requiring file exploration, multi-step editing, test-fix cycles
+
+---
+
+## D144: Workspace-First Pipeline — Orchestrator Creates Worktree Before Phases
+
+**Context (Phase 6.7 E2E):** First live run revealed the Orchestrator never calls `workspaceManager.createWorkspace()`. All 7 phases run with `getWorktreePath()` returning `null`. The LLM gets no repo context and generates fictional responses. The agent loop returns "done" on the first iteration because there's nothing to explore.
+
+**Decision:** The Orchestrator must create a workspace as the first step of `executeTask()`, before any phase handler runs. Workspace creation requires: repo URL (from trigger event metadata), base branch (from config or repo default), and task ID (for branch naming).
+
+**What this means:**
+1. `Dispatch` must include `repoUrl` — resolved from trigger event's `repo` field
+2. Orchestrator calls `workspaceManager.createWorkspace(taskId, repoUrl, baseBranch)` at top of `executeTask()`
+3. All phase handlers already call `getWorktreePath(taskId)` — they'll get a real path instead of null
+4. `gatherRepoContextSafe()` already handles null gracefully — with a real path, prompts get README, tree, git log
+5. Action executor already uses `worktreePath ?? "."` — with a real path, file operations work in the repo
+6. Workspace cleanup at pipeline completion (success or failure)
+
+**Rationale:** The workspace is the #1 gap. Everything else (agent loop, prompts, action executor, tool restrictions) is already built and working. This is the connection that makes it all real.
+
+**Phase:** 6.5
+
+---
+
+## D145: CLI Environment Isolation for LLM Plugin
+
+**Context (Phase 6.7 E2E):** Claude CLI refuses to run inside another Claude Code session — it detects the `CLAUDECODE` environment variable and exits with error. The Engineer's daemon inherits this env var when started from a Claude Code terminal.
+
+**Decision:** `ClaudeCodeLLMPlugin.cleanEnv()` strips `CLAUDECODE` from the child process environment. Applied to both `spawnAndParse()` (LLM calls) and `doHealthCheck()` (version check).
+
+**Rationale:** The Engineer must be able to run from any environment, including being started from within a Claude Code session. Environment isolation prevents provider-specific env vars from leaking into child processes.
+
+**Phase:** 6.7 (implemented)
+
+---
+
+## D146: Dual-Mode Cost Tracking (CLI vs API)
+
+**Context (Phase 6.7 E2E):** All `cost.incurred` events have `spend_usd: null`, `tokens_in: 0`, `tokens_out: 0`. The Claude CLI's `--output-format json` result event doesn't include `cost_usd` in practice. Token counts are also unavailable (upstream GitHub #11917).
+
+**Decision:** Accept that CLI-based LLM providers can't report cost data. Design dual-mode tracking:
+- **API adapters:** Report real cost per call (`spend_usd`, `tokens_in`, `tokens_out`)
+- **CLI adapters:** Report call count + error signals (rate limit detection, error rate)
+
+For CLI adapters, Safety Layer cost limits should be based on call count thresholds rather than dollar amounts. Rate limits and errors detected via CLI exit codes and error messages.
+
+**Rationale:** CLI providers (subscription-based) don't expose per-call billing. Trying to estimate cost from token counts that are 0 is futile. Better to track what we can measure (calls, errors) and defer real cost tracking to API adapters.
+
+**Phase:** 6.8 (implementation)

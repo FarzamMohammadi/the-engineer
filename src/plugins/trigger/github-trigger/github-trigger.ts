@@ -94,7 +94,6 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
       const params: Record<string, unknown> = {
         owner,
         repo: name,
-        assignee: "*",
         state: "open" as const,
         sort: "updated" as const,
         direction: "asc" as const,

@@ -716,8 +716,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     tasksCompleted++;
 
     if (result.outcome === "completed") {
+      taskEngine.requestTransition(taskId, "completed", null, "pipeline_completed", "daemon");
       logger.info({ taskId }, "Task completed");
     } else if (result.outcome === "preempted") {
+      taskEngine.requestTransition(taskId, "queued", null, "preempted", "daemon");
       logger.info({ taskId, lastPhase: result.lastPhase }, "Task preempted — returned to queue");
       pendingPreemption = null;
     } else {

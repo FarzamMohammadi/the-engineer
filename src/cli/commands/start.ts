@@ -58,7 +58,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   }
 
   // 5. Foreground mode: bootstrap and start
-  const { daemon, cleanup } = bootstrap(engineerHome, bundle, options.verbose);
+  const { daemon, cleanup } = await bootstrap(engineerHome, bundle, options.verbose);
 
   // Signal handlers for graceful shutdown
   const shutdown = async () => {

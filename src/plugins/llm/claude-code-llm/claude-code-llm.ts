@@ -23,15 +23,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
   private activeProcess: ChildProcess | null = null;
 
   protected doComplete(request: CompletionRequest): Promise<CompletionResult> {
-    const args = [
-      "--print",
-      "--output-format",
-      "json",
-      "--model",
-      this.config.model,
-      "--max-tokens",
-      String(request.options.max_tokens ?? this.config.max_tokens),
-    ];
+    const args = ["--print", "--output-format", "json", "--model", this.config.model];
 
     if (request.system_prompt) {
       args.push("--system-prompt", request.system_prompt);
@@ -75,6 +67,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
     return new Promise((resolve) => {
       const child = spawn(this.config.cli_path, ["--version"], {
         timeout: 5000,
+        env: this.cleanEnv(),
       });
       const chunks: Buffer[] = [];
       child.stdout?.on("data", (c: Buffer) => {
@@ -96,6 +89,12 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
   // ── Private Helpers ──────────────────────────────────────────────────
 
+  /** Build a clean env for child processes, stripping CLAUDECODE to avoid nested-session detection. */
+  private cleanEnv(): NodeJS.ProcessEnv {
+    const { CLAUDECODE: _, ...env } = process.env;
+    return env;
+  }
+
   private spawnAndParse(args: string[]): Promise<CompletionResult> {
     return new Promise<CompletionResult>((resolve, reject) => {
       const chunks: Buffer[] = [];
@@ -104,6 +103,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
       const child = spawn(this.config.cli_path, args, {
         stdio: ["pipe", "pipe", "pipe"],
         timeout: this.config.command_timeout_ms,
+        env: this.cleanEnv(),
       });
 
       this.activeProcess = child;

@@ -36,10 +36,10 @@ function makeTriggerEvent(overrides?: Partial<TriggerEvent>): TriggerEvent {
   };
 }
 
-/** Build a CompletionResult with the given JSON content. */
+/** Build a CompletionResult with the given JSON content (wrapped in agent loop format). */
 function makeResponse(json: Record<string, unknown>): CompletionResult {
   return {
-    content: JSON.stringify(json),
+    content: JSON.stringify({ action: "done", result: json }),
     tool_calls: null,
     finish_reason: "stop",
     usage: {

@@ -19,6 +19,10 @@ coverage/
 *.swp
 *.swo
 
+# Environment / secrets (track .example files, ignore real ones)
+.env*
+!.env*.example
+
 # OS
 .DS_Store
 Thumbs.db

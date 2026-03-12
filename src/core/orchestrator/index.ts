@@ -26,10 +26,14 @@ import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
 import { gatherRepoContextSafe } from "./prompts/context.js";
+import { buildDemoPrepPrompt } from "./prompts/demo-prep.js";
 import { buildExecutionPrompt } from "./prompts/execution.js";
+import { formatPriorPhaseOutput, section } from "./prompts/format.js";
 import { buildIntakePrompt } from "./prompts/intake.js";
+import { buildIntegrationPrompt } from "./prompts/integration.js";
 import { buildPlanningPrompt } from "./prompts/planning.js";
 import { buildResearchPrompt } from "./prompts/research.js";
+import { buildSelfReviewPrompt } from "./prompts/self-review.js";
 import { buildSystemPrompt } from "./prompts/system.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -47,6 +51,9 @@ export const PHASE_SEQUENCE: Phase[] = [
 
 /** Fast-path phases: skip research, planning, demo_prep, integration. */
 const FAST_PATH_PHASES: Phase[] = ["execution", "self_review"];
+
+/** Max loopbacks before alerting human (orchestrator.md default: 3). */
+const MAX_LOOPBACKS_BEFORE_ALERT = 3;
 
 /** Phase-specific Zod schemas for output validation. */
 const PHASE_SCHEMAS: Record<Phase, ZodType> = {
@@ -107,6 +114,7 @@ export class Orchestrator {
   private readonly workspaceManager: WorkspaceManager;
 
   private preemptionRequested = false;
+  private loopbackCount = 0;
   private preemptionPayload: {
     target_task_id: string;
     preempting_task_id: string;
@@ -164,6 +172,7 @@ export class Orchestrator {
    */
   async executeTask(dispatch: Dispatch): Promise<ExecuteTaskResult> {
     const taskId = dispatch.task.id;
+    this.loopbackCount = 0;
 
     // ── Session setup ──────────────────────────────────────────────────────
     const session = this.createSession(dispatch);
@@ -205,20 +214,23 @@ export class Orchestrator {
 
       priorOutputs.set(phase, output);
 
-      // Fast-path: after intake_analysis, check if we should skip phases
-      if (phase === "intake_analysis") {
-        phases = this.applyFastPathIfNeeded(output, phases);
+      // Post-phase processing (fast-path, loopback, transitions)
+      const postResult = this.processPhaseCompletion(
+        sessionId,
+        taskId,
+        phase,
+        output,
+        phases,
+        i,
+        priorOutputs,
+      );
+      if (postResult.loopbackIndex !== null) {
+        i = postResult.loopbackIndex;
+        continue;
       }
-
-      // Protocol P4: Phase transition
-      const isLastPhase = i === phases.length - 1;
-      // biome-ignore lint/style/noNonNullAssertion: next phase exists when not last
-      const nextPhase = isLastPhase ? null : phases[i + 1]!;
-      this.recordPhaseTransition(sessionId, taskId, phase, nextPhase, priorOutputs);
-
-      // Check preemption again after phase completion
-      if (this.preemptionRequested && nextPhase) {
-        return this.handlePreemption(sessionId, taskId, nextPhase, priorOutputs);
+      phases = postResult.phases;
+      if (postResult.preemptionResult) {
+        return postResult.preemptionResult;
       }
     }
 
@@ -306,7 +318,7 @@ export class Orchestrator {
     const researchData = priorOutputs.get("research")?.data as Record<string, unknown> | undefined;
     const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
     const systemPrompt = buildSystemPrompt("execution");
-    const prompt = buildExecutionPrompt({
+    let prompt = buildExecutionPrompt({
       task: dispatch.task,
       repoContext,
       intakeOutput: intakeData ?? null,
@@ -316,6 +328,12 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
+    // On loopback: inject self_review findings so execution knows what to fix
+    const reviewData = priorOutputs.get("self_review")?.data as Record<string, unknown> | undefined;
+    if (reviewData) {
+      prompt = `${prompt}\n\n${section("Review Findings to Address", formatPriorPhaseOutput("self_review", reviewData))}`;
+    }
+
     return this.runPhaseWithAgentLoop("execution", taskId, systemPrompt, prompt);
   }
 
@@ -324,23 +342,28 @@ export class Orchestrator {
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
+    const intakeData = priorOutputs.get("intake_analysis")?.data as
+      | Record<string, unknown>
+      | undefined;
+    const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
     const execData = priorOutputs.get("execution")?.data as Record<string, unknown> | undefined;
-    const systemPrompt =
-      "You are The Engineer, an autonomous software engineering agent. Review code with a critical eye. Ship quality matters.";
-    const prompt = [
-      "Review the code changes for this task.",
-      `Task: ${dispatch.task.title}`,
-      `Repository: ${this.getTaskRepo(dispatch)}`,
-      execData ? `Execution summary: ${JSON.stringify(execData)}` : "",
-      "",
-      "Read the changed files and run tests to verify quality.",
-      'When done, respond with {"action": "done", "result": {your review}}.',
-      "",
-      "Required result fields:",
-      "- findings: array of {type, file, description, fixed}",
-      "- refactoring_applied: array of refactoring descriptions",
-      "- quality_assessment: 'ship_it', 'needs_work', or 'fundamental_issues'",
-    ].join("\n");
+    const selfReviewData = priorOutputs.get("self_review")?.data as
+      | Record<string, unknown>
+      | undefined;
+    const systemPrompt = buildSystemPrompt("self_review");
+    const prompt = buildSelfReviewPrompt({
+      task: dispatch.task,
+      repoContext,
+      intakeOutput: intakeData ?? null,
+      planningOutput: planData ?? null,
+      executionOutput: execData ?? null,
+      selfReviewFindings: selfReviewData ?? null,
+      loopbackCount: this.loopbackCount,
+      repoKnowledge: dispatch.knowledge.repo,
+      userKnowledge: dispatch.knowledge.user,
+    });
 
     return this.runPhaseWithAgentLoop("self_review", taskId, systemPrompt, prompt);
   }
@@ -348,22 +371,29 @@ export class Orchestrator {
   private handleDemoPrep(
     taskId: string,
     dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
+    priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
-    const systemPrompt =
-      "You are The Engineer, an autonomous software engineering agent. Prepare clear, comprehensive demo artifacts.";
-    const prompt = [
-      "Prepare demo artifacts and a PR description for this task.",
-      `Task: ${dispatch.task.title}`,
-      `Repository: ${this.getTaskRepo(dispatch)}`,
-      "",
-      'When done, respond with {"action": "done", "result": {your artifacts}}.',
-      "",
-      "Required result fields:",
-      "- artifacts: array of {type, location, permanent}",
-      "- pr_number: positive integer",
-      "- pr_description: string",
-    ].join("\n");
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
+    const intakeData = priorOutputs.get("intake_analysis")?.data as
+      | Record<string, unknown>
+      | undefined;
+    const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
+    const execData = priorOutputs.get("execution")?.data as Record<string, unknown> | undefined;
+    const selfReviewData = priorOutputs.get("self_review")?.data as
+      | Record<string, unknown>
+      | undefined;
+    const systemPrompt = buildSystemPrompt("demo_prep");
+    const prompt = buildDemoPrepPrompt({
+      task: dispatch.task,
+      repoContext,
+      intakeOutput: intakeData ?? null,
+      planningOutput: planData ?? null,
+      executionOutput: execData ?? null,
+      selfReviewOutput: selfReviewData ?? null,
+      repoKnowledge: dispatch.knowledge.repo,
+      userKnowledge: dispatch.knowledge.user,
+    });
 
     return this.runPhaseWithAgentLoop("demo_prep", taskId, systemPrompt, prompt);
   }
@@ -371,23 +401,37 @@ export class Orchestrator {
   private handleIntegration(
     taskId: string,
     dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
+    priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
-    const systemPrompt =
-      "You are The Engineer, an autonomous software engineering agent. Verify integration thoroughly.";
-    const prompt = [
-      "Verify integration of all changes for this task.",
-      `Task: ${dispatch.task.title}`,
-      `Repository: ${this.getTaskRepo(dispatch)}`,
-      "",
-      'When done, respond with {"action": "done", "result": {your verification}}.',
-      "",
-      "Required result fields:",
-      "- children_verified: array of child task IDs checked",
-      "- integration_tests: {passed: number, failed: number}",
-      "- conflicts_found: array of conflict descriptions",
-      "- resolution_actions: array of resolution descriptions",
-    ].join("\n");
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
+    const execData = priorOutputs.get("execution")?.data as Record<string, unknown> | undefined;
+    const selfReviewData = priorOutputs.get("self_review")?.data as
+      | Record<string, unknown>
+      | undefined;
+
+    // Source child summaries from dispatch (populated by Daemon for parent tasks)
+    const childSummaries =
+      ((dispatch as Record<string, unknown>)["child_summaries"] as
+        | Array<{
+            child_id: string;
+            child_title: string;
+            branch: string;
+            test_status: string;
+            files_changed: string[];
+          }>
+        | undefined) ?? [];
+
+    const systemPrompt = buildSystemPrompt("integration");
+    const prompt = buildIntegrationPrompt({
+      task: dispatch.task,
+      repoContext,
+      executionOutput: execData ?? null,
+      selfReviewOutput: selfReviewData ?? null,
+      childSummaries,
+      repoKnowledge: dispatch.knowledge.repo,
+      userKnowledge: dispatch.knowledge.user,
+    });
 
     return this.runPhaseWithAgentLoop("integration", taskId, systemPrompt, prompt);
   }
@@ -424,6 +468,58 @@ export class Orchestrator {
     });
 
     return { phases, startIndex };
+  }
+
+  /** Handle post-phase logic: fast-path, loopback, transitions, preemption. */
+  private processPhaseCompletion(
+    sessionId: string,
+    taskId: string,
+    phase: Phase,
+    output: PhaseOutput,
+    currentPhases: Phase[],
+    currentIndex: number,
+    priorOutputs: Map<Phase, PhaseOutput>,
+  ): {
+    phases: Phase[];
+    loopbackIndex: number | null;
+    preemptionResult: ExecuteTaskResult | null;
+  } {
+    let phases = currentPhases;
+
+    // Fast-path: after intake_analysis, check if we should skip phases
+    if (phase === "intake_analysis") {
+      phases = this.applyFastPathIfNeeded(output, phases);
+    }
+
+    // Self-review quality gate: loopback to execution if needs_work
+    if (phase === "self_review") {
+      const loopbackResult = this.checkSelfReviewLoopback(sessionId, taskId, output, phases);
+      if (loopbackResult) {
+        this.taskEngine.updateTaskField(taskId, "phase", "execution");
+        return {
+          phases,
+          loopbackIndex: loopbackResult.targetIndex - 1,
+          preemptionResult: null,
+        };
+      }
+    }
+
+    // Protocol P4: Phase transition
+    const isLastPhase = currentIndex === phases.length - 1;
+    // biome-ignore lint/style/noNonNullAssertion: next phase exists when not last
+    const nextPhase = isLastPhase ? null : phases[currentIndex + 1]!;
+    this.recordPhaseTransition(sessionId, taskId, phase, nextPhase, priorOutputs);
+
+    // Check preemption after phase completion
+    if (this.preemptionRequested && nextPhase) {
+      return {
+        phases,
+        loopbackIndex: null,
+        preemptionResult: this.handlePreemption(sessionId, taskId, nextPhase, priorOutputs),
+      };
+    }
+
+    return { phases, loopbackIndex: null, preemptionResult: null };
   }
 
   /** Log error and build error result for a failed phase. */
@@ -482,6 +578,78 @@ export class Orchestrator {
       return ["intake_analysis", ...FAST_PATH_PHASES];
     }
     return currentPhases;
+  }
+
+  /** Check if self-review output requires loopback to execution. */
+  private checkSelfReviewLoopback(
+    sessionId: string,
+    taskId: string,
+    output: PhaseOutput,
+    phases: Phase[],
+  ): { targetIndex: number } | null {
+    // Only trust quality assessment from real LLM output (not fallback defaults)
+    if (output.confidence === "low") {
+      return null;
+    }
+
+    const reviewData = output.data as { quality_assessment?: string };
+    const assessment = reviewData.quality_assessment;
+
+    if (assessment !== "needs_work" && assessment !== "fundamental_issues") {
+      return null;
+    }
+
+    this.loopbackCount++;
+
+    if (this.loopbackCount > MAX_LOOPBACKS_BEFORE_ALERT) {
+      this.emitLoopbackAlert(sessionId, taskId, this.loopbackCount, assessment);
+      return null; // Proceed to demo_prep — human will review
+    }
+
+    this.sessionMemory.addJournalEntry({
+      sessionId,
+      taskId,
+      phase: "self_review",
+      type: "phase_change",
+      summary: `Quality assessment: ${assessment}. Looping back to execution (attempt ${String(this.loopbackCount)}).`,
+      tags: ["loopback", assessment],
+    });
+
+    const executionIndex = phases.indexOf("execution");
+    if (executionIndex < 0) {
+      return null; // Shouldn't happen, but defensive
+    }
+    return { targetIndex: executionIndex };
+  }
+
+  /** Alert human that loopbacks have exceeded the safety threshold. */
+  private emitLoopbackAlert(
+    sessionId: string,
+    taskId: string,
+    count: number,
+    assessment: string,
+  ): void {
+    this.eventBus.publish({
+      type: "comm.message_sent",
+      source: "orchestrator",
+      task_id: taskId,
+      payload: {
+        task_id: taskId,
+        target: "owner",
+        message_type: "alert",
+        content_summary: `Self-review loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`,
+        channel: "primary",
+      },
+    } satisfies PublishInput<"comm.message_sent">);
+
+    this.sessionMemory.addJournalEntry({
+      sessionId,
+      taskId,
+      phase: "self_review",
+      type: "error",
+      summary: `Loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`,
+      tags: ["loopback_alert"],
+    });
   }
 
   /** Extract repository identifier from task (workspace or external_ref). */

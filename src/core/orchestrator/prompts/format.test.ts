@@ -124,11 +124,90 @@ describe("formatPriorPhaseOutput", () => {
     expect(result).toContain("zod");
   });
 
-  it("falls back to JSON for phases without custom formatter", () => {
-    const data = { findings: [], quality_assessment: "ship_it" };
+  it("formats execution output with files and test results", () => {
+    const data = {
+      files_changed: ["src/index.ts", "src/utils.ts"],
+      tests_written: ["src/index.test.ts"],
+      test_results: { passed: 5, failed: 1, skipped: 0 },
+      build_status: "failing",
+    };
+    const result = formatPriorPhaseOutput("execution", data);
+    expect(result).toContain("Execution Results:");
+    expect(result).toContain("src/index.ts");
+    expect(result).toContain("src/index.test.ts");
+    expect(result).toContain("5 passed, 1 failed, 0 skipped");
+    expect(result).toContain("Build status: failing");
+  });
+
+  it("handles execution output with empty arrays", () => {
+    const data = {
+      files_changed: [],
+      tests_written: [],
+      test_results: { passed: 0, failed: 0, skipped: 0 },
+      build_status: "passing",
+    };
+    const result = formatPriorPhaseOutput("execution", data);
+    expect(result).toContain("Execution Results:");
+    expect(result).toContain("Build status: passing");
+    expect(result).not.toContain("Files changed:");
+    expect(result).not.toContain("Tests written:");
+  });
+
+  it("formats self_review output with findings and quality", () => {
+    const data = {
+      quality_assessment: "needs_work",
+      findings: [
+        { type: "logic", file: "src/index.ts", description: "Missing null check", fixed: true },
+        { type: "style", file: "src/utils.ts", description: "Inconsistent naming", fixed: false },
+      ],
+      refactoring_applied: ["Extracted validation helper"],
+    };
     const result = formatPriorPhaseOutput("self_review", data);
-    expect(result).toContain("self_review output:");
-    expect(result).toContain("ship_it");
+    expect(result).toContain("Self-Review Results:");
+    expect(result).toContain("Quality assessment: needs_work");
+    expect(result).toContain("[logic] src/index.ts: Missing null check (fixed: yes)");
+    expect(result).toContain("[style] src/utils.ts: Inconsistent naming (fixed: no)");
+    expect(result).toContain("Extracted validation helper");
+  });
+
+  it("handles self_review output with empty arrays", () => {
+    const data = {
+      quality_assessment: "ship_it",
+      findings: [],
+      refactoring_applied: [],
+    };
+    const result = formatPriorPhaseOutput("self_review", data);
+    expect(result).toContain("Quality assessment: ship_it");
+    expect(result).not.toContain("Findings:");
+    expect(result).not.toContain("Refactoring applied:");
+  });
+
+  it("formats demo_prep output with PR and artifacts", () => {
+    const data = {
+      pr_number: 42,
+      pr_description: "Add pagination to the user listing API",
+      artifacts: [
+        { type: "screenshot", location: "/tmp/before-after.png", permanent: true },
+        { type: "tui", location: "/tmp/demo-tui", permanent: false },
+      ],
+    };
+    const result = formatPriorPhaseOutput("demo_prep", data);
+    expect(result).toContain("Demo Prep Results:");
+    expect(result).toContain("PR #42:");
+    expect(result).toContain("pagination");
+    expect(result).toContain("[screenshot] /tmp/before-after.png (permanent: yes)");
+    expect(result).toContain("[tui] /tmp/demo-tui (permanent: no)");
+  });
+
+  it("handles demo_prep output with empty artifacts", () => {
+    const data = {
+      pr_number: 1,
+      pr_description: "Simple fix",
+      artifacts: [],
+    };
+    const result = formatPriorPhaseOutput("demo_prep", data);
+    expect(result).toContain("PR #1:");
+    expect(result).not.toContain("Artifacts:");
   });
 
   it("formats planning output with approach and file changes", () => {

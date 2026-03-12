@@ -91,6 +91,76 @@ const PHASE_FORMATTERS: Partial<Record<Phase, (data: Record<string, unknown>) =>
     lines.push(`- Decomposition likely: ${data["decomposition_likely"] === true ? "yes" : "no"}`);
     return lines.join("\n");
   },
+  execution: (data) => {
+    const lines = ["Execution Results:"];
+    if (Array.isArray(data["files_changed"]) && (data["files_changed"] as string[]).length > 0) {
+      lines.push("- Files changed:");
+      for (const f of data["files_changed"] as string[]) {
+        lines.push(`  - ${f}`);
+      }
+    }
+    if (Array.isArray(data["tests_written"]) && (data["tests_written"] as string[]).length > 0) {
+      lines.push("- Tests written:");
+      for (const t of data["tests_written"] as string[]) {
+        lines.push(`  - ${t}`);
+      }
+    }
+    const testResults = data["test_results"] as Record<string, number> | undefined;
+    if (testResults) {
+      lines.push(
+        `- Test results: ${String(testResults["passed"] ?? 0)} passed, ${String(testResults["failed"] ?? 0)} failed, ${String(testResults["skipped"] ?? 0)} skipped`,
+      );
+    }
+    if (data["build_status"]) {
+      lines.push(`- Build status: ${String(data["build_status"])}`);
+    }
+    return lines.join("\n");
+  },
+  self_review: (data) => {
+    const lines = ["Self-Review Results:"];
+    if (data["quality_assessment"]) {
+      lines.push(`- Quality assessment: ${String(data["quality_assessment"])}`);
+    }
+    if (
+      Array.isArray(data["findings"]) &&
+      (data["findings"] as Record<string, unknown>[]).length > 0
+    ) {
+      lines.push("- Findings:");
+      for (const f of data["findings"] as Record<string, unknown>[]) {
+        lines.push(
+          `  - [${String(f["type"])}] ${String(f["file"])}: ${String(f["description"])} (fixed: ${f["fixed"] === true ? "yes" : "no"})`,
+        );
+      }
+    }
+    if (
+      Array.isArray(data["refactoring_applied"]) &&
+      (data["refactoring_applied"] as string[]).length > 0
+    ) {
+      lines.push("- Refactoring applied:");
+      for (const r of data["refactoring_applied"] as string[]) {
+        lines.push(`  - ${r}`);
+      }
+    }
+    return lines.join("\n");
+  },
+  demo_prep: (data) => {
+    const lines = ["Demo Prep Results:"];
+    if (data["pr_number"]) {
+      lines.push(`- PR #${String(data["pr_number"])}: ${String(data["pr_description"] ?? "")}`);
+    }
+    if (
+      Array.isArray(data["artifacts"]) &&
+      (data["artifacts"] as Record<string, unknown>[]).length > 0
+    ) {
+      lines.push("- Artifacts:");
+      for (const a of data["artifacts"] as Record<string, unknown>[]) {
+        lines.push(
+          `  - [${String(a["type"])}] ${String(a["location"])} (permanent: ${a["permanent"] === true ? "yes" : "no"})`,
+        );
+      }
+    }
+    return lines.join("\n");
+  },
   planning: (data) => {
     const lines = ["Technical Plan:"];
     if (data["approach"]) {

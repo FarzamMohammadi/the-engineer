@@ -16,6 +16,7 @@ npx tsx src/index.ts init                # Create ~/.engineer/ with template con
 # Edit ~/.engineer/config/*.yaml          # Add API keys, repos, preferences
 npx tsx src/index.ts doctor              # Verify health (10 checks)
 npx tsx src/index.ts start               # Start daemon (foreground)
+npx tsx src/index.ts dashboard --open    # War room dashboard (browser)
 ```
 
 Any command accepts `--home <path>` to use a custom data directory instead of `~/.engineer`.
@@ -43,7 +44,7 @@ Deep dives live in [`implementation-docs/`](implementation-docs/), organized by 
 ## Development
 
 ```bash
-pnpm test             # 1058 unit tests
+pnpm test             # 1733 tests (unit + integration + E2E)
 pnpm run typecheck    # tsc --noEmit (strict)
 pnpm run lint         # Biome (all rules)
 pnpm run build        # Production build
@@ -52,7 +53,7 @@ npx tsx src/index.ts  # Run CLI in dev mode
 
 ## Status
 
-Phase 13 of 19 complete. Core built and tested. Next: plugin implementations and integration tests.
+Layer 5 (19-phase build) complete. Layer 6 refinement in progress — agent loop, prompts, workspace integration, communication, decomposition, and observability dashboard all shipped. Live end-to-end tested against real repos.
 
 ## License
 

@@ -19,6 +19,7 @@ Directory structure (created by `engineer init`):
   data/               # SQLite database
   logs/               # Daemon log files (rolling JSON)
   run/                # PID file
+  traces/             # LLM prompt/response blobs (content-addressable)
   workspaces/         # Git worktrees for task isolation
 ```
 
@@ -177,3 +178,32 @@ engineer install                 # Detects platform automatically
 Prints the generated file and registration instructions — does not auto-register.
 
 Source: [`src/cli/commands/install.ts`](../src/cli/commands/install.ts)
+
+### dashboard
+
+Opens a real-time war room dashboard in the browser. Reads the database directly (read-only, WAL mode) — works whether the daemon is running or stopped.
+
+```bash
+engineer dashboard                  # Start on default port 3847
+engineer dashboard --port 4000      # Custom port
+engineer dashboard --open           # Auto-open browser
+```
+
+**Dashboard views:**
+
+| Tab | What it shows |
+|-----|---------------|
+| **Tasks** | Kanban board by state (intake → completed/failed). Click any card for full detail: phase progression, unified timeline, cost breakdown, action traces |
+| **Events** | Live event feed with type/task filtering. Auto-polls every 2s (incremental) |
+| **Cost** | Today's and monthly spend, per-task cost table, per-phase and per-day breakdowns |
+| **Traces** | Full agent loop replay per task/phase: each LLM call (latency, tokens, cost) followed by each action (type, params, result, duration). Click to lazy-load full prompts/responses from blob store |
+
+**System bar** (always visible): daemon status indicator, active/queued task counts, today's cost, monthly cost, total trace counts. Refreshes every 2s.
+
+**Technical details:**
+- Single-page dark-theme HTML served by a Hono HTTP server
+- 11 REST API endpoints under `/api/` for all dashboard data
+- LLM prompts/responses stored as content-addressable blobs in `~/.engineer/traces/` — the dashboard lazy-loads them on demand via `/api/blob/:ref`
+- No frontend build step — zero React, zero Vite, one HTML file
+
+Source: [`src/cli/commands/dashboard.ts`](../src/cli/commands/dashboard.ts), [`src/dashboard/`](../src/dashboard/)

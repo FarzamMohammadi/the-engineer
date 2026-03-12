@@ -216,7 +216,7 @@ Update this section as phases complete:
 | 6.0 | DONE | 051 | 1437 | Assessment, gaps, decisions (D137-D142) |
 | 6.1 | DONE | 052 | 1442 | Agent loop engine, D143 (Engineer owns the loop) |
 | 6.2 | DONE | 053 | 1502 | Prompt template architecture, system/intake/research prompts, context assembly |
-| 6.3 | Not started | — | — | — |
+| 6.3 | DONE | 054 | 1540 | Planning + execution prompts, planning formatter, full context flow wired |
 | 6.4 | Not started | — | — | — |
 | 6.5 | Not started | — | — | — |
 | 6.6 | Not started | — | — | — |

@@ -62,7 +62,7 @@ export const PlanningOutputSchema = z.object({
   approach: z.string(),
   file_changes: z.array(FileChangeSchema),
   risks: z.array(RiskSchema),
-  decomposition_plan: z.record(z.unknown()).nullable(),
+  decomposition_plan: z.lazy(() => LLMDecompositionPlanSchema).nullable(),
 });
 export type PlanningOutput = z.infer<typeof PlanningOutputSchema>;
 
@@ -177,6 +177,16 @@ export const DecompositionPlanSchema = z.object({
   parallelizable: z.boolean(),
 });
 export type DecompositionPlan = z.infer<typeof DecompositionPlanSchema>;
+
+/** LLM-facing decomposition plan (parent_task_id excluded — set by Orchestrator). */
+export const LLMDecompositionPlanSchema = z.object({
+  rationale: z.string(),
+  children: z.array(DecompositionChildSchema),
+  dependency_graph: z.string(),
+  total_estimated_ms: z.number().int(),
+  parallelizable: z.boolean(),
+});
+export type LLMDecompositionPlan = z.infer<typeof LLMDecompositionPlanSchema>;
 
 // ── Trivial Criteria (Fast-Path) ────────────────────────────────────────────────
 

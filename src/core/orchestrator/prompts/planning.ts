@@ -205,7 +205,11 @@ function buildPlanningStrategy(intakeOutput: Record<string, unknown> | null): st
         "2. Consider which changes must come first (dependency ordering).",
         "3. Plan for incremental testing — each group of changes should be testable independently.",
         "4. Identify the highest-risk changes and plan those carefully.",
-        "5. If decomposition makes sense, describe clear subtask boundaries.",
+        "5. If the task has 3+ genuinely independent areas of change, use decomposition_plan to split into subtasks.",
+        "   Each subtask runs the full engineering pipeline independently (research, plan, execute, review).",
+        "   Only decompose when subtasks are truly separable — do NOT decompose when changes are tightly coupled.",
+        "   Good subtask boundaries: separate modules, independent features, different domains.",
+        "   Bad boundaries: UI and API that must match, schema and all consumers, tightly coupled refactors.",
       ].join("\n"),
     );
   }

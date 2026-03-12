@@ -3,7 +3,13 @@ import { z } from "zod";
 
 // ── Session ────────────────────────────────────────────────────────────────────
 
-export const SessionEndReasonSchema = z.enum(["completed", "preempted", "crashed", "new_session"]);
+export const SessionEndReasonSchema = z.enum([
+  "completed",
+  "preempted",
+  "crashed",
+  "new_session",
+  "decomposed",
+]);
 export type SessionEndReason = z.infer<typeof SessionEndReasonSchema>;
 
 export const SessionSchema = z.object({

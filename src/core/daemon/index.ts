@@ -478,8 +478,32 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       return;
     }
 
-    // Re-dispatch parent for integration phase
-    dispatchTask(parent);
+    // Populate child_summaries on parent before re-dispatch
+    const children = taskEngine.getChildren(parent.id);
+    const summaries = children.map((child) => ({
+      child_id: child.id,
+      child_title: child.title,
+      summary: child.description,
+      key_outputs: [] as Array<{ type: "file"; path: string; description: string }>,
+      patterns_introduced: [] as string[],
+      gotchas: [] as string[],
+      decisions_made: child.decisions.map((d) => d.what),
+      pr_number: child.review?.pr_number ?? null,
+      branch: child.workspace?.branch ?? "",
+      test_status: (child.state === "completed" ? "passing" : "failing") as
+        | "passing"
+        | "failing"
+        | "no_tests",
+    }));
+    taskEngine.updateTaskField(parent.id, "child_summaries", summaries);
+
+    // Re-fetch parent with updated child_summaries for dispatch
+    const updatedParent = taskEngine.getTask(parent.id);
+    if (!updatedParent) {
+      logger.error({ parentTaskId: parent.id }, "Parent task disappeared after update");
+      return;
+    }
+    dispatchTask(updatedParent);
 
     logger.info(
       {
@@ -488,6 +512,45 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
         failedIds: payload.failed_ids,
       },
       "Parent task resumed for integration after all children completed",
+    );
+  }
+
+  // ── Child Completion Detection ─────────────────────────────────────────
+
+  /**
+   * After a child task reaches a terminal state, check if all siblings are done.
+   * If so, emit task.children_all_done so the Daemon can resume the parent.
+   */
+  function checkAndEmitChildrenAllDone(childTaskId: string): void {
+    const child = taskEngine.getTask(childTaskId);
+    if (!child?.parent_id) {
+      return;
+    }
+
+    const siblings = taskEngine.getChildren(child.parent_id);
+    const allTerminal = siblings.every((s) => s.state === "completed" || s.state === "failed");
+
+    if (!allTerminal) {
+      return;
+    }
+
+    const failedIds = siblings.filter((s) => s.state === "failed").map((s) => s.id);
+
+    eventBus.publish({
+      type: "task.children_all_done",
+      source: "daemon",
+      task_id: child.parent_id,
+      payload: {
+        parent_task_id: child.parent_id,
+        child_ids: siblings.map((s) => s.id),
+        all_succeeded: failedIds.length === 0,
+        failed_ids: failedIds,
+      },
+    } satisfies PublishInput<"task.children_all_done">);
+
+    logger.info(
+      { parentTaskId: child.parent_id, allSucceeded: failedIds.length === 0, failedIds },
+      "All children completed — emitting children_all_done",
     );
   }
 
@@ -724,6 +787,8 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
     if (result.outcome === "completed") {
       taskEngine.requestTransition(taskId, "completed", null, "pipeline_completed", "daemon");
+      // Check if this child's completion means all siblings are done
+      checkAndEmitChildrenAllDone(taskId);
       // Workspace cleanup (D153): preserve branch, remove worktree
       try {
         workspaceManager.cleanupWorkspace(taskId, true);
@@ -734,13 +799,23 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       sendCompletionNotification(taskId, taskTitle);
       commentOnTaskIssue(taskId, "Task completed successfully.");
       logger.info({ taskId }, "Task completed");
+    } else if (result.outcome === "decomposed") {
+      // Parent is already in active.supervising (set by Orchestrator).
+      // Children are already queued. Daemon will schedule them on next tick.
+      // Don't cleanup workspace — parent needs it for integration later.
+      logger.info(
+        { taskId, childCount: result.childTaskIds.length },
+        "Task decomposed — children queued for scheduling",
+      );
     } else if (result.outcome === "preempted") {
       taskEngine.requestTransition(taskId, "queued", null, "preempted", "daemon");
       logger.info({ taskId, lastPhase: result.lastPhase }, "Task preempted — returned to queue");
       pendingPreemption = null;
-    } else {
+    } else if (result.outcome === "error") {
       logger.error({ taskId, phase: result.phase, reason: result.reason }, "Task error");
       taskEngine.requestTransition(taskId, "blocked", null, result.reason, "daemon");
+      // Check if this child's failure means all siblings are terminal
+      checkAndEmitChildrenAllDone(taskId);
       // Notify error — personal channels + GitHub issue comment
       sendTaskErrorNotification(taskId, taskTitle, result.reason);
       commentOnTaskIssue(taskId, `Task encountered an error: ${result.reason}`);

@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-**Layer 6: Refinement & Intelligence.** Making The Engineer actually work. Pipeline validated end-to-end — The Engineer created its first real draft PR (#2). Agent loop, prompts, 7-phase pipeline, workspace integration, PR creation, and dual-channel notifications all operational. Next: Phase 6.7b (Decomposition) or Phase 6.8 (E2E hardening round 3).
+**Layer 6: Refinement & Intelligence.** Making The Engineer actually work. Pipeline validated end-to-end — The Engineer created its first real draft PR (#2). Agent loop, prompts, 7-phase pipeline, workspace integration, PR creation, dual-channel notifications, and task decomposition all operational. Next: Phase 6.8 (E2E hardening round 3 + live decomposition test).
 
 See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
 - [`assessment.md`](6-refinement/assessment.md) — Current state assessment
@@ -139,6 +139,8 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 **Layer 6 Phase 6.5 (Workspace Integration + E2E Round 2): DONE (Sessions 057-058).** The Engineer now produces **real work** end-to-end. First successful draft PR created on `FarzamMohammadi/learnaholic-demo` (PR #2). Session 057: 5 bugs found and fixed (schema, CLI permissions, ahead-of-base detection, GitHub token, token leak). Session 058: token sanitization at 3 chokepoints (`sanitizeSecrets()` in `src/utils/sanitize.ts`), unit tests for `commitPushAndCreatePR` (10 tests), decisions D147-D154 documented. 1,625 tests total.
 
 **Layer 6 Phase 6.6 (Communication Wiring): DONE (Session 059).** Dual-channel notifications: personal (Telegram via PeopleDirectory) + public (GitHub issue comments via `commentOnIssue`). Key milestones only — pickup, PR created, completion/error. `commentOnSourceIssue()` in Orchestrator (2 call sites), `commentOnTaskIssue()` + 3 notification helpers in Daemon (3 trigger points). All fire-and-forget. 1,647 tests total.
+
+**Layer 6 Phase 6.7b (Decomposition & Multi-Task): DONE (Session 060).** Full decomposition pipeline: planning phase detects large tasks → creates child tasks → parent supervises → children run full pipeline → parent integrates. `LLMDecompositionPlanSchema` typed in orchestrator schemas. `handleDecomposition()` in Orchestrator (child creation, dependency mapping, parent→supervising transition). `checkAndEmitChildrenAllDone()` in Daemon (sibling terminal detection, child_summaries population). `"decomposed"` outcome + session end reason. Workspace parentBranch for child tasks. Sequential-only (pause_siblings) for v1. Prompt guidance for decomposition in planning. 1,663 tests total.
 
 Deferred items:
 - Full observability (persisting agent action traces) — separate Layer 6 phase

@@ -12,6 +12,7 @@ import {
   FileChangeSchema,
   IntakeAnalysisOutputSchema,
   IntegrationOutputSchema,
+  LLMDecompositionPlanSchema,
   PhaseOutputSchema,
   PhaseSchema,
   PhaseToolConfigSchema,
@@ -184,14 +185,29 @@ describe("PlanningOutputSchema", () => {
     expect(output.file_changes).toHaveLength(1);
   });
 
-  it("accepts decomposition_plan as record", () => {
+  it("accepts valid decomposition_plan", () => {
     const output = PlanningOutputSchema.parse({
       approach: "Complex task",
       file_changes: [],
       risks: [],
-      decomposition_plan: { parent_task_id: "01ABC", children: [] },
+      decomposition_plan: {
+        rationale: "Task has 3 independent areas",
+        children: [
+          {
+            title: "Subtask A",
+            description: "First area",
+            estimated_time_ms: 60000,
+            depends_on: [],
+            acceptance_criteria: ["Tests pass"],
+          },
+        ],
+        dependency_graph: "A → B",
+        total_estimated_ms: 120000,
+        parallelizable: false,
+      },
     });
     expect(output.decomposition_plan).toBeDefined();
+    expect(output.decomposition_plan?.children).toHaveLength(1);
   });
 });
 
@@ -422,6 +438,48 @@ describe("DecompositionPlanSchema", () => {
     });
     expect(plan.children).toHaveLength(1);
     expect(plan.parallelizable).toBe(true);
+  });
+});
+
+describe("LLMDecompositionPlanSchema", () => {
+  it("parses valid plan (no parent_task_id)", () => {
+    const plan = LLMDecompositionPlanSchema.parse({
+      rationale: "3 independent areas",
+      children: [
+        {
+          title: "Sub-task 1",
+          description: "First part",
+          estimated_time_ms: 60000,
+          depends_on: [],
+          acceptance_criteria: ["Tests pass"],
+        },
+      ],
+      dependency_graph: "A",
+      total_estimated_ms: 60000,
+      parallelizable: false,
+    });
+    expect(plan.children).toHaveLength(1);
+    expect(plan.rationale).toBe("3 independent areas");
+  });
+
+  it("rejects plan missing required fields", () => {
+    expect(() =>
+      LLMDecompositionPlanSchema.parse({
+        invalid: "no rationale or children",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects plan with invalid children", () => {
+    expect(() =>
+      LLMDecompositionPlanSchema.parse({
+        rationale: "test",
+        children: [{ title: "missing fields" }],
+        dependency_graph: "",
+        total_estimated_ms: 0,
+        parallelizable: false,
+      }),
+    ).toThrow();
   });
 });
 

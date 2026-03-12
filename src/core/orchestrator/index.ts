@@ -12,12 +12,14 @@ import {
   ExecutionOutputSchema,
   IntakeAnalysisOutputSchema,
   IntegrationOutputSchema,
+  LLMDecompositionPlanSchema,
   type Phase,
   type PhaseOutput,
   PlanningOutputSchema,
   ResearchOutputSchema,
   SelfReviewOutputSchema,
 } from "../../schemas/orchestrator.js";
+import type { ChildEntry } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
@@ -87,6 +89,7 @@ export interface OrchestratorDependencies {
 /** Discriminated union of executeTask outcomes. */
 export type ExecuteTaskResult =
   | { outcome: "completed"; phaseOutputs: Map<Phase, PhaseOutput> }
+  | { outcome: "decomposed"; childTaskIds: string[]; phaseOutputs: Map<Phase, PhaseOutput> }
   | { outcome: "preempted"; lastPhase: Phase; checkpointId: string }
   | { outcome: "error"; phase: Phase; reason: string };
 
@@ -175,8 +178,9 @@ export class Orchestrator {
    * Execute a task through the phase pipeline.
    *
    * Entry point called by the Daemon. Handles new tasks and resumed tasks.
-   * Returns when the pipeline completes, is preempted, or encounters an error.
+   * Returns when the pipeline completes, is preempted, decomposed, or encounters an error.
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: main pipeline loop with extracted helpers — further extraction harms readability
   async executeTask(dispatch: Dispatch): Promise<ExecuteTaskResult> {
     const taskId = dispatch.task.id;
     this.loopbackCount = 0;
@@ -191,12 +195,18 @@ export class Orchestrator {
       const repo = dispatch.task.repo;
       const cloneUrl = dispatch.task.clone_url;
       if (repo && cloneUrl) {
+        // Child tasks branch from parent's branch
+        let parentBranch: string | undefined;
+        if (dispatch.task.parent_id) {
+          const parentTask = this.taskEngine.getTask(dispatch.task.parent_id);
+          parentBranch = parentTask?.workspace?.branch ?? undefined;
+        }
         const record = this.workspaceManager.createWorkspace(
           taskId,
           repo,
           dispatch.task.title,
           undefined,
-          undefined,
+          parentBranch,
           cloneUrl,
         );
         this.taskEngine.updateTaskField(taskId, "workspace", {
@@ -259,6 +269,9 @@ export class Orchestrator {
         priorOutputs,
         dispatch,
       );
+      if (postResult.decompositionResult) {
+        return postResult.decompositionResult;
+      }
       if (postResult.loopbackIndex !== null) {
         i = postResult.loopbackIndex;
         continue;
@@ -445,17 +458,14 @@ export class Orchestrator {
       | Record<string, unknown>
       | undefined;
 
-    // Source child summaries from dispatch (populated by Daemon for parent tasks)
-    const childSummaries =
-      ((dispatch as Record<string, unknown>)["child_summaries"] as
-        | Array<{
-            child_id: string;
-            child_title: string;
-            branch: string;
-            test_status: string;
-            files_changed: string[];
-          }>
-        | undefined) ?? [];
+    // Child summaries are populated on the task by Daemon before re-dispatch
+    const childSummaries = (dispatch.task.child_summaries ?? []).map((cs) => ({
+      child_id: cs.child_id,
+      child_title: cs.child_title,
+      branch: cs.branch,
+      test_status: cs.test_status,
+      files_changed: cs.key_outputs.map((o) => o.path),
+    }));
 
     const systemPrompt = buildSystemPrompt("integration");
     const prompt = buildIntegrationPrompt({
@@ -505,7 +515,7 @@ export class Orchestrator {
     return { phases, startIndex };
   }
 
-  /** Handle post-phase logic: fast-path, loopback, transitions, preemption, PR creation. */
+  /** Handle post-phase logic: fast-path, decomposition, loopback, transitions, preemption, PR creation. */
   private async processPhaseCompletion(
     sessionId: string,
     taskId: string,
@@ -519,12 +529,27 @@ export class Orchestrator {
     phases: Phase[];
     loopbackIndex: number | null;
     preemptionResult: ExecuteTaskResult | null;
+    decompositionResult: ExecuteTaskResult | null;
   }> {
     let phases = currentPhases;
 
     // Fast-path: after intake_analysis, check if we should skip phases
     if (phase === "intake_analysis") {
       phases = this.applyFastPathIfNeeded(output, phases);
+    }
+
+    // Decomposition: after planning, check if task should be split into children
+    if (phase === "planning") {
+      const decompositionResult = this.handleDecomposition(
+        sessionId,
+        taskId,
+        output,
+        dispatch,
+        priorOutputs,
+      );
+      if (decompositionResult) {
+        return { phases, loopbackIndex: null, preemptionResult: null, decompositionResult };
+      }
     }
 
     // Self-review quality gate: loopback to execution if needs_work
@@ -536,6 +561,7 @@ export class Orchestrator {
           phases,
           loopbackIndex: loopbackResult.targetIndex - 1,
           preemptionResult: null,
+          decompositionResult: null,
         };
       }
     }
@@ -562,10 +588,11 @@ export class Orchestrator {
         phases,
         loopbackIndex: null,
         preemptionResult: this.handlePreemption(sessionId, taskId, nextPhase, priorOutputs),
+        decompositionResult: null,
       };
     }
 
-    return { phases, loopbackIndex: null, preemptionResult: null };
+    return { phases, loopbackIndex: null, preemptionResult: null, decompositionResult: null };
   }
 
   /** Log error and build error result for a failed phase. */
@@ -696,6 +723,104 @@ export class Orchestrator {
       summary: `Loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`,
       tags: ["loopback_alert"],
     });
+  }
+
+  // ── Decomposition ───────────────────────────────────────────────────────────
+
+  /**
+   * After planning: check if the LLM produced a decomposition plan.
+   * If so, create child tasks, transition parent to supervising, and return.
+   */
+  private handleDecomposition(
+    sessionId: string,
+    taskId: string,
+    planningOutput: PhaseOutput,
+    dispatch: Dispatch,
+    priorOutputs: Map<Phase, PhaseOutput>,
+  ): ExecuteTaskResult | null {
+    const planData = planningOutput.data as { decomposition_plan?: unknown };
+    if (!planData.decomposition_plan) {
+      return null;
+    }
+
+    const parseResult = LLMDecompositionPlanSchema.safeParse(planData.decomposition_plan);
+    if (!parseResult.success) {
+      this.sessionMemory.addJournalEntry({
+        sessionId,
+        taskId,
+        phase: "planning",
+        type: "error",
+        summary: `Invalid decomposition plan from LLM: ${parseResult.error.message}`,
+        tags: ["decomposition", "validation_error"],
+      });
+      return null;
+    }
+
+    const plan = parseResult.data;
+    const childIds: string[] = [];
+
+    for (const childSpec of plan.children) {
+      const childTask = this.taskEngine.createTask({
+        title: childSpec.title,
+        repo: dispatch.task.repo ?? "",
+        source: "decomposition",
+        description: childSpec.description,
+        parent_id: taskId,
+        acceptance_criteria: childSpec.acceptance_criteria,
+        clone_url: dispatch.task.clone_url,
+        cascade_policy: "pause_siblings",
+      });
+
+      this.taskEngine.requestTransition(
+        childTask.id,
+        "queued",
+        null,
+        "decomposition",
+        "orchestrator",
+      );
+
+      childIds.push(childTask.id);
+    }
+
+    // Build children array with dependency mapping (index-based → task ID)
+    const childEntries: ChildEntry[] = childIds.map((id, idx) => {
+      // biome-ignore lint/style/noNonNullAssertion: idx is within bounds
+      const spec = plan.children[idx]!;
+      const dependsOnIds = spec.depends_on
+        .filter((depIdx) => depIdx >= 0 && depIdx < childIds.length)
+        // biome-ignore lint/style/noNonNullAssertion: filter guarantees valid index
+        .map((depIdx) => childIds[depIdx]!);
+      return { id, state: "queued" as const, depends_on: dependsOnIds };
+    });
+    this.taskEngine.updateTaskField(taskId, "children", childEntries);
+
+    // Transition parent: active.working → active.supervising
+    this.taskEngine.requestTransition(
+      taskId,
+      "active",
+      "supervising",
+      "decomposed_into_children",
+      "orchestrator",
+    );
+
+    this.sessionMemory.addJournalEntry({
+      sessionId,
+      taskId,
+      phase: "planning",
+      type: "phase_change",
+      summary: `Task decomposed into ${String(childIds.length)} child tasks: ${childIds.join(", ")}`,
+      tags: ["decomposition"],
+    });
+
+    const subtaskList = plan.children.map((c, i) => `${String(i + 1)}. ${c.title}`).join("\n");
+    this.commentOnSourceIssue(
+      dispatch,
+      `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
+    );
+
+    this.sessionMemory.endSession(sessionId, "decomposed");
+
+    return { outcome: "decomposed", childTaskIds: childIds, phaseOutputs: priorOutputs };
   }
 
   // ── Workspace Integration (D149, D150, D152) ────────────────────────────────

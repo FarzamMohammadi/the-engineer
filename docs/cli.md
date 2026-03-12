@@ -2,6 +2,21 @@
 
 The Engineer is operated through the `engineer` CLI. All commands share a common data directory (`ENGINEER_HOME`) and global options.
 
+## Installing the CLI
+
+The `engineer` command is provided via the `bin` field in `package.json`. To make it available globally:
+
+```bash
+pnpm run build                    # Build to dist/
+pnpm setup                        # Configure PNPM_HOME (first time only)
+source ~/.zshrc                    # Reload shell (or restart terminal)
+pnpm link --global                 # Link `engineer` command globally
+```
+
+After this, `engineer` works from any directory. Rebuild (`pnpm run build`) after code changes.
+
+> **Dev mode:** Use `npx tsx src/index.ts <command>` to run without building or linking.
+
 ## ENGINEER_HOME
 
 Every command reads and writes to a single data directory. Resolution order:
@@ -21,6 +36,7 @@ Directory structure (created by `engineer init`):
   run/                # PID file
   traces/             # LLM prompt/response blobs (content-addressable)
   workspaces/         # Git worktrees for task isolation
+  example-templates/  # Fully documented config references (like .env.example)
 ```
 
 Source: [`src/cli/home.ts`](../src/cli/home.ts)
@@ -70,6 +86,8 @@ engineer init --force            # Overwrite existing configs
 ```
 
 **Template files created:** 5 core configs (`daemon.yaml`, `orchestrator.yaml`, `safety.yaml`, `workspace.yaml`, `people.yaml`) + 6 plugin configs in `config/plugins/`. Core configs are fully commented (Zod defaults apply). Plugin configs have required fields uncommented with placeholders.
+
+**Example templates:** 11 fully documented reference files are written to `example-templates/`. Each shows every field with descriptions, defaults, required/optional markers, and valid options — like `.env.example` files. Always overwritten on `init` (they're references, not user-edited).
 
 Source: [`src/cli/commands/init.ts`](../src/cli/commands/init.ts), [`src/cli/templates.ts`](../src/cli/templates.ts)
 

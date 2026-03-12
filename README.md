@@ -12,14 +12,23 @@ Receives tasks, gathers requirements, researches codebases, plans, executes, sel
 git clone https://github.com/user/the-engineer.git && cd the-engineer
 pnpm install
 
-npx tsx src/index.ts init                # Create ~/.engineer/ with template configs
+# ── Install the `engineer` CLI globally ──
+pnpm run build                           # Build to dist/
+pnpm setup                               # Configure PNPM_HOME (first time only)
+source ~/.zshrc                           # Reload shell (or restart terminal)
+pnpm link --global                        # Link `engineer` command
+
+# ── First run ──
+engineer init                            # Create ~/.engineer/ with template configs
 # Edit ~/.engineer/config/*.yaml          # Add API keys, repos, preferences
-npx tsx src/index.ts doctor              # Verify health (10 checks)
-npx tsx src/index.ts start               # Start daemon (foreground)
-npx tsx src/index.ts dashboard --open    # War room dashboard (browser)
+engineer doctor                          # Verify health (10 checks)
+engineer start                           # Start daemon (foreground)
+engineer dashboard --open                # War room dashboard (browser)
 ```
 
 Any command accepts `--home <path>` to use a custom data directory instead of `~/.engineer`.
+
+> **Dev mode (without global install):** Use `npx tsx src/index.ts` in place of `engineer` for any command.
 
 For the full command reference, options, and first-run walkthrough: **[docs/cli.md](docs/cli.md)**
 

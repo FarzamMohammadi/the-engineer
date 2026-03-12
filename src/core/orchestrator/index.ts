@@ -26,7 +26,9 @@ import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
 import { gatherRepoContextSafe } from "./prompts/context.js";
+import { buildExecutionPrompt } from "./prompts/execution.js";
 import { buildIntakePrompt } from "./prompts/intake.js";
+import { buildPlanningPrompt } from "./prompts/planning.js";
 import { buildResearchPrompt } from "./prompts/research.js";
 import { buildSystemPrompt } from "./prompts/system.js";
 
@@ -272,24 +274,21 @@ export class Orchestrator {
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
+    const intakeData = priorOutputs.get("intake_analysis")?.data as
+      | Record<string, unknown>
+      | undefined;
     const researchData = priorOutputs.get("research")?.data as Record<string, unknown> | undefined;
-    const systemPrompt =
-      "You are The Engineer, an autonomous software engineering agent. Create thorough, actionable technical plans.";
-    const prompt = [
-      "Create a technical plan for this task.",
-      `Task: ${dispatch.task.title}`,
-      `Repository: ${this.getTaskRepo(dispatch)}`,
-      researchData ? `Research findings: ${JSON.stringify(researchData)}` : "",
-      "",
-      "You may read files to verify your plan is sound.",
-      'When done, respond with {"action": "done", "result": {your plan}}.',
-      "",
-      "Required result fields:",
-      "- approach: string describing the technical approach",
-      "- file_changes: array of {file, change_type, description}",
-      "- risks: array of {risk, mitigation}",
-      "- decomposition_plan: null or a decomposition plan object",
-    ].join("\n");
+    const systemPrompt = buildSystemPrompt("planning");
+    const prompt = buildPlanningPrompt({
+      task: dispatch.task,
+      repoContext,
+      intakeOutput: intakeData ?? null,
+      researchOutput: researchData ?? null,
+      repoKnowledge: dispatch.knowledge.repo,
+      userKnowledge: dispatch.knowledge.user,
+    });
 
     return this.runPhaseWithAgentLoop("planning", taskId, systemPrompt, prompt);
   }
@@ -299,25 +298,23 @@ export class Orchestrator {
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
   ): Promise<PhaseOutput> {
+    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
+    const intakeData = priorOutputs.get("intake_analysis")?.data as
+      | Record<string, unknown>
+      | undefined;
+    const researchData = priorOutputs.get("research")?.data as Record<string, unknown> | undefined;
     const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
-    const systemPrompt =
-      "You are The Engineer, an autonomous software engineering agent. Write clean, tested code. Iterate until tests pass.";
-    const prompt = [
-      "Execute the implementation for this task.",
-      `Task: ${dispatch.task.title}`,
-      `Repository: ${this.getTaskRepo(dispatch)}`,
-      planData ? `Plan: ${JSON.stringify(planData)}` : "",
-      "",
-      "Use write_file, edit_file, and run_command to implement the changes.",
-      "Run tests after making changes. Fix any failures.",
-      'When done, respond with {"action": "done", "result": {your summary}}.',
-      "",
-      "Required result fields:",
-      "- files_changed: array of file paths modified",
-      "- tests_written: array of test file paths",
-      "- test_results: {passed: number, failed: number, skipped: number}",
-      "- build_status: 'passing' or 'failing'",
-    ].join("\n");
+    const systemPrompt = buildSystemPrompt("execution");
+    const prompt = buildExecutionPrompt({
+      task: dispatch.task,
+      repoContext,
+      intakeOutput: intakeData ?? null,
+      researchOutput: researchData ?? null,
+      planningOutput: planData ?? null,
+      repoKnowledge: dispatch.knowledge.repo,
+      userKnowledge: dispatch.knowledge.user,
+    });
 
     return this.runPhaseWithAgentLoop("execution", taskId, systemPrompt, prompt);
   }

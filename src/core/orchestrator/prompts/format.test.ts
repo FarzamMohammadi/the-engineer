@@ -125,10 +125,53 @@ describe("formatPriorPhaseOutput", () => {
   });
 
   it("falls back to JSON for phases without custom formatter", () => {
-    const data = { approach: "Direct implementation" };
+    const data = { findings: [], quality_assessment: "ship_it" };
+    const result = formatPriorPhaseOutput("self_review", data);
+    expect(result).toContain("self_review output:");
+    expect(result).toContain("ship_it");
+  });
+
+  it("formats planning output with approach and file changes", () => {
+    const data = {
+      approach: "Add offset-based pagination",
+      file_changes: [
+        { file: "src/routes/users.ts", change_type: "modify", description: "Add page params" },
+        { file: "src/routes/users.test.ts", change_type: "create", description: "Add tests" },
+      ],
+      risks: [{ risk: "Breaking consumers", mitigation: "Default values" }],
+      decomposition_plan: null,
+    };
     const result = formatPriorPhaseOutput("planning", data);
-    expect(result).toContain("planning output:");
-    expect(result).toContain("Direct implementation");
+    expect(result).toContain("Approach: Add offset-based pagination");
+    expect(result).toContain("[modify] src/routes/users.ts: Add page params");
+    expect(result).toContain("[create] src/routes/users.test.ts: Add tests");
+    expect(result).toContain("Breaking consumers");
+    expect(result).toContain("Default values");
+  });
+
+  it("handles planning output with empty arrays", () => {
+    const data = {
+      approach: "Simple fix",
+      file_changes: [],
+      risks: [],
+      decomposition_plan: null,
+    };
+    const result = formatPriorPhaseOutput("planning", data);
+    expect(result).toContain("Approach: Simple fix");
+    expect(result).not.toContain("File changes:");
+    expect(result).not.toContain("Risks:");
+  });
+
+  it("formats planning output with decomposition", () => {
+    const data = {
+      approach: "Split into subtasks",
+      file_changes: [],
+      risks: [],
+      decomposition_plan: { children: ["task-1", "task-2"] },
+    };
+    const result = formatPriorPhaseOutput("planning", data);
+    expect(result).toContain("Decomposition:");
+    expect(result).toContain("task-1");
   });
 
   it("handles empty arrays gracefully", () => {

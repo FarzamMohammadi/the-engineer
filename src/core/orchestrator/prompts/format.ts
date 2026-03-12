@@ -91,6 +91,33 @@ const PHASE_FORMATTERS: Partial<Record<Phase, (data: Record<string, unknown>) =>
     lines.push(`- Decomposition likely: ${data["decomposition_likely"] === true ? "yes" : "no"}`);
     return lines.join("\n");
   },
+  planning: (data) => {
+    const lines = ["Technical Plan:"];
+    if (data["approach"]) {
+      lines.push(`- Approach: ${String(data["approach"])}`);
+    }
+    if (
+      Array.isArray(data["file_changes"]) &&
+      (data["file_changes"] as Record<string, unknown>[]).length > 0
+    ) {
+      lines.push("- File changes:");
+      for (const fc of data["file_changes"] as Record<string, unknown>[]) {
+        lines.push(
+          `  - [${String(fc["change_type"])}] ${String(fc["file"])}: ${String(fc["description"])}`,
+        );
+      }
+    }
+    if (Array.isArray(data["risks"]) && (data["risks"] as Record<string, unknown>[]).length > 0) {
+      lines.push("- Risks:");
+      for (const r of data["risks"] as Record<string, unknown>[]) {
+        lines.push(`  - ${String(r["risk"])} → Mitigation: ${String(r["mitigation"])}`);
+      }
+    }
+    if (data["decomposition_plan"]) {
+      lines.push(`- Decomposition: ${JSON.stringify(data["decomposition_plan"])}`);
+    }
+    return lines.join("\n");
+  },
   research: (data) => {
     const lines = ["Research Findings:"];
     if (Array.isArray(data["relevant_files"]) && (data["relevant_files"] as string[]).length > 0) {

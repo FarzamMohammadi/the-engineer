@@ -2,12 +2,12 @@
 
 ## Current Focus
 
-**Layer 6: Refinement & Intelligence.** Making The Engineer actually work. Pipeline infrastructure validated end-to-end (Phase 6.7 E2E test, Session 056). Agent loop, prompts, and 7-phase pipeline all operational with real Claude CLI. The #1 remaining gap is **workspace integration** — the Orchestrator never creates a worktree, so the LLM can't interact with the target repo. Phase 6.5 (Workspace Integration + Wiring) is next.
+**Layer 6: Refinement & Intelligence.** Making The Engineer actually work. Pipeline validated end-to-end — The Engineer created its first real draft PR (#2). Agent loop, prompts, 7-phase pipeline, workspace integration, and PR creation all operational with real Claude CLI. Next: Phase 6.6 (Communication Wiring) or Phase 6.8 (E2E hardening round 3).
 
 See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
 - [`assessment.md`](6-refinement/assessment.md) — Current state assessment
 - [`gaps.md`](6-refinement/gaps.md) — Gap analysis (8 gaps, prioritized)
-- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D146)
+- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D154)
 - [`phase-plan.md`](6-refinement/phase-plan.md) — 8-phase plan with dependencies
 
 All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
@@ -136,16 +136,8 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 **Layer 6 Phase 6.7 (E2E Manual Testing Round 1): DONE (Session 056).** First live run against `FarzamMohammadi/learnaholic-demo`. All 7 phases completed with real Claude CLI. 4 bugs found and fixed: trigger assignee filter, nested Claude session, --max-tokens flag, task completion transition. Critical gap confirmed: no workspace created → LLM operates without repo context. Full findings documented in `6-refinement/phase-plan.md` Phase 6.7 section.
 
-**Layer 6 Phase 6.5 (Workspace Integration + E2E Round 2): IN PROGRESS (Session 057).** The Engineer now produces **real work** end-to-end. First successful draft PR created on `FarzamMohammadi/learnaholic-demo` (PR #2). 5 bugs found and fixed this session:
-1. `build_status: "unknown"` rejected by schema — added to enum
-2. Claude CLI `--print` mode blocked file writes — added `--dangerously-skip-permissions`
-3. `commitPushAndCreatePR` skipped push/PR when Claude CLI committed internally — added `rev-list` ahead-of-base check
-4. GitHub token lacked push access — user regenerated with full permissions
-5. Token leaked in journal entry — noted for security hardening
+**Layer 6 Phase 6.5 (Workspace Integration + E2E Round 2): DONE (Sessions 057-058).** The Engineer now produces **real work** end-to-end. First successful draft PR created on `FarzamMohammadi/learnaholic-demo` (PR #2). Session 057: 5 bugs found and fixed (schema, CLI permissions, ahead-of-base detection, GitHub token, token leak). Session 058: token sanitization at 3 chokepoints (`sanitizeSecrets()` in `src/utils/sanitize.ts`), unit tests for `commitPushAndCreatePR` (10 tests), decisions D147-D154 documented. 1,625 tests total.
 
-Outstanding items for Phase 6.5 completion:
-- Security: sanitize token from journal/log entries
-- Unit tests for `commitPushAndCreatePR` ahead-of-base detection
-- Update Layer 6 decisions doc (D147-D153)
-- Full observability (persisting agent action traces) — deferred to later Layer 6 phase
-- Communication receive capability — deferred
+Deferred items:
+- Full observability (persisting agent action traces) — separate Layer 6 phase
+- Communication receive capability — separate Layer 6 phase

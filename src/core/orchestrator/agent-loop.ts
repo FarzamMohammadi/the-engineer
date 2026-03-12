@@ -5,6 +5,7 @@ import {
   AgentActionSchema,
   type PhaseToolConfig,
 } from "../../schemas/orchestrator.js";
+import { sanitizeSecrets } from "../../utils/sanitize.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ async function executeAndLog(
   if (result.success) {
     log(`[agent-loop]   -> OK (${String(result.output.length)} chars)`);
   } else {
-    log(`[agent-loop]   -> FAILED: ${result.error ?? "unknown"}`);
+    log(`[agent-loop]   -> FAILED: ${sanitizeSecrets(result.error ?? "unknown")}`);
   }
   history.push({ action, result });
 }
@@ -251,16 +252,17 @@ function appendHistoryEntry(parts: string[], entry: HistoryEntry, index: number)
     parts.push(`Input: ${JSON.stringify("params" in entry.action ? entry.action.params : {})}`);
   }
   if (entry.result) {
+    const sanitizedOutput = sanitizeSecrets(entry.result.output);
     const outputPreview =
-      entry.result.output.length > 2000
-        ? `${entry.result.output.slice(0, 2000)}\n[... truncated, ${String(entry.result.output.length)} chars total]`
-        : entry.result.output;
+      sanitizedOutput.length > 2000
+        ? `${sanitizedOutput.slice(0, 2000)}\n[... truncated, ${String(sanitizedOutput.length)} chars total]`
+        : sanitizedOutput;
     parts.push(`Result: ${entry.result.success ? "success" : "error"}`);
-    if (entry.result.output) {
+    if (sanitizedOutput) {
       parts.push(`Output:\n${outputPreview}`);
     }
     if (entry.result.error) {
-      parts.push(`Error: ${entry.result.error}`);
+      parts.push(`Error: ${sanitizeSecrets(entry.result.error)}`);
     }
   }
 }

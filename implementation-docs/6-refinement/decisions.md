@@ -232,3 +232,104 @@ For CLI adapters, Safety Layer cost limits should be based on call count thresho
 **Rationale:** CLI providers (subscription-based) don't expose per-call billing. Trying to estimate cost from token counts that are 0 is futile. Better to track what we can measure (calls, errors) and defer real cost tracking to API adapters.
 
 **Phase:** 6.8 (implementation)
+
+---
+
+## D147: Clone-on-Demand for Workspaces
+
+**Context (Phase 6.5):** WorkspaceManager creates worktrees via `git worktree add`, but needs a local clone of the target repo first. The clone may or may not already exist from a previous task.
+
+**Decision:** `WorkspaceManager.createWorkspace()` clones the target repo on first use if the clone directory doesn't exist. Accepts `cloneUrl` parameter. Idempotent — skips if already cloned. After clone, resets the remote URL to the unauthenticated form (token only used transiently during clone, per D151).
+
+**Rationale:** On-demand cloning means no manual setup step. Idempotent design means multiple tasks targeting the same repo don't conflict. Token is never persisted in git config.
+
+**Phase:** 6.5
+
+---
+
+## D148: Task clone_url Field + Transient Auth Injection
+
+**Context (Phase 6.5):** Tasks need to reference the target repo for workspace creation. The clone URL must include authentication for private repos, but storing tokens in the database is a security risk.
+
+**Decision:** Tasks store a `clone_url TEXT` field in SQLite (the HTTPS URL without credentials). Authentication is injected transiently into HTTPS URLs (`https://git:{token}@`) by the `injectAuth()` function at operation time. Token is read from an env var specified in workspace config (`git_token_env`), never persisted to disk or git config.
+
+**Rationale:** Separates "where is the repo" (persisted) from "how to authenticate" (ephemeral). The env var indirection means different deployments can use different token sources.
+
+**Phase:** 6.5
+
+---
+
+## D149: Deterministic Commit + Draft PR After Demo Prep
+
+**Context (Phase 6.5):** After the LLM completes the demo_prep phase, any code changes need to be committed, pushed, and presented as a draft PR. The LLM (Claude CLI in `--print --dangerously-skip-permissions` mode) may have already committed changes internally during the execution phase.
+
+**Decision:** After demo_prep phase completion, the Orchestrator runs a deterministic commit pipeline: `git add -A` → check for staged changes → `git commit` if changes exist → check `git rev-list --count origin/{base}..HEAD` for ahead-of-base commits (covers Claude CLI internal commits) → push → create draft PR via GitHostingAdapter. The ahead-of-base check was a critical Session 057 bug fix — without it, Claude CLI's internal commits were silently dropped.
+
+**Rationale:** Deterministic commits ensure nothing is lost. The rev-list check handles the case where the LLM already committed internally, making the Orchestrator's commit a no-op but still requiring push/PR.
+
+**Phase:** 6.5
+
+---
+
+## D150: Push via Explicit Authenticated URL
+
+**Context (Phase 6.5):** `git push` needs authentication for private repos. The standard approach of storing credentials in `.git/config` or git credential helpers persists sensitive data.
+
+**Decision:** `WorkspaceManager.pushBranch()` pushes to an explicit `https://git:{token}@` URL rather than a git remote name. The token is injected at call time and discarded after the command completes.
+
+**Rationale:** The token never appears in `.git/config`, credential storage, or any persisted state. Each push is self-contained — the URL is constructed, used, and forgotten.
+
+**Phase:** 6.5
+
+---
+
+## D151: Token Injection Lifecycle (Never Persisted)
+
+**Context (Phase 6.5):** Multiple git operations (clone, push) need authentication. The token lifecycle must be carefully managed to prevent leaks.
+
+**Decision:** Tokens follow a strict lifecycle: read from environment variable → inject into URL → execute single git command → discard. After clone, the remote URL is immediately reset to the unauthenticated form. The token never appears in: git config, remote URLs on disk, environment passed to the LLM, or database records.
+
+**Rationale:** Defense in depth for credential security. Even if the process crashes mid-operation, the token only exists in the process memory of the git command. Combined with D154 (sanitization at chokepoints), token exposure risk is minimized.
+
+**Phase:** 6.5
+
+---
+
+## D152: Milestone Notifications via PeopleDirectory
+
+**Context (Phase 6.5):** The Orchestrator should notify the task owner at key milestones (task pickup, PR creation) but shouldn't have hard-coded notification logic.
+
+**Decision:** `notifyMilestone()` resolves the task owner via PeopleDirectory, then dispatches fire-and-forget messages to matching comm plugins. Plugin matching uses channel name convention: contact's `plugin_id` maps to `{channel}-comm` in the Registry. Failures are logged and swallowed — notifications are best-effort.
+
+**Rationale:** PeopleDirectory owns "who to notify", Registry owns "how to send". Orchestrator just says "send this message to the owner". Fire-and-forget because notification failures shouldn't block task execution.
+
+**Phase:** 6.5
+
+---
+
+## D153: Workspace Cleanup Policy
+
+**Context (Phase 6.5):** After task completion, the worktree consumes disk space but the branch may be needed for the open PR. After task error, the workspace may be needed for debugging or resume.
+
+**Decision:** On task completion: remove the worktree, preserve the branch (PR may still be open). On task error: preserve both worktree and branch (for potential resume via checkpoint). Cleanup is idempotent and failure-tolerant — if the worktree is already gone, no error.
+
+**Rationale:** Disk space is a real concern for long-running daemons handling many tasks. Branches are cheap (just refs). Preserving failed workspaces enables the resume-from-checkpoint pattern (Protocol P9).
+
+**Phase:** 6.5
+
+---
+
+## D154: Token Sanitization at Chokepoints
+
+**Context (Phase 6.5):** Session 057 discovered that a `git push` failure writes the full authenticated URL (including GITHUB_TOKEN) into journal entries via `logPrStepFailure()`. Multiple other leak paths exist: BashToolPlugin stdout/stderr, agent loop history fed back to LLM, console log output.
+
+**Decision:** Rather than sanitizing at every potential leak source, apply `sanitizeSecrets()` at three chokepoints:
+1. **SessionMemory.addJournalEntry()** — sanitize `summary`, `detail`, `errorDetail` before DB insert
+2. **Agent loop `appendHistoryEntry()`** — sanitize `output` and `error` before appending to LLM context
+3. **Agent loop `executeAndLog()`** — sanitize error strings in console log calls
+
+The `sanitizeSecrets()` function (in `src/utils/sanitize.ts`) redacts URL-embedded tokens (`https://git:{token}@`) via regex and replaces known env var values (GITHUB_TOKEN, TELEGRAM_BOT_TOKEN) when they appear in text (≥8 chars to avoid false positives).
+
+**Rationale:** Defense-in-depth at chokepoints is more maintainable than point-of-origin sanitization. If a new leak path emerges (new tool, new error handler), the chokepoints catch it before the data reaches persistence or external systems. The three chokepoints cover: database persistence, LLM context (privacy), and console output (developer visibility).
+
+**Phase:** 6.5

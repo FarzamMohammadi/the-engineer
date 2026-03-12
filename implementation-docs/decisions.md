@@ -1239,3 +1239,18 @@ Log of major decisions made. Do not re-litigate unless explicitly asked.
 **Decision:** `evaluateAction()` checks `config.merge.auto_merge` when `actionClass === "merge"`. Returns `ask_human` if auto-merge is not enabled for the repo.
 
 **Rationale:** Connects to Task Engine's conditional permission for merge (Decision #3, Session 039). Safety Layer evaluates the condition that Task Engine flags.
+
+---
+
+## 2026-03-12 — Layer 6 Phase 6.5 decisions (D147-D154)
+
+See `6-refinement/decisions.md` for full entries. Summary:
+
+- **D147:** Clone-on-demand for workspaces — WorkspaceManager clones target repo on first use, idempotent, resets remote URL after clone.
+- **D148:** Task `clone_url` field + `injectAuth()` transient auth injection — URL stored without credentials, token injected ephemerally from env var.
+- **D149:** Deterministic commit + draft PR after demo_prep — `git add -A` → commit → rev-list ahead-of-base check → push → create draft PR. Rev-list handles Claude CLI internal commits.
+- **D150:** Push via explicit authenticated URL — `git push` uses transient `https://git:{token}@` URL, never stored in `.git/config`.
+- **D151:** Token injection lifecycle — read from env → inject → single git command → discard. Never persisted anywhere.
+- **D152:** Milestone notifications via PeopleDirectory — owner resolution + fire-and-forget comm dispatch, channel→plugin name convention.
+- **D153:** Workspace cleanup policy — remove worktree on completion (preserve branch for PR), preserve everything on error (for resume).
+- **D154:** Token sanitization at chokepoints — `sanitizeSecrets()` applied at SessionMemory.addJournalEntry, agent loop history, and agent loop logs. Redacts URL-embedded tokens and known env var values.

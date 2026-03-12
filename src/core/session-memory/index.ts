@@ -15,6 +15,7 @@ import {
   type SessionEndReason,
   knowledgeId,
 } from "../../schemas/session-memory.js";
+import { sanitizeSecrets } from "../../utils/sanitize.js";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -369,6 +370,11 @@ export class SessionMemory {
     const now = new Date().toISOString();
     const tags = input.tags ?? [];
 
+    // Sanitize fields that may contain leaked tokens (D154)
+    const summary = sanitizeSecrets(input.summary);
+    const detail = input.detail ? sanitizeSecrets(input.detail) : null;
+    const errorDetail = input.errorDetail ? sanitizeSecrets(input.errorDetail) : null;
+
     this.insertJournalStmt.run(
       id,
       input.sessionId,
@@ -376,12 +382,12 @@ export class SessionMemory {
       now,
       input.phase,
       input.type,
-      input.summary,
-      input.detail ?? null,
+      summary,
+      detail,
       input.actionType ?? null,
       input.findingType ?? null,
       input.decisionKey ?? null,
-      input.errorDetail ?? null,
+      errorDetail,
       input.commTarget ?? null,
       JSON.stringify(tags),
     );
@@ -393,12 +399,12 @@ export class SessionMemory {
       timestamp: now,
       phase: input.phase,
       type: input.type,
-      summary: input.summary,
-      detail: input.detail ?? null,
+      summary,
+      detail,
       action_type: input.actionType ?? null,
       finding_type: input.findingType ?? null,
       decision_key: input.decisionKey ?? null,
-      error_detail: input.errorDetail ?? null,
+      error_detail: errorDetail,
       comm_target: input.commTarget ?? null,
       tags,
     };

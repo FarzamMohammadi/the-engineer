@@ -6,6 +6,7 @@ import path from "node:path";
 import type { z } from "zod";
 
 import type { WorkspaceConfigSchema } from "../../schemas/config.js";
+import { EventTypes } from "../../schemas/events.js";
 import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 
@@ -179,7 +180,7 @@ export class WorkspaceManager {
     this.workspaces.set(taskId, record);
 
     this.eventBus.publish({
-      type: "workspace.created",
+      type: EventTypes["workspace.created"],
       source: "workspace_manager",
       task_id: taskId,
       payload: {
@@ -283,7 +284,7 @@ export class WorkspaceManager {
     this.workspaces.delete(taskId);
 
     this.eventBus.publish({
-      type: "workspace.cleaned",
+      type: EventTypes["workspace.cleaned"],
       source: "workspace_manager",
       task_id: taskId,
       payload: {
@@ -412,7 +413,7 @@ export class WorkspaceManager {
 
   private emitVerified(taskId: string, result: WorkspaceVerification): void {
     this.eventBus.publish({
-      type: "workspace.verified",
+      type: EventTypes["workspace.verified"],
       source: "workspace_manager",
       task_id: taskId,
       payload: {

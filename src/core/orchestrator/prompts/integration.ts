@@ -1,3 +1,4 @@
+import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
@@ -79,7 +80,7 @@ export function buildIntegrationPrompt(ctx: IntegrationPromptContext): string {
   );
 
   // 9. Output Schema + Action Reference
-  parts.push(section("Output Requirements", formatOutputSchema("integration")));
+  parts.push(section("Output Requirements", formatOutputSchema(Phases.integration)));
   parts.push(
     section(
       "Actions",
@@ -141,14 +142,14 @@ function buildExecutionSection(executionOutput: Record<string, unknown> | null):
       "No parent-level execution was performed. Focus on integrating child task outputs.",
     );
   }
-  return section("Parent Execution", formatPriorPhaseOutput("execution", executionOutput));
+  return section("Parent Execution", formatPriorPhaseOutput(Phases.execution, executionOutput));
 }
 
 function buildReviewSection(selfReviewOutput: Record<string, unknown> | null): string {
   if (!selfReviewOutput) {
     return section("Parent Review", "No parent-level review was performed.");
   }
-  return section("Parent Review", formatPriorPhaseOutput("self_review", selfReviewOutput));
+  return section("Parent Review", formatPriorPhaseOutput(Phases.self_review, selfReviewOutput));
 }
 
 function buildRepoOverview(repoContext: RepoContext | null): string | null {

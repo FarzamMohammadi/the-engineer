@@ -1,7 +1,8 @@
 import type { Logger } from "pino";
 import type { CommunicationAdapter } from "../../adapters/communication.js";
+import { AdapterTypes } from "../../schemas/adapters.js";
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
-import type { TaskState } from "../../schemas/task.js";
+import { type TaskState, TaskStates } from "../../schemas/task.js";
 import type { Registry } from "../registry/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
@@ -48,7 +49,7 @@ export async function handleQuery(
   }
 
   // Send response via communication plugins
-  const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+  const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
   for (const comm of commPlugins) {
     try {
       await comm.sendMessage(
@@ -68,13 +69,13 @@ export async function handleQuery(
 
 function formatStatusResponse(taskEngine: TaskEngine): string {
   const states: TaskState[] = [
-    "intake",
-    "queued",
-    "active",
-    "blocked",
-    "review_pending",
-    "completed",
-    "failed",
+    TaskStates.intake,
+    TaskStates.queued,
+    TaskStates.active,
+    TaskStates.blocked,
+    TaskStates.review_pending,
+    TaskStates.completed,
+    TaskStates.failed,
   ];
   const counts: string[] = [];
   for (const state of states) {

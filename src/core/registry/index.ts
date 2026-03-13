@@ -9,10 +9,12 @@ import {
   type InitResult,
   type PluginHealthRecord,
   type PluginHealthState,
+  PluginHealthStates,
   type PluginManifest,
   PluginManifestSchema,
   type RegistrationResult,
 } from "../../schemas/adapters.js";
+import { EventTypes } from "../../schemas/events.js";
 import type { EventBus } from "../event-bus/index.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -268,7 +270,7 @@ export class Registry {
       instance,
       health: {
         plugin_id: manifest.id,
-        state: "healthy",
+        state: PluginHealthStates.healthy,
         consecutive_failures: 0,
         last_check_at: null,
         last_healthy_at: null,
@@ -476,11 +478,11 @@ export class Registry {
     health.last_healthy_at = now;
     health.last_error = null;
 
-    if (previousState !== "healthy") {
-      health.state = "healthy";
+    if (previousState !== PluginHealthStates.healthy) {
+      health.state = PluginHealthStates.healthy;
       console.log(`Registry: plugin "${manifest.id}" recovered (was ${previousState})`);
       this.eventBus.publish({
-        type: "health.plugin_recovered",
+        type: EventTypes["health.plugin_recovered"],
         source: "registry",
         task_id: null,
         payload: {
@@ -501,14 +503,14 @@ export class Registry {
     health.consecutive_failures++;
     health.last_error = errorMessage;
 
-    if (previousState === "healthy") {
+    if (previousState === PluginHealthStates.healthy) {
       // healthy → unhealthy
-      health.state = "unhealthy";
+      health.state = PluginHealthStates.unhealthy;
       console.warn(
         `Registry: plugin "${manifest.id}" is unhealthy (${String(health.consecutive_failures)} failures): ${errorMessage}`,
       );
       this.eventBus.publish({
-        type: "health.plugin_unhealthy",
+        type: EventTypes["health.plugin_unhealthy"],
         source: "registry",
         task_id: null,
         payload: {
@@ -519,16 +521,16 @@ export class Registry {
         },
       });
     } else if (
-      previousState === "unhealthy" &&
+      previousState === PluginHealthStates.unhealthy &&
       health.consecutive_failures >= this.consecutiveFailuresThreshold
     ) {
       // unhealthy → failed
-      health.state = "failed";
+      health.state = PluginHealthStates.failed;
       console.error(
         `Registry: plugin "${manifest.id}" has FAILED (${String(health.consecutive_failures)}/${String(this.consecutiveFailuresThreshold)} failures): ${errorMessage}`,
       );
       this.eventBus.publish({
-        type: "health.plugin_failed",
+        type: EventTypes["health.plugin_failed"],
         source: "registry",
         task_id: null,
         payload: {

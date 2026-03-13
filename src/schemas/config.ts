@@ -234,6 +234,9 @@ export type ScopeBoundaries = z.infer<typeof ScopeBoundariesSchema>;
 export const AutonomyLevelSchema = z.enum(["always_ask", "threshold", "always_decide"]);
 export type AutonomyLevel = z.infer<typeof AutonomyLevelSchema>;
 
+/** Constant enum values for AutonomyLevel. Use instead of raw strings. */
+export const AutonomyLevels = AutonomyLevelSchema.enum;
+
 export const AutonomyDecisionSchema = z.object({
   level: AutonomyLevelSchema.default("always_ask"),
   threshold: z.string().nullable().default(null),

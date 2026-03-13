@@ -1,26 +1,19 @@
+import { EventTypes } from "../../schemas/events.js";
+import { ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
-import type { SafetyLayer, SafetyVerdict } from "../safety-layer/index.js";
+import type { EventBus } from "../event-bus/index.js";
+import type {
+  ExecuteInput,
+  IActionPipeline,
+  PipelineResult,
+} from "../interfaces/action-pipeline.interface.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import type { SafetyVerdict } from "../interfaces/safety-layer.interface.js";
+import type { SafetyLayer } from "../safety-layer/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-/** Input for ActionPipeline.execute(). */
-export interface ExecuteInput<T> {
-  taskId: string;
-  actionClass: ActionClass;
-  details: Record<string, unknown>;
-  requestedBy: string;
-  executeFn: () => T | Promise<T>;
-  notifyFn?: (result: T) => void;
-}
-
-/** Discriminated union of pipeline outcomes. */
-export type PipelineResult<T> =
-  | { outcome: "executed"; result: T }
-  | { outcome: "rejected"; gate: "task_engine" | "safety_layer"; reason: string }
-  | { outcome: "ask_human"; reason: string; warnings?: string[] }
-  | { outcome: "error"; reason: string; error: unknown };
+// Re-export interface types so existing consumers don't break
+export type { ExecuteInput, PipelineResult } from "../interfaces/action-pipeline.interface.js";
 
 // ── ActionPipeline ────────────────────────────────────────────────────────────
 
@@ -29,7 +22,7 @@ export type PipelineResult<T> =
  * Every side-effect action flows through this pipeline. The intelligence lives in the gates,
  * not the pipeline itself.
  */
-export class ActionPipeline {
+export class ActionPipeline implements IActionPipeline {
   private readonly taskEngine: TaskEngine;
   private readonly safetyLayer: SafetyLayer;
   private readonly eventBus: EventBus;
@@ -58,7 +51,7 @@ export class ActionPipeline {
     }
 
     // Gate 2: Safety Layer — does policy allow this action? (skip for read-only)
-    if (actionClass !== "read") {
+    if (actionClass !== ActionClasses.read) {
       const verdict = this.safetyLayer.evaluateAction(taskId, actionClass, details);
       const rejection = this.checkSafetyVerdict<T>(
         verdict,
@@ -129,7 +122,7 @@ export class ActionPipeline {
     requestedBy: string,
   ): void {
     this.eventBus.publish({
-      type: "action.rejected",
+      type: EventTypes["action.rejected"],
       source: "action_pipeline",
       task_id: taskId,
       payload: {

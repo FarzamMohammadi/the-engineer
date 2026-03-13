@@ -6,16 +6,18 @@ import type { CommunicationAdapter } from "../../adapters/communication.js";
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import { parseGitHubUrl, toExternalRef } from "../../plugins/github-shared/index.js";
-import type { TriggerEvent } from "../../schemas/adapters.js";
+import { AdapterTypes, type TriggerEvent } from "../../schemas/adapters.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
-import type {
-  Event,
-  EventPayloads,
-  TaskChildrenAllDonePayload,
-  TaskFeedbackReceivedPayload,
-  TaskStateChangedPayload,
+import {
+  type Event,
+  type EventPayloads,
+  EventTypes,
+  type TaskChildrenAllDonePayload,
+  type TaskFeedbackReceivedPayload,
+  type TaskStateChangedPayload,
 } from "../../schemas/events.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
@@ -91,7 +93,10 @@ export interface Daemon {
 
 /** Whether a task in the given state consumes a working slot. */
 export function isSlotConsuming(state: string, subState: string | null): boolean {
-  return state === "active" && (subState === "working" || subState === "integrating");
+  return (
+    state === TaskStates.active &&
+    (subState === SubStates.working || subState === SubStates.integrating)
+  );
 }
 
 /** Whether a higher-priority task should preempt a lower-priority one. */
@@ -264,14 +269,14 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // ── Event Bus Subscriptions ───────────────────────────────────────────
 
   function registerSubscriptions(): void {
-    eventBus.subscribe("daemon:cost", "cost.limit_reached", (event: Event) => {
+    eventBus.subscribe("daemon:cost", EventTypes["cost.limit_reached"], (event: Event) => {
       const payload = event.payload as EventPayloads["cost.limit_reached"];
       if (payload.task_id) {
         costLimitTasks.push(payload.task_id);
       }
     });
 
-    eventBus.subscribe("daemon:comm", "comm.message_received", (event: Event) => {
+    eventBus.subscribe("daemon:comm", EventTypes["comm.message_received"], (event: Event) => {
       const payload = event.payload as EventPayloads["comm.message_received"];
       const queryDeps: QueryHandlerDeps = {
         taskEngine,
@@ -285,19 +290,23 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     });
 
     // Subscribe to task state changes — sync to communication plugins
-    eventBus.subscribe("daemon:state-sync", "task.state_changed", (event: Event) => {
+    eventBus.subscribe("daemon:state-sync", EventTypes["task.state_changed"], (event: Event) => {
       const payload = event.payload as TaskStateChangedPayload;
       syncStateToCommPlugin(payload);
     });
 
     // Subscribe to children_all_done — resume parent task integration
-    eventBus.subscribe("daemon:children-done", "task.children_all_done", (event: Event) => {
-      const payload = event.payload as TaskChildrenAllDonePayload;
-      handleChildrenAllDone(payload);
-    });
+    eventBus.subscribe(
+      "daemon:children-done",
+      EventTypes["task.children_all_done"],
+      (event: Event) => {
+        const payload = event.payload as TaskChildrenAllDonePayload;
+        handleChildrenAllDone(payload);
+      },
+    );
 
     // Subscribe to PR review feedback — handle approval, rework, or demo→code transition
-    eventBus.subscribe("daemon:feedback", "task.feedback_received", (event: Event) => {
+    eventBus.subscribe("daemon:feedback", EventTypes["task.feedback_received"], (event: Event) => {
       const payload = event.payload as TaskFeedbackReceivedPayload;
       handleFeedbackEvent(payload);
     });
@@ -315,14 +324,14 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
   function rebuildStateFromTaskEngine(): void {
     // Crash recovery: transition orphaned active tasks → queued
-    const activeTasks = taskEngine.getTasksByState("active");
+    const activeTasks = taskEngine.getTasksByState(TaskStates.active);
     for (const task of activeTasks) {
       if (isSlotConsuming(task.state, task.sub_state)) {
         logger.warn(
           { taskId: task.id, subState: task.sub_state },
           "Recovering orphaned active task",
         );
-        taskEngine.requestTransition(task.id, "queued", null, "crash_recovery", "daemon");
+        taskEngine.requestTransition(task.id, TaskStates.queued, null, "crash_recovery", "daemon");
       }
     }
 
@@ -332,7 +341,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // original. This is safe because aging is capped at aging_cap and
     // computeAgedPriority checks against basePriority, so the worst case
     // is slightly faster convergence to cap — never exceeds it.
-    const queuedTasks = taskEngine.getTasksByState("queued");
+    const queuedTasks = taskEngine.getTasksByState(TaskStates.queued);
     for (const task of queuedTasks) {
       basePriorities.set(task.id, task.priority);
     }
@@ -341,7 +350,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // ── Trigger Polling ───────────────────────────────────────────────────
 
   async function pollTriggers(now: number): Promise<void> {
-    const triggers = registry.getPluginsByType<TriggerAdapter>("trigger");
+    const triggers = registry.getPluginsByType<TriggerAdapter>(AdapterTypes.trigger);
 
     for (const trigger of triggers) {
       await pollSingleTrigger(trigger, now);
@@ -386,7 +395,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
     // Emit trigger.new_event
     eventBus.publish({
-      type: "trigger.new_event",
+      type: EventTypes["trigger.new_event"],
       source: "daemon",
       task_id: null,
       payload: {
@@ -417,7 +426,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       clone_url: event.clone_url,
     });
 
-    taskEngine.requestTransition(task.id, "queued", null, "new_trigger_event", "daemon");
+    taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");
     basePriorities.set(task.id, task.priority);
     logger.info({ taskId: task.id, title: event.title }, "Task created from trigger event");
   }
@@ -425,7 +434,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // ── State Sync ──────────────────────────────────────────────────────
 
   function syncStateToCommPlugin(payload: TaskStateChangedPayload): void {
-    const commPlugins = registry.getPluginsByType("communication");
+    const commPlugins = registry.getPluginsByType(AdapterTypes.communication);
     for (const plugin of commPlugins) {
       const comm = plugin as CommunicationAdapter;
       if (!comm.hasCapability("sync")) {
@@ -464,7 +473,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       return;
     }
 
-    if (parent.state !== "active" || parent.sub_state !== "supervising") {
+    if (parent.state !== TaskStates.active || parent.sub_state !== SubStates.supervising) {
       logger.warn(
         { parentTaskId: payload.parent_task_id, state: parent.state, subState: parent.sub_state },
         "Parent not in supervising state for children_all_done",
@@ -474,8 +483,8 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
     const transition = taskEngine.requestTransition(
       parent.id,
-      "active",
-      "integrating",
+      TaskStates.active,
+      SubStates.integrating,
       "children_all_done",
       "daemon",
     );
@@ -500,7 +509,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       decisions_made: child.decisions.map((d) => d.what),
       pr_number: child.review?.pr_number ?? null,
       branch: child.workspace?.branch ?? "",
-      test_status: (child.state === "completed" ? "passing" : "failing") as
+      test_status: (child.state === TaskStates.completed ? "passing" : "failing") as
         | "passing"
         | "failing"
         | "no_tests",
@@ -538,16 +547,18 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
 
     const siblings = taskEngine.getChildren(child.parent_id);
-    const allTerminal = siblings.every((s) => s.state === "completed" || s.state === "failed");
+    const allTerminal = siblings.every(
+      (s) => s.state === TaskStates.completed || s.state === TaskStates.failed,
+    );
 
     if (!allTerminal) {
       return;
     }
 
-    const failedIds = siblings.filter((s) => s.state === "failed").map((s) => s.id);
+    const failedIds = siblings.filter((s) => s.state === TaskStates.failed).map((s) => s.id);
 
     eventBus.publish({
-      type: "task.children_all_done",
+      type: EventTypes["task.children_all_done"],
       source: "daemon",
       task_id: child.parent_id,
       payload: {
@@ -625,7 +636,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     };
 
     eventBus.publish({
-      type: "preemption.requested",
+      type: EventTypes["preemption.requested"],
       source: "daemon",
       task_id: targetTaskId,
       payload: {
@@ -657,7 +668,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       );
       taskEngine.requestTransition(
         pendingPreemption.targetTaskId,
-        "queued",
+        TaskStates.queued,
         null,
         "preemption_timeout",
         "daemon",
@@ -674,7 +685,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       pendingPreemption.requestedAt = now;
 
       eventBus.publish({
-        type: "preemption.requested",
+        type: EventTypes["preemption.requested"],
         source: "daemon",
         task_id: pendingPreemption.targetTaskId,
         payload: {
@@ -710,14 +721,14 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
 
     // Parent must be in supervising state for children to run
-    if (parent.state !== "active" || parent.sub_state !== "supervising") {
+    if (parent.state !== TaskStates.active || parent.sub_state !== SubStates.supervising) {
       return false;
     }
 
     // With pause_siblings policy, only one child can be active at a time
     if (parent.cascade_policy === "pause_siblings") {
       const siblings = taskEngine.getChildren(task.parent_id);
-      const activeSibling = siblings.find((s) => s.id !== task.id && s.state === "active");
+      const activeSibling = siblings.find((s) => s.id !== task.id && s.state === TaskStates.active);
       if (activeSibling) {
         return false;
       }
@@ -758,8 +769,8 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Transition to active.working
     const transition = taskEngine.requestTransition(
       candidate.id,
-      "active",
-      "working",
+      TaskStates.active,
+      SubStates.working,
       checkpoint ? "resumed_from_checkpoint" : "scheduled",
       "daemon",
     );
@@ -796,7 +807,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     const taskTitle = task?.title ?? taskId;
 
     if (result.outcome === "completed") {
-      taskEngine.requestTransition(taskId, "completed", null, "pipeline_completed", "daemon");
+      taskEngine.requestTransition(
+        taskId,
+        TaskStates.completed,
+        null,
+        "pipeline_completed",
+        "daemon",
+      );
       // Check if this child's completion means all siblings are done
       checkAndEmitChildrenAllDone(taskId);
       // Workspace cleanup (D153): preserve branch, remove worktree
@@ -810,7 +827,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       commentOnTaskIssue(taskId, "Task completed successfully.");
       logger.info({ taskId }, "Task completed");
     } else if (result.outcome === "review_pending") {
-      taskEngine.requestTransition(taskId, "review_pending", "demo", "pr_created", "daemon");
+      taskEngine.requestTransition(
+        taskId,
+        TaskStates.review_pending,
+        SubStates.demo,
+        "pr_created",
+        "daemon",
+      );
       // Notify about PR review needed — personal channels + GitHub issue comment
       sendReviewPendingNotification(taskId, taskTitle);
       commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
@@ -825,12 +848,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
         "Task decomposed — children queued for scheduling",
       );
     } else if (result.outcome === "preempted") {
-      taskEngine.requestTransition(taskId, "queued", null, "preempted", "daemon");
+      taskEngine.requestTransition(taskId, TaskStates.queued, null, "preempted", "daemon");
       logger.info({ taskId, lastPhase: result.lastPhase }, "Task preempted — returned to queue");
       pendingPreemption = null;
     } else if (result.outcome === "error") {
       logger.error({ taskId, phase: result.phase, reason: result.reason }, "Task error");
-      taskEngine.requestTransition(taskId, "blocked", null, result.reason, "daemon");
+      taskEngine.requestTransition(taskId, TaskStates.blocked, null, result.reason, "daemon");
       // Check if this child's failure means all siblings are terminal
       checkAndEmitChildrenAllDone(taskId);
       // Notify error — personal channels + GitHub issue comment
@@ -845,13 +868,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     logger.error({ taskId, error }, "Orchestrator crash during task execution");
 
     emitStuckDetected(taskId, "orchestrator_crash", 0);
-    taskEngine.requestTransition(taskId, "queued", null, "crash_recovery", "daemon");
+    taskEngine.requestTransition(taskId, TaskStates.queued, null, "crash_recovery", "daemon");
   }
 
   // ── Priority Aging ────────────────────────────────────────────────────
 
   function applyPriorityAging(now: number): void {
-    const queuedTasks = taskEngine.getTasksByState("queued");
+    const queuedTasks = taskEngine.getTasksByState(TaskStates.queued);
     for (const task of queuedTasks) {
       const base = basePriorities.get(task.id) ?? task.priority;
       const elapsed = now - Date.parse(task.created_at);
@@ -911,7 +934,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     elapsedMs: number,
   ): void {
     eventBus.publish({
-      type: "health.stuck_detected",
+      type: EventTypes["health.stuck_detected"],
       source: "daemon",
       task_id: taskId,
       payload: {
@@ -931,7 +954,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // ── Blocked Timeout Escalation ──────────────────────────────────────
 
   function checkBlockedEscalation(now: number): void {
-    const blockedTasks = taskEngine.getTasksByState("blocked");
+    const blockedTasks = taskEngine.getTasksByState(TaskStates.blocked);
     const timeoutPolicy = deps.safetyLayer.getTimeoutPolicy();
     const stages = timeoutPolicy.blocked.stages;
 
@@ -1010,7 +1033,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       orchestrator.attemptSelfUnblock(taskId).then(
         (resolved) => {
           if (resolved) {
-            taskEngine.requestTransition(taskId, "active", "working", "self_unblocked", "daemon");
+            taskEngine.requestTransition(
+              taskId,
+              TaskStates.active,
+              SubStates.working,
+              "self_unblocked",
+              "daemon",
+            );
             blockedEscalationState.delete(taskId);
             logger.info({ taskId }, "Task self-unblocked");
           } else {
@@ -1022,7 +1051,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
         },
       );
     } else if (stage.action === "escalation_alert") {
-      taskEngine.requestTransition(taskId, "failed", null, "blocked_timeout_escalation", "daemon");
+      taskEngine.requestTransition(
+        taskId,
+        TaskStates.failed,
+        null,
+        "blocked_timeout_escalation",
+        "daemon",
+      );
       sendEscalationAlert(taskId, taskTitle);
       blockedEscalationState.delete(taskId);
       logger.warn({ taskId, stage: stage.name }, "Blocked task escalated to failed");
@@ -1034,7 +1069,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     if (!owner) {
       return;
     }
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const content = `Task "${taskTitle}" is still blocked and waiting for attention.`;
 
     for (const comm of commPlugins) {
@@ -1057,7 +1092,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     const owner = deps.peopleDirectory.getOwner();
     const reviewers = deps.peopleDirectory.getReviewers();
     const recipients = [...(owner ? [owner] : []), ...reviewers];
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const content = `ALERT: Task "${taskTitle}" has been blocked too long and was transitioned to failed. Please investigate.`;
 
     for (const person of recipients) {
@@ -1081,7 +1116,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // ── Review Pending Reminders ──────────────────────────────────────────
 
   function checkReviewPendingReminders(now: number): void {
-    const reviewPendingTasks = taskEngine.getTasksByState("review_pending");
+    const reviewPendingTasks = taskEngine.getTasksByState(TaskStates.review_pending);
     const timeoutPolicy = deps.safetyLayer.getTimeoutPolicy();
     const reviewConfig = timeoutPolicy.review_pending;
 
@@ -1100,10 +1135,16 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     sub_state: string | null;
     review: { pr_number: number | null } | null;
   }): void {
-    if (task.sub_state === "demo") {
-      taskEngine.requestTransition(task.id, "review_pending", "code", "pr_merged", "daemon");
+    if (task.sub_state === SubStates.demo) {
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.review_pending,
+        SubStates.code,
+        "pr_merged",
+        "daemon",
+      );
     }
-    taskEngine.requestTransition(task.id, "completed", null, "pr_merged", "daemon");
+    taskEngine.requestTransition(task.id, TaskStates.completed, null, "pr_merged", "daemon");
     try {
       workspaceManager.cleanupWorkspace(task.id, true);
     } catch {
@@ -1135,12 +1176,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   }
 
   async function checkReviewPendingMerges(): Promise<void> {
-    const reviewTasks = taskEngine.getTasksByState("review_pending");
+    const reviewTasks = taskEngine.getTasksByState(TaskStates.review_pending);
     if (reviewTasks.length === 0) {
       return;
     }
 
-    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>("git_hosting");
+    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting);
     const hosting = hostingPlugins[0];
     if (!hosting) {
       return;
@@ -1154,7 +1195,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // ── Review Feedback Detection ─────────────────────────────────────────
 
   async function checkReviewPendingFeedback(): Promise<void> {
-    const reviewTasks = taskEngine.getTasksByState("review_pending");
+    const reviewTasks = taskEngine.getTasksByState(TaskStates.review_pending);
     if (reviewTasks.length === 0) {
       return;
     }
@@ -1172,7 +1213,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       }
     }
 
-    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>("git_hosting");
+    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting);
     const hosting = hostingPlugins[0];
     if (!hosting) {
       return;
@@ -1259,7 +1300,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       reviewStatus.reviewers.find((r) => r.state === aggregateState) ?? reviewStatus.reviewers[0];
 
     eventBus.publish({
-      type: "task.feedback_received",
+      type: EventTypes["task.feedback_received"],
       source: "daemon",
       task_id: taskId,
       payload: {
@@ -1309,7 +1350,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       const dedupSkipped = processedReviewStates.get(task.id) === dedupKey;
 
       eventBus.publish({
-        type: "review.poll_completed",
+        type: EventTypes["review.poll_completed"],
         source: "daemon",
         task_id: task.id,
         payload: {
@@ -1367,7 +1408,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
 
     // Guard: only handle feedback for tasks in review_pending state
-    if (task.state !== "review_pending") {
+    if (task.state !== TaskStates.review_pending) {
       logger.debug(
         { taskId: payload.task_id, state: task.state },
         "Ignoring feedback for non-review_pending task",
@@ -1426,7 +1467,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     payload: TaskFeedbackReceivedPayload,
   ): void {
     // Mark PR as ready (not draft) and transition demo → code
-    const hosting = registry.getPluginsByType<GitHostingAdapter>("git_hosting")[0];
+    const hosting = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting)[0];
     if (hosting && task.repo && task.review?.pr_number) {
       hosting
         .updatePR(task.repo, task.review.pr_number, {
@@ -1449,8 +1490,8 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
           });
           taskEngine.requestTransition(
             payload.task_id,
-            "review_pending",
-            "code",
+            TaskStates.review_pending,
+            SubStates.code,
             "demo_approved",
             "daemon",
           );
@@ -1478,7 +1519,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       const prNumber = task.review?.pr_number;
       const autoMergeAllowed = repo ? deps.safetyLayer.checkAutoMergeAllowed(repo) : false;
 
-      const hosting = registry.getPluginsByType<GitHostingAdapter>("git_hosting")[0];
+      const hosting = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting)[0];
       if (autoMergeAllowed && prNumber && repo && hosting) {
         // Auto-merge: attempt squash merge directly
         hosting
@@ -1502,7 +1543,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
             // Complete the task regardless of merge outcome
             taskEngine.requestTransition(
               payload.task_id,
-              "completed",
+              TaskStates.completed,
               null,
               "code_approved_merged",
               "daemon",
@@ -1512,7 +1553,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
             // Merge failed — still complete, human merges manually
             taskEngine.requestTransition(
               payload.task_id,
-              "completed",
+              TaskStates.completed,
               null,
               "code_approved",
               "daemon",
@@ -1524,7 +1565,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
           });
       } else {
         // No auto-merge — complete, let human merge
-        taskEngine.requestTransition(payload.task_id, "completed", null, "code_approved", "daemon");
+        taskEngine.requestTransition(
+          payload.task_id,
+          TaskStates.completed,
+          null,
+          "code_approved",
+          "daemon",
+        );
         commentOnTaskIssue(payload.task_id, "Code review approved — ready to merge.");
       }
       logger.info({ taskId: payload.task_id, autoMergeAllowed }, "Code approved — task completing");
@@ -1540,7 +1587,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     try {
       taskEngine.requestTransition(
         payload.task_id,
-        "queued",
+        TaskStates.queued,
         null,
         `feedback_rework:${payload.feedback_type}`,
         "daemon",
@@ -1591,7 +1638,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
   function sendReviewReminder(taskId: string, taskTitle: string, elapsedMs: number): void {
     const reviewers = deps.peopleDirectory.getReviewers();
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const hours = Math.floor(elapsedMs / 3_600_000);
     const content = `Review reminder: Task "${taskTitle}" has been pending review for ${String(hours)}h.`;
 
@@ -1622,7 +1669,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     if (!owner) {
       return;
     }
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const content = `Task "${taskTitle}" completed successfully.`;
 
     for (const comm of commPlugins) {
@@ -1646,7 +1693,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     if (!owner) {
       return;
     }
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const content = `Task "${taskTitle}" — PR created, awaiting review.`;
 
     for (const comm of commPlugins) {
@@ -1670,7 +1717,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     if (!owner) {
       return;
     }
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const content = `Task "${taskTitle}" encountered an error: ${reason}. Status: blocked.`;
 
     for (const comm of commPlugins) {
@@ -1694,7 +1741,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     if (!owner) {
       return;
     }
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const content = `Task "${taskTitle}" blocked — cost limit reached.`;
 
     for (const comm of commPlugins) {
@@ -1723,7 +1770,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       return;
     }
 
-    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const plugin = commPlugins.find((p) => p.hasCapability("issue_management"));
     if (!plugin) {
       return;
@@ -1738,7 +1785,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
   function emitHealthTriggerFailure(pluginId: string, failures: number, error: unknown): void {
     eventBus.publish({
-      type: "health.trigger_failure",
+      type: EventTypes["health.trigger_failure"],
       source: "daemon",
       task_id: null,
       payload: {
@@ -1772,9 +1819,15 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     const pending = costLimitTasks.splice(0);
     for (const taskId of pending) {
       const task = taskEngine.getTask(taskId);
-      if (task && task.state === "active") {
+      if (task && task.state === TaskStates.active) {
         logger.warn({ taskId }, "Task blocked due to cost limit");
-        taskEngine.requestTransition(taskId, "blocked", null, "cost_limit_reached", "daemon");
+        taskEngine.requestTransition(
+          taskId,
+          TaskStates.blocked,
+          null,
+          "cost_limit_reached",
+          "daemon",
+        );
         // Notify cost limit — personal channels + GitHub issue comment
         sendCostLimitNotification(taskId, task.title);
         commentOnTaskIssue(taskId, "Task blocked \u2014 cost limit reached.");
@@ -1920,8 +1973,14 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
       // Transition active tasks to queued
       const task = taskEngine.getTask(taskId);
-      if (task && task.state === "active") {
-        taskEngine.requestTransition(taskId, "queued", null, "graceful_shutdown", "daemon");
+      if (task && task.state === TaskStates.active) {
+        taskEngine.requestTransition(
+          taskId,
+          TaskStates.queued,
+          null,
+          "graceful_shutdown",
+          "daemon",
+        );
       }
     }
     activeDispatches.clear();

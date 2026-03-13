@@ -1,28 +1,20 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
-import type { Event, EventPayloads, EventType } from "../../schemas/events.js";
+import type { Event, EventType } from "../../schemas/events.js";
+import type {
+  EventCallback,
+  IEventBus,
+  PublishInput,
+  PublishInputGeneral,
+} from "../interfaces/event-bus.interface.js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-/** Input for publishing a known event type (type-safe payload). */
-export interface PublishInput<T extends EventType> {
-  type: T;
-  source: string;
-  task_id: string | null;
-  payload: EventPayloads[T];
-}
-
-/** Input for publishing any event type (future/plugin event types). */
-export interface PublishInputGeneral {
-  type: string;
-  source: string;
-  task_id: string | null;
-  payload: Record<string, unknown>;
-}
-
-/** Subscriber callback invoked when a matching event is published or replayed. */
-export type EventCallback = (event: Event) => void;
+// Re-export interface types so existing consumers don't break
+export type {
+  EventCallback,
+  PublishInput,
+  PublishInputGeneral,
+} from "../interfaces/event-bus.interface.js";
 
 interface SubscriptionRecord {
   subscriberId: string;
@@ -88,7 +80,7 @@ export function matchesPattern(pattern: string, eventType: string): boolean {
  * If a subscriber throws, the error is logged and delivery continues to
  * remaining subscribers. DB failures propagate (Event Bus down = system halt).
  */
-export class EventBus {
+export class EventBus implements IEventBus {
   private readonly db: Database.Database;
   private subscriptions: SubscriptionRecord[] = [];
 

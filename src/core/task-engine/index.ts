@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
+import { EventTypes } from "../../schemas/events.js";
 import type {
   ActionClass,
   BlockedDetails,
@@ -18,45 +19,34 @@ import type {
   TaskWorkspace,
   TeamMember,
 } from "../../schemas/task.js";
-import { PermissionTable, ValidTransitions } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
+import {
+  CascadePolicies,
+  PermissionTable,
+  TaskStates,
+  ValidTransitions,
+} from "../../schemas/task.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import type {
+  CreateTaskInput,
+  ITaskEngine,
+  PermissionResult,
+  TransitionResult,
+  UpdatableField,
+} from "../interfaces/task-engine.interface.js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// Re-export interface types so existing consumers don't break
+export type {
+  CreateTaskInput,
+  TransitionResult,
+  PermissionResult,
+  UpdatableField,
+} from "../interfaces/task-engine.interface.js";
 
-/** Input for createTask(). Only caller-provided fields. */
-export interface CreateTaskInput {
-  title: string;
-  /** Repository identifier (e.g. "owner/repo"). Stored on the task for workspace creation. */
-  repo: string;
-  /** Who created this task: "github-trigger", "manual", "decomposition", etc. */
-  source: string;
-  external_ref?: ExternalRef | null;
-  parent_id?: string | null;
-  description?: string;
-  source_text?: string;
-  acceptance_criteria?: string[];
-  priority?: number;
-  cascade_policy?: CascadePolicy;
-  /** Git clone URL for the target repo (D148). */
-  clone_url?: string | null;
-}
-
-/** Result of requestTransition(). */
-export interface TransitionResult {
-  success: boolean;
-  reason?: string;
-}
-
-/** Result of checkPermission(). */
-export interface PermissionResult {
-  allowed: boolean;
-  reason?: string;
-  /** Condition the caller must evaluate (e.g., "auto_merge configured for repo"). */
-  conditional?: string;
-}
+// Import EventBus class for constructor injection
+import type { EventBus } from "../event-bus/index.js";
 
 /** All fields updatable via updateTaskField(). Single source of truth — type derived from this. */
-const UPDATABLE_FIELDS = [
+const UPDATABLE_FIELDS: readonly UpdatableField[] = [
   "phase",
   "cascade_policy",
   "session_id",
@@ -75,10 +65,7 @@ const UPDATABLE_FIELDS = [
   "priority",
   "repo",
   "clone_url",
-] as const;
-
-/** Fields that can be updated via updateTaskField(). */
-export type UpdatableField = (typeof UPDATABLE_FIELDS)[number];
+];
 
 /** Shape of a row read from the `tasks` table. */
 interface TaskRow {
@@ -243,7 +230,7 @@ const JSON_FIELDS: ReadonlySet<UpdatableField> = new Set([
  * state machine), permission enforcement (Gate 1 of the Action Pipeline),
  * field updates, and cost tracking. Emits events on creation and state changes.
  */
-export class TaskEngine {
+export class TaskEngine implements ITaskEngine {
   private readonly db: Database.Database;
   private readonly eventBus: EventBus;
 
@@ -346,7 +333,7 @@ export class TaskEngine {
     const now = new Date().toISOString();
     const priority = input.priority ?? 50;
     const parentId = input.parent_id ?? null;
-    const cascadePolicy = input.cascade_policy ?? "pause_siblings";
+    const cascadePolicy = input.cascade_policy ?? CascadePolicies.pause_siblings;
     const description = input.description ?? "";
     const sourceText = input.source_text ?? "";
     const acceptanceCriteria = input.acceptance_criteria ?? [];
@@ -356,7 +343,7 @@ export class TaskEngine {
     this.insertTaskStmt.run(
       id,
       externalRefJson,
-      "intake",
+      TaskStates.intake,
       null, // sub_state
       null, // phase
       parentId,
@@ -387,7 +374,7 @@ export class TaskEngine {
     );
 
     this.eventBus.publish({
-      type: "task.created",
+      type: EventTypes["task.created"],
       source: "task_engine",
       task_id: id,
       payload: {
@@ -404,7 +391,7 @@ export class TaskEngine {
     const task: Task = {
       id,
       external_ref: externalRef,
-      state: "intake",
+      state: TaskStates.intake,
       sub_state: null,
       phase: null,
       parent_id: parentId,
@@ -476,11 +463,11 @@ export class TaskEngine {
     const executeTransition = this.db.transaction(() => {
       this.updateStateStmt.run(toState, toSub, now, taskId);
 
-      if (toState === "active") {
+      if (toState === TaskStates.active) {
         this.setStartedAtStmt.run(now, taskId);
       }
 
-      if (toState === "completed" || toState === "failed") {
+      if (toState === TaskStates.completed || toState === TaskStates.failed) {
         this.setCompletedAtStmt.run(now, taskId);
       }
 
@@ -500,7 +487,7 @@ export class TaskEngine {
     executeTransition();
 
     this.eventBus.publish({
-      type: "task.state_changed",
+      type: EventTypes["task.state_changed"],
       source: "task_engine",
       task_id: taskId,
       payload: {

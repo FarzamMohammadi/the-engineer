@@ -17,6 +17,9 @@ export type Capacity = z.infer<typeof CapacitySchema>;
 export const PrioritySourceSchema = z.enum(["explicit", "default", "aged"]);
 export type PrioritySource = z.infer<typeof PrioritySourceSchema>;
 
+/** Constant enum values for PrioritySource. Use instead of raw strings. */
+export const PrioritySources = PrioritySourceSchema.enum;
+
 export const PrioritySchema = z.object({
   value: z.number().int().min(1).max(100),
   source: PrioritySourceSchema,
@@ -43,6 +46,9 @@ export type TriggerState = z.infer<typeof TriggerStateSchema>;
 
 export const PreemptionStatusSchema = z.enum(["requested", "checkpointing"]);
 export type PreemptionStatus = z.infer<typeof PreemptionStatusSchema>;
+
+/** Constant enum values for PreemptionStatus. Use instead of raw strings. */
+export const PreemptionStatuses = PreemptionStatusSchema.enum;
 
 export const PendingPreemptionSchema = z.object({
   target_task_id: z.string(),

@@ -5,6 +5,9 @@ import { z } from "zod";
 export const AdapterTypeSchema = z.enum(["trigger", "communication", "llm", "tool", "git_hosting"]);
 export type AdapterType = z.infer<typeof AdapterTypeSchema>;
 
+/** Constant enum values for AdapterType. Use instead of raw strings. */
+export const AdapterTypes = AdapterTypeSchema.enum;
+
 export const PluginManifestSchema = z.object({
   id: z.string(),
   type: AdapterTypeSchema,
@@ -34,6 +37,9 @@ export type HealthStatus = z.infer<typeof HealthStatusSchema>;
 
 export const AdapterErrorSeveritySchema = z.enum(["warning", "error", "fatal"]);
 export type AdapterErrorSeverity = z.infer<typeof AdapterErrorSeveritySchema>;
+
+/** Constant enum values for AdapterErrorSeverity. Use instead of raw strings. */
+export const AdapterErrorSeverities = AdapterErrorSeveritySchema.enum;
 
 export const AdapterErrorSchema = z.object({
   code: z.string(),
@@ -76,6 +82,9 @@ export const MessageTypeSchema = z.enum([
   "alert",
 ]);
 export type MessageType = z.infer<typeof MessageTypeSchema>;
+
+/** Constant enum values for MessageType. Use instead of raw strings. */
+export const MessageTypes = MessageTypeSchema.enum;
 
 export const TargetSchema = z.object({
   user_id: z.string(),
@@ -242,6 +251,9 @@ export type ToolResult = z.infer<typeof ToolResultSchema>;
 export const MergeStrategySchema = z.enum(["merge", "squash", "rebase"]);
 export type MergeStrategy = z.infer<typeof MergeStrategySchema>;
 
+/** Constant enum values for MergeStrategy. Use instead of raw strings. */
+export const MergeStrategies = MergeStrategySchema.enum;
+
 export const PROptionsSchema = z.object({
   repo: z.string(),
   branch: z.string(),
@@ -329,6 +341,9 @@ export type BranchProtection = z.infer<typeof BranchProtectionSchema>;
 export const NotificationLevelSchema = z.enum(["all", "milestones", "critical"]);
 export type NotificationLevel = z.infer<typeof NotificationLevelSchema>;
 
+/** Constant enum values for NotificationLevel. Use instead of raw strings. */
+export const NotificationLevels = NotificationLevelSchema.enum;
+
 export const ContactSchema = z.object({
   channel: z.string(),
   handle: z.string(),
@@ -366,6 +381,9 @@ export type ContactInfo = z.infer<typeof ContactInfoSchema>;
 
 export const PluginHealthStateSchema = z.enum(["healthy", "unhealthy", "failed"]);
 export type PluginHealthState = z.infer<typeof PluginHealthStateSchema>;
+
+/** Constant enum values for PluginHealthState. Use instead of raw strings. */
+export const PluginHealthStates = PluginHealthStateSchema.enum;
 
 export const PluginHealthRecordSchema = z.object({
   plugin_id: z.string(),

@@ -1,3 +1,4 @@
+import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
@@ -64,7 +65,7 @@ export function buildIntakePrompt(ctx: IntakePromptContext): string {
   );
 
   // 6. Output Schema
-  parts.push(section("Output Requirements", formatOutputSchema("intake_analysis")));
+  parts.push(section("Output Requirements", formatOutputSchema(Phases.intake_analysis)));
 
   // 7. Action Reference
   parts.push(

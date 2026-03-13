@@ -13,6 +13,9 @@ export const SessionEndReasonSchema = z.enum([
 ]);
 export type SessionEndReason = z.infer<typeof SessionEndReasonSchema>;
 
+/** Constant enum values for SessionEndReason. Use instead of raw strings. */
+export const SessionEndReasons = SessionEndReasonSchema.enum;
+
 export const SessionSchema = z.object({
   id: z.string(),
   task_id: z.string(),
@@ -36,6 +39,9 @@ export const JournalEntryTypeSchema = z.enum([
   "checkpoint_marker",
 ]);
 export type JournalEntryType = z.infer<typeof JournalEntryTypeSchema>;
+
+/** Constant enum values for JournalEntryType. Use instead of raw strings. */
+export const JournalEntryTypes = JournalEntryTypeSchema.enum;
 
 export const JournalEntrySchema = z.object({
   id: z.string(),
@@ -71,6 +77,9 @@ export const CheckpointReasonSchema = z.enum([
   "periodic",
 ]);
 export type CheckpointReason = z.infer<typeof CheckpointReasonSchema>;
+
+/** Constant enum values for CheckpointReason. Use instead of raw strings. */
+export const CheckpointReasons = CheckpointReasonSchema.enum;
 
 export const CheckpointSchema = z.object({
   id: z.string(),
@@ -108,8 +117,14 @@ export type Checkpoint = z.infer<typeof CheckpointSchema>;
 export const KnowledgeScopeSchema = z.enum(["repo", "user"]);
 export type KnowledgeScope = z.infer<typeof KnowledgeScopeSchema>;
 
+/** Constant enum values for KnowledgeScope. Use instead of raw strings. */
+export const KnowledgeScopes = KnowledgeScopeSchema.enum;
+
 export const KnowledgeConfidenceSchema = z.enum(["observed", "inferred", "told"]);
 export type KnowledgeConfidence = z.infer<typeof KnowledgeConfidenceSchema>;
+
+/** Constant enum values for KnowledgeConfidence. Use instead of raw strings. */
+export const KnowledgeConfidences = KnowledgeConfidenceSchema.enum;
 
 export const KnowledgeDomainSchema = z.enum([
   "conventions",
@@ -120,6 +135,9 @@ export const KnowledgeDomainSchema = z.enum([
   "preferences",
 ]);
 export type KnowledgeDomain = z.infer<typeof KnowledgeDomainSchema>;
+
+/** Constant enum values for KnowledgeDomain. Use instead of raw strings. */
+export const KnowledgeDomains = KnowledgeDomainSchema.enum;
 
 export const KnowledgeEvidenceSchema = z.object({
   task_id: z.string(),

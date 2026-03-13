@@ -1,3 +1,4 @@
+import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
@@ -68,7 +69,7 @@ export function buildDemoPrepPrompt(ctx: DemoPrepPromptContext): string {
   );
 
   // 9. Output Schema + Action Reference
-  parts.push(section("Output Requirements", formatOutputSchema("demo_prep")));
+  parts.push(section("Output Requirements", formatOutputSchema(Phases.demo_prep)));
   parts.push(
     section("Actions", formatActionReference(["read_file", "write_file", "run_command", "done"])),
   );
@@ -93,7 +94,10 @@ function buildExecutionSection(executionOutput: Record<string, unknown> | null):
       "No execution summary available. Read the branch diff to understand the changes.",
     );
   }
-  return section("Implementation Summary", formatPriorPhaseOutput("execution", executionOutput));
+  return section(
+    "Implementation Summary",
+    formatPriorPhaseOutput(Phases.execution, executionOutput),
+  );
 }
 
 function buildReviewSection(selfReviewOutput: Record<string, unknown> | null): string {
@@ -103,7 +107,7 @@ function buildReviewSection(selfReviewOutput: Record<string, unknown> | null): s
       "No review assessment available. Assume the code is ready for demo.",
     );
   }
-  return section("Review Assessment", formatPriorPhaseOutput("self_review", selfReviewOutput));
+  return section("Review Assessment", formatPriorPhaseOutput(Phases.self_review, selfReviewOutput));
 }
 
 function buildPlanSection(planningOutput: Record<string, unknown> | null): string {
@@ -113,7 +117,7 @@ function buildPlanSection(planningOutput: Record<string, unknown> | null): strin
       "No planning context available. Describe the changes based on what you find in the code.",
     );
   }
-  return section("Original Approach", formatPriorPhaseOutput("planning", planningOutput));
+  return section("Original Approach", formatPriorPhaseOutput(Phases.planning, planningOutput));
 }
 
 function buildRepoOverview(repoContext: RepoContext | null): string {

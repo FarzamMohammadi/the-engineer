@@ -1,40 +1,25 @@
 import type Database from "better-sqlite3";
 
 import type { CostLimits, ResponseTimeout, SafetyConfig } from "../../schemas/config.js";
+import { EventTypes } from "../../schemas/events.js";
 import type { CostIncurredPayload } from "../../schemas/events.js";
 import type { Event } from "../../schemas/events.js";
+import { ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventBus } from "../event-bus/index.js";
+import type {
+  CostStatus,
+  ISafetyLayer,
+  SafetyQuery,
+  SafetyVerdict,
+} from "../interfaces/safety-layer.interface.js";
 
-// ── Public Types ─────────────────────────────────────────────────────────────
-
-/** Query for passive consultation (called by Orchestrator). */
-export interface SafetyQuery {
-  type: "can_i" | "should_i_ask" | "cost_check";
-  context: {
-    task_id: string;
-    repo: string;
-    action_class?: ActionClass;
-    decision_category?: string;
-    details: Record<string, unknown>;
-  };
-}
-
-/** Verdict returned by evaluateAction and consultJudgment. */
-export interface SafetyVerdict {
-  allowed: boolean;
-  action: "proceed" | "ask_human" | "deny";
-  reason: string;
-  warnings?: string[];
-}
-
-/** Cost status summary. */
-export interface CostStatus {
-  per_task_usd: number;
-  daily_usd: number;
-  monthly_usd: number;
-  warnings: string[];
-}
+// Re-export interface types so existing consumers don't break
+export type {
+  SafetyQuery,
+  SafetyVerdict,
+  CostStatus,
+} from "../interfaces/safety-layer.interface.js";
 
 /** Parsed threshold from autonomy config. */
 export interface ParsedThreshold {
@@ -251,7 +236,7 @@ function basename(path: string): string {
  * accumulators, emits `cost.limit_reached` when thresholds are hit. Accumulators
  * are snapshot to `_meta` after every cost event and restored on startup.
  */
-export class SafetyLayer {
+export class SafetyLayer implements ISafetyLayer {
   private readonly db: Database.Database;
   private readonly eventBus: EventBus;
   private config: SafetyConfig;
@@ -283,7 +268,7 @@ export class SafetyLayer {
     this.restoreFromSnapshot();
     this.replayEvents();
 
-    eventBus.subscribe("safety_layer", "cost.incurred", (event) => {
+    eventBus.subscribe("safety_layer", EventTypes["cost.incurred"], (event) => {
       this.onCostEvent(event);
     });
   }
@@ -310,7 +295,7 @@ export class SafetyLayer {
     }
 
     // 2. Branch scope check (for git_remote and merge actions)
-    if (actionClass === "git_remote" || actionClass === "merge") {
+    if (actionClass === ActionClasses.git_remote || actionClass === ActionClasses.merge) {
       const branchCheck = this.checkBranchScope(actionClass, details);
       if (branchCheck) {
         return branchCheck;
@@ -318,7 +303,7 @@ export class SafetyLayer {
     }
 
     // 3. File scope check (for write actions)
-    if (actionClass === "write") {
+    if (actionClass === ActionClasses.write) {
       const fileCheck = this.checkFileScope(details);
       if (fileCheck) {
         return fileCheck;
@@ -326,7 +311,7 @@ export class SafetyLayer {
     }
 
     // 4. Merge policy check
-    if (actionClass === "merge") {
+    if (actionClass === ActionClasses.merge) {
       const mergeCheck = this.checkMergePolicy(details);
       if (mergeCheck) {
         return mergeCheck;
@@ -356,10 +341,14 @@ export class SafetyLayer {
   consultJudgment(query: SafetyQuery): SafetyVerdict {
     switch (query.type) {
       case "can_i":
-        return this.evaluateAction(query.context.task_id, query.context.action_class ?? "read", {
-          ...query.context.details,
-          repo: query.context.repo,
-        });
+        return this.evaluateAction(
+          query.context.task_id,
+          query.context.action_class ?? ActionClasses.read,
+          {
+            ...query.context.details,
+            repo: query.context.repo,
+          },
+        );
 
       case "should_i_ask":
         return this.evaluateAutonomy(query);
@@ -802,7 +791,7 @@ export class SafetyLayer {
 
     if (spent >= limitConfig.cost_usd) {
       this.eventBus.publish({
-        type: "cost.limit_reached" as const,
+        type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: limitType === "per_task" ? taskId : null,
         payload: {
@@ -831,7 +820,7 @@ export class SafetyLayer {
 
     if (cliConfig.daily_requests !== null && usage.requests_used >= cliConfig.daily_requests) {
       this.eventBus.publish({
-        type: "cost.limit_reached" as const,
+        type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: taskId,
         payload: {
@@ -848,7 +837,7 @@ export class SafetyLayer {
 
     if (cliConfig.daily_tokens !== null && usage.tokens_used >= cliConfig.daily_tokens) {
       this.eventBus.publish({
-        type: "cost.limit_reached" as const,
+        type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: taskId,
         payload: {
@@ -866,7 +855,7 @@ export class SafetyLayer {
     // CLI self-reporting: remaining === 0 means provider exhausted
     if (usage.last_known_remaining === 0) {
       this.eventBus.publish({
-        type: "cost.limit_reached" as const,
+        type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: taskId,
         payload: {
@@ -937,7 +926,7 @@ export class SafetyLayer {
     const monthlyStart = getMonthlyWindowStart(now);
 
     for (const event of events) {
-      if (event.type !== "cost.incurred") {
+      if (event.type !== EventTypes["cost.incurred"]) {
         continue;
       }
 

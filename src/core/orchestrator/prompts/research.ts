@@ -1,3 +1,4 @@
+import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
@@ -62,7 +63,7 @@ export function buildResearchPrompt(ctx: ResearchPromptContext): string {
   );
 
   // 8. Output Schema
-  parts.push(section("Output Requirements", formatOutputSchema("research")));
+  parts.push(section("Output Requirements", formatOutputSchema(Phases.research)));
 
   // 9. Action Reference
   parts.push(
@@ -92,7 +93,7 @@ function buildIntakeResultsSection(intakeOutput: Record<string, unknown> | null)
       "No intake analysis available. Proceed with research based on the task description.",
     );
   }
-  return section("Intake Analysis", formatPriorPhaseOutput("intake_analysis", intakeOutput));
+  return section("Intake Analysis", formatPriorPhaseOutput(Phases.intake_analysis, intakeOutput));
 }
 
 function buildRepoOverview(repoContext: RepoContext | null): string {

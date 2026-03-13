@@ -1,4 +1,4 @@
-import type { Phase, PhaseToolConfig } from "../../schemas/orchestrator.js";
+import { type Phase, type PhaseToolConfig, Phases } from "../../schemas/orchestrator.js";
 
 /**
  * Per-phase tool restrictions (Decision #141).
@@ -8,22 +8,22 @@ import type { Phase, PhaseToolConfig } from "../../schemas/orchestrator.js";
  * execution can't merge PRs.
  */
 export const PHASE_TOOL_CONFIG: Record<Phase, PhaseToolConfig> = {
-  intake_analysis: {
+  [Phases.intake_analysis]: {
     allowed_actions: ["read_file", "search_files", "search_content", "done"],
     max_iterations: 5,
     action_classes: ["read"],
   },
-  research: {
+  [Phases.research]: {
     allowed_actions: ["read_file", "search_files", "search_content", "run_command", "done"],
     max_iterations: 15,
     action_classes: ["read", "communicate"],
   },
-  planning: {
+  [Phases.planning]: {
     allowed_actions: ["read_file", "search_files", "search_content", "done"],
     max_iterations: 10,
     action_classes: ["read", "communicate", "task-manage"],
   },
-  execution: {
+  [Phases.execution]: {
     allowed_actions: [
       "read_file",
       "write_file",
@@ -36,17 +36,17 @@ export const PHASE_TOOL_CONFIG: Record<Phase, PhaseToolConfig> = {
     max_iterations: 25,
     action_classes: ["read", "write", "test", "git-local"],
   },
-  self_review: {
+  [Phases.self_review]: {
     allowed_actions: ["read_file", "search_files", "search_content", "run_command", "done"],
     max_iterations: 15,
     action_classes: ["read", "write", "test"],
   },
-  demo_prep: {
+  [Phases.demo_prep]: {
     allowed_actions: ["read_file", "write_file", "run_command", "done"],
     max_iterations: 10,
     action_classes: ["read", "git-remote", "communicate"],
   },
-  integration: {
+  [Phases.integration]: {
     allowed_actions: [
       "read_file",
       "write_file",

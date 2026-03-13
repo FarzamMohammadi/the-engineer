@@ -1,3 +1,4 @@
+import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
@@ -80,7 +81,7 @@ export function buildSelfReviewPrompt(ctx: SelfReviewPromptContext): string {
   );
 
   // 10. Output Schema + Action Reference
-  parts.push(section("Output Requirements", formatOutputSchema("self_review")));
+  parts.push(section("Output Requirements", formatOutputSchema(Phases.self_review)));
   parts.push(
     section(
       "Actions",
@@ -108,7 +109,7 @@ function buildPlanSection(planningOutput: Record<string, unknown> | null): strin
       "No plan available. Review the changes based on general engineering quality standards.",
     );
   }
-  return section("Original Plan", formatPriorPhaseOutput("planning", planningOutput));
+  return section("Original Plan", formatPriorPhaseOutput(Phases.planning, planningOutput));
 }
 
 function buildExecutionSection(executionOutput: Record<string, unknown> | null): string {
@@ -118,7 +119,7 @@ function buildExecutionSection(executionOutput: Record<string, unknown> | null):
       "No execution summary available. Read the changed files directly to understand what was done.",
     );
   }
-  return section("Execution Summary", formatPriorPhaseOutput("execution", executionOutput));
+  return section("Execution Summary", formatPriorPhaseOutput(Phases.execution, executionOutput));
 }
 
 function buildPriorFindings(
@@ -133,7 +134,7 @@ function buildPriorFindings(
     [
       "The following issues were identified in a previous review. Verify they have been addressed:",
       "",
-      formatPriorPhaseOutput("self_review", selfReviewFindings),
+      formatPriorPhaseOutput(Phases.self_review, selfReviewFindings),
     ].join("\n"),
   );
 }

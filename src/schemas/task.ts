@@ -13,11 +13,20 @@ export const TaskStateSchema = z.enum([
 ]);
 export type TaskState = z.infer<typeof TaskStateSchema>;
 
+/** Constant enum values for TaskState. Use instead of raw strings. */
+export const TaskStates = TaskStateSchema.enum;
+
 export const SubStateSchema = z.enum(["working", "supervising", "integrating", "demo", "code"]);
 export type SubState = z.infer<typeof SubStateSchema>;
 
+/** Constant enum values for SubState. Use instead of raw strings. */
+export const SubStates = SubStateSchema.enum;
+
 export const CascadePolicySchema = z.enum(["pause_siblings", "fail_fast", "best_effort", "manual"]);
 export type CascadePolicy = z.infer<typeof CascadePolicySchema>;
+
+/** Constant enum values for CascadePolicy. Use instead of raw strings. */
+export const CascadePolicies = CascadePolicySchema.enum;
 
 export const ActionClassSchema = z.enum([
   "read",
@@ -32,6 +41,9 @@ export const ActionClassSchema = z.enum([
   "ask_human",
 ]);
 export type ActionClass = z.infer<typeof ActionClassSchema>;
+
+/** Constant enum values for ActionClass. Use instead of raw strings. */
+export const ActionClasses = ActionClassSchema.enum;
 
 // ── Sub-schemas ────────────────────────────────────────────────────────────────
 
@@ -52,6 +64,9 @@ export type ChildEntry = z.infer<typeof ChildEntrySchema>;
 export const TeamMemberRoleSchema = z.enum(["author", "reviewer", "domain_expert", "stakeholder"]);
 export type TeamMemberRole = z.infer<typeof TeamMemberRoleSchema>;
 
+/** Constant enum values for TeamMemberRole. Use instead of raw strings. */
+export const TeamMemberRoles = TeamMemberRoleSchema.enum;
+
 export const TeamMemberSchema = z.object({
   person_id: z.string(),
   role: TeamMemberRoleSchema,
@@ -68,6 +83,9 @@ export const RelatedTypeSchema = z.enum([
   "design",
 ]);
 export type RelatedType = z.infer<typeof RelatedTypeSchema>;
+
+/** Constant enum values for RelatedType. Use instead of raw strings. */
+export const RelatedTypes = RelatedTypeSchema.enum;
 
 export const RelatedItemSchema = z.object({
   type: RelatedTypeSchema,

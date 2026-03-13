@@ -1,3 +1,4 @@
+import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
@@ -79,7 +80,7 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
   );
 
   // 9. Output Schema
-  parts.push(section("Output Requirements", formatOutputSchema("execution")));
+  parts.push(section("Output Requirements", formatOutputSchema(Phases.execution)));
 
   // 10. Action Reference
   parts.push(
@@ -117,7 +118,7 @@ function buildPlanSection(planningOutput: Record<string, unknown> | null): strin
       "No plan available. Implement changes based on the task description, following existing codebase conventions.",
     );
   }
-  return section("Plan", formatPriorPhaseOutput("planning", planningOutput));
+  return section("Plan", formatPriorPhaseOutput(Phases.planning, planningOutput));
 }
 
 function buildResearchSection(researchOutput: Record<string, unknown> | null): string {
@@ -127,7 +128,7 @@ function buildResearchSection(researchOutput: Record<string, unknown> | null): s
       "No research context available. Follow existing patterns you find in the codebase.",
     );
   }
-  return section("Research Context", formatPriorPhaseOutput("research", researchOutput));
+  return section("Research Context", formatPriorPhaseOutput(Phases.research, researchOutput));
 }
 
 function buildRepoOverview(repoContext: RepoContext | null, hasPlan: boolean): string | null {

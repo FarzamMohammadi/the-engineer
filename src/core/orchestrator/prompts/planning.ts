@@ -1,3 +1,4 @@
+import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
@@ -66,7 +67,7 @@ export function buildPlanningPrompt(ctx: PlanningPromptContext): string {
   );
 
   // 9. Output Schema
-  parts.push(section("Output Requirements", formatOutputSchema("planning")));
+  parts.push(section("Output Requirements", formatOutputSchema(Phases.planning)));
 
   // 10. Action Reference
   parts.push(
@@ -96,7 +97,7 @@ function buildIntakeSection(intakeOutput: Record<string, unknown> | null): strin
       "No intake analysis available. Plan based on the task description and research findings.",
     );
   }
-  return section("Intake Analysis", formatPriorPhaseOutput("intake_analysis", intakeOutput));
+  return section("Intake Analysis", formatPriorPhaseOutput(Phases.intake_analysis, intakeOutput));
 }
 
 function buildResearchSection(researchOutput: Record<string, unknown> | null): string {
@@ -106,7 +107,7 @@ function buildResearchSection(researchOutput: Record<string, unknown> | null): s
       "No research findings available. Create the plan based on the task description alone.",
     );
   }
-  return section("Research Findings", formatPriorPhaseOutput("research", researchOutput));
+  return section("Research Findings", formatPriorPhaseOutput(Phases.research, researchOutput));
 }
 
 function buildRepoOverview(repoContext: RepoContext | null): string {

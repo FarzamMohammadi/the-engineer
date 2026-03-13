@@ -13,6 +13,9 @@ export const PhaseSchema = z.enum([
 ]);
 export type Phase = z.infer<typeof PhaseSchema>;
 
+/** Constant enum values for Phase. Use instead of raw strings. */
+export const Phases = PhaseSchema.enum;
+
 // ── Phase Output Envelope ───────────────────────────────────────────────────────
 
 export const PhaseOutputSchema = z.object({

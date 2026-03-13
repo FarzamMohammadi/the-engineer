@@ -7,20 +7,15 @@ import { parse as parseYaml } from "yaml";
 import type { BaseAdapter } from "../adapters/base.js";
 import type { ConfigBundle } from "../config/loader.js";
 import { resolveEnvVars } from "../config/loader.js";
-import { ActionPipeline } from "../core/action-pipeline/index.js";
 import { type Daemon, RealClock, createDaemon } from "../core/daemon/index.js";
 import { createChildLogger, createLogger } from "../core/daemon/logging.js";
-import { EventBus } from "../core/event-bus/index.js";
 import { BlobStore } from "../core/observability/blob-store.js";
 import { ObservabilityStore } from "../core/observability/index.js";
 import { createObserver } from "../core/observer/index.js";
 import { Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
 import { Registry } from "../core/registry/index.js";
-import { SafetyLayer } from "../core/safety-layer/index.js";
-import { SessionMemory } from "../core/session-memory/index.js";
-import { TaskEngine } from "../core/task-engine/index.js";
-import { WorkspaceManager } from "../core/workspace-manager/index.js";
+import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/database.js";
 import { createPlugin as createGitHubComm } from "../plugins/communication/github-comm/index.js";
 import { createPlugin as createTelegramComm } from "../plugins/communication/telegram-comm/index.js";
@@ -28,7 +23,7 @@ import { createPlugin as createGitHubHosting } from "../plugins/git-hosting/gith
 import { createPlugin as createClaudeCodeLlm } from "../plugins/llm/claude-code-llm/index.js";
 import { createPlugin as createBashTool } from "../plugins/tool/bash-tool/index.js";
 import { createPlugin as createGitHubTrigger } from "../plugins/trigger/github-trigger/index.js";
-import type { PluginManifest } from "../schemas/adapters.js";
+import { AdapterTypes, type PluginManifest } from "../schemas/adapters.js";
 
 /** Result of bootstrapping all components. */
 export interface BootstrapResult {
@@ -62,10 +57,15 @@ export async function bootstrap(
   const dbPath = join(engineerHome, "data", "engineer.db");
   const dbHandle: DatabaseHandle = createDatabase(dbPath);
 
-  // 3. Event Bus
-  const eventBus = new EventBus(dbHandle.db);
+  // 3-9. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
+  const { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager } =
+    createCoreComponents({
+      db: dbHandle.db,
+      safetyConfig: config.safety,
+      workspaceConfig: config.workspace,
+    });
 
-  // 4. Registry
+  // 4. Registry (needs eventBus from core components + health config)
   const registry = new Registry({
     eventBus,
     healthCheckIntervalMs: config.daemon.plugins.health_check_interval_ms,
@@ -73,27 +73,12 @@ export async function bootstrap(
     consecutiveFailuresThreshold: config.daemon.plugins.consecutive_failures_threshold,
   });
 
-  // 5. Task Engine
-  const taskEngine = new TaskEngine(dbHandle.db, eventBus);
-
-  // 6. Safety Layer
-  const safetyLayer = new SafetyLayer(dbHandle.db, eventBus, config.safety);
-
-  // 7. Action Pipeline
-  const actionPipeline = new ActionPipeline(taskEngine, safetyLayer, eventBus);
-
-  // 8. Session Memory
-  const sessionMemory = new SessionMemory(dbHandle.db);
-
   // 8b. Observability Store
   const blobStore = new BlobStore(join(engineerHome, "traces"));
   const observability = new ObservabilityStore(dbHandle.db, blobStore);
 
   // 8c. Observer (centralized visibility for War Room)
   const observer = createObserver(dbHandle.db, blobStore);
-
-  // 9. Workspace Manager
-  const workspaceManager = new WorkspaceManager(eventBus, config.workspace);
 
   // 10. People Directory
   const peopleDirectory = new PeopleDirectory({ people: config.people });
@@ -153,7 +138,7 @@ const BUILTIN_PLUGINS: Array<{
   {
     manifest: {
       id: "github-comm",
-      type: "communication",
+      type: AdapterTypes.communication,
       version: "1.0.0",
       name: "GitHub Communication",
       description: "Comments on issues and PRs, manages labels",
@@ -169,7 +154,7 @@ const BUILTIN_PLUGINS: Array<{
   {
     manifest: {
       id: "telegram-comm",
-      type: "communication",
+      type: AdapterTypes.communication,
       version: "1.0.0",
       name: "Telegram Communication",
       description: "Sends notifications via Telegram bot",
@@ -185,7 +170,7 @@ const BUILTIN_PLUGINS: Array<{
   {
     manifest: {
       id: "claude-code-llm",
-      type: "llm",
+      type: AdapterTypes.llm,
       version: "1.0.0",
       name: "Claude Code LLM",
       description: "Uses Claude CLI for LLM completions",
@@ -201,7 +186,7 @@ const BUILTIN_PLUGINS: Array<{
   {
     manifest: {
       id: "bash-tool",
-      type: "tool",
+      type: AdapterTypes.tool,
       version: "1.0.0",
       name: "Bash Tool",
       description: "Executes bash commands in workspace",
@@ -217,7 +202,7 @@ const BUILTIN_PLUGINS: Array<{
   {
     manifest: {
       id: "github-hosting",
-      type: "git_hosting",
+      type: AdapterTypes.git_hosting,
       version: "1.0.0",
       name: "GitHub Hosting",
       description: "Creates PRs, manages branches, handles reviews",
@@ -233,7 +218,7 @@ const BUILTIN_PLUGINS: Array<{
   {
     manifest: {
       id: "github-trigger",
-      type: "trigger",
+      type: AdapterTypes.trigger,
       version: "1.0.0",
       name: "GitHub Trigger",
       description: "Polls GitHub for assigned issues",

@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { ToolAdapter } from "../../adapters/tool.js";
 import type { ActionResult, AgentAction } from "../../schemas/orchestrator.js";
+import { ActionClasses } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 
 /**
@@ -96,7 +97,7 @@ async function executeWriteFile(
 
     const pipelineResult = await deps.actionPipeline.execute<void>({
       taskId: deps.taskId,
-      actionClass: "write",
+      actionClass: ActionClasses.write,
       details: { operation: "write_file", path },
       requestedBy: "orchestrator",
       executeFn: async () => {
@@ -144,7 +145,7 @@ async function executeEditFile(
 
     const pipelineResult = await deps.actionPipeline.execute<void>({
       taskId: deps.taskId,
-      actionClass: "write",
+      actionClass: ActionClasses.write,
       details: { operation: "edit_file", path },
       requestedBy: "orchestrator",
       executeFn: async () => {
@@ -216,7 +217,7 @@ async function runToolCommand(
   try {
     const pipelineResult = await deps.actionPipeline.execute({
       taskId: deps.taskId,
-      actionClass: "read",
+      actionClass: ActionClasses.read,
       details: { operation: "run_command", command },
       requestedBy: "orchestrator",
       executeFn: () =>

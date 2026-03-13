@@ -65,6 +65,9 @@ export const EventTypeSchema = z.enum([
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
+/** Constant enum values for EventType. Use instead of raw strings. */
+export const EventTypes = EventTypeSchema.enum;
+
 // ── Payload Schemas ────────────────────────────────────────────────────────────
 
 // task.*

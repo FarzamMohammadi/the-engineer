@@ -5,9 +5,9 @@ import type { CommunicationAdapter } from "../../adapters/communication.js";
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import type { ToolAdapter } from "../../adapters/tool.js";
-import type { CompletionResult } from "../../schemas/adapters.js";
+import { AdapterTypes, type CompletionResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
-import type { Event } from "../../schemas/events.js";
+import { type Event, EventTypes } from "../../schemas/events.js";
 import {
   DemoPrepOutputSchema,
   ExecutionOutputSchema,
@@ -16,11 +16,17 @@ import {
   LLMDecompositionPlanSchema,
   type Phase,
   type PhaseOutput,
+  Phases,
   PlanningOutputSchema,
   ResearchOutputSchema,
   SelfReviewOutputSchema,
 } from "../../schemas/orchestrator.js";
-import type { ChildEntry } from "../../schemas/task.js";
+import {
+  CheckpointReasons,
+  JournalEntryTypes,
+  SessionEndReasons,
+} from "../../schemas/session-memory.js";
+import { ActionClasses, type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { ObservabilityStore } from "../observability/index.js";
@@ -49,30 +55,30 @@ import { buildSystemPrompt } from "./prompts/system.js";
 
 /** The standard 7-phase pipeline sequence. */
 export const PHASE_SEQUENCE: Phase[] = [
-  "intake_analysis",
-  "research",
-  "planning",
-  "execution",
-  "self_review",
-  "demo_prep",
-  "integration",
+  Phases.intake_analysis,
+  Phases.research,
+  Phases.planning,
+  Phases.execution,
+  Phases.self_review,
+  Phases.demo_prep,
+  Phases.integration,
 ];
 
 /** Fast-path phases: skip research, planning, demo_prep, integration. */
-const FAST_PATH_PHASES: Phase[] = ["execution", "self_review"];
+const FAST_PATH_PHASES: Phase[] = [Phases.execution, Phases.self_review];
 
 /** Max loopbacks before alerting human (orchestrator.md default: 3). */
 const MAX_LOOPBACKS_BEFORE_ALERT = 3;
 
 /** Phase-specific Zod schemas for output validation. */
 const PHASE_SCHEMAS: Record<Phase, ZodType> = {
-  intake_analysis: IntakeAnalysisOutputSchema,
-  research: ResearchOutputSchema,
-  planning: PlanningOutputSchema,
-  execution: ExecutionOutputSchema,
-  self_review: SelfReviewOutputSchema,
-  demo_prep: DemoPrepOutputSchema,
-  integration: IntegrationOutputSchema,
+  [Phases.intake_analysis]: IntakeAnalysisOutputSchema,
+  [Phases.research]: ResearchOutputSchema,
+  [Phases.planning]: PlanningOutputSchema,
+  [Phases.execution]: ExecutionOutputSchema,
+  [Phases.self_review]: SelfReviewOutputSchema,
+  [Phases.demo_prep]: DemoPrepOutputSchema,
+  [Phases.integration]: IntegrationOutputSchema,
 };
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -164,7 +170,7 @@ export class Orchestrator {
     this.observer = deps.observer ?? null;
 
     // Subscribe to preemption requests (Protocol P8)
-    this.eventBus.subscribe("orchestrator", "preemption.requested", (event: Event) => {
+    this.eventBus.subscribe("orchestrator", EventTypes["preemption.requested"], (event: Event) => {
       this.preemptionRequested = true;
       const payload = event.payload as {
         target_task_id: string;
@@ -178,13 +184,13 @@ export class Orchestrator {
 
     // Bind phase handlers
     this.phaseHandlers = {
-      intake_analysis: this.handleIntakeAnalysis.bind(this),
-      research: this.handleResearch.bind(this),
-      planning: this.handlePlanning.bind(this),
-      execution: this.handleExecution.bind(this),
-      self_review: this.handleSelfReview.bind(this),
-      demo_prep: this.handleDemoPrep.bind(this),
-      integration: this.handleIntegration.bind(this),
+      [Phases.intake_analysis]: this.handleIntakeAnalysis.bind(this),
+      [Phases.research]: this.handleResearch.bind(this),
+      [Phases.planning]: this.handlePlanning.bind(this),
+      [Phases.execution]: this.handleExecution.bind(this),
+      [Phases.self_review]: this.handleSelfReview.bind(this),
+      [Phases.demo_prep]: this.handleDemoPrep.bind(this),
+      [Phases.integration]: this.handleIntegration.bind(this),
     };
   }
 
@@ -308,7 +314,7 @@ export class Orchestrator {
     }
 
     // ── Pipeline complete ──────────────────────────────────────────────────
-    this.sessionMemory.endSession(sessionId, "completed");
+    this.sessionMemory.endSession(sessionId, SessionEndReasons.completed);
     return { outcome: "completed", phaseOutputs: priorOutputs };
   }
 
@@ -321,7 +327,7 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
-    const systemPrompt = buildSystemPrompt("intake_analysis");
+    const systemPrompt = buildSystemPrompt(Phases.intake_analysis);
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
       (r) => !r.applied,
     );
@@ -334,7 +340,7 @@ export class Orchestrator {
       prNumber: dispatch.task.review?.pr_number ?? undefined,
     });
 
-    return this.runPhaseWithAgentLoop("intake_analysis", taskId, systemPrompt, prompt);
+    return this.runPhaseWithAgentLoop(Phases.intake_analysis, taskId, systemPrompt, prompt);
   }
 
   private handleResearch(
@@ -344,10 +350,10 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
-    const intakeData = priorOutputs.get("intake_analysis")?.data as
+    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
-    const systemPrompt = buildSystemPrompt("research");
+    const systemPrompt = buildSystemPrompt(Phases.research);
     const prompt = buildResearchPrompt({
       task: dispatch.task,
       repoContext,
@@ -356,7 +362,7 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop("research", taskId, systemPrompt, prompt);
+    return this.runPhaseWithAgentLoop(Phases.research, taskId, systemPrompt, prompt);
   }
 
   private handlePlanning(
@@ -366,11 +372,13 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
-    const intakeData = priorOutputs.get("intake_analysis")?.data as
+    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
-    const researchData = priorOutputs.get("research")?.data as Record<string, unknown> | undefined;
-    const systemPrompt = buildSystemPrompt("planning");
+    const researchData = priorOutputs.get(Phases.research)?.data as
+      | Record<string, unknown>
+      | undefined;
+    const systemPrompt = buildSystemPrompt(Phases.planning);
     const prompt = buildPlanningPrompt({
       task: dispatch.task,
       repoContext,
@@ -380,7 +388,7 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop("planning", taskId, systemPrompt, prompt);
+    return this.runPhaseWithAgentLoop(Phases.planning, taskId, systemPrompt, prompt);
   }
 
   private handleExecution(
@@ -390,12 +398,14 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
-    const intakeData = priorOutputs.get("intake_analysis")?.data as
+    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
-    const researchData = priorOutputs.get("research")?.data as Record<string, unknown> | undefined;
-    const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
-    const systemPrompt = buildSystemPrompt("execution");
+    const researchData = priorOutputs.get(Phases.research)?.data as
+      | Record<string, unknown>
+      | undefined;
+    const planData = priorOutputs.get(Phases.planning)?.data as Record<string, unknown> | undefined;
+    const systemPrompt = buildSystemPrompt(Phases.execution);
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
       (r) => !r.applied,
     );
@@ -411,12 +421,14 @@ export class Orchestrator {
     });
 
     // On loopback: inject self_review findings so execution knows what to fix
-    const reviewData = priorOutputs.get("self_review")?.data as Record<string, unknown> | undefined;
+    const reviewData = priorOutputs.get(Phases.self_review)?.data as
+      | Record<string, unknown>
+      | undefined;
     if (reviewData) {
-      prompt = `${prompt}\n\n${section("Review Findings to Address", formatPriorPhaseOutput("self_review", reviewData))}`;
+      prompt = `${prompt}\n\n${section("Review Findings to Address", formatPriorPhaseOutput(Phases.self_review, reviewData))}`;
     }
 
-    return this.runPhaseWithAgentLoop("execution", taskId, systemPrompt, prompt);
+    return this.runPhaseWithAgentLoop(Phases.execution, taskId, systemPrompt, prompt);
   }
 
   private handleSelfReview(
@@ -426,15 +438,17 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
-    const intakeData = priorOutputs.get("intake_analysis")?.data as
+    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
-    const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
-    const execData = priorOutputs.get("execution")?.data as Record<string, unknown> | undefined;
-    const selfReviewData = priorOutputs.get("self_review")?.data as
+    const planData = priorOutputs.get(Phases.planning)?.data as Record<string, unknown> | undefined;
+    const execData = priorOutputs.get(Phases.execution)?.data as
       | Record<string, unknown>
       | undefined;
-    const systemPrompt = buildSystemPrompt("self_review");
+    const selfReviewData = priorOutputs.get(Phases.self_review)?.data as
+      | Record<string, unknown>
+      | undefined;
+    const systemPrompt = buildSystemPrompt(Phases.self_review);
     const prompt = buildSelfReviewPrompt({
       task: dispatch.task,
       repoContext,
@@ -447,7 +461,7 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop("self_review", taskId, systemPrompt, prompt);
+    return this.runPhaseWithAgentLoop(Phases.self_review, taskId, systemPrompt, prompt);
   }
 
   private handleDemoPrep(
@@ -457,15 +471,17 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
-    const intakeData = priorOutputs.get("intake_analysis")?.data as
+    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
-    const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
-    const execData = priorOutputs.get("execution")?.data as Record<string, unknown> | undefined;
-    const selfReviewData = priorOutputs.get("self_review")?.data as
+    const planData = priorOutputs.get(Phases.planning)?.data as Record<string, unknown> | undefined;
+    const execData = priorOutputs.get(Phases.execution)?.data as
       | Record<string, unknown>
       | undefined;
-    const systemPrompt = buildSystemPrompt("demo_prep");
+    const selfReviewData = priorOutputs.get(Phases.self_review)?.data as
+      | Record<string, unknown>
+      | undefined;
+    const systemPrompt = buildSystemPrompt(Phases.demo_prep);
     const prompt = buildDemoPrepPrompt({
       task: dispatch.task,
       repoContext,
@@ -477,7 +493,7 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop("demo_prep", taskId, systemPrompt, prompt);
+    return this.runPhaseWithAgentLoop(Phases.demo_prep, taskId, systemPrompt, prompt);
   }
 
   private handleIntegration(
@@ -487,8 +503,10 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
-    const execData = priorOutputs.get("execution")?.data as Record<string, unknown> | undefined;
-    const selfReviewData = priorOutputs.get("self_review")?.data as
+    const execData = priorOutputs.get(Phases.execution)?.data as
+      | Record<string, unknown>
+      | undefined;
+    const selfReviewData = priorOutputs.get(Phases.self_review)?.data as
       | Record<string, unknown>
       | undefined;
 
@@ -501,7 +519,7 @@ export class Orchestrator {
       files_changed: cs.key_outputs.map((o) => o.path),
     }));
 
-    const systemPrompt = buildSystemPrompt("integration");
+    const systemPrompt = buildSystemPrompt(Phases.integration);
     const prompt = buildIntegrationPrompt({
       task: dispatch.task,
       repoContext,
@@ -512,7 +530,7 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop("integration", taskId, systemPrompt, prompt);
+    return this.runPhaseWithAgentLoop(Phases.integration, taskId, systemPrompt, prompt);
   }
 
   // ── Extracted Helpers (for cognitive complexity) ─────────────────────────────
@@ -543,7 +561,7 @@ export class Orchestrator {
       sessionId,
       taskId,
       phase: checkpoint.phase,
-      type: "phase_change",
+      type: JournalEntryTypes.phase_change,
       summary: `Resumed from checkpoint in ${checkpoint.phase} phase. Reason: ${checkpoint.reason}.`,
       detail: checkpoint.next_action,
       tags: ["resume"],
@@ -573,12 +591,12 @@ export class Orchestrator {
     let phases = currentPhases;
 
     // Fast-path: after intake_analysis, check if we should skip phases
-    if (phase === "intake_analysis") {
+    if (phase === Phases.intake_analysis) {
       phases = this.applyFastPathIfNeeded(output, phases);
     }
 
     // Decomposition: after planning, check if task should be split into children
-    if (phase === "planning") {
+    if (phase === Phases.planning) {
       const decompositionResult = this.handleDecomposition(
         sessionId,
         taskId,
@@ -598,10 +616,10 @@ export class Orchestrator {
     }
 
     // Self-review quality gate: loopback to execution if needs_work
-    if (phase === "self_review") {
+    if (phase === Phases.self_review) {
       const loopbackResult = this.checkSelfReviewLoopback(sessionId, taskId, output, phases);
       if (loopbackResult) {
-        this.taskEngine.updateTaskField(taskId, "phase", "execution");
+        this.taskEngine.updateTaskField(taskId, "phase", Phases.execution);
         return {
           phases,
           loopbackIndex: loopbackResult.targetIndex - 1,
@@ -613,7 +631,7 @@ export class Orchestrator {
     }
 
     // After demo_prep: commit, push, create draft PR — then exit pipeline for review (D149, D150)
-    if (phase === "demo_prep") {
+    if (phase === Phases.demo_prep) {
       const result = await this.tryCreatePRAndExitForReview(
         sessionId,
         taskId,
@@ -632,7 +650,7 @@ export class Orchestrator {
     const isLastPhase = currentIndex === phases.length - 1;
 
     // Fast-path PR: when self_review is the final phase (no demo_prep), still create PR — then exit for review
-    if (phase === "self_review" && isLastPhase) {
+    if (phase === Phases.self_review && isLastPhase) {
       const result = await this.tryCreatePRAndExitForReview(
         sessionId,
         taskId,
@@ -684,7 +702,7 @@ export class Orchestrator {
       sessionId,
       taskId,
       phase,
-      type: "error",
+      type: JournalEntryTypes.error,
       summary: `Phase ${phase} failed: ${message}`,
       errorDetail: stack,
       tags: ["phase_error"],
@@ -714,7 +732,7 @@ export class Orchestrator {
       return null;
     }
     this.recordPhaseTransition(sessionId, taskId, phase, null, priorOutputs);
-    this.sessionMemory.endSession(sessionId, "review_pending");
+    this.sessionMemory.endSession(sessionId, SessionEndReasons.review_pending);
     return {
       phases,
       loopbackIndex: null,
@@ -738,7 +756,7 @@ export class Orchestrator {
       sessionId,
       taskId,
       phase: completedPhase,
-      type: "phase_change",
+      type: JournalEntryTypes.phase_change,
       summary: nextPhase
         ? `Completed ${completedPhase}, entering ${nextPhase}`
         : `Completed ${completedPhase} (final phase)`,
@@ -754,7 +772,7 @@ export class Orchestrator {
   private applyFastPathIfNeeded(intakeOutput: PhaseOutput, currentPhases: Phase[]): Phase[] {
     const intakeData = intakeOutput.data as { fast_path?: boolean };
     if (intakeData.fast_path === true) {
-      return ["intake_analysis", ...FAST_PATH_PHASES];
+      return [Phases.intake_analysis, ...FAST_PATH_PHASES];
     }
     return currentPhases;
   }
@@ -788,13 +806,13 @@ export class Orchestrator {
     this.sessionMemory.addJournalEntry({
       sessionId,
       taskId,
-      phase: "self_review",
-      type: "phase_change",
+      phase: Phases.self_review,
+      type: JournalEntryTypes.phase_change,
       summary: `Quality assessment: ${assessment}. Looping back to execution (attempt ${String(this.loopbackCount)}).`,
       tags: ["loopback", assessment],
     });
 
-    const executionIndex = phases.indexOf("execution");
+    const executionIndex = phases.indexOf(Phases.execution);
     if (executionIndex < 0) {
       return null; // Shouldn't happen, but defensive
     }
@@ -809,7 +827,7 @@ export class Orchestrator {
     assessment: string,
   ): void {
     this.eventBus.publish({
-      type: "comm.message_sent",
+      type: EventTypes["comm.message_sent"],
       source: "orchestrator",
       task_id: taskId,
       payload: {
@@ -824,8 +842,8 @@ export class Orchestrator {
     this.sessionMemory.addJournalEntry({
       sessionId,
       taskId,
-      phase: "self_review",
-      type: "error",
+      phase: Phases.self_review,
+      type: JournalEntryTypes.error,
       summary: `Loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`,
       tags: ["loopback_alert"],
     });
@@ -854,8 +872,8 @@ export class Orchestrator {
       this.sessionMemory.addJournalEntry({
         sessionId,
         taskId,
-        phase: "planning",
-        type: "error",
+        phase: Phases.planning,
+        type: JournalEntryTypes.error,
         summary: `Invalid decomposition plan from LLM: ${parseResult.error.message}`,
         tags: ["decomposition", "validation_error"],
       });
@@ -879,7 +897,7 @@ export class Orchestrator {
 
       this.taskEngine.requestTransition(
         childTask.id,
-        "queued",
+        TaskStates.queued,
         null,
         "decomposition",
         "orchestrator",
@@ -896,15 +914,15 @@ export class Orchestrator {
         .filter((depIdx) => depIdx >= 0 && depIdx < childIds.length)
         // biome-ignore lint/style/noNonNullAssertion: filter guarantees valid index
         .map((depIdx) => childIds[depIdx]!);
-      return { id, state: "queued" as const, depends_on: dependsOnIds };
+      return { id, state: TaskStates.queued, depends_on: dependsOnIds };
     });
     this.taskEngine.updateTaskField(taskId, "children", childEntries);
 
     // Transition parent: active.working → active.supervising
     this.taskEngine.requestTransition(
       taskId,
-      "active",
-      "supervising",
+      TaskStates.active,
+      SubStates.supervising,
       "decomposed_into_children",
       "orchestrator",
     );
@@ -912,8 +930,8 @@ export class Orchestrator {
     this.sessionMemory.addJournalEntry({
       sessionId,
       taskId,
-      phase: "planning",
-      type: "phase_change",
+      phase: Phases.planning,
+      type: JournalEntryTypes.phase_change,
       summary: `Task decomposed into ${String(childIds.length)} child tasks: ${childIds.join(", ")}`,
       tags: ["decomposition"],
     });
@@ -924,7 +942,7 @@ export class Orchestrator {
       `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
     );
 
-    this.sessionMemory.endSession(sessionId, "decomposed");
+    this.sessionMemory.endSession(sessionId, SessionEndReasons.decomposed);
 
     return { outcome: "decomposed", childTaskIds: childIds, phaseOutputs: priorOutputs };
   }
@@ -945,7 +963,9 @@ export class Orchestrator {
         return; // No owner or no contacts configured
       }
 
-      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>("communication");
+      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>(
+        AdapterTypes.communication,
+      );
       if (commPlugins.length === 0) {
         return; // No comm plugins registered
       }
@@ -1000,7 +1020,9 @@ export class Orchestrator {
         return; // No GitHub issue/PR to comment on
       }
 
-      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>("communication");
+      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>(
+        AdapterTypes.communication,
+      );
       const plugin = commPlugins.find((p) => p.hasCapability("issue_management"));
       if (!plugin) {
         return; // No plugin with issue_management capability
@@ -1140,7 +1162,7 @@ export class Orchestrator {
     }
 
     // 3. Create draft PR via GitHostingAdapter
-    const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>("git_hosting");
+    const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!gitHosting) {
       console.warn("[pr-workflow] no git hosting plugin — skipping PR creation");
       return false; // No hosting plugin — skip PR creation
@@ -1192,8 +1214,8 @@ export class Orchestrator {
     this.sessionMemory.addJournalEntry({
       sessionId,
       taskId,
-      phase: "demo_prep",
-      type: "error",
+      phase: Phases.demo_prep,
+      type: JournalEntryTypes.error,
       summary: `PR workflow failed at ${step}: ${message}`,
       tags: ["pr_workflow", step],
     });
@@ -1258,7 +1280,7 @@ export class Orchestrator {
     taskId: string,
     systemPrompt?: string | null,
   ): Promise<CompletionResult> {
-    const llm = this.registry.getPrimaryPlugin<LLMAdapter>("llm");
+    const llm = this.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
     if (!llm) {
       throw new Error("Orchestrator: no LLM plugin registered");
     }
@@ -1268,7 +1290,7 @@ export class Orchestrator {
 
     const pipelineResult = await this.actionPipeline.execute<CompletionResult>({
       taskId,
-      actionClass: "read",
+      actionClass: ActionClasses.read,
       details: { operation: "llm_complete" },
       requestedBy: "orchestrator",
       executeFn: () =>
@@ -1307,7 +1329,7 @@ export class Orchestrator {
   ): Promise<PhaseOutput> {
     const toolConfig = getPhaseToolConfig(phase);
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
-    const toolAdapter = this.registry.getPrimaryPlugin<ToolAdapter>("tool") ?? null;
+    const toolAdapter = this.registry.getPrimaryPlugin<ToolAdapter>(AdapterTypes.tool) ?? null;
     const traceId = this.currentTraceId;
     const sessionId = this.currentSessionId;
 
@@ -1379,7 +1401,7 @@ export class Orchestrator {
   /** Emit cost.incurred event for an agent loop's accumulated cost. */
   private emitAgentLoopCost(taskId: string, phase: string, loopResult: AgentLoopResult): void {
     this.eventBus.publish({
-      type: "cost.incurred",
+      type: EventTypes["cost.incurred"],
       source: "orchestrator",
       task_id: taskId,
       payload: {
@@ -1475,7 +1497,7 @@ export class Orchestrator {
   /** Emit a cost.incurred event from LLM completion usage data. */
   private emitCostIncurred(taskId: string, completion: CompletionResult): void {
     this.eventBus.publish({
-      type: "cost.incurred",
+      type: EventTypes["cost.incurred"],
       source: "orchestrator",
       task_id: taskId,
       payload: {
@@ -1519,43 +1541,43 @@ export class Orchestrator {
   /** Get default/empty data for a phase when LLM output is invalid. */
   private getDefaultData(phase: Phase): Record<string, unknown> {
     const defaults: Record<Phase, Record<string, unknown>> = {
-      intake_analysis: {
+      [Phases.intake_analysis]: {
         complexity: "moderate",
         estimated_phases: [...PHASE_SEQUENCE],
         ambiguities: [],
         fast_path: false,
         decomposition_likely: false,
       },
-      research: {
+      [Phases.research]: {
         relevant_files: [],
         relevant_modules: [],
         conventions: [],
         existing_patterns: [],
         dependencies: [],
       },
-      planning: {
+      [Phases.planning]: {
         approach: "Unable to generate plan from LLM output",
         file_changes: [],
         risks: [],
         decomposition_plan: null,
       },
-      execution: {
+      [Phases.execution]: {
         files_changed: [],
         tests_written: [],
         test_results: { passed: 0, failed: 0, skipped: 0 },
         build_status: "failing",
       },
-      self_review: {
+      [Phases.self_review]: {
         findings: [],
         refactoring_applied: [],
         quality_assessment: "needs_work",
       },
-      demo_prep: {
+      [Phases.demo_prep]: {
         artifacts: [],
         pr_number: 1,
         pr_description: "Unable to generate PR description from LLM output",
       },
-      integration: {
+      [Phases.integration]: {
         children_verified: [],
         integration_tests: { passed: 0, failed: 0 },
         conflicts_found: [],
@@ -1585,7 +1607,7 @@ export class Orchestrator {
       nextAction: nextPhase ? `Begin ${nextPhase} phase` : "Pipeline complete",
       lastEventId: "",
       workspaceRef: null,
-      reason: "phase_transition",
+      reason: CheckpointReasons.phase_transition,
       journalOffset: 0,
     });
     return checkpoint.id;
@@ -1612,7 +1634,7 @@ export class Orchestrator {
       nextAction: `Resume at ${currentPhase}`,
       lastEventId: "",
       workspaceRef: null,
-      reason: "preemption",
+      reason: CheckpointReasons.preemption,
       journalOffset: 0,
     });
 
@@ -1621,17 +1643,17 @@ export class Orchestrator {
       sessionId,
       taskId,
       phase: currentPhase,
-      type: "checkpoint_marker",
+      type: JournalEntryTypes.checkpoint_marker,
       summary: `Preempted by ${preemptingId}`,
       tags: ["preemption"],
     });
 
     // End session
-    this.sessionMemory.endSession(sessionId, "preempted");
+    this.sessionMemory.endSession(sessionId, SessionEndReasons.preempted);
 
     // Emit preemption.ready
     this.eventBus.publish({
-      type: "preemption.ready",
+      type: EventTypes["preemption.ready"],
       source: "orchestrator",
       task_id: taskId,
       payload: {
@@ -1661,11 +1683,11 @@ export class Orchestrator {
    */
   async attemptSelfUnblock(taskId: string): Promise<boolean> {
     const task = this.taskEngine.getTask(taskId);
-    if (!task || task.state !== "blocked") {
+    if (!task || task.state !== TaskStates.blocked) {
       return false;
     }
 
-    const llm = this.registry.getPrimaryPlugin<LLMAdapter>("llm");
+    const llm = this.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
     if (!llm) {
       return false;
     }
@@ -1688,7 +1710,7 @@ export class Orchestrator {
     try {
       const pipelineResult = await this.actionPipeline.execute<CompletionResult>({
         taskId,
-        actionClass: "read",
+        actionClass: ActionClasses.read,
         details: { operation: "self_unblock_diagnosis" },
         requestedBy: "orchestrator",
         executeFn: () =>

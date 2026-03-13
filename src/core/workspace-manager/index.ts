@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import type { z } from "zod";
@@ -97,7 +98,13 @@ export class WorkspaceManager {
 
   constructor(eventBus: EventBus, config: WorkspaceConfig) {
     this.eventBus = eventBus;
-    this.config = config;
+    // Expand ~ to actual home directory — Node APIs don't handle tilde
+    this.config = {
+      ...config,
+      workspace_root: config.workspace_root.startsWith("~/")
+        ? path.join(os.homedir(), config.workspace_root.slice(2))
+        : config.workspace_root,
+    };
   }
 
   // ── Workspace Lifecycle ──────────────────────────────────────────────────

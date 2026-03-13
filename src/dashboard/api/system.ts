@@ -38,9 +38,21 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       }
     }
 
+    // Detect LLM provider from traces (most recent provider_id)
+    let llmProvider: string | null = null;
+    try {
+      const row = deps.db
+        .prepare("SELECT DISTINCT provider_id FROM llm_traces ORDER BY rowid DESC LIMIT 1")
+        .get() as { provider_id: string } | undefined;
+      llmProvider = row?.provider_id ?? null;
+    } catch {
+      // table may not exist yet
+    }
+
     return c.json({
       daemon_running: daemonRunning,
       daemon_pid: daemonPid,
+      llm_provider: llmProvider,
       ...stats,
     });
   });

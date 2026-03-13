@@ -112,7 +112,29 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     }
 
     const tasks = rows.map(mapListRow);
-    return c.json({ tasks, count: tasks.length });
+
+    // Bulk-fetch which phases actually ran for each task
+    const taskIds = tasks.map((t) => t.id);
+    const phasesRanMap: Record<string, string[]> = {};
+    if (taskIds.length > 0) {
+      const phaseRows = deps.db
+        .prepare(
+          `SELECT task_id, phase FROM phase_metrics WHERE task_id IN (${taskIds.map(() => "?").join(",")})`,
+        )
+        .all(...taskIds) as Array<{ task_id: string; phase: string }>;
+      for (const row of phaseRows) {
+        const arr = phasesRanMap[row.task_id] ?? [];
+        arr.push(row.phase);
+        phasesRanMap[row.task_id] = arr;
+      }
+    }
+
+    const tasksWithPhases = tasks.map((t) => ({
+      ...t,
+      phases_ran: phasesRanMap[t.id] ?? [],
+    }));
+
+    return c.json({ tasks: tasksWithPhases, count: tasksWithPhases.length });
   });
 
   /** Full task detail. */

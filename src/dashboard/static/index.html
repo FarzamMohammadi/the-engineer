@@ -227,6 +227,59 @@ a:hover { text-decoration: underline; }
   100% { transform: scale(1.8); opacity: 0; }
 }
 
+.sb-llm-provider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--border-dim);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.sb-llm-provider .llm-label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.6rem;
+}
+
+.sb-llm-provider .llm-value {
+  font-weight: 600;
+  color: var(--purple);
+}
+
+.sb-llm-provider .llm-value.api { color: var(--green); }
+.sb-llm-provider .llm-value.cli { color: var(--purple); }
+
+.cli-cost-notice {
+  background: rgba(167, 139, 250, 0.06);
+  border: 1px solid rgba(167, 139, 250, 0.15);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.cli-cost-notice .notice-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.cli-cost-notice .notice-label {
+  color: var(--purple);
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .sb-metric {
   display: flex;
   flex-direction: column;
@@ -751,6 +804,41 @@ a:hover { text-decoration: underline; }
 
 .phase-bar-connector.done { color: var(--green-dim); }
 
+.phase-bar-item.skipped {
+  background: transparent;
+  border-color: var(--border-dim);
+  color: var(--text-ghost);
+  position: relative;
+  overflow: hidden;
+}
+
+.phase-bar-item.skipped::after {
+  content: '';
+  position: absolute;
+  left: -2px;
+  bottom: -2px;
+  width: calc(100% + 4px);
+  height: 1px;
+  background: var(--red);
+  transform: rotate(-20deg);
+  transform-origin: bottom left;
+  opacity: 0.6;
+}
+
+.phase-mini-bar .phase-seg.skipped {
+  background: transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.phase-mini-bar .phase-seg.skipped::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top right, var(--red) 0%, var(--red) 48%, transparent 48%, transparent 52%, transparent 52%, transparent 100%);
+  opacity: 0.5;
+}
+
 /* Detail grid */
 .detail-grid {
   display: grid;
@@ -1231,6 +1319,11 @@ a:hover { text-decoration: underline; }
     <div class="sb-metric-label">LLM Traces</div>
     <div class="sb-metric-value" id="sb-llm-traces">—</div>
   </div>
+
+  <div class="sb-llm-provider" id="sb-llm-provider" style="display:none">
+    <span class="llm-label">LLM</span>
+    <span class="llm-value" id="sb-llm-value">—</span>
+  </div>
 </header>
 
 <!-- ════════════ TAB BAR ════════════ -->
@@ -1463,7 +1556,42 @@ async function pollSystemStatus() {
   document.getElementById('sb-actions').textContent = fmtTokens(data.total_action_traces);
   document.getElementById('sb-llm-traces').textContent = fmtTokens(data.total_llm_traces);
 
+  // LLM provider badge
+  const providerEl = document.getElementById('sb-llm-provider');
+  const providerVal = document.getElementById('sb-llm-value');
+  if (data.llm_provider) {
+    const isCli = data.llm_provider.includes('cli') || data.llm_provider.includes('claude-code');
+    providerEl.style.display = 'flex';
+    providerVal.textContent = isCli ? 'CLI' : 'API';
+    providerVal.className = 'llm-value ' + (isCli ? 'cli' : 'api');
+    updateCliCostNotice(isCli);
+  } else {
+    providerEl.style.display = 'none';
+  }
+
   document.getElementById('tab-tasks-count').textContent = data.total_tasks || 0;
+}
+
+let cliNoticeInjected = false;
+function updateCliCostNotice(isCli) {
+  const costPanel = document.getElementById('panel-cost');
+  const existing = document.getElementById('cli-cost-notice');
+  if (isCli && !cliNoticeInjected) {
+    const notice = document.createElement('div');
+    notice.className = 'cli-cost-notice';
+    notice.id = 'cli-cost-notice';
+    notice.innerHTML = `
+      <span class="notice-icon">&#9432;</span>
+      <div>
+        <div class="notice-label">CLI Mode — Usage Tracking Limited</div>
+        Claude Code CLI does not expose token-level usage data. Cost figures shown are estimates based on prompt/response sizes. Switch to API mode for precise usage tracking.
+      </div>`;
+    costPanel.insertBefore(notice, costPanel.firstChild);
+    cliNoticeInjected = true;
+  } else if (!isCli && existing) {
+    existing.remove();
+    cliNoticeInjected = false;
+  }
 }
 
 async function pollCostForBar() {
@@ -1525,13 +1653,15 @@ function renderKanban() {
 
     tasks.forEach(t => {
       const phaseIdx = t.phase ? PHASES.indexOf(t.phase) : -1;
+      const ranSet = new Set(t.phases_ran || []);
+      const taskFinished = t.state === 'completed' || t.state === 'failed';
       let miniBar = '<div class="phase-mini-bar">';
       PHASES.forEach((p, i) => {
         let cls = '';
-        if (t.state === 'completed') cls = 'done';
-        else if (t.state === 'failed') cls = i <= phaseIdx ? 'failed' : '';
-        else if (i < phaseIdx) cls = 'done';
+        if (ranSet.has(p)) cls = 'done';
+        else if (t.state === 'failed' && i === phaseIdx) cls = 'failed';
         else if (i === phaseIdx) cls = 'current';
+        else if (taskFinished && !ranSet.has(p)) cls = 'skipped';
         miniBar += `<div class="phase-seg ${cls}"></div>`;
       });
       miniBar += '</div>';
@@ -1584,6 +1714,8 @@ async function renderTaskDetail(taskId) {
   const timeline = (timelineData && timelineData.timeline) || [];
   const currentPhaseIdx = t.phase ? PHASES.indexOf(t.phase) : -1;
   const completedPhases = new Set(phases.filter(p => p.outcome === 'completed').map(p => p.phase));
+  const ranPhases = new Set(phases.map(p => p.phase));
+  const isFinished = t.state === 'completed' || t.state === 'failed';
 
   // Phase bar
   let phaseBar = '<div class="phase-bar">';
@@ -1593,9 +1725,10 @@ async function renderTaskDetail(taskId) {
       phaseBar += `<div class="phase-bar-connector${connDone}">&#8594;</div>`;
     }
     let cls = '';
-    if (t.state === 'completed' || completedPhases.has(p)) cls = 'completed';
+    if (completedPhases.has(p)) cls = 'completed';
     else if (t.state === 'failed' && i === currentPhaseIdx) cls = 'failed';
     else if (i === currentPhaseIdx) cls = 'current';
+    else if (isFinished && !ranPhases.has(p)) cls = 'skipped';
     phaseBar += `<div class="phase-bar-item ${cls}">${esc(PHASE_LABELS[p] || p)}</div>`;
   });
   phaseBar += '</div>';

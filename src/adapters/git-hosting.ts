@@ -3,6 +3,7 @@ import type {
   CommentResult,
   MergeResult,
   MergeStrategy,
+  PRComment,
   PROptions,
   PRResult,
   PRStatus,
@@ -70,6 +71,11 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     return wrapAsync(() => this.doGetReviewStatus(repo, prNumber));
   }
 
+  /** Fetch conversation-level comments on a PR (not inline review comments). */
+  async getPRComments(repo: string, prNumber: number): Promise<PRComment[]> {
+    return wrapAsync(() => this.doGetPRComments(repo, prNumber));
+  }
+
   // ── PR Comments ───────────────────────────────────────────────────────────
 
   async commentOnPR(
@@ -109,6 +115,7 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     comment: string,
     replyTo: string | undefined,
   ): Promise<CommentResult>;
+  protected abstract doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]>;
   protected abstract doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection>;
   protected abstract doGetDefaultBranch(repo: string): Promise<string>;
 }

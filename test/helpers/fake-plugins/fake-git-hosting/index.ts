@@ -6,6 +6,7 @@ import type {
   InitResult,
   MergeResult,
   MergeStrategy,
+  PRComment,
   PROptions,
   PRResult,
   PRStatus,
@@ -154,6 +155,10 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
     };
     pr.comments.push(result);
     return Promise.resolve(result);
+  }
+
+  protected doGetPRComments(_repo: string, _prNumber: number): Promise<PRComment[]> {
+    return Promise.resolve([]);
   }
 
   protected doGetBranchProtection(_repo: string, _branch: string): Promise<BranchProtection> {

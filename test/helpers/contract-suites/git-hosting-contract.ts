@@ -4,6 +4,7 @@ import {
   BranchProtectionSchema,
   CommentResultSchema,
   MergeResultSchema,
+  PRCommentSchema,
   type PROptions,
   PRResultSchema,
   PRStatusSchema,
@@ -97,6 +98,17 @@ export function runGitHostingContractSuite(
         const review = await adapter.getReviewStatus(fixtures.prOptions.repo, pr.pr_number);
         const parsed = ReviewStatusSchema.safeParse(review);
         expect(parsed.success).toBe(true);
+      });
+
+      it("getPRComments() returns valid PRComment array", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const pr = await adapter.createPR(fixtures.prOptions);
+        const comments = await adapter.getPRComments(fixtures.prOptions.repo, pr.pr_number);
+        expect(Array.isArray(comments)).toBe(true);
+        for (const comment of comments) {
+          const parsed = PRCommentSchema.safeParse(comment);
+          expect(parsed.success).toBe(true);
+        }
       });
 
       it("commentOnPR() returns a valid CommentResult", async () => {

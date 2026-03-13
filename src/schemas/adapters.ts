@@ -297,8 +297,18 @@ export const ReviewStatusSchema = z.object({
   approvals: z.number().int(),
   changes_requested: z.boolean(),
   reviewers: z.array(ReviewerStateSchema),
+  /** Review body text and inline comments from formal reviews. */
+  comments: z.array(z.string()).default([]),
 });
 export type ReviewStatus = z.infer<typeof ReviewStatusSchema>;
+
+export const PRCommentSchema = z.object({
+  id: z.string(),
+  author: z.string(),
+  body: z.string(),
+  created_at: z.string(),
+});
+export type PRComment = z.infer<typeof PRCommentSchema>;
 
 export const CommentResultSchema = z.object({
   comment_id: z.string(),

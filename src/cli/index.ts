@@ -9,9 +9,9 @@ import { runInit } from "./commands/init.js";
 import { runInstall } from "./commands/install.js";
 import { runLogs } from "./commands/logs.js";
 import { runPrepare } from "./commands/prepare.js";
+import { runShutdown } from "./commands/shutdown.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
-import { runStop } from "./commands/stop.js";
 import { resolveEngineerHome, resolveSubdirs } from "./home.js";
 
 export const VERSION = "0.0.1";
@@ -41,16 +41,16 @@ program
     }
   });
 
-// ── stop ─────────────────────────────────────────────────────────────────────
+// ── shutdown ─────────────────────────────────────────────────────────────────
 
 program
-  .command("stop")
-  .description("Stop the daemon")
+  .command("shutdown")
+  .description("Shut down the daemon and all subsidiary processes")
   .option("--timeout <ms>", "Shutdown timeout in milliseconds", "30000")
   .action(async (options: { timeout: string }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
-    const code = await runStop(home, Number.parseInt(options.timeout, 10));
+    const code = await runShutdown(home, Number.parseInt(options.timeout, 10));
     if (code !== 0) {
       process.exitCode = code;
     }

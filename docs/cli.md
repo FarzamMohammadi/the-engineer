@@ -162,20 +162,20 @@ engineer start --verbose         # Debug logging
 
 **Signal handling:** `SIGTERM` and `SIGINT` trigger graceful shutdown — active tasks transition to `queued`, PID file is cleaned up.
 
-**Background mode** (`--daemon`): spawns a detached child process and exits. Use `engineer status` to check, `engineer stop` to stop.
+**Background mode** (`--daemon`): spawns a detached child process and exits. Use `engineer status` to check, `engineer shutdown` to stop.
 
 Source: [`src/cli/commands/start.ts`](../src/cli/commands/start.ts), [`src/cli/bootstrap.ts`](../src/cli/bootstrap.ts)
 
-### stop
+### shutdown
 
-Sends `SIGTERM` to the running daemon and waits for clean exit.
+Shuts down the daemon and all subsidiary processes (dashboard, etc.). Sends `SIGTERM` and waits for clean exit.
 
 ```bash
-engineer stop                    # Default 30s timeout
-engineer stop --timeout 60000   # Custom timeout in ms
+engineer shutdown                    # Default 30s timeout
+engineer shutdown --timeout 60000   # Custom timeout in ms
 ```
 
-Source: [`src/cli/commands/stop.ts`](../src/cli/commands/stop.ts)
+Source: [`src/cli/commands/shutdown.ts`](../src/cli/commands/shutdown.ts)
 
 ### status
 

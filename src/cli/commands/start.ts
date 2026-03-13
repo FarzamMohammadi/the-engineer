@@ -107,6 +107,6 @@ function spawnBackground(engineerHome: string, verbose: boolean): number {
   child.unref();
 
   console.log(`  The Engineer started in background (PID ${child.pid}).`);
-  console.log("  Use 'engineer status' to check, 'engineer stop' to stop.");
+  console.log("  Use 'engineer status' to check, 'engineer shutdown' to stop.");
   return 0;
 }

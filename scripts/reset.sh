@@ -12,8 +12,8 @@ if [ -z "${PNPM_HOME:-}" ]; then
   export PATH="$PNPM_HOME:$PATH"
 fi
 
-echo "Stopping daemon (if running)..."
-engineer stop 2>/dev/null || true
+echo "Shutting down (if running)..."
+engineer shutdown 2>/dev/null || true
 
 echo "Building..."
 pnpm run build

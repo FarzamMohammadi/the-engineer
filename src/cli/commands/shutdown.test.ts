@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runStop, waitForProcessExit } from "./stop.js";
+import { runShutdown, waitForProcessExit } from "./shutdown.js";
 
 let tempDir: string;
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), "stop-test-"));
+  tempDir = mkdtempSync(join(tmpdir(), "shutdown-test-"));
   mkdirSync(join(tempDir, "run"), { recursive: true });
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console in tests
   vi.spyOn(console, "log").mockImplementation(() => {});
@@ -19,15 +19,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("runStop", () => {
+describe("runShutdown", () => {
   it("returns 0 when no PID file exists", async () => {
-    const code = await runStop(tempDir, 1000);
+    const code = await runShutdown(tempDir, 1000);
     expect(code).toBe(0);
   });
 
   it("returns 0 when PID file points to dead process", async () => {
     writeFileSync(join(tempDir, "run", "engineer.pid"), "99999999\n");
-    const code = await runStop(tempDir, 1000);
+    const code = await runShutdown(tempDir, 1000);
     expect(code).toBe(0);
   });
 });

@@ -4,7 +4,7 @@
  * Reads from the same SQLite DB in WAL mode (read-only).
  * Works independently of the daemon — can view historical data when daemon is stopped.
  */
-import { existsSync } from "node:fs";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { startDashboard } from "../../dashboard/index.js";
@@ -34,6 +34,18 @@ export async function runDashboard(dirs: EngineerDirs, options: DashboardOptions
     options.port,
   );
 
+  // Write PID file so `engineer shutdown` can find us
+  const pidPath = join(dirs.run, "dashboard.pid");
+  writeFileSync(pidPath, String(process.pid), "utf8");
+
+  const cleanup = () => {
+    try {
+      unlinkSync(pidPath);
+    } catch {
+      // already removed
+    }
+  };
+
   if (options.open) {
     const { exec } = await import("node:child_process");
     const url = `http://localhost:${String(options.port)}`;
@@ -46,11 +58,13 @@ export async function runDashboard(dirs: EngineerDirs, options: DashboardOptions
   process.on("SIGINT", () => {
     console.log("\nShutting down dashboard...");
     handle.close();
+    cleanup();
     process.exit(0);
   });
 
   process.on("SIGTERM", () => {
     handle.close();
+    cleanup();
     process.exit(0);
   });
 }

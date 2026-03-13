@@ -815,14 +815,16 @@ a:hover { text-decoration: underline; }
 .phase-bar-item.skipped::after {
   content: '';
   position: absolute;
-  left: -2px;
-  bottom: -2px;
-  width: calc(100% + 4px);
-  height: 1px;
-  background: var(--red);
-  transform: rotate(-20deg);
-  transform-origin: bottom left;
-  opacity: 0.6;
+  inset: 0;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.5px),
+    var(--red) calc(50% - 0.5px),
+    var(--red) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+  opacity: 0.5;
+  border-radius: inherit;
 }
 
 .phase-mini-bar .phase-seg.skipped {
@@ -1661,7 +1663,7 @@ function renderKanban() {
         if (ranSet.has(p)) cls = 'done';
         else if (t.state === 'failed' && i === phaseIdx) cls = 'failed';
         else if (i === phaseIdx) cls = 'current';
-        else if (taskFinished && !ranSet.has(p)) cls = 'skipped';
+        else if (!ranSet.has(p) && (taskFinished || i < phaseIdx)) cls = 'skipped';
         miniBar += `<div class="phase-seg ${cls}"></div>`;
       });
       miniBar += '</div>';
@@ -1728,7 +1730,7 @@ async function renderTaskDetail(taskId) {
     if (completedPhases.has(p)) cls = 'completed';
     else if (t.state === 'failed' && i === currentPhaseIdx) cls = 'failed';
     else if (i === currentPhaseIdx) cls = 'current';
-    else if (isFinished && !ranPhases.has(p)) cls = 'skipped';
+    else if (!ranPhases.has(p) && (isFinished || i < currentPhaseIdx)) cls = 'skipped';
     phaseBar += `<div class="phase-bar-item ${cls}">${esc(PHASE_LABELS[p] || p)}</div>`;
   });
   phaseBar += '</div>';

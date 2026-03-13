@@ -1178,7 +1178,20 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
   }
 
-  /** Fetch conversation-level PR comments (non-critical, returns [] on failure). */
+  /** Prefix on all daemon-posted issue/PR comments. Used to filter self-comments. */
+  const ENGINEER_COMMENT_MARKERS = [
+    "Task completed",
+    "Pull request created",
+    "Task encountered an error",
+    "PR merged",
+    "Demo approved",
+    "Code approved",
+    "Code review approved",
+    "Pushed rework",
+    "Task picked up",
+  ];
+
+  /** Fetch conversation-level PR comments, filtering out the engineer's own. */
   async function fetchPRCommentStrings(
     hosting: GitHostingAdapter,
     repo: string,
@@ -1187,7 +1200,14 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     try {
       const comments = await hosting.getPRComments(repo, prNumber);
       return comments
-        .filter((c) => c.body.trim().length > 0)
+        .filter((c) => {
+          const body = c.body.trim();
+          if (body.length === 0) {
+            return false;
+          }
+          // Filter out the engineer's own status comments
+          return !ENGINEER_COMMENT_MARKERS.some((marker) => body.startsWith(marker));
+        })
         .map((c) => `@${c.author}: ${c.body.trim()}`);
     } catch {
       return []; // Non-critical — proceed with review data only
@@ -1410,52 +1430,50 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       const prNumber = task.review?.pr_number;
       const autoMergeAllowed = repo ? deps.safetyLayer.checkAutoMergeAllowed(repo) : false;
 
-      if (autoMergeAllowed && prNumber && repo) {
+      const hosting = registry.getPluginsByType<GitHostingAdapter>("git_hosting")[0];
+      if (autoMergeAllowed && prNumber && repo && hosting) {
         // Auto-merge: attempt squash merge directly
-        const hosting = registry.getPluginsByType<GitHostingAdapter>("git_hosting")[0];
-        if (hosting) {
-          hosting
-            .mergePR(repo, prNumber, "squash")
-            .then((result) => {
-              if (result.success) {
-                taskEngine.updateTaskField(payload.task_id, "review", {
-                  ...(task.review ?? {
-                    pr_number: prNumber,
-                    pr_state: "ready" as const,
-                    demo_artifacts: [],
-                    feedback_rounds: [],
-                  }),
-                  pr_state: "merged",
-                });
-                commentOnTaskIssue(
-                  payload.task_id,
-                  `Code approved — PR #${String(prNumber)} auto-merged.`,
-                );
-              }
-              // Complete the task regardless of merge outcome
-              taskEngine.requestTransition(
-                payload.task_id,
-                "completed",
-                null,
-                "code_approved_merged",
-                "daemon",
-              );
-            })
-            .catch(() => {
-              // Merge failed — still complete, human merges manually
-              taskEngine.requestTransition(
-                payload.task_id,
-                "completed",
-                null,
-                "code_approved",
-                "daemon",
-              );
+        hosting
+          .mergePR(repo, prNumber, "squash")
+          .then((result) => {
+            if (result.success) {
+              taskEngine.updateTaskField(payload.task_id, "review", {
+                ...(task.review ?? {
+                  pr_number: prNumber,
+                  pr_state: "ready" as const,
+                  demo_artifacts: [],
+                  feedback_rounds: [],
+                }),
+                pr_state: "merged",
+              });
               commentOnTaskIssue(
                 payload.task_id,
-                "Code approved — auto-merge failed, please merge manually.",
+                `Code approved — PR #${String(prNumber)} auto-merged.`,
               );
-            });
-        }
+            }
+            // Complete the task regardless of merge outcome
+            taskEngine.requestTransition(
+              payload.task_id,
+              "completed",
+              null,
+              "code_approved_merged",
+              "daemon",
+            );
+          })
+          .catch(() => {
+            // Merge failed — still complete, human merges manually
+            taskEngine.requestTransition(
+              payload.task_id,
+              "completed",
+              null,
+              "code_approved",
+              "daemon",
+            );
+            commentOnTaskIssue(
+              payload.task_id,
+              "Code approved — auto-merge failed, please merge manually.",
+            );
+          });
       } else {
         // No auto-merge — complete, let human merge
         taskEngine.requestTransition(payload.task_id, "completed", null, "code_approved", "daemon");

@@ -1728,6 +1728,116 @@ describe("Daemon", () => {
       );
     });
 
+    it("auto-merges PR on code approval when allowed", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const task = createMockTask({
+        id: "task-auto-merge",
+        state: "review_pending",
+        sub_state: "code",
+        repo: "owner/repo",
+        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+      handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(true);
+
+      const fakeHosting = {
+        mergePR: vi.fn().mockResolvedValue({ success: true, merge_sha: "abc123" }),
+        hasCapability: vi.fn().mockReturnValue(false),
+      };
+      handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
+
+      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      callback?.({
+        id: "evt-am-1",
+        type: "task.feedback_received",
+        source: "daemon",
+        task_id: "task-auto-merge",
+        payload: {
+          task_id: "task-auto-merge",
+          stage: "code",
+          feedback_type: "approved",
+          reviewer: "reviewer1",
+          content: null,
+          pr_number: 10,
+        },
+        sequence: 10,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Wait for async mergePR call
+      await vi.waitFor(() => {
+        expect(fakeHosting.mergePR).toHaveBeenCalledWith("owner/repo", 10, "squash");
+      });
+
+      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith(
+        "task-auto-merge",
+        "review",
+        expect.objectContaining({ pr_state: "merged" }),
+      );
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-auto-merge",
+        "completed",
+        null,
+        "code_approved_merged",
+        "daemon",
+      );
+    });
+
+    it("completes task even when auto-merge fails", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const task = createMockTask({
+        id: "task-merge-fail",
+        state: "review_pending",
+        sub_state: "code",
+        repo: "owner/repo",
+        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+      handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(true);
+
+      const fakeHosting = {
+        mergePR: vi.fn().mockRejectedValue(new Error("Conflict")),
+        hasCapability: vi.fn().mockReturnValue(false),
+      };
+      handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
+
+      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      callback?.({
+        id: "evt-am-2",
+        type: "task.feedback_received",
+        source: "daemon",
+        task_id: "task-merge-fail",
+        payload: {
+          task_id: "task-merge-fail",
+          stage: "code",
+          feedback_type: "approved",
+          reviewer: "reviewer1",
+          content: null,
+          pr_number: 10,
+        },
+        sequence: 11,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Wait for async mergePR rejection to be handled
+      await vi.waitFor(() => {
+        expect(fakeHosting.mergePR).toHaveBeenCalled();
+      });
+
+      // Should still complete the task despite merge failure
+      await vi.waitFor(() => {
+        expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+          "task-merge-fail",
+          "completed",
+          null,
+          "code_approved",
+          "daemon",
+        );
+      });
+    });
+
     it("ignores feedback for non-review_pending tasks", async () => {
       handle = createTestDaemon();
       await handle.daemon.start();

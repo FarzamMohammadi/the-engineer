@@ -182,6 +182,8 @@ These constants MUST be re-exported through `src/schemas/index.ts` (they already
 
 ### 5B. Create Interface Files
 
+> **IMPORTANT:** The interface signatures below are APPROXIMATE guidance. You MUST derive the actual interfaces from the source code you read in Step 4. If the code differs from this prompt, **the code is the source of truth**. Read each component's actual public methods, parameter types, and return types, then write the interface to match exactly.
+
 Create `src/core/interfaces/` directory with these files:
 
 **`src/core/interfaces/event-bus.interface.ts`:**

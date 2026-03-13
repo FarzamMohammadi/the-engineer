@@ -128,6 +128,23 @@ export function computeAgedPriority(
   return aged > basePriority ? aged : null;
 }
 
+/**
+ * Derive aggregate review state from per-reviewer statuses.
+ * changes_requested dominates over approved. Returns null if no actionable reviews.
+ */
+export function deriveAggregateReviewState(reviewStatus: {
+  changes_requested: boolean;
+  approved: boolean;
+}): "changes_requested" | "approved" | null {
+  if (reviewStatus.changes_requested) {
+    return "changes_requested";
+  }
+  if (reviewStatus.approved) {
+    return "approved";
+  }
+  return null;
+}
+
 /** Check if an active task is stuck based on journal entry staleness. */
 export function evaluateTaskStuckness(
   activeElapsedMs: number,
@@ -204,6 +221,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   // Review pending reminders: tracks when last reminder was sent per task
   const reviewReminderTimes = new Map<string, number>();
 
+  // Review feedback dedup: tracks last processed aggregate review state per task
+  const processedReviewStates = new Map<string, string>();
+
   // ── PID File ───────────────────────────────────────────────────────────
 
   function pidFilePath(): string {
@@ -271,26 +291,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       handleChildrenAllDone(payload);
     });
 
-    // Subscribe to PR review feedback — transition task back to queued for rework
+    // Subscribe to PR review feedback — handle approval, rework, or demo→code transition
     eventBus.subscribe("daemon:feedback", "task.feedback_received", (event: Event) => {
       const payload = event.payload as TaskFeedbackReceivedPayload;
-      if (payload.feedback_type === "changes_requested" || payload.feedback_type === "comment") {
-        try {
-          taskEngine.requestTransition(
-            payload.task_id,
-            "queued",
-            null,
-            `feedback_rework:${payload.feedback_type}`,
-            "daemon",
-          );
-          logger.info(
-            { taskId: payload.task_id, feedbackType: payload.feedback_type },
-            "Task re-queued after review feedback",
-          );
-        } catch (err) {
-          logger.error({ err, taskId: payload.task_id }, "Failed to re-queue task after feedback");
-        }
-      }
+      handleFeedbackEvent(payload);
     });
   }
 
@@ -1142,6 +1146,235 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
   }
 
+  // ── Review Feedback Detection ─────────────────────────────────────────
+
+  async function checkReviewPendingFeedback(): Promise<void> {
+    const reviewTasks = taskEngine.getTasksByState("review_pending");
+    if (reviewTasks.length === 0) {
+      return;
+    }
+
+    // Prune stale dedup entries for tasks no longer in review_pending
+    const reviewTaskIds = new Set(reviewTasks.map((t) => t.id));
+    for (const key of processedReviewStates.keys()) {
+      if (!reviewTaskIds.has(key)) {
+        processedReviewStates.delete(key);
+      }
+    }
+
+    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>("git_hosting");
+    const hosting = hostingPlugins[0];
+    if (!hosting) {
+      return;
+    }
+
+    for (const task of reviewTasks) {
+      await checkSingleTaskReviewFeedback(task, hosting);
+    }
+  }
+
+  async function checkSingleTaskReviewFeedback(
+    task: ReturnType<typeof taskEngine.getTasksByState>[number],
+    hosting: GitHostingAdapter,
+  ): Promise<void> {
+    if (!(task.review?.pr_number && task.repo)) {
+      return;
+    }
+
+    try {
+      const reviewStatus = await hosting.getReviewStatus(task.repo, task.review.pr_number);
+      const prStatus = await hosting.getPRStatus(task.repo, task.review.pr_number);
+
+      // Determine aggregate review state
+      const aggregateState = deriveAggregateReviewState(reviewStatus);
+      if (!aggregateState) {
+        return; // No actionable reviews yet
+      }
+
+      // Dedup: skip if we already processed this aggregate state for this task
+      const previousState = processedReviewStates.get(task.id);
+      if (previousState === aggregateState) {
+        return;
+      }
+      processedReviewStates.set(task.id, aggregateState);
+
+      const stage = prStatus.draft ? "demo" : "code";
+      const feedbackType = aggregateState === "approved" ? "approved" : aggregateState;
+      const primaryReviewer =
+        reviewStatus.reviewers.find((r: { state: string }) => r.state === aggregateState) ??
+        reviewStatus.reviewers[0];
+
+      eventBus.publish({
+        type: "task.feedback_received",
+        source: "daemon",
+        task_id: task.id,
+        payload: {
+          task_id: task.id,
+          stage,
+          feedback_type: feedbackType as "approved" | "changes_requested" | "comment",
+          reviewer: primaryReviewer?.username ?? "unknown",
+          content: null,
+          pr_number: task.review.pr_number,
+        },
+      } satisfies PublishInput<"task.feedback_received">);
+
+      logger.info(
+        { taskId: task.id, aggregateState, stage, prNumber: task.review.pr_number },
+        "Review feedback detected",
+      );
+    } catch (err) {
+      logger.warn({ taskId: task.id, err }, "Failed to check PR review feedback");
+    }
+  }
+
+  // ── Feedback Event Handler ──────────────────────────────────────────
+
+  function handleFeedbackEvent(payload: TaskFeedbackReceivedPayload): void {
+    const task = taskEngine.getTask(payload.task_id);
+    if (!task) {
+      return;
+    }
+
+    // Guard: only handle feedback for tasks in review_pending state
+    if (task.state !== "review_pending") {
+      logger.debug(
+        { taskId: payload.task_id, state: task.state },
+        "Ignoring feedback for non-review_pending task",
+      );
+      return;
+    }
+
+    // Store feedback round on the task
+    storeFeedbackRound(payload);
+
+    if (payload.feedback_type === "approved") {
+      handleReviewApproval(task, payload);
+    } else {
+      handleFeedbackRework(task, payload);
+    }
+  }
+
+  function storeFeedbackRound(payload: TaskFeedbackReceivedPayload): void {
+    const task = taskEngine.getTask(payload.task_id);
+    if (!task) {
+      return;
+    }
+    const currentReview = task.review ?? {
+      pr_number: payload.pr_number,
+      pr_state: payload.stage === "demo" ? "draft" : "ready",
+      demo_artifacts: [],
+      feedback_rounds: [],
+    };
+    const newRound = {
+      stage: payload.stage,
+      comments: payload.content ? [payload.content] : [],
+      applied: payload.feedback_type === "approved",
+    };
+    taskEngine.updateTaskField(payload.task_id, "review", {
+      ...currentReview,
+      feedback_rounds: [...currentReview.feedback_rounds, newRound],
+    });
+  }
+
+  function handleReviewApproval(
+    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    if (payload.stage === "demo") {
+      handleDemoApproval(task, payload);
+    } else {
+      handleCodeApproval(task, payload);
+    }
+  }
+
+  function handleDemoApproval(
+    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    // Mark PR as ready (not draft) and transition demo → code
+    const hosting = registry.getPluginsByType<GitHostingAdapter>("git_hosting")[0];
+    if (hosting && task.repo && task.review?.pr_number) {
+      hosting
+        .updatePR(task.repo, task.review.pr_number, {
+          title: null,
+          body: null,
+          draft: false,
+          labels_add: null,
+          labels_remove: null,
+        })
+        .then(() => {
+          const currentReview = task.review ?? {
+            pr_number: payload.pr_number,
+            pr_state: "draft" as const,
+            demo_artifacts: [],
+            feedback_rounds: [],
+          };
+          taskEngine.updateTaskField(payload.task_id, "review", {
+            ...currentReview,
+            pr_state: "ready",
+          });
+          taskEngine.requestTransition(
+            payload.task_id,
+            "review_pending",
+            "code",
+            "demo_approved",
+            "daemon",
+          );
+          commentOnTaskIssue(payload.task_id, "Demo approved — PR marked ready for code review.");
+          logger.info(
+            { taskId: payload.task_id },
+            "Demo approved — PR marked ready for code review",
+          );
+        })
+        .catch((err) => {
+          logger.error(
+            { err, taskId: payload.task_id },
+            "Failed to mark PR ready after demo approval",
+          );
+        });
+    }
+  }
+
+  function handleCodeApproval(
+    _task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    try {
+      // Set phase hint so Orchestrator starts at integration
+      taskEngine.updateTaskField(payload.task_id, "phase", "integration");
+      taskEngine.requestTransition(payload.task_id, "queued", null, "code_approved", "daemon");
+      commentOnTaskIssue(payload.task_id, "Code review approved — running integration checks.");
+      logger.info({ taskId: payload.task_id }, "Code approved — queued for integration");
+    } catch (err) {
+      logger.error({ err, taskId: payload.task_id }, "Failed to handle code approval");
+    }
+  }
+
+  function handleFeedbackRework(
+    _task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    try {
+      taskEngine.requestTransition(
+        payload.task_id,
+        "queued",
+        null,
+        `feedback_rework:${payload.feedback_type}`,
+        "daemon",
+      );
+      commentOnTaskIssue(
+        payload.task_id,
+        `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
+      );
+      logger.info(
+        { taskId: payload.task_id, feedbackType: payload.feedback_type },
+        "Task re-queued after review feedback",
+      );
+    } catch (err) {
+      logger.error({ err, taskId: payload.task_id }, "Failed to re-queue task after feedback");
+    }
+  }
+
   function cleanupStaleReminderTimes(activeTasks: Array<{ id: string }>): void {
     for (const taskId of reviewReminderTimes.keys()) {
       if (!activeTasks.some((t) => t.id === taskId)) {
@@ -1396,7 +1629,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Step 7: Check if review-pending PRs have been merged
     await checkReviewPendingMerges();
 
-    // Step 8: Cleanup expired seen keys
+    // Step 8: Check for PR review feedback on review-pending tasks
+    await checkReviewPendingFeedback();
+
+    // Step 9: Cleanup expired seen keys
     cleanupSeenKeys(now);
   }
 

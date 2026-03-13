@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   FAST_PATH_INTAKE_DATA,
@@ -784,6 +784,249 @@ describe("Orchestrator", () => {
           taskId: "task-1",
         }),
       );
+    });
+  });
+
+  // ── Feedback Loop (resolveStartState, rework push, auto-merge) ──────────
+
+  describe("resolveStartState — feedback rework", () => {
+    it("starts from intake_analysis for task with unapplied feedback", async () => {
+      handle.setAllPhaseResponses();
+      const dispatch = createMockDispatch({
+        task: {
+          review: {
+            pr_number: 42,
+            pr_state: "draft",
+            demo_artifacts: [],
+            feedback_rounds: [{ stage: "demo", comments: ["Fix naming"], applied: false }],
+          },
+        },
+      });
+
+      const result = await handle.orchestrator.executeTask(dispatch);
+
+      // Should start from intake (index 0), run full pipeline
+      expect(result.outcome).toBe("completed");
+      // Verify first phase was intake_analysis (task.phase set to intake_analysis first)
+      const phaseUpdates = handle.taskEngine.updateTaskField.mock.calls
+        .filter((c: unknown[]) => c[1] === "phase")
+        .map((c: unknown[]) => c[2]);
+      expect(phaseUpdates[0]).toBe("intake_analysis");
+    });
+  });
+
+  describe("resolveStartState — code approval integration", () => {
+    it("starts from integration for code-approved task", async () => {
+      // Only set integration LLM response (that's the only phase that runs)
+      handle.setAllPhaseResponses();
+      const dispatch = createMockDispatch({
+        task: {
+          phase: "integration",
+          review: {
+            pr_number: 42,
+            pr_state: "ready",
+            demo_artifacts: [],
+            feedback_rounds: [],
+          },
+        },
+      });
+
+      const result = await handle.orchestrator.executeTask(dispatch);
+
+      expect(result.outcome).toBe("completed");
+      // Should have a journal entry about code-approved resume
+      const journalCalls = handle.sessionMemory.addJournalEntry.mock.calls;
+      const resumeEntry = journalCalls.find((c: unknown[]) =>
+        (c[0] as { summary: string }).summary.includes("code-approved"),
+      );
+      expect(resumeEntry).toBeDefined();
+    });
+  });
+
+  describe("commitPushAndCreatePR — rework path", () => {
+    it("re-registers workspace on rework dispatch with existing PR", async () => {
+      handle.setAllPhaseResponses();
+      const workspace = {
+        repo: "org/repo",
+        branch: "engineer/task-001-test",
+        worktree_path: "/tmp/worktree/task-001",
+      };
+      // Task already has a PR and workspace (rework scenario)
+      const task = createMockTask({
+        repo: "org/repo",
+        clone_url: "https://github.com/org/repo.git",
+        workspace,
+        review: {
+          pr_number: 42,
+          pr_state: "draft",
+          demo_artifacts: [],
+          feedback_rounds: [{ stage: "demo", comments: ["Fix naming"], applied: false }],
+        },
+      });
+
+      const dispatch = createMockDispatch({ task });
+
+      await handle.orchestrator.executeTask(dispatch);
+
+      // Should re-register existing workspace, not create new
+      expect(handle.workspaceManager.registerExistingWorkspace).toHaveBeenCalledWith(
+        "task-001",
+        workspace,
+      );
+      expect(handle.workspaceManager.createWorkspace).not.toHaveBeenCalled();
+    });
+
+    it("marks all feedback rounds as applied after rework push", async () => {
+      handle.setAllPhaseResponses();
+      handle.workspaceManager.getWorkspaceRecord.mockReturnValue({
+        taskId: "task-001",
+        repo: "org/repo",
+        branch: "engineer/task-001-test",
+        baseBranch: "main",
+        worktreePath: "/tmp/worktree/task-001",
+      });
+      const task = createMockTask({
+        repo: "org/repo",
+        clone_url: "https://github.com/org/repo.git",
+        workspace: {
+          repo: "org/repo",
+          branch: "engineer/task-001-test",
+          worktree_path: "/tmp/worktree/task-001",
+        },
+        review: {
+          pr_number: 42,
+          pr_state: "draft",
+          demo_artifacts: [],
+          feedback_rounds: [{ stage: "demo", comments: ["Fix naming"], applied: false }],
+        },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const dispatch = createMockDispatch({ task });
+
+      await handle.orchestrator.executeTask(dispatch);
+
+      // Should update review with all feedback applied
+      const reviewUpdates = handle.taskEngine.updateTaskField.mock.calls.filter(
+        (c: unknown[]) => c[1] === "review",
+      );
+      const lastReviewUpdate = reviewUpdates[reviewUpdates.length - 1];
+      if (lastReviewUpdate) {
+        const review = lastReviewUpdate[2] as {
+          feedback_rounds: Array<{ applied: boolean }>;
+        };
+        for (const round of review.feedback_rounds) {
+          expect(round.applied).toBe(true);
+        }
+      }
+    });
+  });
+
+  describe("auto-merge after integration", () => {
+    it("calls mergePR when auto-merge is enabled and task has PR", async () => {
+      handle.setAllPhaseResponses();
+      const task = createMockTask({
+        repo: "org/repo",
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+        },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+      handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(true);
+
+      const fakeHosting = {
+        mergePR: vi.fn().mockResolvedValue({ success: true, sha: "abc123" }),
+      };
+      // Save original getPrimaryPlugin to keep LLM/tool working
+      const origGetPrimary = handle.registry.getPrimaryPlugin.getMockImplementation();
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) => {
+        if (type === "git_hosting") {
+          return fakeHosting;
+        }
+        return origGetPrimary ? origGetPrimary(type) : null;
+      });
+
+      // For code-approved integration-only path
+      const dispatch = createMockDispatch({
+        task: {
+          ...task,
+          phase: "integration",
+        },
+      });
+
+      const result = await handle.orchestrator.executeTask(dispatch);
+
+      expect(result.outcome).toBe("completed");
+      expect(fakeHosting.mergePR).toHaveBeenCalledWith("org/repo", 42, "squash");
+    });
+
+    it("skips merge when auto-merge is not allowed", async () => {
+      handle.setAllPhaseResponses();
+      const task = createMockTask({
+        repo: "org/repo",
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+        },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+      handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(false);
+
+      const fakeHosting = {
+        mergePR: vi.fn(),
+      };
+      const origGetPrimary = handle.registry.getPrimaryPlugin.getMockImplementation();
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) => {
+        if (type === "git_hosting") {
+          return fakeHosting;
+        }
+        return origGetPrimary ? origGetPrimary(type) : null;
+      });
+
+      const dispatch = createMockDispatch({
+        task: {
+          ...task,
+          phase: "integration",
+        },
+      });
+
+      const result = await handle.orchestrator.executeTask(dispatch);
+
+      expect(result.outcome).toBe("completed");
+      expect(fakeHosting.mergePR).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("workspace guard — rework dispatch", () => {
+    it("re-registers existing workspace instead of creating new one", async () => {
+      handle.setAllPhaseResponses();
+      const workspace = {
+        repo: "org/repo",
+        branch: "engineer/task-001-fix-bug",
+        worktree_path: "/tmp/worktree/task-001",
+      };
+      handle.workspaceManager.getWorktreePath.mockReturnValue("/tmp/worktree/task-001");
+
+      const dispatch = createMockDispatch({
+        task: {
+          repo: "org/repo",
+          clone_url: "https://github.com/org/repo.git",
+          workspace,
+        },
+      });
+
+      await handle.orchestrator.executeTask(dispatch);
+
+      expect(handle.workspaceManager.registerExistingWorkspace).toHaveBeenCalledWith(
+        "task-001",
+        workspace,
+      );
+      expect(handle.workspaceManager.createWorkspace).not.toHaveBeenCalled();
     });
   });
 });

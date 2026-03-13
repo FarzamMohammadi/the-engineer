@@ -193,7 +193,7 @@ describe("SafetyLayer — scope boundaries", () => {
   it("allows merge to branch matching merge_to patterns", () => {
     handle = createTestSafetyLayer({
       scope: { branches: { merge_to: ["main", "develop"] } },
-      merge: { auto_merge: { default: true } },
+      merge: { auto_merge_after_approval: { default: true } },
     });
     const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
       branch: "main",
@@ -247,10 +247,10 @@ describe("SafetyLayer — scope boundaries", () => {
 // ── Merge Policy ─────────────────────────────────────────────────────────────
 
 describe("SafetyLayer — merge policy", () => {
-  it("allows merge when auto_merge is enabled for repo", () => {
+  it("allows merge when auto_merge_after_approval is enabled for repo", () => {
     handle = createTestSafetyLayer({
       scope: { branches: { merge_to: ["main"] } },
-      merge: { auto_merge: { default: false, repos: { "owner/repo": true } } },
+      merge: { auto_merge_after_approval: { default: false, repos: { "owner/repo": true } } },
     });
     const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
       repo: "owner/repo",
@@ -259,10 +259,10 @@ describe("SafetyLayer — merge policy", () => {
     expect(verdict.allowed).toBe(true);
   });
 
-  it("returns ask_human when auto_merge is disabled", () => {
+  it("returns ask_human when auto_merge_after_approval is disabled", () => {
     handle = createTestSafetyLayer({
       scope: { branches: { merge_to: ["main"] } },
-      merge: { auto_merge: { default: false } },
+      merge: { auto_merge_after_approval: { default: false } },
     });
     const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
       repo: "owner/repo",
@@ -276,13 +276,45 @@ describe("SafetyLayer — merge policy", () => {
   it("uses default when repo not in overrides", () => {
     handle = createTestSafetyLayer({
       scope: { branches: { merge_to: ["main"] } },
-      merge: { auto_merge: { default: true } },
+      merge: { auto_merge_after_approval: { default: true } },
     });
     const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
       repo: "some/other-repo",
       branch: "main",
     });
     expect(verdict.allowed).toBe(true);
+  });
+});
+
+// ── checkAutoMergeAllowed ────────────────────────────────────────────────────
+
+describe("SafetyLayer — checkAutoMergeAllowed", () => {
+  it("returns true when default is true", () => {
+    handle = createTestSafetyLayer({
+      merge: { auto_merge_after_approval: { default: true } },
+    });
+    expect(handle.safetyLayer.checkAutoMergeAllowed("any/repo")).toBe(true);
+  });
+
+  it("returns false when default is false and no repo override", () => {
+    handle = createTestSafetyLayer({
+      merge: { auto_merge_after_approval: { default: false } },
+    });
+    expect(handle.safetyLayer.checkAutoMergeAllowed("any/repo")).toBe(false);
+  });
+
+  it("returns true when repo override is true", () => {
+    handle = createTestSafetyLayer({
+      merge: { auto_merge_after_approval: { default: false, repos: { "owner/repo": true } } },
+    });
+    expect(handle.safetyLayer.checkAutoMergeAllowed("owner/repo")).toBe(true);
+  });
+
+  it("returns false when repo override is false", () => {
+    handle = createTestSafetyLayer({
+      merge: { auto_merge_after_approval: { default: true, repos: { "owner/repo": false } } },
+    });
+    expect(handle.safetyLayer.checkAutoMergeAllowed("owner/repo")).toBe(false);
   });
 });
 

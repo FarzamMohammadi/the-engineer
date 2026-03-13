@@ -223,4 +223,32 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("run_command");
     expect(result).toContain("done");
   });
+
+  // ── Feedback Injection ──────────────────────────────────────────────
+
+  it("includes feedback section when unapplied feedback present", () => {
+    const result = buildExecutionPrompt(
+      makeContext({
+        feedbackRounds: [
+          { stage: "demo", comments: ["Please use camelCase for variables"], applied: false },
+        ],
+      }),
+    );
+    expect(result).toContain("Reviewer Feedback (MUST ADDRESS)");
+    expect(result).toContain("Please use camelCase for variables");
+  });
+
+  it("omits feedback section when no feedback rounds", () => {
+    const result = buildExecutionPrompt(makeContext());
+    expect(result).not.toContain("Reviewer Feedback");
+  });
+
+  it("omits feedback section when all feedback is applied", () => {
+    const result = buildExecutionPrompt(
+      makeContext({
+        feedbackRounds: [{ stage: "demo", comments: ["Already done"], applied: true }],
+      }),
+    );
+    expect(result).not.toContain("Reviewer Feedback");
+  });
 });

@@ -495,7 +495,7 @@ export class SafetyLayer {
       return null;
     }
 
-    const mergeConfig = this.config.merge.auto_merge;
+    const mergeConfig = this.config.merge.auto_merge_after_approval;
     const repoSetting = mergeConfig.repos[repo];
     const autoMergeAllowed = repoSetting ?? mergeConfig.default;
 
@@ -507,6 +507,13 @@ export class SafetyLayer {
       };
     }
     return null;
+  }
+
+  /** Simple boolean check: is auto-merge allowed for this repo? */
+  checkAutoMergeAllowed(repo: string): boolean {
+    const mergeConfig = this.config.merge.auto_merge_after_approval;
+    const repoSetting = mergeConfig.repos[repo];
+    return repoSetting ?? mergeConfig.default;
   }
 
   private checkCostLimits(taskId: string, warnings: string[]): SafetyVerdict | null {

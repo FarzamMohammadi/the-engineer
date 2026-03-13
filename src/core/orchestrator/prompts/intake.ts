@@ -1,4 +1,5 @@
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
+import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
 import { formatActionReference, formatKnowledge, formatOutputSchema, section } from "./format.js";
 
@@ -14,6 +15,10 @@ export interface IntakePromptContext {
   repoContext: RepoContext | null;
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
+  /** Unapplied feedback rounds from PR review (rework mode). */
+  feedbackRounds?: FeedbackRound[] | undefined;
+  /** Existing PR number (rework mode). */
+  prNumber?: number | undefined;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -25,9 +30,14 @@ export interface IntakePromptContext {
  */
 export function buildIntakePrompt(ctx: IntakePromptContext): string {
   const parts: string[] = [];
+  const isFeedbackRework = hasUnappliedFeedback(ctx);
 
-  // 1. Task Brief
-  parts.push(buildTaskBrief(ctx));
+  // 1. Task Brief (or Feedback Rework brief)
+  if (isFeedbackRework) {
+    parts.push(buildFeedbackReworkBrief(ctx));
+  } else {
+    parts.push(buildTaskBrief(ctx));
+  }
 
   // 2. Repository Overview
   parts.push(buildRepoOverview(ctx.repoContext));
@@ -39,7 +49,11 @@ export function buildIntakePrompt(ctx: IntakePromptContext): string {
   }
 
   // 4. Phase Instructions
-  parts.push(buildIntakeInstructions());
+  if (isFeedbackRework) {
+    parts.push(buildFeedbackReworkInstructions());
+  } else {
+    parts.push(buildIntakeInstructions());
+  }
 
   // 5. Iteration Budget
   parts.push(
@@ -158,6 +172,61 @@ function buildIntakeInstructions(): string {
       "4. Determine if this is a trivial task (fast path). A task is trivial ONLY if: it affects a single file, has no ambiguity, needs no new dependencies, has no architectural impact, and needs no new tests.",
       "",
       "5. Determine if decomposition is needed. A task should be decomposed when it involves multiple independent components, has clearly separable concerns, or would benefit from parallel execution.",
+    ].join("\n"),
+  );
+}
+
+/** Check if context has unapplied feedback rounds. */
+function hasUnappliedFeedback(ctx: IntakePromptContext): boolean {
+  return (ctx.feedbackRounds ?? []).some((r) => !r.applied);
+}
+
+function buildFeedbackReworkBrief(ctx: IntakePromptContext): string {
+  const unapplied = (ctx.feedbackRounds ?? []).filter((r) => !r.applied);
+  const lines = [
+    `Original Task: ${ctx.task.title}`,
+    `PR: #${String(ctx.prNumber ?? "unknown")}`,
+    "",
+    "## Reviewer Feedback to Address",
+    "",
+  ];
+
+  for (const [i, round] of unapplied.entries()) {
+    lines.push(`### Feedback Round ${String(i + 1)} (${round.stage} review)`);
+    if (round.comments.length > 0) {
+      for (const comment of round.comments) {
+        lines.push(`- ${comment}`);
+      }
+    } else {
+      lines.push("- (Changes requested — no specific comments provided)");
+    }
+    lines.push("");
+  }
+
+  if (ctx.task.description) {
+    lines.push("## Original Task Description", "", ctx.task.description);
+  }
+
+  return section("Feedback Rework", lines.join("\n"));
+}
+
+function buildFeedbackReworkInstructions(): string {
+  return section(
+    "Instructions",
+    [
+      "Assess the scope of changes needed to address this reviewer feedback.",
+      "",
+      "1. Read the feedback carefully. Understand what the reviewer is asking for.",
+      "",
+      "2. Explore the affected area of the codebase to understand the current implementation.",
+      "",
+      "3. Assess complexity of the changes needed:",
+      "   - If the feedback is minor (typo, naming, style, small edge case), this is a trivial fast-path task.",
+      "   - If the feedback requires rethinking the approach, touching multiple components, or architectural changes, assess full complexity.",
+      "",
+      "4. Determine if this is a trivial rework (fast path). Rework is trivial ONLY if: it affects a single file, the fix is obvious from the feedback, and no new tests are needed.",
+      "",
+      "5. Do NOT decompose feedback rework — address all feedback points in a single pass.",
     ].join("\n"),
   );
 }

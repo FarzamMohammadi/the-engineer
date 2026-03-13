@@ -207,25 +207,31 @@ export class Orchestrator {
       const repo = dispatch.task.repo;
       const cloneUrl = dispatch.task.clone_url;
       if (repo && cloneUrl) {
-        // Child tasks branch from parent's branch
-        let parentBranch: string | undefined;
-        if (dispatch.task.parent_id) {
-          const parentTask = this.taskEngine.getTask(dispatch.task.parent_id);
-          parentBranch = parentTask?.workspace?.branch ?? undefined;
+        // Rework dispatch: workspace already exists (preserved during review_pending)
+        const existingWorktree = this.workspaceManager.getWorktreePath(taskId);
+        if (existingWorktree && dispatch.task.workspace) {
+          this.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
+        } else {
+          // Child tasks branch from parent's branch
+          let parentBranch: string | undefined;
+          if (dispatch.task.parent_id) {
+            const parentTask = this.taskEngine.getTask(dispatch.task.parent_id);
+            parentBranch = parentTask?.workspace?.branch ?? undefined;
+          }
+          const record = this.workspaceManager.createWorkspace(
+            taskId,
+            repo,
+            dispatch.task.title,
+            undefined,
+            parentBranch,
+            cloneUrl,
+          );
+          this.taskEngine.updateTaskField(taskId, "workspace", {
+            repo,
+            branch: record.branch,
+            worktree_path: record.worktreePath,
+          });
         }
-        const record = this.workspaceManager.createWorkspace(
-          taskId,
-          repo,
-          dispatch.task.title,
-          undefined,
-          parentBranch,
-          cloneUrl,
-        );
-        this.taskEngine.updateTaskField(taskId, "workspace", {
-          repo,
-          branch: record.branch,
-          worktree_path: record.worktreePath,
-        });
       }
     } else if (dispatch.task.workspace) {
       this.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
@@ -297,6 +303,9 @@ export class Orchestrator {
       }
     }
 
+    // ── Auto-merge after integration (if configured) ──────────────────────
+    await this.attemptAutoMerge(sessionId, taskId, dispatch);
+
     // ── Pipeline complete ──────────────────────────────────────────────────
     this.sessionMemory.endSession(sessionId, "completed");
     return { outcome: "completed", phaseOutputs: priorOutputs };
@@ -312,11 +321,16 @@ export class Orchestrator {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const systemPrompt = buildSystemPrompt("intake_analysis");
+    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
+      (r) => !r.applied,
+    );
     const prompt = buildIntakePrompt({
       task: dispatch.task,
       repoContext,
       repoKnowledge: dispatch.knowledge.repo,
       userKnowledge: dispatch.knowledge.user,
+      feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
+      prNumber: dispatch.task.review?.pr_number ?? undefined,
     });
 
     return this.runPhaseWithAgentLoop("intake_analysis", taskId, systemPrompt, prompt);
@@ -381,6 +395,9 @@ export class Orchestrator {
     const researchData = priorOutputs.get("research")?.data as Record<string, unknown> | undefined;
     const planData = priorOutputs.get("planning")?.data as Record<string, unknown> | undefined;
     const systemPrompt = buildSystemPrompt("execution");
+    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
+      (r) => !r.applied,
+    );
     let prompt = buildExecutionPrompt({
       task: dispatch.task,
       repoContext,
@@ -389,6 +406,7 @@ export class Orchestrator {
       planningOutput: planData ?? null,
       repoKnowledge: dispatch.knowledge.repo,
       userKnowledge: dispatch.knowledge.user,
+      feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
     });
 
     // On loopback: inject self_review findings so execution knows what to fix
@@ -507,6 +525,24 @@ export class Orchestrator {
     const phases = [...PHASE_SEQUENCE];
 
     if (!dispatch.resume_from) {
+      // Code approval auto-merge: resume directly at integration phase
+      if (dispatch.task.phase === "integration" && dispatch.task.review?.pr_state === "ready") {
+        const integrationIndex = phases.indexOf("integration");
+        if (integrationIndex >= 0) {
+          this.sessionMemory.addJournalEntry({
+            sessionId,
+            taskId,
+            phase: "integration",
+            type: "phase_change",
+            summary: "Resuming at integration for code-approved auto-merge",
+            tags: ["code_approved", "auto_merge", "resume"],
+          });
+          return { phases, startIndex: integrationIndex };
+        }
+      }
+
+      // Feedback rework is handled naturally: starts from intake_analysis (index 0).
+      // Intake will assess feedback scope and route via fast-path or full pipeline.
       return { phases, startIndex: 0 };
     }
 
@@ -998,7 +1034,11 @@ export class Orchestrator {
    * Called after demo_prep completes. Deterministic commit ensures all LLM
    * changes are captured. Push via WorkspaceManager (token injection).
    * PR creation via GitHostingAdapter.
+   *
+   * For rework dispatches (PR already exists): commits, pushes to existing
+   * branch, marks feedback as applied, and returns true (no new PR).
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-step PR workflow with rework branch — extraction would fragment the sequential logic
   private async commitPushAndCreatePR(
     sessionId: string,
     taskId: string,
@@ -1014,6 +1054,8 @@ export class Orchestrator {
     if (!record) {
       return false;
     }
+
+    const isRework = dispatch.task.review?.pr_number != null;
 
     // 1. Deterministic commit: git add -A && git commit
     //    Claude Code CLI may have already committed changes via its internal tools,
@@ -1040,7 +1082,9 @@ export class Orchestrator {
       }
 
       if (hasStagedChanges) {
-        const commitMessage = `feat: ${dispatch.task.title}\n\nAutomated by The Engineer`;
+        const commitMessage = isRework
+          ? "fix: address review feedback\n\nAutomated by The Engineer"
+          : `feat: ${dispatch.task.title}\n\nAutomated by The Engineer`;
         execFileSync("git", ["commit", "-m", commitMessage], {
           cwd: worktreePath,
           encoding: "utf-8",
@@ -1075,6 +1119,20 @@ export class Orchestrator {
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "push", error);
       return false;
+    }
+
+    // Rework path: PR already exists — just push, mark feedback applied, notify
+    if (isRework) {
+      const task = this.taskEngine.getTask(taskId);
+      if (task?.review) {
+        const updatedRounds = task.review.feedback_rounds.map((r) => ({ ...r, applied: true }));
+        this.taskEngine.updateTaskField(taskId, "review", {
+          ...task.review,
+          feedback_rounds: updatedRounds,
+        });
+      }
+      this.commentOnSourceIssue(dispatch, "Pushed rework addressing review feedback.");
+      return true;
     }
 
     // 3. Create draft PR via GitHostingAdapter
@@ -1114,6 +1172,54 @@ export class Orchestrator {
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "pr_creation", error);
       return false;
+    }
+  }
+
+  /**
+   * Attempt auto-merge after integration phase completes.
+   * Only merges if the task has a PR and auto_merge_after_approval is enabled.
+   */
+  private async attemptAutoMerge(
+    sessionId: string,
+    taskId: string,
+    dispatch: Dispatch,
+  ): Promise<void> {
+    const task = this.taskEngine.getTask(taskId);
+    if (!(task?.review?.pr_number && task.repo)) {
+      return; // No PR or no repo — nothing to merge
+    }
+
+    if (!this.safetyLayer.checkAutoMergeAllowed(task.repo)) {
+      return; // Auto-merge not configured for this repo
+    }
+
+    const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>("git_hosting");
+    if (!gitHosting) {
+      return;
+    }
+
+    try {
+      const result = await gitHosting.mergePR(task.repo, task.review.pr_number, "squash");
+      if (result.success) {
+        this.taskEngine.updateTaskField(taskId, "review", {
+          ...task.review,
+          pr_state: "merged",
+        });
+        this.sessionMemory.addJournalEntry({
+          sessionId,
+          taskId,
+          phase: "integration",
+          type: "action",
+          summary: `PR #${String(task.review.pr_number)} auto-merged successfully`,
+          tags: ["auto_merge"],
+        });
+        this.commentOnSourceIssue(
+          dispatch,
+          `PR #${String(task.review.pr_number)} auto-merged after approval.`,
+        );
+      }
+    } catch {
+      // Merge failed — task still completes, human merges manually
     }
   }
 

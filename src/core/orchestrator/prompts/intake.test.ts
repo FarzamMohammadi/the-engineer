@@ -142,4 +142,39 @@ describe("buildIntakePrompt", () => {
     expect(result).not.toContain("write_file:");
     expect(result).not.toContain("edit_file:");
   });
+
+  // ── Feedback Rework Mode ────────────────────────────────────────────
+
+  it("uses feedback rework brief when unapplied feedback present", () => {
+    const result = buildIntakePrompt(
+      makeContext({
+        feedbackRounds: [
+          { stage: "demo", comments: ["Fix the naming convention"], applied: false },
+        ],
+        prNumber: 42,
+      }),
+    );
+    expect(result).toContain("Feedback Rework");
+    expect(result).toContain("Fix the naming convention");
+    expect(result).toContain("#42");
+    // Should NOT contain regular task instructions
+    expect(result).not.toContain("taking on a new assignment");
+  });
+
+  it("uses normal mode when no feedback rounds present", () => {
+    const result = buildIntakePrompt(makeContext());
+    expect(result).not.toContain("Feedback Rework");
+    expect(result).toContain("taking on a new assignment");
+  });
+
+  it("uses normal mode when all feedback is already applied", () => {
+    const result = buildIntakePrompt(
+      makeContext({
+        feedbackRounds: [{ stage: "demo", comments: ["Already fixed"], applied: true }],
+        prNumber: 42,
+      }),
+    );
+    expect(result).not.toContain("Feedback Rework");
+    expect(result).toContain("taking on a new assignment");
+  });
 });

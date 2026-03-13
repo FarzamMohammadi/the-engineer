@@ -221,6 +221,7 @@ export interface TestOrchestratorHandle {
   safetyLayer: {
     evaluateAction: Mock;
     consultJudgment: Mock;
+    checkAutoMergeAllowed: Mock;
   };
   actionPipeline: {
     execute: Mock;
@@ -340,6 +341,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       warnings: null,
     }),
     consultJudgment: vi.fn(),
+    checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
   };
 
   // ── ActionPipeline mock — passthrough by default ───────────────────────

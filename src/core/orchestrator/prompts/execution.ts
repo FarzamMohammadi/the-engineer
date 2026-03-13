@@ -1,4 +1,5 @@
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
+import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
 import {
   formatActionReference,
@@ -22,6 +23,8 @@ export interface ExecutionPromptContext {
   planningOutput: Record<string, unknown> | null;
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
+  /** Unapplied feedback rounds from PR review (rework mode). */
+  feedbackRounds?: FeedbackRound[] | undefined;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -53,6 +56,12 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
   const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
   if (knowledge) {
     parts.push(knowledge);
+  }
+
+  // 5b. Reviewer Feedback (rework mode)
+  const feedbackSection = buildFeedbackSection(ctx.feedbackRounds);
+  if (feedbackSection) {
+    parts.push(feedbackSection);
   }
 
   // 6. Phase Instructions
@@ -233,4 +242,35 @@ function buildExecutionStrategy(intakeOutput: Record<string, unknown> | null): s
     "Execution Strategy",
     "Follow the plan methodically. Implement, test, fix, commit. If a test keeps failing, re-read the relevant code to understand what you're missing before trying more fixes.",
   );
+}
+
+function buildFeedbackSection(feedbackRounds?: FeedbackRound[]): string | null {
+  if (!feedbackRounds) {
+    return null;
+  }
+  const unapplied = feedbackRounds.filter((r) => !r.applied);
+  if (unapplied.length === 0) {
+    return null;
+  }
+
+  const lines = [
+    "The following reviewer feedback was received during PR review. You MUST address each point:",
+    "",
+  ];
+
+  for (const [i, round] of unapplied.entries()) {
+    lines.push(`### Feedback Round ${String(i + 1)} (${round.stage} review)`);
+    if (round.comments.length > 0) {
+      for (const comment of round.comments) {
+        lines.push(`- ${comment}`);
+      }
+    } else {
+      lines.push("- (Changes requested — review the PR discussion for details)");
+    }
+    lines.push("");
+  }
+
+  lines.push("After addressing all feedback, verify your changes compile and pass tests.");
+
+  return section("Reviewer Feedback (MUST ADDRESS)", lines.join("\n"));
 }

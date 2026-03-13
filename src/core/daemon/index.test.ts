@@ -9,7 +9,12 @@ import {
 } from "../../../test/helpers/test-daemon.js";
 import { createMockTask } from "../../../test/helpers/test-orchestrator.js";
 import type { ExecuteTaskResult } from "./index.js";
-import { computeAgedPriority, isSlotConsuming, shouldPreempt } from "./index.js";
+import {
+  computeAgedPriority,
+  deriveAggregateReviewState,
+  isSlotConsuming,
+  shouldPreempt,
+} from "./index.js";
 
 // ── Pure Function Tests ───────────────────────────────────────────────────────
 
@@ -1377,6 +1382,12 @@ describe("Daemon", () => {
           mergeable: true,
           checks_passing: true,
         }),
+        getReviewStatus: vi.fn().mockResolvedValue({
+          approved: false,
+          approvals: 0,
+          changes_requested: false,
+          reviewers: [],
+        }),
       };
       handle.registry.getPluginsByType.mockImplementation((type: string) => {
         if (type === "git_hosting") {
@@ -1395,5 +1406,380 @@ describe("Daemon", () => {
         expect.any(String),
       );
     });
+  });
+
+  // ── Review Feedback Detection ─────────────────────────────────────
+
+  describe("review feedback detection", () => {
+    function setupReviewTask(overrides?: Partial<ReturnType<typeof createMockTask>>) {
+      const task = createMockTask({
+        id: "task-review",
+        state: "review_pending",
+        sub_state: "demo",
+        repo: "owner/repo",
+        review: { pr_number: 10, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+        ...overrides,
+      });
+      return task;
+    }
+
+    function setupHostingMock(
+      prStatus: Record<string, unknown>,
+      reviewStatus: Record<string, unknown>,
+    ) {
+      return {
+        getPRStatus: vi.fn().mockResolvedValue({
+          number: 10,
+          state: "open",
+          draft: true,
+          mergeable: true,
+          checks_passing: true,
+          url: "https://github.com/owner/repo/pull/10",
+          ...prStatus,
+        }),
+        getReviewStatus: vi.fn().mockResolvedValue({
+          approved: false,
+          approvals: 0,
+          changes_requested: false,
+          reviewers: [],
+          ...reviewStatus,
+        }),
+        updatePR: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    it("emits feedback event when changes_requested detected", async () => {
+      handle = createTestDaemon();
+      const task = setupReviewTask();
+      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const hosting = setupHostingMock(
+        {},
+        {
+          changes_requested: true,
+          reviewers: [{ username: "reviewer1", state: "changes_requested" }],
+        },
+      );
+      handle.registry.getPluginsByType.mockImplementation((type: string) =>
+        type === "git_hosting" ? [hosting] : [],
+      );
+
+      await handle.daemon.tick();
+
+      expect(handle.eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "task.feedback_received",
+          payload: expect.objectContaining({
+            task_id: "task-review",
+            stage: "demo",
+            feedback_type: "changes_requested",
+            reviewer: "reviewer1",
+          }),
+        }),
+      );
+    });
+
+    it("emits approved event when PR is approved", async () => {
+      handle = createTestDaemon();
+      const task = setupReviewTask({ sub_state: "code" });
+      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const hosting = setupHostingMock(
+        { draft: false },
+        {
+          approved: true,
+          approvals: 1,
+          reviewers: [{ username: "reviewer1", state: "approved" }],
+        },
+      );
+      handle.registry.getPluginsByType.mockImplementation((type: string) =>
+        type === "git_hosting" ? [hosting] : [],
+      );
+
+      await handle.daemon.tick();
+
+      expect(handle.eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "task.feedback_received",
+          payload: expect.objectContaining({
+            task_id: "task-review",
+            stage: "code",
+            feedback_type: "approved",
+          }),
+        }),
+      );
+    });
+
+    it("deduplicates — does not re-emit same aggregate state", async () => {
+      handle = createTestDaemon();
+      const task = setupReviewTask();
+      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const hosting = setupHostingMock(
+        {},
+        {
+          changes_requested: true,
+          reviewers: [{ username: "r1", state: "changes_requested" }],
+        },
+      );
+      handle.registry.getPluginsByType.mockImplementation((type: string) =>
+        type === "git_hosting" ? [hosting] : [],
+      );
+
+      await handle.daemon.tick();
+      await handle.daemon.tick();
+
+      const feedbackEvents = handle.eventBus.publish.mock.calls.filter(
+        (call: unknown[]) => (call[0] as { type: string }).type === "task.feedback_received",
+      );
+      expect(feedbackEvents).toHaveLength(1);
+    });
+
+    it("emits new event when aggregate state changes", async () => {
+      handle = createTestDaemon();
+      const task = setupReviewTask();
+      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const hosting = setupHostingMock(
+        {},
+        {
+          changes_requested: true,
+          reviewers: [{ username: "r1", state: "changes_requested" }],
+        },
+      );
+      handle.registry.getPluginsByType.mockImplementation((type: string) =>
+        type === "git_hosting" ? [hosting] : [],
+      );
+
+      await handle.daemon.tick();
+
+      // Reviewer now approves (state changes)
+      hosting.getReviewStatus.mockResolvedValue({
+        approved: true,
+        approvals: 1,
+        changes_requested: false,
+        reviewers: [{ username: "r1", state: "approved" }],
+      });
+
+      await handle.daemon.tick();
+
+      const feedbackEvents = handle.eventBus.publish.mock.calls.filter(
+        (call: unknown[]) => (call[0] as { type: string }).type === "task.feedback_received",
+      );
+      expect(feedbackEvents).toHaveLength(2);
+    });
+  });
+
+  // ── Feedback Event Handler ─────────────────────────────────────────
+
+  describe("feedback event handler", () => {
+    it("stores feedback round and transitions to queued on changes_requested", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const task = createMockTask({
+        id: "task-fb",
+        state: "review_pending",
+        sub_state: "demo",
+        repo: "owner/repo",
+        review: { pr_number: 10, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      // Manually trigger the feedback subscription
+      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      expect(callback).toBeDefined();
+
+      callback?.({
+        id: "evt-1",
+        type: "task.feedback_received",
+        source: "daemon",
+        task_id: "task-fb",
+        payload: {
+          task_id: "task-fb",
+          stage: "demo",
+          feedback_type: "changes_requested",
+          reviewer: "reviewer1",
+          content: "Please fix the naming",
+          pr_number: 10,
+        },
+        sequence: 1,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Should store feedback round
+      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith(
+        "task-fb",
+        "review",
+        expect.objectContaining({
+          feedback_rounds: [expect.objectContaining({ stage: "demo", applied: false })],
+        }),
+      );
+
+      // Should transition to queued
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-fb",
+        "queued",
+        null,
+        "feedback_rework:changes_requested",
+        "daemon",
+      );
+    });
+
+    it("transitions demo → code on demo approval and marks PR ready", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const task = createMockTask({
+        id: "task-demo-approve",
+        state: "review_pending",
+        sub_state: "demo",
+        repo: "owner/repo",
+        review: { pr_number: 10, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const fakeHosting = {
+        updatePR: vi.fn().mockResolvedValue(undefined),
+        hasCapability: vi.fn().mockReturnValue(false),
+      };
+      handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
+
+      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      callback?.({
+        id: "evt-2",
+        type: "task.feedback_received",
+        source: "daemon",
+        task_id: "task-demo-approve",
+        payload: {
+          task_id: "task-demo-approve",
+          stage: "demo",
+          feedback_type: "approved",
+          reviewer: "reviewer1",
+          content: null,
+          pr_number: 10,
+        },
+        sequence: 2,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Wait for async updatePR call
+      await vi.waitFor(() => {
+        expect(fakeHosting.updatePR).toHaveBeenCalledWith(
+          "owner/repo",
+          10,
+          expect.objectContaining({ draft: false }),
+        );
+      });
+
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-demo-approve",
+        "review_pending",
+        "code",
+        "demo_approved",
+        "daemon",
+      );
+    });
+
+    it("queues task for integration on code approval", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const task = createMockTask({
+        id: "task-code-approve",
+        state: "review_pending",
+        sub_state: "code",
+        repo: "owner/repo",
+        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      callback?.({
+        id: "evt-3",
+        type: "task.feedback_received",
+        source: "daemon",
+        task_id: "task-code-approve",
+        payload: {
+          task_id: "task-code-approve",
+          stage: "code",
+          feedback_type: "approved",
+          reviewer: "reviewer1",
+          content: null,
+          pr_number: 10,
+        },
+        sequence: 3,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Should set phase to integration
+      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith(
+        "task-code-approve",
+        "phase",
+        "integration",
+      );
+
+      // Should transition to queued for integration dispatch
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-code-approve",
+        "queued",
+        null,
+        "code_approved",
+        "daemon",
+      );
+    });
+
+    it("ignores feedback for non-review_pending tasks", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const task = createMockTask({
+        id: "task-active",
+        state: "active",
+        sub_state: "working",
+      });
+      handle.taskEngine.getTask.mockReturnValue(task);
+
+      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      callback?.({
+        id: "evt-4",
+        type: "task.feedback_received",
+        source: "daemon",
+        task_id: "task-active",
+        payload: {
+          task_id: "task-active",
+          stage: "demo",
+          feedback_type: "changes_requested",
+          reviewer: "reviewer1",
+          content: null,
+          pr_number: 10,
+        },
+        sequence: 4,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Should NOT transition
+      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ── Pure Function: deriveAggregateReviewState ─────────────────────────────────
+
+describe("deriveAggregateReviewState", () => {
+  it("returns changes_requested when changes are requested", () => {
+    expect(deriveAggregateReviewState({ changes_requested: true, approved: true })).toBe(
+      "changes_requested",
+    );
+  });
+
+  it("returns approved when approved and no changes requested", () => {
+    expect(deriveAggregateReviewState({ changes_requested: false, approved: true })).toBe(
+      "approved",
+    );
+  });
+
+  it("returns null when no actionable reviews", () => {
+    expect(deriveAggregateReviewState({ changes_requested: false, approved: false })).toBeNull();
   });
 });

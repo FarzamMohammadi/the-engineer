@@ -2,6 +2,28 @@
 
 **Wave 2 (Parallel) — Depends on R0 (Interface Foundation) being complete.**
 
+---
+
+## Worktree Setup (DO THIS FIRST)
+
+This phase runs in an **isolated git worktree**. Before doing anything else:
+
+```bash
+# From the main repo directory:
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree add ../engineer-R2a -b layer7/R2a main
+cd ../engineer-R2a
+```
+
+**Rules:**
+- Work ONLY in this worktree (`../engineer-R2a/`)
+- Commit your changes to the `layer7/R2a` branch
+- Do NOT push — the merge prompt will collect this branch
+- Do NOT modify files outside the scope listed in this prompt
+- When done: commit, verify tests pass, stop. The merge wave handles the rest.
+
+---
+
 You are implementing a structural restructuring phase for The Engineer, an autonomous software engineering agent. This phase decomposes the TaskEngine (~642 LOC) into focused modules: state machine, queries, and permissions. It also adds optimistic locking and tagged errors. No new features, no behavior changes (except the version column addition). Every existing test must pass after.
 
 ---

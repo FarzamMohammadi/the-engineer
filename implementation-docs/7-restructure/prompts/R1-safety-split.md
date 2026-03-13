@@ -2,6 +2,28 @@
 
 **Wave 2 (Parallel) — Depends on R0 (Interface Foundation) being complete.**
 
+---
+
+## Worktree Setup (DO THIS FIRST)
+
+This phase runs in an **isolated git worktree**. Before doing anything else:
+
+```bash
+# From the main repo directory:
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree add ../engineer-R1 -b layer7/R1 main
+cd ../engineer-R1
+```
+
+**Rules:**
+- Work ONLY in this worktree (`../engineer-R1/`)
+- Commit your changes to the `layer7/R1` branch
+- Do NOT push — the merge prompt will collect this branch
+- Do NOT modify files outside the scope listed in this prompt
+- When done: commit, verify tests pass, stop. The merge wave handles the rest.
+
+---
+
 You are implementing a structural restructuring phase for The Engineer, an autonomous software engineering agent. This phase splits the SafetyLayer god object (~992 LOC, ~20 methods, 2 distinct concerns) into focused modules. No new features, no behavior changes. Every test that passes before must pass after.
 
 ---

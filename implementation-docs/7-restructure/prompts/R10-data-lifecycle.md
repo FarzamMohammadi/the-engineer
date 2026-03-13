@@ -6,6 +6,26 @@
 
 ---
 
+## Worktree Setup (DO THIS FIRST)
+
+This phase runs in an **isolated git worktree**. Before doing anything else:
+
+```bash
+# From the main repo directory:
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree add ../engineer-R10 -b layer7/R10 main
+cd ../engineer-R10
+```
+
+**Rules:**
+- Work ONLY in this worktree (`../engineer-R10/`)
+- Commit your changes to the `layer7/R10` branch
+- Do NOT push — the merge prompt will collect this branch
+- Do NOT modify files outside the scope listed in this prompt
+- When done: commit, verify tests pass, stop. The merge wave handles the rest.
+
+---
+
 ## Context
 
 The Engineer is an autonomous software engineering agent with a SQLite-backed event bus, observability traces, and session data. Currently, all data grows unbounded — events, action_traces, phase_metrics, llm_traces, and journal entries accumulate forever. In production, this will cause disk exhaustion and query performance degradation.

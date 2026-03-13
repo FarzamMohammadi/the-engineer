@@ -6,6 +6,26 @@
 
 ---
 
+## Worktree Setup (DO THIS FIRST)
+
+This phase runs in an **isolated git worktree**. Before doing anything else:
+
+```bash
+# From the main repo directory:
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree add ../engineer-R9 -b layer7/R9 main
+cd ../engineer-R9
+```
+
+**Rules:**
+- Work ONLY in this worktree (`../engineer-R9/`)
+- Commit your changes to the `layer7/R9` branch
+- Do NOT push — the merge prompt will collect this branch
+- Do NOT modify files outside the scope listed in this prompt
+- When done: commit, verify tests pass, stop. The merge wave handles the rest.
+
+---
+
 ## Context
 
 The Engineer is an autonomous software engineering agent — a fully self-directed system that receives tasks (via GitHub issues), researches codebases, plans solutions, executes changes, self-reviews, and ships PRs. It is built on a three-tier architecture (Core / Adapter / Plugin) with TypeScript, Node.js 22, SQLite, and a modular plugin system.

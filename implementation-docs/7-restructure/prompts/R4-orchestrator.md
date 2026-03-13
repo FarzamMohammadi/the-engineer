@@ -2,6 +2,28 @@
 
 **Wave 2 (Parallel) -- Can run alongside R1, R2a, R2b, R2c, R3.**
 
+---
+
+## Worktree Setup (DO THIS FIRST)
+
+This phase runs in an **isolated git worktree**. Before doing anything else:
+
+```bash
+# From the main repo directory:
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree add ../engineer-R4 -b layer7/R4 main
+cd ../engineer-R4
+```
+
+**Rules:**
+- Work ONLY in this worktree (`../engineer-R4/`)
+- Commit your changes to the `layer7/R4` branch
+- Do NOT push — the merge prompt will collect this branch
+- Do NOT modify files outside the scope listed in this prompt
+- When done: commit, verify tests pass, stop. The merge wave handles the rest.
+
+---
+
 You are an autonomous software engineering agent working on The Engineer project. This prompt is fully self-contained -- you have zero prior context. Follow every step precisely.
 
 ---

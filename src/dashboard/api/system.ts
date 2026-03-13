@@ -22,19 +22,21 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
     const stats = deps.observability.getSystemStats();
 
     // Check if daemon is running via PID file
-    const pidFile = join(deps.runDir, "daemon.pid");
+    // Try engineer.pid first, fall back to dashboard.pid (co-hosted = same process)
     let daemonRunning = false;
     let daemonPid: number | null = null;
 
-    if (existsSync(pidFile)) {
+    for (const name of ["engineer.pid", "dashboard.pid"]) {
+      const pidFile = join(deps.runDir, name);
+      if (!existsSync(pidFile)) continue;
       try {
-        daemonPid = Number.parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-        // Check if process exists (signal 0 doesn't kill, just checks)
-        process.kill(daemonPid, 0);
+        const pid = Number.parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+        process.kill(pid, 0);
         daemonRunning = true;
+        daemonPid = pid;
+        break;
       } catch {
-        daemonRunning = false;
-        daemonPid = null;
+        // stale or unreadable
       }
     }
 

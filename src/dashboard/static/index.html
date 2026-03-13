@@ -166,6 +166,11 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 0 8px var(--red);
 }
 
+.sb-dot.idle {
+  background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan), 0 0 14px rgba(34,211,238,0.2);
+}
+
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green), 0 0 20px rgba(16,185,129,0.3); }
   50% { opacity: 0.7; box-shadow: 0 0 4px var(--green), 0 0 10px rgba(16,185,129,0.15); }
@@ -319,21 +324,31 @@ a:hover { text-decoration: underline; }
 
 .sb-heartbeat polyline {
   fill: none;
-  stroke: var(--cyan);
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* Idle: calm cyan heartbeat */
+.sb-heartbeat .hb-signal {
+  stroke: var(--cyan);
   filter: drop-shadow(0 0 3px var(--cyan));
 }
+.sb-heartbeat .hb-signal animate { }
+.sb-heartbeat .hb-flat { stroke: transparent; }
 
-.sb-heartbeat.dead polyline {
+/* Working: fast green heartbeat */
+.sb-heartbeat.working .hb-signal {
+  stroke: var(--green);
+  filter: drop-shadow(0 0 4px var(--green));
+}
+.sb-heartbeat.working .hb-flat { stroke: transparent; }
+
+/* Stopped: flatline */
+.sb-heartbeat.stopped .hb-signal { stroke: transparent; filter: none; }
+.sb-heartbeat.stopped .hb-flat {
   stroke: var(--red-dim);
   filter: none;
-}
-
-@keyframes heartbeat-draw {
-  from { stroke-dashoffset: 200; }
-  to { stroke-dashoffset: 0; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1276,10 +1291,13 @@ a:hover { text-decoration: underline; }
   </div>
 
   <svg class="sb-heartbeat" id="sb-heartbeat" viewBox="0 0 80 28">
-    <polyline points="0,14 15,14 20,14 24,4 28,24 32,14 37,14 42,14 46,6 50,22 54,14 59,14 80,14"
+    <polyline class="hb-signal" points="0,14 15,14 20,14 24,4 28,24 32,14 37,14 42,14 46,6 50,22 54,14 59,14 80,14"
               stroke-dasharray="200" stroke-dashoffset="0">
-      <animate attributeName="stroke-dashoffset" from="200" to="0" dur="2s" repeatCount="indefinite"/>
+      <animate id="hb-anim" attributeName="stroke-dashoffset" from="200" to="0" dur="2s" repeatCount="indefinite"/>
     </polyline>
+    <line class="hb-flat" x1="0" y1="14" x2="80" y2="14" stroke-dasharray="4 4">
+      <animate attributeName="stroke-dashoffset" from="8" to="0" dur="1s" repeatCount="indefinite"/>
+    </line>
   </svg>
 
   <div class="sb-separator"></div>
@@ -1315,7 +1333,7 @@ a:hover { text-decoration: underline; }
       <div class="rec-dot"></div>
       <div class="rec-ring"></div>
     </div>
-    <span>Watching</span>
+    <span>Watching for changes</span>
   </div>
 
   <div class="sb-separator"></div>
@@ -1545,17 +1563,27 @@ async function pollSystemStatus() {
   const label = document.getElementById('sb-daemon-label');
   const hb = document.getElementById('sb-heartbeat');
 
+  const bs = data.tasks_by_state || {};
+
   if (data.daemon_running) {
-    dot.className = 'sb-dot online';
-    label.textContent = 'Running';
-    hb.classList.remove('dead');
+    const active = bs.active || 0;
+
+    if (active > 0) {
+      dot.className = 'sb-dot online';
+      label.textContent = 'Working';
+      hb.className = 'sb-heartbeat working';
+      document.getElementById('hb-anim').setAttribute('dur', '0.8s');
+    } else {
+      dot.className = 'sb-dot idle';
+      label.textContent = 'Idle';
+      hb.className = 'sb-heartbeat';
+      document.getElementById('hb-anim').setAttribute('dur', '2s');
+    }
   } else {
     dot.className = 'sb-dot offline';
     label.textContent = 'Stopped';
-    hb.classList.add('dead');
+    hb.className = 'sb-heartbeat stopped';
   }
-
-  const bs = data.tasks_by_state || {};
   document.getElementById('sb-active').textContent = bs.active || 0;
   document.getElementById('sb-queued').textContent = bs.queued || 0;
   document.getElementById('sb-actions').textContent = fmtTokens(data.total_action_traces);
@@ -1753,7 +1781,7 @@ async function renderTaskDetail(taskId) {
 
   // Phase stats
   let phaseStats = '';
-  phases.forEach(p => {
+  [...phases].reverse().forEach(p => {
     phaseStats += `<div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem;">
       <span style="width:80px;color:var(--text-secondary);text-transform:capitalize">${esc(PHASE_LABELS[p.phase] || p.phase)}</span>
       <span style="color:var(--text-muted)">${fmtDuration(p.duration_ms)}</span>

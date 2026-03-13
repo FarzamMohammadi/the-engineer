@@ -21,6 +21,7 @@ Each phase: build → manual test → refine → next phase.
 | 6.7b | Decomposition & Multi-Task | Task splitting for large tasks | 6.6 | DONE |
 | 6.9 | Observability — War Room Dashboard | Internal instrumentation + live dashboard | 6.7b | DONE |
 | 6.8 | Hardening & OSS Prep | E2E hardening, error recovery, CI, polish | 6.9 | Not started |
+| 6.10 | War Room v2 — Dashboard Rebuild | React+Vite foundation, deep observability, real-time streaming | 6.8 | Not started |
 
 **Order change note (Phase 6.7):** Originally 6.5 (Communication) and 6.6 (Decomposition) came before E2E testing. We pulled 6.7 forward to validate the infrastructure before adding more features. The E2E test revealed that the pipeline infrastructure is solid, but **workspace integration** is the critical missing piece — not communication or decomposition. Phase 6.5 is now redefined as "Workspace Integration + Wiring" to address the #1 gap before anything else.
 
@@ -42,6 +43,7 @@ Each phase: build → manual test → refine → next phase.
                                      └─ 6.7b (Decomposition) ✅
                                           └─ 6.9 (Observability — War Room Dashboard) ✅
                                                └─ 6.8 (Hardening & OSS Prep)
+                                                    └─ 6.10 (War Room v2 — Dashboard Rebuild)
 ```
 
 ---
@@ -261,6 +263,58 @@ Two sub-phases: 6.9a (Internal Instrumentation) and 6.9b (Dashboard).
 
 ---
 
+### Phase 6.10: War Room v2 — Dashboard Rebuild
+
+**Status: Not started**
+
+**Decisions:** D160-D165
+
+**Goal:** Rebuild the dashboard from a 2,209-line single HTML file into a proper React application with deep real-time observability. The War Room is the face of the open source project — it must be impressive, intricate, and show *everything* the engineer does.
+
+**This is a two-sided effort:**
+
+1. **Backend instrumentation** — The current dashboard can only show what the system already records. The War Room vision requires far deeper observability. The implementing agent must assess what data is already available in the ObservabilityStore and what new instrumentation is needed. Target areas:
+   - Agent loop visibility (every iteration: context → LLM call → decision → action → result)
+   - LLM interaction detail (full prompts, responses, parsed actions, token counts, latency)
+   - Decision points (complexity classification, strategy selection, loopback triggers)
+   - Phase transitions in detail (gate checks, outputs, trigger reasons)
+   - Cost granularity (per-iteration, per-phase, cumulative with budget warnings)
+   - Git operations (branch, commit, push, PR, review feedback)
+   - Decomposition visibility (parent-child trees, child progress relative to parent)
+
+2. **Frontend rebuild** — Replace the single HTML file with a component-based React application:
+   - **React + Vite** — ecosystem + OSS contributor accessibility
+   - **shadcn/ui + Tailwind CSS** — premade components, not custom
+   - **Lucide React** — icons
+   - **Recharts** — charts and data visualization
+   - **SSE** for real-time push (new `GET /api/stream` endpoint), polling as fallback
+   - War Room dark aesthetic preserved and evolved
+
+**Core principle:** Leverage the ecosystem, don't rebuild it. Use shadcn/ui, Lucide, Recharts, @tanstack/react-table — focus our energy on the data and functionality that differentiates the War Room, not on building generic UI components.
+
+**Important:** The implementing agent should do a fresh assessment at implementation time. By the time this phase starts, Phase 6.8 will have stabilized the data model, added CI, and potentially introduced new events/traces. The plan file (`.claude/plans/replicated-sniffing-fountain.md`) contains detailed research on component architecture, hook patterns, SSE implementation, build integration, and migration steps — use it as a starting point, not a prescription. Reassess what makes sense with the codebase as it exists at that point.
+
+**Key technical decisions (locked in):**
+- React + Vite (D160)
+- Same package, `src/dashboard/ui/` sub-project (D161)
+- shadcn/ui + Tailwind + Lucide + Recharts (D162)
+- SSE for real-time, polling as fallback (D163)
+- Ecosystem-first: premade components over custom (D164)
+- Backend instrumentation as equal priority to frontend (D165)
+
+**Key files to study:**
+- `src/dashboard/static/index.html` — Source of truth for current UI (2,209 lines, what to replicate + exceed)
+- `src/dashboard/server.ts` — Hono app (modify for Vite output + SSE)
+- `src/dashboard/api/` — Existing API routes (keep, extend)
+- `src/core/observability/` — ObservabilityStore + BlobStore (current data model, extend)
+- `src/schemas/events.ts` + `src/schemas/observability.ts` — Event/trace schemas (extend)
+- `src/core/orchestrator/agent-loop.ts` — Agent loop (instrumentation target)
+- `src/core/daemon/index.ts` — Daemon lifecycle (instrumentation target)
+
+**Detailed plan reference:** `.claude/plans/replicated-sniffing-fountain.md`
+
+---
+
 ## Progress Tracking
 
 | Phase | Status | Session | Tests After | Notes |
@@ -276,3 +330,4 @@ Two sub-phases: 6.9a (Internal Instrumentation) and 6.9b (Dashboard).
 | 6.7b | DONE | 060 | 1663 | Decomposition & multi-task pipeline |
 | 6.9 | DONE | 061 | — | Observability: instrumentation + war room dashboard, D155-D159 |
 | 6.8 | Not started | — | — | Hardening & OSS prep |
+| 6.10 | Not started | — | — | War Room v2: React+Vite rebuild + deep backend instrumentation (D160-D165) |

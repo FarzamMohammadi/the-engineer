@@ -1266,3 +1266,16 @@ See `6-refinement/decisions.md` for full entries. Summary:
 - **D157:** Agent loop callbacks pattern — optional `AgentLoopCallbacks` interface (onActionComplete, onLlmComplete) injected into runAgentLoop. Loop stays pure, no DB dependency.
 - **D158:** Dashboard as separate process — reads SQLite in WAL mode (read-only), works independently of daemon, can view historical data when daemon stopped.
 - **D159:** Hono + single HTML file — zero frontend build, 14KB HTTP framework, dark war room theme. Polling over WebSocket for simplicity.
+
+---
+
+## 2026-03-12 — Layer 6 Phase 6.10 decisions (D160-D165)
+
+See `6-refinement/decisions.md` for full entries. Summary:
+
+- **D160:** React + Vite for War Room v2 — largest ecosystem + OSS contributor pool. Bundle size irrelevant for localhost. Replaces D159's single HTML file approach.
+- **D161:** Dashboard stays in same package — `src/dashboard/ui/` Vite sub-project. Shared types import directly from `src/schemas/`.
+- **D162:** shadcn/ui + Tailwind CSS + Lucide + Recharts — premade component ecosystem for UI, charts, and icons.
+- **D163:** SSE for real-time dashboard updates — `GET /api/stream` endpoint. Polling as fallback. No WebSocket (unidirectional data).
+- **D164:** Ecosystem-first — premade components over custom. Only build custom for domain-unique visualizations (agent loop, phase pipeline, decomposition tree).
+- **D165:** War Room is two-sided — deep backend instrumentation (agent loop visibility, LLM detail, decision points, decomposition) + modern frontend. Observability depth is the differentiator.

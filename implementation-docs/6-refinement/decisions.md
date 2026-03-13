@@ -333,3 +333,93 @@ The `sanitizeSecrets()` function (in `src/utils/sanitize.ts`) redacts URL-embedd
 **Rationale:** Defense-in-depth at chokepoints is more maintainable than point-of-origin sanitization. If a new leak path emerges (new tool, new error handler), the chokepoints catch it before the data reaches persistence or external systems. The three chokepoints cover: database persistence, LLM context (privacy), and console output (developer visibility).
 
 **Phase:** 6.5
+
+---
+
+## D160: React + Vite for War Room v2
+
+**Context (Phase 6.10 planning):** The dashboard is a 2,209-line single HTML file with vanilla JS and 5 global variables. It works, but can't scale to the "see everything in real-time" vision. Need a component-based foundation. Evaluated: React, Preact, Svelte, Vue, vanilla web components.
+
+**Decision:** React + Vite. React for the largest ecosystem and contributor pool (critical for an open source project). Bundle size (40KB) is irrelevant for a localhost dashboard. Vite for industry-standard build tooling with fast HMR.
+
+**Rejected alternatives:**
+- Preact: 3KB smaller but smaller ecosystem, `preact/compat` has edge cases
+- Svelte: Elegant but smaller contributor pool, custom syntax
+- Vue: Good but React has more UI library support (shadcn, Recharts)
+- Vanilla web components: Solves encapsulation but not reactivity
+
+**Phase:** 6.10
+
+---
+
+## D161: Dashboard Stays in Same Package
+
+**Context (Phase 6.10 planning):** Should the dashboard become a separate npm package or stay in `the-engineer`?
+
+**Decision:** Stay in the same package, add `src/dashboard/ui/` as a Vite sub-project. Shared types (task states, phases, events) import directly from `src/schemas/`. Distribution stays simple — one `npm install`, one binary, `engineer start` launches dashboard automatically.
+
+**Rationale:** Splitting would require a third shared-types package just for internal consumption. The dashboard is a build artifact served by the Hono backend, not a standalone deployable. Keeps the project monorepo-ready per existing Layer 4 decisions.
+
+**Phase:** 6.10
+
+---
+
+## D162: shadcn/ui + Tailwind CSS + Lucide + Recharts
+
+**Context (Phase 6.10 planning):** UI library choices for the dashboard rebuild.
+
+**Decision:**
+- **shadcn/ui** — Copy-paste components (Radix primitives). Not a dependency — source lives in our code, fully customizable. Gives us polished, accessible components without reinventing them.
+- **Tailwind CSS** — shadcn/ui's foundation. War Room color palette maps to custom Tailwind v4 theme tokens.
+- **Lucide React** — Icon library. Clean, consistent, extensive.
+- **Recharts** — Charts and data visualization. Cost breakdowns, phase timelines, token usage.
+- **@tanstack/react-table** — If sortable/filterable data tables are needed (traces, events).
+
+**Rationale:** See D164. Ecosystem leverage over custom components.
+
+**Phase:** 6.10
+
+---
+
+## D163: SSE for Real-Time Dashboard Updates
+
+**Context (Phase 6.10 planning):** Current dashboard uses polling (2-10s intervals). The War Room vision needs real-time streaming.
+
+**Decision:** Add Server-Sent Events (SSE) via a new `GET /api/stream` endpoint (Hono's `streamSSE`). Keep polling as fallback for aggregate data and when SSE disconnects. No WebSocket.
+
+**Rationale:** SSE is unidirectional (dashboard only reads), HTTP-native (works through proxies, no upgrade handshake), and auto-reconnects (browser `EventSource` API). WebSocket is bidirectional — unnecessary complexity for a read-only dashboard.
+
+**Phase:** 6.10
+
+---
+
+## D164: Ecosystem-First — Premade Components Over Custom
+
+**Context (Phase 6.10 planning):** Farzam's strong preference: focus energy on data/functionality, not component creation.
+
+**Decision:** Before building ANY component, search for an existing library solution first. Only build custom when the component is truly unique to our domain (e.g., agent loop visualization, phase pipeline, decomposition tree). Use shadcn/ui for all generic UI (cards, tables, badges, dialogs, tabs). Use Recharts for all charts. Use Lucide for all icons.
+
+**Rationale:** Our value is in *what data we show* and *how we wire it*, not in crafting custom buttons, modals, and bar charts. Every premade component is time freed for the real differentiator — the War Room's intelligence and data richness.
+
+**Phase:** 6.10
+
+---
+
+## D165: War Room Is a Two-Sided Effort — Backend Instrumentation + Frontend
+
+**Context (Phase 6.10 planning):** The current dashboard shows what the system already records. The War Room vision requires far deeper observability — agent loop internals, LLM prompt/response pairs, decision points, decomposition trees.
+
+**Decision:** Phase 6.10 is explicitly a two-sided effort: deep backend instrumentation AND modern frontend. The implementing agent must assess what data is already available in the ObservabilityStore and what new instrumentation is needed in the core (new events, richer traces, new tables/schemas). The frontend can only show what the backend emits.
+
+**Target instrumentation areas:**
+- Agent loop: every iteration's context → LLM call → parsed action → execution result
+- LLM: full prompts (system + user), responses, token counts, latency, retries
+- Decisions: complexity classification, strategy selection, loopback triggers, decomposition decisions
+- Phases: detailed transition triggers, gate check results, phase outputs
+- Cost: per-iteration, per-phase, cumulative with budget tracking
+- Git: branch creation, commits, pushes, PR creation, review feedback
+- Decomposition: parent-child trees, child progress, sibling coordination
+
+**Rationale:** A beautiful frontend showing shallow data is a worse War Room than a basic frontend showing deep data. The observability depth is the differentiator.
+
+**Phase:** 6.10

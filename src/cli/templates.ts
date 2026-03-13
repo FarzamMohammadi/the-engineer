@@ -638,6 +638,23 @@ export const ALL_TEMPLATES: TemplateFile[] = [
   { relativePath: "config/plugins/bash-tool.yaml", content: BASH_TOOL_TEMPLATE },
 ];
 
+/** Seed templates — fully documented configs for seed/ directory (used by `engineer prepare`). */
+export const SEED_TEMPLATES: TemplateFile[] = [
+  // Core configs — same paths as ALL_TEMPLATES, but with full documentation
+  { relativePath: "config/daemon.yaml", content: EXAMPLE_DAEMON },
+  { relativePath: "config/orchestrator.yaml", content: EXAMPLE_ORCHESTRATOR },
+  { relativePath: "config/safety.yaml", content: EXAMPLE_SAFETY },
+  { relativePath: "config/workspace.yaml", content: EXAMPLE_WORKSPACE },
+  { relativePath: "config/people.yaml", content: EXAMPLE_PEOPLE },
+  // Plugin configs
+  { relativePath: "config/plugins/github-trigger.yaml", content: EXAMPLE_GITHUB_TRIGGER },
+  { relativePath: "config/plugins/telegram-comm.yaml", content: EXAMPLE_TELEGRAM_COMM },
+  { relativePath: "config/plugins/github-comm.yaml", content: EXAMPLE_GITHUB_COMM },
+  { relativePath: "config/plugins/github-hosting.yaml", content: EXAMPLE_GITHUB_HOSTING },
+  { relativePath: "config/plugins/claude-code-llm.yaml", content: EXAMPLE_CLAUDE_CODE_LLM },
+  { relativePath: "config/plugins/bash-tool.yaml", content: EXAMPLE_BASH_TOOL },
+];
+
 /** Fully documented example templates — written to ~/.engineer/example-templates/. */
 export const ALL_EXAMPLE_TEMPLATES: TemplateFile[] = [
   { relativePath: "example-templates/daemon.yaml", content: EXAMPLE_DAEMON },

@@ -1,0 +1,6 @@
+# GitHub git hosting plugin
+
+token: "${GITHUB_TOKEN}"
+
+draft_first: true
+request_reviewers: true

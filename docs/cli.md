@@ -71,22 +71,30 @@ engineer start                   # Foreground (recommended for first run)
 engineer start --daemon          # Background (detached process)
 ```
 
-`prepare` creates a gitignored `seed/` directory with all config templates. Edit once, use forever — every future `engineer init` copies from seed automatically.
+`prepare` copies configs from the tracked `seed-example/` directory into a gitignored `seed/` directory. Edit once, use forever — every future `engineer init` copies from seed automatically.
 
 `init` is safe to run multiple times — it skips existing files unless `--force` is passed.
+
+## Config Workflow
+
+The project ships a `seed-example/` directory (tracked in git) with working example configs. This is the reference for what a fully configured system looks like.
+
+- `seed-example/` — tracked in git, shows real config structure (tokens as `${ENV_VAR}` refs)
+- `seed/` — gitignored, your local copy with real secrets filled in
+- `~/.engineer/example-templates/` — verbose reference docs for every field (created by `init`)
 
 ## Commands
 
 ### prepare
 
-Scaffolds a `seed/` directory in the current working directory with all 11 config templates. Edit these files with your real values (repos, handles, tokens). The `seed/` directory is gitignored — secrets stay local.
+Creates a `seed/` directory by copying from `seed-example/` (if present in the current directory). Falls back to built-in templates if `seed-example/` is not found (e.g., when installed as a package).
 
 ```bash
-engineer prepare                 # Create seed/ with all templates
+engineer prepare                 # Copy seed-example/ → seed/
 engineer prepare --force         # Overwrite existing seed files
 ```
 
-Every future `engineer init` checks `seed/` first — if a matching config exists there, it copies that instead of the default template. This means `rm -rf ~/.engineer && engineer init` gives you a fully configured system every time.
+Edit `seed/` with your real values (repos, handles, tokens). The `seed/` directory is gitignored — secrets stay local. Every future `engineer init` checks `seed/` first — if a matching config exists there, it copies that instead of the default template. This means `rm -rf ~/.engineer && engineer init` gives you a fully configured system every time.
 
 ### init
 

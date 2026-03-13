@@ -1,0 +1,4 @@
+# Claude Code LLM plugin
+
+model: claude-sonnet-4-20250514
+max_tokens: 16384

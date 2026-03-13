@@ -1,0 +1,7 @@
+# GitHub Issues trigger plugin
+
+repos:
+  - owner: FarzamMohammadi
+    name: learnaholic-demo
+
+token: "${GITHUB_TOKEN}"

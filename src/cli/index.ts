@@ -99,7 +99,8 @@ program
   .option("--force", "Overwrite existing seed files")
   .action((options: { force?: boolean }) => {
     const seedDir = join(process.cwd(), "seed");
-    runPrepare(seedDir, { force: options.force ?? false });
+    const seedExampleDir = join(process.cwd(), "seed-example");
+    runPrepare(seedDir, { force: options.force ?? false, seedExampleDir });
   });
 
 // ── init ─────────────────────────────────────────────────────────────────────

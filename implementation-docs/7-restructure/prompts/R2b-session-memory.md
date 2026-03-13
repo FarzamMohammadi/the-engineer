@@ -783,19 +783,6 @@ pnpm lint
 
 ---
 
-## 8. Commit Instructions
+## Commit
 
-```
-refactor(session-memory): decompose into sessions, journal, checkpoints, knowledge
-
-- Extract SessionStore: session lifecycle and chain management
-- Extract JournalStore: append-only log with dynamic SQL query builder
-- Extract CheckpointStore: crash recovery snapshots
-- Extract KnowledgeStore: content-hash upsert, scope-isolated queries
-- Extract row-mappers.ts: pure mapping functions for all 4 table types
-- SessionMemory remains as thin facade implementing ISessionMemory
-- Consumers reference ISessionMemory interface instead of concrete class
-- New isolated test files for each sub-module
-
-Part of Layer 7 structural restructuring (Phase R2b).
-```
+When all verification passes, run `/commit` to stage and commit your changes.

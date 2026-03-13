@@ -194,11 +194,4 @@ Add SQLite PRAGMA tuning to `src/db/database.ts` (or a new `tuning.ts` module):
 
 ## Commit
 
-When complete, commit on branch `layer7/R10` with message:
-
-```
-R10: Add data lifecycle management and database tuning
-
-Event retention, trace pruning, subscriber timeout guard,
-SQLite cache/vacuum configuration
-```
+When all verification passes, run `/commit` to stage and commit your changes.

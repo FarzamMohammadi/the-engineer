@@ -522,26 +522,6 @@ Use `vi.fn()` mocks for dependencies. Follow the existing test patterns in `src/
 
 ---
 
-## 8. Commit Instructions
+## Commit
 
-When all verification steps pass, create a single commit:
-
-```
-refactor(daemon): decompose into 6 focused subsystems
-
-Break the monolithic createDaemon() factory (1,964 LOC, 70+ functions) into:
-- trigger-poller.ts: polling with adaptive backoff and batch fetch
-- task-scheduler.ts: scheduling, dispatch, completion, priority aging
-- preemption-manager.ts: preemption evaluation and timeout handling
-- notification-router.ts: all notifications with template-driven messages
-- review-handler.ts: PR merge/feedback detection and approval flows
-- health-monitor.ts: stuck detection, blocked escalation, cost limits
-
-createDaemon() remains as thin coordinator. Public API unchanged.
-Improvements: adaptive polling, parallel trigger fetch, notification templates,
-time-windowed failure counting.
-
-Layer 7 Phase R3.
-```
-
-Do NOT push to remote. Commit only.
+When all verification passes, run `/commit` to stage and commit your changes.

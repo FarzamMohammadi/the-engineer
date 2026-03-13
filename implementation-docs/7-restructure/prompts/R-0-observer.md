@@ -434,14 +434,4 @@ After R-0, every phase that decomposes a component will inject `observer: IObser
 
 ## Commit
 
-```bash
-git add src/core/observer/ src/db/migrations/003_observer.sql src/schemas/observability.ts
-git commit -m "refactor(observer): Layer 7 R-0 — Create centralized Observer for War Room visibility
-
-- Add Observer class: single trace() + span() API for all components
-- Define 11 trace categories mapping to dashboard sections
-- Create migration 003_observer.sql with unified traces table
-- Add IObserver interface for dependency injection
-- Absorb BlobStore, keep ObservabilityStore for backward compat
-- Real-time subscriber support for SSE dashboard streaming"
-```
+When all verification passes, run `/commit` to stage and commit your changes.

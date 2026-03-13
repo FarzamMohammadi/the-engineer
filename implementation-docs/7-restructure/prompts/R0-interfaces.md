@@ -591,21 +591,6 @@ pnpm lint
 
 ---
 
-## 8. Commit Instructions
+## Commit
 
-Create a single commit with conventional commit format:
-
-```
-refactor(core): extract interfaces, export Zod enum constants, add shared system factory
-
-- Create src/core/interfaces/ with IEventBus, ITaskEngine, ISafetyLayer,
-  ISessionMemory, IActionPipeline contracts
-- Export Zod enum constants (TaskStates, EventTypes, etc.) from all schema files
-- Replace 327+ raw string literals with type-safe enum constants
-- Add src/core/system.ts shared factory for Core component creation
-- Update bootstrap.ts to use shared factory
-- All concrete classes implement their interfaces
-- Re-export types from module barrels for backward compatibility
-
-Part of Layer 7 structural restructuring (Phase R0).
-```
+When all verification passes, run `/commit` to stage and commit your changes.

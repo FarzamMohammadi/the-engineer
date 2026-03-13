@@ -678,19 +678,6 @@ pnpm lint
 
 ---
 
-## 8. Commit Instructions
+## Commit
 
-```
-refactor(task-engine): decompose into state-machine, queries, permissions
-
-- Extract StateMachine: transition validation + execution with optimistic locking
-- Extract TaskQueries: all read queries with row mappers
-- Extract checkPermission: pure function for Gate 1
-- Extract row-mapper.ts: pure rowToTask/rowToStateTransition functions
-- Add tagged errors (TaskNotFoundError, InvalidTransitionError, VersionConflictError)
-- Add version column migration for optimistic locking
-- TaskEngine remains as facade implementing ITaskEngine
-- Consumers reference ITaskEngine interface instead of concrete class
-
-Part of Layer 7 structural restructuring (Phase R2a).
-```
+When all verification passes, run `/commit` to stage and commit your changes.

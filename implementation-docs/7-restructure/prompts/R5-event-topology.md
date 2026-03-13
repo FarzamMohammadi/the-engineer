@@ -301,21 +301,9 @@ Create `src/core/event-bus/topology.test.ts` with tests covering:
 
 ---
 
-## Commit Instructions
+## Commit
 
-When complete, create a single commit:
-
-```
-Add declarative event topology (R5)
-
-- EventTopology class with declaration registry and runtime validation
-- EVENTS export on every Core component (single source of truth)
-- Optional validateOnPublish mode on EventBus
-- topology.getGraph() for dashboard visualization
-- Bootstrap wiring for topology registration
-```
-
-Do NOT push. The commit stays local.
+When all verification passes, run `/commit` to stage and commit your changes.
 
 ---
 

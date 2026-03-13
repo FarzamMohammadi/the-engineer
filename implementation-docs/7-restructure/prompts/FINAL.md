@@ -189,17 +189,9 @@ Update the MEMORY.md file (if the project uses one) to reflect:
 
 ---
 
-## Final Commit
+## Commit
 
-```bash
-git add -A
-git commit -m "Layer 7 complete: Structural Restructuring
-
-Final verification passed. All phases R0-R10 + REVIEW done.
-Tests: [count]. Decisions: D166-D[last].
-
-Session [NNN]."
-```
+When all verification passes, run `/commit` to stage and commit your changes.
 
 ---
 

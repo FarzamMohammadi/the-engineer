@@ -439,23 +439,9 @@ pnpm build
 
 ---
 
-## Commit Instructions
+## Commit
 
-When complete, create a single commit:
-
-```
-Add CLI polish: output formatting, progress, why, setup (R7)
-
-- Output class with human/json/quiet modes, TTY detection, NO_COLOR
-- Spinner and ProgressBar for startup progress (stderr)
-- --dry-run on engineer start
-- --json flag on data-producing commands
-- engineer why <task-id> command (event timeline)
-- engineer setup interactive wizard (Inquirer.js)
-- Migrated existing commands to Output class
-```
-
-Do NOT push. The commit stays local.
+When all verification passes, run `/commit` to stage and commit your changes.
 
 ---
 

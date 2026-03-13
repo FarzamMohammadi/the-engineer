@@ -427,22 +427,9 @@ pnpm build
 
 ---
 
-## Commit Instructions
+## Commit
 
-When complete, create a single commit:
-
-```
-Add plugin discovery, scaffolding, hooks, and CI (R6)
-
-- discoverPlugins() replaces hardcoded BUILTIN_PLUGINS in bootstrap
-- engineer.plugin.yaml with contributes section for all 6 built-in plugins
-- engineer create-plugin scaffolding command
-- HookRegistry for plugin lifecycle hooks
-- Config schema versioning with engineer config migrate
-- CI pipeline (.github/workflows/ci.yml)
-```
-
-Do NOT push. The commit stays local.
+When all verification passes, run `/commit` to stage and commit your changes.
 
 ---
 

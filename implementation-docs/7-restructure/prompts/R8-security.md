@@ -513,22 +513,9 @@ pnpm build
 
 ---
 
-## Commit Instructions
+## Commit
 
-When complete, create a single commit:
-
-```
-Add security hardening: command validation, input sanitization, workspace escapes, env allowlist (R8)
-
-- BashTool blocked_patterns with audit logging
-- sanitizeSecrets on ALL LLM input (not just output)
-- Expanded secret detection (GitHub PATs, AWS keys, pattern-based)
-- Workspace escape prevention via realpathSync canonicalization
-- Explicit GIT_* env allowlist (replaces wildcard passthrough)
-- Zod validation on SafetyLayer scope parameters
-```
-
-Do NOT push. The commit stays local.
+When all verification passes, run `/commit` to stage and commit your changes.
 
 ---
 

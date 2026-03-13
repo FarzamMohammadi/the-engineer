@@ -617,28 +617,6 @@ Use `vi.fn()` mocks for dependencies. Follow the existing test patterns.
 
 ---
 
-## 8. Commit Instructions
+## Commit
 
-When all verification steps pass, create a single commit:
-
-```
-refactor(orchestrator): decompose into 5 focused subsystems
-
-Break the monolithic Orchestrator class (1,724 LOC, 35 methods) into:
-- phase-runner.ts: phase pipeline with handler registry, SBAR handoffs,
-  sterile cockpit awareness
-- workspace-lifecycle.ts: workspace/session setup, notifications, andon cord
-- pr-manager.ts: commit/push/PR workflow with secret sanitization
-- decomposition-handler.ts: task decomposition into children
-- llm-caller.ts: LLM invocation with exponential backoff retry, cost
-  tracking, schema validation
-
-Orchestrator class remains as thin facade. Public API unchanged.
-Per-task state moved from class fields to pipeline scope.
-Improvements: LLM retry, andon cord, SBAR handoffs, phase handler registry,
-trace context propagation, secret sanitization on PR descriptions.
-
-Layer 7 Phase R4.
-```
-
-Do NOT push to remote. Commit only.
+When all verification passes, run `/commit` to stage and commit your changes.

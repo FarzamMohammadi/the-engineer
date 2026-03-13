@@ -316,22 +316,6 @@ Additionally, write NEW tests for the extracted modules:
 
 ---
 
-## 8. Commit Instructions
+## Commit
 
-When all verification steps pass, create a single commit:
-
-```
-refactor(registry): decompose into discovery, lifecycle, and health modules
-
-Break the monolithic Registry class (564 LOC) into three focused modules:
-- discovery.ts: pure functions for plugin discovery, validation, ordering
-- lifecycle.ts: plugin registration, initialization, shutdown with per-type cache
-- health.ts: health monitoring subsystem with state machine
-
-Registry class remains as thin facade -- public API unchanged.
-Per-type cache added to getPluginsByType() for O(1) lookups.
-
-Layer 7 Phase R2c.
-```
-
-Do NOT push to remote. Commit only.
+When all verification passes, run `/commit` to stage and commit your changes.

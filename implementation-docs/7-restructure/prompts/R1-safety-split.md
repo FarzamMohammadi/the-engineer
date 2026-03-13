@@ -475,18 +475,6 @@ pnpm lint
 
 ---
 
-## 8. Commit Instructions
+## Commit
 
-```
-refactor(safety): split SafetyLayer into CostTracker + PolicyEngine
-
-- Extract CostTracker: cost accumulation, snapshots, replay, limit checks
-- Extract PolicyEngine: scope boundaries, autonomy, merge policy (pure logic)
-- SafetyLayer remains as thin facade implementing ISafetyLayer
-- Add tagged error classes (CostLimitExceededError, ScopeDeniedError)
-- Add paginated replay (LIMIT param on EventBus.getEventsSince)
-- Consumers reference ISafetyLayer interface instead of concrete class
-- New test files for CostTracker and PolicyEngine in isolation
-
-Part of Layer 7 structural restructuring (Phase R1).
-```
+When all verification passes, run `/commit` to stage and commit your changes.

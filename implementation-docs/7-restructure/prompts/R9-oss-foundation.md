@@ -206,11 +206,4 @@ After creating all files:
 
 ## Commit
 
-When complete, commit on branch `layer7/R9` with message:
-
-```
-R9: Add OSS foundation files
-
-CONTRIBUTING.md, issue/PR templates, CODE_OF_CONDUCT.md,
-CHANGELOG.md, docs/architecture.md, docs/plugin-development.md
-```
+When all verification passes, run `/commit` to stage and commit your changes.

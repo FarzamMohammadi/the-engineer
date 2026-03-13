@@ -102,6 +102,8 @@ Read ALL of these files before making any changes:
 
 ## 5. Exact Specifications
 
+> **SOURCE OF TRUTH:** The method names, signatures, and structures in this prompt are approximate guidance. You MUST read the actual source code first (Step 4) and derive your implementation from what's really there. If the code differs from this prompt, **the code is the source of truth**.
+
 ### 5A. New File Structure
 
 Transform `src/core/safety-layer/` from a single file to a module directory:
@@ -196,6 +198,8 @@ export class CostTracker {
 
   /** Check if any cost limit is breached for the given task. */
   checkCostLimits(taskId: string, warnings: string[]): SafetyVerdict | null { /* move */ }
+
+  > **Note:** `checkCostLimits()` and `isAnyLimitBreached()` are currently **private** methods in SafetyLayer. During extraction to CostTracker, decide whether to keep them private within CostTracker or expose them — either way, account for their current private visibility.
 
   /** Update cost limits (hot-reload). */
   updateLimits(newLimits: CostLimits): void { /* new */ }

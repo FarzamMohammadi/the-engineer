@@ -140,6 +140,8 @@ Read ALL of these files completely before making any changes:
 
 ## 5. Exact Specifications
 
+> **SOURCE OF TRUTH:** The method names, signatures, and structures in this prompt are approximate guidance. You MUST read the actual source code first (Step 4) and derive your implementation from what's really there. If the code differs from this prompt, **the code is the source of truth**.
+
 ### Goal
 Decompose the monolithic `Orchestrator` class (1,724 LOC, 35 methods) into 5 focused subsystems. The `Orchestrator` class remains as the public API but delegates to subsystems. Each subsystem is either a factory function returning an object or a set of pure functions.
 

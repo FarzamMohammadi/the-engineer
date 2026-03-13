@@ -118,6 +118,8 @@ Read ALL of these files completely before making any changes:
 
 ## 5. Exact Specifications
 
+> **SOURCE OF TRUTH:** The method names, signatures, and structures in this prompt are approximate guidance. You MUST read the actual source code first (Step 4) and derive your implementation from what's really there. If the code differs from this prompt, **the code is the source of truth**.
+
 ### Goal
 Decompose the monolithic `createDaemon()` factory (1,964 LOC, 70+ functions) into 6 focused subsystems. The `createDaemon()` function remains as the public entry point but delegates to subsystems. Each subsystem is a factory function returning an object with methods.
 

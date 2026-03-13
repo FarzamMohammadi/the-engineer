@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full reset: rebuild CLI, relink, wipe ~/.engineer.
+# Full reset: rebuild CLI, relink, wipe ~/.engineer, reinitialize.
 # Usage: ./scripts/reset.sh
 
 set -euo pipefail
@@ -12,6 +12,9 @@ if [ -z "${PNPM_HOME:-}" ]; then
   export PATH="$PNPM_HOME:$PATH"
 fi
 
+echo "Stopping daemon (if running)..."
+engineer stop 2>/dev/null || true
+
 echo "Building..."
 pnpm run build
 
@@ -21,8 +24,14 @@ pnpm link --global
 echo "Wiping ~/.engineer..."
 rm -rf ~/.engineer
 
+echo "Preparing seed (if needed)..."
+if [ ! -d "seed" ]; then
+  engineer prepare
+fi
+
+echo "Initializing..."
+engineer init
+
 echo ""
-echo "Done. Now run:"
-echo "  engineer prepare    # scaffold seed configs (skip if seed/ already exists)"
-echo "  engineer init       # initialize ~/.engineer from seed"
-echo "  engineer start      # start the daemon"
+echo "Done. Ready to run:"
+echo "  engineer start"

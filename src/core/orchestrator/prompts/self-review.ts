@@ -178,7 +178,7 @@ function buildSelfReviewInstructions(): string {
       "",
       "1. Read the changed files listed in the execution summary. Understand what was done and compare against the original plan.",
       "",
-      "2. Run the test suite to verify everything passes. If tests fail, that's a finding.",
+      "2. Discover available test/build commands first (e.g., `cat package.json | grep scripts` or `npm run` or `cat Makefile`), then run them. If tests fail, that's a finding.",
       "",
       "3. Check each changed file for:",
       "   - Logic errors: incorrect conditions, off-by-one, missing edge cases",

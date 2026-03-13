@@ -247,8 +247,10 @@ async function handleRetry(
 
 /** Build the prompt including conversation history. */
 function buildPrompt(config: AgentLoopConfig, history: HistoryEntry[]): string {
+  const jsonDirective = `\n\n## Response Format\nRespond with exactly one JSON object per message. No markdown wrapping, no explanation outside the JSON.\nAvailable actions: ${config.toolConfig.allowed_actions.join(", ")}`;
+
   if (history.length === 0) {
-    return config.initialPrompt;
+    return config.initialPrompt + jsonDirective;
   }
 
   const parts: string[] = [config.initialPrompt, "", "## Previous Actions"];

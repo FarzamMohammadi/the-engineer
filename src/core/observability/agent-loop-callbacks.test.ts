@@ -42,7 +42,7 @@ describe("Agent Loop Observability Callbacks", () => {
     expect(llmTraces[0]?.spend_usd).toBe(0.01);
     expect(llmTraces[0]?.latency_ms).toBeGreaterThanOrEqual(0);
     expect(llmTraces[0]?.iteration).toBe(1);
-    expect(llmTraces[0]?.prompt_content).toBe(baseConfig.initialPrompt);
+    expect(llmTraces[0]?.prompt_content).toContain(baseConfig.initialPrompt);
   });
 
   it("calls onActionComplete for each action execution", async () => {
@@ -149,7 +149,7 @@ describe("Agent Loop Observability Callbacks", () => {
       async () => ({ success: true, output: "ok" }),
     );
 
-    expect(llmTraces[0]?.prompt_content).toBe(baseConfig.initialPrompt);
+    expect(llmTraces[0]?.prompt_content).toContain(baseConfig.initialPrompt);
     expect(llmTraces[0]?.response_content).toBe(responseContent);
   });
 

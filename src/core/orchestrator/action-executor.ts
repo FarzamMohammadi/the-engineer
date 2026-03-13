@@ -232,7 +232,7 @@ async function runToolCommand(
     return {
       success: result.success,
       output: result.output,
-      error: result.error ? String(result.error) : undefined,
+      error: result.error ? result.error.message : undefined,
     };
   } catch (err) {
     return { success: false, output: "", error: errorMessage(err) };

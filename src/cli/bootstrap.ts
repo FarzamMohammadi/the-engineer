@@ -13,6 +13,7 @@ import { createChildLogger, createLogger } from "../core/daemon/logging.js";
 import { EventBus } from "../core/event-bus/index.js";
 import { BlobStore } from "../core/observability/blob-store.js";
 import { ObservabilityStore } from "../core/observability/index.js";
+import { createObserver } from "../core/observer/index.js";
 import { Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
 import { Registry } from "../core/registry/index.js";
@@ -88,6 +89,9 @@ export async function bootstrap(
   const blobStore = new BlobStore(join(engineerHome, "traces"));
   const observability = new ObservabilityStore(dbHandle.db, blobStore);
 
+  // 8c. Observer (centralized visibility for War Room)
+  const observer = createObserver(dbHandle.db, blobStore);
+
   // 9. Workspace Manager
   const workspaceManager = new WorkspaceManager(eventBus, config.workspace);
 
@@ -105,6 +109,7 @@ export async function bootstrap(
     workspaceManager,
     peopleDirectory,
     observability,
+    observer,
   });
 
   // 12. Daemon

@@ -88,7 +88,7 @@ describe("createInMemoryDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("2");
+    expect(row.value).toBe("3");
   });
 
   it("can insert and query a task row", () => {
@@ -194,7 +194,7 @@ describe("createDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("2");
+    expect(row.value).toBe("3");
   });
 });
 
@@ -464,6 +464,15 @@ describe("table structure", () => {
       "idx_llm_traces_task_id",
       "idx_llm_traces_trace_id",
       "idx_llm_traces_timestamp",
+      // observations (003_observer)
+      "idx_obs_task",
+      "idx_obs_trace",
+      "idx_obs_type",
+      "idx_obs_time",
+      "idx_obs_type_name",
+      "idx_obs_parent",
+      "idx_obs_task_type",
+      "idx_obs_level",
     ];
 
     for (const idx of expectedIndexes) {

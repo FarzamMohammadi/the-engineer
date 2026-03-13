@@ -24,6 +24,7 @@ import type { ChildEntry } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { ObservabilityStore } from "../observability/index.js";
+import type { IObserver } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
@@ -87,6 +88,7 @@ export interface OrchestratorDependencies {
   workspaceManager: WorkspaceManager;
   peopleDirectory: PeopleDirectory;
   observability?: ObservabilityStore;
+  observer?: IObserver;
 }
 
 /** Discriminated union of executeTask outcomes. */
@@ -126,6 +128,7 @@ export class Orchestrator {
   private readonly workspaceManager: WorkspaceManager;
   private readonly peopleDirectory: PeopleDirectory;
   private readonly observability: ObservabilityStore | null;
+  private readonly observer: IObserver | null;
   /** Trace ID for the current executeTask() call. Set once per dispatch. */
   private currentTraceId: string | null = null;
   /** Session ID for the current executeTask() call. */
@@ -158,6 +161,7 @@ export class Orchestrator {
     this.workspaceManager = deps.workspaceManager;
     this.peopleDirectory = deps.peopleDirectory;
     this.observability = deps.observability ?? null;
+    this.observer = deps.observer ?? null;
 
     // Subscribe to preemption requests (Protocol P8)
     this.eventBus.subscribe("orchestrator", "preemption.requested", (event: Event) => {

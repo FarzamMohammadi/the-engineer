@@ -137,7 +137,7 @@ Actual code. 20-phase bottom-up build order. 1 decision (#128).
 **Documents:**
 - [`build-order.md`](5-build/build-order.md) — full build order specification with dependency graph
 
-## Layer 6: Refinement & Intelligence — IN PROGRESS
+## Layer 6: Refinement & Intelligence — DONE
 
 Teaching the machine to think. Layers 0–5 designed and built the system. Layer 6 installs the engine.
 
@@ -167,3 +167,35 @@ This layer is **iterative, empirical, human-driven** — but structured into 8 p
 - [`6-refinement/decisions.md`](6-refinement/decisions.md) — Layer 6 decisions
 - [`6-refinement/phase-plan.md`](6-refinement/phase-plan.md) — Phase breakdown with dependencies
 - Phase 16 section in [`build-order.md`](5-build/build-order.md)
+
+## Layer 7: Structural Restructuring & Refinement — IN PROGRESS
+
+MVP works. Now restructure for world-class modularity, security, DX, and OSS readiness. 18 phases across 6 waves with parallel execution via git worktrees.
+
+**Scope:**
+- Decompose all god objects and mid-tier components (Daemon, Orchestrator, SafetyLayer, TaskEngine, SessionMemory, Registry)
+- Interface extraction + Zod enum constants + shared component factory + tagged errors
+- Declarative event topology with startup validation
+- Plugin auto-discovery + scaffolding CLI + hook system
+- CLI polish (colors, progress, output modes, interactive setup, `engineer why`)
+- Security hardening (command validation, secret sanitization, workspace escape prevention)
+- OSS foundation (CONTRIBUTING.md, templates, CHANGELOG, architecture diagrams, plugin guide)
+- Data lifecycle (event/trace retention, query optimization, DB tuning)
+- Deep review + end-to-end verification
+
+**Parallel execution strategy:**
+- Wave 1: R0 (sequential — foundation)
+- Wave 2: R1 + R2a + R2b + R2c + R3 + R4 (6 parallel worktrees)
+- Wave 3: R5 + R6 + R7 + R8 (4 parallel worktrees)
+- Wave 4: R9 + R10 (2 parallel worktrees)
+- Wave 5: REVIEW (sequential)
+- Wave 6: FINAL (sequential)
+
+**Inspired by:** Fastify (scoped plugins), VS Code (manifest contributes), Terraform (config versioning), Effect-TS (tagged errors), OpenTelemetry (trace context), SWE-agent (tool constraints), Toyota TPS (andon cord), Aviation (sterile cockpit), Medicine (SBAR handoffs)
+
+**Documents:**
+- [`7-restructure/assessment.md`](7-restructure/assessment.md) — Current state analysis
+- [`7-restructure/phase-plan.md`](7-restructure/phase-plan.md) — Phase status tracking
+- [`7-restructure/decisions.md`](7-restructure/decisions.md) — Layer 7 decisions (D166+)
+- [`7-restructure/prompts/`](7-restructure/prompts/) — 18 self-contained prompt files for parallel execution
+- Full plan: `.claude/plans/tingly-wondering-fairy.md`

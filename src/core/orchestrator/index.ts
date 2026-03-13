@@ -1029,15 +1029,20 @@ export class Orchestrator {
   ): Promise<boolean> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
+      console.warn("[pr-workflow] no workspace path — skipping");
       return false; // No workspace — no PR (e.g., fast-path without repo)
     }
 
     const record = this.workspaceManager.getWorkspaceRecord(taskId);
     if (!record) {
+      console.warn("[pr-workflow] no workspace record — skipping");
       return false;
     }
 
     const isRework = dispatch.task.review?.pr_number != null;
+    console.log(
+      `[pr-workflow] starting: repo=${record.repo} branch=${record.branch} rework=${String(isRework)}`,
+    );
 
     // 1. Deterministic commit: git add -A && git commit
     //    Claude Code CLI may have already committed changes via its internal tools,
@@ -1076,6 +1081,9 @@ export class Orchestrator {
       }
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "commit", error);
+      console.error(
+        `[pr-workflow] commit failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return false;
     }
 
@@ -1088,18 +1096,28 @@ export class Orchestrator {
           { cwd: worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
         ).trim();
         if (aheadCount === "0") {
+          console.warn("[pr-workflow] no commits ahead of base — skipping");
           return false; // Truly no changes — nothing to push or PR
         }
-      } catch {
+        console.log(`[pr-workflow] ${aheadCount} commits ahead of base`);
+      } catch (error) {
+        console.warn(
+          `[pr-workflow] can't determine ahead count — skipping: ${error instanceof Error ? error.message : String(error)}`,
+        );
         return false; // Can't determine — skip to be safe
       }
     }
 
     // 2. Push via WorkspaceManager (D151 — token injection)
+    console.log(`[pr-workflow] pushing branch ${record.branch}...`);
     try {
       this.workspaceManager.pushBranch(taskId);
+      console.log("[pr-workflow] push succeeded");
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "push", error);
+      console.error(
+        `[pr-workflow] push failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return false;
     }
 
@@ -1120,9 +1138,11 @@ export class Orchestrator {
     // 3. Create draft PR via GitHostingAdapter
     const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>("git_hosting");
     if (!gitHosting) {
+      console.warn("[pr-workflow] no git hosting plugin — skipping PR creation");
       return false; // No hosting plugin — skip PR creation
     }
 
+    console.log(`[pr-workflow] creating draft PR on ${record.repo}...`);
     try {
       const prDescription =
         (demoPrepOutput.data as { pr_description?: string }).pr_description ??
@@ -1147,12 +1167,17 @@ export class Orchestrator {
         feedback_rounds: [],
       });
 
+      console.log(`[pr-workflow] draft PR #${String(prResult.pr_number)} created: ${prResult.url}`);
+
       // Notify PR creation — personal channels + GitHub issue comment
       this.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
       this.commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
       return true;
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "pr_creation", error);
+      console.error(
+        `[pr-workflow] PR creation failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return false;
     }
   }

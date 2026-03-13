@@ -3,5 +3,5 @@
 bot_token: "${TELEGRAM_BOT_TOKEN}"
 chat_id: "${TELEGRAM_CHAT_ID}"
 
-parse_mode: Markdown
+parse_mode: MarkdownV2
 disable_link_preview: true

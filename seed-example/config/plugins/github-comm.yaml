@@ -1,6 +1,5 @@
 # GitHub communication plugin
 
-token: "${GITHUB_TOKEN}"
+github_token: "${GITHUB_TOKEN}"
 
-comment_prefix: "[The Engineer]"
-sync_labels: true
+label_prefix: "engineer:"

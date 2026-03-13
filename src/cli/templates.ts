@@ -227,7 +227,7 @@ repos:
     # poll_interval: "30s"                 # Override default polling interval
     # labels: ["engineer"]                 # Only trigger on issues with these labels
 
-# token: "\${GITHUB_TOKEN}"               # GitHub personal access token (env var)
+# github_token: "\${GITHUB_TOKEN}"         # GitHub personal access token (env var)
 `;
 
 export const TELEGRAM_COMM_TEMPLATE = `# Telegram communication plugin
@@ -237,28 +237,26 @@ bot_token: "\${TELEGRAM_BOT_TOKEN}"        # <-- set env var
 chat_id: "\${TELEGRAM_CHAT_ID}"            # <-- set env var
 
 # --- Optional settings ---
-# parse_mode: Markdown                    # Markdown | HTML
+# parse_mode: MarkdownV2                  # MarkdownV2 | Markdown | HTML
 # disable_link_preview: true
 `;
 
 export const GITHUB_COMM_TEMPLATE = `# GitHub communication plugin
 # Comments on issues and PRs, manages labels
 
-token: "\${GITHUB_TOKEN}"                  # <-- set env var
+github_token: "\${GITHUB_TOKEN}"           # <-- set env var
 
 # --- Optional settings ---
-# comment_prefix: "[The Engineer]"        # Prefix for all comments
-# sync_labels: true                       # Sync task state to issue labels
+# label_prefix: "engineer:"              # Prefix for issue labels (default: "engineer:")
 `;
 
 export const GITHUB_HOSTING_TEMPLATE = `# GitHub git hosting plugin
 # Creates PRs, manages branches, handles reviews
 
-token: "\${GITHUB_TOKEN}"                  # <-- set env var
+github_token: "\${GITHUB_TOKEN}"           # <-- set env var
 
 # --- Optional settings ---
-# draft_first: true                       # Create PRs as draft initially
-# request_reviewers: true                 # Auto-request reviewers from CODEOWNERS
+# default_merge_strategy: squash          # squash | merge | rebase (default: squash)
 `;
 
 export const CLAUDE_CODE_LLM_TEMPLATE = `# Claude Code LLM plugin
@@ -547,7 +545,7 @@ repos:                                    # REQUIRED — at least one repo to wa
     # poll_interval: "30s"                # optional — override default polling interval
     # labels: ["engineer"]                # optional — only trigger on issues with these labels
 
-token: "\${GITHUB_TOKEN}"                 # REQUIRED — GitHub personal access token (env var)
+github_token: "\${GITHUB_TOKEN}"           # REQUIRED — GitHub personal access token (env var)
 `;
 
 export const EXAMPLE_TELEGRAM_COMM = `# ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -560,7 +558,7 @@ bot_token: "\${TELEGRAM_BOT_TOKEN}"        # REQUIRED — Telegram bot token (en
 chat_id: "\${TELEGRAM_CHAT_ID}"            # REQUIRED — Telegram chat ID (env var)
 
 # ── Optional Settings ────────────────────────────────────────────────────────
-parse_mode: Markdown                      # Markdown | HTML (default: Markdown)
+parse_mode: MarkdownV2                    # MarkdownV2 | Markdown | HTML (default: MarkdownV2)
 disable_link_preview: true                # Disable link previews (default: true)
 `;
 
@@ -570,11 +568,10 @@ export const EXAMPLE_GITHUB_COMM = `# ┌─────────────
 # │  Comments on issues and PRs, manages labels.                             │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
-token: "\${GITHUB_TOKEN}"                  # REQUIRED — GitHub personal access token (env var)
+github_token: "\${GITHUB_TOKEN}"           # REQUIRED — GitHub personal access token (env var)
 
 # ── Optional Settings ────────────────────────────────────────────────────────
-comment_prefix: "[The Engineer]"          # Prefix for all comments (default: "[The Engineer]")
-sync_labels: true                         # Sync task state to issue labels (default: true)
+label_prefix: "engineer:"                 # Prefix for issue labels (default: "engineer:")
 `;
 
 export const EXAMPLE_GITHUB_HOSTING = `# ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -583,11 +580,10 @@ export const EXAMPLE_GITHUB_HOSTING = `# ┌────────────
 # │  Creates PRs, manages branches, handles reviews.                         │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
-token: "\${GITHUB_TOKEN}"                  # REQUIRED — GitHub personal access token (env var)
+github_token: "\${GITHUB_TOKEN}"           # REQUIRED — GitHub personal access token (env var)
 
 # ── Optional Settings ────────────────────────────────────────────────────────
-draft_first: true                         # Create PRs as draft initially (default: true)
-request_reviewers: true                   # Auto-request reviewers from CODEOWNERS (default: true)
+default_merge_strategy: squash            # squash | merge | rebase (default: squash)
 `;
 
 export const EXAMPLE_CLAUDE_CODE_LLM = `# ┌─────────────────────────────────────────────────────────────────────────────┐

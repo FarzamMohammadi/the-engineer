@@ -4,4 +4,4 @@ repos:
   - owner: FarzamMohammadi
     name: learnaholic-demo
 
-token: "${GITHUB_TOKEN}"
+github_token: "${GITHUB_TOKEN}"

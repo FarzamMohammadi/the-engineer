@@ -316,7 +316,7 @@ describe("checkRiskyConfig", () => {
 
   it("warns when auto-merge is enabled by default", () => {
     const bundle = makeSafeBundle();
-    bundle.safety.merge.auto_merge.default = true;
+    bundle.safety.merge.auto_merge_after_approval.default = true;
     const result = checkRiskyConfig(bundle);
     const warn = result.checks.find((c) => c.label === "Auto-merge");
     expect(warn?.status).toBe("warn");
@@ -468,7 +468,7 @@ function makeSafeBundle() {
         blocked: { stages: [] },
         review_pending: { reminder_after_ms: 86400000, repeat_interval_ms: 86400000 },
       },
-      merge: { auto_merge: { default: false, repos: {} } },
+      merge: { auto_merge_after_approval: { default: false, repos: {} } },
     },
     people: [],
   };

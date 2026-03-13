@@ -30,7 +30,7 @@ autonomy:
       threshold: "low-risk"
       description: "Deployment decisions"
 merge:
-  auto_merge:
+  auto_merge_after_approval:
     default: false
     repos:
       "owner/my-app": true

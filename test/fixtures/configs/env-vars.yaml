@@ -6,5 +6,5 @@ scope:
     allowed_domains:
       - "${TEST_DOMAIN}"
 merge:
-  auto_merge:
+  auto_merge_after_approval:
     default: false

@@ -14,5 +14,5 @@ scope:
       - "*.key"
 
 merge:
-  auto_merge:
+  auto_merge_after_approval:
     default: false

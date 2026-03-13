@@ -299,7 +299,7 @@ export const PermissionTable: readonly PermissionEntry[] = [
     state: "review_pending",
     sub_state: "code",
     allowed: ["read", "communicate"],
-    conditional: { merge: "auto_merge configured for repo" },
+    conditional: { merge: "auto_merge_after_approval configured for repo" },
   },
   { state: "blocked", sub_state: null, allowed: ["read", "communicate", "ask_human"] },
   { state: "completed", sub_state: null, allowed: [] },

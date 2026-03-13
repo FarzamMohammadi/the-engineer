@@ -383,16 +383,16 @@ describe("ResponseTimeoutSchema", () => {
 describe("MergePolicySchema", () => {
   it("produces valid defaults from empty input", () => {
     const config = MergePolicySchema.parse({});
-    expect(config.auto_merge.default).toBe(false);
-    expect(config.auto_merge.repos).toEqual({});
+    expect(config.auto_merge_after_approval.default).toBe(false);
+    expect(config.auto_merge_after_approval.repos).toEqual({});
   });
 
   it("accepts per-repo overrides", () => {
     const config = MergePolicySchema.parse({
-      auto_merge: { repos: { "owner/repo": true } },
+      auto_merge_after_approval: { repos: { "owner/repo": true } },
     });
-    expect(config.auto_merge.repos["owner/repo"]).toBe(true);
-    expect(config.auto_merge.default).toBe(false);
+    expect(config.auto_merge_after_approval.repos["owner/repo"]).toBe(true);
+    expect(config.auto_merge_after_approval.default).toBe(false);
   });
 });
 
@@ -410,7 +410,7 @@ describe("SafetyConfigSchema", () => {
     // Autonomy defaults to always_ask (safest)
     expect(config.autonomy.decisions).toEqual({});
     // Merge defaults to no auto-merge
-    expect(config.merge.auto_merge.default).toBe(false);
+    expect(config.merge.auto_merge_after_approval.default).toBe(false);
     // Response timeout has 3 default stages
     expect(config.response_timeout.blocked.stages).toHaveLength(3);
   });
@@ -424,9 +424,9 @@ describe("SafetyConfigSchema", () => {
           monthly: { cost_usd: 200 },
         },
       },
-      merge: { auto_merge: { default: true } },
+      merge: { auto_merge_after_approval: { default: true } },
     });
     expect(config.cost_limits.api.per_task.cost_usd).toBe(5);
-    expect(config.merge.auto_merge.default).toBe(true);
+    expect(config.merge.auto_merge_after_approval.default).toBe(true);
   });
 });

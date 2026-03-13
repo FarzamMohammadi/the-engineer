@@ -484,7 +484,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
   const checks: DoctorCheck[] = [];
 
   // Auto-merge enabled
-  if (bundle.safety.merge.auto_merge.default) {
+  if (bundle.safety.merge.auto_merge_after_approval.default) {
     checks.push({
       label: "Auto-merge",
       status: "warn",
@@ -493,7 +493,9 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
   }
 
   // Check for repos with auto-merge
-  for (const [repo, enabled] of Object.entries(bundle.safety.merge.auto_merge.repos)) {
+  for (const [repo, enabled] of Object.entries(
+    bundle.safety.merge.auto_merge_after_approval.repos,
+  )) {
     if (enabled) {
       checks.push({
         label: `Auto-merge: ${repo}`,

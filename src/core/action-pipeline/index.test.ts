@@ -127,7 +127,7 @@ describe("ActionPipeline", () => {
       const { pipeline, taskEngine, safetyLayer } = createMocks();
       taskEngine.checkPermission.mockReturnValue({
         allowed: true,
-        conditional: "auto_merge configured for repo",
+        conditional: "auto_merge_after_approval configured for repo",
       });
       allowGate2(safetyLayer);
 

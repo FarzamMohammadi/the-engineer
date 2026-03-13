@@ -572,7 +572,7 @@ describe("TaskEngine", () => {
       expect(engine.checkPermission(task.id, "communicate").allowed).toBe(true);
       const mergeResult = engine.checkPermission(task.id, "merge");
       expect(mergeResult.allowed).toBe(true);
-      expect(mergeResult.conditional).toBe("auto_merge configured for repo");
+      expect(mergeResult.conditional).toBe("auto_merge_after_approval configured for repo");
     });
 
     it("allows read, communicate, ask_human in blocked", () => {

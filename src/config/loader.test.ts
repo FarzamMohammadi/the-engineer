@@ -333,8 +333,8 @@ describe("loadConfig", () => {
     expect(result.config.cost_limits.api.per_task.cost_usd).toBe(5.0);
     expect(result.config.cost_limits.api.daily.cost_usd).toBe(50.0);
     expect(result.config.scope.repos.allowed).toEqual(["owner/my-app", "owner/another-repo"]);
-    expect(result.config.merge.auto_merge.repos["owner/my-app"]).toBe(true);
-    expect(result.config.merge.auto_merge.default).toBe(false);
+    expect(result.config.merge.auto_merge_after_approval.repos["owner/my-app"]).toBe(true);
+    expect(result.config.merge.auto_merge_after_approval.default).toBe(false);
   });
 
   it("resolves env vars in YAML values", () => {
@@ -468,7 +468,7 @@ describe("loadConfigDir", () => {
     expect(result.bundle.daemon.tick_interval_ms).toBe(5_000);
     expect(result.bundle.orchestrator.fast_path.enabled).toBe(true);
     expect(result.bundle.workspace.branch_prefix).toBe("engineer/");
-    expect(result.bundle.safety.merge.auto_merge.default).toBe(false);
+    expect(result.bundle.safety.merge.auto_merge_after_approval.default).toBe(false);
     expect(result.bundle.people).toEqual([]);
   });
 

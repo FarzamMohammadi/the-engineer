@@ -164,7 +164,7 @@ export const SAFETY_TEMPLATE = `# Safety configuration for The Engineer
 
 # --- Merge policy ---
 # merge:
-#   auto_merge:
+#   auto_merge_after_approval:
 #     default: false                  # Don't auto-merge by default
 #     repos: {}                       # Per-repo overrides: { "owner/repo": true }
 `;
@@ -460,8 +460,8 @@ response_timeout:
 
 # ── Merge Policy ─────────────────────────────────────────────────────────────
 merge:
-  auto_merge:
-    default: false                        # Auto-merge PRs by default (default: false)
+  auto_merge_after_approval:
+    default: false                        # Auto-merge PRs after approval (default: false)
     repos: {}                             # Per-repo overrides: { "owner/repo": true }
 `;
 

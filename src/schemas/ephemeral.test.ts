@@ -392,7 +392,7 @@ describe("SafetyStateSchema", () => {
       intercepted_event_types: ["cost.incurred", "cost.limit_reached"],
     });
     // SafetyConfigSchema defaults apply
-    expect(state.config.merge.auto_merge.default).toBe(false);
+    expect(state.config.merge.auto_merge_after_approval.default).toBe(false);
     expect(state.intercepted_event_types).toHaveLength(2);
   });
 });

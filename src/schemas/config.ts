@@ -300,7 +300,7 @@ export const ResponseTimeoutSchema = z.object({
 export type ResponseTimeout = z.infer<typeof ResponseTimeoutSchema>;
 
 export const MergePolicySchema = z.object({
-  auto_merge: z
+  auto_merge_after_approval: z
     .object({
       default: z.boolean().default(false),
       repos: z.record(z.boolean()).default({}),

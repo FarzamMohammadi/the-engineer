@@ -28,7 +28,9 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
 
     for (const name of ["engineer.pid", "dashboard.pid"]) {
       const pidFile = join(deps.runDir, name);
-      if (!existsSync(pidFile)) continue;
+      if (!existsSync(pidFile)) {
+        continue;
+      }
       try {
         const pid = Number.parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
         process.kill(pid, 0);

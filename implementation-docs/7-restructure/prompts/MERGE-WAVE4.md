@@ -15,12 +15,32 @@ The Engineer is an autonomous software engineering agent. Layer 7 is a structura
 
 ---
 
-## Branches to Merge
+## Worktrees & Branches
+
+Each phase ran in its own git worktree. The branches and worktree locations are:
+
+| Branch | Worktree | Phase |
+|--------|----------|-------|
+| `layer7/R9` | `../engineer-R9/` | OSS Foundation |
+| `layer7/R10` | `../engineer-R10/` | Data Lifecycle + Performance |
+
+Review each branch's prompt file at `implementation-docs/7-restructure/prompts/R{X}.md` to understand what each phase did.
+
+## Merge Order
 
 Merge in this order:
 
 1. `layer7/R9` — OSS Foundation (root-level files and docs/ only, no src/)
 2. `layer7/R10` — Data Lifecycle + Performance (src/ changes)
+
+## Cleanup
+
+After all merges are verified, remove the worktrees:
+```bash
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree remove ../engineer-R9
+git worktree remove ../engineer-R10
+```
 
 ---
 

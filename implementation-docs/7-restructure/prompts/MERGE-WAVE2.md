@@ -16,7 +16,22 @@ The Engineer is an autonomous software engineering agent. Layer 7 is a structura
 
 ---
 
-## Branches to Merge
+## Worktrees & Branches
+
+Each phase ran in its own git worktree. The branches and worktree locations are:
+
+| Branch | Worktree | Phase |
+|--------|----------|-------|
+| `layer7/R1` | `../engineer-R1/` | Safety Layer split |
+| `layer7/R2a` | `../engineer-R2a/` | TaskEngine decomposition |
+| `layer7/R2b` | `../engineer-R2b/` | SessionMemory decomposition |
+| `layer7/R2c` | `../engineer-R2c/` | Registry decomposition |
+| `layer7/R3` | `../engineer-R3/` | Daemon decomposition |
+| `layer7/R4` | `../engineer-R4/` | Orchestrator decomposition |
+
+Review each branch's prompt file at `implementation-docs/7-restructure/prompts/R{X}.md` to understand what each phase did.
+
+## Merge Order
 
 Merge in this order (least likely to conflict first):
 
@@ -26,6 +41,19 @@ Merge in this order (least likely to conflict first):
 4. `layer7/R2c` — Registry decomposition
 5. `layer7/R3` — Daemon decomposition (6 subsystems)
 6. `layer7/R4` — Orchestrator decomposition (5 subsystems)
+
+## Cleanup
+
+After all merges are verified, remove the worktrees:
+```bash
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree remove ../engineer-R1
+git worktree remove ../engineer-R2a
+git worktree remove ../engineer-R2b
+git worktree remove ../engineer-R2c
+git worktree remove ../engineer-R3
+git worktree remove ../engineer-R4
+```
 
 ---
 

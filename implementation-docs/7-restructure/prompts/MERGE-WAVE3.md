@@ -16,7 +16,20 @@ The Engineer is an autonomous software engineering agent. Layer 7 is a structura
 
 ---
 
-## Branches to Merge
+## Worktrees & Branches
+
+Each phase ran in its own git worktree. The branches and worktree locations are:
+
+| Branch | Worktree | Phase |
+|--------|----------|-------|
+| `layer7/R5` | `../engineer-R5/` | Declarative Event Topology |
+| `layer7/R6` | `../engineer-R6/` | Plugin Discovery + Scaffolding + Hooks |
+| `layer7/R7` | `../engineer-R7/` | CLI Polish |
+| `layer7/R8` | `../engineer-R8/` | Security Hardening |
+
+Review each branch's prompt file at `implementation-docs/7-restructure/prompts/R{X}.md` to understand what each phase did.
+
+## Merge Order
 
 Merge in this order:
 
@@ -24,6 +37,17 @@ Merge in this order:
 2. `layer7/R6` — Plugin Discovery + Scaffolding + Hooks
 3. `layer7/R7` — CLI Polish
 4. `layer7/R8` — Security Hardening
+
+## Cleanup
+
+After all merges are verified, remove the worktrees:
+```bash
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree remove ../engineer-R5
+git worktree remove ../engineer-R6
+git worktree remove ../engineer-R7
+git worktree remove ../engineer-R8
+```
 
 ---
 

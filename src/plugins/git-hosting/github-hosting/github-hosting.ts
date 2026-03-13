@@ -8,6 +8,7 @@ import {
   type InitResult,
   type MergeResult,
   type MergeStrategy,
+  type PRComment,
   type PROptions,
   type PRResult,
   type PRStatus,
@@ -210,6 +211,24 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     return { comment_id: String(data.id), url: data.html_url };
   }
 
+  protected async doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]> {
+    const [owner, repoName] = splitRepo(repo);
+    const { data: comments } = await this.octokit.issues.listComments({
+      owner,
+      repo: repoName,
+      issue_number: prNumber,
+    });
+
+    return comments
+      .filter((c) => c.user?.login !== "github-actions[bot]")
+      .map((c) => ({
+        id: String(c.id),
+        author: c.user?.login ?? "unknown",
+        body: c.body ?? "",
+        created_at: c.created_at,
+      }));
+  }
+
   protected async doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection> {
     const [owner, repoName] = splitRepo(repo);
 
@@ -338,17 +357,23 @@ async function getChecksPassing(
 interface GitHubReview {
   user?: { login: string } | null;
   state: string;
+  body?: string | null;
 }
 
 function aggregateReviews(reviews: GitHubReview[]): ReviewStatus {
   // GitHub returns reviews chronologically; we want the latest per reviewer
   const latestByUser = new Map<string, string>();
+  const comments: string[] = [];
   for (const review of reviews) {
     const user = review.user?.login ?? "unknown";
     const state = review.state.toUpperCase();
     // Only track meaningful states
     if (["APPROVED", "CHANGES_REQUESTED", "COMMENTED"].includes(state)) {
       latestByUser.set(user, state);
+    }
+    // Collect non-empty review bodies as feedback comments
+    if (review.body?.trim()) {
+      comments.push(`@${user}: ${review.body.trim()}`);
     }
   }
 
@@ -365,6 +390,7 @@ function aggregateReviews(reviews: GitHubReview[]): ReviewStatus {
     approvals,
     changes_requested: changesRequested,
     reviewers,
+    comments,
   };
 }
 

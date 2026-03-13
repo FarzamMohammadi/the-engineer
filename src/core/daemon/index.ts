@@ -135,12 +135,17 @@ export function computeAgedPriority(
 export function deriveAggregateReviewState(reviewStatus: {
   changes_requested: boolean;
   approved: boolean;
-}): "changes_requested" | "approved" | null {
+  reviewers: Array<{ state: string }>;
+}): "changes_requested" | "approved" | "comment" | null {
   if (reviewStatus.changes_requested) {
     return "changes_requested";
   }
   if (reviewStatus.approved) {
     return "approved";
+  }
+  // A reviewer submitted a review with comments (not approve/reject)
+  if (reviewStatus.reviewers.some((r) => r.state === "commented")) {
+    return "comment";
   }
   return null;
 }
@@ -1185,24 +1190,49 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       const reviewStatus = await hosting.getReviewStatus(task.repo, task.review.pr_number);
       const prStatus = await hosting.getPRStatus(task.repo, task.review.pr_number);
 
+      // Also fetch conversation-level PR comments (not just formal reviews)
+      let prComments: string[] = [];
+      try {
+        const comments = await hosting.getPRComments(task.repo, task.review.pr_number);
+        // Filter out bot comments (our own)
+        prComments = comments
+          .filter((c) => c.body.trim().length > 0)
+          .map((c) => `@${c.author}: ${c.body.trim()}`);
+      } catch {
+        // Non-critical — proceed with review data only
+      }
+
+      // Combine review comments + conversation comments
+      const allComments = [...(reviewStatus.comments ?? []), ...prComments];
+
       // Determine aggregate review state
-      const aggregateState = deriveAggregateReviewState(reviewStatus);
+      // Also treat PR conversation comments as actionable feedback
+      const hasConversationComments = prComments.length > 0;
+      let aggregateState = deriveAggregateReviewState(reviewStatus);
+      if (!aggregateState && hasConversationComments) {
+        aggregateState = "comment";
+      }
       if (!aggregateState) {
-        return; // No actionable reviews yet
+        return; // No actionable reviews or comments yet
       }
 
       // Dedup: skip if we already processed this aggregate state for this task
+      // Include comment count in dedup key so new comments trigger re-processing
+      const dedupKey = `${aggregateState}:${String(allComments.length)}`;
       const previousState = processedReviewStates.get(task.id);
-      if (previousState === aggregateState) {
+      if (previousState === dedupKey) {
         return;
       }
-      processedReviewStates.set(task.id, aggregateState);
+      processedReviewStates.set(task.id, dedupKey);
 
       const stage = prStatus.draft ? "demo" : "code";
       const feedbackType = aggregateState === "approved" ? "approved" : aggregateState;
       const primaryReviewer =
         reviewStatus.reviewers.find((r: { state: string }) => r.state === aggregateState) ??
         reviewStatus.reviewers[0];
+
+      // Combine all feedback into content string
+      const contentStr = allComments.length > 0 ? allComments.join("\n") : null;
 
       eventBus.publish({
         type: "task.feedback_received",
@@ -1213,7 +1243,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
           stage,
           feedback_type: feedbackType as "approved" | "changes_requested" | "comment",
           reviewer: primaryReviewer?.username ?? "unknown",
-          content: null,
+          content: contentStr,
           pr_number: task.review.pr_number,
         },
       } satisfies PublishInput<"task.feedback_received">);
@@ -1265,9 +1295,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       demo_artifacts: [],
       feedback_rounds: [],
     };
+    const comments = payload.content
+      ? payload.content.split("\n").filter((line) => line.trim().length > 0)
+      : [];
     const newRound = {
       stage: payload.stage,
-      comments: payload.content ? [payload.content] : [],
+      comments,
       applied: payload.feedback_type === "approved",
     };
     taskEngine.updateTaskField(payload.task_id, "review", {

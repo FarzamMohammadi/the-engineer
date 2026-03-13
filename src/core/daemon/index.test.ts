@@ -1387,7 +1387,9 @@ describe("Daemon", () => {
           approvals: 0,
           changes_requested: false,
           reviewers: [],
+          comments: [],
         }),
+        getPRComments: vi.fn().mockResolvedValue([]),
       };
       handle.registry.getPluginsByType.mockImplementation((type: string) => {
         if (type === "git_hosting") {
@@ -1442,8 +1444,10 @@ describe("Daemon", () => {
           approvals: 0,
           changes_requested: false,
           reviewers: [],
+          comments: [],
           ...reviewStatus,
         }),
+        getPRComments: vi.fn().mockResolvedValue([]),
         updatePR: vi.fn().mockResolvedValue(undefined),
       };
     }
@@ -1768,18 +1772,30 @@ describe("Daemon", () => {
 
 describe("deriveAggregateReviewState", () => {
   it("returns changes_requested when changes are requested", () => {
-    expect(deriveAggregateReviewState({ changes_requested: true, approved: true })).toBe(
-      "changes_requested",
-    );
+    expect(
+      deriveAggregateReviewState({ changes_requested: true, approved: true, reviewers: [] }),
+    ).toBe("changes_requested");
   });
 
   it("returns approved when approved and no changes requested", () => {
-    expect(deriveAggregateReviewState({ changes_requested: false, approved: true })).toBe(
-      "approved",
-    );
+    expect(
+      deriveAggregateReviewState({ changes_requested: false, approved: true, reviewers: [] }),
+    ).toBe("approved");
+  });
+
+  it("returns comment when reviewer left a comment review", () => {
+    expect(
+      deriveAggregateReviewState({
+        changes_requested: false,
+        approved: false,
+        reviewers: [{ state: "commented" }],
+      }),
+    ).toBe("comment");
   });
 
   it("returns null when no actionable reviews", () => {
-    expect(deriveAggregateReviewState({ changes_requested: false, approved: false })).toBeNull();
+    expect(
+      deriveAggregateReviewState({ changes_requested: false, approved: false, reviewers: [] }),
+    ).toBeNull();
   });
 });

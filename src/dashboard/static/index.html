@@ -810,21 +810,24 @@ a:hover { text-decoration: underline; }
   color: var(--text-ghost);
   position: relative;
   overflow: hidden;
+  cursor: default;
 }
 
 .phase-bar-item.skipped::after {
   content: '';
   position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to top right,
-    transparent calc(50% - 0.5px),
-    var(--red) calc(50% - 0.5px),
-    var(--red) calc(50% + 0.5px),
-    transparent calc(50% + 0.5px)
-  );
-  opacity: 0.5;
-  border-radius: inherit;
+  inset: 4px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cline x1='0' y1='100%25' x2='100%25' y2='0' stroke='%23ef4444' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.phase-bar-item.skipped:hover::after {
+  opacity: 0.2;
+}
+
+.phase-bar-item.skipped:hover {
+  color: var(--red);
 }
 
 .phase-mini-bar .phase-seg.skipped {
@@ -1731,7 +1734,8 @@ async function renderTaskDetail(taskId) {
     else if (t.state === 'failed' && i === currentPhaseIdx) cls = 'failed';
     else if (i === currentPhaseIdx) cls = 'current';
     else if (!ranPhases.has(p) && (isFinished || i < currentPhaseIdx)) cls = 'skipped';
-    phaseBar += `<div class="phase-bar-item ${cls}">${esc(PHASE_LABELS[p] || p)}</div>`;
+    const tooltip = cls === 'skipped' ? ' title="Skipped"' : '';
+    phaseBar += `<div class="phase-bar-item ${cls}"${tooltip}>${esc(PHASE_LABELS[p] || p)}</div>`;
   });
   phaseBar += '</div>';
 

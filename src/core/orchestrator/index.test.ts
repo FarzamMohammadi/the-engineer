@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   FAST_PATH_INTAKE_DATA,
@@ -815,34 +815,6 @@ describe("Orchestrator", () => {
     });
   });
 
-  describe("resolveStartState — code approval integration", () => {
-    it("starts from integration for code-approved task", async () => {
-      // Only set integration LLM response (that's the only phase that runs)
-      handle.setAllPhaseResponses();
-      const dispatch = createMockDispatch({
-        task: {
-          phase: "integration",
-          review: {
-            pr_number: 42,
-            pr_state: "ready",
-            demo_artifacts: [],
-            feedback_rounds: [],
-          },
-        },
-      });
-
-      const result = await handle.orchestrator.executeTask(dispatch);
-
-      expect(result.outcome).toBe("completed");
-      // Should have a journal entry about code-approved resume
-      const journalCalls = handle.sessionMemory.addJournalEntry.mock.calls;
-      const resumeEntry = journalCalls.find((c: unknown[]) =>
-        (c[0] as { summary: string }).summary.includes("code-approved"),
-      );
-      expect(resumeEntry).toBeDefined();
-    });
-  });
-
   describe("commitPushAndCreatePR — rework path", () => {
     it("re-registers workspace on rework dispatch with existing PR", async () => {
       handle.setAllPhaseResponses();
@@ -919,86 +891,6 @@ describe("Orchestrator", () => {
           expect(round.applied).toBe(true);
         }
       }
-    });
-  });
-
-  describe("auto-merge after integration", () => {
-    it("calls mergePR when auto-merge is enabled and task has PR", async () => {
-      handle.setAllPhaseResponses();
-      const task = createMockTask({
-        repo: "org/repo",
-        review: {
-          pr_number: 42,
-          pr_state: "ready",
-          demo_artifacts: [],
-          feedback_rounds: [],
-        },
-      });
-      handle.taskEngine.getTask.mockReturnValue(task);
-      handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(true);
-
-      const fakeHosting = {
-        mergePR: vi.fn().mockResolvedValue({ success: true, sha: "abc123" }),
-      };
-      // Save original getPrimaryPlugin to keep LLM/tool working
-      const origGetPrimary = handle.registry.getPrimaryPlugin.getMockImplementation();
-      handle.registry.getPrimaryPlugin.mockImplementation((type: string) => {
-        if (type === "git_hosting") {
-          return fakeHosting;
-        }
-        return origGetPrimary ? origGetPrimary(type) : null;
-      });
-
-      // For code-approved integration-only path
-      const dispatch = createMockDispatch({
-        task: {
-          ...task,
-          phase: "integration",
-        },
-      });
-
-      const result = await handle.orchestrator.executeTask(dispatch);
-
-      expect(result.outcome).toBe("completed");
-      expect(fakeHosting.mergePR).toHaveBeenCalledWith("org/repo", 42, "squash");
-    });
-
-    it("skips merge when auto-merge is not allowed", async () => {
-      handle.setAllPhaseResponses();
-      const task = createMockTask({
-        repo: "org/repo",
-        review: {
-          pr_number: 42,
-          pr_state: "ready",
-          demo_artifacts: [],
-          feedback_rounds: [],
-        },
-      });
-      handle.taskEngine.getTask.mockReturnValue(task);
-      handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(false);
-
-      const fakeHosting = {
-        mergePR: vi.fn(),
-      };
-      const origGetPrimary = handle.registry.getPrimaryPlugin.getMockImplementation();
-      handle.registry.getPrimaryPlugin.mockImplementation((type: string) => {
-        if (type === "git_hosting") {
-          return fakeHosting;
-        }
-        return origGetPrimary ? origGetPrimary(type) : null;
-      });
-
-      const dispatch = createMockDispatch({
-        task: {
-          ...task,
-          phase: "integration",
-        },
-      });
-
-      const result = await handle.orchestrator.executeTask(dispatch);
-
-      expect(result.outcome).toBe("completed");
-      expect(fakeHosting.mergePR).not.toHaveBeenCalled();
     });
   });
 

@@ -303,9 +303,6 @@ export class Orchestrator {
       }
     }
 
-    // ── Auto-merge after integration (if configured) ──────────────────────
-    await this.attemptAutoMerge(sessionId, taskId, dispatch);
-
     // ── Pipeline complete ──────────────────────────────────────────────────
     this.sessionMemory.endSession(sessionId, "completed");
     return { outcome: "completed", phaseOutputs: priorOutputs };
@@ -525,24 +522,9 @@ export class Orchestrator {
     const phases = [...PHASE_SEQUENCE];
 
     if (!dispatch.resume_from) {
-      // Code approval auto-merge: resume directly at integration phase
-      if (dispatch.task.phase === "integration" && dispatch.task.review?.pr_state === "ready") {
-        const integrationIndex = phases.indexOf("integration");
-        if (integrationIndex >= 0) {
-          this.sessionMemory.addJournalEntry({
-            sessionId,
-            taskId,
-            phase: "integration",
-            type: "phase_change",
-            summary: "Resuming at integration for code-approved auto-merge",
-            tags: ["code_approved", "auto_merge", "resume"],
-          });
-          return { phases, startIndex: integrationIndex };
-        }
-      }
-
       // Feedback rework is handled naturally: starts from intake_analysis (index 0).
       // Intake will assess feedback scope and route via fast-path or full pipeline.
+      // Code approval completes directly in the Daemon (no re-dispatch needed).
       return { phases, startIndex: 0 };
     }
 
@@ -1172,54 +1154,6 @@ export class Orchestrator {
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "pr_creation", error);
       return false;
-    }
-  }
-
-  /**
-   * Attempt auto-merge after integration phase completes.
-   * Only merges if the task has a PR and auto_merge_after_approval is enabled.
-   */
-  private async attemptAutoMerge(
-    sessionId: string,
-    taskId: string,
-    dispatch: Dispatch,
-  ): Promise<void> {
-    const task = this.taskEngine.getTask(taskId);
-    if (!(task?.review?.pr_number && task.repo)) {
-      return; // No PR or no repo — nothing to merge
-    }
-
-    if (!this.safetyLayer.checkAutoMergeAllowed(task.repo)) {
-      return; // Auto-merge not configured for this repo
-    }
-
-    const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>("git_hosting");
-    if (!gitHosting) {
-      return;
-    }
-
-    try {
-      const result = await gitHosting.mergePR(task.repo, task.review.pr_number, "squash");
-      if (result.success) {
-        this.taskEngine.updateTaskField(taskId, "review", {
-          ...task.review,
-          pr_state: "merged",
-        });
-        this.sessionMemory.addJournalEntry({
-          sessionId,
-          taskId,
-          phase: "integration",
-          type: "action",
-          summary: `PR #${String(task.review.pr_number)} auto-merged successfully`,
-          tags: ["auto_merge"],
-        });
-        this.commentOnSourceIssue(
-          dispatch,
-          `PR #${String(task.review.pr_number)} auto-merged after approval.`,
-        );
-      }
-    } catch {
-      // Merge failed — task still completes, human merges manually
     }
   }
 

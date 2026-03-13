@@ -1687,7 +1687,7 @@ describe("Daemon", () => {
       );
     });
 
-    it("queues task for integration on code approval", async () => {
+    it("completes task directly on code approval (no auto-merge)", async () => {
       handle = createTestDaemon();
       await handle.daemon.start();
       const task = createMockTask({
@@ -1698,6 +1698,7 @@ describe("Daemon", () => {
         review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
+      handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(false);
 
       const callback = handle.getSubscriptionCallback("task.feedback_received");
       callback?.({
@@ -1717,17 +1718,10 @@ describe("Daemon", () => {
         timestamp: new Date().toISOString(),
       });
 
-      // Should set phase to integration
-      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith(
-        "task-code-approve",
-        "phase",
-        "integration",
-      );
-
-      // Should transition to queued for integration dispatch
+      // Should transition directly to completed (human merges)
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-code-approve",
-        "queued",
+        "completed",
         null,
         "code_approved",
         "daemon",

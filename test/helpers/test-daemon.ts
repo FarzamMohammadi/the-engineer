@@ -84,6 +84,7 @@ export interface TestDaemonHandle {
     getTimeoutPolicy: Mock;
     getCostStatus: Mock;
     updateConfig: Mock;
+    checkAutoMergeAllowed: Mock;
   };
   actionPipeline: {
     execute: Mock;
@@ -274,6 +275,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     }),
     getCostStatus: vi.fn().mockReturnValue({}),
     updateConfig: vi.fn(),
+    checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
   };
 
   // ── ActionPipeline mock ───────────────────────────────────────────────

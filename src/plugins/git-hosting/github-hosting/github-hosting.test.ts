@@ -40,6 +40,7 @@ function createMockOctokit() {
       createComment: vi.fn().mockResolvedValue({
         data: { id: 456, html_url: "https://github.com/acme/webapp/pull/51#issuecomment-456" },
       }),
+      listComments: vi.fn().mockResolvedValue({ data: [] }),
     },
     repos: {
       get: vi.fn().mockResolvedValue({ data: { default_branch: "main" } }),

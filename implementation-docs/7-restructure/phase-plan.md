@@ -7,6 +7,7 @@ This file tracks phase status.
 ## Wave Structure
 
 ```
+WAVE 0 (Sequential):   R-0 — Centralized Observer (War Room's eyes)
 WAVE 1 (Sequential):   R0 — Interface Foundation + Zod Enums + Shared Factory
 WAVE 2 (Parallel, 6):  R1 | R2a | R2b | R2c | R3 | R4
 WAVE 3 (Parallel, 4):  R5 | R6 | R7 | R8
@@ -19,6 +20,7 @@ WAVE 6 (Sequential):   FINAL
 
 | Phase | Description | Wave | Status |
 |-------|-------------|------|--------|
+| R-0 | Centralized Observer (War Room's eyes) | 0 | NOT STARTED |
 | R0 | Interface Foundation + Zod Enums + Shared Factory | 1 | NOT STARTED |
 | R1 | Safety Layer Split → CostTracker + PolicyEngine | 2 | NOT STARTED |
 | R2a | TaskEngine Decomposition | 2 | NOT STARTED |

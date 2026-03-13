@@ -171,6 +171,62 @@ a:hover { text-decoration: underline; }
   50% { opacity: 0.7; box-shadow: 0 0 4px var(--green), 0 0 10px rgba(16,185,129,0.15); }
 }
 
+/* Watching indicator — recording style */
+.sb-watching {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--red);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.sb-watching .rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 6px var(--red), 0 0 16px rgba(239, 68, 68, 0.35);
+  animation: rec-pulse 1.5s ease-in-out infinite;
+}
+
+.sb-watching .rec-ring {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: rec-ring-expand 1.5s ease-out infinite;
+}
+
+.sb-watching .rec-dot-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--red), 0 0 16px rgba(239, 68, 68, 0.35); }
+  50% { opacity: 0.4; box-shadow: 0 0 2px var(--red), 0 0 6px rgba(239, 68, 68, 0.1); }
+}
+
+@keyframes rec-ring-expand {
+  0% { transform: scale(0.6); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
 .sb-metric {
   display: flex;
   flex-direction: column;
@@ -1161,6 +1217,16 @@ a:hover { text-decoration: underline; }
 
   <div class="sb-spacer"></div>
 
+  <div class="sb-watching" id="sb-watching">
+    <div class="rec-dot-wrap">
+      <div class="rec-dot"></div>
+      <div class="rec-ring"></div>
+    </div>
+    <span>Watching</span>
+  </div>
+
+  <div class="sb-separator"></div>
+
   <div class="sb-metric">
     <div class="sb-metric-label">LLM Traces</div>
     <div class="sb-metric-value" id="sb-llm-traces">—</div>
@@ -1561,7 +1627,7 @@ async function renderTaskDetail(taskId) {
 
   // Timeline
   let timelineHtml = '';
-  timeline.slice(-80).forEach(item => {
+  [...timeline].reverse().slice(0, 80).forEach(item => {
     const d = item.data || {};
     let detail = '';
     if (item.kind === 'event') {

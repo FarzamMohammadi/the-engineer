@@ -92,6 +92,7 @@ export interface OrchestratorDependencies {
 /** Discriminated union of executeTask outcomes. */
 export type ExecuteTaskResult =
   | { outcome: "completed"; phaseOutputs: Map<Phase, PhaseOutput> }
+  | { outcome: "review_pending"; phase: Phase; phaseOutputs: Map<Phase, PhaseOutput> }
   | { outcome: "decomposed"; childTaskIds: string[]; phaseOutputs: Map<Phase, PhaseOutput> }
   | { outcome: "preempted"; lastPhase: Phase; checkpointId: string }
   | { outcome: "error"; phase: Phase; reason: string };
@@ -282,6 +283,9 @@ export class Orchestrator {
       );
       if (postResult.decompositionResult) {
         return postResult.decompositionResult;
+      }
+      if (postResult.reviewPendingResult) {
+        return postResult.reviewPendingResult;
       }
       if (postResult.loopbackIndex !== null) {
         i = postResult.loopbackIndex;
@@ -527,6 +531,7 @@ export class Orchestrator {
   }
 
   /** Handle post-phase logic: fast-path, decomposition, loopback, transitions, preemption, PR creation. */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-branch pipeline orchestration
   private async processPhaseCompletion(
     sessionId: string,
     taskId: string,
@@ -541,6 +546,7 @@ export class Orchestrator {
     loopbackIndex: number | null;
     preemptionResult: ExecuteTaskResult | null;
     decompositionResult: ExecuteTaskResult | null;
+    reviewPendingResult: ExecuteTaskResult | null;
   }> {
     let phases = currentPhases;
 
@@ -559,7 +565,13 @@ export class Orchestrator {
         priorOutputs,
       );
       if (decompositionResult) {
-        return { phases, loopbackIndex: null, preemptionResult: null, decompositionResult };
+        return {
+          phases,
+          loopbackIndex: null,
+          preemptionResult: null,
+          decompositionResult,
+          reviewPendingResult: null,
+        };
       }
     }
 
@@ -573,21 +585,44 @@ export class Orchestrator {
           loopbackIndex: loopbackResult.targetIndex - 1,
           preemptionResult: null,
           decompositionResult: null,
+          reviewPendingResult: null,
         };
       }
     }
 
-    // After demo_prep: commit, push, create draft PR (D149, D150)
+    // After demo_prep: commit, push, create draft PR — then exit pipeline for review (D149, D150)
     if (phase === "demo_prep") {
-      await this.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
+      const result = await this.tryCreatePRAndExitForReview(
+        sessionId,
+        taskId,
+        phase,
+        output,
+        dispatch,
+        phases,
+        priorOutputs,
+      );
+      if (result) {
+        return result;
+      }
     }
 
     // Protocol P4: Phase transition
     const isLastPhase = currentIndex === phases.length - 1;
 
-    // Fast-path PR: when self_review is the final phase (no demo_prep), still create PR
+    // Fast-path PR: when self_review is the final phase (no demo_prep), still create PR — then exit for review
     if (phase === "self_review" && isLastPhase) {
-      await this.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
+      const result = await this.tryCreatePRAndExitForReview(
+        sessionId,
+        taskId,
+        phase,
+        output,
+        dispatch,
+        phases,
+        priorOutputs,
+      );
+      if (result) {
+        return result;
+      }
     }
     // biome-ignore lint/style/noNonNullAssertion: next phase exists when not last
     const nextPhase = isLastPhase ? null : phases[currentIndex + 1]!;
@@ -600,10 +635,17 @@ export class Orchestrator {
         loopbackIndex: null,
         preemptionResult: this.handlePreemption(sessionId, taskId, nextPhase, priorOutputs),
         decompositionResult: null,
+        reviewPendingResult: null,
       };
     }
 
-    return { phases, loopbackIndex: null, preemptionResult: null, decompositionResult: null };
+    return {
+      phases,
+      loopbackIndex: null,
+      preemptionResult: null,
+      decompositionResult: null,
+      reviewPendingResult: null,
+    };
   }
 
   /** Log error and build error result for a failed phase. */
@@ -627,6 +669,37 @@ export class Orchestrator {
     });
 
     return { outcome: "error", phase, reason: message };
+  }
+
+  /** Attempt PR creation; if successful, exit the pipeline for human review. */
+  private async tryCreatePRAndExitForReview(
+    sessionId: string,
+    taskId: string,
+    phase: Phase,
+    output: PhaseOutput,
+    dispatch: Dispatch,
+    phases: Phase[],
+    priorOutputs: Map<Phase, PhaseOutput>,
+  ): Promise<{
+    phases: Phase[];
+    loopbackIndex: number | null;
+    preemptionResult: ExecuteTaskResult | null;
+    decompositionResult: ExecuteTaskResult | null;
+    reviewPendingResult: ExecuteTaskResult | null;
+  } | null> {
+    const prCreated = await this.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
+    if (!prCreated) {
+      return null;
+    }
+    this.recordPhaseTransition(sessionId, taskId, phase, null, priorOutputs);
+    this.sessionMemory.endSession(sessionId, "review_pending");
+    return {
+      phases,
+      loopbackIndex: null,
+      preemptionResult: null,
+      decompositionResult: null,
+      reviewPendingResult: { outcome: "review_pending", phase, phaseOutputs: priorOutputs },
+    };
   }
 
   /** Record a phase transition: checkpoint + journal + update task.phase (Protocol P4). */
@@ -931,15 +1004,15 @@ export class Orchestrator {
     taskId: string,
     demoPrepOutput: PhaseOutput,
     dispatch: Dispatch,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const worktreePath = this.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
-      return; // No workspace — no PR (e.g., fast-path without repo)
+      return false; // No workspace — no PR (e.g., fast-path without repo)
     }
 
     const record = this.workspaceManager.getWorkspaceRecord(taskId);
     if (!record) {
-      return;
+      return false;
     }
 
     // 1. Deterministic commit: git add -A && git commit
@@ -977,7 +1050,7 @@ export class Orchestrator {
       }
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "commit", error);
-      return;
+      return false;
     }
 
     // Check if branch has commits ahead of base (covers Claude CLI internal commits)
@@ -989,10 +1062,10 @@ export class Orchestrator {
           { cwd: worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
         ).trim();
         if (aheadCount === "0") {
-          return; // Truly no changes — nothing to push or PR
+          return false; // Truly no changes — nothing to push or PR
         }
       } catch {
-        return; // Can't determine — skip to be safe
+        return false; // Can't determine — skip to be safe
       }
     }
 
@@ -1001,13 +1074,13 @@ export class Orchestrator {
       this.workspaceManager.pushBranch(taskId);
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "push", error);
-      return;
+      return false;
     }
 
     // 3. Create draft PR via GitHostingAdapter
     const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>("git_hosting");
     if (!gitHosting) {
-      return; // No hosting plugin — skip PR creation
+      return false; // No hosting plugin — skip PR creation
     }
 
     try {
@@ -1037,8 +1110,10 @@ export class Orchestrator {
       // Notify PR creation — personal channels + GitHub issue comment
       this.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
       this.commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
+      return true;
     } catch (error) {
       this.logPrStepFailure(sessionId, taskId, "pr_creation", error);
+      return false;
     }
   }
 

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Logger } from "pino";
 
 import type { CommunicationAdapter } from "../../adapters/communication.js";
+import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import { parseGitHubUrl, toExternalRef } from "../../plugins/github-shared/index.js";
 import type { TriggerEvent } from "../../schemas/adapters.js";
@@ -799,6 +800,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       sendCompletionNotification(taskId, taskTitle);
       commentOnTaskIssue(taskId, "Task completed successfully.");
       logger.info({ taskId }, "Task completed");
+    } else if (result.outcome === "review_pending") {
+      taskEngine.requestTransition(taskId, "review_pending", "demo", "pr_created", "daemon");
+      // Notify about PR review needed — personal channels + GitHub issue comment
+      sendReviewPendingNotification(taskId, taskTitle);
+      commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
+      logger.info({ taskId }, "Task awaiting PR review");
+      // Do NOT cleanup workspace — task is still in progress
     } else if (result.outcome === "decomposed") {
       // Parent is already in active.supervising (set by Orchestrator).
       // Children are already queued. Daemon will schedule them on next tick.
@@ -1075,6 +1083,65 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
   }
 
+  // ── Review Pending Merge Detection ───────────────────────────────────
+
+  function completeTaskOnMerge(task: {
+    id: string;
+    title: string;
+    sub_state: string | null;
+    review: { pr_number: number | null } | null;
+  }): void {
+    if (task.sub_state === "demo") {
+      taskEngine.requestTransition(task.id, "review_pending", "code", "pr_merged", "daemon");
+    }
+    taskEngine.requestTransition(task.id, "completed", null, "pr_merged", "daemon");
+    try {
+      workspaceManager.cleanupWorkspace(task.id, true);
+    } catch {
+      logger.warn({ taskId: task.id }, "Workspace cleanup failed after PR merge");
+    }
+    sendCompletionNotification(task.id, task.title);
+    commentOnTaskIssue(task.id, "PR merged — task completed.");
+    logger.info(
+      { taskId: task.id, prNumber: task.review?.pr_number },
+      "PR merged — task completed",
+    );
+  }
+
+  async function checkSingleTaskMerge(
+    task: ReturnType<typeof taskEngine.getTasksByState>[number],
+    hosting: GitHostingAdapter,
+  ): Promise<void> {
+    if (!(task.review?.pr_number && task.repo)) {
+      return;
+    }
+    try {
+      const status = await hosting.getPRStatus(task.repo, task.review.pr_number);
+      if (status.state === "merged") {
+        completeTaskOnMerge(task);
+      }
+    } catch (err) {
+      logger.warn({ taskId: task.id, err }, "Failed to check PR status");
+    }
+  }
+
+  async function checkReviewPendingMerges(): Promise<void> {
+    const reviewTasks = taskEngine.getTasksByState("review_pending");
+    if (reviewTasks.length === 0) {
+      return;
+    }
+
+    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>("git_hosting");
+    const hosting = hostingPlugins[0];
+    if (!hosting) {
+      return;
+    }
+
+    for (const task of reviewTasks) {
+      await checkSingleTaskMerge(task, hosting);
+    }
+  }
+
   function cleanupStaleReminderTimes(activeTasks: Array<{ id: string }>): void {
     for (const taskId of reviewReminderTimes.keys()) {
       if (!activeTasks.some((t) => t.id === taskId)) {
@@ -1154,6 +1221,30 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
         )
         .catch((err) => {
           logger.error({ err, taskId }, "Failed to send completion notification");
+        });
+    }
+  }
+
+  function sendReviewPendingNotification(taskId: string, taskTitle: string): void {
+    const owner = deps.peopleDirectory.getOwner();
+    if (!owner) {
+      return;
+    }
+    const commPlugins = registry.getPluginsByType<CommunicationAdapter>("communication");
+    const content = `Task "${taskTitle}" — PR created, awaiting review.`;
+
+    for (const comm of commPlugins) {
+      if (!comm.hasCapability("send")) {
+        continue;
+      }
+      const formatted = comm.formatMessage(content, "milestone");
+      comm
+        .sendMessage(
+          { user_id: owner.id, channel: null },
+          { content: formatted, metadata: { task_id: taskId, type: "milestone" } },
+        )
+        .catch((err) => {
+          logger.error({ err, taskId }, "Failed to send review pending notification");
         });
     }
   }
@@ -1302,7 +1393,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Step 6: Stuck detection
     checkStuckTasks(now);
 
-    // Step 7: Cleanup expired seen keys
+    // Step 7: Check if review-pending PRs have been merged
+    await checkReviewPendingMerges();
+
+    // Step 8: Cleanup expired seen keys
     cleanupSeenKeys(now);
   }
 

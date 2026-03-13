@@ -1249,4 +1249,151 @@ describe("Daemon", () => {
       );
     });
   });
+
+  // ── Review Pending ──────────────────────────────────────────────────
+
+  describe("review pending", () => {
+    it("transitions task to review_pending.demo on review_pending outcome", async () => {
+      handle = createTestDaemon();
+      const task = createMockTask({
+        id: "task-pr",
+        state: "queued",
+        sub_state: null,
+        title: "PR task",
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
+      handle.orchestrator.executeTask.mockResolvedValueOnce({
+        outcome: "review_pending",
+        phase: "demo_prep",
+        phaseOutputs: new Map(),
+      } satisfies ExecuteTaskResult);
+
+      await handle.daemon.tick();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-pr",
+        "review_pending",
+        "demo",
+        "pr_created",
+        "daemon",
+      );
+    });
+
+    it("does not cleanup workspace on review_pending outcome", async () => {
+      handle = createTestDaemon();
+      const task = createMockTask({
+        id: "task-pr",
+        state: "queued",
+        sub_state: null,
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
+      handle.orchestrator.executeTask.mockResolvedValueOnce({
+        outcome: "review_pending",
+        phase: "demo_prep",
+        phaseOutputs: new Map(),
+      } satisfies ExecuteTaskResult);
+
+      await handle.daemon.tick();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(handle.workspaceManager.cleanupWorkspace).not.toHaveBeenCalled();
+    });
+
+    it("completes task when PR is merged", async () => {
+      handle = createTestDaemon();
+      const task = createMockTask({
+        id: "task-merged",
+        state: "review_pending",
+        sub_state: "demo",
+        title: "Merged task",
+        repo: "org/repo",
+        review: { pr_number: 42, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "review_pending") {
+          return [task];
+        }
+        return [];
+      });
+
+      // Mock git hosting plugin
+      const fakeHosting = {
+        getPRStatus: vi.fn().mockResolvedValue({
+          number: 42,
+          state: "merged",
+          draft: false,
+          mergeable: false,
+          checks_passing: true,
+        }),
+      };
+      handle.registry.getPluginsByType.mockImplementation((type: string) => {
+        if (type === "git_hosting") {
+          return [fakeHosting];
+        }
+        return [];
+      });
+
+      await handle.daemon.tick();
+
+      // Should transition demo → code → completed
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-merged",
+        "review_pending",
+        "code",
+        "pr_merged",
+        "daemon",
+      );
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-merged",
+        "completed",
+        null,
+        "pr_merged",
+        "daemon",
+      );
+      expect(handle.workspaceManager.cleanupWorkspace).toHaveBeenCalledWith("task-merged", true);
+    });
+
+    it("does nothing when PR is still open", async () => {
+      handle = createTestDaemon();
+      const task = createMockTask({
+        id: "task-open",
+        state: "review_pending",
+        sub_state: "demo",
+        review: { pr_number: 42, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === "review_pending") {
+          return [task];
+        }
+        return [];
+      });
+
+      const fakeHosting = {
+        getPRStatus: vi.fn().mockResolvedValue({
+          number: 42,
+          state: "open",
+          draft: true,
+          mergeable: true,
+          checks_passing: true,
+        }),
+      };
+      handle.registry.getPluginsByType.mockImplementation((type: string) => {
+        if (type === "git_hosting") {
+          return [fakeHosting];
+        }
+        return [];
+      });
+
+      await handle.daemon.tick();
+
+      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
+        "task-open",
+        "completed",
+        null,
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+  });
 });

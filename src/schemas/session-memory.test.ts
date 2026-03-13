@@ -58,8 +58,8 @@ describe("SessionSchema", () => {
     expect(() => SessionSchema.parse({ ...validSession, end_reason: "timeout" })).toThrow();
   });
 
-  it("has exactly 5 end reasons", () => {
-    expect(SessionEndReasonSchema.options).toHaveLength(5);
+  it("has exactly 6 end reasons", () => {
+    expect(SessionEndReasonSchema.options).toHaveLength(6);
   });
 });
 

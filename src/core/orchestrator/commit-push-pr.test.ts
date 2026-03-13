@@ -306,4 +306,51 @@ describe("commitPushAndCreatePR", () => {
       }),
     );
   });
+
+  // ── Review Pending Outcome ────────────────────────────────────────────
+
+  it("returns review_pending outcome when PR is successfully created", async () => {
+    setupGitMocks({ hasStagedChanges: true });
+
+    const dispatch = dispatchWithWorkspace();
+    const result = await h.orchestrator.executeTask(dispatch);
+
+    expect(result.outcome).toBe("review_pending");
+    if (result.outcome === "review_pending") {
+      expect(result.phase).toBe("demo_prep");
+      // Should include phases up to demo_prep (6 of 7)
+      expect(result.phaseOutputs.size).toBe(6);
+      expect(result.phaseOutputs.has("integration")).toBe(false);
+    }
+  });
+
+  it("ends session with review_pending when PR is created", async () => {
+    setupGitMocks({ hasStagedChanges: true });
+
+    const dispatch = dispatchWithWorkspace();
+    await h.orchestrator.executeTask(dispatch);
+
+    expect(h.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "review_pending");
+  });
+
+  it("returns completed when PR creation fails (no early exit)", async () => {
+    setupGitMocks({ hasStagedChanges: true });
+    fakeGitHosting.createPR.mockRejectedValue(new Error("API rate limited"));
+
+    const dispatch = dispatchWithWorkspace();
+    const result = await h.orchestrator.executeTask(dispatch);
+
+    // PR creation failed, so pipeline continues and completes normally
+    expect(result.outcome).toBe("completed");
+  });
+
+  it("returns completed when no workspace (no PR to create)", async () => {
+    h.workspaceManager.getWorkspaceRecord.mockReturnValue(null);
+    setupGitMocks({ hasStagedChanges: false });
+
+    const dispatch = dispatchWithWorkspace();
+    const result = await h.orchestrator.executeTask(dispatch);
+
+    expect(result.outcome).toBe("completed");
+  });
 });

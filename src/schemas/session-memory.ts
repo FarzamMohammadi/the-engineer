@@ -9,6 +9,7 @@ export const SessionEndReasonSchema = z.enum([
   "crashed",
   "new_session",
   "decomposed",
+  "review_pending",
 ]);
 export type SessionEndReason = z.infer<typeof SessionEndReasonSchema>;
 

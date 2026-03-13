@@ -20,6 +20,7 @@ import {
   HealthTriggerFailurePayloadSchema,
   PreemptionReadyPayloadSchema,
   PreemptionRequestedPayloadSchema,
+  ReviewPollCompletedPayloadSchema,
   SubscriptionSchema,
   TaskChildrenAllDonePayloadSchema,
   TaskCreatedPayloadSchema,
@@ -94,8 +95,8 @@ describe("SubscriptionSchema", () => {
 // ── EventTypeSchema ────────────────────────────────────────────────────────────
 
 describe("EventTypeSchema", () => {
-  it("has exactly 33 event types", () => {
-    expect(EventTypeSchema.options).toHaveLength(33);
+  it("has exactly 34 event types", () => {
+    expect(EventTypeSchema.options).toHaveLength(34);
   });
 
   it("accepts all 33 valid event types", () => {
@@ -579,6 +580,24 @@ describe("CommMessageSentPayloadSchema", () => {
   });
 });
 
+describe("ReviewPollCompletedPayloadSchema", () => {
+  it("parses valid data", () => {
+    const valid = {
+      task_id: "01TASK",
+      pr_number: 51,
+      repo: "acme/webapp",
+      aggregate_state: "approved",
+      approvals: 1,
+      changes_requested_count: 0,
+      comment_count: 2,
+      reviewer_count: 1,
+      pr_draft: false,
+      dedup_skipped: false,
+    };
+    expect(ReviewPollCompletedPayloadSchema.parse(valid)).toEqual(valid);
+  });
+});
+
 // ── eventPayloadSchemas exhaustiveness ─────────────────────────────────────────
 
 describe("eventPayloadSchemas", () => {
@@ -592,8 +611,8 @@ describe("eventPayloadSchemas", () => {
     }
   });
 
-  it("has exactly 33 entries", () => {
-    expect(Object.keys(eventPayloadSchemas)).toHaveLength(33);
+  it("has exactly 34 entries", () => {
+    expect(Object.keys(eventPayloadSchemas)).toHaveLength(34);
   });
 
   it("every schema can validate an object", () => {

@@ -61,6 +61,7 @@ export const EventTypeSchema = z.enum([
   "health.plugin_recovered",
   "comm.message_received",
   "comm.message_sent",
+  "review.poll_completed",
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
@@ -398,6 +399,22 @@ export const CommMessageSentPayloadSchema = z.object({
 });
 export type CommMessageSentPayload = z.infer<typeof CommMessageSentPayloadSchema>;
 
+// review.*
+
+export const ReviewPollCompletedPayloadSchema = z.object({
+  task_id: z.string(),
+  pr_number: z.number().int().positive(),
+  repo: z.string(),
+  aggregate_state: z.enum(["approved", "changes_requested", "comment", "none"]),
+  approvals: z.number().int(),
+  changes_requested_count: z.number().int(),
+  comment_count: z.number().int(),
+  reviewer_count: z.number().int(),
+  pr_draft: z.boolean(),
+  dedup_skipped: z.boolean(),
+});
+export type ReviewPollCompletedPayload = z.infer<typeof ReviewPollCompletedPayloadSchema>;
+
 // ── EventPayloads mapped type ──────────────────────────────────────────────────
 
 export type EventPayloads = {
@@ -434,6 +451,7 @@ export type EventPayloads = {
   "health.plugin_recovered": HealthPluginRecoveredPayload;
   "comm.message_received": CommMessageReceivedPayload;
   "comm.message_sent": CommMessageSentPayload;
+  "review.poll_completed": ReviewPollCompletedPayload;
 };
 
 // ── TypedEvent generic ─────────────────────────────────────────────────────────
@@ -479,4 +497,5 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "health.plugin_recovered": HealthPluginRecoveredPayloadSchema,
   "comm.message_received": CommMessageReceivedPayloadSchema,
   "comm.message_sent": CommMessageSentPayloadSchema,
+  "review.poll_completed": ReviewPollCompletedPayloadSchema,
 };

@@ -1160,6 +1160,11 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
 
     // Prune stale dedup entries for tasks no longer in review_pending
+    logger.debug(
+      { count: reviewTasks.length, taskIds: reviewTasks.map((t) => t.id) },
+      "Polling review feedback",
+    );
+
     const reviewTaskIds = new Set(reviewTasks.map((t) => t.id));
     for (const key of processedReviewStates.keys()) {
       if (!reviewTaskIds.has(key)) {
@@ -1280,20 +1285,58 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       return;
     }
 
+    const prNumber = task.review.pr_number;
+    const repo = task.repo;
+
     try {
-      const reviewStatus = await hosting.getReviewStatus(task.repo, task.review.pr_number);
-      const prStatus = await hosting.getPRStatus(task.repo, task.review.pr_number);
-      const prComments = await fetchPRCommentStrings(hosting, task.repo, task.review.pr_number);
+      const reviewStatus = await hosting.getReviewStatus(repo, prNumber);
+      const prStatus = await hosting.getPRStatus(repo, prNumber);
+      const prComments = await fetchPRCommentStrings(hosting, repo, prNumber);
       const allComments = [...(reviewStatus.comments ?? []), ...prComments];
 
       const aggregateState = resolveAggregateState(reviewStatus, prComments);
+
+      // Count review states for observability
+      const approvalCount = reviewStatus.reviewers.filter((r) => r.state === "approved").length;
+      const changesCount = reviewStatus.reviewers.filter(
+        (r) => r.state === "changes_requested",
+      ).length;
+
+      // Emit poll event (every cycle, so the dashboard can show polling is alive)
+      const dedupKey = aggregateState
+        ? `${aggregateState}:${String(allComments.length)}`
+        : "none:0";
+      const dedupSkipped = processedReviewStates.get(task.id) === dedupKey;
+
+      eventBus.publish({
+        type: "review.poll_completed",
+        source: "daemon",
+        task_id: task.id,
+        payload: {
+          task_id: task.id,
+          pr_number: prNumber,
+          repo,
+          aggregate_state: aggregateState ?? "none",
+          approvals: approvalCount,
+          changes_requested_count: changesCount,
+          comment_count: allComments.length,
+          reviewer_count: reviewStatus.reviewers.length,
+          pr_draft: prStatus.draft,
+          dedup_skipped: dedupSkipped,
+        },
+      } satisfies PublishInput<"review.poll_completed">);
+
       if (!aggregateState) {
+        logger.debug(
+          { taskId: task.id, prNumber, reviewerCount: reviewStatus.reviewers.length },
+          "No actionable review activity",
+        );
         return;
       }
 
       const emitted = emitFeedbackIfNew(
         task.id,
-        task.review.pr_number,
+        prNumber,
         aggregateState,
         allComments,
         reviewStatus,
@@ -1301,8 +1344,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       );
       if (emitted) {
         logger.info(
-          { taskId: task.id, aggregateState, prNumber: task.review.pr_number },
+          { taskId: task.id, aggregateState, prNumber, approvals: approvalCount },
           "Review feedback detected",
+        );
+      } else {
+        logger.debug(
+          { taskId: task.id, aggregateState, prNumber },
+          "Review poll: no new feedback (dedup)",
         );
       }
     } catch (err) {

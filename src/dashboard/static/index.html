@@ -1730,6 +1730,51 @@ document.getElementById('task-detail-back').addEventListener('click', () => {
   document.getElementById('task-detail').classList.remove('visible');
 });
 
+function buildReviewPanel(t) {
+  const r = t.review;
+  if (!r && t.state !== 'review_pending') return '';
+
+  const prState = r?.pr_state || 'unknown';
+  const prNumber = r?.pr_number;
+  const prBadgeColor = prState === 'merged' ? 'badge-green' : prState === 'ready' ? 'badge-cyan' : 'badge-dim';
+  const subState = t.sub_state || '';
+  const feedbackRounds = r?.feedback_rounds || [];
+
+  let prLink = prNumber ? `PR #${prNumber}` : 'No PR';
+  // Try to build a link from repo
+  if (prNumber && t.repo) {
+    prLink = `<a href="https://github.com/${esc(t.repo)}/pull/${prNumber}" target="_blank" style="color:var(--cyan)">PR #${prNumber}</a>`;
+  }
+
+  let roundsHtml = '';
+  if (feedbackRounds.length > 0) {
+    roundsHtml = feedbackRounds.map((round, i) => {
+      const icon = round.applied ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--amber)">&#9679;</span>';
+      const comments = (round.comments || []).slice(0, 3).map(c => `<div style="color:var(--text-muted);padding-left:12px;font-size:0.7rem;">${esc(truncate(c, 100))}</div>`).join('');
+      const moreCount = (round.comments || []).length > 3 ? `<div style="color:var(--text-ghost);padding-left:12px;font-size:0.65rem;">+${(round.comments || []).length - 3} more</div>` : '';
+      return `<div style="margin-bottom:6px;">
+        ${icon} <span style="color:var(--text-secondary)">Round ${i + 1}</span> <span class="badge badge-dim" style="font-size:0.55rem">${esc(round.stage || '')}</span>
+        ${round.applied ? '<span style="color:var(--green);font-size:0.65rem;margin-left:4px;">applied</span>' : '<span style="color:var(--amber);font-size:0.65rem;margin-left:4px;">pending</span>'}
+        ${comments}${moreCount}
+      </div>`;
+    }).join('');
+  }
+
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-header">PR Review</div>
+    <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>${prLink} <span class="badge ${prBadgeColor}" style="font-size:0.6rem">${esc(prState)}</span></div>
+        ${subState ? `<span class="badge badge-purple" style="font-size:0.6rem">${esc(subState)} review</span>` : ''}
+      </div>
+      ${feedbackRounds.length > 0 ? `<div style="margin-top:4px;border-top:1px solid var(--border-dim);padding-top:6px;">
+        <div style="color:var(--text-muted);font-size:0.7rem;margin-bottom:4px;">Feedback Rounds (${feedbackRounds.length})</div>
+        ${roundsHtml}
+      </div>` : '<div style="color:var(--text-ghost);font-size:0.7rem;">Awaiting review...</div>'}
+    </div>
+  </div>`;
+}
+
 async function renderTaskDetail(taskId) {
   const [taskData, phasesData, timelineData] = await Promise.all([
     api('/api/tasks/' + taskId),
@@ -1802,6 +1847,21 @@ async function renderTaskDetail(taskId) {
       if (d.type === 'task.state_changed') {
         detail = `${esc(pl.from_state || '')} → ${esc(pl.to_state || '')}`;
         if (pl.reason) detail += ` (${esc(truncate(pl.reason, 80))})`;
+      } else if (d.type === 'task.feedback_received') {
+        const fbIcon = pl.feedback_type === 'approved' ? '<span style="color:var(--green)">&#10003;</span>'
+          : pl.feedback_type === 'changes_requested' ? '<span style="color:var(--red)">&#10007;</span>'
+          : '<span style="color:var(--amber)">&#9998;</span>';
+        detail = `${fbIcon} <span style="color:var(--cyan)">@${esc(pl.reviewer || '')}</span> ${esc(pl.feedback_type || '')} (${esc(pl.stage || '')} review)`;
+        if (pl.content) detail += `<div style="color:var(--text-muted);font-size:0.7rem;margin-top:2px;">${esc(truncate(pl.content, 120))}</div>`;
+      } else if (d.type === 'review.poll_completed') {
+        const stateColor = pl.aggregate_state === 'approved' ? 'var(--green)'
+          : pl.aggregate_state === 'changes_requested' ? 'var(--red)'
+          : pl.aggregate_state === 'comment' ? 'var(--amber)' : 'var(--text-ghost)';
+        detail = `PR #${pl.pr_number || '?'}: <span style="color:${stateColor}">${esc(pl.aggregate_state || 'none')}</span>`;
+        detail += ` (${pl.approvals || 0} approvals, ${pl.comment_count || 0} comments, ${pl.reviewer_count || 0} reviewers)`;
+        if (pl.dedup_skipped) detail += ' <span style="color:var(--text-ghost)">[dedup]</span>';
+      } else if (d.type === 'git.pr_opened') {
+        detail = `<a href="${esc(pl.url || '')}" target="_blank" style="color:var(--cyan)">PR #${pl.pr_number || '?'}</a> ${pl.draft ? '(draft)' : '(ready)'} → ${esc(pl.base_branch || '')}`;
       } else {
         detail = esc(truncate(JSON.stringify(pl), 120));
       }
@@ -1853,6 +1913,7 @@ async function renderTaskDetail(taskId) {
             <span style="color:var(--amber);font-weight:600">${fmt$(t.llm_cost_usd)}</span>
           </div>
         </div>
+        ${buildReviewPanel(t)}
         <div class="card">
           <div class="card-header">Details</div>
           <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:6px;">

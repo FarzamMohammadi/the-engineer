@@ -29,12 +29,12 @@ import {
 import { ActionClasses, type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ObservabilityStore } from "../observability/index.js";
 import type { IObserver } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
-import type { SessionMemory } from "../session-memory/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
@@ -90,7 +90,7 @@ export interface OrchestratorDependencies {
   taskEngine: TaskEngine;
   safetyLayer: SafetyLayer;
   actionPipeline: ActionPipeline;
-  sessionMemory: SessionMemory;
+  sessionMemory: ISessionMemory;
   workspaceManager: WorkspaceManager;
   peopleDirectory: PeopleDirectory;
   observability?: ObservabilityStore;
@@ -130,7 +130,7 @@ export class Orchestrator {
   // through ActionPipeline, so no direct calls in the skeleton.
   private readonly safetyLayer: SafetyLayer;
   private readonly actionPipeline: ActionPipeline;
-  private readonly sessionMemory: SessionMemory;
+  private readonly sessionMemory: ISessionMemory;
   private readonly workspaceManager: WorkspaceManager;
   private readonly peopleDirectory: PeopleDirectory;
   private readonly observability: ObservabilityStore | null;

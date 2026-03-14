@@ -6,16 +6,16 @@ import type {
   PipelineResult,
 } from "../../src/core/action-pipeline/index.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
-import { Orchestrator } from "../../src/core/orchestrator/index.js";
-import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
-import type { Registry } from "../../src/core/registry/index.js";
-import type { SafetyLayer } from "../../src/core/safety-layer/index.js";
 import type {
   AddJournalEntryInput,
   CreateCheckpointInput,
   CreateSessionInput,
-  SessionMemory,
-} from "../../src/core/session-memory/index.js";
+  ISessionMemory,
+} from "../../src/core/interfaces/session-memory.interface.js";
+import { Orchestrator } from "../../src/core/orchestrator/index.js";
+import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
+import type { Registry } from "../../src/core/registry/index.js";
+import type { SafetyLayer } from "../../src/core/safety-layer/index.js";
 import type { TaskEngine } from "../../src/core/task-engine/index.js";
 import type {
   WorkspaceManager,
@@ -352,7 +352,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     }),
   };
 
-  // ── SessionMemory mock ─────────────────────────────────────────────────
+  // ── ISessionMemory mock ─────────────────────────────────────────────────
   let checkpointCounter = 0;
   let sessionCounter = 0;
 
@@ -441,7 +441,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     taskEngine: taskEngine as unknown as TaskEngine,
     safetyLayer: safetyLayer as unknown as SafetyLayer,
     actionPipeline: actionPipeline as unknown as ActionPipeline,
-    sessionMemory: sessionMemory as unknown as SessionMemory,
+    sessionMemory: sessionMemory as unknown as ISessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
   });

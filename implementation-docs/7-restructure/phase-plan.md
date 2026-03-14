@@ -53,15 +53,15 @@ WAVE 6 (Sequential):   FINAL — End-to-end verification
 
 | Phase | Description | Wave | Prompt File | Status |
 |-------|-------------|------|-------------|--------|
-| R-0 | Centralized Observer (War Room's eyes) | 0 | `R-0-observer.md` | NOT STARTED |
-| R0 | Interface Foundation + Zod Enums + Shared Factory | 1 | `R0-interfaces.md` | NOT STARTED |
-| R1 | Safety Layer Split → CostTracker + PolicyEngine | 2 | `R1-safety-split.md` | NOT STARTED |
-| R2a | TaskEngine Decomposition | 2 | `R2a-task-engine.md` | NOT STARTED |
-| R2b | SessionMemory Decomposition | 2 | `R2b-session-memory.md` | NOT STARTED |
-| R2c | Registry Decomposition | 2 | `R2c-registry.md` | NOT STARTED |
-| R3 | Daemon Decomposition (6 subsystems) | 2 | `R3-daemon.md` | NOT STARTED |
-| R4 | Orchestrator Decomposition (5 subsystems) | 2 | `R4-orchestrator.md` | NOT STARTED |
-| — | *Merge Wave 2* | 2→3 | `MERGE-WAVE2.md` | NOT STARTED |
+| R-0 | Centralized Observer (War Room's eyes) | 0 | `R-0-observer.md` | DONE |
+| R0 | Interface Foundation + Zod Enums + Shared Factory | 1 | `R0-interfaces.md` | DONE |
+| R1 | Safety Layer Split → CostTracker + PolicyEngine | 2 | `R1-safety-split.md` | MERGED |
+| R2a | TaskEngine Decomposition | 2 | `R2a-task-engine.md` | MERGED |
+| R2b | SessionMemory Decomposition | 2 | `R2b-session-memory.md` | MERGED |
+| R2c | Registry Decomposition | 2 | `R2c-registry.md` | MERGED |
+| R3 | Daemon Decomposition (6 subsystems) | 2 | `R3-daemon.md` | MERGED |
+| R4 | Orchestrator Decomposition (5 subsystems) | 2 | `R4-orchestrator.md` | MERGED |
+| — | *Merge Wave 2* | 2→3 | `MERGE-WAVE2.md` | DONE |
 | R5 | Declarative Event Topology | 3 | `R5-event-topology.md` | NOT STARTED |
 | R6 | Plugin Discovery + Scaffolding + Hooks | 3 | `R6-plugin-discovery.md` | NOT STARTED |
 | R7 | CLI Polish | 3 | `R7-cli-polish.md` | NOT STARTED |

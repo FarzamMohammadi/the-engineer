@@ -88,7 +88,7 @@ describe("createInMemoryDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("3");
+    expect(row.value).toBe("4");
   });
 
   it("can insert and query a task row", () => {
@@ -194,7 +194,7 @@ describe("createDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("3");
+    expect(row.value).toBe("4");
   });
 });
 
@@ -239,6 +239,7 @@ describe("table structure", () => {
       "completed_at",
       "last_transition_at",
       "session_id",
+      "version",
     ];
     expect(columns).toEqual(expected);
   });

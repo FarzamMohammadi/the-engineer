@@ -29,13 +29,13 @@ import {
 import { ActionClasses, type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { ObservabilityStore } from "../observability/index.js";
 import type { IObserver } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
 import type { SessionMemory } from "../session-memory/index.js";
-import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
@@ -87,7 +87,7 @@ const PHASE_SCHEMAS: Record<Phase, ZodType> = {
 export interface OrchestratorDependencies {
   eventBus: EventBus;
   registry: Registry;
-  taskEngine: TaskEngine;
+  taskEngine: ITaskEngine;
   safetyLayer: SafetyLayer;
   actionPipeline: ActionPipeline;
   sessionMemory: SessionMemory;
@@ -124,7 +124,7 @@ export type ExecuteTaskResult =
 export class Orchestrator {
   private readonly eventBus: EventBus;
   private readonly registry: Registry;
-  private readonly taskEngine: TaskEngine;
+  private readonly taskEngine: ITaskEngine;
   // Stored for future use: Orchestrator will call consultJudgment() directly
   // for should_i_ask queries and cost_check pre-flight. Currently Gate 2 runs
   // through ActionPipeline, so no direct calls in the skeleton.

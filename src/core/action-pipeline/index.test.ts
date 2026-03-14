@@ -2,10 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventBus } from "../event-bus/index.js";
+import type { PermissionResult } from "../interfaces/task-engine.interface.js";
 import type { SafetyVerdict } from "../safety-layer/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
-import type { PermissionResult } from "../task-engine/index.js";
-import type { TaskEngine } from "../task-engine/index.js";
 import { ActionPipeline } from "./index.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

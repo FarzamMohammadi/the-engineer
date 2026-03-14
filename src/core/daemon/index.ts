@@ -20,12 +20,12 @@ import {
 import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import type { SafetyLayer } from "../safety-layer/index.js";
 import type { SessionMemory } from "../session-memory/index.js";
-import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
 import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 
@@ -49,7 +49,7 @@ export class RealClock implements Clock {
 export interface DaemonDependencies {
   eventBus: EventBus;
   registry: Registry;
-  taskEngine: TaskEngine;
+  taskEngine: ITaskEngine;
   safetyLayer: SafetyLayer;
   actionPipeline: ActionPipeline;
   orchestrator: Orchestrator;
@@ -596,7 +596,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   }
 
   function findAndInitiatePreemption(
-    queuedTasks: ReturnType<TaskEngine["getQueuedByPriority"]>,
+    queuedTasks: ReturnType<ITaskEngine["getQueuedByPriority"]>,
     now: number,
   ): void {
     const candidate = queuedTasks[0];
@@ -752,7 +752,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
   }
 
-  function dispatchTask(candidate: ReturnType<TaskEngine["getQueuedByPriority"]>[number]): void {
+  function dispatchTask(candidate: ReturnType<ITaskEngine["getQueuedByPriority"]>[number]): void {
     // Build dispatch package
     const checkpoint = sessionMemory.getLatestCheckpoint(candidate.id);
     const repoKnowledge = candidate.workspace

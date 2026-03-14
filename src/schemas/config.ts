@@ -12,6 +12,38 @@ export const ConfigVersionSchema = z.object({
 });
 export type ConfigVersion = z.infer<typeof ConfigVersionSchema>;
 
+// ── Data Lifecycle Config ────────────────────────────────────────────────────────
+
+export const TableRetentionSchema = z.object({
+  max_age_days: z.number().int().positive().default(90),
+  max_count: z.number().int().positive().nullable().default(null),
+});
+export type TableRetention = z.infer<typeof TableRetentionSchema>;
+
+export const DataLifecycleConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  interval_ms: z.number().int().positive().default(3_600_000), // 1 hour
+  retention: z
+    .object({
+      events: TableRetentionSchema.default({}),
+      action_traces: TableRetentionSchema.default({ max_age_days: 60 }),
+      phase_metrics: TableRetentionSchema.default({ max_age_days: 180 }),
+      llm_traces: TableRetentionSchema.default({ max_age_days: 60 }),
+      journal_entries: TableRetentionSchema.default({}),
+      checkpoints: TableRetentionSchema.default({}),
+    })
+    .default({}),
+  vacuum_on_cleanup: z.boolean().default(true),
+});
+export type DataLifecycleConfig = z.infer<typeof DataLifecycleConfigSchema>;
+
+// ── Database Config ─────────────────────────────────────────────────────────────
+
+export const DatabaseTuningConfigSchema = z.object({
+  cache_size_mb: z.number().int().positive().default(64),
+});
+export type DatabaseTuningConfig = z.infer<typeof DatabaseTuningConfigSchema>;
+
 // ── Daemon Config ───────────────────────────────────────────────────────────────
 // Loaded from daemon.yaml. Startup-only — not hot-reloadable.
 
@@ -63,6 +95,16 @@ export const DaemonConfigSchema = z.object({
       consecutive_failures_threshold: z.number().int().positive().default(3),
     })
     .default({}),
+
+  // Data lifecycle (R10)
+  data_lifecycle: DataLifecycleConfigSchema.default({}),
+
+  // Database tuning (R10)
+  database: DatabaseTuningConfigSchema.default({}),
+
+  // EventBus subscriber slow-callback warning threshold in ms (R10)
+  // 0 = disabled. When > 0, logs a warning if any subscriber callback exceeds this duration.
+  subscriber_warn_threshold_ms: z.number().int().min(0).default(50),
 });
 export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 

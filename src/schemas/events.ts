@@ -62,6 +62,7 @@ export const EventTypeSchema = z.enum([
   "comm.message_received",
   "comm.message_sent",
   "review.poll_completed",
+  "system.cleanup_completed",
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
@@ -418,6 +419,21 @@ export const ReviewPollCompletedPayloadSchema = z.object({
 });
 export type ReviewPollCompletedPayload = z.infer<typeof ReviewPollCompletedPayloadSchema>;
 
+// system.*
+
+export const SystemCleanupCompletedPayloadSchema = z.object({
+  duration_ms: z.number().int(),
+  tables: z.record(
+    z.object({
+      deleted: z.number().int(),
+      remaining: z.number().int(),
+    }),
+  ),
+  blobs_deleted: z.number().int(),
+  vacuum_ran: z.boolean(),
+});
+export type SystemCleanupCompletedPayload = z.infer<typeof SystemCleanupCompletedPayloadSchema>;
+
 // ── EventPayloads mapped type ──────────────────────────────────────────────────
 
 export type EventPayloads = {
@@ -455,6 +471,7 @@ export type EventPayloads = {
   "comm.message_received": CommMessageReceivedPayload;
   "comm.message_sent": CommMessageSentPayload;
   "review.poll_completed": ReviewPollCompletedPayload;
+  "system.cleanup_completed": SystemCleanupCompletedPayload;
 };
 
 // ── TypedEvent generic ─────────────────────────────────────────────────────────
@@ -501,4 +518,5 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "comm.message_received": CommMessageReceivedPayloadSchema,
   "comm.message_sent": CommMessageSentPayloadSchema,
   "review.poll_completed": ReviewPollCompletedPayloadSchema,
+  "system.cleanup_completed": SystemCleanupCompletedPayloadSchema,
 };

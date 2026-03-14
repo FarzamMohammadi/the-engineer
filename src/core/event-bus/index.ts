@@ -87,6 +87,8 @@ export interface EventBusOptions {
   topology?: EventTopology;
   /** When true, validate payloads against topology schemas on publish. Default: false. */
   validateOnPublish?: boolean;
+  /** Log a warning when a subscriber callback exceeds this duration (ms). 0 = disabled. Default: 0. */
+  subscriberWarnThresholdMs?: number;
 }
 
 export class EventBus implements IEventBus {
@@ -94,6 +96,7 @@ export class EventBus implements IEventBus {
   private subscriptions: SubscriptionRecord[] = [];
   private readonly topology: EventTopology | undefined;
   private readonly validateOnPublish: boolean;
+  private readonly subscriberWarnThresholdMs: number;
 
   private readonly insertStmt: Database.Statement;
   private readonly byTaskStmt: Database.Statement;
@@ -104,6 +107,7 @@ export class EventBus implements IEventBus {
     this.db = db;
     this.topology = options?.topology;
     this.validateOnPublish = options?.validateOnPublish ?? false;
+    this.subscriberWarnThresholdMs = options?.subscriberWarnThresholdMs ?? 0;
     this.insertStmt = db.prepare(
       "INSERT INTO events (id, type, source, task_id, timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)",
     );
@@ -223,11 +227,22 @@ export class EventBus implements IEventBus {
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
+  private warnIfSlow(subscriberId: string, eventType: string, startMs: number): void {
+    const elapsed = performance.now() - startMs;
+    if (elapsed > this.subscriberWarnThresholdMs) {
+      console.warn(
+        `EventBus: subscriber "${subscriberId}" took ${elapsed.toFixed(1)}ms processing "${eventType}" (threshold: ${this.subscriberWarnThresholdMs}ms)`,
+      );
+    }
+  }
+
   private deliver(event: Event): void {
     // Snapshot: safe if a callback calls subscribe() or unsubscribe() mid-delivery
     const snapshot = this.subscriptions;
+    const measureTiming = this.subscriberWarnThresholdMs > 0;
     for (const sub of snapshot) {
       if (matchesPattern(sub.pattern, event.type)) {
+        const start = measureTiming ? performance.now() : 0;
         try {
           sub.callback(event);
         } catch (error) {
@@ -235,6 +250,9 @@ export class EventBus implements IEventBus {
             `EventBus: subscriber "${sub.subscriberId}" threw on event "${event.type}":`,
             error,
           );
+        }
+        if (measureTiming) {
+          this.warnIfSlow(sub.subscriberId, event.type, start);
         }
       }
     }

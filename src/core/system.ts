@@ -33,6 +33,8 @@ export interface CreateCoreInput {
   db: Database.Database;
   safetyConfig: SafetyConfig;
   workspaceConfig: WorkspaceConfig;
+  /** EventBus subscriber slow-callback warning threshold (ms). 0 = disabled. */
+  subscriberWarnThresholdMs?: number;
 }
 
 /**
@@ -48,7 +50,11 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponents {
   topology.registerPublisher("safety-layer", SAFETY_LAYER_EVENTS);
   topology.registerPublisher("workspace-manager", WORKSPACE_MANAGER_EVENTS);
 
-  const eventBus = new EventBus(input.db, { topology });
+  const eventBusOptions: import("./event-bus/index.js").EventBusOptions = { topology };
+  if (input.subscriberWarnThresholdMs !== undefined) {
+    eventBusOptions.subscriberWarnThresholdMs = input.subscriberWarnThresholdMs;
+  }
+  const eventBus = new EventBus(input.db, eventBusOptions);
   const taskEngine = new TaskEngine(input.db, eventBus);
   const safetyLayer = new SafetyLayer(input.db, eventBus, input.safetyConfig);
   const actionPipeline = new ActionPipeline(taskEngine, safetyLayer, eventBus);

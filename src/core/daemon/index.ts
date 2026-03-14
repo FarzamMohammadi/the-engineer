@@ -11,6 +11,7 @@ import {
   HealthTriggerFailurePayloadSchema,
   PreemptionRequestedPayloadSchema,
   ReviewPollCompletedPayloadSchema,
+  SystemCleanupCompletedPayloadSchema,
   type TaskChildrenAllDonePayload,
   TaskChildrenAllDonePayloadSchema,
   type TaskFeedbackReceivedPayload,
@@ -19,6 +20,7 @@ import {
 } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
+import type { DataLifecycleManager } from "../data-lifecycle/index.js";
 import type { EventBus } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
@@ -88,6 +90,13 @@ export const EVENTS: EventDeclaration[] = [
     publishers: ["daemon"],
     subscribers: [],
   },
+  {
+    type: "system.cleanup_completed",
+    description: "Emitted after data lifecycle cleanup completes",
+    payloadSchema: SystemCleanupCompletedPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
 ];
 
 // ── Clock ───────────────────────────────────────────────────────────────────
@@ -120,6 +129,7 @@ export interface DaemonDependencies {
   clock: Clock;
   logger: Logger;
   engineerHome: string;
+  dataLifecycleManager?: DataLifecycleManager;
 }
 
 /** Observable Daemon state (for testing and debugging). */
@@ -264,6 +274,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     clock,
     logger,
     engineerHome,
+    dataLifecycleManager,
   } = deps;
 
   // ── Facade State ──────────────────────────────────────────────────────
@@ -570,6 +581,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Start Registry health check loop
     registry.startHealthCheckLoop();
 
+    // Start data lifecycle manager
+    dataLifecycleManager?.start();
+
     // Rebuild state from Task Engine (crash recovery)
     rebuildStateFromTaskEngine();
 
@@ -616,6 +630,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       clearInterval(tickInterval);
       tickInterval = null;
     }
+
+    // Stop data lifecycle manager
+    dataLifecycleManager?.stop();
 
     // Drain active dispatches with shutdown timeout
     await drainActiveDispatches();

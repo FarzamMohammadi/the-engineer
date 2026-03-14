@@ -14,6 +14,7 @@ import {
   createDaemon,
 } from "../core/daemon/index.js";
 import { createChildLogger, createLogger } from "../core/daemon/logging.js";
+import { createDataLifecycleManager } from "../core/data-lifecycle/index.js";
 import type { EventTopology } from "../core/event-bus/topology.js";
 import { HookRegistry } from "../core/hooks/index.js";
 import { BlobStore } from "../core/observability/blob-store.js";
@@ -66,7 +67,9 @@ export async function bootstrap(
   // 2. Database
   progress?.("Initializing database", "start");
   const dbPath = join(engineerHome, "data", "engineer.db");
-  const dbHandle: DatabaseHandle = createDatabase(dbPath);
+  const dbHandle: DatabaseHandle = createDatabase(dbPath, {
+    cacheSizeMb: config.daemon.database.cache_size_mb,
+  });
   progress?.("Initializing database", "done");
 
   // 3-9. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
@@ -83,6 +86,7 @@ export async function bootstrap(
     db: dbHandle.db,
     safetyConfig: config.safety,
     workspaceConfig: config.workspace,
+    subscriberWarnThresholdMs: config.daemon.subscriber_warn_threshold_ms,
   });
 
   // 4. Hook Registry
@@ -123,7 +127,17 @@ export async function bootstrap(
     observer,
   });
 
-  // 12. Daemon
+  // 12. Data Lifecycle Manager
+  const tracesDir = join(engineerHome, "traces");
+  const dataLifecycleManager = createDataLifecycleManager({
+    db: dbHandle.db,
+    eventBus,
+    config: config.daemon.data_lifecycle,
+    blobsDir: tracesDir,
+    clock: new RealClock(),
+  });
+
+  // 13. Daemon
   topology.registerPublisher("daemon", DAEMON_EVENTS);
   const daemon = createDaemon(config.daemon, {
     eventBus,
@@ -138,6 +152,7 @@ export async function bootstrap(
     clock: new RealClock(),
     logger: createChildLogger(logger, "daemon"),
     engineerHome,
+    dataLifecycleManager,
   });
   progress?.("Creating core components", "done");
 

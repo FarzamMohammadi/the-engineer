@@ -52,6 +52,13 @@ const MIGRATION_FILE_PATTERN = /^(\d+)_.*\.sql$/;
 const TRANSACTION_STATEMENT_PATTERN = /^\s*(BEGIN|COMMIT|ROLLBACK)\b/im;
 
 const BUSY_TIMEOUT_MS = 5_000;
+const DEFAULT_CACHE_SIZE_MB = 64;
+
+/** Options for database creation. */
+export interface DatabaseOptions {
+  /** SQLite page cache size in MB. Default: 64. */
+  cacheSizeMb?: number;
+}
 
 interface MigrationFile {
   version: number;
@@ -142,7 +149,7 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
  *
  * Creates the database file and parent directories if they don't exist.
  */
-export function createDatabase(dbPath: string): DatabaseHandle {
+export function createDatabase(dbPath: string, options?: DatabaseOptions): DatabaseHandle {
   // Ensure parent directories exist
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
@@ -160,6 +167,11 @@ export function createDatabase(dbPath: string): DatabaseHandle {
   // FK enforcement must be set before migrations — per-connection, not persisted
   db.pragma("foreign_keys = ON");
 
+  // auto_vacuum must be set before any tables exist. For existing databases where
+  // tables already exist, this is silently ignored (correct SQLite behavior).
+  // Only new installations benefit from incremental vacuum.
+  db.pragma("auto_vacuum = INCREMENTAL");
+
   // Run migrations
   runMigrations(db, dbPath, MIGRATIONS_DIR);
 
@@ -167,6 +179,10 @@ export function createDatabase(dbPath: string): DatabaseHandle {
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
+
+  // Cache size: negative value = KiB (SQLite convention)
+  const cacheSizeMb = options?.cacheSizeMb ?? DEFAULT_CACHE_SIZE_MB;
+  db.pragma(`cache_size = -${cacheSizeMb * 1_024}`);
 
   return {
     db,
@@ -194,4 +210,12 @@ export function createInMemoryDatabase(): DatabaseHandle {
       db.close();
     },
   };
+}
+
+/**
+ * Runs SQLite incremental vacuum to reclaim space after large deletes.
+ * Only effective when `auto_vacuum = INCREMENTAL` was set at DB creation.
+ */
+export function runIncrementalVacuum(db: Database.Database): void {
+  db.pragma("incremental_vacuum");
 }

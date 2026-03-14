@@ -31,7 +31,7 @@ function makeTriggerEvent(overrides?: Partial<TriggerEvent>): TriggerEvent {
     title: "Test happy path issue",
     body: "Test body for happy path",
     repo: "test/repo",
-    clone_url: "https://github.com/test/repo.git",
+    clone_url: "",
     metadata: null,
     ...overrides,
   };

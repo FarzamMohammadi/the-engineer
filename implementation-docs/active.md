@@ -2,15 +2,13 @@
 
 ## Current Focus
 
-**Layer 7: Structural Restructuring & Refinement.** MVP complete through Layer 6. Now restructuring the entire codebase for world-class modularity, security, DX, and OSS readiness. 18 prompt files across 6 waves, up to 6 parallel worktrees per wave. Every core component decomposed. Interfaces, tagged errors, event topology, plugin auto-discovery, CLI polish, security hardening, OSS foundation.
+**Next: Layer 6.10 — War Room v2 Dashboard Rebuild.** Architecture decisions D160-D165 documented. React + Vite + shadcn/ui + Tailwind + Lucide + Recharts + SSE. Plan in `.claude/plans/replicated-sniffing-fountain.md`.
 
-See [`7-restructure/`](7-restructure/) for Layer 7 documentation (to be created next session).
+**Layer 7: COMPLETE (Session 063).** Structural restructuring of the entire codebase — 18 phases across 6 waves. Every core component decomposed into focused sub-modules. Interfaces extracted, typed errors introduced, declarative event topology, plugin auto-discovery, CLI polish, security hardening, OSS foundation, data lifecycle management. 10 decisions (D166-D175). Final test count: 2,414 (2,355 unit + 42 integration + 17 E2E). See [`7-restructure/`](7-restructure/) for Layer 7 documentation.
 
-Previous: See [`6-refinement/`](6-refinement/) for Layer 6 documentation:
-- [`assessment.md`](6-refinement/assessment.md) — Current state assessment
-- [`gaps.md`](6-refinement/gaps.md) — Gap analysis (8 gaps, prioritized)
-- [`decisions.md`](6-refinement/decisions.md) — Layer 6 decisions (D137-D165)
-- [`phase-plan.md`](6-refinement/phase-plan.md) — Phase plan with dependencies (through 6.10)
+Previous layers:
+- [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)
+- [`7-restructure/`](7-restructure/) — Layer 7 documentation (D166-D175)
 
 All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
 
@@ -148,8 +146,8 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 **Layer 6 Phase 6.10 (War Room v2 — Dashboard Rebuild): PLANNED.** Architecture decisions D160-D165 documented. Deferred until after Layer 7.
 
-**Layer 7 (Structural Restructuring): PLANNED (Session 062).** Comprehensive plan approved. 18 phases across 6 waves. Full plan in `.claude/plans/tingly-wondering-fairy.md`. Next session: create Layer 7 tracking docs + all 18 prompt files + begin R0 (Interface Foundation).
+**Layer 7 (Structural Restructuring): COMPLETE (Session 063).** 18 phases across 6 waves, all DONE. 10 decisions (D166-D175). Decomposed every core component, extracted interfaces, added typed errors, declarative event topology, plugin auto-discovery, CLI polish, security hardening, OSS foundation, data lifecycle. Final: 2,414 tests (2,355 unit + 42 integration + 17 E2E), 0 TypeScript errors, 0 Biome warnings.
 
 Deferred items:
-- Communication receive capability — separate Layer 6 phase
-- War Room v2 dashboard rebuild — after Layer 7
+- Communication receive capability — separate phase
+- War Room v2 dashboard rebuild (Layer 6.10) — next focus

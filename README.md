@@ -53,7 +53,7 @@ Deep dives live in [`implementation-docs/`](implementation-docs/), organized by 
 ## Development
 
 ```bash
-pnpm test             # 1733 tests (unit + integration + E2E)
+pnpm test             # 2414 tests (unit + integration + E2E)
 pnpm run typecheck    # tsc --noEmit (strict)
 pnpm run lint         # Biome (all rules)
 pnpm run build        # Production build

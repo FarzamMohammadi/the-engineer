@@ -11,6 +11,8 @@ import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
 import { ActionPipeline } from "./action-pipeline/index.js";
 import { EventBus } from "./event-bus/index.js";
 import type { ISafetyLayer } from "./interfaces/safety-layer.interface.js";
+import type { ISessionMemory } from "./interfaces/session-memory.interface.js";
+import type { ITaskEngine } from "./interfaces/task-engine.interface.js";
 import { SafetyLayer } from "./safety-layer/index.js";
 import { SessionMemory } from "./session-memory/index.js";
 import { TaskEngine } from "./task-engine/index.js";
@@ -18,10 +20,10 @@ import { WorkspaceManager } from "./workspace-manager/index.js";
 
 export interface CoreComponents {
   eventBus: EventBus;
-  taskEngine: TaskEngine;
+  taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   actionPipeline: ActionPipeline;
-  sessionMemory: SessionMemory;
+  sessionMemory: ISessionMemory;
   workspaceManager: WorkspaceManager;
 }
 

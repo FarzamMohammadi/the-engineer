@@ -13,6 +13,7 @@ import {
 import { createSilentLogger } from "../../src/core/daemon/logging.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
+import type { ISessionMemory } from "../../src/core/interfaces/session-memory.interface.js";
 import type {
   ITaskEngine,
   TransitionResult,
@@ -20,7 +21,6 @@ import type {
 import type { ExecuteTaskResult, Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
-import type { SessionMemory } from "../../src/core/session-memory/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
 import type { DaemonConfig } from "../../src/schemas/config.js";
@@ -316,7 +316,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     safetyLayer: safetyLayer as unknown as ISafetyLayer,
     actionPipeline: actionPipeline as unknown as ActionPipeline,
     orchestrator: orchestrator as unknown as Orchestrator,
-    sessionMemory: sessionMemory as unknown as SessionMemory,
+    sessionMemory: sessionMemory as unknown as ISessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
     clock,

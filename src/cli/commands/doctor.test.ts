@@ -445,6 +445,21 @@ function makeSafeBundle() {
         health_check_timeout_ms: 5000,
         consecutive_failures_threshold: 3,
       },
+      data_lifecycle: {
+        enabled: true,
+        interval_ms: 3_600_000,
+        retention: {
+          events: { max_age_days: 90, max_count: null },
+          action_traces: { max_age_days: 60, max_count: null },
+          phase_metrics: { max_age_days: 180, max_count: null },
+          llm_traces: { max_age_days: 60, max_count: null },
+          journal_entries: { max_age_days: 90, max_count: null },
+          checkpoints: { max_age_days: 90, max_count: null },
+        },
+        vacuum_on_cleanup: true,
+      },
+      database: { cache_size_mb: 64 },
+      subscriber_warn_threshold_ms: 50,
     },
     orchestrator: {} as ReturnType<
       typeof import("../../schemas/config.js").OrchestratorConfigSchema.parse

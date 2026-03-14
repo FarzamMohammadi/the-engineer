@@ -408,8 +408,8 @@ describe("createDataLifecycleManager", () => {
     expect(stats.tables).toHaveProperty("llm_traces");
     expect(stats.tables).toHaveProperty("journal_entries");
     expect(stats.tables).toHaveProperty("checkpoints");
-    expect(stats.tables.events.deleted).toBe(1);
-    expect(stats.tables.events.remaining).toBe(1);
+    expect(stats.tables["events"]?.deleted).toBe(1);
+    expect(stats.tables["events"]?.remaining).toBe(1);
   });
 
   it("emits system.cleanup_completed event", () => {
@@ -428,10 +428,10 @@ describe("createDataLifecycleManager", () => {
     ebHandle.assertEventEmitted("system.cleanup_completed");
     const events = ebHandle.getEmittedEvents("system.cleanup_completed");
     expect(events).toHaveLength(1);
-    expect(events[0].payload).toHaveProperty("duration_ms");
-    expect(events[0].payload).toHaveProperty("tables");
-    expect(events[0].payload).toHaveProperty("blobs_deleted");
-    expect(events[0].payload).toHaveProperty("vacuum_ran");
+    expect(events[0]?.payload).toHaveProperty("duration_ms");
+    expect(events[0]?.payload).toHaveProperty("tables");
+    expect(events[0]?.payload).toHaveProperty("blobs_deleted");
+    expect(events[0]?.payload).toHaveProperty("vacuum_ran");
   });
 
   it("getLastRun returns null before first run", () => {
@@ -581,19 +581,19 @@ describe("DataLifecycleManager integration", () => {
     const stats = manager.runCleanup();
 
     // 2 events older than 90 days deleted
-    expect(stats.tables.events.deleted).toBe(2);
-    expect(stats.tables.events.remaining).toBe(2);
+    expect(stats.tables["events"]?.deleted).toBe(2);
+    expect(stats.tables["events"]?.remaining).toBe(2);
 
     // 1 action trace older than 60 days deleted
-    expect(stats.tables.action_traces.deleted).toBe(1);
-    expect(stats.tables.action_traces.remaining).toBe(1);
+    expect(stats.tables["action_traces"]?.deleted).toBe(1);
+    expect(stats.tables["action_traces"]?.remaining).toBe(1);
 
     // Cleanup event emitted
     ebHandle.assertEventEmitted("system.cleanup_completed");
     const events = ebHandle.getEmittedEvents("system.cleanup_completed");
-    const payload = events[0].payload as Record<string, unknown>;
-    expect(payload.vacuum_ran).toBe(false);
-    expect(payload.blobs_deleted).toBe(0);
+    const payload = events[0]?.payload as Record<string, unknown>;
+    expect(payload["vacuum_ran"]).toBe(false);
+    expect(payload["blobs_deleted"]).toBe(0);
   });
 });
 
@@ -665,8 +665,8 @@ describe("EventBus subscriber timing guard", () => {
     });
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain("slow-sub");
-    expect(warnSpy.mock.calls[0][0]).toContain("threshold: 1ms");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("slow-sub");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("threshold: 1ms");
     warnSpy.mockRestore();
   });
 
@@ -737,7 +737,7 @@ describe("Database tuning", () => {
 
       const result = handle.db.pragma("cache_size") as { cache_size: number }[];
       // Negative value = KiB, so 32 MB = -32768
-      expect(result[0].cache_size).toBe(-32768);
+      expect(result[0]?.cache_size).toBe(-32768);
 
       handle.close();
     } finally {
@@ -752,7 +752,7 @@ describe("Database tuning", () => {
 
       const result = handle.db.pragma("cache_size") as { cache_size: number }[];
       // Default 64 MB = -65536
-      expect(result[0].cache_size).toBe(-65536);
+      expect(result[0]?.cache_size).toBe(-65536);
 
       handle.close();
     } finally {

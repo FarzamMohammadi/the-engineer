@@ -74,6 +74,7 @@ const MANIFEST: PluginManifest = {
   enabled: true,
   entry: "index.ts",
   adapter_meta: {},
+  contributes: { events: [], commands: [], config_keys: [], hooks: [] },
 };
 
 const VALID_CONFIG = { github_token: "ghp_testtoken123" };

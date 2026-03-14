@@ -8,6 +8,8 @@ import type { z } from "zod";
 
 import type { Person } from "../schemas/adapters.js";
 import {
+  CURRENT_CONFIG_VERSION,
+  ConfigVersionSchema,
   DaemonConfigSchema,
   OrchestratorConfigSchema,
   PeopleConfigSchema,
@@ -70,6 +72,7 @@ export interface ConfigBundle {
   workspace: WorkspaceConfig;
   safety: SafetyConfig;
   people: Person[];
+  version: number;
 }
 
 export interface ConfigWarning {
@@ -346,6 +349,29 @@ export function loadConfigSafe<S extends z.ZodTypeAny>(
 // ── Config Directory Loading ─────────────────────────────────────────────────────
 
 /**
+ * Detect config schema version from daemon.yaml. Best-effort — returns
+ * CURRENT_CONFIG_VERSION if the file doesn't exist or has no version field.
+ */
+function detectConfigVersion(daemonPath: string): number {
+  if (!fs.existsSync(daemonPath)) {
+    return CURRENT_CONFIG_VERSION;
+  }
+  try {
+    const raw = fs.readFileSync(daemonPath, "utf-8");
+    const parsed = YAML.parse(raw) as Record<string, unknown> | null;
+    if (parsed && "version" in parsed) {
+      const result = ConfigVersionSchema.safeParse(parsed);
+      if (result.success) {
+        return result.data.version;
+      }
+    }
+  } catch {
+    // Version detection is best-effort
+  }
+  return CURRENT_CONFIG_VERSION;
+}
+
+/**
  * Loads all core config files from a directory. Startup behavior: throws on
  * invalid config. Returns warnings for notable conditions (e.g., missing
  * safety.yaml using conservative defaults).
@@ -362,7 +388,17 @@ export function loadConfigDir(configDir?: string): ConfigDirResult {
 
   const warnings: ConfigWarning[] = [];
 
-  const daemon = loadConfig(path.join(dir, "daemon.yaml"), DaemonConfigSchema);
+  const daemonPath = path.join(dir, "daemon.yaml");
+  const configVersion = detectConfigVersion(daemonPath);
+
+  if (configVersion > CURRENT_CONFIG_VERSION) {
+    warnings.push({
+      file: "daemon.yaml",
+      message: `Config version ${String(configVersion)} is newer than supported version ${String(CURRENT_CONFIG_VERSION)}. Some settings may not be recognized. Consider upgrading The Engineer.`,
+    });
+  }
+
+  const daemon = loadConfig(daemonPath, DaemonConfigSchema);
   const orchestrator = loadConfig(path.join(dir, "orchestrator.yaml"), OrchestratorConfigSchema);
   const workspace = loadConfig(path.join(dir, "workspace.yaml"), WorkspaceConfigSchema);
   const safety = loadConfig(path.join(dir, "safety.yaml"), SafetyConfigSchema);
@@ -390,6 +426,7 @@ export function loadConfigDir(configDir?: string): ConfigDirResult {
       workspace: workspace.config,
       safety: safety.config,
       people: peopleResult.config.people,
+      version: configVersion,
     },
     warnings,
   };

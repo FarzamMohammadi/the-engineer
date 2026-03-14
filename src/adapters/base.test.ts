@@ -45,6 +45,7 @@ function createManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     enabled: true,
     entry: "index.ts",
     adapter_meta: {},
+    contributes: { events: [], commands: [], config_keys: [], hooks: [] },
     ...overrides,
   };
 }

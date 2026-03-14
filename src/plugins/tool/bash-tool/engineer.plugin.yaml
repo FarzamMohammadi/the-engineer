@@ -12,3 +12,6 @@ adapter_meta:
     - write
     - test
     - git-local
+contributes:
+  config_keys:
+    - bash_tool

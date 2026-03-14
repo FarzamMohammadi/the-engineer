@@ -414,6 +414,7 @@ describe("runAllChecks", () => {
 
 function makeSafeBundle() {
   return {
+    version: 1,
     daemon: {
       max_concurrent: 1,
       tick_interval_ms: 5000,

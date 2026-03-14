@@ -73,6 +73,7 @@ function createManifest(): PluginManifest {
     enabled: true,
     entry: "index.ts",
     adapter_meta: { action_classes: ["read", "write"] },
+    contributes: { events: [], commands: [], config_keys: [], hooks: [] },
   };
 }
 

@@ -8,3 +8,7 @@ enabled: true
 entry: index.ts
 adapter_meta:
   poll_interval: "30s"
+contributes:
+  events:
+    - trigger.new_event
+    - trigger.pr_review

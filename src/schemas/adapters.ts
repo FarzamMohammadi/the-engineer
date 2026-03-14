@@ -19,6 +19,14 @@ export const PluginManifestSchema = z.object({
   enabled: z.boolean().default(true),
   entry: z.string().default("index.ts"),
   adapter_meta: z.record(z.unknown()).default({}),
+  contributes: z
+    .object({
+      events: z.array(z.string()).default([]),
+      commands: z.array(z.string()).default([]),
+      config_keys: z.array(z.string()).default([]),
+      hooks: z.array(z.string()).default([]),
+    })
+    .default({}),
 });
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 

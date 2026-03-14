@@ -70,6 +70,7 @@ function createManifest(): PluginManifest {
     enabled: true,
     entry: "index.ts",
     adapter_meta: { provider_type: "api" },
+    contributes: { events: [], commands: [], config_keys: [], hooks: [] },
   };
 }
 

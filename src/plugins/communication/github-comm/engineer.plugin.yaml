@@ -11,3 +11,6 @@ adapter_meta:
     - send
     - sync
     - issue_management
+contributes:
+  events:
+    - comm.message_sent

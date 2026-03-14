@@ -74,7 +74,7 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
     null,
     now,
     null,
-    (overrides.version as number) ?? 1,
+    (overrides["version"] as number) ?? 1,
   );
   return id;
 }

@@ -8,3 +8,6 @@ enabled: true
 entry: index.ts
 adapter_meta:
   provider_type: cli
+contributes:
+  events:
+    - cost.incurred

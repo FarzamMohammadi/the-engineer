@@ -13,6 +13,7 @@ import {
 } from "../../schemas/events.js";
 import type { EventBus } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import type { HookRegistry } from "../hooks/index.js";
 import { discoverPlugins, orderByTypePriority, validateDiscoveredPlugins } from "./discovery.js";
 import { createHealthMonitor } from "./health.js";
 import { type ConfigResolver, createLifecycleManager } from "./lifecycle.js";
@@ -30,6 +31,11 @@ export {
 export type { DiscoveredManifest } from "./discovery.js";
 export type { PluginRecord, LifecycleManager, ConfigResolver } from "./lifecycle.js";
 export type { HealthMonitor, HealthMonitorDeps } from "./health.js";
+export {
+  discoverPlugins as discoverAllPlugins,
+  type DiscoveryOptions,
+  type DiscoveredPlugin,
+} from "./plugin-discovery.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -64,6 +70,7 @@ export interface RegistryOptions {
   healthCheckIntervalMs?: number;
   healthCheckTimeoutMs?: number;
   consecutiveFailuresThreshold?: number;
+  hookRegistry?: HookRegistry | undefined;
 }
 
 // ── Registry Facade ────────────────────────────────────────────────────────
@@ -85,11 +92,13 @@ export class Registry {
   private readonly lifecycle = createLifecycleManager();
   private readonly healthMonitor;
   private readonly eventBus: EventBus;
+  private readonly hookRegistry?: HookRegistry | undefined;
   private readonly healthCheckIntervalMs: number;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: RegistryOptions) {
     this.eventBus = options.eventBus;
+    this.hookRegistry = options.hookRegistry;
     this.healthCheckIntervalMs = options.healthCheckIntervalMs ?? 60_000;
     this.healthMonitor = createHealthMonitor({
       eventBus: options.eventBus,
@@ -124,6 +133,9 @@ export class Registry {
   // ── Registration ───────────────────────────────────────────────────────
 
   register(manifest: PluginManifest, instance: BaseAdapter): RegistrationResult {
+    if (this.hookRegistry) {
+      instance.hookRegistry = this.hookRegistry;
+    }
     return this.lifecycle.register(manifest, instance);
   }
 

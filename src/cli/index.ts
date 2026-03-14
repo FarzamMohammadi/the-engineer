@@ -2,7 +2,9 @@ import { join } from "node:path";
 
 import { Command } from "commander";
 
+import { runConfigMigrate } from "./commands/config-migrate.js";
 import { runConfigValidate } from "./commands/config-validate.js";
+import { runCreatePlugin } from "./commands/create-plugin.js";
 import { runDashboard } from "./commands/dashboard.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
@@ -174,6 +176,32 @@ configCmd
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runConfigValidate(home);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+configCmd
+  .command("migrate")
+  .description("Migrate config files to the current version")
+  .action(() => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runConfigMigrate(home);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── create-plugin ─────────────────────────────────────────────────────────────
+
+program
+  .command("create-plugin <name>")
+  .description("Scaffold a new plugin")
+  .requiredOption("--type <type>", "Adapter type (trigger, communication, llm, tool, git_hosting)")
+  .option("--dir <dir>", "Output directory", process.cwd())
+  .action((name: string, options: { type: string; dir: string }) => {
+    const code = runCreatePlugin(name, options.type, options.dir);
     if (code !== 0) {
       process.exitCode = code;
     }

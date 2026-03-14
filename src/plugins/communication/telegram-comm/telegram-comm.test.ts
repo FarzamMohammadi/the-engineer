@@ -36,6 +36,7 @@ const MANIFEST: PluginManifest = {
   enabled: true,
   entry: "index.ts",
   adapter_meta: { capabilities: ["send"] },
+  contributes: { events: [], commands: [], config_keys: [], hooks: [] },
 };
 
 const VALID_CONFIG = {

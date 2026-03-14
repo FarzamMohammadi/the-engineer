@@ -10,3 +10,8 @@ adapter_meta:
   action_classes:
     - git-remote
     - merge
+contributes:
+  events:
+    - git.pr_opened
+    - git.pr_updated
+    - git.pr_merged

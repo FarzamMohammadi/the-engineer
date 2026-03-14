@@ -121,6 +121,7 @@ function createManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     enabled: true,
     entry: "index.ts",
     adapter_meta: { capabilities: ["send"] },
+    contributes: { events: [], commands: [], config_keys: [], hooks: [] },
     ...overrides,
   };
 }

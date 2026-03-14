@@ -2,6 +2,16 @@ import { z } from "zod";
 
 import { PersonSchema } from "./adapters.js";
 
+// ── Config Version ──────────────────────────────────────────────────────────────
+
+/** Current config schema version. */
+export const CURRENT_CONFIG_VERSION = 1;
+
+export const ConfigVersionSchema = z.object({
+  version: z.number().int().positive().default(CURRENT_CONFIG_VERSION),
+});
+export type ConfigVersion = z.infer<typeof ConfigVersionSchema>;
+
 // ── Daemon Config ───────────────────────────────────────────────────────────────
 // Loaded from daemon.yaml. Startup-only — not hot-reloadable.
 

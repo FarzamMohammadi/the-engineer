@@ -102,7 +102,7 @@ describe("createWorkspace", () => {
 
     h.assertEventEmitted("workspace.created", (p) => p["task_id"] === "task-1");
     const events = h.getEmittedEvents("workspace.created");
-    expect(events[0].payload["branch"]).toBe("engineer/task-1-dark-mode");
+    expect(events[0]?.payload["branch"]).toBe("engineer/task-1-dark-mode");
   });
 
   it("uses taskId as slug when no title provided", () => {

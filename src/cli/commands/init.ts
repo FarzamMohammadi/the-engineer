@@ -2,7 +2,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { checkbox } from "@inquirer/prompts";
+import { Separator, checkbox } from "@inquirer/prompts";
+import chalk from "chalk";
 import { parse as parseYaml } from "yaml";
 
 import type { PluginManifest } from "../../schemas/adapters.js";
@@ -31,13 +32,15 @@ interface AvailablePlugin {
 }
 
 /**
- * Find available plugins from src/plugins/ relative to the CLI source.
- * In dev (tsx): this file is at src/cli/commands/, plugins at src/plugins/.
- * After build (tsdown): this file is at dist/, plugins at dist/plugins/ (copied by build).
+ * Find available plugins relative to the CLI source.
+ * In dev (tsx): this file is at src/cli/commands/, plugins at src/plugins/ (../../plugins).
+ * After build (tsdown): bundled to dist/index.js, plugins at dist/plugins/ (./plugins).
  */
 function scanAvailablePlugins(): AvailablePlugin[] {
-  const pluginsRoot = resolve(THIS_DIR, "..", "..", "plugins");
-  if (!existsSync(pluginsRoot)) {
+  // Try bundled path first (dist/plugins/), then dev path (../../plugins from src/cli/commands/)
+  const candidates = [resolve(THIS_DIR, "plugins"), resolve(THIS_DIR, "..", "..", "plugins")];
+  const pluginsRoot = candidates.find((p) => existsSync(p));
+  if (!pluginsRoot) {
     return [];
   }
 
@@ -71,27 +74,41 @@ function parseAndAddManifest(manifestPath: string, dir: string, results: Availab
 
 // ── Plugin Selection ────────────────────────────────────────────────────────
 
-async function selectPlugins(available: AvailablePlugin[]): Promise<AvailablePlugin[]> {
-  const typePriority: Record<string, number> = {
-    trigger: 1,
-    llm: 2,
-    tool: 3,
-    git_hosting: 4,
-    communication: 5,
-  };
+const CATEGORY_ORDER: Array<{ type: string; label: string }> = [
+  { type: "trigger", label: "Trigger" },
+  { type: "llm", label: "LLM Provider" },
+  { type: "tool", label: "Tool" },
+  { type: "git_hosting", label: "Git Hosting" },
+  { type: "communication", label: "Communication" },
+];
 
-  const choices = available
-    .map((p) => ({
-      name: `${p.manifest.name} — ${p.manifest.description}`,
-      value: p.manifest.id,
-      checked: true,
-      _type: p.manifest.type,
-    }))
-    .sort((a, b) => (typePriority[a._type] ?? 99) - (typePriority[b._type] ?? 99));
+/** Single checkbox prompt — all plugins listed, grouped by category, all pre-checked. */
+async function selectPlugins(available: AvailablePlugin[]): Promise<AvailablePlugin[]> {
+  const choices: Array<{ name: string; value: string; checked: boolean } | Separator> = [];
+
+  for (const cat of CATEGORY_ORDER) {
+    const plugins = available.filter((p) => p.manifest.type === cat.type);
+    if (plugins.length === 0) {
+      continue;
+    }
+    if (choices.length > 0) {
+      choices.push(new Separator(" "));
+    }
+    choices.push(new Separator(`  ${cat.label}`));
+    for (const p of plugins) {
+      choices.push({
+        name: `${p.manifest.name} — ${p.manifest.description}`,
+        value: p.manifest.id,
+        checked: true,
+      });
+    }
+  }
 
   const selectedIds = await checkbox({
-    message: "Select plugins to install:",
+    message: chalk.bold("Select plugins to install:"),
     choices,
+    required: true,
+    loop: false,
   });
 
   return available.filter((p) => selectedIds.includes(p.manifest.id));
@@ -251,7 +268,6 @@ async function discoverAndInstallPlugins(
   dirs: EngineerDirs,
   options: InitOptions,
 ): Promise<Set<string>> {
-  out.blank();
   const available = scanAvailablePlugins();
 
   if (available.length === 0) {
@@ -259,12 +275,16 @@ async function discoverAndInstallPlugins(
     return new Set();
   }
 
+  out.blank();
+  out.log("  ─────────────────────────────────────");
+  out.blank();
   out.log(`  Found ${String(available.length)} available plugins:`);
   for (const p of available) {
     const typeLabel = TYPE_LABELS[p.manifest.type] ?? p.manifest.type;
     const critical = p.manifest.critical ? " [CRITICAL]" : "";
     out.log(`    ${p.manifest.id} (${typeLabel})${critical}`);
   }
+
   out.blank();
 
   const selected = options.allPlugins ? available : await selectPlugins(available);

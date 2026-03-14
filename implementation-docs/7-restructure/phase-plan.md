@@ -70,7 +70,7 @@ WAVE 6 (Sequential):   FINAL — End-to-end verification
 | R9 | OSS Foundation | 4 | `R9-oss-foundation.md` | MERGED |
 | R10 | Data Lifecycle + Performance | 4 | `R10-data-lifecycle.md` | MERGED |
 | — | *Merge Wave 4* | 4→5 | `MERGE-WAVE4.md` | DONE |
-| REVIEW | Deep Audit + Security Verification | 5 | `REVIEW.md` | NOT STARTED |
+| REVIEW | Deep Audit + Security Verification | 5 | `REVIEW.md` | DONE |
 | FINAL | End-to-End Verification | 6 | `FINAL.md` | NOT STARTED |
 
 ---

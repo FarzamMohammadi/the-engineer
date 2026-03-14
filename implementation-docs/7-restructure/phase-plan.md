@@ -62,11 +62,11 @@ WAVE 6 (Sequential):   FINAL — End-to-end verification
 | R3 | Daemon Decomposition (6 subsystems) | 2 | `R3-daemon.md` | MERGED |
 | R4 | Orchestrator Decomposition (5 subsystems) | 2 | `R4-orchestrator.md` | MERGED |
 | — | *Merge Wave 2* | 2→3 | `MERGE-WAVE2.md` | DONE |
-| R5 | Declarative Event Topology | 3 | `R5-event-topology.md` | NOT STARTED |
-| R6 | Plugin Discovery + Scaffolding + Hooks | 3 | `R6-plugin-discovery.md` | NOT STARTED |
-| R7 | CLI Polish | 3 | `R7-cli-polish.md` | NOT STARTED |
-| R8 | Security Hardening | 3 | `R8-security.md` | NOT STARTED |
-| — | *Merge Wave 3* | 3→4 | `MERGE-WAVE3.md` | NOT STARTED |
+| R5 | Declarative Event Topology | 3 | `R5-event-topology.md` | MERGED |
+| R6 | Plugin Discovery + Scaffolding + Hooks | 3 | `R6-plugin-discovery.md` | MERGED |
+| R7 | CLI Polish | 3 | `R7-cli-polish.md` | MERGED |
+| R8 | Security Hardening | 3 | `R8-security.md` | MERGED |
+| — | *Merge Wave 3* | 3→4 | `MERGE-WAVE3.md` | DONE |
 | R9 | OSS Foundation | 4 | `R9-oss-foundation.md` | NOT STARTED |
 | R10 | Data Lifecycle + Performance | 4 | `R10-data-lifecycle.md` | NOT STARTED |
 | — | *Merge Wave 4* | 4→5 | `MERGE-WAVE4.md` | NOT STARTED |

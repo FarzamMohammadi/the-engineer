@@ -7,6 +7,7 @@ import type {
 } from "../../src/core/action-pipeline/index.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
+import type { ITaskEngine } from "../../src/core/interfaces/task-engine.interface.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
@@ -16,7 +17,6 @@ import type {
   CreateSessionInput,
   SessionMemory,
 } from "../../src/core/session-memory/index.js";
-import type { TaskEngine } from "../../src/core/task-engine/index.js";
 import type {
   WorkspaceManager,
   WorkspaceVerification,
@@ -438,7 +438,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
   const orchestrator = new Orchestrator({
     eventBus: eventBus as unknown as EventBus,
     registry: registry as unknown as Registry,
-    taskEngine: taskEngine as unknown as TaskEngine,
+    taskEngine: taskEngine as unknown as ITaskEngine,
     safetyLayer: safetyLayer as unknown as ISafetyLayer,
     actionPipeline: actionPipeline as unknown as ActionPipeline,
     sessionMemory: sessionMemory as unknown as SessionMemory,

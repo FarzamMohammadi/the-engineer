@@ -9,7 +9,7 @@ import type {
 } from "../interfaces/action-pipeline.interface.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
-import type { TaskEngine } from "../task-engine/index.js";
+import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 
 // Re-export interface types so existing consumers don't break
 export type { ExecuteInput, PipelineResult } from "../interfaces/action-pipeline.interface.js";
@@ -22,11 +22,11 @@ export type { ExecuteInput, PipelineResult } from "../interfaces/action-pipeline
  * not the pipeline itself.
  */
 export class ActionPipeline implements IActionPipeline {
-  private readonly taskEngine: TaskEngine;
+  private readonly taskEngine: ITaskEngine;
   private readonly safetyLayer: ISafetyLayer;
   private readonly eventBus: EventBus;
 
-  constructor(taskEngine: TaskEngine, safetyLayer: ISafetyLayer, eventBus: EventBus) {
+  constructor(taskEngine: ITaskEngine, safetyLayer: ISafetyLayer, eventBus: EventBus) {
     this.taskEngine = taskEngine;
     this.safetyLayer = safetyLayer;
     this.eventBus = eventBus;

@@ -3,8 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventBus } from "../event-bus/index.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
-import type { PermissionResult } from "../task-engine/index.js";
-import type { TaskEngine } from "../task-engine/index.js";
+import type { ITaskEngine, PermissionResult } from "../interfaces/task-engine.interface.js";
 import { ActionPipeline } from "./index.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -27,7 +26,7 @@ function createMocks() {
     publish: vi.fn(),
   };
   const pipeline = new ActionPipeline(
-    taskEngine as unknown as TaskEngine,
+    taskEngine as unknown as ITaskEngine,
     safetyLayer as unknown as ISafetyLayer,
     eventBus as unknown as EventBus,
   );

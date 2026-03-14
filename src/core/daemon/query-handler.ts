@@ -4,13 +4,13 @@ import { AdapterTypes } from "../../schemas/adapters.js";
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import { type TaskState, TaskStates } from "../../schemas/task.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
+import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { Registry } from "../registry/index.js";
-import type { TaskEngine } from "../task-engine/index.js";
 
 const PROGRESS_RE = /progress.*#(\d+)|#(\d+).*progress/;
 
 export interface QueryHandlerDeps {
-  taskEngine: TaskEngine;
+  taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   registry: Registry;
   logger: Logger;
@@ -67,7 +67,7 @@ export async function handleQuery(
 
 // ── Response Formatters ───────────────────────────────────────────────────
 
-function formatStatusResponse(taskEngine: TaskEngine): string {
+function formatStatusResponse(taskEngine: ITaskEngine): string {
   const states: TaskState[] = [
     TaskStates.intake,
     TaskStates.queued,
@@ -87,7 +87,7 @@ function formatStatusResponse(taskEngine: TaskEngine): string {
   return counts.length > 0 ? `Task status:\n${counts.join("\n")}` : "No tasks found.";
 }
 
-function formatProgressResponse(taskEngine: TaskEngine, taskId: string): string {
+function formatProgressResponse(taskEngine: ITaskEngine, taskId: string): string {
   const task = taskEngine.getTask(taskId);
   if (!task) {
     return `Task #${taskId} not found.`;

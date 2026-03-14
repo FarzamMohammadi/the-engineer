@@ -13,11 +13,14 @@ import {
 import { createSilentLogger } from "../../src/core/daemon/logging.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
+import type {
+  ITaskEngine,
+  TransitionResult,
+} from "../../src/core/interfaces/task-engine.interface.js";
 import type { ExecuteTaskResult, Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import type { SessionMemory } from "../../src/core/session-memory/index.js";
-import type { TaskEngine, TransitionResult } from "../../src/core/task-engine/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
 import type { DaemonConfig } from "../../src/schemas/config.js";
@@ -309,7 +312,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
   const deps: DaemonDependencies = {
     eventBus: eventBus as unknown as EventBus,
     registry: registry as unknown as Registry,
-    taskEngine: taskEngine as unknown as TaskEngine,
+    taskEngine: taskEngine as unknown as ITaskEngine,
     safetyLayer: safetyLayer as unknown as ISafetyLayer,
     actionPipeline: actionPipeline as unknown as ActionPipeline,
     orchestrator: orchestrator as unknown as Orchestrator,

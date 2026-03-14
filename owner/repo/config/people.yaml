@@ -1,6 +1,0 @@
-people:
-  - handle: owner
-    role: owner
-    contacts:
-      - type: telegram
-        chat_id: ${TELEGRAM_CHAT_ID}

@@ -1,2 +1,0 @@
-bot_token: ${TELEGRAM_BOT_TOKEN}
-default_chat_id: ${TELEGRAM_CHAT_ID}

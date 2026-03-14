@@ -133,9 +133,9 @@ describe("Orchestrator", () => {
 
       const calls = handle.sessionMemory.createCheckpoint.mock.calls;
       // First checkpoint (intake_analysis) should reference research
-      expect((calls[0][0] as { nextAction: string }).nextAction).toContain("research");
+      expect((calls[0]![0] as { nextAction: string }).nextAction).toContain("research");
       // Last checkpoint (integration) should say complete
-      expect((calls[6][0] as { nextAction: string }).nextAction).toContain("complete");
+      expect((calls[6]![0] as { nextAction: string }).nextAction).toContain("complete");
     });
   });
 
@@ -265,7 +265,7 @@ describe("Orchestrator", () => {
         (call: unknown[]) => (call[0] as { type: string }).type === "preemption.ready",
       );
       expect(readyEvent).toBeDefined();
-      expect((readyEvent[0] as { payload: { task_id: string } }).payload.task_id).toBe("task-001");
+      expect((readyEvent![0] as { payload: { task_id: string } }).payload.task_id).toBe("task-001");
     });
 
     it("ends session with reason 'preempted'", async () => {
@@ -667,7 +667,13 @@ describe("Orchestrator", () => {
           id: "task-1",
           state: "blocked",
           sub_state: null,
-          blocked: { reason: "Missing dependency", since: new Date().toISOString() },
+          blocked: {
+            reason: "Missing dependency",
+            efforts_made: [],
+            contacted: [],
+            needed: "dependency",
+            waiting_for: "upstream",
+          },
         }),
       );
       handle.sessionMemory.queryJournal.mockReturnValue([]);

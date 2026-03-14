@@ -102,6 +102,7 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
       enabled: true,
       max_repos_per_task: 5,
     },
+    git_token_env: "GITHUB_TOKEN",
   };
 
   const workspaceManager = new WorkspaceManager(eventBus, config);

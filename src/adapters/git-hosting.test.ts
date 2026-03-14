@@ -7,6 +7,7 @@ import type {
   InitResult,
   MergeResult,
   MergeStrategy,
+  PRComment,
   PROptions,
   PRResult,
   PRStatus,
@@ -65,6 +66,7 @@ class TestGitHostingAdapter extends GitHostingAdapter {
       approvals: 1,
       changes_requested: false,
       reviewers: [],
+      comments: [],
     });
   }
 
@@ -89,6 +91,11 @@ class TestGitHostingAdapter extends GitHostingAdapter {
       required_checks: ["ci"],
       restrictions: null,
     });
+  }
+
+  protected doGetPRComments(_repo: string, _prNumber: number): Promise<PRComment[]> {
+    this.maybeThrow("getPRComments");
+    return Promise.resolve([]);
   }
 
   protected doGetDefaultBranch(_repo: string): Promise<string> {

@@ -149,7 +149,6 @@ describe("EventBus delivery (integration)", () => {
 
       expect(received).toHaveLength(5);
       for (let i = 1; i < received.length; i++) {
-        // biome-ignore lint/style/noNonNullAssertion: test assertion on known indices
         expect(received[i]!.sequence).toBeGreaterThan(received[i - 1]!.sequence);
       }
     });
@@ -251,7 +250,6 @@ describe("EventBus delivery (integration)", () => {
 
       expect(replayed).toHaveLength(3);
       for (let i = 1; i < replayed.length; i++) {
-        // biome-ignore lint/style/noNonNullAssertion: test assertion on known indices
         expect(replayed[i]!.sequence).toBeGreaterThan(replayed[i - 1]!.sequence);
       }
     });

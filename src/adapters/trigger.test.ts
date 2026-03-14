@@ -60,6 +60,7 @@ function createTriggerEvent(overrides?: Partial<TriggerEvent>): TriggerEvent {
     title: "Test Issue",
     body: null,
     repo: "test/repo",
+    clone_url: "https://github.com/test/repo.git",
     metadata: null,
     ...overrides,
   };

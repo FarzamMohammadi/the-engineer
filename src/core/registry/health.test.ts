@@ -54,9 +54,15 @@ describe("createHealthMonitor", () => {
   let handle: TestEventBusHandle;
 
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {
+      /* no-op */
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {
+      /* no-op */
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {
+      /* no-op */
+    });
     handle = createTestEventBus();
   });
 
@@ -124,7 +130,7 @@ describe("createHealthMonitor", () => {
       await monitor.healthCheckAll();
 
       expect(events).toHaveLength(1);
-      expect(events[0].type).toBe("health.plugin_unhealthy");
+      expect(events[0]!.type).toBe("health.plugin_unhealthy");
     });
 
     it("emits health.plugin_recovered on recovery", async () => {
@@ -142,7 +148,7 @@ describe("createHealthMonitor", () => {
       await monitor.healthCheckAll(); // unhealthy → healthy
 
       expect(events).toHaveLength(1);
-      expect(events[0].type).toBe("health.plugin_recovered");
+      expect(events[0]!.type).toBe("health.plugin_recovered");
     });
 
     it("does not emit events on healthy → healthy", async () => {
@@ -185,7 +191,11 @@ describe("createHealthMonitor", () => {
     it("treats timeout as a failed check", async () => {
       const instance = new FakeTriggerPlugin();
       // Override healthCheck to never resolve
-      vi.spyOn(instance, "healthCheck").mockReturnValue(new Promise(() => {}));
+      vi.spyOn(instance, "healthCheck").mockReturnValue(
+        new Promise(() => {
+          /* never resolves */
+        }),
+      );
       const record = createRecord("t1", instance);
       const monitor = createMonitor([record], handle, { healthCheckTimeoutMs: 10 });
 
@@ -197,7 +207,7 @@ describe("createHealthMonitor", () => {
   });
 
   describe("getHealthRecord", () => {
-    it("returns a copy of the health record", async () => {
+    it("returns a copy of the health record", () => {
       const record = createRecord("t1");
       const monitor = createMonitor([record], handle);
 

@@ -72,8 +72,8 @@ describe("SessionStore", () => {
 
     const chain = store.getSessionChain(taskId);
     expect(chain).toHaveLength(1);
-    expect(chain[0].ended_at).toBeTruthy();
-    expect(chain[0].end_reason).toBe("completed");
+    expect(chain[0]!.ended_at).toBeTruthy();
+    expect(chain[0]!.end_reason).toBe("completed");
   });
 
   it("throws for non-existent session on endSession", () => {
@@ -95,10 +95,10 @@ describe("SessionStore", () => {
 
     const chain = store.getSessionChain(taskId);
     expect(chain).toHaveLength(3);
-    expect(chain[0].id).toBe(s1.id);
-    expect(chain[1].id).toBe(s2.id);
-    expect(chain[2].id).toBe(s3.id);
-    expect(chain[2].previous_session_id).toBe(s2.id);
+    expect(chain[0]!.id).toBe(s1.id);
+    expect(chain[1]!.id).toBe(s2.id);
+    expect(chain[2]!.id).toBe(s3.id);
+    expect(chain[2]!.previous_session_id).toBe(s2.id);
   });
 
   it("returns empty array for task with no sessions", () => {

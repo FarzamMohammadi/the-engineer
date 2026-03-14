@@ -42,13 +42,14 @@ function waitForCallback<T>(timeoutMs = 2000): {
     reject = rej;
   });
   const timer = setTimeout(() => {
-    // biome-ignore lint/style/noNonNullAssertion: reject is assigned in the Promise constructor
     reject!(new Error(`Callback not called within ${timeoutMs}ms`));
   }, timeoutMs);
   // Clear timeout when promise resolves to avoid dangling timers
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op catch for cleanup timer
-  promise.then(() => clearTimeout(timer)).catch(() => {});
-  // biome-ignore lint/style/noNonNullAssertion: resolve is assigned in the Promise constructor
+  promise
+    .then(() => clearTimeout(timer))
+    .catch(() => {
+      /* no-op */
+    });
   return { promise, resolve: resolve! };
 }
 
@@ -154,8 +155,9 @@ describe("createConfigWatcher", () => {
   });
 
   it("stop() is idempotent", () => {
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op callback for stop test
-    const handle = createConfigWatcher(configPath, TestConfigSchema, () => {});
+    const handle = createConfigWatcher(configPath, TestConfigSchema, () => {
+      /* no-op */
+    });
     handle.stop();
     // Second call should not throw
     expect(() => {

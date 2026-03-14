@@ -69,25 +69,21 @@ describe("parseThreshold", () => {
 
 describe("evaluateThreshold", () => {
   it("returns true when threshold exceeded", () => {
-    // biome-ignore lint/style/noNonNullAssertion: test knows parse succeeds
     const parsed = parseThreshold("scope > 5")!;
     expect(evaluateThreshold(parsed, { scope: 10 })).toBe(true);
   });
 
   it("returns false when within threshold", () => {
-    // biome-ignore lint/style/noNonNullAssertion: test knows parse succeeds
     const parsed = parseThreshold("scope > 5")!;
     expect(evaluateThreshold(parsed, { scope: 3 })).toBe(false);
   });
 
   it("returns false when metric missing from details", () => {
-    // biome-ignore lint/style/noNonNullAssertion: test knows parse succeeds
     const parsed = parseThreshold("scope > 5")!;
     expect(evaluateThreshold(parsed, { files: 10 })).toBe(false);
   });
 
   it("handles equality operator", () => {
-    // biome-ignore lint/style/noNonNullAssertion: test knows parse succeeds
     const parsed = parseThreshold("count = 3")!;
     expect(evaluateThreshold(parsed, { count: 3 })).toBe(true);
     expect(evaluateThreshold(parsed, { count: 4 })).toBe(false);

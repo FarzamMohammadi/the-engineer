@@ -8,7 +8,7 @@ import {
   createTestTriggerEvent,
 } from "../../../test/helpers/test-daemon.js";
 import { createMockTask } from "../../../test/helpers/test-orchestrator.js";
-import type { ExecuteTaskResult } from "./index.js";
+import type { ExecuteTaskResult } from "../orchestrator/index.js";
 import {
   computeAgedPriority,
   deriveAggregateReviewState,
@@ -588,7 +588,7 @@ describe("Daemon", () => {
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([lowTask]);
 
       // Orchestrator will return preempted
-      let resolveExecute: (result: ExecuteTaskResult) => void;
+      let resolveExecute: ((result: ExecuteTaskResult) => void) | undefined;
       handle.orchestrator.executeTask.mockReturnValueOnce(
         new Promise<ExecuteTaskResult>((resolve) => {
           resolveExecute = resolve;
@@ -1169,7 +1169,7 @@ describe("Daemon", () => {
         source: "task-engine",
         task_id: "parent-1",
         sequence: 1,
-        created_at: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
         payload: {
           parent_task_id: "parent-1",
           child_ids: ["child-1", "child-2"],
@@ -1205,7 +1205,7 @@ describe("Daemon", () => {
         source: "task-engine",
         task_id: "parent-1",
         sequence: 2,
-        created_at: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
         payload: {
           parent_task_id: "parent-1",
           child_ids: ["child-1"],
@@ -1236,7 +1236,7 @@ describe("Daemon", () => {
         source: "task-engine",
         task_id: "missing-parent",
         sequence: 3,
-        created_at: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
         payload: {
           parent_task_id: "missing-parent",
           child_ids: ["child-1"],

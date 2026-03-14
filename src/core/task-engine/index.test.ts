@@ -256,12 +256,12 @@ describe("TaskEngine", () => {
       handle.assertEventEmitted("task.created", (payload) => {
         const p = payload as Record<string, unknown>;
         return (
-          p.task_id === task.id &&
-          p.title === "Test task" &&
-          p.repo === "owner/test-repo" &&
-          p.source === "test" &&
-          p.priority === 75 &&
-          p.parent_id === null
+          p["task_id"] === task.id &&
+          p["title"] === "Test task" &&
+          p["repo"] === "owner/test-repo" &&
+          p["source"] === "test" &&
+          p["priority"] === 75 &&
+          p["parent_id"] === null
         );
       });
     });
@@ -372,12 +372,12 @@ describe("TaskEngine", () => {
       engine.requestTransition(task.id, "queued", null, "validated", "daemon");
       const history = engine.getStateHistory(task.id);
       expect(history).toHaveLength(1);
-      expect(history[0].from_state).toBe("intake");
-      expect(history[0].to_state).toBe("queued");
-      expect(history[0].from_sub).toBeNull();
-      expect(history[0].to_sub).toBeNull();
-      expect(history[0].reason).toBe("validated");
-      expect(history[0].triggered_by).toBe("daemon");
+      expect(history[0]!.from_state).toBe("intake");
+      expect(history[0]!.to_state).toBe("queued");
+      expect(history[0]!.from_sub).toBeNull();
+      expect(history[0]!.to_sub).toBeNull();
+      expect(history[0]!.reason).toBe("validated");
+      expect(history[0]!.triggered_by).toBe("daemon");
     });
 
     it("emits task.state_changed event with correct payload", () => {
@@ -386,13 +386,13 @@ describe("TaskEngine", () => {
       handle.assertEventEmitted("task.state_changed", (payload) => {
         const p = payload as Record<string, unknown>;
         return (
-          p.task_id === task.id &&
-          p.from_state === "intake" &&
-          p.from_sub === null &&
-          p.to_state === "queued" &&
-          p.to_sub === null &&
-          p.reason === "validated" &&
-          p.triggered_by === "daemon"
+          p["task_id"] === task.id &&
+          p["from_state"] === "intake" &&
+          p["from_sub"] === null &&
+          p["to_state"] === "queued" &&
+          p["to_sub"] === null &&
+          p["reason"] === "validated" &&
+          p["triggered_by"] === "daemon"
         );
       });
     });
@@ -691,9 +691,9 @@ describe("TaskEngine", () => {
       const intakeTasks = engine.getTasksByState("intake");
       const queuedTasks = engine.getTasksByState("queued");
       expect(intakeTasks).toHaveLength(1);
-      expect(intakeTasks[0].title).toBe("Task 2");
+      expect(intakeTasks[0]!.title).toBe("Task 2");
       expect(queuedTasks).toHaveLength(1);
-      expect(queuedTasks[0].title).toBe("Task 1");
+      expect(queuedTasks[0]!.title).toBe("Task 1");
     });
 
     it("returns empty array when no tasks in state", () => {
@@ -706,9 +706,9 @@ describe("TaskEngine", () => {
       engine.createTask(makeInput({ title: "Mid", priority: 50 }));
 
       const tasks = engine.getTasksByState("intake");
-      expect(tasks[0].title).toBe("High");
-      expect(tasks[1].title).toBe("Mid");
-      expect(tasks[2].title).toBe("Low");
+      expect(tasks[0]!.title).toBe("High");
+      expect(tasks[1]!.title).toBe("Mid");
+      expect(tasks[2]!.title).toBe("Low");
     });
 
     it("returns multiple tasks in same state", () => {
@@ -729,7 +729,7 @@ describe("TaskEngine", () => {
 
       const queued = engine.getQueuedByPriority();
       expect(queued).toHaveLength(1);
-      expect(queued[0].title).toBe("Queued task");
+      expect(queued[0]!.title).toBe("Queued task");
     });
 
     it("orders by priority DESC", () => {
@@ -739,8 +739,8 @@ describe("TaskEngine", () => {
       engine.requestTransition(high.id, "queued", null, "validated", "test");
 
       const queued = engine.getQueuedByPriority();
-      expect(queued[0].title).toBe("High");
-      expect(queued[1].title).toBe("Low");
+      expect(queued[0]!.title).toBe("High");
+      expect(queued[1]!.title).toBe("Low");
     });
 
     it("breaks priority ties by created_at ASC (oldest first)", () => {
@@ -750,8 +750,8 @@ describe("TaskEngine", () => {
       engine.requestTransition(second.id, "queued", null, "validated", "test");
 
       const queued = engine.getQueuedByPriority();
-      expect(queued[0].title).toBe("First");
-      expect(queued[1].title).toBe("Second");
+      expect(queued[0]!.title).toBe("First");
+      expect(queued[1]!.title).toBe("Second");
     });
 
     it("returns empty when no queued tasks", () => {
@@ -785,7 +785,7 @@ describe("TaskEngine", () => {
 
       const children = engine.getChildren(grandparent.id);
       expect(children).toHaveLength(1);
-      expect(children[0].title).toBe("Parent");
+      expect(children[0]!.title).toBe("Parent");
     });
   });
 
@@ -799,11 +799,11 @@ describe("TaskEngine", () => {
 
       const history = engine.getStateHistory(task.id);
       expect(history).toHaveLength(2);
-      expect(history[0].from_state).toBe("intake");
-      expect(history[0].to_state).toBe("queued");
-      expect(history[1].from_state).toBe("queued");
-      expect(history[1].to_state).toBe("active");
-      expect(history[1].to_sub).toBe("working");
+      expect(history[0]!.from_state).toBe("intake");
+      expect(history[0]!.to_state).toBe("queued");
+      expect(history[1]!.from_state).toBe("queued");
+      expect(history[1]!.to_state).toBe("active");
+      expect(history[1]!.to_sub).toBe("working");
     });
 
     it("returns transitions ordered by timestamp", () => {

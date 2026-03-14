@@ -138,7 +138,7 @@ function createSecondDaemon(ctx: IntegrationContext): Daemon {
     stuck_threshold_ms: 5_000,
     max_active_duration_ms: 30_000,
     shutdown_timeout_ms: 5_000,
-    logging: { ...base.logging, level: "silent", console: false },
+    logging: { ...base.logging, level: "error", console: false },
     plugins: {
       ...base.plugins,
       health_check_interval_ms: 5_000,

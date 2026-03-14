@@ -102,9 +102,10 @@ describe("runSetup", () => {
     const prompts = await import("@inquirer/prompts");
     // The input mock's validate function is called by inquirer
     // We test the validate function by extracting it
-    let validateFn: ((val: string) => string | true) | undefined;
+    let validateFn: ((val: string) => string | boolean | Promise<string | boolean>) | undefined;
     vi.mocked(prompts.input).mockImplementation(
-      (opts: { validate?: (val: string) => string | true }) => {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock type coercion
+      (opts: any) => {
         if (opts.validate) {
           validateFn = opts.validate;
         }

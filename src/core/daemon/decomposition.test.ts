@@ -52,10 +52,11 @@ describe("Daemon — Decomposition", () => {
       // children_all_done should have been emitted
       const publishCalls = handle.eventBus.publish.mock.calls;
       const childrenDoneEvent = publishCalls.find(
-        (call: unknown[]) => (call[0] as Record<string, unknown>).type === "task.children_all_done",
+        (call: unknown[]) =>
+          (call[0] as Record<string, unknown>)["type"] === "task.children_all_done",
       );
       expect(childrenDoneEvent).toBeDefined();
-      const payload = (childrenDoneEvent?.[0] as Record<string, unknown>).payload as Record<
+      const payload = (childrenDoneEvent?.[0] as Record<string, unknown>)["payload"] as Record<
         string,
         unknown
       >;
@@ -103,7 +104,8 @@ describe("Daemon — Decomposition", () => {
 
       const publishCalls = handle.eventBus.publish.mock.calls;
       const childrenDoneEvent = publishCalls.find(
-        (call: unknown[]) => (call[0] as Record<string, unknown>).type === "task.children_all_done",
+        (call: unknown[]) =>
+          (call[0] as Record<string, unknown>)["type"] === "task.children_all_done",
       );
       expect(childrenDoneEvent).toBeUndefined();
     });
@@ -144,10 +146,11 @@ describe("Daemon — Decomposition", () => {
 
       const publishCalls = handle.eventBus.publish.mock.calls;
       const childrenDoneEvent = publishCalls.find(
-        (call: unknown[]) => (call[0] as Record<string, unknown>).type === "task.children_all_done",
+        (call: unknown[]) =>
+          (call[0] as Record<string, unknown>)["type"] === "task.children_all_done",
       );
       expect(childrenDoneEvent).toBeDefined();
-      const payload = (childrenDoneEvent?.[0] as Record<string, unknown>).payload as Record<
+      const payload = (childrenDoneEvent?.[0] as Record<string, unknown>)["payload"] as Record<
         string,
         unknown
       >;
@@ -179,7 +182,8 @@ describe("Daemon — Decomposition", () => {
 
       const publishCalls = handle.eventBus.publish.mock.calls;
       const childrenDoneEvent = publishCalls.find(
-        (call: unknown[]) => (call[0] as Record<string, unknown>).type === "task.children_all_done",
+        (call: unknown[]) =>
+          (call[0] as Record<string, unknown>)["type"] === "task.children_all_done",
       );
       expect(childrenDoneEvent).toBeUndefined();
     });

@@ -202,7 +202,6 @@ describe("E2E: Task happy path", () => {
     // Get latest checkpoint for first task
     const task = allTasks[0];
     expect(task).toBeDefined();
-    // biome-ignore lint/style/noNonNullAssertion: guarded by expect above
     const checkpoint = ctx.sessionMemory.getLatestCheckpoint(task!.id);
     expect(checkpoint).not.toBeNull();
     // Final checkpoint should be for integration (last phase)

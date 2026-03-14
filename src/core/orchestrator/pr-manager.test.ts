@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
@@ -297,7 +297,7 @@ describe("PrManager", () => {
 
     // The createPR call should have sanitized the description
     if (fakeGitHosting.createPR.mock.calls.length > 0) {
-      const prArgs = fakeGitHosting.createPR.mock.calls[0][0];
+      const prArgs = fakeGitHosting.createPR.mock.calls[0]![0];
       // sanitizeSecrets replaces known env var values, not arbitrary tokens
       // Just verify it was called with a body field
       expect(prArgs.body).toBeDefined();

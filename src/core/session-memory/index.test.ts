@@ -71,8 +71,8 @@ describe("endSession", () => {
 
     const chain = sessionMemory.getSessionChain(taskId);
     expect(chain).toHaveLength(1);
-    expect(chain[0].ended_at).toBeTruthy();
-    expect(chain[0].end_reason).toBe("completed");
+    expect(chain[0]!.ended_at).toBeTruthy();
+    expect(chain[0]!.end_reason).toBe("completed");
   });
 
   it("throws for non-existent session", () => {
@@ -329,7 +329,7 @@ describe("getKnowledge", () => {
 
     const results = sessionMemory.getKnowledge("repo", "owner/repo");
     expect(results).toHaveLength(1);
-    expect(results[0].id).toBe(newer.id);
+    expect(results[0]!.id).toBe(newer.id);
   });
 
   it("filters by repo scope", () => {
@@ -340,11 +340,11 @@ describe("getKnowledge", () => {
 
     const resultsA = sessionMemory.getKnowledge("repo", "owner/repo-a");
     expect(resultsA).toHaveLength(1);
-    expect(resultsA[0].key).toBe("k1");
+    expect(resultsA[0]!.key).toBe("k1");
 
     const resultsB = sessionMemory.getKnowledge("repo", "owner/repo-b");
     expect(resultsB).toHaveLength(1);
-    expect(resultsB[0].key).toBe("k2");
+    expect(resultsB[0]!.key).toBe("k2");
   });
 
   it("returns all active entries when no repo scope given", () => {
@@ -384,7 +384,7 @@ describe("supersedeKnowledge", () => {
 
     const results = sessionMemory.getKnowledge("repo", "owner/repo");
     expect(results).toHaveLength(1);
-    expect(results[0].id).toBe(c.id);
+    expect(results[0]!.id).toBe(c.id);
   });
 
   it("throws for non-existent old ID", () => {
@@ -405,7 +405,7 @@ describe("confirmKnowledge", () => {
     sessionMemory.confirmKnowledge(entry.id);
 
     const results = sessionMemory.getKnowledge("repo", "owner/repo");
-    expect(results[0].last_confirmed >= originalConfirmed).toBe(true);
+    expect(results[0]!.last_confirmed >= originalConfirmed).toBe(true);
   });
 
   it("throws for non-existent ID", () => {
@@ -472,7 +472,7 @@ describe("queryJournal", () => {
 
     const entries = sessionMemory.queryJournal(taskId, { type: "finding" });
     expect(entries).toHaveLength(1);
-    expect(entries[0].type).toBe("finding");
+    expect(entries[0]!.type).toBe("finding");
   });
 
   it("filters by phase", () => {
@@ -495,7 +495,7 @@ describe("queryJournal", () => {
       tags: ["auth", "patterns"],
     });
     expect(entries).toHaveLength(1);
-    expect(entries[0].summary).toBe("Found patterns");
+    expect(entries[0]!.summary).toBe("Found patterns");
   });
 
   it("filters by since (timestamp)", () => {
@@ -513,7 +513,7 @@ describe("queryJournal", () => {
 
     // Get the timestamp of the entry just added
     const allEntries = sessionMemory.queryJournal(taskId);
-    const sinceTime = allEntries[0].timestamp;
+    const sinceTime = allEntries[0]!.timestamp;
 
     sessionMemory.addJournalEntry({
       sessionId: session.id,
@@ -539,7 +539,7 @@ describe("queryJournal", () => {
       phase: "research",
     });
     expect(entries).toHaveLength(1);
-    expect(entries[0].summary).toBe("Read files");
+    expect(entries[0]!.summary).toBe("Read files");
   });
 });
 
@@ -558,11 +558,11 @@ describe("getSessionChain", () => {
 
     const chain = sessionMemory.getSessionChain(taskId);
     expect(chain).toHaveLength(3);
-    expect(chain[0].id).toBe(s1.id);
-    expect(chain[1].id).toBe(s2.id);
-    expect(chain[2].id).toBe(s3.id);
-    expect(chain[1].previous_session_id).toBe(s1.id);
-    expect(chain[2].previous_session_id).toBe(s2.id);
+    expect(chain[0]!.id).toBe(s1.id);
+    expect(chain[1]!.id).toBe(s2.id);
+    expect(chain[2]!.id).toBe(s3.id);
+    expect(chain[1]!.previous_session_id).toBe(s1.id);
+    expect(chain[2]!.previous_session_id).toBe(s2.id);
   });
 
   it("returns empty array for task with no sessions", () => {

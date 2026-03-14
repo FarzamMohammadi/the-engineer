@@ -196,10 +196,10 @@ describe("TriggerPoller", () => {
     // Health event should be emitted on the 3rd failure
     const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
     const healthEvents = publishCalls.filter(
-      ([evt]: [{ type: string }]) => evt.type === "health.trigger_failure",
+      (call: unknown[]) => (call[0] as { type: string }).type === "health.trigger_failure",
     );
     expect(healthEvents.length).toBe(1);
-    expect(healthEvents[0][0].payload).toEqual(
+    expect((healthEvents[0]![0] as { payload: unknown }).payload).toEqual(
       expect.objectContaining({
         trigger_id: "test-trigger",
         consecutive_failures: 3,
@@ -365,10 +365,10 @@ describe("TriggerPoller", () => {
 
     const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
     const triggerEvents = publishCalls.filter(
-      ([evt]: [{ type: string }]) => evt.type === "trigger.new_event",
+      (call: unknown[]) => (call[0] as { type: string }).type === "trigger.new_event",
     );
     expect(triggerEvents.length).toBe(1);
-    expect(triggerEvents[0][0].payload).toEqual(
+    expect((triggerEvents[0]![0] as { payload: unknown }).payload).toEqual(
       expect.objectContaining({
         idempotency_key: "evt-key",
         title: "My new issue",

@@ -19,9 +19,15 @@ describe("createLifecycleManager", () => {
   let lifecycle: ReturnType<typeof createLifecycleManager>;
 
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {
+      /* no-op */
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {
+      /* no-op */
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {
+      /* no-op */
+    });
     lifecycle = createLifecycleManager();
   });
 
@@ -183,11 +189,13 @@ describe("createLifecycleManager", () => {
       lifecycle.register(createManifest("trigger", "t1"), t1);
       lifecycle.register(createManifest("llm", "l1"), t2);
 
-      vi.spyOn(t1, "shutdown").mockImplementation(async () => {
+      vi.spyOn(t1, "shutdown").mockImplementation(() => {
         shutdownOrder.push("t1");
+        return Promise.resolve();
       });
-      vi.spyOn(t2, "shutdown").mockImplementation(async () => {
+      vi.spyOn(t2, "shutdown").mockImplementation(() => {
         shutdownOrder.push("l1");
+        return Promise.resolve();
       });
 
       await lifecycle.shutdownAll();

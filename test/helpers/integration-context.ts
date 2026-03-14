@@ -15,6 +15,7 @@ import { SafetyLayer } from "../../src/core/safety-layer/index.js";
 import { SessionMemory } from "../../src/core/session-memory/index.js";
 import { TaskEngine } from "../../src/core/task-engine/index.js";
 import { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
+import type { Person } from "../../src/schemas/adapters.js";
 import type { DaemonConfig, SafetyConfig, WorkspaceConfig } from "../../src/schemas/config.js";
 import {
   DaemonConfigSchema,
@@ -22,7 +23,6 @@ import {
   SafetyConfigSchema,
   WorkspaceConfigSchema,
 } from "../../src/schemas/config.js";
-import type { Person } from "../../src/schemas/config.js";
 import { FakeClock } from "./fake-clock.js";
 import type { FakeCommunicationPlugin } from "./fake-plugins/fake-comm/index.js";
 import type { FakeGitHostingPlugin } from "./fake-plugins/fake-git-hosting/index.js";
@@ -82,7 +82,7 @@ function defaultDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     aging_threshold_ms: 10_000,
     aging_interval_ms: 5_000,
     seen_keys_ttl_ms: 60_000,
-    logging: { ...base.logging, level: "silent", console: false },
+    logging: { ...base.logging, level: "error", console: false },
     plugins: {
       ...base.plugins,
       health_check_interval_ms: 5_000,

@@ -90,6 +90,7 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
         approvals: 0,
         changes_requested: false,
         reviewers: [],
+        comments: [],
       },
       comments: [],
     });

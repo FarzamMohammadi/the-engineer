@@ -150,8 +150,8 @@ describe("Orchestrator commentOnSourceIssue", () => {
 
     const commentCalls = commPlugin.commentOnIssue.mock.calls;
     expect(commentCalls.length).toBeGreaterThan(0);
-    expect(commentCalls[0][0]).toBe("acme/widgets");
-    expect(commentCalls[0][1]).toBe(99);
+    expect(commentCalls[0]![0]).toBe("acme/widgets");
+    expect(commentCalls[0]![1]).toBe(99);
   });
 
   it("skips comment for non-GitHub external_ref types", async () => {

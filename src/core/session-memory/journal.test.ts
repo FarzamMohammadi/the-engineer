@@ -147,7 +147,7 @@ describe("JournalStore", () => {
 
     const entries = journal.queryJournal(taskId, { type: "finding" });
     expect(entries).toHaveLength(1);
-    expect(entries[0].type).toBe("finding");
+    expect(entries[0]!.type).toBe("finding");
   });
 
   it("filters by phase", () => {
@@ -168,7 +168,7 @@ describe("JournalStore", () => {
 
     const entries = journal.queryJournal(taskId, { tags: ["auth", "patterns"] });
     expect(entries).toHaveLength(1);
-    expect(entries[0].summary).toBe("Found patterns");
+    expect(entries[0]!.summary).toBe("Found patterns");
   });
 
   it("combines multiple filters", () => {
@@ -179,7 +179,7 @@ describe("JournalStore", () => {
 
     const entries = journal.queryJournal(taskId, { type: "action", phase: "research" });
     expect(entries).toHaveLength(1);
-    expect(entries[0].summary).toBe("Read files");
+    expect(entries[0]!.summary).toBe("Read files");
   });
 
   function addSampleEntries(sessionId: string, taskId: string): void {

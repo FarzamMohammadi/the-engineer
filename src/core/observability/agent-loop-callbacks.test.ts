@@ -1,7 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { CompletionResult } from "../../schemas/adapters.js";
 import type { ActionTraceRecord, LlmTraceRecord } from "../../schemas/observability.js";
 import { runAgentLoop } from "../orchestrator/agent-loop.js";
+
+function mockCompletion(
+  content: string,
+  usage: { tokens_in: number; tokens_out: number; spend_usd: number | null },
+): CompletionResult {
+  return {
+    content,
+    tool_calls: null,
+    finish_reason: "stop",
+    usage: { ...usage, remaining: null, resets_at: null },
+  };
+}
 
 describe("Agent Loop Observability Callbacks", () => {
   const baseConfig = {
@@ -12,6 +25,7 @@ describe("Agent Loop Observability Callbacks", () => {
     toolConfig: {
       allowed_actions: ["read_file", "done"] as string[],
       max_iterations: 10,
+      action_classes: [] as string[],
     },
     worktreePath: "/tmp/test-worktree",
     logger: vi.fn(),
@@ -28,11 +42,15 @@ describe("Agent Loop Observability Callbacks", () => {
         },
       },
       // LLM returns done immediately
-      async () => ({
-        content: JSON.stringify({ action: "done", result: { summary: "done" } }),
-        usage: { tokens_in: 100, tokens_out: 50, spend_usd: 0.01 },
-      }),
-      async () => ({ success: true, output: "ok" }),
+      () =>
+        Promise.resolve(
+          mockCompletion(JSON.stringify({ action: "done", result: { summary: "done" } }), {
+            tokens_in: 100,
+            tokens_out: 50,
+            spend_usd: 0.01,
+          }),
+        ),
+      () => Promise.resolve({ success: true, output: "ok" }),
     );
 
     expect(result.iterations).toBe(1);
@@ -56,23 +74,25 @@ describe("Agent Loop Observability Callbacks", () => {
           onActionComplete: (trace) => actionTraces.push(trace),
         },
       },
-      async () => {
+      () => {
         callCount++;
         if (callCount === 1) {
-          return {
-            content: JSON.stringify({
-              action: "read_file",
-              params: { path: "src/index.ts" },
-            }),
-            usage: { tokens_in: 50, tokens_out: 30, spend_usd: null },
-          };
+          return Promise.resolve(
+            mockCompletion(
+              JSON.stringify({ action: "read_file", params: { path: "src/index.ts" } }),
+              { tokens_in: 50, tokens_out: 30, spend_usd: null },
+            ),
+          );
         }
-        return {
-          content: JSON.stringify({ action: "done", result: { summary: "done" } }),
-          usage: { tokens_in: 50, tokens_out: 30, spend_usd: null },
-        };
+        return Promise.resolve(
+          mockCompletion(JSON.stringify({ action: "done", result: { summary: "done" } }), {
+            tokens_in: 50,
+            tokens_out: 30,
+            spend_usd: null,
+          }),
+        );
       },
-      async () => ({ success: true, output: "file contents" }),
+      () => Promise.resolve({ success: true, output: "file contents" }),
     );
 
     expect(result.iterations).toBe(2);
@@ -94,23 +114,25 @@ describe("Agent Loop Observability Callbacks", () => {
           onActionComplete: (trace) => actionTraces.push(trace),
         },
       },
-      async () => {
+      () => {
         callCount++;
         if (callCount === 1) {
-          return {
-            content: JSON.stringify({
-              action: "read_file",
-              params: { path: "missing.ts" },
-            }),
-            usage: { tokens_in: 50, tokens_out: 30, spend_usd: null },
-          };
+          return Promise.resolve(
+            mockCompletion(
+              JSON.stringify({ action: "read_file", params: { path: "missing.ts" } }),
+              { tokens_in: 50, tokens_out: 30, spend_usd: null },
+            ),
+          );
         }
-        return {
-          content: JSON.stringify({ action: "done", result: {} }),
-          usage: { tokens_in: 50, tokens_out: 30, spend_usd: null },
-        };
+        return Promise.resolve(
+          mockCompletion(JSON.stringify({ action: "done", result: {} }), {
+            tokens_in: 50,
+            tokens_out: 30,
+            spend_usd: null,
+          }),
+        );
       },
-      async () => ({ success: false, output: "", error: "File not found" }),
+      () => Promise.resolve({ success: false, output: "", error: "File not found" }),
     );
 
     expect(actionTraces).toHaveLength(1);
@@ -121,11 +143,15 @@ describe("Agent Loop Observability Callbacks", () => {
   it("works without callbacks (undefined)", async () => {
     const result = await runAgentLoop(
       { ...baseConfig },
-      async () => ({
-        content: JSON.stringify({ action: "done", result: { summary: "test" } }),
-        usage: { tokens_in: 10, tokens_out: 5, spend_usd: null },
-      }),
-      async () => ({ success: true, output: "ok" }),
+      () =>
+        Promise.resolve(
+          mockCompletion(JSON.stringify({ action: "done", result: { summary: "test" } }), {
+            tokens_in: 10,
+            tokens_out: 5,
+            spend_usd: null,
+          }),
+        ),
+      () => Promise.resolve({ success: true, output: "ok" }),
     );
 
     expect(result.iterations).toBe(1);
@@ -142,11 +168,11 @@ describe("Agent Loop Observability Callbacks", () => {
           onLlmComplete: (trace) => llmTraces.push(trace),
         },
       },
-      async () => ({
-        content: responseContent,
-        usage: { tokens_in: 10, tokens_out: 5, spend_usd: null },
-      }),
-      async () => ({ success: true, output: "ok" }),
+      () =>
+        Promise.resolve(
+          mockCompletion(responseContent, { tokens_in: 10, tokens_out: 5, spend_usd: null }),
+        ),
+      () => Promise.resolve({ success: true, output: "ok" }),
     );
 
     expect(llmTraces[0]?.prompt_content).toContain(baseConfig.initialPrompt);
@@ -166,23 +192,28 @@ describe("Agent Loop Observability Callbacks", () => {
           onLlmComplete: (trace) => llmTraces.push(trace),
         },
       },
-      async () => {
+      () => {
         callCount++;
         if (callCount <= 2) {
-          return {
-            content: JSON.stringify({
-              action: "read_file",
-              params: { path: `file${String(callCount)}.ts` },
-            }),
-            usage: { tokens_in: 50, tokens_out: 30, spend_usd: 0.005 },
-          };
+          return Promise.resolve(
+            mockCompletion(
+              JSON.stringify({
+                action: "read_file",
+                params: { path: `file${String(callCount)}.ts` },
+              }),
+              { tokens_in: 50, tokens_out: 30, spend_usd: 0.005 },
+            ),
+          );
         }
-        return {
-          content: JSON.stringify({ action: "done", result: { summary: "all done" } }),
-          usage: { tokens_in: 50, tokens_out: 30, spend_usd: 0.005 },
-        };
+        return Promise.resolve(
+          mockCompletion(JSON.stringify({ action: "done", result: { summary: "all done" } }), {
+            tokens_in: 50,
+            tokens_out: 30,
+            spend_usd: 0.005,
+          }),
+        );
       },
-      async () => ({ success: true, output: "file contents" }),
+      () => Promise.resolve({ success: true, output: "file contents" }),
     );
 
     expect(llmTraces).toHaveLength(3); // 2 actions + 1 done

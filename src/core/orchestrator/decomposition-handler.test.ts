@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
@@ -157,8 +157,10 @@ describe("DecompositionHandler", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result?.outcome).toBe("decomposed");
-    expect(result?.childTaskIds).toHaveLength(2);
+    expect(result!.outcome).toBe("decomposed");
+    if (result!.outcome === "decomposed") {
+      expect(result!.childTaskIds).toHaveLength(2);
+    }
     expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(2);
   });
 
@@ -203,8 +205,8 @@ describe("DecompositionHandler", () => {
     const updateCalls = (ctx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock.calls;
     const childrenUpdate = updateCalls.find((c: unknown[]) => c[1] === "children");
     expect(childrenUpdate).toBeDefined();
-    const children = childrenUpdate[2] as Array<{ depends_on: string[] }>;
-    expect(children[1].depends_on).toContain("child-001");
+    const children = childrenUpdate![2] as Array<{ depends_on: string[] }>;
+    expect(children[1]!.depends_on).toContain("child-001");
   });
 
   it("transitions parent to supervising", () => {

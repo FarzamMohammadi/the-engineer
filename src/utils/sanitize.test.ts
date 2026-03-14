@@ -7,13 +7,13 @@ describe("sanitizeSecrets", () => {
 
   beforeEach(() => {
     // Clear secret env vars so they don't interfere
-    process.env.GITHUB_TOKEN = undefined;
-    process.env.TELEGRAM_BOT_TOKEN = undefined;
+    process.env["GITHUB_TOKEN"] = undefined;
+    process.env["TELEGRAM_BOT_TOKEN"] = undefined;
   });
 
   afterEach(() => {
-    process.env.GITHUB_TOKEN = originalEnv.GITHUB_TOKEN;
-    process.env.TELEGRAM_BOT_TOKEN = originalEnv.TELEGRAM_BOT_TOKEN;
+    process.env["GITHUB_TOKEN"] = originalEnv["GITHUB_TOKEN"];
+    process.env["TELEGRAM_BOT_TOKEN"] = originalEnv["TELEGRAM_BOT_TOKEN"];
   });
 
   // ── Empty / no-op cases ──────────────────────────────────────────────────
@@ -56,25 +56,25 @@ describe("sanitizeSecrets", () => {
   // ── Env var value replacement ──────────────────────────────────────────
 
   it("redacts GITHUB_TOKEN value from text", () => {
-    process.env.GITHUB_TOKEN = "ghp_RealToken123456";
+    process.env["GITHUB_TOKEN"] = "ghp_RealToken123456";
     const input = "Error with token ghp_RealToken123456 in request";
     expect(sanitizeSecrets(input)).toBe("Error with token [REDACTED] in request");
   });
 
   it("redacts TELEGRAM_BOT_TOKEN value from text", () => {
-    process.env.TELEGRAM_BOT_TOKEN = "123456:ABCdefGHIjklMNO";
+    process.env["TELEGRAM_BOT_TOKEN"] = "123456:ABCdefGHIjklMNO";
     const input = "Bot token is 123456:ABCdefGHIjklMNO";
     expect(sanitizeSecrets(input)).toBe("Bot token is [REDACTED]");
   });
 
   it("redacts multiple occurrences of the same env var value", () => {
-    process.env.GITHUB_TOKEN = "ghp_repeated_token";
+    process.env["GITHUB_TOKEN"] = "ghp_repeated_token";
     const input = "token ghp_repeated_token appeared twice ghp_repeated_token";
     expect(sanitizeSecrets(input)).toBe("token [REDACTED] appeared twice [REDACTED]");
   });
 
   it("does not redact short env var values (< 8 chars)", () => {
-    process.env.GITHUB_TOKEN = "short";
+    process.env["GITHUB_TOKEN"] = "short";
     const input = "The word short appears here.";
     expect(sanitizeSecrets(input)).toBe(input);
   });
@@ -88,7 +88,7 @@ describe("sanitizeSecrets", () => {
   // ── Combined patterns ─────────────────────────────────────────────────
 
   it("redacts both URL tokens and env var values in one pass", () => {
-    process.env.GITHUB_TOKEN = "ghp_MySecretToken99";
+    process.env["GITHUB_TOKEN"] = "ghp_MySecretToken99";
     const input =
       "Push to https://git:ghp_MySecretToken99@github.com/org/repo failed. Token: ghp_MySecretToken99";
     const expected = "Push to https://git:***@github.com/org/repo failed. Token: [REDACTED]";

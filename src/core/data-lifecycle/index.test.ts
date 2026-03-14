@@ -609,7 +609,9 @@ describe("EventBus subscriber timing guard", () => {
   });
 
   it("does not warn for fast subscribers", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {
+      /* no-op */
+    });
 
     const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1000 });
 
@@ -637,7 +639,9 @@ describe("EventBus subscriber timing guard", () => {
   });
 
   it("warns for slow subscribers", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {
+      /* no-op */
+    });
 
     const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1 });
 
@@ -671,7 +675,9 @@ describe("EventBus subscriber timing guard", () => {
   });
 
   it("does not warn when threshold is 0 (disabled)", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {
+      /* no-op */
+    });
 
     const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 0 });
 

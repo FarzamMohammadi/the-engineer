@@ -156,8 +156,8 @@ describe("Daemon Notifications", () => {
       setupTaskDispatch(handle, {
         outcome: "preempted",
         lastPhase: "execution",
-        phaseOutputs: new Map(),
-      } as ExecuteTaskResult);
+        checkpointId: "cp-1",
+      });
 
       await handle.daemon.tick();
       await flush();
@@ -266,7 +266,6 @@ describe("Daemon Notifications", () => {
 
       const costCallback = handle.getSubscriptionCallback("cost.limit_reached");
       expect(costCallback).toBeDefined();
-      // biome-ignore lint/style/noNonNullAssertion: asserted above
       costCallback!({
         id: "evt-cost",
         sequence: 1,
@@ -311,7 +310,6 @@ describe("Daemon Notifications", () => {
       await handle.daemon.start();
 
       const costCallback = handle.getSubscriptionCallback("cost.limit_reached");
-      // biome-ignore lint/style/noNonNullAssertion: asserted above
       costCallback!({
         id: "evt-cost",
         sequence: 1,

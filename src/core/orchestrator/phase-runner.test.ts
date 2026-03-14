@@ -122,7 +122,7 @@ function createHandlersThatReturn(outputs: Map<Phase, PhaseOutput>) {
     Object.fromEntries(
       PHASE_SEQUENCE.map((phase) => [
         phase,
-        vi.fn(async () => outputs.get(phase) ?? makeOutput(phase)),
+        vi.fn(() => Promise.resolve(outputs.get(phase) ?? makeOutput(phase))),
       ]),
     ) as Record<Phase, ReturnType<typeof vi.fn>>,
   );
@@ -243,18 +243,20 @@ describe("PhaseRunner", () => {
       const handlerFns = Object.fromEntries(
         PHASE_SEQUENCE.map((phase) => [
           phase,
-          vi.fn(async () => {
+          vi.fn(() => {
             if (phase === Phases.self_review) {
               selfReviewCallCount++;
               if (selfReviewCallCount === 1) {
-                return makeOutput(Phases.self_review, {
-                  findings: ["issue"],
-                  refactoring_applied: [],
-                  quality_assessment: "needs_work",
-                });
+                return Promise.resolve(
+                  makeOutput(Phases.self_review, {
+                    findings: ["issue"],
+                    refactoring_applied: [],
+                    quality_assessment: "needs_work",
+                  }),
+                );
               }
             }
-            return outputs.get(phase) ?? makeOutput(phase);
+            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
           }),
         ]),
       ) as Record<Phase, ReturnType<typeof vi.fn>>;
@@ -277,15 +279,17 @@ describe("PhaseRunner", () => {
       const handlerFns = Object.fromEntries(
         PHASE_SEQUENCE.map((phase) => [
           phase,
-          vi.fn(async () => {
+          vi.fn(() => {
             if (phase === Phases.self_review) {
-              return makeOutput(Phases.self_review, {
-                findings: ["issue"],
-                refactoring_applied: [],
-                quality_assessment: "needs_work",
-              });
+              return Promise.resolve(
+                makeOutput(Phases.self_review, {
+                  findings: ["issue"],
+                  refactoring_applied: [],
+                  quality_assessment: "needs_work",
+                }),
+              );
             }
-            return outputs.get(phase) ?? makeOutput(phase);
+            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
           }),
         ]),
       ) as Record<Phase, ReturnType<typeof vi.fn>>;
@@ -338,11 +342,11 @@ describe("PhaseRunner", () => {
       const handlerFns = Object.fromEntries(
         PHASE_SEQUENCE.map((phase) => [
           phase,
-          vi.fn(async () => {
+          vi.fn(() => {
             if (phase === Phases.intake_analysis) {
-              throw new Error("LLM unavailable");
+              return Promise.reject(new Error("LLM unavailable"));
             }
-            return makeOutput(phase);
+            return Promise.resolve(makeOutput(phase));
           }),
         ]),
       ) as Record<Phase, ReturnType<typeof vi.fn>>;

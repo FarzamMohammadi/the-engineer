@@ -27,7 +27,7 @@ function createMockDaemonConfig() {
     trigger_poll_interval_ms: 30_000,
     seen_keys_ttl_ms: 86_400_000,
     logging: {
-      level: "silent" as const,
+      level: "error" as const,
       dir: "logs",
       max_size_bytes: 524_288_000,
       max_files: 7,
@@ -364,10 +364,10 @@ describe("ReviewHandler", () => {
       );
       expect(feedbackCalls).toHaveLength(2);
       expect(
-        (feedbackCalls[0][0] as { payload: TaskFeedbackReceivedPayload }).payload.feedback_type,
+        (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload.feedback_type,
       ).toBe("changes_requested");
       expect(
-        (feedbackCalls[1][0] as { payload: TaskFeedbackReceivedPayload }).payload.feedback_type,
+        (feedbackCalls[1]![0] as { payload: TaskFeedbackReceivedPayload }).payload.feedback_type,
       ).toBe("approved");
     });
 
@@ -622,16 +622,16 @@ describe("ReviewHandler", () => {
       // updateTaskField called for review with feedback_rounds
       const reviewCalls = te.updateTaskField.mock.calls.filter((c: unknown[]) => c[1] === "review");
       expect(reviewCalls.length).toBeGreaterThanOrEqual(1);
-      const reviewArg = reviewCalls[0][2] as {
+      const reviewArg = reviewCalls[0]![2] as {
         feedback_rounds: Array<{ stage: string; comments: string[]; applied: boolean }>;
       };
       expect(reviewArg.feedback_rounds).toHaveLength(1);
-      expect(reviewArg.feedback_rounds[0].stage).toBe("code");
-      expect(reviewArg.feedback_rounds[0].comments).toEqual([
+      expect(reviewArg.feedback_rounds[0]!.stage).toBe("code");
+      expect(reviewArg.feedback_rounds[0]!.comments).toEqual([
         "Line 10 needs a fix",
         "Line 20 also",
       ]);
-      expect(reviewArg.feedback_rounds[0].applied).toBe(false);
+      expect(reviewArg.feedback_rounds[0]!.applied).toBe(false);
     });
   });
 });

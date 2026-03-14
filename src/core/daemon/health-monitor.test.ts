@@ -23,7 +23,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     trigger_poll_interval_ms: 60_000,
     seen_keys_ttl_ms: 3_600_000,
     logging: {
-      level: "silent",
+      level: "error",
       dir: "/tmp/test-logs",
       max_size_bytes: 10_485_760,
       max_files: 5,
@@ -35,6 +35,21 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
       health_check_timeout_ms: 5_000,
       consecutive_failures_threshold: 3,
     },
+    subscriber_warn_threshold_ms: 50,
+    data_lifecycle: {
+      enabled: false,
+      interval_ms: 3_600_000,
+      retention: {
+        events: { max_age_days: 90, max_count: null },
+        action_traces: { max_age_days: 60, max_count: null },
+        phase_metrics: { max_age_days: 180, max_count: null },
+        llm_traces: { max_age_days: 60, max_count: null },
+        journal_entries: { max_age_days: 90, max_count: null },
+        checkpoints: { max_age_days: 90, max_count: null },
+      },
+      vacuum_on_cleanup: true,
+    },
+    database: { cache_size_mb: 64 },
     ...overrides,
   };
 }

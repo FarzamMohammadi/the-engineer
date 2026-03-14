@@ -52,32 +52,32 @@ describe("mode detection", () => {
 
 describe("color detection", () => {
   it("disables color when NO_COLOR is set", () => {
-    process.env.NO_COLOR = "1";
+    process.env["NO_COLOR"] = "1";
     const out = new Output();
     expect(out.color).toBe(false);
   });
 
   it("disables color when NO_COLOR is empty string", () => {
-    process.env.NO_COLOR = "";
+    process.env["NO_COLOR"] = "";
     const out = new Output();
     expect(out.color).toBe(false);
   });
 
   it("enables color when FORCE_COLOR is set", () => {
-    process.env.FORCE_COLOR = "1";
+    process.env["FORCE_COLOR"] = "1";
     const out = new Output();
     expect(out.color).toBe(true);
   });
 
   it("FORCE_COLOR is overridden by NO_COLOR", () => {
-    process.env.NO_COLOR = "1";
-    process.env.FORCE_COLOR = "1";
+    process.env["NO_COLOR"] = "1";
+    process.env["FORCE_COLOR"] = "1";
     const out = new Output();
     expect(out.color).toBe(false);
   });
 
   it("respects explicit color override", () => {
-    process.env.NO_COLOR = "1";
+    process.env["NO_COLOR"] = "1";
     const out = new Output({ color: true });
     expect(out.color).toBe(true);
   });

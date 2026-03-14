@@ -29,12 +29,10 @@ describe("parseThreshold", () => {
 
 describe("evaluateThreshold", () => {
   it("returns true when threshold exceeded", () => {
-    // biome-ignore lint/style/noNonNullAssertion: test
     expect(evaluateThreshold(parseThreshold("scope > 5")!, { scope: 10 })).toBe(true);
   });
 
   it("returns false when within threshold", () => {
-    // biome-ignore lint/style/noNonNullAssertion: test
     expect(evaluateThreshold(parseThreshold("scope > 5")!, { scope: 3 })).toBe(false);
   });
 });

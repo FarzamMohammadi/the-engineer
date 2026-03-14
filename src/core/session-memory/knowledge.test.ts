@@ -86,7 +86,7 @@ describe("KnowledgeStore", () => {
 
     const results = knowledge.getKnowledge("repo", "owner/repo");
     expect(results).toHaveLength(1);
-    expect(results[0].id).toBe(newer.id);
+    expect(results[0]!.id).toBe(newer.id);
   });
 
   it("filters by repo scope", () => {
@@ -96,7 +96,7 @@ describe("KnowledgeStore", () => {
 
     const resultsA = knowledge.getKnowledge("repo", "owner/repo-a");
     expect(resultsA).toHaveLength(1);
-    expect(resultsA[0].key).toBe("k1");
+    expect(resultsA[0]!.key).toBe("k1");
   });
 
   it("returns all active entries when no repo scope given", () => {
@@ -119,7 +119,7 @@ describe("KnowledgeStore", () => {
 
     const results = knowledge.getKnowledge("repo", "owner/repo");
     expect(results).toHaveLength(1);
-    expect(results[0].id).toBe(c.id);
+    expect(results[0]!.id).toBe(c.id);
   });
 
   it("throws for non-existent old ID on supersede", () => {
@@ -137,7 +137,7 @@ describe("KnowledgeStore", () => {
     knowledge.confirmKnowledge(entry.id);
 
     const results = knowledge.getKnowledge("repo", "owner/repo");
-    expect(results[0].last_confirmed >= originalConfirmed).toBe(true);
+    expect(results[0]!.last_confirmed >= originalConfirmed).toBe(true);
   });
 
   it("throws for non-existent ID on confirm", () => {

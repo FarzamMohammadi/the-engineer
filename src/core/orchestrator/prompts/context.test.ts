@@ -77,7 +77,6 @@ describe("gatherRepoContext", () => {
     const ctx = gatherRepoContext(tempDir);
     expect(ctx.readme).not.toBeNull();
     // Should be truncated — either by line count (200) or char count (4000)
-    // biome-ignore lint/style/noNonNullAssertion: verified not null above
     expect(ctx.readme!.length).toBeLessThanOrEqual(4020); // 4000 + [... truncated]
   });
 

@@ -16,6 +16,11 @@ import {
   validateDiscoveredPlugins,
 } from "./discovery.js";
 
+// ── Top-level regex constants ───────────────────────────────────────────
+const DUPLICATE_PLUGIN_ID_RE = /duplicate plugin ID/;
+const INVALID_VERSION_RE = /invalid version/;
+const ENTRY_FILE_NOT_FOUND_RE = /entry file not found/;
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function createPluginDir(
@@ -51,8 +56,12 @@ describe("discovery", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {
+      /* no-op */
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {
+      /* no-op */
+    });
     tempDir = mkdtempSync(join(tmpdir(), "registry-discovery-"));
   });
 
@@ -68,7 +77,7 @@ describe("discovery", () => {
       const result = discoverPlugins([tempDir]);
 
       expect(result).toHaveLength(1);
-      expect(result[0].manifest.id).toBe("my-plugin");
+      expect(result[0]!.manifest.id).toBe("my-plugin");
     });
 
     it("discovers plugins in nested directories", () => {
@@ -79,7 +88,7 @@ describe("discovery", () => {
       const result = discoverPlugins([tempDir]);
 
       expect(result).toHaveLength(1);
-      expect(result[0].manifest.id).toBe("deep-plugin");
+      expect(result[0]!.manifest.id).toBe("deep-plugin");
     });
 
     it("skips disabled plugins", () => {
@@ -121,7 +130,7 @@ describe("discovery", () => {
 
       const result = discoverPlugins([tempDir]);
 
-      expect(result[0].entryPath).toBe(join(dir, "index.js"));
+      expect(result[0]!.entryPath).toBe(join(dir, "index.js"));
     });
   });
 
@@ -155,7 +164,7 @@ describe("discovery", () => {
       ];
       writeFileSync(join(tempDir, "index.js"), "");
 
-      expect(() => validateDiscoveredPlugins(discovered)).toThrow(/duplicate plugin ID/);
+      expect(() => validateDiscoveredPlugins(discovered)).toThrow(DUPLICATE_PLUGIN_ID_RE);
     });
 
     it("rejects invalid semver versions", () => {
@@ -168,7 +177,7 @@ describe("discovery", () => {
       ];
       writeFileSync(join(tempDir, "index.js"), "");
 
-      expect(() => validateDiscoveredPlugins(discovered)).toThrow(/invalid version/);
+      expect(() => validateDiscoveredPlugins(discovered)).toThrow(INVALID_VERSION_RE);
     });
 
     it("rejects missing entry files", () => {
@@ -180,7 +189,7 @@ describe("discovery", () => {
         },
       ];
 
-      expect(() => validateDiscoveredPlugins(discovered)).toThrow(/entry file not found/);
+      expect(() => validateDiscoveredPlugins(discovered)).toThrow(ENTRY_FILE_NOT_FOUND_RE);
     });
   });
 
@@ -245,7 +254,7 @@ describe("discovery", () => {
       const ordered = orderByTypePriority(discovered);
 
       expect(ordered).not.toBe(discovered);
-      expect(discovered[0].manifest.id).toBe("b");
+      expect(discovered[0]!.manifest.id).toBe("b");
     });
   });
 

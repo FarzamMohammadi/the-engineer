@@ -44,6 +44,7 @@ function insertTask(
 ): void {
   const defaults = {
     state: "intake",
+    sub_state: null as string | null,
     priority: 50,
     title: "Test task",
     description: "",

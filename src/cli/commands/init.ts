@@ -75,11 +75,11 @@ function parseAndAddManifest(manifestPath: string, dir: string, results: Availab
 // ── Plugin Selection ────────────────────────────────────────────────────────
 
 const CATEGORY_ORDER: Array<{ type: string; label: string }> = [
-  { type: "trigger", label: "Trigger" },
-  { type: "llm", label: "LLM Provider" },
-  { type: "tool", label: "Tool" },
-  { type: "git_hosting", label: "Git Hosting" },
-  { type: "communication", label: "Communication" },
+  { type: "trigger", label: "Trigger:" },
+  { type: "llm", label: "LLM Provider:" },
+  { type: "tool", label: "Tool:" },
+  { type: "git_hosting", label: "Git Hosting:" },
+  { type: "communication", label: "Communication:" },
 ];
 
 /** Single checkbox prompt — all plugins listed, grouped by category, all pre-checked. */

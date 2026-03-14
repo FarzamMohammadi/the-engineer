@@ -1,34 +1,12 @@
-import { execFileSync } from "node:child_process";
 import { ulid } from "ulid";
-import type { ZodType } from "zod";
-import type { CommunicationAdapter } from "../../adapters/communication.js";
-import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import type { LLMAdapter } from "../../adapters/llm.js";
-import type { ToolAdapter } from "../../adapters/tool.js";
 import { AdapterTypes, type CompletionResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { type Event, EventTypes } from "../../schemas/events.js";
-import {
-  DemoPrepOutputSchema,
-  ExecutionOutputSchema,
-  IntakeAnalysisOutputSchema,
-  IntegrationOutputSchema,
-  LLMDecompositionPlanSchema,
-  type Phase,
-  type PhaseOutput,
-  Phases,
-  PlanningOutputSchema,
-  ResearchOutputSchema,
-  SelfReviewOutputSchema,
-} from "../../schemas/orchestrator.js";
-import {
-  CheckpointReasons,
-  JournalEntryTypes,
-  SessionEndReasons,
-} from "../../schemas/session-memory.js";
-import { ActionClasses, type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
+import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
+import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { EventBus } from "../event-bus/index.js";
 import type { ObservabilityStore } from "../observability/index.js";
 import type { IObserver } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
@@ -37,9 +15,10 @@ import type { SafetyLayer } from "../safety-layer/index.js";
 import type { SessionMemory } from "../session-memory/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
-import { executeAction as executeAgentAction } from "./action-executor.js";
-import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
-import { getPhaseToolConfig } from "./phase-tools.js";
+import { createDecompositionHandler } from "./decomposition-handler.js";
+import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
+import { createPhaseHandlerRegistry, runPhasePipeline } from "./phase-runner.js";
+import { createPrManager } from "./pr-manager.js";
 import { gatherRepoContextSafe } from "./prompts/context.js";
 import { buildDemoPrepPrompt } from "./prompts/demo-prep.js";
 import { buildExecutionPrompt } from "./prompts/execution.js";
@@ -50,36 +29,29 @@ import { buildPlanningPrompt } from "./prompts/planning.js";
 import { buildResearchPrompt } from "./prompts/research.js";
 import { buildSelfReviewPrompt } from "./prompts/self-review.js";
 import { buildSystemPrompt } from "./prompts/system.js";
+import type { ExecuteTaskResult, OrchestratorContext, PipelineState } from "./types.js";
+import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
-// ── Constants ───────────────────────────────────────────────────────────────
+// ── Re-exports ──────────────────────────────────────────────────────────────
 
-/** The standard 7-phase pipeline sequence. */
-export const PHASE_SEQUENCE: Phase[] = [
-  Phases.intake_analysis,
-  Phases.research,
-  Phases.planning,
-  Phases.execution,
-  Phases.self_review,
-  Phases.demo_prep,
-  Phases.integration,
-];
-
-/** Fast-path phases: skip research, planning, demo_prep, integration. */
-const FAST_PATH_PHASES: Phase[] = [Phases.execution, Phases.self_review];
-
-/** Max loopbacks before alerting human (orchestrator.md default: 3). */
-const MAX_LOOPBACKS_BEFORE_ALERT = 3;
-
-/** Phase-specific Zod schemas for output validation. */
-const PHASE_SCHEMAS: Record<Phase, ZodType> = {
-  [Phases.intake_analysis]: IntakeAnalysisOutputSchema,
-  [Phases.research]: ResearchOutputSchema,
-  [Phases.planning]: PlanningOutputSchema,
-  [Phases.execution]: ExecutionOutputSchema,
-  [Phases.self_review]: SelfReviewOutputSchema,
-  [Phases.demo_prep]: DemoPrepOutputSchema,
-  [Phases.integration]: IntegrationOutputSchema,
-};
+export type { ExecuteTaskResult } from "./types.js";
+export type { OrchestratorContext, PipelineState, ProcessPhaseResult } from "./types.js";
+export { PHASE_SEQUENCE } from "./phase-runner.js";
+export type { PhaseHandler, PhaseHandlerRegistry } from "./phase-runner.js";
+export { createPhaseHandlerRegistry, buildPhaseHandoff } from "./phase-runner.js";
+export { runPhasePipeline } from "./phase-runner.js";
+export type { WorkspaceLifecycle, AndonCord } from "./workspace-lifecycle.js";
+export {
+  createWorkspaceLifecycle,
+  createAndonCord,
+  isCriticalPhase,
+} from "./workspace-lifecycle.js";
+export type { PrManager } from "./pr-manager.js";
+export { createPrManager } from "./pr-manager.js";
+export type { DecompositionHandler } from "./decomposition-handler.js";
+export { createDecompositionHandler } from "./decomposition-handler.js";
+export type { LlmCaller } from "./llm-caller.js";
+export { createLlmCaller, isRetryableError } from "./llm-caller.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -97,14 +69,6 @@ export interface OrchestratorDependencies {
   observer?: IObserver;
 }
 
-/** Discriminated union of executeTask outcomes. */
-export type ExecuteTaskResult =
-  | { outcome: "completed"; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: "review_pending"; phase: Phase; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: "decomposed"; childTaskIds: string[]; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: "preempted"; lastPhase: Phase; checkpointId: string }
-  | { outcome: "error"; phase: Phase; reason: string };
-
 // ── Orchestrator ────────────────────────────────────────────────────────────
 
 /**
@@ -112,9 +76,12 @@ export type ExecuteTaskResult =
  * to integration.
  *
  * Derives from compiler front-end (multi-pass pipeline) + flight director
- * (coordination and communication). This is the skeleton: thin phase handlers
- * that call the LLM adapter, parse responses with `.safeParse()`, and produce
- * PhaseOutputs. Full phase sophistication comes in later refinement.
+ * (coordination and communication). Delegates to focused subsystems:
+ * - LlmCaller: LLM invocation, retry, cost, validation
+ * - WorkspaceLifecycle: workspace setup, session, notifications
+ * - PrManager: commit, push, PR creation
+ * - DecompositionHandler: task decomposition
+ * - PhaseRunner: phase pipeline orchestration
  *
  * Protocols implemented:
  * - P4 (Phase Transition): checkpoint → journal → update task.phase → next phase
@@ -122,68 +89,60 @@ export type ExecuteTaskResult =
  * - P9 (Task Resume): reconstruct from checkpoint, skip completed phases
  */
 export class Orchestrator {
-  private readonly eventBus: EventBus;
-  private readonly registry: Registry;
-  private readonly taskEngine: TaskEngine;
-  // Stored for future use: Orchestrator will call consultJudgment() directly
-  // for should_i_ask queries and cost_check pre-flight. Currently Gate 2 runs
-  // through ActionPipeline, so no direct calls in the skeleton.
-  private readonly safetyLayer: SafetyLayer;
-  private readonly actionPipeline: ActionPipeline;
-  private readonly sessionMemory: SessionMemory;
-  private readonly workspaceManager: WorkspaceManager;
-  private readonly peopleDirectory: PeopleDirectory;
-  private readonly observability: ObservabilityStore | null;
-  private readonly observer: IObserver | null;
-  /** Trace ID for the current executeTask() call. Set once per dispatch. */
-  private currentTraceId: string | null = null;
-  /** Session ID for the current executeTask() call. */
-  private currentSessionId: string | null = null;
+  private readonly ctx: OrchestratorContext;
+  private readonly llmCaller: LlmCaller;
+  private readonly workspaceLifecycle: ReturnType<typeof createWorkspaceLifecycle>;
+  private readonly prManager: ReturnType<typeof createPrManager>;
+  private readonly decompositionHandler: ReturnType<typeof createDecompositionHandler>;
 
   private preemptionRequested = false;
-  private loopbackCount = 0;
   private preemptionPayload: {
     target_task_id: string;
     preempting_task_id: string;
   } | null = null;
 
   /** Phase handler dispatch map — one method per phase. */
-  private readonly phaseHandlers: Record<
-    Phase,
-    (
-      taskId: string,
-      dispatch: Dispatch,
-      priorOutputs: Map<Phase, PhaseOutput>,
-    ) => Promise<PhaseOutput>
-  >;
+  private readonly phaseHandlers: ReturnType<typeof createPhaseHandlerRegistry>;
 
   constructor(deps: OrchestratorDependencies) {
-    this.eventBus = deps.eventBus;
-    this.registry = deps.registry;
-    this.taskEngine = deps.taskEngine;
-    this.safetyLayer = deps.safetyLayer;
-    this.actionPipeline = deps.actionPipeline;
-    this.sessionMemory = deps.sessionMemory;
-    this.workspaceManager = deps.workspaceManager;
-    this.peopleDirectory = deps.peopleDirectory;
-    this.observability = deps.observability ?? null;
-    this.observer = deps.observer ?? null;
+    this.ctx = {
+      eventBus: deps.eventBus,
+      registry: deps.registry,
+      taskEngine: deps.taskEngine,
+      safetyLayer: deps.safetyLayer,
+      actionPipeline: deps.actionPipeline,
+      sessionMemory: deps.sessionMemory,
+      workspaceManager: deps.workspaceManager,
+      peopleDirectory: deps.peopleDirectory,
+      observability: deps.observability ?? null,
+      observer: deps.observer ?? null,
+    };
+
+    // Create subsystems
+    this.llmCaller = createLlmCaller(this.ctx);
+    this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
+    this.prManager = createPrManager(this.ctx);
+    this.decompositionHandler = createDecompositionHandler(this.ctx);
 
     // Subscribe to preemption requests (Protocol P8)
-    this.eventBus.subscribe("orchestrator", EventTypes["preemption.requested"], (event: Event) => {
-      this.preemptionRequested = true;
-      const payload = event.payload as {
-        target_task_id: string;
-        preempting_task_id: string;
-      };
-      this.preemptionPayload = {
-        target_task_id: payload.target_task_id,
-        preempting_task_id: payload.preempting_task_id,
-      };
-    });
+    this.ctx.eventBus.subscribe(
+      "orchestrator",
+      EventTypes["preemption.requested"],
+      (event: Event) => {
+        this.preemptionRequested = true;
+        const payload = event.payload as {
+          target_task_id: string;
+          preempting_task_id: string;
+        };
+        this.preemptionPayload = {
+          target_task_id: payload.target_task_id,
+          preempting_task_id: payload.preempting_task_id,
+        };
+      },
+    );
 
-    // Bind phase handlers
-    this.phaseHandlers = {
+    // Build phase handler registry
+    this.phaseHandlers = createPhaseHandlerRegistry({
       [Phases.intake_analysis]: this.handleIntakeAnalysis.bind(this),
       [Phases.research]: this.handleResearch.bind(this),
       [Phases.planning]: this.handlePlanning.bind(this),
@@ -191,7 +150,7 @@ export class Orchestrator {
       [Phases.self_review]: this.handleSelfReview.bind(this),
       [Phases.demo_prep]: this.handleDemoPrep.bind(this),
       [Phases.integration]: this.handleIntegration.bind(this),
-    };
+    });
   }
 
   /**
@@ -200,122 +159,43 @@ export class Orchestrator {
    * Entry point called by the Daemon. Handles new tasks and resumed tasks.
    * Returns when the pipeline completes, is preempted, decomposed, or encounters an error.
    */
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: main pipeline loop with extracted helpers — further extraction harms readability
   async executeTask(dispatch: Dispatch): Promise<ExecuteTaskResult> {
     const taskId = dispatch.task.id;
-    this.loopbackCount = 0;
-    this.currentTraceId = ulid();
+    const traceId = ulid();
 
     // ── Session setup ──────────────────────────────────────────────────────
-    const session = this.createSession(dispatch);
+    const session = this.workspaceLifecycle.createSession(dispatch);
     const sessionId = session.id;
-    this.currentSessionId = sessionId;
-    this.taskEngine.updateTaskField(taskId, "session_id", sessionId);
+    this.ctx.taskEngine.updateTaskField(taskId, "session_id", sessionId);
 
     // ── Workspace setup (D144) ──────────────────────────────────────────
-    if (!dispatch.resume_from) {
-      const repo = dispatch.task.repo;
-      const cloneUrl = dispatch.task.clone_url;
-      if (repo && cloneUrl) {
-        // Rework dispatch: workspace already exists (preserved during review_pending)
-        const existingWorktree = this.workspaceManager.getWorktreePath(taskId);
-        if (existingWorktree && dispatch.task.workspace) {
-          this.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
-        } else {
-          // Child tasks branch from parent's branch
-          let parentBranch: string | undefined;
-          if (dispatch.task.parent_id) {
-            const parentTask = this.taskEngine.getTask(dispatch.task.parent_id);
-            parentBranch = parentTask?.workspace?.branch ?? undefined;
-          }
-          const record = this.workspaceManager.createWorkspace(
-            taskId,
-            repo,
-            dispatch.task.title,
-            undefined,
-            parentBranch,
-            cloneUrl,
-          );
-          this.taskEngine.updateTaskField(taskId, "workspace", {
-            repo,
-            branch: record.branch,
-            worktree_path: record.worktreePath,
-          });
-        }
-      }
-    } else if (dispatch.task.workspace) {
-      this.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
-    }
+    this.workspaceLifecycle.setupWorkspace(dispatch);
 
     // Notify task pickup (D152) — personal channels + GitHub issue comment
-    this.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
-    this.commentOnSourceIssue(dispatch, "Starting work on this issue.");
+    this.workspaceLifecycle.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
+    this.workspaceLifecycle.commentOnSourceIssue(dispatch, "Starting work on this issue.");
 
-    // ── Determine phase sequence ───────────────────────────────────────────
-    const { phases: initialPhases, startIndex } = this.resolveStartState(
-      dispatch,
+    // ── Build pipeline state ───────────────────────────────────────────────
+    const state: PipelineState = {
+      traceId,
       sessionId,
-      taskId,
-    );
-    let phases = initialPhases;
+      loopbackCount: 0,
+    };
 
-    // Set initial task.phase so Daemon can see what phase we're in
-    // biome-ignore lint/style/noNonNullAssertion: startIndex is within bounds (resolveStartState guarantees it)
-    const initialPhase = phases[startIndex]!;
-    this.taskEngine.updateTaskField(taskId, "phase", initialPhase);
-
-    // ── Phase loop ─────────────────────────────────────────────────────────
-    const priorOutputs = new Map<Phase, PhaseOutput>();
-
-    for (let i = startIndex; i < phases.length; i++) {
-      if (this.preemptionRequested) {
-        // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
-        return this.handlePreemption(sessionId, taskId, phases[i]!, priorOutputs);
-      }
-
-      // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
-      const phase = phases[i]!;
-
-      // Execute the phase handler
-      let output: PhaseOutput;
-      try {
-        output = await this.phaseHandlers[phase](taskId, dispatch, priorOutputs);
-      } catch (error: unknown) {
-        return this.handlePhaseError(sessionId, taskId, phase, error);
-      }
-
-      priorOutputs.set(phase, output);
-
-      // Post-phase processing (fast-path, loopback, transitions, PR creation)
-      const postResult = await this.processPhaseCompletion(
-        sessionId,
-        taskId,
-        phase,
-        output,
-        phases,
-        i,
-        priorOutputs,
-        dispatch,
-      );
-      if (postResult.decompositionResult) {
-        return postResult.decompositionResult;
-      }
-      if (postResult.reviewPendingResult) {
-        return postResult.reviewPendingResult;
-      }
-      if (postResult.loopbackIndex !== null) {
-        i = postResult.loopbackIndex;
-        continue;
-      }
-      phases = postResult.phases;
-      if (postResult.preemptionResult) {
-        return postResult.preemptionResult;
-      }
-    }
-
-    // ── Pipeline complete ──────────────────────────────────────────────────
-    this.sessionMemory.endSession(sessionId, SessionEndReasons.completed);
-    return { outcome: "completed", phaseOutputs: priorOutputs };
+    // ── Run phase pipeline ─────────────────────────────────────────────────
+    return runPhasePipeline(dispatch, state, {
+      ctx: this.ctx,
+      handlers: this.phaseHandlers,
+      workspaceLifecycle: this.workspaceLifecycle,
+      prManager: this.prManager,
+      decompositionHandler: this.decompositionHandler,
+      isPreempted: () => this.preemptionRequested,
+      getPreemptionPayload: () => this.preemptionPayload,
+      resetPreemption: () => {
+        this.preemptionRequested = false;
+        this.preemptionPayload = null;
+      },
+    });
   }
 
   // ── Phase Handlers ──────────────────────────────────────────────────────────
@@ -324,8 +204,9 @@ export class Orchestrator {
     taskId: string,
     dispatch: Dispatch,
     _priorOutputs: Map<Phase, PhaseOutput>,
+    state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const systemPrompt = buildSystemPrompt(Phases.intake_analysis);
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
@@ -340,15 +221,22 @@ export class Orchestrator {
       prNumber: dispatch.task.review?.pr_number ?? undefined,
     });
 
-    return this.runPhaseWithAgentLoop(Phases.intake_analysis, taskId, systemPrompt, prompt);
+    return this.llmCaller.runPhaseWithAgentLoop(
+      Phases.intake_analysis,
+      taskId,
+      systemPrompt,
+      prompt,
+      state,
+    );
   }
 
   private handleResearch(
     taskId: string,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
+    state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
@@ -362,15 +250,22 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop(Phases.research, taskId, systemPrompt, prompt);
+    return this.llmCaller.runPhaseWithAgentLoop(
+      Phases.research,
+      taskId,
+      systemPrompt,
+      prompt,
+      state,
+    );
   }
 
   private handlePlanning(
     taskId: string,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
+    state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
@@ -388,15 +283,22 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop(Phases.planning, taskId, systemPrompt, prompt);
+    return this.llmCaller.runPhaseWithAgentLoop(
+      Phases.planning,
+      taskId,
+      systemPrompt,
+      prompt,
+      state,
+    );
   }
 
   private handleExecution(
     taskId: string,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
+    state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
@@ -428,15 +330,22 @@ export class Orchestrator {
       prompt = `${prompt}\n\n${section("Review Findings to Address", formatPriorPhaseOutput(Phases.self_review, reviewData))}`;
     }
 
-    return this.runPhaseWithAgentLoop(Phases.execution, taskId, systemPrompt, prompt);
+    return this.llmCaller.runPhaseWithAgentLoop(
+      Phases.execution,
+      taskId,
+      systemPrompt,
+      prompt,
+      state,
+    );
   }
 
   private handleSelfReview(
     taskId: string,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
+    state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
@@ -456,20 +365,27 @@ export class Orchestrator {
       planningOutput: planData ?? null,
       executionOutput: execData ?? null,
       selfReviewFindings: selfReviewData ?? null,
-      loopbackCount: this.loopbackCount,
+      loopbackCount: state.loopbackCount,
       repoKnowledge: dispatch.knowledge.repo,
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop(Phases.self_review, taskId, systemPrompt, prompt);
+    return this.llmCaller.runPhaseWithAgentLoop(
+      Phases.self_review,
+      taskId,
+      systemPrompt,
+      prompt,
+      state,
+    );
   }
 
   private handleDemoPrep(
     taskId: string,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
+    state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
@@ -493,15 +409,22 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop(Phases.demo_prep, taskId, systemPrompt, prompt);
+    return this.llmCaller.runPhaseWithAgentLoop(
+      Phases.demo_prep,
+      taskId,
+      systemPrompt,
+      prompt,
+      state,
+    );
   }
 
   private handleIntegration(
     taskId: string,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
+    state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath);
     const execData = priorOutputs.get(Phases.execution)?.data as
       | Record<string, unknown>
@@ -510,7 +433,6 @@ export class Orchestrator {
       | Record<string, unknown>
       | undefined;
 
-    // Child summaries are populated on the task by Daemon before re-dispatch
     const childSummaries = (dispatch.task.child_summaries ?? []).map((cs) => ({
       child_id: cs.child_id,
       child_title: cs.child_title,
@@ -530,1170 +452,35 @@ export class Orchestrator {
       userKnowledge: dispatch.knowledge.user,
     });
 
-    return this.runPhaseWithAgentLoop(Phases.integration, taskId, systemPrompt, prompt);
-  }
-
-  // ── Extracted Helpers (for cognitive complexity) ─────────────────────────────
-
-  /** Determine start index and log resume context (Protocol P9). */
-  private resolveStartState(
-    dispatch: Dispatch,
-    sessionId: string,
-    taskId: string,
-  ): { phases: Phase[]; startIndex: number } {
-    const phases = [...PHASE_SEQUENCE];
-
-    if (!dispatch.resume_from) {
-      // Feedback rework is handled naturally: starts from intake_analysis (index 0).
-      // Intake will assess feedback scope and route via fast-path or full pipeline.
-      // Code approval completes directly in the Daemon (no re-dispatch needed).
-      return { phases, startIndex: 0 };
-    }
-
-    const checkpoint = dispatch.resume_from;
-    const checkpointPhaseIndex = phases.indexOf(checkpoint.phase as Phase);
-    const startIndex = checkpointPhaseIndex >= 0 ? checkpointPhaseIndex + 1 : 0;
-
-    // Verify workspace integrity before resuming (Plan step 2)
-    this.workspaceManager.verifyWorkspace(taskId);
-
-    this.sessionMemory.addJournalEntry({
-      sessionId,
+    return this.llmCaller.runPhaseWithAgentLoop(
+      Phases.integration,
       taskId,
-      phase: checkpoint.phase,
-      type: JournalEntryTypes.phase_change,
-      summary: `Resumed from checkpoint in ${checkpoint.phase} phase. Reason: ${checkpoint.reason}.`,
-      detail: checkpoint.next_action,
-      tags: ["resume"],
-    });
-
-    return { phases, startIndex };
-  }
-
-  /** Handle post-phase logic: fast-path, decomposition, loopback, transitions, preemption, PR creation. */
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-branch pipeline orchestration
-  private async processPhaseCompletion(
-    sessionId: string,
-    taskId: string,
-    phase: Phase,
-    output: PhaseOutput,
-    currentPhases: Phase[],
-    currentIndex: number,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    dispatch: Dispatch,
-  ): Promise<{
-    phases: Phase[];
-    loopbackIndex: number | null;
-    preemptionResult: ExecuteTaskResult | null;
-    decompositionResult: ExecuteTaskResult | null;
-    reviewPendingResult: ExecuteTaskResult | null;
-  }> {
-    let phases = currentPhases;
-
-    // Fast-path: after intake_analysis, check if we should skip phases
-    if (phase === Phases.intake_analysis) {
-      phases = this.applyFastPathIfNeeded(output, phases);
-    }
-
-    // Decomposition: after planning, check if task should be split into children
-    if (phase === Phases.planning) {
-      const decompositionResult = this.handleDecomposition(
-        sessionId,
-        taskId,
-        output,
-        dispatch,
-        priorOutputs,
-      );
-      if (decompositionResult) {
-        return {
-          phases,
-          loopbackIndex: null,
-          preemptionResult: null,
-          decompositionResult,
-          reviewPendingResult: null,
-        };
-      }
-    }
-
-    // Self-review quality gate: loopback to execution if needs_work
-    if (phase === Phases.self_review) {
-      const loopbackResult = this.checkSelfReviewLoopback(sessionId, taskId, output, phases);
-      if (loopbackResult) {
-        this.taskEngine.updateTaskField(taskId, "phase", Phases.execution);
-        return {
-          phases,
-          loopbackIndex: loopbackResult.targetIndex - 1,
-          preemptionResult: null,
-          decompositionResult: null,
-          reviewPendingResult: null,
-        };
-      }
-    }
-
-    // After demo_prep: commit, push, create draft PR — then exit pipeline for review (D149, D150)
-    if (phase === Phases.demo_prep) {
-      const result = await this.tryCreatePRAndExitForReview(
-        sessionId,
-        taskId,
-        phase,
-        output,
-        dispatch,
-        phases,
-        priorOutputs,
-      );
-      if (result) {
-        return result;
-      }
-    }
-
-    // Protocol P4: Phase transition
-    const isLastPhase = currentIndex === phases.length - 1;
-
-    // Fast-path PR: when self_review is the final phase (no demo_prep), still create PR — then exit for review
-    if (phase === Phases.self_review && isLastPhase) {
-      const result = await this.tryCreatePRAndExitForReview(
-        sessionId,
-        taskId,
-        phase,
-        output,
-        dispatch,
-        phases,
-        priorOutputs,
-      );
-      if (result) {
-        return result;
-      }
-    }
-    // biome-ignore lint/style/noNonNullAssertion: next phase exists when not last
-    const nextPhase = isLastPhase ? null : phases[currentIndex + 1]!;
-    this.recordPhaseTransition(sessionId, taskId, phase, nextPhase, priorOutputs);
-
-    // Check preemption after phase completion
-    if (this.preemptionRequested && nextPhase) {
-      return {
-        phases,
-        loopbackIndex: null,
-        preemptionResult: this.handlePreemption(sessionId, taskId, nextPhase, priorOutputs),
-        decompositionResult: null,
-        reviewPendingResult: null,
-      };
-    }
-
-    return {
-      phases,
-      loopbackIndex: null,
-      preemptionResult: null,
-      decompositionResult: null,
-      reviewPendingResult: null,
-    };
-  }
-
-  /** Log error and build error result for a failed phase. */
-  private handlePhaseError(
-    sessionId: string,
-    taskId: string,
-    phase: Phase,
-    error: unknown,
-  ): ExecuteTaskResult {
-    const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? (error.stack ?? null) : null;
-
-    this.sessionMemory.addJournalEntry({
-      sessionId,
-      taskId,
-      phase,
-      type: JournalEntryTypes.error,
-      summary: `Phase ${phase} failed: ${message}`,
-      errorDetail: stack,
-      tags: ["phase_error"],
-    });
-
-    return { outcome: "error", phase, reason: message };
-  }
-
-  /** Attempt PR creation; if successful, exit the pipeline for human review. */
-  private async tryCreatePRAndExitForReview(
-    sessionId: string,
-    taskId: string,
-    phase: Phase,
-    output: PhaseOutput,
-    dispatch: Dispatch,
-    phases: Phase[],
-    priorOutputs: Map<Phase, PhaseOutput>,
-  ): Promise<{
-    phases: Phase[];
-    loopbackIndex: number | null;
-    preemptionResult: ExecuteTaskResult | null;
-    decompositionResult: ExecuteTaskResult | null;
-    reviewPendingResult: ExecuteTaskResult | null;
-  } | null> {
-    const prCreated = await this.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
-    if (!prCreated) {
-      return null;
-    }
-    this.recordPhaseTransition(sessionId, taskId, phase, null, priorOutputs);
-    this.sessionMemory.endSession(sessionId, SessionEndReasons.review_pending);
-    return {
-      phases,
-      loopbackIndex: null,
-      preemptionResult: null,
-      decompositionResult: null,
-      reviewPendingResult: { outcome: "review_pending", phase, phaseOutputs: priorOutputs },
-    };
-  }
-
-  /** Record a phase transition: checkpoint + journal + update task.phase (Protocol P4). */
-  private recordPhaseTransition(
-    sessionId: string,
-    taskId: string,
-    completedPhase: Phase,
-    nextPhase: Phase | null,
-    priorOutputs: Map<Phase, PhaseOutput>,
-  ): void {
-    this.createPhaseCheckpoint(sessionId, taskId, completedPhase, priorOutputs, nextPhase);
-
-    this.sessionMemory.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: completedPhase,
-      type: JournalEntryTypes.phase_change,
-      summary: nextPhase
-        ? `Completed ${completedPhase}, entering ${nextPhase}`
-        : `Completed ${completedPhase} (final phase)`,
-      tags: ["phase_transition"],
-    });
-
-    if (nextPhase) {
-      this.taskEngine.updateTaskField(taskId, "phase", nextPhase);
-    }
-  }
-
-  /** Check if intake output enables fast-path, return updated phases array. */
-  private applyFastPathIfNeeded(intakeOutput: PhaseOutput, currentPhases: Phase[]): Phase[] {
-    const intakeData = intakeOutput.data as { fast_path?: boolean };
-    if (intakeData.fast_path === true) {
-      return [Phases.intake_analysis, ...FAST_PATH_PHASES];
-    }
-    return currentPhases;
-  }
-
-  /** Check if self-review output requires loopback to execution. */
-  private checkSelfReviewLoopback(
-    sessionId: string,
-    taskId: string,
-    output: PhaseOutput,
-    phases: Phase[],
-  ): { targetIndex: number } | null {
-    // Only trust quality assessment from real LLM output (not fallback defaults)
-    if (output.confidence === "low") {
-      return null;
-    }
-
-    const reviewData = output.data as { quality_assessment?: string };
-    const assessment = reviewData.quality_assessment;
-
-    if (assessment !== "needs_work" && assessment !== "fundamental_issues") {
-      return null;
-    }
-
-    this.loopbackCount++;
-
-    if (this.loopbackCount > MAX_LOOPBACKS_BEFORE_ALERT) {
-      this.emitLoopbackAlert(sessionId, taskId, this.loopbackCount, assessment);
-      return null; // Proceed to demo_prep — human will review
-    }
-
-    this.sessionMemory.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: Phases.self_review,
-      type: JournalEntryTypes.phase_change,
-      summary: `Quality assessment: ${assessment}. Looping back to execution (attempt ${String(this.loopbackCount)}).`,
-      tags: ["loopback", assessment],
-    });
-
-    const executionIndex = phases.indexOf(Phases.execution);
-    if (executionIndex < 0) {
-      return null; // Shouldn't happen, but defensive
-    }
-    return { targetIndex: executionIndex };
-  }
-
-  /** Alert human that loopbacks have exceeded the safety threshold. */
-  private emitLoopbackAlert(
-    sessionId: string,
-    taskId: string,
-    count: number,
-    assessment: string,
-  ): void {
-    this.eventBus.publish({
-      type: EventTypes["comm.message_sent"],
-      source: "orchestrator",
-      task_id: taskId,
-      payload: {
-        task_id: taskId,
-        target: "owner",
-        message_type: "alert",
-        content_summary: `Self-review loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`,
-        channel: "primary",
-      },
-    } satisfies PublishInput<"comm.message_sent">);
-
-    this.sessionMemory.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: Phases.self_review,
-      type: JournalEntryTypes.error,
-      summary: `Loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`,
-      tags: ["loopback_alert"],
-    });
-  }
-
-  // ── Decomposition ───────────────────────────────────────────────────────────
-
-  /**
-   * After planning: check if the LLM produced a decomposition plan.
-   * If so, create child tasks, transition parent to supervising, and return.
-   */
-  private handleDecomposition(
-    sessionId: string,
-    taskId: string,
-    planningOutput: PhaseOutput,
-    dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
-  ): ExecuteTaskResult | null {
-    const planData = planningOutput.data as { decomposition_plan?: unknown };
-    if (!planData.decomposition_plan) {
-      return null;
-    }
-
-    const parseResult = LLMDecompositionPlanSchema.safeParse(planData.decomposition_plan);
-    if (!parseResult.success) {
-      this.sessionMemory.addJournalEntry({
-        sessionId,
-        taskId,
-        phase: Phases.planning,
-        type: JournalEntryTypes.error,
-        summary: `Invalid decomposition plan from LLM: ${parseResult.error.message}`,
-        tags: ["decomposition", "validation_error"],
-      });
-      return null;
-    }
-
-    const plan = parseResult.data;
-    const childIds: string[] = [];
-
-    for (const childSpec of plan.children) {
-      const childTask = this.taskEngine.createTask({
-        title: childSpec.title,
-        repo: dispatch.task.repo ?? "",
-        source: "decomposition",
-        description: childSpec.description,
-        parent_id: taskId,
-        acceptance_criteria: childSpec.acceptance_criteria,
-        clone_url: dispatch.task.clone_url,
-        cascade_policy: "pause_siblings",
-      });
-
-      this.taskEngine.requestTransition(
-        childTask.id,
-        TaskStates.queued,
-        null,
-        "decomposition",
-        "orchestrator",
-      );
-
-      childIds.push(childTask.id);
-    }
-
-    // Build children array with dependency mapping (index-based → task ID)
-    const childEntries: ChildEntry[] = childIds.map((id, idx) => {
-      // biome-ignore lint/style/noNonNullAssertion: idx is within bounds
-      const spec = plan.children[idx]!;
-      const dependsOnIds = spec.depends_on
-        .filter((depIdx) => depIdx >= 0 && depIdx < childIds.length)
-        // biome-ignore lint/style/noNonNullAssertion: filter guarantees valid index
-        .map((depIdx) => childIds[depIdx]!);
-      return { id, state: TaskStates.queued, depends_on: dependsOnIds };
-    });
-    this.taskEngine.updateTaskField(taskId, "children", childEntries);
-
-    // Transition parent: active.working → active.supervising
-    this.taskEngine.requestTransition(
-      taskId,
-      TaskStates.active,
-      SubStates.supervising,
-      "decomposed_into_children",
-      "orchestrator",
+      systemPrompt,
+      prompt,
+      state,
     );
-
-    this.sessionMemory.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: Phases.planning,
-      type: JournalEntryTypes.phase_change,
-      summary: `Task decomposed into ${String(childIds.length)} child tasks: ${childIds.join(", ")}`,
-      tags: ["decomposition"],
-    });
-
-    const subtaskList = plan.children.map((c, i) => `${String(i + 1)}. ${c.title}`).join("\n");
-    this.commentOnSourceIssue(
-      dispatch,
-      `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
-    );
-
-    this.sessionMemory.endSession(sessionId, SessionEndReasons.decomposed);
-
-    return { outcome: "decomposed", childTaskIds: childIds, phaseOutputs: priorOutputs };
   }
 
-  // ── Workspace Integration (D149, D150, D152) ────────────────────────────────
-
-  /**
-   * Send a milestone notification via PeopleDirectory + comm plugins (D152).
-   *
-   * Resolves the owner from PeopleDirectory, then sends to all registered
-   * communication plugins. Fire-and-forget — errors are logged, never block
-   * the pipeline.
-   */
-  private notifyMilestone(dispatch: Dispatch, message: string): void {
-    try {
-      const owner = this.peopleDirectory.getOwner();
-      if (!owner || owner.contacts.length === 0) {
-        return; // No owner or no contacts configured
-      }
-
-      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>(
-        AdapterTypes.communication,
-      );
-      if (commPlugins.length === 0) {
-        return; // No comm plugins registered
-      }
-
-      const taskId = dispatch.task.id;
-
-      // Route by contact channel → matching comm plugin
-      // Contact channel is "telegram", plugin ID is "telegram-comm".
-      // Convention: plugin ID = "{channel}-comm"
-      for (const contact of owner.contacts) {
-        const plugin = commPlugins.find(
-          (p) => p.manifest.id === `${contact.channel}-comm` || p.manifest.id === contact.channel,
-        );
-        if (!plugin) {
-          continue; // No plugin for this channel
-        }
-
-        const target = {
-          user_id: contact.handle,
-          channel: contact.channel,
-        };
-
-        const formatted = {
-          content: plugin.formatMessage(message, "milestone"),
-          metadata: { task_id: taskId, type: "milestone" as const },
-        };
-
-        // Fire-and-forget — catch all errors
-        plugin.sendMessage(target, formatted).catch(() => {
-          // Silent — notification failure must never block the pipeline
-        });
-      }
-    } catch {
-      // Silent — notification failure must never block the pipeline
-    }
-  }
-
-  /**
-   * Post a comment on the source GitHub issue (the issue that triggered this task).
-   *
-   * Uses task.external_ref to find the issue, then routes through the first
-   * comm plugin with "issue_management" capability. Fire-and-forget — errors
-   * are silently caught, never block the pipeline.
-   */
-  private commentOnSourceIssue(dispatch: Dispatch, message: string): void {
-    try {
-      const externalRef = dispatch.task.external_ref;
-      if (
-        !externalRef ||
-        (externalRef.type !== "github_issue" && externalRef.type !== "github_pr")
-      ) {
-        return; // No GitHub issue/PR to comment on
-      }
-
-      const commPlugins = this.registry.getPluginsByType<CommunicationAdapter>(
-        AdapterTypes.communication,
-      );
-      const plugin = commPlugins.find((p) => p.hasCapability("issue_management"));
-      if (!plugin) {
-        return; // No plugin with issue_management capability
-      }
-
-      plugin.commentOnIssue(externalRef.repo, externalRef.number, message).catch(() => {
-        // Silent — issue comment failure must never block the pipeline
-      });
-    } catch {
-      // Silent — notification failure must never block the pipeline
-    }
-  }
-
-  /**
-   * Commit all changes, push branch, and create a draft PR (D149, D150, D151).
-   *
-   * Called after demo_prep completes. Deterministic commit ensures all LLM
-   * changes are captured. Push via WorkspaceManager (token injection).
-   * PR creation via GitHostingAdapter.
-   *
-   * For rework dispatches (PR already exists): commits, pushes to existing
-   * branch, marks feedback as applied, and returns true (no new PR).
-   */
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-step PR workflow with rework branch — extraction would fragment the sequential logic
-  private async commitPushAndCreatePR(
-    sessionId: string,
-    taskId: string,
-    demoPrepOutput: PhaseOutput,
-    dispatch: Dispatch,
-  ): Promise<boolean> {
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
-    if (!worktreePath) {
-      console.warn("[pr-workflow] no workspace path — skipping");
-      return false; // No workspace — no PR (e.g., fast-path without repo)
-    }
-
-    const record = this.workspaceManager.getWorkspaceRecord(taskId);
-    if (!record) {
-      console.warn("[pr-workflow] no workspace record — skipping");
-      return false;
-    }
-
-    const isRework = dispatch.task.review?.pr_number != null;
-    console.log(
-      `[pr-workflow] starting: repo=${record.repo} branch=${record.branch} rework=${String(isRework)}`,
-    );
-
-    // 1. Deterministic commit: git add -A && git commit
-    //    Claude Code CLI may have already committed changes via its internal tools,
-    //    so we also check for commits ahead of base to avoid skipping push/PR.
-    let hasNewCommit = false;
-    try {
-      execFileSync("git", ["add", "-A"], {
-        cwd: worktreePath,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-
-      // Check if there are staged changes
-      let hasStagedChanges = false;
-      try {
-        execFileSync("git", ["diff", "--cached", "--quiet"], {
-          cwd: worktreePath,
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-      } catch {
-        // Non-zero exit = there ARE staged changes
-        hasStagedChanges = true;
-      }
-
-      if (hasStagedChanges) {
-        const commitMessage = isRework
-          ? "fix: address review feedback\n\nAutomated by The Engineer"
-          : `feat: ${dispatch.task.title}\n\nAutomated by The Engineer`;
-        execFileSync("git", ["commit", "-m", commitMessage], {
-          cwd: worktreePath,
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        hasNewCommit = true;
-      }
-    } catch (error) {
-      this.logPrStepFailure(sessionId, taskId, "commit", error);
-      console.error(
-        `[pr-workflow] commit failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return false;
-    }
-
-    // Check if branch has commits ahead of base (covers Claude CLI internal commits)
-    if (!hasNewCommit) {
-      try {
-        const aheadCount = execFileSync(
-          "git",
-          ["rev-list", "--count", `origin/${record.baseBranch}..HEAD`],
-          { cwd: worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-        ).trim();
-        if (aheadCount === "0") {
-          console.warn("[pr-workflow] no commits ahead of base — skipping");
-          return false; // Truly no changes — nothing to push or PR
-        }
-        console.log(`[pr-workflow] ${aheadCount} commits ahead of base`);
-      } catch (error) {
-        console.warn(
-          `[pr-workflow] can't determine ahead count — skipping: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return false; // Can't determine — skip to be safe
-      }
-    }
-
-    // 2. Push via WorkspaceManager (D151 — token injection)
-    console.log(`[pr-workflow] pushing branch ${record.branch}...`);
-    try {
-      this.workspaceManager.pushBranch(taskId);
-      console.log("[pr-workflow] push succeeded");
-    } catch (error) {
-      this.logPrStepFailure(sessionId, taskId, "push", error);
-      console.error(
-        `[pr-workflow] push failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return false;
-    }
-
-    // Rework path: PR already exists — just push, mark feedback applied, notify
-    if (isRework) {
-      const task = this.taskEngine.getTask(taskId);
-      if (task?.review) {
-        const updatedRounds = task.review.feedback_rounds.map((r) => ({ ...r, applied: true }));
-        this.taskEngine.updateTaskField(taskId, "review", {
-          ...task.review,
-          feedback_rounds: updatedRounds,
-        });
-      }
-      this.commentOnSourceIssue(dispatch, "Pushed rework addressing review feedback.");
-      return true;
-    }
-
-    // 3. Create draft PR via GitHostingAdapter
-    const gitHosting = this.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
-    if (!gitHosting) {
-      console.warn("[pr-workflow] no git hosting plugin — skipping PR creation");
-      return false; // No hosting plugin — skip PR creation
-    }
-
-    console.log(`[pr-workflow] creating draft PR on ${record.repo}...`);
-    try {
-      const prDescription =
-        (demoPrepOutput.data as { pr_description?: string }).pr_description ??
-        `Automated PR for: ${dispatch.task.title}`;
-
-      const prResult = await gitHosting.createPR({
-        repo: record.repo,
-        branch: record.branch,
-        base: record.baseBranch,
-        title: dispatch.task.title,
-        body: prDescription,
-        draft: true,
-        labels: null,
-        reviewers: null,
-      });
-
-      // Update task review state
-      this.taskEngine.updateTaskField(taskId, "review", {
-        pr_number: prResult.pr_number,
-        pr_state: "draft",
-        demo_artifacts: [],
-        feedback_rounds: [],
-      });
-
-      console.log(`[pr-workflow] draft PR #${String(prResult.pr_number)} created: ${prResult.url}`);
-
-      // Notify PR creation — personal channels + GitHub issue comment
-      this.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
-      this.commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
-      return true;
-    } catch (error) {
-      this.logPrStepFailure(sessionId, taskId, "pr_creation", error);
-      console.error(
-        `[pr-workflow] PR creation failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return false;
-    }
-  }
-
-  /** Log a PR workflow step failure to the session journal. */
-  private logPrStepFailure(sessionId: string, taskId: string, step: string, error: unknown): void {
-    const message = error instanceof Error ? error.message : String(error);
-    this.sessionMemory.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: Phases.demo_prep,
-      type: JournalEntryTypes.error,
-      summary: `PR workflow failed at ${step}: ${message}`,
-      tags: ["pr_workflow", step],
-    });
-  }
-
-  /** Extract repository identifier from task (workspace or external_ref). */
-  private getTaskRepo(dispatch: Dispatch): string {
-    return dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? "";
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Call the LLM adapter through the Action Pipeline, parse the response,
-   * and validate with the phase-specific schema.
-   *
-   * Emits a `cost.incurred` event after each successful call.
-   * On safeParse failure, returns a fallback PhaseOutput (Decision #85).
-   */
-  private async callLlmAndParse(
-    phase: Phase,
-    taskId: string,
-    prompt: string,
-  ): Promise<PhaseOutput> {
-    const completion = await this.callLlm(prompt, taskId);
-
-    // Emit cost.incurred event
-    this.emitCostIncurred(taskId, completion);
-
-    // Parse JSON from LLM response
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(completion.content);
-    } catch {
-      return this.buildFallbackOutput(
-        phase,
-        taskId,
-        `Invalid JSON from LLM: ${completion.content.slice(0, 200)}`,
-      );
-    }
-
-    // Validate against phase schema
-    const schema = PHASE_SCHEMAS[phase];
-    const result = schema.safeParse(parsed);
-    if (!result.success) {
-      return this.buildFallbackOutput(
-        phase,
-        taskId,
-        `Schema validation failed: ${result.error.message}`,
-      );
-    }
-
-    return this.buildPhaseOutput(phase, taskId, result.data as Record<string, unknown>, "high", []);
-  }
-
-  /**
-   * Call the LLM adapter through the Action Pipeline.
-   * Throws if no LLM plugin is registered or if the pipeline rejects.
-   */
-  private async callLlm(
-    prompt: string,
-    taskId: string,
-    systemPrompt?: string | null,
-  ): Promise<CompletionResult> {
-    const llm = this.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
-    if (!llm) {
-      throw new Error("Orchestrator: no LLM plugin registered");
-    }
-
-    // Set CWD to worktree so CLI-based plugins load the target repo's context, not the daemon's.
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
-
-    const pipelineResult = await this.actionPipeline.execute<CompletionResult>({
-      taskId,
-      actionClass: ActionClasses.read,
-      details: { operation: "llm_complete" },
-      requestedBy: "orchestrator",
-      executeFn: () =>
-        llm.complete({
-          prompt,
-          system_prompt: systemPrompt ?? null,
-          options: {
-            max_tokens: null,
-            temperature: null,
-            stop: null,
-            tools: null,
-            cwd: worktreePath,
-          },
-        }),
-    });
-
-    if (pipelineResult.outcome !== "executed") {
-      const reason = "reason" in pipelineResult ? pipelineResult.reason : "unknown";
-      throw new Error(`LLM call rejected: ${pipelineResult.outcome} - ${reason}`);
-    }
-
-    return pipelineResult.result;
-  }
-
-  /**
-   * Run a phase using the agent loop (multi-turn LLM + tool execution).
-   *
-   * The Engineer IS the agent: call LLM → parse action → execute tool → repeat.
-   * Falls back to callLlmAndParse if no worktree is available.
-   */
-  private async runPhaseWithAgentLoop(
-    phase: Phase,
-    taskId: string,
-    systemPrompt: string,
-    initialPrompt: string,
-  ): Promise<PhaseOutput> {
-    const toolConfig = getPhaseToolConfig(phase);
-    const worktreePath = this.workspaceManager.getWorktreePath(taskId);
-    const toolAdapter = this.registry.getPrimaryPlugin<ToolAdapter>(AdapterTypes.tool) ?? null;
-    const traceId = this.currentTraceId;
-    const sessionId = this.currentSessionId;
-
-    // ── Phase metrics: start ─────────────────────────────────────────────
-    const phaseMetricsId =
-      this.observability && traceId && sessionId
-        ? this.observability.createPhaseMetrics({
-            task_id: taskId,
-            session_id: sessionId,
-            trace_id: traceId,
-            phase,
-          })
-        : null;
-    const phaseStart = Date.now();
-
-    // ── Observability callbacks ──────────────────────────────────────────
-    const obsCallbacks =
-      this.observability && traceId && sessionId
-        ? {
-            callbacks: this.buildObservabilityCallbacks(taskId, sessionId, traceId, phase),
-          }
-        : {};
-
-    const loopResult = await runAgentLoop(
-      {
-        phase,
-        taskId,
-        systemPrompt,
-        initialPrompt,
-        toolConfig,
-        worktreePath,
-        ...obsCallbacks,
-      },
-      // Inject LLM call through ActionPipeline
-      (prompt, sysPrompt) => this.callLlm(prompt, taskId, sysPrompt),
-      // Inject action execution
-      (action, wPath) =>
-        executeAgentAction(action, wPath, {
-          actionPipeline: this.actionPipeline,
-          toolAdapter,
-          taskId,
-        }),
-    );
-
-    // ── Phase metrics: complete ──────────────────────────────────────────
-    if (phaseMetricsId && this.observability) {
-      const phaseDuration = Date.now() - phaseStart;
-      const actionsExecuted = loopResult.actions.length;
-      const actionsFailed = loopResult.actions.filter((a) => a.result && !a.result.success).length;
-      this.observability.completePhaseMetrics(phaseMetricsId, {
-        duration_ms: phaseDuration,
-        llm_iterations: loopResult.iterations,
-        tokens_in: loopResult.totalCost.tokens_in,
-        tokens_out: loopResult.totalCost.tokens_out,
-        spend_usd: loopResult.totalCost.spend_usd,
-        actions_executed: actionsExecuted,
-        actions_failed: actionsFailed,
-        outcome: "completed",
-      });
-    }
-
-    // Emit cost for the entire loop
-    this.emitAgentLoopCost(taskId, phase, loopResult);
-
-    // Validate output against phase schema
-    return this.validateLoopResult(phase, taskId, loopResult);
-  }
-
-  /** Emit cost.incurred event for an agent loop's accumulated cost. */
-  private emitAgentLoopCost(taskId: string, phase: string, loopResult: AgentLoopResult): void {
-    this.eventBus.publish({
-      type: EventTypes["cost.incurred"],
-      source: "orchestrator",
-      task_id: taskId,
-      payload: {
-        task_id: taskId,
-        repo: "",
-        provider_id: "llm",
-        provider_type: "api",
-        operation: `agent_loop:${phase}`,
-        tokens_in: loopResult.totalCost.tokens_in,
-        tokens_out: loopResult.totalCost.tokens_out,
-        spend_usd: loopResult.totalCost.spend_usd,
-        usage_units: null,
-        remaining: null,
-      },
-    } satisfies PublishInput<"cost.incurred">);
-  }
-
-  /** Build observability callbacks for agent loop tracing. */
-  private buildObservabilityCallbacks(
-    taskId: string,
-    sessionId: string,
-    traceId: string,
-    phase: string,
-  ): AgentLoopCallbacks {
-    // biome-ignore lint/style/noNonNullAssertion: caller checks observability is not null
-    const obs = this.observability!;
-    return {
-      onActionComplete: (trace) => {
-        obs.insertActionTrace({
-          task_id: taskId,
-          session_id: sessionId,
-          trace_id: traceId,
-          phase,
-          iteration: trace.iteration,
-          action_type: trace.action_type,
-          action_params: trace.action_params,
-          result_success: trace.result_success,
-          result_output: trace.result_output,
-          result_error: trace.result_error,
-          duration_ms: trace.duration_ms,
-        });
-      },
-      onLlmComplete: (trace) => {
-        // Store prompt and response as blobs
-        const promptRef = trace.prompt_content
-          ? obs.storeBlob(trace.prompt_content)
-          : trace.prompt_ref;
-        const responseRef = trace.response_content
-          ? obs.storeBlob(trace.response_content)
-          : trace.response_ref;
-
-        obs.insertLlmTrace({
-          task_id: taskId,
-          trace_id: traceId,
-          phase,
-          iteration: trace.iteration,
-          prompt_length: trace.prompt_length,
-          response_length: trace.response_length,
-          tokens_in: trace.tokens_in,
-          tokens_out: trace.tokens_out,
-          spend_usd: trace.spend_usd,
-          latency_ms: trace.latency_ms,
-          provider_id: "llm",
-          model_id: null,
-          finish_reason: null,
-          prompt_ref: promptRef,
-          response_ref: responseRef,
-        });
-      },
-    };
-  }
-
-  /** Validate agent loop result against phase schema, build PhaseOutput. */
-  private validateLoopResult(
-    phase: Phase,
-    taskId: string,
-    loopResult: AgentLoopResult,
-  ): PhaseOutput {
-    const schema = PHASE_SCHEMAS[phase];
-    const result = schema.safeParse(loopResult.phaseData);
-
-    if (!result.success) {
-      return this.buildFallbackOutput(
-        phase,
-        taskId,
-        `Agent loop output invalid: ${result.error.message} (after ${String(loopResult.iterations)} iterations)`,
-      );
-    }
-
-    return this.buildPhaseOutput(phase, taskId, result.data as Record<string, unknown>, "high", []);
-  }
-
-  /** Emit a cost.incurred event from LLM completion usage data. */
-  private emitCostIncurred(taskId: string, completion: CompletionResult): void {
-    this.eventBus.publish({
-      type: EventTypes["cost.incurred"],
-      source: "orchestrator",
-      task_id: taskId,
-      payload: {
-        task_id: taskId,
-        repo: "",
-        provider_id: "llm",
-        provider_type: "api",
-        operation: "phase_completion",
-        tokens_in: completion.usage.tokens_in,
-        tokens_out: completion.usage.tokens_out,
-        spend_usd: completion.usage.spend_usd,
-        usage_units: null,
-        remaining: completion.usage.remaining,
-      },
-    } satisfies PublishInput<"cost.incurred">);
-  }
-
-  /** Build a PhaseOutput envelope. */
-  private buildPhaseOutput(
-    phase: Phase,
-    taskId: string,
-    data: Record<string, unknown>,
-    confidence: "high" | "medium" | "low",
-    openQuestions: string[],
-  ): PhaseOutput {
-    return {
-      phase,
-      task_id: taskId,
-      timestamp: new Date().toISOString(),
-      data,
-      confidence,
-      open_questions: openQuestions,
-    };
-  }
-
-  /** Build a fallback PhaseOutput when safeParse fails (Decision #85). */
-  private buildFallbackOutput(phase: Phase, taskId: string, errorMessage: string): PhaseOutput {
-    return this.buildPhaseOutput(phase, taskId, this.getDefaultData(phase), "low", [errorMessage]);
-  }
-
-  /** Get default/empty data for a phase when LLM output is invalid. */
-  private getDefaultData(phase: Phase): Record<string, unknown> {
-    const defaults: Record<Phase, Record<string, unknown>> = {
-      [Phases.intake_analysis]: {
-        complexity: "moderate",
-        estimated_phases: [...PHASE_SEQUENCE],
-        ambiguities: [],
-        fast_path: false,
-        decomposition_likely: false,
-      },
-      [Phases.research]: {
-        relevant_files: [],
-        relevant_modules: [],
-        conventions: [],
-        existing_patterns: [],
-        dependencies: [],
-      },
-      [Phases.planning]: {
-        approach: "Unable to generate plan from LLM output",
-        file_changes: [],
-        risks: [],
-        decomposition_plan: null,
-      },
-      [Phases.execution]: {
-        files_changed: [],
-        tests_written: [],
-        test_results: { passed: 0, failed: 0, skipped: 0 },
-        build_status: "failing",
-      },
-      [Phases.self_review]: {
-        findings: [],
-        refactoring_applied: [],
-        quality_assessment: "needs_work",
-      },
-      [Phases.demo_prep]: {
-        artifacts: [],
-        pr_number: 1,
-        pr_description: "Unable to generate PR description from LLM output",
-      },
-      [Phases.integration]: {
-        children_verified: [],
-        integration_tests: { passed: 0, failed: 0 },
-        conflicts_found: [],
-        resolution_actions: [],
-      },
-    };
-    return defaults[phase];
-  }
-
-  /** Create a checkpoint at a phase transition (Protocol P4). */
-  private createPhaseCheckpoint(
-    sessionId: string,
-    taskId: string,
-    completedPhase: Phase,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    nextPhase: Phase | null,
-  ): string {
-    const output = priorOutputs.get(completedPhase);
-    const checkpoint = this.sessionMemory.createCheckpoint({
-      sessionId,
-      taskId,
-      phase: completedPhase,
-      phaseProgress: `Completed ${completedPhase}`,
-      contextSummary: `Phase ${completedPhase} complete. ${output ? `Confidence: ${output.confidence}` : ""}`,
-      keyFindings: output?.open_questions ?? [],
-      openQuestions: output?.open_questions ?? [],
-      nextAction: nextPhase ? `Begin ${nextPhase} phase` : "Pipeline complete",
-      lastEventId: "",
-      workspaceRef: null,
-      reason: CheckpointReasons.phase_transition,
-      journalOffset: 0,
-    });
-    return checkpoint.id;
-  }
-
-  /** Handle preemption: checkpoint, end session, emit ready (Protocol P8). */
-  private handlePreemption(
-    sessionId: string,
-    taskId: string,
-    currentPhase: Phase,
-    _priorOutputs: Map<Phase, PhaseOutput>,
-  ): ExecuteTaskResult {
-    const preemptingId = this.preemptionPayload?.preempting_task_id ?? "unknown";
-
-    // Create preemption checkpoint
-    const checkpoint = this.sessionMemory.createCheckpoint({
-      sessionId,
-      taskId,
-      phase: currentPhase,
-      phaseProgress: `Preempted during ${currentPhase}`,
-      contextSummary: `Task preempted by ${preemptingId} before completing ${currentPhase}`,
-      keyFindings: [],
-      openQuestions: [],
-      nextAction: `Resume at ${currentPhase}`,
-      lastEventId: "",
-      workspaceRef: null,
-      reason: CheckpointReasons.preemption,
-      journalOffset: 0,
-    });
-
-    // Log journal entry
-    this.sessionMemory.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: currentPhase,
-      type: JournalEntryTypes.checkpoint_marker,
-      summary: `Preempted by ${preemptingId}`,
-      tags: ["preemption"],
-    });
-
-    // End session
-    this.sessionMemory.endSession(sessionId, SessionEndReasons.preempted);
-
-    // Emit preemption.ready
-    this.eventBus.publish({
-      type: EventTypes["preemption.ready"],
-      source: "orchestrator",
-      task_id: taskId,
-      payload: {
-        task_id: taskId,
-        checkpoint_id: checkpoint.id,
-        phase: currentPhase,
-        atomic_op: "phase_complete",
-      },
-    } satisfies PublishInput<"preemption.ready">);
-
-    // Reset flag
-    this.preemptionRequested = false;
-    this.preemptionPayload = null;
-
-    return { outcome: "preempted", lastPhase: currentPhase, checkpointId: checkpoint.id };
-  }
+  // ── Self-Unblock ──────────────────────────────────────────────────────────
 
   /**
    * Attempt to self-diagnose and resolve a blocked task.
    *
    * Called by the Daemon during Stage 2 of blocked timeout escalation.
-   * Makes a lightweight LLM call to assess whether the block can be
-   * automatically resolved. Thin for v1 — Phase 16 adds real prompt
-   * engineering.
-   *
    * Returns `true` if the block was resolved, `false` otherwise.
    */
   async attemptSelfUnblock(taskId: string): Promise<boolean> {
-    const task = this.taskEngine.getTask(taskId);
+    const task = this.ctx.taskEngine.getTask(taskId);
     if (!task || task.state !== TaskStates.blocked) {
       return false;
     }
 
-    const llm = this.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
+    const llm = this.ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
     if (!llm) {
       return false;
     }
 
-    // Gather recent journal context
-    const entries = this.sessionMemory.queryJournal(taskId);
+    const entries = this.ctx.sessionMemory.queryJournal(taskId);
     const recentEntries = entries.slice(-5);
     const blockedReason = task.blocked?.reason ?? "unknown";
 
@@ -1708,7 +495,7 @@ export class Orchestrator {
     ].join("\n");
 
     try {
-      const pipelineResult = await this.actionPipeline.execute<CompletionResult>({
+      const pipelineResult = await this.ctx.actionPipeline.execute<CompletionResult>({
         taskId,
         actionClass: ActionClasses.read,
         details: { operation: "self_unblock_diagnosis" },
@@ -1725,26 +512,12 @@ export class Orchestrator {
         return false;
       }
 
-      this.emitCostIncurred(taskId, pipelineResult.result);
+      this.llmCaller.emitCostIncurred(taskId, pipelineResult.result);
 
       const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean };
       return parsed.can_resolve === true;
     } catch {
       return false;
     }
-  }
-
-  /** Create a session — new for fresh tasks, linked for resumed tasks. */
-  private createSession(dispatch: Dispatch) {
-    if (dispatch.resume_from) {
-      return this.sessionMemory.createSession({
-        taskId: dispatch.task.id,
-        previousSessionId: dispatch.resume_from.session_id,
-        resumedFromCheckpoint: dispatch.resume_from.id,
-      });
-    }
-    return this.sessionMemory.createSession({
-      taskId: dispatch.task.id,
-    });
   }
 }

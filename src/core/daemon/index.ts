@@ -21,11 +21,11 @@ import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
+import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
-import type { SessionMemory } from "../session-memory/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
 import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 
@@ -53,7 +53,7 @@ export interface DaemonDependencies {
   safetyLayer: ISafetyLayer;
   actionPipeline: ActionPipeline;
   orchestrator: Orchestrator;
-  sessionMemory: SessionMemory;
+  sessionMemory: ISessionMemory;
   workspaceManager: WorkspaceManager;
   peopleDirectory: PeopleDirectory;
   clock: Clock;

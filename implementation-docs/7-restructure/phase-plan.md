@@ -67,9 +67,9 @@ WAVE 6 (Sequential):   FINAL — End-to-end verification
 | R7 | CLI Polish | 3 | `R7-cli-polish.md` | MERGED |
 | R8 | Security Hardening | 3 | `R8-security.md` | MERGED |
 | — | *Merge Wave 3* | 3→4 | `MERGE-WAVE3.md` | DONE |
-| R9 | OSS Foundation | 4 | `R9-oss-foundation.md` | NOT STARTED |
-| R10 | Data Lifecycle + Performance | 4 | `R10-data-lifecycle.md` | NOT STARTED |
-| — | *Merge Wave 4* | 4→5 | `MERGE-WAVE4.md` | NOT STARTED |
+| R9 | OSS Foundation | 4 | `R9-oss-foundation.md` | MERGED |
+| R10 | Data Lifecycle + Performance | 4 | `R10-data-lifecycle.md` | MERGED |
+| — | *Merge Wave 4* | 4→5 | `MERGE-WAVE4.md` | DONE |
 | REVIEW | Deep Audit + Security Verification | 5 | `REVIEW.md` | NOT STARTED |
 | FINAL | End-to-End Verification | 6 | `FINAL.md` | NOT STARTED |
 

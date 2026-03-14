@@ -11,10 +11,13 @@ import { runInit } from "./commands/init.js";
 import { runInstall } from "./commands/install.js";
 import { runLogs } from "./commands/logs.js";
 import { runPrepare } from "./commands/prepare.js";
+import { runSetup } from "./commands/setup.js";
 import { runShutdown } from "./commands/shutdown.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
+import { runWhy } from "./commands/why.js";
 import { resolveEngineerHome, resolveSubdirs } from "./home.js";
+import { type OutputMode, createOutput, getOutput } from "./output.js";
 
 export const VERSION = "0.0.1";
 
@@ -23,7 +26,15 @@ export const program = new Command()
   .description("The Engineer — Autonomous Software Engineering Agent")
   .version(VERSION)
   .option("--home <path>", "Override ENGINEER_HOME directory")
-  .option("--verbose", "Enable debug logging");
+  .option("--verbose", "Enable debug logging")
+  .option("--json", "Output in JSON format");
+
+// Initialize Output singleton before any command runs
+program.hook("preAction", () => {
+  const globals = program.opts<{ json?: boolean }>();
+  const mode: OutputMode = globals.json ? "json" : "human";
+  createOutput({ mode });
+});
 
 // ── start ────────────────────────────────────────────────────────────────────
 
@@ -31,12 +42,14 @@ program
   .command("start")
   .description("Start the daemon")
   .option("--daemon", "Run in background")
-  .action(async (options: { daemon?: boolean }) => {
+  .option("--dry-run", "Validate config and show what would happen without starting")
+  .action(async (options: { daemon?: boolean; dryRun?: boolean }) => {
     const globals = program.opts<{ home?: string; verbose?: boolean }>();
     const home = resolveEngineerHome(globals.home);
     const code = await runStart(home, {
       daemon: options.daemon ?? false,
       verbose: globals.verbose ?? false,
+      dryRun: options.dryRun ?? false,
     });
     if (code !== 0) {
       process.exitCode = code;
@@ -126,9 +139,16 @@ program
   .action(() => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
+    const out = getOutput();
     const categories = runAllChecks(home);
-    console.log(formatDoctorResults(categories));
     const code = computeExitCode(categories);
+
+    if (out.mode === "json") {
+      out.data({ checks: categories, exitCode: code });
+    } else {
+      out.log(formatDoctorResults(categories));
+    }
+
     if (code !== 0) {
       process.exitCode = code;
     }
@@ -163,6 +183,34 @@ program
       port: Number.parseInt(options.port, 10),
       open: options.open ?? false,
     });
+  });
+
+// ── why ──────────────────────────────────────────────────────────────────────
+
+program
+  .command("why <task-id>")
+  .description("Explain why a task is in its current state")
+  .action((taskId: string) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runWhy(home, taskId);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── setup ────────────────────────────────────────────────────────────────────
+
+program
+  .command("setup")
+  .description("Interactive first-run setup wizard")
+  .action(async () => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = await runSetup(home);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
   });
 
 // ── config (subcommand) ──────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { _resetOutput, createOutput } from "../output.js";
 import {
   type DoctorCategory,
   checkConfigFiles,
@@ -25,10 +26,12 @@ let tempDir: string;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "doctor-test-"));
+  createOutput({ mode: "quiet" });
 });
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
+  _resetOutput();
 });
 
 // ── Category 1: Node.js Runtime ───────────────────────────────────────────

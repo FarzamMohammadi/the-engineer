@@ -20,7 +20,7 @@ describe("TaskQueries", () => {
   });
 
   function insertTask(overrides: Record<string, unknown> = {}): string {
-    const id = (overrides.id as string) ?? ulid();
+    const id = (overrides["id"] as string) ?? ulid();
     const now = new Date().toISOString();
     dbHandle.db
       .prepare(
@@ -46,14 +46,14 @@ describe("TaskQueries", () => {
       )
       .run(
         id,
-        (overrides.external_ref as string) ?? null,
-        (overrides.state as string) ?? TaskStates.intake,
-        (overrides.sub_state as string) ?? null,
-        (overrides.phase as string) ?? null,
-        (overrides.parent_id as string) ?? null,
+        (overrides["external_ref"] as string) ?? null,
+        (overrides["state"] as string) ?? TaskStates.intake,
+        (overrides["sub_state"] as string) ?? null,
+        (overrides["phase"] as string) ?? null,
+        (overrides["parent_id"] as string) ?? null,
         "[]",
         "pause_siblings",
-        (overrides.title as string) ?? `Task ${id}`,
+        (overrides["title"] as string) ?? `Task ${id}`,
         "",
         "",
         "[]",
@@ -61,16 +61,16 @@ describe("TaskQueries", () => {
         "[]",
         "[]",
         "[]",
-        (overrides.repo as string) ?? "test/repo",
+        (overrides["repo"] as string) ?? "test/repo",
         null,
         null,
         null,
         null,
-        (overrides.priority as number) ?? 50,
+        (overrides["priority"] as number) ?? 50,
         0,
         0,
         0,
-        (overrides.created_at as string) ?? now,
+        (overrides["created_at"] as string) ?? now,
         null,
         null,
         now,

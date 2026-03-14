@@ -1,0 +1,6 @@
+tick_interval_ms: 30000
+max_concurrent: 2
+plugins:
+  health_check_interval_ms: 60000
+  health_check_timeout_ms: 5000
+  consecutive_failures_threshold: 3

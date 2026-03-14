@@ -26,6 +26,8 @@ import { discoverPlugins } from "../core/registry/plugin-discovery.js";
 import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/database.js";
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 /** Result of bootstrapping all components. */
 export interface BootstrapResult {
   daemon: Daemon;
@@ -33,6 +35,11 @@ export interface BootstrapResult {
   logger: Logger;
   cleanup: () => void;
 }
+
+/** Progress callback for startup spinners. */
+export type ProgressCallback = (step: string, status: "start" | "done" | "error") => void;
+
+// ── Bootstrap ────────────────────────────────────────────────────────────────
 
 /**
  * Instantiates all Core components in dependency order, discovers and initializes
@@ -42,8 +49,10 @@ export async function bootstrap(
   engineerHome: string,
   config: ConfigBundle,
   verbose: boolean,
+  progress?: ProgressCallback,
 ): Promise<BootstrapResult> {
   // 1. Logger
+  progress?.("Initializing logger", "start");
   const loggingConfig = { ...config.daemon.logging };
   if (verbose) {
     loggingConfig.level = "debug";
@@ -51,14 +60,17 @@ export async function bootstrap(
   }
   const logger = createLogger(loggingConfig, engineerHome);
   const cliLogger = createChildLogger(logger, "cli");
-
   cliLogger.info("Bootstrapping The Engineer...");
+  progress?.("Initializing logger", "done");
 
   // 2. Database
+  progress?.("Initializing database", "start");
   const dbPath = join(engineerHome, "data", "engineer.db");
   const dbHandle: DatabaseHandle = createDatabase(dbPath);
+  progress?.("Initializing database", "done");
 
   // 3-9. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
+  progress?.("Creating core components", "start");
   const {
     eventBus,
     topology,
@@ -127,6 +139,7 @@ export async function bootstrap(
     logger: createChildLogger(logger, "daemon"),
     engineerHome,
   });
+  progress?.("Creating core components", "done");
 
   // 13. Register event topology subscriptions
   topology.registerSubscriber("orchestrator", "preemption.requested");
@@ -138,8 +151,10 @@ export async function bootstrap(
   topology.registerSubscriber("daemon:feedback", "task.feedback_received");
 
   // 14. Discover and initialize plugins via auto-discovery
+  progress?.("Loading plugins", "start");
   const pluginConfigDir = join(engineerHome, "config", "plugins");
   await loadDiscoveredPlugins(registry, pluginConfigDir, config, cliLogger);
+  progress?.("Plugins loaded", "done");
 
   cliLogger.info("Bootstrap complete.");
 

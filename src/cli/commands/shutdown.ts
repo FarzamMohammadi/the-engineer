@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
+import { getOutput } from "../output.js";
 import { isProcessRunning, readPidFile } from "../pid.js";
 
 /**
@@ -25,20 +26,21 @@ export async function waitForProcessExit(pid: number, timeoutMs: number): Promis
 
 /** Shuts down the daemon and all subsidiary processes. Returns exit code. */
 export async function runShutdown(engineerHome: string, timeoutMs: number): Promise<number> {
+  const out = getOutput();
   const pid = readPidFile(engineerHome);
 
   if (pid === null || !isProcessRunning(pid)) {
-    console.log("  The Engineer is not running.");
+    out.log("  The Engineer is not running.");
     cleanupAll(engineerHome);
     return 0;
   }
 
-  console.log(`  Stopping The Engineer (PID ${pid})...`);
+  out.log(`  Stopping The Engineer (PID ${pid})...`);
 
   try {
     process.kill(pid, "SIGTERM");
   } catch {
-    console.log("  Process already exited.");
+    out.log("  Process already exited.");
     cleanupAll(engineerHome);
     return 0;
   }
@@ -46,10 +48,10 @@ export async function runShutdown(engineerHome: string, timeoutMs: number): Prom
   const exited = await waitForProcessExit(pid, timeoutMs);
 
   if (exited) {
-    console.log("  The Engineer stopped.");
+    out.log("  The Engineer stopped.");
   } else {
-    console.log(`  Warning: Process did not exit within ${timeoutMs}ms.`);
-    console.log(`  PID ${pid} may still be running.`);
+    out.warn(`Process did not exit within ${timeoutMs}ms.`);
+    out.log(`  PID ${pid} may still be running.`);
   }
 
   cleanupAll(engineerHome);
@@ -68,6 +70,7 @@ function cleanupAll(engineerHome: string): void {
 
 /** Generic: read a PID file, kill the process, remove the file. */
 function stopByPidFile(engineerHome: string, filename: string, label: string): void {
+  const out = getOutput();
   const pidPath = join(engineerHome, "run", filename);
 
   if (!existsSync(pidPath)) {
@@ -80,7 +83,7 @@ function stopByPidFile(engineerHome: string, filename: string, label: string): v
 
     if (!Number.isNaN(pid) && pid > 0 && isProcessRunning(pid)) {
       process.kill(pid, "SIGTERM");
-      console.log(`  ${label} stopped (PID ${String(pid)}).`);
+      out.log(`  ${label} stopped (PID ${String(pid)}).`);
     }
 
     unlinkSync(pidPath);

@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { getOutput } from "../output.js";
+
 /** Generates OS-specific service configuration. Returns exit code. */
 export function runInstall(engineerHome: string): number {
   const platform = process.platform;
@@ -14,12 +16,14 @@ export function runInstall(engineerHome: string): number {
     return installSystemd(engineerHome);
   }
 
-  console.log(`  Unsupported platform: ${platform}`);
-  console.log("  Service installation is only supported on macOS and Linux.");
+  const out = getOutput();
+  out.error(`Unsupported platform: ${platform}`);
+  out.log("  Service installation is only supported on macOS and Linux.");
   return 1;
 }
 
 function installLaunchd(engineerHome: string): number {
+  const out = getOutput();
   const plistDir = join(homedir(), "Library", "LaunchAgents");
   const plistPath = join(plistDir, "com.the-engineer.daemon.plist");
   const engineerBin = process.argv[1] ?? "engineer";
@@ -57,21 +61,22 @@ function installLaunchd(engineerHome: string): number {
   mkdirSync(plistDir, { recursive: true });
   writeFileSync(plistPath, plist, "utf8");
 
-  console.log(`  Generated: ${plistPath}`);
-  console.log("");
-  console.log("  To register the service:");
-  console.log(`    launchctl load ${plistPath}`);
-  console.log("");
-  console.log("  To unregister:");
-  console.log(`    launchctl unload ${plistPath}`);
-  console.log("");
-  console.log("  To check status:");
-  console.log("    launchctl list | grep the-engineer");
+  out.success(`Generated: ${plistPath}`);
+  out.blank();
+  out.log("  To register the service:");
+  out.log(`    launchctl load ${plistPath}`);
+  out.blank();
+  out.log("  To unregister:");
+  out.log(`    launchctl unload ${plistPath}`);
+  out.blank();
+  out.log("  To check status:");
+  out.log("    launchctl list | grep the-engineer");
 
   return 0;
 }
 
 function installSystemd(engineerHome: string): number {
+  const out = getOutput();
   const unitDir = join(homedir(), ".config", "systemd", "user");
   const unitPath = join(unitDir, "engineer.service");
   const engineerBin = process.argv[1] ?? "engineer";
@@ -94,18 +99,18 @@ WantedBy=default.target
   mkdirSync(unitDir, { recursive: true });
   writeFileSync(unitPath, unit, "utf8");
 
-  console.log(`  Generated: ${unitPath}`);
-  console.log("");
-  console.log("  To register and start the service:");
-  console.log("    systemctl --user daemon-reload");
-  console.log("    systemctl --user enable engineer");
-  console.log("    systemctl --user start engineer");
-  console.log("");
-  console.log("  To check status:");
-  console.log("    systemctl --user status engineer");
-  console.log("");
-  console.log("  To stop:");
-  console.log("    systemctl --user stop engineer");
+  out.success(`Generated: ${unitPath}`);
+  out.blank();
+  out.log("  To register and start the service:");
+  out.log("    systemctl --user daemon-reload");
+  out.log("    systemctl --user enable engineer");
+  out.log("    systemctl --user start engineer");
+  out.blank();
+  out.log("  To check status:");
+  out.log("    systemctl --user status engineer");
+  out.blank();
+  out.log("  To stop:");
+  out.log("    systemctl --user stop engineer");
 
   return 0;
 }

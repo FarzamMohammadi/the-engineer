@@ -3,18 +3,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { _resetOutput, createOutput } from "../output.js";
 import { runConfigValidate } from "./config-validate.js";
 
 let tempDir: string;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "config-validate-test-"));
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console in tests
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  createOutput({ mode: "quiet" });
 });
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
+  _resetOutput();
   vi.restoreAllMocks();
 });
 

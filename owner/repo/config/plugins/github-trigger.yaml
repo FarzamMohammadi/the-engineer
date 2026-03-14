@@ -1,0 +1,5 @@
+token: ${GITHUB_TOKEN}
+repos:
+  - owner: owner
+    repo: repo
+assignee: ""

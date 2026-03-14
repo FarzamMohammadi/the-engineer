@@ -3,9 +3,12 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
+import { discoverPlugins } from "../../core/registry/plugin-discovery.js";
 import { startDashboard } from "../../dashboard/index.js";
-import { bootstrap } from "../bootstrap.js";
+import { type ProgressCallback, bootstrap } from "../bootstrap.js";
 import { type EngineerDirs, resolveSubdirs } from "../home.js";
+import { getOutput } from "../output.js";
+import { Spinner } from "../progress.js";
 import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "./doctor.js";
 
 const DASHBOARD_PORT = 3847;
@@ -13,10 +16,13 @@ const DASHBOARD_PORT = 3847;
 interface StartOptions {
   daemon: boolean;
   verbose: boolean;
+  dryRun: boolean;
 }
 
 /** Boots the daemon. Returns exit code. */
 export async function runStart(engineerHome: string, options: StartOptions): Promise<number> {
+  const out = getOutput();
+
   // 1. Auto-create directories
   const dirs = resolveSubdirs(engineerHome);
   for (const dirPath of Object.values(dirs)) {
@@ -29,15 +35,15 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     const result = loadConfigDir(dirs.config);
     bundle = result.bundle;
     for (const w of result.warnings) {
-      console.log(`  Warning: ${w.file}: ${w.message}`);
+      out.warn(`${w.file}: ${w.message}`);
     }
   } catch (error) {
-    console.error(`  Config error: ${error instanceof Error ? error.message : String(error)}`);
+    out.error(`Config error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
 
   if (!bundle) {
-    console.error("  Config loading failed unexpectedly.");
+    out.error("Config loading failed unexpectedly.");
     return 1;
   }
 
@@ -46,25 +52,49 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   const preFlightCode = computeExitCode(preFlightResults);
 
   if (preFlightCode === 1) {
-    console.error("  Pre-flight checks failed:");
-    console.error(formatDoctorResults(preFlightResults));
+    out.error("Pre-flight checks failed:");
+    out.log(formatDoctorResults(preFlightResults));
     return 1;
   }
 
   if (preFlightCode === 2 && options.verbose) {
-    console.log("  Pre-flight warnings:");
-    console.log(formatDoctorResults(preFlightResults));
+    out.warn("Pre-flight warnings:");
+    out.log(formatDoctorResults(preFlightResults));
   }
 
-  // 4. Background mode: re-spawn as detached child
+  // 4. Dry-run mode: show what would happen and exit
+  if (options.dryRun) {
+    return runDryRun(engineerHome, dirs, preFlightResults);
+  }
+
+  // 5. Background mode: re-spawn as detached child
   if (options.daemon) {
     return spawnBackground(engineerHome, options.verbose);
   }
 
-  // 5. Foreground mode: bootstrap and start
-  const { daemon, cleanup } = await bootstrap(engineerHome, bundle, options.verbose);
+  // 6. Foreground mode: bootstrap and start with progress indicators
+  const spinner = new Spinner("");
+  const progress: ProgressCallback = (step, status) => {
+    if (status === "start") {
+      spinner.update(step);
+      spinner.start();
+    } else if (status === "done") {
+      spinner.succeed(step);
+    } else {
+      spinner.fail(step);
+    }
+  };
 
-  // 6. Start dashboard alongside daemon
+  // Config already loaded — report it
+  progress("Configuration loaded", "done");
+
+  // Pre-flight already passed — report it
+  const totalChecks = preFlightResults.reduce((sum, c) => sum + c.checks.length, 0);
+  progress(`Pre-flight: ${String(totalChecks)}/${String(totalChecks)} checks passed`, "done");
+
+  const { daemon, cleanup } = await bootstrap(engineerHome, bundle, options.verbose, progress);
+
+  // 7. Start dashboard alongside daemon
   const { cleanup: cleanupDashboard } = launchDashboard(dirs);
 
   // Signal handlers for graceful shutdown
@@ -87,23 +117,79 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   });
 
   try {
-    console.log("  Starting The Engineer...");
+    const startSpinner = new Spinner("Starting daemon");
+    startSpinner.start();
     await daemon.start();
+    startSpinner.succeed("Daemon running");
     const warRoomUrl = `http://localhost:${String(DASHBOARD_PORT)}`;
-    console.log(`  Engineer started. Access the War Room at: ${warRoomUrl}`);
+    out.blank();
+    out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
   } catch (error) {
-    console.error(`  Startup failed: ${error instanceof Error ? error.message : String(error)}`);
+    out.error(`Startup failed: ${error instanceof Error ? error.message : String(error)}`);
     cleanupDashboard();
     cleanup();
     return 1;
   }
 
-  // Daemon.start() returns after the tick loop is set up — process stays alive
-  // via the setInterval in the daemon. We just wait here.
   return 0;
 }
 
+// ── Dry Run ──────────────────────────────────────────────────────────────────
+
+function runDryRun(
+  _engineerHome: string,
+  dirs: EngineerDirs,
+  preFlightResults: import("./doctor.js").DoctorCategory[],
+): number {
+  const out = getOutput();
+  const totalChecks = preFlightResults.reduce((sum, c) => sum + c.checks.length, 0);
+  const discovered = discoverPlugins({ dirs: [], includeBuiltins: true });
+  const criticalCount = discovered.filter((p) => p.manifest.critical).length;
+
+  if (out.mode === "json") {
+    out.data({
+      config: { dir: dirs.config },
+      database: {
+        path: join(dirs.data, "engineer.db"),
+        exists: existsSync(join(dirs.data, "engineer.db")),
+      },
+      plugins: discovered.map((p) => ({
+        id: p.manifest.id,
+        type: p.manifest.type,
+        critical: p.manifest.critical,
+      })),
+      preflight: { total: totalChecks, passed: totalChecks, categories: preFlightResults },
+    });
+    return 0;
+  }
+
+  out.blank();
+  out.heading("Dry Run — The Engineer would start with:");
+  out.blank();
+  out.keyValue("Config", `${dirs.config}`);
+  out.keyValue("Database", join(dirs.data, "engineer.db"));
+  out.keyValue(
+    "Plugins",
+    `${String(discovered.length)} plugins (${String(criticalCount)} critical)`,
+  );
+  out.keyValue("Pre-flight", `${String(totalChecks)}/${String(totalChecks)} checks passed`);
+
+  out.blank();
+  out.log("  Plugin loading order:");
+  for (const [i, p] of discovered.entries()) {
+    const label = p.manifest.critical ? "CRITICAL" : "non-critical";
+    out.log(`    ${String(i + 1)}. ${p.manifest.id} (${p.manifest.type}) — ${label}`);
+  }
+
+  out.blank();
+  out.success("Everything looks good. Run without --dry-run to start.");
+  return 0;
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+
 function launchDashboard(dirs: EngineerDirs): { cleanup: () => void } {
+  const out = getOutput();
   const dbPath = join(dirs.data, "engineer.db");
   const pidPath = join(dirs.run, "dashboard.pid");
   let handle: { close: () => void } | null = null;
@@ -114,7 +200,7 @@ function launchDashboard(dirs: EngineerDirs): { cleanup: () => void } {
       writeFileSync(pidPath, String(process.pid), "utf8");
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.log(`  Dashboard failed to start: ${msg}`);
+      out.warn(`Dashboard failed to start: ${msg}`);
     }
   }
 
@@ -131,6 +217,7 @@ function launchDashboard(dirs: EngineerDirs): { cleanup: () => void } {
 }
 
 function spawnBackground(engineerHome: string, verbose: boolean): number {
+  const out = getOutput();
   const args = [process.argv[1] ?? "engineer", "start", "--home", engineerHome];
   if (verbose) {
     args.push("--verbose");
@@ -144,7 +231,7 @@ function spawnBackground(engineerHome: string, verbose: boolean): number {
 
   child.unref();
 
-  console.log(`  The Engineer started in background (PID ${child.pid}).`);
-  console.log("  Use 'engineer status' to check, 'engineer shutdown' to stop.");
+  out.success(`The Engineer started in background (PID ${child.pid}).`);
+  out.log("  Use 'engineer status' to check, 'engineer shutdown' to stop.");
   return 0;
 }

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createDatabase } from "../../db/database.js";
+import { _resetOutput, createOutput } from "../output.js";
 import { runStatus } from "./status.js";
 
 let tempDir: string;
@@ -11,12 +12,12 @@ let tempDir: string;
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "status-test-"));
   mkdirSync(join(tempDir, "run"), { recursive: true });
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console in tests
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  createOutput({ mode: "quiet" });
 });
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
+  _resetOutput();
   vi.restoreAllMocks();
 });
 

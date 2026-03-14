@@ -21,7 +21,7 @@ function createMockEventBus(): IEventBus {
 }
 
 function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unknown> = {}): string {
-  const id = (overrides.id as string) ?? ulid();
+  const id = (overrides["id"] as string) ?? ulid();
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO tasks (
@@ -46,8 +46,8 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
   ).run(
     id,
     null,
-    (overrides.state as string) ?? TaskStates.intake,
-    (overrides.sub_state as string) ?? null,
+    (overrides["state"] as string) ?? TaskStates.intake,
+    (overrides["sub_state"] as string) ?? null,
     null,
     null,
     "[]",

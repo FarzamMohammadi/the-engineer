@@ -1,0 +1,4 @@
+autonomy_level: supervised
+auto_merge: false
+max_cost_per_task_usd: 5
+require_human_review: false

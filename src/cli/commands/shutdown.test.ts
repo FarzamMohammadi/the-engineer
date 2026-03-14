@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { _resetOutput, createOutput } from "../output.js";
 import { runShutdown, waitForProcessExit } from "./shutdown.js";
 
 let tempDir: string;
@@ -10,12 +11,12 @@ let tempDir: string;
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "shutdown-test-"));
   mkdirSync(join(tempDir, "run"), { recursive: true });
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console in tests
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  createOutput({ mode: "quiet" });
 });
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
+  _resetOutput();
   vi.restoreAllMocks();
 });
 

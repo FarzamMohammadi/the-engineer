@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import { startDashboard } from "../../dashboard/index.js";
 import type { EngineerDirs } from "../home.js";
+import { getOutput } from "../output.js";
 
 export interface DashboardOptions {
   port: number;
@@ -16,11 +17,12 @@ export interface DashboardOptions {
 }
 
 export async function runDashboard(dirs: EngineerDirs, options: DashboardOptions): Promise<void> {
+  const out = getOutput();
   const dbPath = join(dirs.data, "engineer.db");
 
   if (!existsSync(dbPath)) {
-    console.error(`Database not found at ${dbPath}`);
-    console.error('Run "engineer init" and "engineer start" first.');
+    out.error(`Database not found at ${dbPath}`);
+    out.error('Run "engineer init" and "engineer start" first.');
     process.exitCode = 1;
     return;
   }
@@ -56,7 +58,7 @@ export async function runDashboard(dirs: EngineerDirs, options: DashboardOptions
 
   // Keep alive until Ctrl+C
   process.on("SIGINT", () => {
-    console.log("\nShutting down dashboard...");
+    out.log("\nShutting down dashboard...");
     handle.close();
     cleanup();
     process.exit(0);

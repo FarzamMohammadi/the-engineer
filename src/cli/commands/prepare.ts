@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { getOutput } from "../output.js";
 import { SEED_TEMPLATES } from "../templates.js";
 
 interface PrepareOptions {
@@ -10,9 +11,11 @@ interface PrepareOptions {
 
 /** Scaffolds a seed/ directory with fully documented config files for the user to customize. */
 export function runPrepare(seedDir: string, options: PrepareOptions): void {
-  console.log("");
-  console.log("  Preparing seed directory for local configuration...");
-  console.log("");
+  const out = getOutput();
+
+  out.blank();
+  out.log("  Preparing seed directory for local configuration...");
+  out.blank();
 
   const hasSeedExample = existsSync(options.seedExampleDir);
 
@@ -25,7 +28,7 @@ export function runPrepare(seedDir: string, options: PrepareOptions): void {
     const filePath = join(seedDir, template.relativePath);
 
     if (existsSync(filePath) && !options.force) {
-      console.log(`    ${template.relativePath} (exists, skipped)`);
+      out.log(`    ${template.relativePath} (exists, skipped)`);
       skipped++;
       continue;
     }
@@ -41,26 +44,26 @@ export function runPrepare(seedDir: string, options: PrepareOptions): void {
 
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, content, "utf8");
-    console.log(`    ${template.relativePath} (${source})`);
+    out.log(`    ${template.relativePath} (${source})`);
     created++;
   }
 
-  console.log("");
+  out.blank();
   if (skipped > 0) {
-    console.log(`  ${created} files created, ${skipped} skipped (use --force to overwrite)`);
+    out.log(`  ${created} files created, ${skipped} skipped (use --force to overwrite)`);
   } else {
-    console.log(`  ${created} files created in ${seedDir}/`);
+    out.log(`  ${created} files created in ${seedDir}/`);
   }
-  console.log("");
-  console.log("  Next steps:");
-  console.log(`    1. Review configs:      ls ${seedDir}/config/`);
+  out.blank();
+  out.log("  Next steps:");
+  out.log(`    1. Review configs:      ls ${seedDir}/config/`);
   if (hasSeedExample) {
-    console.log("    2. Or use seed-example/ as a working reference");
+    out.log("    2. Or use seed-example/ as a working reference");
   }
-  console.log("    3. Fill in your values: repos, handles, tokens");
-  console.log("    4. Run:                 engineer init");
-  console.log("    5. Start:               engineer start");
-  console.log("");
-  console.log("  The seed/ directory is gitignored — your secrets stay local.");
-  console.log("  Every future `engineer init` will use these configs automatically.");
+  out.log("    3. Fill in your values: repos, handles, tokens");
+  out.log("    4. Run:                 engineer init");
+  out.log("    5. Start:               engineer start");
+  out.blank();
+  out.log("  The seed/ directory is gitignored — your secrets stay local.");
+  out.log("  Every future `engineer init` will use these configs automatically.");
 }

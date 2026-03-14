@@ -10,6 +10,7 @@ import {
   WorkspaceConfigSchema,
 } from "../../schemas/config.js";
 import { resolveSubdirs } from "../home.js";
+import { getOutput } from "../output.js";
 
 interface ConfigFileEntry {
   name: string;
@@ -26,40 +27,66 @@ const CONFIG_FILES: ConfigFileEntry[] = [
 
 /** Validates all config files and reports results per-file. Returns exit code. */
 export function runConfigValidate(engineerHome: string): number {
+  const out = getOutput();
   const dirs = resolveSubdirs(engineerHome);
   const configDir = dirs.config;
 
   if (!existsSync(configDir)) {
-    console.log(`  Config directory not found: ${configDir}`);
-    console.log(`  Run: engineer init --home ${engineerHome}`);
+    out.error(`Config directory not found: ${configDir}`);
+    out.log(`  Run: engineer init --home ${engineerHome}`);
     return 1;
   }
 
   let hasErrors = false;
-  console.log("  Validating config files:\n");
+  const fileResults: Array<{ name: string; status: string; message?: string }> = [];
 
   for (const { name, schema } of CONFIG_FILES) {
     const filePath = join(configDir, name);
 
     if (!existsSync(filePath)) {
-      console.log(`  ⚠ ${name}: not found (defaults will be used)`);
+      fileResults.push({ name, status: "missing" });
       continue;
     }
 
     const result = loadConfigSafe(filePath, schema);
     if (result.ok) {
-      console.log(`  ✓ ${name}: valid`);
+      fileResults.push({ name, status: "valid" });
     } else {
       hasErrors = true;
-      console.log(`  ✗ ${name}: ${result.error.message}`);
+      fileResults.push({ name, status: "error", message: result.error.message });
     }
   }
 
-  console.log("");
-  if (hasErrors) {
-    console.log("  Some config files have errors.");
-    return 1;
+  if (out.mode === "json") {
+    out.data({ valid: !hasErrors, files: fileResults });
+    return hasErrors ? 1 : 0;
   }
-  console.log("  All config files valid.");
-  return 0;
+
+  displayResults(out, fileResults, hasErrors);
+  return hasErrors ? 1 : 0;
+}
+
+function displayResults(
+  out: import("../output.js").Output,
+  fileResults: Array<{ name: string; status: string; message?: string }>,
+  hasErrors: boolean,
+): void {
+  out.log("  Validating config files:\n");
+
+  for (const file of fileResults) {
+    if (file.status === "missing") {
+      out.warn(`${file.name}: not found (defaults will be used)`);
+    } else if (file.status === "valid") {
+      out.success(`${file.name}: valid`);
+    } else {
+      out.error(`${file.name}: ${file.message}`);
+    }
+  }
+
+  out.blank();
+  if (hasErrors) {
+    out.log("  Some config files have errors.");
+  } else {
+    out.log("  All config files valid.");
+  }
 }

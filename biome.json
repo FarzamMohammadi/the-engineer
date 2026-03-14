@@ -48,7 +48,19 @@
   "organizeImports": {
     "enabled": true
   },
+  "overrides": [
+    {
+      "include": ["**/*.test.ts", "test/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          }
+        }
+      }
+    }
+  ],
   "files": {
-    "ignore": ["dist", "coverage", "node_modules"]
+    "ignore": ["dist", "coverage", "node_modules", "~"]
   }
 }

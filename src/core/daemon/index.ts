@@ -20,10 +20,10 @@ import {
 import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
-import type { SafetyLayer } from "../safety-layer/index.js";
 import type { SessionMemory } from "../session-memory/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
@@ -50,7 +50,7 @@ export interface DaemonDependencies {
   eventBus: EventBus;
   registry: Registry;
   taskEngine: TaskEngine;
-  safetyLayer: SafetyLayer;
+  safetyLayer: ISafetyLayer;
   actionPipeline: ActionPipeline;
   orchestrator: Orchestrator;
   sessionMemory: SessionMemory;

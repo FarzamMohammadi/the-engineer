@@ -66,10 +66,12 @@ export class StateMachine {
   private readonly setCompletedAtStmt: Database.Statement;
   private readonly insertTransitionStmt: Database.Statement;
 
-  constructor(
-    private readonly db: Database.Database,
-    private readonly eventBus: IEventBus,
-  ) {
+  private readonly db: Database.Database;
+  private readonly eventBus: IEventBus;
+
+  constructor(db: Database.Database, eventBus: IEventBus) {
+    this.db = db;
+    this.eventBus = eventBus;
     this.getTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?");
 
     this.updateStateStmt = db.prepare(

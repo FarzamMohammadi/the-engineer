@@ -28,6 +28,7 @@ import type {
 import type { EventBus } from "../event-bus/index.js";
 
 // Internal modules
+import { UnknownFieldError } from "./errors.js";
 import { checkPermission as checkPermissionPure } from "./permissions.js";
 import { TaskQueries } from "./queries.js";
 import { StateMachine } from "./state-machine.js";
@@ -345,7 +346,7 @@ export class TaskEngine implements ITaskEngine {
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void {
     const stmt = this.updateFieldStmts.get(field);
     if (!stmt) {
-      throw new Error(`TaskEngine: unknown updatable field "${field}"`);
+      throw new UnknownFieldError(field);
     }
 
     const serialized = JSON_FIELDS.has(field)

@@ -215,11 +215,18 @@ export function parseCliOutput(raw: string): CompletionResult {
   }
 
   if (!resultEvent) {
-    throw new Error("No result event found in CLI output");
+    throw new AdapterMethodError(
+      createAdapterError("internal_error", "No result event found in CLI output"),
+    );
   }
 
   if (resultEvent["subtype"] === "error") {
-    throw new Error(`CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`);
+    throw new AdapterMethodError(
+      createAdapterError(
+        "internal_error",
+        `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`,
+      ),
+    );
   }
 
   // The `result` field may be a string (--print mode) or an object with a `text` field.

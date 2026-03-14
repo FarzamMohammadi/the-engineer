@@ -15,6 +15,7 @@ import {
 import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ export function validateWorkspacePath(targetPath: string, workspaceRoot: string)
   try {
     resolvedPath = realpathSync(targetPath);
   } catch {
-    throw new Error(
+    throw new WorkspaceCreationError(
       `Workspace path validation failed: "${targetPath}" does not exist or cannot be resolved`,
     );
   }
@@ -131,13 +132,13 @@ export function validateWorkspacePath(targetPath: string, workspaceRoot: string)
   try {
     resolvedRoot = realpathSync(workspaceRoot);
   } catch {
-    throw new Error(
+    throw new WorkspaceCreationError(
       `Workspace root validation failed: "${workspaceRoot}" does not exist or cannot be resolved`,
     );
   }
 
   if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}/`)) {
-    throw new Error(
+    throw new WorkspaceCreationError(
       `Workspace escape detected: "${targetPath}" resolves to "${resolvedPath}" which is outside workspace root "${resolvedRoot}"`,
     );
   }
@@ -214,7 +215,9 @@ export class WorkspaceManager {
     // Clone repo if not present (D147)
     if (!existsSync(repoCloneDir)) {
       if (!cloneUrl) {
-        throw new Error(`WorkspaceManager: repo clone directory does not exist: ${repoCloneDir}`);
+        throw new WorkspaceCreationError(
+          `WorkspaceManager: repo clone directory does not exist: ${repoCloneDir}`,
+        );
       }
       this.ensureClone(repo, cloneUrl);
     }
@@ -404,7 +407,7 @@ export class WorkspaceManager {
   pushBranch(taskId: string): void {
     const record = this.workspaces.get(taskId);
     if (!record) {
-      throw new Error(`WorkspaceManager: no workspace for task ${taskId}`);
+      throw new WorkspaceNotFoundError(taskId);
     }
 
     const token = this.resolveToken();

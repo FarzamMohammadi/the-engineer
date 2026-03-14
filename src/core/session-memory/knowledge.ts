@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import type { KnowledgeEntry, KnowledgeScope } from "../../schemas/session-memory.js";
 import { knowledgeId } from "../../schemas/session-memory.js";
 import type { StoreKnowledgeInput } from "../interfaces/session-memory.interface.js";
+import { KnowledgeNotFoundError } from "./errors.js";
 import { type KnowledgeEntryRow, rowToKnowledgeEntry } from "./row-mappers.js";
 
 /**
@@ -98,7 +99,7 @@ export class KnowledgeStore {
   supersedeKnowledge(oldId: string, newId: string): void {
     const result = this.supersedeKnowledgeStmt.run(newId, oldId);
     if (result.changes === 0) {
-      throw new Error(`SessionMemory: knowledge entry "${oldId}" not found`);
+      throw new KnowledgeNotFoundError(oldId);
     }
   }
 
@@ -106,7 +107,7 @@ export class KnowledgeStore {
     const now = new Date().toISOString();
     const result = this.confirmKnowledgeStmt.run(now, id);
     if (result.changes === 0) {
-      throw new Error(`SessionMemory: knowledge entry "${id}" not found`);
+      throw new KnowledgeNotFoundError(id);
     }
   }
 }

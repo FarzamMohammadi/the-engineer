@@ -18,6 +18,7 @@ import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
+import { LlmCallRejectedError, NoLlmPluginError } from "./errors.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
 import type { OrchestratorContext, PipelineState } from "./types.js";
 
@@ -115,7 +116,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
   ): Promise<CompletionResult> {
     const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
     if (!llm) {
-      throw new Error("Orchestrator: no LLM plugin registered");
+      throw new NoLlmPluginError();
     }
 
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
@@ -141,7 +142,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
     if (pipelineResult.outcome !== "executed") {
       const reason = "reason" in pipelineResult ? pipelineResult.reason : "unknown";
-      throw new Error(`LLM call rejected: ${pipelineResult.outcome} - ${reason}`);
+      throw new LlmCallRejectedError(pipelineResult.outcome, reason);
     }
 
     return pipelineResult.result;

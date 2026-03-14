@@ -9,7 +9,7 @@ import { discoverPlugins } from "./plugin-discovery.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const DUPLICATE_ID_RE = /[Dd]uplicate plugin ID "same-id"/;
+const DUPLICATE_ID_RE = /same-id.*[Dd]uplicate plugin ID/;
 
 // ── Test Helpers ──────────────────────────────────────────────────────────
 

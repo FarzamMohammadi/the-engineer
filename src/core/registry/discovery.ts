@@ -8,6 +8,7 @@ import {
   type PluginManifest,
   PluginManifestSchema,
 } from "../../schemas/adapters.js";
+import { RegistryValidationError } from "./errors.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ export function validateDiscoveredPlugins(discovered: DiscoveredManifest[]): voi
     if (seenIds.has(manifest.id)) {
       const message = `duplicate plugin ID "${manifest.id}"`;
       console.error(`Registry: validation failed for "${manifest.id}": ${message}`);
-      throw new Error(`Registry: validation failed: ${message}`);
+      throw new RegistryValidationError(manifest.id, message);
     }
     seenIds.add(manifest.id);
 
@@ -75,14 +76,14 @@ export function validateDiscoveredPlugins(discovered: DiscoveredManifest[]): voi
     if (!SEMVER_REGEX.test(manifest.version)) {
       const message = `invalid version "${manifest.version}" (must be semver)`;
       console.error(`Registry: validation failed for "${manifest.id}": ${message}`);
-      throw new Error(`Registry: validation failed for "${manifest.id}": ${message}`);
+      throw new RegistryValidationError(manifest.id, message);
     }
 
     // Entry file exists
     if (!existsSync(entryPath)) {
       const message = `entry file not found: ${entryPath}`;
       console.error(`Registry: validation failed for "${manifest.id}": ${message}`);
-      throw new Error(`Registry: validation failed for "${manifest.id}": ${message}`);
+      throw new RegistryValidationError(manifest.id, message);
     }
   }
 }

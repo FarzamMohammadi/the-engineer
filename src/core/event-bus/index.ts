@@ -8,6 +8,7 @@ import type {
   PublishInput,
   PublishInputGeneral,
 } from "../interfaces/event-bus.interface.js";
+import { EventReplayError } from "./errors.js";
 import type { EventTopology } from "./topology.js";
 
 // Re-export interface types so existing consumers don't break
@@ -137,7 +138,7 @@ export class EventBus implements IEventBus {
       if (!validation.valid) {
         const msg = `EventBus: payload validation failed for "${input.type}": ${validation.errors?.join(", ")}`;
         if (process.env["NODE_ENV"] === "test") {
-          throw new Error(msg);
+          throw new EventReplayError(msg);
         }
         console.warn(msg);
       }

@@ -8,6 +8,7 @@ import {
 } from "../../schemas/session-memory.js";
 import type { PublishInput } from "../event-bus/index.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
+import { PhaseHandlerMissingError } from "./errors.js";
 import type { PrManager } from "./pr-manager.js";
 import type {
   ExecuteTaskResult,
@@ -59,7 +60,7 @@ export function createPhaseHandlerRegistry(
     get(phase: Phase): PhaseHandler {
       const handler = handlers[phase];
       if (!handler) {
-        throw new Error(`No handler registered for phase: ${phase}`);
+        throw new PhaseHandlerMissingError(phase);
       }
       return handler;
     },

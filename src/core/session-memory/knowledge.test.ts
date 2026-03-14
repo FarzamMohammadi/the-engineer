@@ -125,7 +125,7 @@ describe("KnowledgeStore", () => {
   it("throws for non-existent old ID on supersede", () => {
     setup();
     expect(() => knowledge.supersedeKnowledge("nonexistent", "new-id")).toThrow(
-      'knowledge entry "nonexistent" not found',
+      'Knowledge entry "nonexistent" not found',
     );
   });
 
@@ -143,7 +143,7 @@ describe("KnowledgeStore", () => {
   it("throws for non-existent ID on confirm", () => {
     setup();
     expect(() => knowledge.confirmKnowledge("nonexistent")).toThrow(
-      'knowledge entry "nonexistent" not found',
+      'Knowledge entry "nonexistent" not found',
     );
   });
 });

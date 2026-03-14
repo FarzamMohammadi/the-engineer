@@ -30,6 +30,7 @@ import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import type { WorkspaceManager } from "../workspace-manager/index.js";
+import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import { createNotificationRouter } from "./notification-router.js";
 import { createPreemptionManager } from "./preemption-manager.js";
@@ -426,7 +427,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     if (existsSync(pidPath)) {
       const existingPid = Number.parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
       if (isProcessAlive(existingPid)) {
-        throw new Error(`Another Daemon instance is already running (PID: ${String(existingPid)})`);
+        throw new DaemonAlreadyRunningError(existingPid);
       }
       logger.warn({ pid: existingPid }, "Removing stale PID file");
       unlinkSync(pidPath);
@@ -570,7 +571,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
   async function start(): Promise<void> {
     if (running) {
-      throw new Error("Daemon is already running");
+      throw new DaemonAlreadyRunningError();
     }
 
     logger.info("Daemon starting (Protocol P1)");

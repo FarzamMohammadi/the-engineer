@@ -4,6 +4,7 @@ import type { ToolAdapter } from "../../adapters/tool.js";
 import type { ActionResult, AgentAction } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
+import { WorkspaceEscapeError } from "./errors.js";
 
 /**
  * Executes agent actions within a worktree.
@@ -25,7 +26,7 @@ export interface ActionExecutorDeps {
 export function resolveWorktreePath(worktreePath: string, filePath: string): string {
   const resolved = resolve(worktreePath, filePath);
   if (!resolved.startsWith(worktreePath)) {
-    throw new Error(`Path escapes worktree: ${filePath}`);
+    throw new WorkspaceEscapeError(filePath);
   }
   return resolved;
 }

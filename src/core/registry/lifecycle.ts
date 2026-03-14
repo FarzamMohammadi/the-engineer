@@ -8,6 +8,7 @@ import {
 } from "../../schemas/adapters.js";
 import type { PluginHealthRecord } from "../../schemas/adapters.js";
 import type { DiscoveredManifest } from "./discovery.js";
+import { RegistryLoadError } from "./errors.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -159,8 +160,9 @@ export function createLifecycleManager(): LifecycleManager {
           console.error(
             `Registry: CRITICAL plugin "${manifest.id}" failed to initialize: ${result.message ?? "unknown error"}. Aborting startup.`,
           );
-          throw new Error(
-            `Registry: critical plugin "${manifest.id}" failed to initialize: ${result.message ?? "unknown error"}`,
+          throw new RegistryLoadError(
+            manifest.id,
+            `critical plugin failed to initialize: ${result.message ?? "unknown error"}`,
           );
         }
         console.warn(
@@ -179,7 +181,7 @@ export function createLifecycleManager(): LifecycleManager {
       if (typeof module.createPlugin !== "function") {
         const message = `entry module does not export createPlugin(): ${entryPath}`;
         console.error(`Registry: load failed for "${manifest.id}": ${message}`);
-        throw new Error(`Registry: load failed for "${manifest.id}": ${message}`);
+        throw new RegistryLoadError(manifest.id, message);
       }
 
       const instance = module.createPlugin();

@@ -79,7 +79,7 @@ describe("endSession", () => {
     setup();
     expect(() => {
       handle.sessionMemory.endSession("nonexistent", "completed");
-    }).toThrow('session "nonexistent" not found');
+    }).toThrow('Session "nonexistent" not found');
   });
 });
 
@@ -391,7 +391,7 @@ describe("supersedeKnowledge", () => {
     setup();
     expect(() => {
       handle.sessionMemory.supersedeKnowledge("nonexistent", "new-id");
-    }).toThrow('knowledge entry "nonexistent" not found');
+    }).toThrow('Knowledge entry "nonexistent" not found');
   });
 });
 
@@ -412,7 +412,7 @@ describe("confirmKnowledge", () => {
     setup();
     expect(() => {
       handle.sessionMemory.confirmKnowledge("nonexistent");
-    }).toThrow('knowledge entry "nonexistent" not found');
+    }).toThrow('Knowledge entry "nonexistent" not found');
   });
 });
 

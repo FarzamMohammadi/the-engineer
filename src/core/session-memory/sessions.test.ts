@@ -79,7 +79,7 @@ describe("SessionStore", () => {
   it("throws for non-existent session on endSession", () => {
     setup();
     expect(() => store.endSession("nonexistent", "completed")).toThrow(
-      'session "nonexistent" not found',
+      'Session "nonexistent" not found',
     );
   });
 

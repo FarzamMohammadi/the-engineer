@@ -3,6 +3,7 @@ import { ulid } from "ulid";
 
 import type { Session, SessionEndReason } from "../../schemas/session-memory.js";
 import type { CreateSessionInput } from "../interfaces/session-memory.interface.js";
+import { SessionNotFoundError } from "./errors.js";
 import { type SessionRow, rowToSession } from "./row-mappers.js";
 
 /**
@@ -60,7 +61,7 @@ export class SessionStore {
     const now = new Date().toISOString();
     const result = this.endSessionStmt.run(now, reason, id);
     if (result.changes === 0) {
-      throw new Error(`SessionMemory: session "${id}" not found`);
+      throw new SessionNotFoundError(id);
     }
   }
 

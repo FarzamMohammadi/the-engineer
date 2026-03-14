@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import type { PluginManifest } from "../../schemas/adapters.js";
 import { orderByTypePriority, discoverPlugins as scanDirectories } from "./discovery.js";
+import { RegistryValidationError } from "./errors.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -74,8 +75,9 @@ export function discoverPlugins(options: DiscoveryOptions): DiscoveredPlugin[] {
     const userPlugins = scanDirectories(options.dirs);
     for (const item of userPlugins) {
       if (seenIds.has(item.manifest.id)) {
-        throw new Error(
-          `Duplicate plugin ID "${item.manifest.id}" found in user directory "${item.dir}" — conflicts with built-in plugin`,
+        throw new RegistryValidationError(
+          item.manifest.id,
+          `Duplicate plugin ID found in user directory "${item.dir}" — conflicts with built-in plugin`,
         );
       }
       seenIds.add(item.manifest.id);

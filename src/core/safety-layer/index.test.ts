@@ -903,6 +903,64 @@ describe("SafetyLayer — hot-reload", () => {
   });
 });
 
+// ── Input Validation (Security Hardening R8) ─────────────────────────────────
+
+describe("SafetyLayer — input validation", () => {
+  it("valid input passes through to existing logic", () => {
+    handle = createTestSafetyLayer();
+    const verdict = handle.safetyLayer.evaluateAction("task-1", "read", {});
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.action).toBe("proceed");
+  });
+
+  it("empty task_id returns deny verdict", () => {
+    handle = createTestSafetyLayer();
+    const verdict = handle.safetyLayer.evaluateAction("", "read", {});
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.action).toBe("deny");
+    expect(verdict.reason).toContain("Invalid safety input");
+    expect(verdict.warnings).toBeDefined();
+  });
+
+  it("invalid action_class returns deny verdict", () => {
+    handle = createTestSafetyLayer();
+    // biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+    const verdict = handle.safetyLayer.evaluateAction("task-1", "destroy_everything" as any, {});
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.action).toBe("deny");
+    expect(verdict.reason).toContain("Invalid safety input");
+  });
+
+  it("consultJudgment denies with empty task_id in query", () => {
+    handle = createTestSafetyLayer();
+    const verdict = handle.safetyLayer.consultJudgment({
+      type: "can_i",
+      context: {
+        task_id: "",
+        repo: "owner/repo",
+        details: {},
+      },
+    });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.action).toBe("deny");
+    expect(verdict.reason).toContain("Invalid safety query");
+  });
+
+  it("consultJudgment denies with empty repo in query", () => {
+    handle = createTestSafetyLayer();
+    const verdict = handle.safetyLayer.consultJudgment({
+      type: "can_i",
+      context: {
+        task_id: "task-1",
+        repo: "",
+        details: {},
+      },
+    });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.action).toBe("deny");
+  });
+});
+
 // ── Timeout Policy ───────────────────────────────────────────────────────────
 
 describe("SafetyLayer — getTimeoutPolicy", () => {

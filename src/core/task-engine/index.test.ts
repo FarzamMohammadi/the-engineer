@@ -812,7 +812,11 @@ describe("TaskEngine", () => {
       engine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
 
       const history = engine.getStateHistory(task.id);
-      expect(history[0].timestamp <= history[1].timestamp).toBe(true);
+      expect(
+        history[0]?.timestamp !== undefined &&
+          history[1]?.timestamp !== undefined &&
+          history[0].timestamp <= history[1].timestamp,
+      ).toBe(true);
     });
 
     it("returns empty array for task with no transitions", () => {

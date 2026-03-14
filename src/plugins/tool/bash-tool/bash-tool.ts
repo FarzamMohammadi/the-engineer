@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import {
   type HealthStatus,
   type InitResult,
@@ -26,6 +27,8 @@ const ENV_ALLOWLIST = [
   "GIT_COMMITTER_NAME",
   "GIT_AUTHOR_EMAIL",
   "GIT_COMMITTER_EMAIL",
+  "GIT_SSH_COMMAND",
+  "GIT_TERMINAL_PROMPT",
 ];
 
 /** Grace period before SIGKILL after SIGTERM (ms). */
@@ -76,8 +79,32 @@ export class BashToolPlugin extends ToolAdapter {
       });
     }
 
+    // Command validation: block dangerous patterns
+    const blockReason = validateCommand(command, this.config.blocked_patterns);
+    if (blockReason) {
+      return Promise.resolve({
+        success: false,
+        output: "",
+        side_effects: [{ type: "command_run", details: { command, blocked: true } }],
+        error: createAdapterError("command_blocked", blockReason),
+      });
+    }
+
+    // Workspace path validation: resolve symlinks to prevent escape
+    let resolvedCwd: string;
+    try {
+      resolvedCwd = realpathSync(context.workspace_path);
+    } catch {
+      return Promise.resolve({
+        success: false,
+        output: "",
+        side_effects: [],
+        error: createAdapterError("workspace_invalid", "Workspace path could not be resolved"),
+      });
+    }
+
     const env = this.buildSanitizedEnv();
-    return this.spawnAndCollect(command, context.workspace_path, env);
+    return this.spawnAndCollect(command, resolvedCwd, env);
   }
 
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {
@@ -196,16 +223,25 @@ export class BashToolPlugin extends ToolAdapter {
         env[key] = value;
       }
     }
-    for (const [key, value] of Object.entries(process.env)) {
-      if (key.startsWith("GIT_") && value !== undefined) {
-        env[key] = value;
-      }
-    }
     return env;
   }
 }
 
 // ── Module-level helpers (keep class methods thin for Biome complexity) ───
+
+/**
+ * Validate a command against blocked patterns.
+ * Returns null if the command is safe, or a rejection reason if blocked.
+ */
+export function validateCommand(command: string, blockedPatterns: string[]): string | null {
+  for (const pattern of blockedPatterns) {
+    const regex = new RegExp(pattern, "i");
+    if (regex.test(command)) {
+      return `Command blocked: matches pattern "${pattern}"`;
+    }
+  }
+  return null;
+}
 
 function killProcess(child: ChildProcess): void {
   child.kill("SIGTERM");

@@ -1,8 +1,9 @@
 import type Database from "better-sqlite3";
+import { z } from "zod";
 
 import type { ResponseTimeout, SafetyConfig } from "../../schemas/config.js";
 import { CostLimitReachedPayloadSchema } from "../../schemas/events.js";
-import { ActionClasses } from "../../schemas/task.js";
+import { ActionClassSchema, ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
@@ -14,6 +15,25 @@ import type {
 } from "../interfaces/safety-layer.interface.js";
 import { CostTracker } from "./cost-tracker.js";
 import { PolicyEngine } from "./policy-engine.js";
+
+// ── Input Validation Schemas ────────────────────────────────────────────────
+
+const EvaluateActionInputSchema = z.object({
+  taskId: z.string().min(1),
+  actionClass: ActionClassSchema,
+  details: z.record(z.unknown()),
+});
+
+const SafetyQueryInputSchema = z.object({
+  type: z.enum(["can_i", "should_i_ask", "cost_check"]),
+  context: z.object({
+    task_id: z.string().min(1),
+    repo: z.string().min(1),
+    action_class: ActionClassSchema.optional(),
+    decision_category: z.string().optional(),
+    details: z.record(z.unknown()),
+  }),
+});
 
 // Re-export interface types so existing consumers don't break
 export type {
@@ -85,6 +105,12 @@ export class SafetyLayer implements ISafetyLayer {
     actionClass: ActionClass,
     details: Record<string, unknown>,
   ): SafetyVerdict {
+    // Input validation: deny on invalid input (never throw)
+    const validationDeny = validateEvaluateInput(taskId, actionClass, details);
+    if (validationDeny) {
+      return validationDeny;
+    }
+
     // 1. Policy scope checks (repo, branch, file, merge)
     const scopeResult = this.policyEngine.evaluateScope(actionClass, details);
     if (scopeResult) {
@@ -113,6 +139,12 @@ export class SafetyLayer implements ISafetyLayer {
 
   /** Passive consultation for autonomy decisions, cost status, and scope queries. */
   consultJudgment(query: SafetyQuery): SafetyVerdict {
+    // Input validation: deny on invalid input (never throw)
+    const validationDeny = validateQueryInput(query);
+    if (validationDeny) {
+      return validationDeny;
+    }
+
     switch (query.type) {
       case "can_i":
         return this.evaluateAction(
@@ -179,4 +211,38 @@ export class SafetyLayer implements ISafetyLayer {
     }
     return result;
   }
+}
+
+// ── Input Validation Helpers ────────────────────────────────────────────────
+
+/** Validate evaluateAction input. Returns deny verdict on failure, null on success. */
+function validateEvaluateInput(
+  taskId: string,
+  actionClass: ActionClass,
+  details: Record<string, unknown>,
+): SafetyVerdict | null {
+  const parsed = EvaluateActionInputSchema.safeParse({ taskId, actionClass, details });
+  if (!parsed.success) {
+    return {
+      allowed: false,
+      action: "deny",
+      reason: `Invalid safety input: ${parsed.error.message}`,
+      warnings: ["Input validation failed — this may indicate a prompt injection attempt"],
+    };
+  }
+  return null;
+}
+
+/** Validate consultJudgment query input. Returns deny verdict on failure, null on success. */
+function validateQueryInput(query: SafetyQuery): SafetyVerdict | null {
+  const parsed = SafetyQueryInputSchema.safeParse(query);
+  if (!parsed.success) {
+    return {
+      allowed: false,
+      action: "deny",
+      reason: `Invalid safety query: ${parsed.error.message}`,
+      warnings: ["Input validation failed — this may indicate a prompt injection attempt"],
+    };
+  }
+  return null;
 }

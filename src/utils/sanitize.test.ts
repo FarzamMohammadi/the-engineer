@@ -95,6 +95,63 @@ describe("sanitizeSecrets", () => {
     expect(sanitizeSecrets(input)).toBe(expected);
   });
 
+  // ── Pattern-based secret detection (Security Hardening R8) ────────────
+
+  it("redacts GitHub token patterns (ghp_, gho_, ghs_, ghr_)", () => {
+    const ghp = `ghp_${"a".repeat(40)}`;
+    const gho = `gho_${"b".repeat(40)}`;
+    const ghs = `ghs_${"c".repeat(40)}`;
+    const ghr = `ghr_${"d".repeat(40)}`;
+    const input = `tokens: ${ghp} ${gho} ${ghs} ${ghr}`;
+    const result = sanitizeSecrets(input);
+    expect(result).not.toContain(ghp);
+    expect(result).not.toContain(gho);
+    expect(result).not.toContain(ghs);
+    expect(result).not.toContain(ghr);
+    expect(result).toContain("[REDACTED:github_token]");
+  });
+
+  it("redacts github_pat_ tokens", () => {
+    const pat = `github_pat_${"x".repeat(40)}`;
+    expect(sanitizeSecrets(`pat=${pat}`)).toContain("[REDACTED:github_pat]");
+  });
+
+  it("redacts AWS key patterns (AKIA...)", () => {
+    const awsKey = `AKIA${"A".repeat(16)}`;
+    const result = sanitizeSecrets(`key: ${awsKey}`);
+    expect(result).toContain("[REDACTED:aws_key]");
+    expect(result).not.toContain(awsKey);
+  });
+
+  it("redacts assignment patterns (token=long_value)", () => {
+    const longValue = "a".repeat(50);
+    const input = `api_key="${longValue}"`;
+    const result = sanitizeSecrets(input);
+    expect(result).toContain("[REDACTED:secret_value]");
+  });
+
+  it("does not false-positive on normal text", () => {
+    const text = "The environment variable PATH is set to /usr/bin. This is normal code.";
+    expect(sanitizeSecrets(text)).toBe(text);
+  });
+
+  it("redacts expanded env var list (ANTHROPIC_API_KEY)", () => {
+    process.env["ANTHROPIC_API_KEY"] = "sk-ant-test-key-12345678";
+    const input = "Using key sk-ant-test-key-12345678 for API";
+    expect(sanitizeSecrets(input)).toBe("Using key [REDACTED] for API");
+    // biome-ignore lint/performance/noDelete: test cleanup
+    delete process.env["ANTHROPIC_API_KEY"];
+  });
+
+  it("catches multiple pattern types in one string", () => {
+    const ghp = `ghp_${"z".repeat(40)}`;
+    const awsKey = `AKIA${"B".repeat(16)}`;
+    const input = `Tokens: ${ghp} and ${awsKey}`;
+    const result = sanitizeSecrets(input);
+    expect(result).toContain("[REDACTED:github_token]");
+    expect(result).toContain("[REDACTED:aws_key]");
+  });
+
   // ── Real-world git error messages ──────────────────────────────────────
 
   it("handles realistic git push error", () => {

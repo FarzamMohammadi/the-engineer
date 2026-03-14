@@ -94,9 +94,9 @@ export async function runAgentLoop(
   while (iterations < config.toolConfig.max_iterations) {
     iterations++;
 
-    const prompt = buildPrompt(config, history);
+    const prompt = sanitizeSecrets(buildPrompt(config, history));
     const llmStart = Date.now();
-    const completion = await callLlm(prompt, config.systemPrompt);
+    const completion = await callLlm(prompt, sanitizeSecrets(config.systemPrompt));
     const llmLatency = Date.now() - llmStart;
     accumulateCost(totalCost, completion);
     emitLlmCallback(config.callbacks, completion, prompt, llmLatency, iterations);
@@ -210,9 +210,9 @@ async function handleRetry(
   }
 
   log(`[agent-loop] ${config.phase}: retrying after parse failure...`);
-  const retryPrompt = buildRetryPrompt(config, history, failedContent);
+  const retryPrompt = sanitizeSecrets(buildRetryPrompt(config, history, failedContent));
   const retryLlmStart = Date.now();
-  const retryCompletion = await callLlm(retryPrompt, config.systemPrompt);
+  const retryCompletion = await callLlm(retryPrompt, sanitizeSecrets(config.systemPrompt));
   const retryLlmLatency = Date.now() - retryLlmStart;
   accumulateCost(totalCost, retryCompletion);
   emitLlmCallback(
@@ -277,7 +277,9 @@ function buildPrompt(config: AgentLoopConfig, history: HistoryEntry[]): string {
 function appendHistoryEntry(parts: string[], entry: HistoryEntry, index: number): void {
   parts.push("", `### Action ${String(index + 1)}: ${entry.action.action}`);
   if (entry.action.action !== "done") {
-    parts.push(`Input: ${JSON.stringify("params" in entry.action ? entry.action.params : {})}`);
+    parts.push(
+      `Input: ${sanitizeSecrets(JSON.stringify("params" in entry.action ? entry.action.params : {}))}`,
+    );
   }
   if (entry.result) {
     const sanitizedOutput = sanitizeSecrets(entry.result.output);

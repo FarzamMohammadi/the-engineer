@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -107,6 +107,42 @@ export function injectAuth(url: string, token: string): string {
     return url;
   }
   return url.replace("https://", `https://git:${token}@`);
+}
+
+/**
+ * Validate that a path is within the expected workspace root.
+ * Uses realpathSync to resolve symlinks before comparison.
+ * Throws if the resolved path is outside the workspace root.
+ *
+ * @returns The resolved (canonicalized) path.
+ */
+export function validateWorkspacePath(targetPath: string, workspaceRoot: string): string {
+  let resolvedPath: string;
+  let resolvedRoot: string;
+
+  try {
+    resolvedPath = realpathSync(targetPath);
+  } catch {
+    throw new Error(
+      `Workspace path validation failed: "${targetPath}" does not exist or cannot be resolved`,
+    );
+  }
+
+  try {
+    resolvedRoot = realpathSync(workspaceRoot);
+  } catch {
+    throw new Error(
+      `Workspace root validation failed: "${workspaceRoot}" does not exist or cannot be resolved`,
+    );
+  }
+
+  if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}/`)) {
+    throw new Error(
+      `Workspace escape detected: "${targetPath}" resolves to "${resolvedPath}" which is outside workspace root "${resolvedRoot}"`,
+    );
+  }
+
+  return resolvedPath;
 }
 
 // ── WorkspaceManager ─────────────────────────────────────────────────────────

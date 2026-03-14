@@ -1,9 +1,11 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { TestWorkspaceManagerHandle } from "../../../test/helpers/test-workspace-manager.js";
 import { createTestWorkspaceManager } from "../../../test/helpers/test-workspace-manager.js";
-import { branchName, slugify } from "./index.js";
+import { branchName, slugify, validateWorkspacePath } from "./index.js";
 
 const TRAILING_HYPHEN = /-$/;
 const SHA_40 = /^[\da-f]{40}$/;
@@ -254,5 +256,56 @@ describe("getWorktreePath", () => {
     const { workspaceManager } = setup();
 
     expect(workspaceManager.getWorktreePath("nonexistent")).toBeNull();
+  });
+});
+
+// ── Workspace Path Validation (Security Hardening R8) ────────────────────
+
+describe("validateWorkspacePath", () => {
+  it("passes for path within workspace root", () => {
+    const root = mkdtempSync(join(tmpdir(), "ws-root-"));
+    const subdir = join(root, "sub");
+    require("node:fs").mkdirSync(subdir);
+    const result = validateWorkspacePath(subdir, root);
+    expect(result).toBeTruthy();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("passes when path equals workspace root", () => {
+    const root = mkdtempSync(join(tmpdir(), "ws-root-"));
+    const result = validateWorkspacePath(root, root);
+    expect(result).toBeTruthy();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("detects symlink escape outside workspace root", () => {
+    const root = mkdtempSync(join(tmpdir(), "ws-root-"));
+    const outside = mkdtempSync(join(tmpdir(), "ws-outside-"));
+    const link = join(root, "escape-link");
+    symlinkSync(outside, link);
+
+    expect(() => validateWorkspacePath(link, root)).toThrow("Workspace escape detected");
+
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("throws for non-existent path", () => {
+    const root = mkdtempSync(join(tmpdir(), "ws-root-"));
+    expect(() => validateWorkspacePath(join(root, "nonexistent"), root)).toThrow(
+      "does not exist or cannot be resolved",
+    );
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("catches parent traversal that resolves outside root", () => {
+    const root = mkdtempSync(join(tmpdir(), "ws-root-"));
+    const subdir = join(root, "sub");
+    require("node:fs").mkdirSync(subdir);
+    // ../.. from subdir goes above root
+    expect(() => validateWorkspacePath(join(subdir, "..", ".."), root)).toThrow(
+      "Workspace escape detected",
+    );
+    rmSync(root, { recursive: true, force: true });
   });
 });

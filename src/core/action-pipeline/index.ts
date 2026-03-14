@@ -1,7 +1,8 @@
-import { EventTypes } from "../../schemas/events.js";
+import { ActionRejectedPayloadSchema, EventTypes } from "../../schemas/events.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventBus } from "../event-bus/index.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 import type {
   ExecuteInput,
   IActionPipeline,
@@ -13,6 +14,18 @@ import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 
 // Re-export interface types so existing consumers don't break
 export type { ExecuteInput, PipelineResult } from "../interfaces/action-pipeline.interface.js";
+
+// ── Event Declarations ──────────────────────────────────────────────────────
+
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "action.rejected",
+    description: "Emitted when the pipeline rejects an action (Gate 1 or Gate 2)",
+    payloadSchema: ActionRejectedPayloadSchema,
+    publishers: ["action-pipeline"],
+    subscribers: [],
+  },
+];
 
 // ── ActionPipeline ────────────────────────────────────────────────────────────
 

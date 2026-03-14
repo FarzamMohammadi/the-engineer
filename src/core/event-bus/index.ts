@@ -8,6 +8,7 @@ import type {
   PublishInput,
   PublishInputGeneral,
 } from "../interfaces/event-bus.interface.js";
+import type { EventTopology } from "./topology.js";
 
 // Re-export interface types so existing consumers don't break
 export type {
@@ -80,17 +81,29 @@ export function matchesPattern(pattern: string, eventType: string): boolean {
  * If a subscriber throws, the error is logged and delivery continues to
  * remaining subscribers. DB failures propagate (Event Bus down = system halt).
  */
+/** Options for EventBus construction. */
+export interface EventBusOptions {
+  /** Event topology for runtime payload validation. */
+  topology?: EventTopology;
+  /** When true, validate payloads against topology schemas on publish. Default: false. */
+  validateOnPublish?: boolean;
+}
+
 export class EventBus implements IEventBus {
   private readonly db: Database.Database;
   private subscriptions: SubscriptionRecord[] = [];
+  private readonly topology: EventTopology | undefined;
+  private readonly validateOnPublish: boolean;
 
   private readonly insertStmt: Database.Statement;
   private readonly byTaskStmt: Database.Statement;
   private readonly sinceStmt: Database.Statement;
   private readonly sinceLimitStmt: Database.Statement;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database.Database, options?: EventBusOptions) {
     this.db = db;
+    this.topology = options?.topology;
+    this.validateOnPublish = options?.validateOnPublish ?? false;
     this.insertStmt = db.prepare(
       "INSERT INTO events (id, type, source, task_id, timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)",
     );
@@ -112,6 +125,20 @@ export class EventBus implements IEventBus {
    */
   publish(input: PublishInputGeneral): Event;
   publish(input: PublishInputGeneral): Event {
+    if (this.validateOnPublish && this.topology) {
+      const validation = this.topology.validatePayload(
+        input.type,
+        input.payload as Record<string, unknown>,
+      );
+      if (!validation.valid) {
+        const msg = `EventBus: payload validation failed for "${input.type}": ${validation.errors?.join(", ")}`;
+        if (process.env["NODE_ENV"] === "test") {
+          throw new Error(msg);
+        }
+        console.warn(msg);
+      }
+    }
+
     const id = ulid();
     const timestamp = new Date().toISOString();
     const payloadJson = JSON.stringify(input.payload);

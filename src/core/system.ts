@@ -8,18 +8,20 @@
 import type Database from "better-sqlite3";
 
 import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
-import { ActionPipeline } from "./action-pipeline/index.js";
+import { EVENTS as ACTION_PIPELINE_EVENTS, ActionPipeline } from "./action-pipeline/index.js";
 import { EventBus } from "./event-bus/index.js";
+import { EventTopology } from "./event-bus/topology.js";
 import type { ISafetyLayer } from "./interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "./interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "./interfaces/task-engine.interface.js";
-import { SafetyLayer } from "./safety-layer/index.js";
+import { EVENTS as SAFETY_LAYER_EVENTS, SafetyLayer } from "./safety-layer/index.js";
 import { SessionMemory } from "./session-memory/index.js";
-import { TaskEngine } from "./task-engine/index.js";
-import { WorkspaceManager } from "./workspace-manager/index.js";
+import { EVENTS as TASK_ENGINE_EVENTS, TaskEngine } from "./task-engine/index.js";
+import { EVENTS as WORKSPACE_MANAGER_EVENTS, WorkspaceManager } from "./workspace-manager/index.js";
 
 export interface CoreComponents {
   eventBus: EventBus;
+  topology: EventTopology;
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   actionPipeline: ActionPipeline;
@@ -39,12 +41,27 @@ export interface CreateCoreInput {
  * those have additional dependencies (config, logger, etc.).
  */
 export function createCoreComponents(input: CreateCoreInput): CoreComponents {
-  const eventBus = new EventBus(input.db);
+  // Build event topology from core component declarations
+  const topology = new EventTopology();
+  topology.registerPublisher("task-engine", TASK_ENGINE_EVENTS);
+  topology.registerPublisher("action-pipeline", ACTION_PIPELINE_EVENTS);
+  topology.registerPublisher("safety-layer", SAFETY_LAYER_EVENTS);
+  topology.registerPublisher("workspace-manager", WORKSPACE_MANAGER_EVENTS);
+
+  const eventBus = new EventBus(input.db, { topology });
   const taskEngine = new TaskEngine(input.db, eventBus);
   const safetyLayer = new SafetyLayer(input.db, eventBus, input.safetyConfig);
   const actionPipeline = new ActionPipeline(taskEngine, safetyLayer, eventBus);
   const sessionMemory = new SessionMemory(input.db);
   const workspaceManager = new WorkspaceManager(eventBus, input.workspaceConfig);
 
-  return { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager };
+  return {
+    eventBus,
+    topology,
+    taskEngine,
+    safetyLayer,
+    actionPipeline,
+    sessionMemory,
+    workspaceManager,
+  };
 }

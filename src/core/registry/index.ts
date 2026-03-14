@@ -6,7 +6,13 @@ import type {
   PluginManifest,
   RegistrationResult,
 } from "../../schemas/adapters.js";
+import {
+  HealthPluginFailedPayloadSchema,
+  HealthPluginRecoveredPayloadSchema,
+  HealthPluginUnhealthyPayloadSchema,
+} from "../../schemas/events.js";
 import type { EventBus } from "../event-bus/index.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 import { discoverPlugins, orderByTypePriority, validateDiscoveredPlugins } from "./discovery.js";
 import { createHealthMonitor } from "./health.js";
 import { type ConfigResolver, createLifecycleManager } from "./lifecycle.js";
@@ -24,6 +30,32 @@ export {
 export type { DiscoveredManifest } from "./discovery.js";
 export type { PluginRecord, LifecycleManager, ConfigResolver } from "./lifecycle.js";
 export type { HealthMonitor, HealthMonitorDeps } from "./health.js";
+
+// ── Event Declarations ──────────────────────────────────────────────────────
+
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "health.plugin_unhealthy",
+    description: "Emitted when a plugin fails a health check",
+    payloadSchema: HealthPluginUnhealthyPayloadSchema,
+    publishers: ["registry"],
+    subscribers: [],
+  },
+  {
+    type: "health.plugin_failed",
+    description: "Emitted when a plugin exceeds the failure threshold and is marked failed",
+    payloadSchema: HealthPluginFailedPayloadSchema,
+    publishers: ["registry"],
+    subscribers: [],
+  },
+  {
+    type: "health.plugin_recovered",
+    description: "Emitted when a previously unhealthy/failed plugin passes a health check",
+    payloadSchema: HealthPluginRecoveredPayloadSchema,
+    publishers: ["registry"],
+    subscribers: [],
+  },
+];
 
 // ── Options ────────────────────────────────────────────────────────────────
 
@@ -119,6 +151,7 @@ export class Registry {
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
+  // biome-ignore lint/suspicious/useAwait: delegates to lifecycle manager which returns a Promise
   async initializePlugin(pluginId: string, config: Record<string, unknown>): Promise<InitResult> {
     return this.lifecycle.initializePlugin(pluginId, config);
   }

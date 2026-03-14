@@ -7,14 +7,20 @@ import { parse as parseYaml } from "yaml";
 import type { BaseAdapter } from "../adapters/base.js";
 import type { ConfigBundle } from "../config/loader.js";
 import { resolveEnvVars } from "../config/loader.js";
-import { type Daemon, RealClock, createDaemon } from "../core/daemon/index.js";
+import {
+  EVENTS as DAEMON_EVENTS,
+  type Daemon,
+  RealClock,
+  createDaemon,
+} from "../core/daemon/index.js";
 import { createChildLogger, createLogger } from "../core/daemon/logging.js";
+import type { EventTopology } from "../core/event-bus/topology.js";
 import { BlobStore } from "../core/observability/blob-store.js";
 import { ObservabilityStore } from "../core/observability/index.js";
 import { createObserver } from "../core/observer/index.js";
-import { Orchestrator } from "../core/orchestrator/index.js";
+import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
-import { Registry } from "../core/registry/index.js";
+import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
 import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/database.js";
 import { createPlugin as createGitHubComm } from "../plugins/communication/github-comm/index.js";
@@ -28,6 +34,7 @@ import { AdapterTypes, type PluginManifest } from "../schemas/adapters.js";
 /** Result of bootstrapping all components. */
 export interface BootstrapResult {
   daemon: Daemon;
+  topology: EventTopology;
   logger: Logger;
   cleanup: () => void;
 }
@@ -58,14 +65,22 @@ export async function bootstrap(
   const dbHandle: DatabaseHandle = createDatabase(dbPath);
 
   // 3-9. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
-  const { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager } =
-    createCoreComponents({
-      db: dbHandle.db,
-      safetyConfig: config.safety,
-      workspaceConfig: config.workspace,
-    });
+  const {
+    eventBus,
+    topology,
+    taskEngine,
+    safetyLayer,
+    actionPipeline,
+    sessionMemory,
+    workspaceManager,
+  } = createCoreComponents({
+    db: dbHandle.db,
+    safetyConfig: config.safety,
+    workspaceConfig: config.workspace,
+  });
 
   // 4. Registry (needs eventBus from core components + health config)
+  topology.registerPublisher("registry", REGISTRY_EVENTS);
   const registry = new Registry({
     eventBus,
     healthCheckIntervalMs: config.daemon.plugins.health_check_interval_ms,
@@ -84,6 +99,7 @@ export async function bootstrap(
   const peopleDirectory = new PeopleDirectory({ people: config.people });
 
   // 11. Orchestrator
+  topology.registerPublisher("orchestrator", ORCHESTRATOR_EVENTS);
   const orchestrator = new Orchestrator({
     eventBus,
     registry,
@@ -98,6 +114,7 @@ export async function bootstrap(
   });
 
   // 12. Daemon
+  topology.registerPublisher("daemon", DAEMON_EVENTS);
   const daemon = createDaemon(config.daemon, {
     eventBus,
     registry,
@@ -113,7 +130,16 @@ export async function bootstrap(
     engineerHome,
   });
 
-  // 13. Load and initialize built-in plugins
+  // 13. Register event topology subscriptions
+  topology.registerSubscriber("orchestrator", "preemption.requested");
+  topology.registerSubscriber("safety_layer", "cost.incurred");
+  topology.registerSubscriber("daemon:cost", "cost.limit_reached");
+  topology.registerSubscriber("daemon:comm", "comm.message_received");
+  topology.registerSubscriber("daemon:state-sync", "task.state_changed");
+  topology.registerSubscriber("daemon:children-done", "task.children_all_done");
+  topology.registerSubscriber("daemon:feedback", "task.feedback_received");
+
+  // 14. Load and initialize built-in plugins
   const pluginConfigDir = join(engineerHome, "config", "plugins");
   await loadBuiltinPlugins(registry, pluginConfigDir, cliLogger);
 
@@ -121,6 +147,7 @@ export async function bootstrap(
 
   return {
     daemon,
+    topology,
     logger,
     cleanup() {
       dbHandle.close();

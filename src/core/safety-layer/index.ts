@@ -1,8 +1,10 @@
 import type Database from "better-sqlite3";
 
 import type { ResponseTimeout, SafetyConfig } from "../../schemas/config.js";
+import { CostLimitReachedPayloadSchema } from "../../schemas/events.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type {
   CostStatus,
@@ -34,6 +36,18 @@ export {
   ScopeDeniedError,
   CorruptSnapshotError,
 } from "./errors.js";
+
+// ── Event Declarations ──────────────────────────────────────────────────────
+
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "cost.limit_reached",
+    description: "Emitted when a cost limit (per-task, daily, or monthly) is reached",
+    payloadSchema: CostLimitReachedPayloadSchema,
+    publishers: ["safety-layer"],
+    subscribers: [],
+  },
+];
 
 // ── SafetyLayer ──────────────────────────────────────────────────────────────
 

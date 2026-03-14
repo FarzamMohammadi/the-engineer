@@ -2,11 +2,18 @@ import { ulid } from "ulid";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import { AdapterTypes, type CompletionResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
-import { type Event, EventTypes } from "../../schemas/events.js";
+import {
+  CommMessageSentPayloadSchema,
+  CostIncurredPayloadSchema,
+  type Event,
+  EventTypes,
+  PreemptionReadyPayloadSchema,
+} from "../../schemas/events.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus } from "../event-bus/index.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -52,6 +59,32 @@ export type { DecompositionHandler } from "./decomposition-handler.js";
 export { createDecompositionHandler } from "./decomposition-handler.js";
 export type { LlmCaller } from "./llm-caller.js";
 export { createLlmCaller, isRetryableError } from "./llm-caller.js";
+
+// ── Event Declarations ──────────────────────────────────────────────────────
+
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "cost.incurred",
+    description: "Emitted after each LLM call with token/cost details",
+    payloadSchema: CostIncurredPayloadSchema,
+    publishers: ["orchestrator"],
+    subscribers: [],
+  },
+  {
+    type: "preemption.ready",
+    description: "Emitted when the orchestrator reaches a safe checkpoint for preemption",
+    payloadSchema: PreemptionReadyPayloadSchema,
+    publishers: ["orchestrator"],
+    subscribers: [],
+  },
+  {
+    type: "comm.message_sent",
+    description: "Emitted when a notification is sent to a communication channel",
+    payloadSchema: CommMessageSentPayloadSchema,
+    publishers: ["orchestrator"],
+    subscribers: [],
+  },
+];
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

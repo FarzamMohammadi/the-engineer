@@ -6,9 +6,15 @@ import path from "node:path";
 import type { z } from "zod";
 
 import type { WorkspaceConfigSchema } from "../../schemas/config.js";
-import { EventTypes } from "../../schemas/events.js";
+import {
+  EventTypes,
+  WorkspaceCleanedPayloadSchema,
+  WorkspaceCreatedPayloadSchema,
+  WorkspaceVerifiedPayloadSchema,
+} from "../../schemas/events.js";
 import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +37,32 @@ export interface WorkspaceVerification {
   currentCommit: string | null;
   recoveryAction: string | null;
 }
+
+// ── Event Declarations ──────────────────────────────────────────────────────
+
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "workspace.created",
+    description: "Emitted when a git worktree is created for a task",
+    payloadSchema: WorkspaceCreatedPayloadSchema,
+    publishers: ["workspace-manager"],
+    subscribers: [],
+  },
+  {
+    type: "workspace.verified",
+    description: "Emitted after verifying a workspace's integrity",
+    payloadSchema: WorkspaceVerifiedPayloadSchema,
+    publishers: ["workspace-manager"],
+    subscribers: [],
+  },
+  {
+    type: "workspace.cleaned",
+    description: "Emitted when a task's workspace is cleaned up",
+    payloadSchema: WorkspaceCleanedPayloadSchema,
+    publishers: ["workspace-manager"],
+    subscribers: [],
+  },
+];
 
 // ── Pure Functions ───────────────────────────────────────────────────────────
 

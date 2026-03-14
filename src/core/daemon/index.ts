@@ -7,12 +7,20 @@ import {
   type Event,
   type EventPayloads,
   EventTypes,
+  HealthStuckDetectedPayloadSchema,
+  HealthTriggerFailurePayloadSchema,
+  PreemptionRequestedPayloadSchema,
+  ReviewPollCompletedPayloadSchema,
   type TaskChildrenAllDonePayload,
+  TaskChildrenAllDonePayloadSchema,
   type TaskFeedbackReceivedPayload,
+  TaskFeedbackReceivedPayloadSchema,
+  TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { ActionPipeline } from "../action-pipeline/index.js";
 import type { EventBus } from "../event-bus/index.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -27,6 +35,60 @@ import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 import { createReviewHandler } from "./review-handler.js";
 import { createTaskScheduler } from "./task-scheduler.js";
 import { createTriggerPoller } from "./trigger-poller.js";
+
+// ── Event Declarations ──────────────────────────────────────────────────────
+
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "trigger.new_event",
+    description: "Emitted when a trigger adapter detects a new assignable event",
+    payloadSchema: TriggerNewEventPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
+    type: "health.trigger_failure",
+    description: "Emitted when a trigger adapter fails consecutively",
+    payloadSchema: HealthTriggerFailurePayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
+    type: "health.stuck_detected",
+    description: "Emitted when a task is detected as stuck (no progress)",
+    payloadSchema: HealthStuckDetectedPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
+    type: "task.children_all_done",
+    description: "Emitted when all child tasks of a parent have completed",
+    payloadSchema: TaskChildrenAllDonePayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
+    type: "preemption.requested",
+    description: "Emitted when a higher-priority task preempts a running task",
+    payloadSchema: PreemptionRequestedPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
+    type: "task.feedback_received",
+    description: "Emitted when PR review feedback is processed",
+    payloadSchema: TaskFeedbackReceivedPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
+    type: "review.poll_completed",
+    description: "Emitted after polling PR review status",
+    payloadSchema: ReviewPollCompletedPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+];
 
 // ── Clock ───────────────────────────────────────────────────────────────────
 

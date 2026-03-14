@@ -1,7 +1,11 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
-import { EventTypes } from "../../schemas/events.js";
+import {
+  EventTypes,
+  TaskCreatedPayloadSchema,
+  TaskStateChangedPayloadSchema,
+} from "../../schemas/events.js";
 import type {
   ActionClass,
   StateTransition,
@@ -10,6 +14,7 @@ import type {
   TaskState,
 } from "../../schemas/task.js";
 import { CascadePolicies, TaskStates } from "../../schemas/task.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type {
   CreateTaskInput,
@@ -39,6 +44,25 @@ export type {
 export { isValidTransition, subStateMatches } from "./state-machine.js";
 export { rowToTask } from "./row-mapper.js";
 export { checkPermission } from "./permissions.js";
+
+// ── Event Declarations ──────────────────────────────────────────────────────
+
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "task.created",
+    description: "Emitted when a new task is created in the system",
+    payloadSchema: TaskCreatedPayloadSchema,
+    publishers: ["task-engine"],
+    subscribers: [],
+  },
+  {
+    type: "task.state_changed",
+    description: "Emitted when a task transitions between states",
+    payloadSchema: TaskStateChangedPayloadSchema,
+    publishers: ["task-engine"],
+    subscribers: [],
+  },
+];
 
 // ── Constants ────────────────────────────────────────────────────────────────
 

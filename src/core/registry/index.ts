@@ -31,11 +31,6 @@ export {
 export type { DiscoveredManifest } from "./discovery.js";
 export type { PluginRecord, LifecycleManager, ConfigResolver } from "./lifecycle.js";
 export type { HealthMonitor, HealthMonitorDeps } from "./health.js";
-export {
-  discoverPlugins as discoverAllPlugins,
-  type DiscoveryOptions,
-  type DiscoveredPlugin,
-} from "./plugin-discovery.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 

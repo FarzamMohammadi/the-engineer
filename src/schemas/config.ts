@@ -89,7 +89,7 @@ export const DaemonConfigSchema = z.object({
   // Plugin lifecycle (Decision #107)
   plugins: z
     .object({
-      dirs: z.array(z.string()).default(["src/plugins"]),
+      dirs: z.array(z.string()).default([]),
       health_check_interval_ms: z.number().int().positive().default(60_000),
       health_check_timeout_ms: z.number().int().positive().default(5_000),
       consecutive_failures_threshold: z.number().int().positive().default(3),

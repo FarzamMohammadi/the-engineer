@@ -169,13 +169,11 @@ describe("checkDatabase", () => {
 // ── Category 6: Plugin Manifests ──────────────────────────────────────────
 
 describe("checkPluginManifests", () => {
-  it("finds built-in plugins in src/plugins", () => {
-    // checkPluginManifests scans both <engineerHome>/plugins and src/plugins (relative).
-    // Since src/plugins now contains real built-in plugins (bash-tool, claude-code-llm),
-    // it finds them and returns pass instead of warn.
+  it("warns when no plugins installed", () => {
+    // No plugins in tempDir/plugins/ → returns a warning
     const result = checkPluginManifests(tempDir);
     expect(result.checks.length).toBeGreaterThan(0);
-    expect(result.checks.every((c) => c.status === "pass")).toBe(true);
+    expect(result.checks.some((c) => c.status === "warn")).toBe(true);
   });
 });
 
@@ -440,7 +438,7 @@ function makeSafeBundle() {
         console: false,
       },
       plugins: {
-        dirs: ["src/plugins"],
+        dirs: [],
         health_check_interval_ms: 60000,
         health_check_timeout_ms: 5000,
         consecutive_failures_threshold: 3,

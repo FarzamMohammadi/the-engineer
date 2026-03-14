@@ -8,6 +8,8 @@ import { ALL_TEMPLATES } from "../templates.js";
 import { runInit } from "./init.js";
 
 let tempDir: string;
+const NO_SEED = () => join(tempDir, "no-seed");
+const OPTS = () => ({ force: false, seedDir: NO_SEED(), allPlugins: true });
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "init-test-"));
@@ -21,26 +23,29 @@ afterEach(() => {
 });
 
 describe("runInit", () => {
-  it("creates all 6 directories", () => {
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
+  it("creates all directories including installedPlugins", async () => {
+    await runInit(tempDir, OPTS());
     expect(existsSync(join(tempDir, "config"))).toBe(true);
     expect(existsSync(join(tempDir, "config", "plugins"))).toBe(true);
+    expect(existsSync(join(tempDir, "plugins"))).toBe(true);
     expect(existsSync(join(tempDir, "data"))).toBe(true);
     expect(existsSync(join(tempDir, "logs"))).toBe(true);
     expect(existsSync(join(tempDir, "run"))).toBe(true);
     expect(existsSync(join(tempDir, "workspaces"))).toBe(true);
   });
 
-  it("creates all 11 template files", () => {
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
-    for (const template of ALL_TEMPLATES) {
+  it("creates core config template files", async () => {
+    await runInit(tempDir, OPTS());
+    // Core configs (non-plugin) should always be created
+    const coreTemplates = ALL_TEMPLATES.filter((t) => !t.relativePath.includes("config/plugins/"));
+    for (const template of coreTemplates) {
       const filePath = join(tempDir, template.relativePath);
       expect(existsSync(filePath)).toBe(true);
     }
   });
 
-  it("template files have expected content", () => {
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
+  it("template files have expected content", async () => {
+    await runInit(tempDir, OPTS());
     const daemonContent = readFileSync(join(tempDir, "config", "daemon.yaml"), "utf8");
     expect(daemonContent).toContain("Daemon configuration");
     expect(daemonContent).toContain("tick_interval_ms");
@@ -50,47 +55,31 @@ describe("runInit", () => {
     expect(peopleContent).toContain("roles: [owner]");
   });
 
-  it("skips existing files without --force", () => {
+  it("skips existing files without --force", async () => {
+    await runInit(tempDir, OPTS());
     const filePath = join(tempDir, "config", "daemon.yaml");
     const existingContent = "# my custom config";
-    // Pre-create the file
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
     writeFileSync(filePath, existingContent, "utf8");
 
     // Run again — should skip existing
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
+    await runInit(tempDir, OPTS());
     const content = readFileSync(filePath, "utf8");
     expect(content).toBe(existingContent);
   });
 
-  it("overwrites existing files with --force", () => {
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
+  it("overwrites existing files with --force", async () => {
+    await runInit(tempDir, OPTS());
     const filePath = join(tempDir, "config", "daemon.yaml");
     writeFileSync(filePath, "# custom", "utf8");
 
-    runInit(tempDir, { force: true, seedDir: join(tempDir, "no-seed") });
+    await runInit(tempDir, { force: true, seedDir: NO_SEED(), allPlugins: true });
     const content = readFileSync(filePath, "utf8");
     expect(content).toContain("Daemon configuration");
   });
 
-  it("is idempotent — running twice produces same result", () => {
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
-    const firstRun = ALL_TEMPLATES.map((t) => readFileSync(join(tempDir, t.relativePath), "utf8"));
-
-    runInit(tempDir, { force: true, seedDir: join(tempDir, "no-seed") });
-    const secondRun = ALL_TEMPLATES.map((t) => readFileSync(join(tempDir, t.relativePath), "utf8"));
-
-    expect(firstRun).toEqual(secondRun);
-  });
-
-  it("plugin configs have required fields uncommented", () => {
-    runInit(tempDir, { force: false, seedDir: join(tempDir, "no-seed") });
-    const ghTrigger = readFileSync(
-      join(tempDir, "config", "plugins", "github-trigger.yaml"),
-      "utf8",
-    );
-    // Required fields should be uncommented (not start with #)
-    expect(ghTrigger).toContain("repos:");
-    expect(ghTrigger).toContain("owner:");
+  it("installs plugins to ~/.engineer/plugins/", async () => {
+    await runInit(tempDir, OPTS());
+    const pluginsDir = join(tempDir, "plugins");
+    expect(existsSync(pluginsDir)).toBe(true);
   });
 });

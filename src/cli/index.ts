@@ -124,11 +124,16 @@ program
   .command("init")
   .description("Create directory structure and config files (uses seed/ if available)")
   .option("--force", "Overwrite existing config files")
-  .action((options: { force?: boolean }) => {
+  .option("--all-plugins", "Install all available plugins without prompting")
+  .action(async (options: { force?: boolean; allPlugins?: boolean }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const seedDir = join(process.cwd(), "seed");
-    runInit(home, { force: options.force ?? false, seedDir });
+    await runInit(home, {
+      force: options.force ?? false,
+      seedDir,
+      allPlugins: options.allPlugins ?? false,
+    });
   });
 
 // ── doctor ───────────────────────────────────────────────────────────────────

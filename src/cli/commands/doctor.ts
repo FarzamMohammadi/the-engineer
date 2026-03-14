@@ -260,7 +260,7 @@ export function checkDatabase(engineerHome: string): DoctorCategory {
 /** Category 6: Plugin manifest validation. */
 export function checkPluginManifests(engineerHome: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
-  const pluginDirs = [join(engineerHome, "plugins"), "src/plugins"];
+  const pluginDirs = [join(engineerHome, "plugins")];
 
   let foundAny = false;
 

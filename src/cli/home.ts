@@ -20,6 +20,7 @@ export function resolveEngineerHome(flagValue?: string): string {
 export interface EngineerDirs {
   config: string;
   plugins: string;
+  installedPlugins: string;
   data: string;
   logs: string;
   run: string;
@@ -33,6 +34,7 @@ export function resolveSubdirs(engineerHome: string): EngineerDirs {
   return {
     config: join(engineerHome, "config"),
     plugins: join(engineerHome, "config", "plugins"),
+    installedPlugins: join(engineerHome, "plugins"),
     data: join(engineerHome, "data"),
     logs: join(engineerHome, "logs"),
     run: join(engineerHome, "run"),

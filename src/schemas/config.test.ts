@@ -59,7 +59,7 @@ describe("DaemonConfigSchema", () => {
 
   it("produces valid plugins defaults from empty input", () => {
     const config = DaemonConfigSchema.parse({});
-    expect(config.plugins.dirs).toEqual(["src/plugins"]);
+    expect(config.plugins.dirs).toEqual([]);
     expect(config.plugins.health_check_interval_ms).toBe(60_000);
     expect(config.plugins.health_check_timeout_ms).toBe(5_000);
     expect(config.plugins.consecutive_failures_threshold).toBe(3);

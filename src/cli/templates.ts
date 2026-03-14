@@ -41,7 +41,7 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # --- Plugin lifecycle ---
 # plugins:
 #   dirs:
-#     - src/plugins                   # Plugin discovery directories
+#     - ~/.engineer/plugins            # Plugin discovery directories (auto-populated by engineer init)
 #   health_check_interval_ms: 60000   # How often to health-check plugins
 #   health_check_timeout_ms: 5000     # Timeout per health check
 #   consecutive_failures_threshold: 3  # Failures before marking plugin as failed
@@ -323,8 +323,7 @@ logging:
 
 # ── Plugin Lifecycle ─────────────────────────────────────────────────────────
 plugins:
-  dirs:                                   # Plugin discovery directories
-    - src/plugins                         # (default: ["src/plugins"])
+  dirs: []                                  # Additional plugin directories (default: [], ~/.engineer/plugins/ always scanned)
   health_check_interval_ms: 60000         # Health check frequency (default: 60000)
   health_check_timeout_ms: 5000           # Timeout per health check (default: 5000)
   consecutive_failures_threshold: 3       # Failures before marking failed (default: 3)

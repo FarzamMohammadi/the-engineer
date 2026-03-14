@@ -22,8 +22,8 @@ import { ObservabilityStore } from "../core/observability/index.js";
 import { createObserver } from "../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
+import { discoverPlugins } from "../core/registry/discovery.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
-import { discoverPlugins } from "../core/registry/plugin-discovery.js";
 import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/database.js";
 
@@ -165,10 +165,11 @@ export async function bootstrap(
   topology.registerSubscriber("daemon:children-done", "task.children_all_done");
   topology.registerSubscriber("daemon:feedback", "task.feedback_received");
 
-  // 14. Discover and initialize plugins via auto-discovery
+  // 14. Load installed plugins from ~/.engineer/plugins/
   progress?.("Loading plugins", "start");
+  const installedPluginsDir = join(engineerHome, "plugins");
   const pluginConfigDir = join(engineerHome, "config", "plugins");
-  await loadDiscoveredPlugins(registry, pluginConfigDir, config, cliLogger);
+  await loadDiscoveredPlugins(registry, installedPluginsDir, pluginConfigDir, config, cliLogger);
   progress?.("Plugins loaded", "done");
 
   cliLogger.info("Bootstrap complete.");
@@ -209,14 +210,13 @@ function loadPluginConfig(
 
 async function loadDiscoveredPlugins(
   registry: Registry,
+  installedPluginsDir: string,
   pluginConfigDir: string,
   config: ConfigBundle,
   logger: Logger,
 ): Promise<void> {
-  const discovered = discoverPlugins({
-    dirs: config.daemon.plugins.dirs,
-    includeBuiltins: true,
-  });
+  const allDirs = [installedPluginsDir, ...config.daemon.plugins.dirs];
+  const discovered = discoverPlugins(allDirs);
 
   for (const plugin of discovered) {
     const module = (await import(plugin.entryPath)) as { createPlugin?: () => BaseAdapter };

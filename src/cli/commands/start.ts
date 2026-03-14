@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
-import { discoverPlugins } from "../../core/registry/plugin-discovery.js";
+import { discoverPlugins } from "../../core/registry/discovery.js";
 import { startDashboard } from "../../dashboard/index.js";
 import { type ProgressCallback, bootstrap } from "../bootstrap.js";
 import { type EngineerDirs, resolveSubdirs } from "../home.js";
@@ -137,13 +137,13 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 // ── Dry Run ──────────────────────────────────────────────────────────────────
 
 function runDryRun(
-  _engineerHome: string,
+  engineerHome: string,
   dirs: EngineerDirs,
   preFlightResults: import("./doctor.js").DoctorCategory[],
 ): number {
   const out = getOutput();
   const totalChecks = preFlightResults.reduce((sum, c) => sum + c.checks.length, 0);
-  const discovered = discoverPlugins({ dirs: [], includeBuiltins: true });
+  const discovered = discoverPlugins([join(engineerHome, "plugins")]);
   const criticalCount = discovered.filter((p) => p.manifest.critical).length;
 
   if (out.mode === "json") {

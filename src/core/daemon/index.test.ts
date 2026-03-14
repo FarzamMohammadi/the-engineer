@@ -784,7 +784,7 @@ describe("Daemon", () => {
       handle = createTestDaemon({
         trigger_poll_interval_ms: 0,
         plugins: {
-          dirs: ["src/plugins"],
+          dirs: [],
           health_check_interval_ms: 60_000,
           health_check_timeout_ms: 5_000,
           consecutive_failures_threshold: 3,

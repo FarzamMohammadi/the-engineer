@@ -26,5 +26,5 @@ export interface IEventBus {
   unsubscribe(subscriberId: string): void;
   replay(fromSequence: number): void;
   getEventsForTask(taskId: string): Event[];
-  getEventsSince(sequence: number): Event[];
+  getEventsSince(sequence: number, limit?: number): Event[];
 }

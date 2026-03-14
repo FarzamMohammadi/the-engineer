@@ -87,6 +87,7 @@ export class EventBus implements IEventBus {
   private readonly insertStmt: Database.Statement;
   private readonly byTaskStmt: Database.Statement;
   private readonly sinceStmt: Database.Statement;
+  private readonly sinceLimitStmt: Database.Statement;
 
   constructor(db: Database.Database) {
     this.db = db;
@@ -95,6 +96,9 @@ export class EventBus implements IEventBus {
     );
     this.byTaskStmt = db.prepare("SELECT * FROM events WHERE task_id = ? ORDER BY sequence");
     this.sinceStmt = db.prepare("SELECT * FROM events WHERE sequence > ? ORDER BY sequence");
+    this.sinceLimitStmt = db.prepare(
+      "SELECT * FROM events WHERE sequence > ? ORDER BY sequence LIMIT ?",
+    );
   }
 
   // ── Publishing ──────────────────────────────────────────────────────────────
@@ -182,8 +186,11 @@ export class EventBus implements IEventBus {
   }
 
   /** Get all events with sequence > the given value, ordered by sequence. */
-  getEventsSince(sequence: number): Event[] {
-    const rows = this.sinceStmt.all(sequence) as EventRow[];
+  getEventsSince(sequence: number, limit?: number): Event[] {
+    const rows =
+      limit != null
+        ? (this.sinceLimitStmt.all(sequence, limit) as EventRow[])
+        : (this.sinceStmt.all(sequence) as EventRow[]);
     return rows.map(rowToEvent);
   }
 

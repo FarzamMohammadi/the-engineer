@@ -10,6 +10,7 @@ import type Database from "better-sqlite3";
 import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
 import { ActionPipeline } from "./action-pipeline/index.js";
 import { EventBus } from "./event-bus/index.js";
+import type { ISafetyLayer } from "./interfaces/safety-layer.interface.js";
 import { SafetyLayer } from "./safety-layer/index.js";
 import { SessionMemory } from "./session-memory/index.js";
 import { TaskEngine } from "./task-engine/index.js";
@@ -18,7 +19,7 @@ import { WorkspaceManager } from "./workspace-manager/index.js";
 export interface CoreComponents {
   eventBus: EventBus;
   taskEngine: TaskEngine;
-  safetyLayer: SafetyLayer;
+  safetyLayer: ISafetyLayer;
   actionPipeline: ActionPipeline;
   sessionMemory: SessionMemory;
   workspaceManager: WorkspaceManager;

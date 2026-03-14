@@ -7,6 +7,7 @@ import { ActionPipeline } from "../../src/core/action-pipeline/index.js";
 import { type Daemon, createDaemon } from "../../src/core/daemon/index.js";
 import { createSilentLogger } from "../../src/core/daemon/logging.js";
 import { EventBus } from "../../src/core/event-bus/index.js";
+import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
@@ -48,7 +49,7 @@ export interface IntegrationContext {
   eventBus: EventBus;
   registry: Registry;
   taskEngine: TaskEngine;
-  safetyLayer: SafetyLayer;
+  safetyLayer: ISafetyLayer;
   actionPipeline: ActionPipeline;
   orchestrator: Orchestrator;
   sessionMemory: SessionMemory;

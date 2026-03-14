@@ -12,10 +12,10 @@ import {
 } from "../../src/core/daemon/index.js";
 import { createSilentLogger } from "../../src/core/daemon/logging.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
+import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
 import type { ExecuteTaskResult, Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
-import type { SafetyLayer } from "../../src/core/safety-layer/index.js";
 import type { SessionMemory } from "../../src/core/session-memory/index.js";
 import type { TaskEngine, TransitionResult } from "../../src/core/task-engine/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
@@ -310,7 +310,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     eventBus: eventBus as unknown as EventBus,
     registry: registry as unknown as Registry,
     taskEngine: taskEngine as unknown as TaskEngine,
-    safetyLayer: safetyLayer as unknown as SafetyLayer,
+    safetyLayer: safetyLayer as unknown as ISafetyLayer,
     actionPipeline: actionPipeline as unknown as ActionPipeline,
     orchestrator: orchestrator as unknown as Orchestrator,
     sessionMemory: sessionMemory as unknown as SessionMemory,

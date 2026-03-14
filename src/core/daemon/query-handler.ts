@@ -3,15 +3,15 @@ import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import { type TaskState, TaskStates } from "../../schemas/task.js";
+import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { Registry } from "../registry/index.js";
-import type { SafetyLayer } from "../safety-layer/index.js";
 import type { TaskEngine } from "../task-engine/index.js";
 
 const PROGRESS_RE = /progress.*#(\d+)|#(\d+).*progress/;
 
 export interface QueryHandlerDeps {
   taskEngine: TaskEngine;
-  safetyLayer: SafetyLayer;
+  safetyLayer: ISafetyLayer;
   registry: Registry;
   logger: Logger;
 }
@@ -102,7 +102,7 @@ function formatProgressResponse(taskEngine: TaskEngine, taskId: string): string 
     .join("\n");
 }
 
-function formatCostResponse(safetyLayer: SafetyLayer): string {
+function formatCostResponse(safetyLayer: ISafetyLayer): string {
   const judgment = safetyLayer.consultJudgment({
     type: "cost_check",
     context: { task_id: "", repo: "", details: {} },

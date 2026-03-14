@@ -19,7 +19,7 @@
     "test:all": "pnpm test && pnpm test:integration && pnpm test:e2e",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "build": "tsdown src/index.ts --format esm && cp -r src/db/migrations dist/migrations && cp -r src/dashboard/static dist/static",
+    "build": "tsdown src/index.ts --format esm && cp -r src/db/migrations dist/migrations && cp -r src/dashboard/static dist/static && cp -r src/plugins dist/plugins",
     "dev": "tsx src/index.ts",
     "lint": "biome check --write .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"

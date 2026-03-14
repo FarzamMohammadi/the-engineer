@@ -1,5 +1,3 @@
-import type { ExternalRef } from "../../schemas/task.js";
-
 // ── URL Parsing ──────────────────────────────────────────────────────────────
 
 export interface ParsedGitHubUrl {
@@ -27,22 +25,6 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
     repo: repo as string,
     number: Number.parseInt(num as string, 10),
     type: kind === "pull" ? "pull" : "issue",
-  };
-}
-
-/**
- * Convert parsed GitHub URL components into an ExternalRef for task creation.
- */
-export function toExternalRef(
-  owner: string,
-  repo: string,
-  number: number,
-  type: "issue" | "pull",
-): ExternalRef {
-  return {
-    type: type === "pull" ? "github_pr" : "github_issue",
-    repo: `${owner}/${repo}`,
-    number,
   };
 }
 

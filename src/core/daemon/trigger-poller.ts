@@ -1,10 +1,10 @@
 import type { Logger } from "pino";
 
 import type { TriggerAdapter } from "../../adapters/trigger.js";
-import { parseGitHubUrl, toExternalRef } from "../../plugins/github-shared/index.js";
 import { AdapterTypes, type TriggerEvent } from "../../schemas/adapters.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
+import type { ExternalRef } from "../../schemas/task.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -205,5 +205,38 @@ export function createTriggerPoller(ctx: DaemonContext): TriggerPoller {
     getTriggerFailures,
     cleanupExpiredKeys,
     getBasePriorities,
+  };
+}
+
+// ── URL Parsing (inlined — core must not import from plugins) ────────────
+
+const GITHUB_URL_RE = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/(issues|pull)\/(\d+)/;
+
+function parseGitHubUrl(
+  url: string,
+): { owner: string; repo: string; number: number; type: "issue" | "pull" } | null {
+  const match = GITHUB_URL_RE.exec(url);
+  if (!match) {
+    return null;
+  }
+  const [, owner, repo, kind, num] = match;
+  return {
+    owner: owner as string,
+    repo: repo as string,
+    number: Number.parseInt(num as string, 10),
+    type: kind === "pull" ? "pull" : "issue",
+  };
+}
+
+function toExternalRef(
+  owner: string,
+  repo: string,
+  number: number,
+  type: "issue" | "pull",
+): ExternalRef {
+  return {
+    type: type === "pull" ? "github_pr" : "github_issue",
+    repo: `${owner}/${repo}`,
+    number,
   };
 }

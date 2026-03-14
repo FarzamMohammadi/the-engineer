@@ -16,8 +16,8 @@ import {
   type TaskReconciliationInput,
   createAdapterError,
 } from "../../../adapters/index.js";
-import { diffStateLabels, parseGitHubUrl, parseTargetChannel } from "../../github-shared/index.js";
 import { type GitHubCommConfig, GitHubCommConfigSchema } from "./config.js";
+import { diffStateLabels, parseGitHubUrl, parseTargetChannel } from "./github-utils.js";
 
 /** Message type → GitHub markdown prefix. */
 const TYPE_PREFIXES: Record<MessageType, string> = {

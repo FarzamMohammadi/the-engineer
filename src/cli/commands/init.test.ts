@@ -23,11 +23,10 @@ afterEach(() => {
 });
 
 describe("runInit", () => {
-  it("creates all directories including installedPlugins", async () => {
+  it("creates all standard directories", async () => {
     await runInit(tempDir, OPTS());
     expect(existsSync(join(tempDir, "config"))).toBe(true);
     expect(existsSync(join(tempDir, "config", "plugins"))).toBe(true);
-    expect(existsSync(join(tempDir, "plugins"))).toBe(true);
     expect(existsSync(join(tempDir, "data"))).toBe(true);
     expect(existsSync(join(tempDir, "logs"))).toBe(true);
     expect(existsSync(join(tempDir, "run"))).toBe(true);
@@ -77,9 +76,10 @@ describe("runInit", () => {
     expect(content).toContain("Daemon configuration");
   });
 
-  it("installs plugins to ~/.engineer/plugins/", async () => {
+  it("writes plugin config files for enabled plugins", async () => {
     await runInit(tempDir, OPTS());
-    const pluginsDir = join(tempDir, "plugins");
-    expect(existsSync(pluginsDir)).toBe(true);
+    const pluginConfigDir = join(tempDir, "config", "plugins");
+    expect(existsSync(join(pluginConfigDir, "github-trigger.yaml"))).toBe(true);
+    expect(existsSync(join(pluginConfigDir, "bash-tool.yaml"))).toBe(true);
   });
 });

@@ -1,12 +1,10 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { Separator, checkbox } from "@inquirer/prompts";
 import chalk from "chalk";
-import { parse as parseYaml } from "yaml";
 
-import type { PluginManifest } from "../../schemas/adapters.js";
+import { BUILTIN_PLUGINS, type BuiltinPlugin } from "../../plugins/builtin.js";
 import type { EngineerDirs } from "../home.js";
 import { resolveSubdirs } from "../home.js";
 import { type Output, getOutput } from "../output.js";
@@ -21,56 +19,7 @@ export interface InitOptions {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const THIS_DIR = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_CONFIG_RE = /config\/plugins\/(.+)\.yaml$/;
-
-// ── Plugin Source Resolution ────────────────────────────────────────────────
-
-interface AvailablePlugin {
-  manifest: PluginManifest;
-  sourceDir: string;
-}
-
-/**
- * Find available plugins relative to the CLI source.
- * In dev (tsx): this file is at src/cli/commands/, plugins at src/plugins/ (../../plugins).
- * After build (tsdown): bundled to dist/index.js, plugins at dist/plugins/ (./plugins).
- */
-function scanAvailablePlugins(): AvailablePlugin[] {
-  // Try bundled path first (dist/plugins/), then dev path (../../plugins from src/cli/commands/)
-  const candidates = [resolve(THIS_DIR, "plugins"), resolve(THIS_DIR, "..", "..", "plugins")];
-  const pluginsRoot = candidates.find((p) => existsSync(p));
-  if (!pluginsRoot) {
-    return [];
-  }
-
-  const results: AvailablePlugin[] = [];
-  scanPluginDir(pluginsRoot, results);
-  return results;
-}
-
-function scanPluginDir(dir: string, results: AvailablePlugin[]): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      scanPluginDir(fullPath, results);
-    } else if (entry.name === "engineer.plugin.yaml") {
-      parseAndAddManifest(fullPath, dir, results);
-    }
-  }
-}
-
-function parseAndAddManifest(manifestPath: string, dir: string, results: AvailablePlugin[]): void {
-  try {
-    const raw = readFileSync(manifestPath, "utf8");
-    const manifest = parseYaml(raw) as PluginManifest;
-    if (manifest.id && manifest.type && manifest.enabled !== false) {
-      results.push({ manifest, sourceDir: dir });
-    }
-  } catch {
-    // Skip invalid manifests
-  }
-}
 
 // ── Plugin Selection ────────────────────────────────────────────────────────
 
@@ -83,7 +32,7 @@ const CATEGORY_ORDER: Array<{ type: string; label: string }> = [
 ];
 
 /** Single checkbox prompt — all plugins listed, grouped by category, all pre-checked. */
-async function selectPlugins(available: AvailablePlugin[]): Promise<AvailablePlugin[]> {
+async function selectPlugins(available: BuiltinPlugin[]): Promise<BuiltinPlugin[]> {
   const choices: Array<{ name: string; value: string; checked: boolean } | Separator> = [];
 
   for (const cat of CATEGORY_ORDER) {
@@ -105,7 +54,7 @@ async function selectPlugins(available: AvailablePlugin[]): Promise<AvailablePlu
   }
 
   const selectedIds = await checkbox({
-    message: chalk.bold("Select plugins to install:"),
+    message: chalk.bold("Select plugins to enable:"),
     choices,
     required: true,
     loop: false,
@@ -114,47 +63,19 @@ async function selectPlugins(available: AvailablePlugin[]): Promise<AvailablePlu
   return available.filter((p) => selectedIds.includes(p.manifest.id));
 }
 
-// ── Plugin Installation ─────────────────────────────────────────────────────
-
-function installPlugins(
-  selected: AvailablePlugin[],
-  installedPluginsDir: string,
-  force: boolean,
-): string[] {
-  const installed: string[] = [];
-
-  for (const plugin of selected) {
-    const destDir = join(installedPluginsDir, plugin.manifest.id);
-
-    if (existsSync(destDir) && !force) {
-      installed.push(`${plugin.manifest.id} (exists, skipped)`);
-      continue;
-    }
-
-    mkdirSync(destDir, { recursive: true });
-    cpSync(plugin.sourceDir, destDir, {
-      recursive: true,
-      filter: (src) => !src.endsWith(".test.ts"),
-    });
-    installed.push(plugin.manifest.id);
-  }
-
-  return installed;
-}
-
 // ── Template Writing ────────────────────────────────────────────────────────
 
 function writeTemplates(
   out: Output,
   engineerHome: string,
   templates: TemplateFile[],
-  installedPluginIds: Set<string>,
+  enabledPluginIds: Set<string>,
   seedDir: string,
   hasSeed: boolean,
   force: boolean,
 ): void {
   for (const template of templates) {
-    if (shouldSkipPluginConfig(template.relativePath, installedPluginIds)) {
+    if (shouldSkipPluginConfig(template.relativePath, enabledPluginIds)) {
       continue;
     }
 
@@ -175,13 +96,13 @@ function writeTemplates(
   }
 }
 
-function shouldSkipPluginConfig(relativePath: string, installedIds: Set<string>): boolean {
+function shouldSkipPluginConfig(relativePath: string, enabledIds: Set<string>): boolean {
   const match = PLUGIN_CONFIG_RE.exec(relativePath);
   if (!match) {
     return false;
   }
   const pluginId = match[1];
-  return pluginId !== undefined && !installedIds.has(pluginId);
+  return pluginId !== undefined && !enabledIds.has(pluginId);
 }
 
 function writeExamples(out: Output, engineerHome: string): void {
@@ -202,7 +123,7 @@ export async function runInit(engineerHome: string, options: InitOptions): Promi
   const hasSeed = existsSync(options.seedDir);
 
   createDirectories(out, dirs);
-  const installedPluginIds = await discoverAndInstallPlugins(out, dirs, options);
+  const enabledPluginIds = await promptAndSelectPlugins(out, options);
 
   if (hasSeed) {
     out.blank();
@@ -215,7 +136,7 @@ export async function runInit(engineerHome: string, options: InitOptions): Promi
     out,
     engineerHome,
     ALL_TEMPLATES,
-    installedPluginIds,
+    enabledPluginIds,
     options.seedDir,
     hasSeed,
     options.force,
@@ -241,7 +162,6 @@ function createDirectories(out: Output, dirs: EngineerDirs): void {
   const dirPaths = [
     dirs.config,
     dirs.plugins,
-    dirs.installedPlugins,
     dirs.data,
     dirs.logs,
     dirs.run,
@@ -263,23 +183,12 @@ const TYPE_LABELS: Record<string, string> = {
   git_hosting: "Git Hosting (PR lifecycle)",
 };
 
-async function discoverAndInstallPlugins(
-  out: Output,
-  dirs: EngineerDirs,
-  options: InitOptions,
-): Promise<Set<string>> {
-  const available = scanAvailablePlugins();
-
-  if (available.length === 0) {
-    out.warn("  No plugins found. Plugins can be added later to ~/.engineer/plugins/");
-    return new Set();
-  }
-
+async function promptAndSelectPlugins(out: Output, options: InitOptions): Promise<Set<string>> {
   out.blank();
   out.log("  ─────────────────────────────────────");
   out.blank();
-  out.log(`  Found ${String(available.length)} available plugins:`);
-  for (const p of available) {
+  out.log(`  ${String(BUILTIN_PLUGINS.length)} built-in plugins available:`);
+  for (const p of BUILTIN_PLUGINS) {
     const typeLabel = TYPE_LABELS[p.manifest.type] ?? p.manifest.type;
     const critical = p.manifest.critical ? " [CRITICAL]" : "";
     out.log(`    ${p.manifest.id} (${typeLabel})${critical}`);
@@ -287,17 +196,12 @@ async function discoverAndInstallPlugins(
 
   out.blank();
 
-  const selected = options.allPlugins ? available : await selectPlugins(available);
-  const installed = installPlugins(selected, dirs.installedPlugins, options.force);
+  const selected = options.allPlugins ? BUILTIN_PLUGINS : await selectPlugins(BUILTIN_PLUGINS);
   out.blank();
-  out.log("  Installed plugins:");
-  for (const id of installed) {
-    out.log(`    ${id}`);
+  out.log("  Enabled plugins:");
+  for (const p of selected) {
+    out.log(`    ${p.manifest.id}`);
   }
 
-  return new Set(
-    readdirSync(dirs.installedPlugins, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name),
-  );
+  return new Set(selected.map((p) => p.manifest.id));
 }

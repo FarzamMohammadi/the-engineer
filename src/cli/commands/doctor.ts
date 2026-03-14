@@ -1,13 +1,11 @@
 import { execSync } from "node:child_process";
-import { constants, accessSync, existsSync, readdirSync } from "node:fs";
+import { constants, accessSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { readFileSync } from "node:fs";
-import YAML from "yaml";
+const YAML_EXT_RE = /\.yaml$/;
 
 import { loadConfigSafe } from "../../config/loader.js";
 import type { ConfigBundle } from "../../config/loader.js";
-import { PluginManifestSchema } from "../../schemas/adapters.js";
 import {
   DaemonConfigSchema,
   OrchestratorConfigSchema,
@@ -257,83 +255,38 @@ export function checkDatabase(engineerHome: string): DoctorCategory {
   return { category: "Database", checks };
 }
 
-/** Category 6: Plugin manifest validation. */
+/** Category 6: Plugin config validation — check which built-in plugins are enabled via config files. */
 export function checkPluginManifests(engineerHome: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
-  const pluginDirs = [join(engineerHome, "plugins")];
+  const pluginConfigDir = join(engineerHome, "config", "plugins");
 
-  let foundAny = false;
-
-  for (const dir of pluginDirs) {
-    if (!existsSync(dir)) {
-      continue;
-    }
-    scanPluginDir(dir, checks);
-    foundAny = true;
-  }
-
-  if (!foundAny) {
+  if (!existsSync(pluginConfigDir)) {
     checks.push({
-      label: "Plugin directories",
+      label: "Plugin configs",
       status: "warn",
-      message: "No plugin directories found — plugins will be discovered on start",
+      message: "No plugin config directory found — run 'engineer init' first",
+      remedy: "Run 'engineer init' to set up plugins",
     });
+    return { category: "Plugins", checks };
   }
 
-  return { category: "Plugin Manifests", checks };
-}
+  const configFiles = readdirSync(pluginConfigDir).filter((f) => f.endsWith(".yaml"));
 
-function scanNestedPlugins(subDir: string, parentName: string, checks: DoctorCheck[]): void {
-  for (const sub of readdirSync(subDir, { withFileTypes: true })) {
-    if (!sub.isDirectory()) {
-      continue;
-    }
-    const nestedManifest = join(subDir, sub.name, "engineer.plugin.yaml");
-    if (existsSync(nestedManifest)) {
-      validateManifest(nestedManifest, `${parentName}/${sub.name}`, checks);
-    }
-  }
-}
-
-function scanPluginDir(dir: string, checks: DoctorCheck[]): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    const manifestPath = join(dir, entry.name, "engineer.plugin.yaml");
-    if (!existsSync(manifestPath)) {
-      // Check subdirectories (plugins are nested: type/name/)
-      scanNestedPlugins(join(dir, entry.name), entry.name, checks);
-      continue;
-    }
-    validateManifest(manifestPath, entry.name, checks);
-  }
-}
-
-function validateManifest(manifestPath: string, pluginName: string, checks: DoctorCheck[]): void {
-  try {
-    const content = readFileSync(manifestPath, "utf8");
-    const parsed = YAML.parse(content) as unknown;
-    const result = PluginManifestSchema.safeParse(parsed);
-    if (result.success) {
-      checks.push({ label: pluginName, status: "pass", message: "Valid manifest" });
-    } else {
-      const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-      checks.push({
-        label: pluginName,
-        status: "fail",
-        message: `Invalid manifest: ${issues}`,
-        remedy: `Edit ${manifestPath}`,
-      });
-    }
-  } catch (error) {
+  if (configFiles.length === 0) {
     checks.push({
-      label: pluginName,
-      status: "fail",
-      message: `Failed to read manifest: ${error instanceof Error ? error.message : String(error)}`,
-      remedy: `Check ${manifestPath} is valid YAML`,
+      label: "Plugin configs",
+      status: "warn",
+      message: "No plugin configs found — no plugins will be loaded",
+      remedy: "Run 'engineer init' to enable plugins",
     });
+  } else {
+    for (const file of configFiles) {
+      const pluginId = file.replace(YAML_EXT_RE, "");
+      checks.push({ label: pluginId, status: "pass", message: "Config present (enabled)" });
+    }
   }
+
+  return { category: "Plugins", checks };
 }
 
 /** Category 7: GitHub connectivity — check token presence (sync, no live API call). */

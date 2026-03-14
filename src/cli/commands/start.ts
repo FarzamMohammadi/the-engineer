@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
-import { discoverPlugins } from "../../core/registry/discovery.js";
+import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+
+const YAML_EXT_RE = /\.yaml$/;
 import { startDashboard } from "../../dashboard/index.js";
 import { type ProgressCallback, bootstrap } from "../bootstrap.js";
 import { type EngineerDirs, resolveSubdirs } from "../home.js";
@@ -137,14 +139,21 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 // ── Dry Run ──────────────────────────────────────────────────────────────────
 
 function runDryRun(
-  engineerHome: string,
+  _engineerHome: string,
   dirs: EngineerDirs,
   preFlightResults: import("./doctor.js").DoctorCategory[],
 ): number {
   const out = getOutput();
   const totalChecks = preFlightResults.reduce((sum, c) => sum + c.checks.length, 0);
-  const discovered = discoverPlugins([join(engineerHome, "plugins")]);
-  const criticalCount = discovered.filter((p) => p.manifest.critical).length;
+  const enabledIds = new Set(
+    existsSync(dirs.plugins)
+      ? readdirSync(dirs.plugins)
+          .filter((f) => f.endsWith(".yaml"))
+          .map((f) => f.replace(YAML_EXT_RE, ""))
+      : [],
+  );
+  const enabledPlugins = BUILTIN_PLUGINS.filter((p) => enabledIds.has(p.manifest.id));
+  const criticalCount = enabledPlugins.filter((p) => p.manifest.critical).length;
 
   if (out.mode === "json") {
     out.data({
@@ -153,7 +162,7 @@ function runDryRun(
         path: join(dirs.data, "engineer.db"),
         exists: existsSync(join(dirs.data, "engineer.db")),
       },
-      plugins: discovered.map((p) => ({
+      plugins: enabledPlugins.map((p) => ({
         id: p.manifest.id,
         type: p.manifest.type,
         critical: p.manifest.critical,
@@ -170,13 +179,13 @@ function runDryRun(
   out.keyValue("Database", join(dirs.data, "engineer.db"));
   out.keyValue(
     "Plugins",
-    `${String(discovered.length)} plugins (${String(criticalCount)} critical)`,
+    `${String(enabledPlugins.length)} plugins (${String(criticalCount)} critical)`,
   );
   out.keyValue("Pre-flight", `${String(totalChecks)}/${String(totalChecks)} checks passed`);
 
   out.blank();
   out.log("  Plugin loading order:");
-  for (const [i, p] of discovered.entries()) {
+  for (const [i, p] of enabledPlugins.entries()) {
     const label = p.manifest.critical ? "CRITICAL" : "non-critical";
     out.log(`    ${String(i + 1)}. ${p.manifest.id} (${p.manifest.type}) — ${label}`);
   }

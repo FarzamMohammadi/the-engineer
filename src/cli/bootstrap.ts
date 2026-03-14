@@ -1,10 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Logger } from "pino";
 import { parse as parseYaml } from "yaml";
 
-import type { BaseAdapter } from "../adapters/base.js";
+const YAML_EXT_RE = /\.yaml$/;
+
 import type { ConfigBundle } from "../config/loader.js";
 import { resolveEnvVars } from "../config/loader.js";
 import {
@@ -22,10 +23,10 @@ import { ObservabilityStore } from "../core/observability/index.js";
 import { createObserver } from "../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
-import { discoverPlugins } from "../core/registry/discovery.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
 import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/database.js";
+import { BUILTIN_PLUGINS } from "../plugins/builtin.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,11 +166,10 @@ export async function bootstrap(
   topology.registerSubscriber("daemon:children-done", "task.children_all_done");
   topology.registerSubscriber("daemon:feedback", "task.feedback_received");
 
-  // 14. Load installed plugins from ~/.engineer/plugins/
+  // 14. Load built-in plugins
   progress?.("Loading plugins", "start");
-  const installedPluginsDir = join(engineerHome, "plugins");
   const pluginConfigDir = join(engineerHome, "config", "plugins");
-  await loadDiscoveredPlugins(registry, installedPluginsDir, pluginConfigDir, config, cliLogger);
+  await loadBuiltinPlugins(registry, pluginConfigDir, config, cliLogger);
   progress?.("Plugins loaded", "done");
 
   cliLogger.info("Bootstrap complete.");
@@ -208,28 +208,24 @@ function loadPluginConfig(
   }
 }
 
-async function loadDiscoveredPlugins(
+async function loadBuiltinPlugins(
   registry: Registry,
-  installedPluginsDir: string,
   pluginConfigDir: string,
-  config: ConfigBundle,
+  _config: ConfigBundle,
   logger: Logger,
 ): Promise<void> {
-  const allDirs = [installedPluginsDir, ...config.daemon.plugins.dirs];
-  const discovered = discoverPlugins(allDirs);
+  // A plugin is enabled if its config file exists in ~/.engineer/config/plugins/
+  const enabledIds = new Set(
+    existsSync(pluginConfigDir)
+      ? readdirSync(pluginConfigDir)
+          .filter((f) => f.endsWith(".yaml"))
+          .map((f) => f.replace(YAML_EXT_RE, ""))
+      : [],
+  );
+  const plugins = BUILTIN_PLUGINS.filter((p) => enabledIds.has(p.manifest.id));
 
-  for (const plugin of discovered) {
-    const module = (await import(plugin.entryPath)) as { createPlugin?: () => BaseAdapter };
-    if (typeof module.createPlugin !== "function") {
-      const msg = `Plugin "${plugin.manifest.id}" entry does not export createPlugin()`;
-      if (plugin.manifest.critical) {
-        throw new Error(msg);
-      }
-      logger.warn(msg);
-      continue;
-    }
-
-    const instance = module.createPlugin();
+  for (const plugin of plugins) {
+    const instance = plugin.create();
     const regResult = registry.register(plugin.manifest, instance);
     if (!regResult.success) {
       logger.warn(`Failed to register plugin "${plugin.manifest.id}": ${regResult.message}`);

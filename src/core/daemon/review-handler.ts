@@ -1,0 +1,575 @@
+import type { Logger } from "pino";
+
+import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
+import { AdapterTypes } from "../../schemas/adapters.js";
+import type { DaemonConfig } from "../../schemas/config.js";
+import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
+import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
+import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
+import type { Registry } from "../registry/index.js";
+import type { WorkspaceManager } from "../workspace-manager/index.js";
+import type { Clock } from "./index.js";
+import { deriveAggregateReviewState } from "./index.js";
+import type { NotificationRouter } from "./notification-router.js";
+
+// ── DaemonContext (subset) ───────────────────────────────────────────────────
+
+export interface DaemonContext {
+  config: DaemonConfig;
+  eventBus: EventBus;
+  registry: Registry;
+  taskEngine: ITaskEngine;
+  safetyLayer: ISafetyLayer;
+  workspaceManager: WorkspaceManager;
+  clock: Clock;
+  logger: Logger;
+  [key: string]: unknown;
+}
+
+// ── ReviewHandler Interface ──────────────────────────────────────────────────
+
+/** Handles review feedback detection, merge detection, and approval/rework flows. */
+export interface ReviewHandler {
+  /** Check for PR merges on review-pending tasks. */
+  checkMerges(): Promise<void>;
+  /** Check for PR review feedback on review-pending tasks. */
+  checkFeedback(): Promise<void>;
+  /** Handle a feedback event (called from EventBus subscription). */
+  handleFeedbackEvent(payload: TaskFeedbackReceivedPayload): void;
+}
+
+/** Callbacks for cross-subsystem coordination. */
+export interface ReviewHandlerCallbacks {
+  /** Called when a task should be completed (PR merged). */
+  onTaskMergeComplete(taskId: string, taskTitle: string): void;
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+/** Prefix on all daemon-posted issue/PR comments. Used to filter self-comments. */
+const ENGINEER_COMMENT_MARKERS = [
+  "Task completed",
+  "Pull request created",
+  "Task encountered an error",
+  "PR merged",
+  "Demo approved",
+  "Code approved",
+  "Code review approved",
+  "Pushed rework",
+  "Task picked up",
+];
+
+/** Time window for failure counting (5 minutes). */
+const FAILURE_WINDOW_MS = 300_000;
+
+/** Max recent failures in window before skipping review polling. */
+const MAX_RECENT_FAILURES = 3;
+
+// ── Factory ──────────────────────────────────────────────────────────────────
+
+export function createReviewHandler(
+  ctx: DaemonContext,
+  notifications: NotificationRouter,
+  callbacks: ReviewHandlerCallbacks,
+): ReviewHandler {
+  const { eventBus, registry, taskEngine, logger } = ctx;
+  const safetyLayer = ctx.safetyLayer as ISafetyLayer;
+  const workspaceManager = ctx.workspaceManager as WorkspaceManager;
+
+  // ── Internal State ──────────────────────────────────────────────────────
+  const processedReviewStates = new Map<string, string>();
+
+  // Time-windowed failure counting for review API
+  const reviewApiFailures: Array<{ timestamp: number }> = [];
+
+  function shouldSkipReviewPolling(now: number): boolean {
+    // Clean up old failures outside the window
+    const windowStart = now - FAILURE_WINDOW_MS;
+    while (reviewApiFailures.length > 0 && (reviewApiFailures[0]?.timestamp ?? 0) < windowStart) {
+      reviewApiFailures.shift();
+    }
+    return reviewApiFailures.length >= MAX_RECENT_FAILURES;
+  }
+
+  function recordReviewApiFailure(now: number): void {
+    reviewApiFailures.push({ timestamp: now });
+  }
+
+  // ── Merge Detection ─────────────────────────────────────────────────────
+
+  function completeTaskOnMerge(task: {
+    id: string;
+    title: string;
+    sub_state: string | null;
+    review: { pr_number: number | null } | null;
+  }): void {
+    if (task.sub_state === SubStates.demo) {
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.review_pending,
+        SubStates.code,
+        "pr_merged",
+        "daemon",
+      );
+    }
+    taskEngine.requestTransition(task.id, TaskStates.completed, null, "pr_merged", "daemon");
+    try {
+      workspaceManager.cleanupWorkspace(task.id, true);
+    } catch {
+      logger.warn({ taskId: task.id }, "Workspace cleanup failed after PR merge");
+    }
+    notifications.sendCompletion(task.id, task.title);
+    notifications.commentOnTaskIssue(task.id, "PR merged — task completed.");
+    callbacks.onTaskMergeComplete(task.id, task.title);
+    logger.info(
+      { taskId: task.id, prNumber: task.review?.pr_number },
+      "PR merged — task completed",
+    );
+  }
+
+  async function checkSingleTaskMerge(
+    task: ReturnType<typeof taskEngine.getTasksByState>[number],
+    hosting: GitHostingAdapter,
+  ): Promise<void> {
+    if (!(task.review?.pr_number && task.repo)) {
+      return;
+    }
+    try {
+      const status = await hosting.getPRStatus(task.repo, task.review.pr_number);
+      if (status.state === "merged") {
+        completeTaskOnMerge(task);
+      }
+    } catch (err) {
+      logger.warn({ taskId: task.id, err }, "Failed to check PR status");
+    }
+  }
+
+  async function checkMerges(): Promise<void> {
+    const reviewTasks = taskEngine.getTasksByState(TaskStates.review_pending);
+    if (reviewTasks.length === 0) {
+      return;
+    }
+
+    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting);
+    const hosting = hostingPlugins[0];
+    if (!hosting) {
+      return;
+    }
+
+    for (const task of reviewTasks) {
+      await checkSingleTaskMerge(task, hosting);
+    }
+  }
+
+  // ── Feedback Detection ──────────────────────────────────────────────────
+
+  type AggregateState = "changes_requested" | "approved" | "comment";
+  type ReviewStatusLike = {
+    changes_requested: boolean;
+    approved: boolean;
+    reviewers: Array<{ state: string; username?: string }>;
+    comments?: string[];
+  };
+
+  function resolveAggregateState(
+    reviewStatus: ReviewStatusLike,
+    prComments: string[],
+  ): AggregateState | null {
+    const state = deriveAggregateReviewState(reviewStatus);
+    if (state) {
+      return state;
+    }
+    return prComments.length > 0 ? "comment" : null;
+  }
+
+  async function fetchPRCommentStrings(
+    hosting: GitHostingAdapter,
+    repo: string,
+    prNumber: number,
+  ): Promise<string[]> {
+    try {
+      const comments = await hosting.getPRComments(repo, prNumber);
+      return comments
+        .filter((c) => {
+          const body = c.body.trim();
+          if (body.length === 0) {
+            return false;
+          }
+          return !ENGINEER_COMMENT_MARKERS.some((marker) => body.startsWith(marker));
+        })
+        .map((c) => `@${c.author}: ${c.body.trim()}`);
+    } catch {
+      return []; // Non-critical — proceed with review data only
+    }
+  }
+
+  function emitFeedbackIfNew(
+    taskId: string,
+    prNumber: number,
+    aggregateState: AggregateState,
+    allComments: string[],
+    reviewStatus: ReviewStatusLike,
+    isDraft: boolean,
+  ): boolean {
+    const dedupKey = `${aggregateState}:${String(allComments.length)}`;
+    if (processedReviewStates.get(taskId) === dedupKey) {
+      return false;
+    }
+    processedReviewStates.set(taskId, dedupKey);
+
+    const stage = isDraft ? "demo" : "code";
+    const primaryReviewer =
+      reviewStatus.reviewers.find((r) => r.state === aggregateState) ?? reviewStatus.reviewers[0];
+
+    eventBus.publish({
+      type: EventTypes["task.feedback_received"],
+      source: "daemon",
+      task_id: taskId,
+      payload: {
+        task_id: taskId,
+        stage,
+        feedback_type: (aggregateState === "approved" ? "approved" : aggregateState) as
+          | "approved"
+          | "changes_requested"
+          | "comment",
+        reviewer: primaryReviewer?.username ?? "unknown",
+        content: allComments.length > 0 ? allComments.join("\n") : null,
+        pr_number: prNumber,
+      },
+    } satisfies PublishInput<"task.feedback_received">);
+    return true;
+  }
+
+  async function checkSingleTaskReviewFeedback(
+    task: ReturnType<typeof taskEngine.getTasksByState>[number],
+    hosting: GitHostingAdapter,
+    now: number,
+  ): Promise<void> {
+    if (!(task.review?.pr_number && task.repo)) {
+      return;
+    }
+
+    const prNumber = task.review.pr_number;
+    const repo = task.repo;
+
+    try {
+      const reviewStatus = await hosting.getReviewStatus(repo, prNumber);
+      const prStatus = await hosting.getPRStatus(repo, prNumber);
+      const prComments = await fetchPRCommentStrings(hosting, repo, prNumber);
+      const allComments = [...(reviewStatus.comments ?? []), ...prComments];
+
+      const aggregateState = resolveAggregateState(reviewStatus, prComments);
+
+      // Count review states for observability
+      const approvalCount = reviewStatus.reviewers.filter((r) => r.state === "approved").length;
+      const changesCount = reviewStatus.reviewers.filter(
+        (r) => r.state === "changes_requested",
+      ).length;
+
+      // Emit poll event (every cycle, so the dashboard can show polling is alive)
+      const dedupKey = aggregateState
+        ? `${aggregateState}:${String(allComments.length)}`
+        : "none:0";
+      const dedupSkipped = processedReviewStates.get(task.id) === dedupKey;
+
+      eventBus.publish({
+        type: EventTypes["review.poll_completed"],
+        source: "daemon",
+        task_id: task.id,
+        payload: {
+          task_id: task.id,
+          pr_number: prNumber,
+          repo,
+          aggregate_state: aggregateState ?? "none",
+          approvals: approvalCount,
+          changes_requested_count: changesCount,
+          comment_count: allComments.length,
+          reviewer_count: reviewStatus.reviewers.length,
+          pr_draft: prStatus.draft,
+          dedup_skipped: dedupSkipped,
+        },
+      } satisfies PublishInput<"review.poll_completed">);
+
+      if (!aggregateState) {
+        logger.debug(
+          { taskId: task.id, prNumber, reviewerCount: reviewStatus.reviewers.length },
+          "No actionable review activity",
+        );
+        return;
+      }
+
+      const emitted = emitFeedbackIfNew(
+        task.id,
+        prNumber,
+        aggregateState,
+        allComments,
+        reviewStatus,
+        prStatus.draft,
+      );
+      if (emitted) {
+        logger.info(
+          { taskId: task.id, aggregateState, prNumber, approvals: approvalCount },
+          "Review feedback detected",
+        );
+      } else {
+        logger.debug(
+          { taskId: task.id, aggregateState, prNumber },
+          "Review poll: no new feedback (dedup)",
+        );
+      }
+    } catch (err) {
+      recordReviewApiFailure(now);
+      logger.warn({ taskId: task.id, err }, "Failed to check PR review feedback");
+    }
+  }
+
+  async function checkFeedback(): Promise<void> {
+    const reviewTasks = taskEngine.getTasksByState(TaskStates.review_pending);
+    if (reviewTasks.length === 0) {
+      return;
+    }
+
+    const now = (ctx.clock as { now(): number }).now();
+
+    // Time-windowed failure check
+    if (shouldSkipReviewPolling(now)) {
+      logger.debug("Skipping review feedback polling — too many recent API failures");
+      return;
+    }
+
+    // Prune stale dedup entries for tasks no longer in review_pending
+    logger.debug(
+      { count: reviewTasks.length, taskIds: reviewTasks.map((t) => t.id) },
+      "Polling review feedback",
+    );
+
+    const reviewTaskIds = new Set(reviewTasks.map((t) => t.id));
+    for (const key of processedReviewStates.keys()) {
+      if (!reviewTaskIds.has(key)) {
+        processedReviewStates.delete(key);
+      }
+    }
+
+    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting);
+    const hosting = hostingPlugins[0];
+    if (!hosting) {
+      return;
+    }
+
+    for (const task of reviewTasks) {
+      await checkSingleTaskReviewFeedback(task, hosting, now);
+    }
+  }
+
+  // ── Feedback Event Handler ──────────────────────────────────────────────
+
+  function handleFeedbackEvent(payload: TaskFeedbackReceivedPayload): void {
+    const task = taskEngine.getTask(payload.task_id);
+    if (!task) {
+      return;
+    }
+
+    // Guard: only handle feedback for tasks in review_pending state
+    if (task.state !== TaskStates.review_pending) {
+      logger.debug(
+        { taskId: payload.task_id, state: task.state },
+        "Ignoring feedback for non-review_pending task",
+      );
+      return;
+    }
+
+    // Store feedback round on the task
+    storeFeedbackRound(payload);
+
+    if (payload.feedback_type === "approved") {
+      handleReviewApproval(task, payload);
+    } else {
+      handleFeedbackRework(task, payload);
+    }
+  }
+
+  function storeFeedbackRound(payload: TaskFeedbackReceivedPayload): void {
+    const task = taskEngine.getTask(payload.task_id);
+    if (!task) {
+      return;
+    }
+    const currentReview = task.review ?? {
+      pr_number: payload.pr_number,
+      pr_state: payload.stage === "demo" ? "draft" : "ready",
+      demo_artifacts: [],
+      feedback_rounds: [],
+    };
+    const comments = payload.content
+      ? payload.content.split("\n").filter((line) => line.trim().length > 0)
+      : [];
+    const newRound = {
+      stage: payload.stage,
+      comments,
+      applied: payload.feedback_type === "approved",
+    };
+    taskEngine.updateTaskField(payload.task_id, "review", {
+      ...currentReview,
+      feedback_rounds: [...currentReview.feedback_rounds, newRound],
+    });
+  }
+
+  function handleReviewApproval(
+    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    if (payload.stage === "demo") {
+      handleDemoApproval(task, payload);
+    } else {
+      handleCodeApproval(task, payload);
+    }
+  }
+
+  function handleDemoApproval(
+    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    const hosting = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting)[0];
+    if (hosting && task.repo && task.review?.pr_number) {
+      hosting
+        .updatePR(task.repo, task.review.pr_number, {
+          title: null,
+          body: null,
+          draft: false,
+          labels_add: null,
+          labels_remove: null,
+        })
+        .then(() => {
+          const currentReview = task.review ?? {
+            pr_number: payload.pr_number,
+            pr_state: "draft" as const,
+            demo_artifacts: [],
+            feedback_rounds: [],
+          };
+          taskEngine.updateTaskField(payload.task_id, "review", {
+            ...currentReview,
+            pr_state: "ready",
+          });
+          taskEngine.requestTransition(
+            payload.task_id,
+            TaskStates.review_pending,
+            SubStates.code,
+            "demo_approved",
+            "daemon",
+          );
+          notifications.commentOnTaskIssue(
+            payload.task_id,
+            "Demo approved — PR marked ready for code review.",
+          );
+          logger.info(
+            { taskId: payload.task_id },
+            "Demo approved — PR marked ready for code review",
+          );
+        })
+        .catch((err) => {
+          logger.error(
+            { err, taskId: payload.task_id },
+            "Failed to mark PR ready after demo approval",
+          );
+        });
+    }
+  }
+
+  function handleCodeApproval(
+    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    try {
+      const repo = task.repo;
+      const prNumber = task.review?.pr_number;
+      const autoMergeAllowed = repo ? safetyLayer.checkAutoMergeAllowed(repo) : false;
+
+      const hosting = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting)[0];
+      if (autoMergeAllowed && prNumber && repo && hosting) {
+        hosting
+          .mergePR(repo, prNumber, "squash")
+          .then((result) => {
+            if (result.success) {
+              taskEngine.updateTaskField(payload.task_id, "review", {
+                ...(task.review ?? {
+                  pr_number: prNumber,
+                  pr_state: "ready" as const,
+                  demo_artifacts: [],
+                  feedback_rounds: [],
+                }),
+                pr_state: "merged",
+              });
+              notifications.commentOnTaskIssue(
+                payload.task_id,
+                `Code approved — PR #${String(prNumber)} auto-merged.`,
+              );
+            }
+            taskEngine.requestTransition(
+              payload.task_id,
+              TaskStates.completed,
+              null,
+              "code_approved_merged",
+              "daemon",
+            );
+          })
+          .catch(() => {
+            taskEngine.requestTransition(
+              payload.task_id,
+              TaskStates.completed,
+              null,
+              "code_approved",
+              "daemon",
+            );
+            notifications.commentOnTaskIssue(
+              payload.task_id,
+              "Code approved — auto-merge failed, please merge manually.",
+            );
+          });
+      } else {
+        taskEngine.requestTransition(
+          payload.task_id,
+          TaskStates.completed,
+          null,
+          "code_approved",
+          "daemon",
+        );
+        notifications.commentOnTaskIssue(payload.task_id, "Code review approved — ready to merge.");
+      }
+      logger.info({ taskId: payload.task_id, autoMergeAllowed }, "Code approved — task completing");
+    } catch (err) {
+      logger.error({ err, taskId: payload.task_id }, "Failed to handle code approval");
+    }
+  }
+
+  function handleFeedbackRework(
+    _task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    payload: TaskFeedbackReceivedPayload,
+  ): void {
+    try {
+      taskEngine.requestTransition(
+        payload.task_id,
+        TaskStates.queued,
+        null,
+        `feedback_rework:${payload.feedback_type}`,
+        "daemon",
+      );
+      notifications.commentOnTaskIssue(
+        payload.task_id,
+        `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
+      );
+      logger.info(
+        { taskId: payload.task_id, feedbackType: payload.feedback_type },
+        "Task re-queued after review feedback",
+      );
+    } catch (err) {
+      logger.error({ err, taskId: payload.task_id }, "Failed to re-queue task after feedback");
+    }
+  }
+
+  return {
+    checkMerges,
+    checkFeedback,
+    handleFeedbackEvent,
+  };
+}

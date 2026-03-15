@@ -71,7 +71,7 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     return wrapAsync(() => this.doGetReviewStatus(repo, prNumber));
   }
 
-  /** Fetch conversation-level comments on a PR (not inline review comments). */
+  /** Fetch all comments on a PR (conversation-level + inline review comments). */
   async getPRComments(repo: string, prNumber: number): Promise<PRComment[]> {
     return wrapAsync(() => this.doGetPRComments(repo, prNumber));
   }

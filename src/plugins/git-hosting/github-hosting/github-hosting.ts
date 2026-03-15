@@ -213,13 +213,22 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 
   protected async doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]> {
     const [owner, repoName] = splitRepo(repo);
-    const { data: comments } = await this.octokit.issues.listComments({
-      owner,
-      repo: repoName,
-      issue_number: prNumber,
-    });
 
-    return comments
+    // Fetch both conversation-level comments AND inline review comments
+    const [issueComments, reviewComments] = await Promise.all([
+      this.octokit.issues.listComments({
+        owner,
+        repo: repoName,
+        issue_number: prNumber,
+      }),
+      this.octokit.pulls.listReviewComments({
+        owner,
+        repo: repoName,
+        pull_number: prNumber,
+      }),
+    ]);
+
+    const conversation = issueComments.data
       .filter((c) => c.user?.login !== "github-actions[bot]")
       .map((c) => ({
         id: String(c.id),
@@ -227,6 +236,17 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         body: c.body ?? "",
         created_at: c.created_at,
       }));
+
+    const inline = reviewComments.data
+      .filter((c) => c.user?.login !== "github-actions[bot]")
+      .map((c) => ({
+        id: String(c.id),
+        author: c.user?.login ?? "unknown",
+        body: c.body,
+        created_at: c.created_at,
+      }));
+
+    return [...conversation, ...inline];
   }
 
   protected async doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection> {

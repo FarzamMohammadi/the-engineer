@@ -33,6 +33,7 @@ function createMockOctokit() {
       createReplyForReviewComment: vi.fn().mockResolvedValue({
         data: { id: 789, html_url: "https://github.com/acme/webapp/pull/51#discussion_r789" },
       }),
+      listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
     },
     issues: {
       addLabels: vi.fn().mockResolvedValue({}),

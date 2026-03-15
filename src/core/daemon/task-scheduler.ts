@@ -134,7 +134,14 @@ export function createTaskScheduler(
 
   function dispatchTask(candidate: ReturnType<ITaskEngine["getQueuedByPriority"]>[number]): void {
     // Build dispatch package
-    const checkpoint = sessionMemory.getLatestCheckpoint(candidate.id);
+    const rawCheckpoint = sessionMemory.getLatestCheckpoint(candidate.id);
+
+    // Rework dispatches (unapplied feedback) must restart from intake so the LLM
+    // sees the reviewer's comments — NOT resume from the old checkpoint.
+    const hasUnappliedFeedback =
+      candidate.review?.feedback_rounds?.some((r) => !r.applied) ?? false;
+    const checkpoint = hasUnappliedFeedback ? null : rawCheckpoint;
+
     const repoKnowledge = candidate.workspace
       ? sessionMemory.getKnowledge("repo", candidate.workspace.repo)
       : [];

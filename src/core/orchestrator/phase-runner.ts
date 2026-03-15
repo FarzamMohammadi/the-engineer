@@ -109,9 +109,17 @@ export interface PhaseRunnerDeps {
 /** Check if intake output enables fast-path, return updated phases array. */
 function applyFastPathIfNeeded(intakeOutput: PhaseOutput, currentPhases: Phase[]): Phase[] {
   const intakeData = intakeOutput.data as { fast_path?: boolean };
+  console.log(
+    `[phase-runner] applyFastPathIfNeeded: fast_path=${String(intakeData.fast_path)} (type=${typeof intakeData.fast_path}) confidence=${intakeOutput.confidence}`,
+  );
   if (intakeData.fast_path === true) {
-    return [Phases.intake_analysis, ...FAST_PATH_PHASES];
+    const newPhases = [Phases.intake_analysis, ...FAST_PATH_PHASES];
+    console.log(`[phase-runner] Fast-path ENABLED: phases=[${newPhases.join(",")}]`);
+    return newPhases;
   }
+  console.log(
+    `[phase-runner] Fast-path NOT applied, keeping ${String(currentPhases.length)} phases`,
+  );
   return currentPhases;
 }
 
@@ -309,13 +317,13 @@ function checkSelfReviewLoopback(
   state: PipelineState,
   ctx: OrchestratorContext,
 ): { targetIndex: number; loopbackCount: number } | null {
-  if (output.confidence === "low") {
-    return null;
-  }
-
   const reviewData = output.data as { quality_assessment?: string };
-  const assessment = reviewData.quality_assessment;
+  const assessment = reviewData.quality_assessment ?? "";
 
+  // Only loopback when the LLM explicitly assessed "needs_work" or
+  // "fundamental_issues". Any other value (including "unknown" from fallback
+  // outputs, "ship_it", "acceptable", or free-form positive assessments)
+  // passes through to the next phase.
   if (assessment !== "needs_work" && assessment !== "fundamental_issues") {
     return null;
   }
@@ -398,8 +406,21 @@ async function tryCreatePRAndExitForReview(
   if (!prCreated) {
     return null;
   }
-  recordPhaseTransition(sessionId, taskId, phase, null, priorOutputs, dispatch, ctx);
-  ctx.sessionMemory.endSession(sessionId, SessionEndReasons.review_pending);
+
+  // PR is created — from here, we MUST return reviewPendingResult regardless of errors.
+  // If recordPhaseTransition or endSession throws, a crash_recovery re-dispatch
+  // would resume at demo_prep (bypassing the fast-path exit).
+  try {
+    recordPhaseTransition(sessionId, taskId, phase, null, priorOutputs, dispatch, ctx);
+    ctx.sessionMemory.endSession(sessionId, SessionEndReasons.review_pending);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errStack = err instanceof Error ? err.stack : "";
+    console.error(
+      `[phase-runner] BUG: Post-PR bookkeeping threw (PR already created). Error: ${errMsg}\nStack: ${errStack}`,
+    );
+  }
+
   return {
     phases,
     loopbackIndex: null,
@@ -497,8 +518,13 @@ async function processPhaseCompletion(
   // Protocol P4: Phase transition
   const isLastPhase = currentIndex === phases.length - 1;
 
+  console.log(
+    `[phase-runner] processPhaseCompletion: phase=${phase} currentIndex=${String(currentIndex)} phases.length=${String(phases.length)} isLastPhase=${String(isLastPhase)} phases=[${phases.join(",")}]`,
+  );
+
   // Fast-path PR: when self_review is the final phase
   if (phase === Phases.self_review && isLastPhase) {
+    console.log("[phase-runner] Fast-path PR exit: self_review is last phase, creating PR");
     const result = await tryCreatePRAndExitForReview(
       sessionId,
       taskId,
@@ -511,7 +537,11 @@ async function processPhaseCompletion(
       prManager,
       workspaceLifecycle,
     );
+    console.log(
+      `[phase-runner] tryCreatePRAndExitForReview returned: ${result ? `result (has reviewPendingResult=${String(!!result.reviewPendingResult)})` : "null"}`,
+    );
     if (result) {
+      console.log("[phase-runner] RETURNING reviewPendingResult from processPhaseCompletion");
       return { result, updatedLoopbackCount: loopbackCount };
     }
   }
@@ -571,6 +601,9 @@ export async function runPhasePipeline(
   // ── Determine phase sequence ───────────────────────────────────────────
   const { phases: initialPhases, startIndex } = resolveStartState(dispatch, sessionId, taskId, ctx);
   let phases = initialPhases;
+  console.log(
+    `[phase-runner] runPhasePipeline START: taskId=${taskId} startIndex=${String(startIndex)} phases=[${phases.join(",")}] resume_from=${dispatch.resume_from ? dispatch.resume_from.phase : "none"}`,
+  );
 
   // Set initial task.phase
   // biome-ignore lint/style/noNonNullAssertion: startIndex is within bounds
@@ -591,6 +624,10 @@ export async function runPhasePipeline(
 
     // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
     const phase = phases[i]!;
+
+    console.log(
+      `[phase-runner] loop: i=${String(i)} phase=${phase} phases=[${phases.join(",")}] len=${String(phases.length)}`,
+    );
 
     // Check AndonCord
     if (deps.workspaceLifecycle.andonCord.isPulled()) {
@@ -635,6 +672,7 @@ export async function runPhasePipeline(
       return postResult.decompositionResult;
     }
     if (postResult.reviewPendingResult) {
+      console.log("[phase-runner] PIPELINE EXITING with reviewPendingResult");
       return postResult.reviewPendingResult;
     }
     if (postResult.loopbackIndex !== null) {

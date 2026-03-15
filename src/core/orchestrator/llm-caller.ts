@@ -274,6 +274,9 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const result = schema.safeParse(loopResult.phaseData);
 
     if (!result.success) {
+      console.log(
+        `[llm-caller] VALIDATION FAILED for ${phase}: ${result.error.message}. Using fallback output.`,
+      );
       return buildFallbackOutput(
         phase,
         taskId,
@@ -281,6 +284,9 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       );
     }
 
+    console.log(
+      `[llm-caller] Validation passed for ${phase}, data keys: [${Object.keys(result.data as Record<string, unknown>).join(",")}]`,
+    );
     return buildPhaseOutput(phase, taskId, result.data as Record<string, unknown>, "high", []);
   }
 
@@ -332,7 +338,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       [Phases.self_review]: {
         findings: [],
         refactoring_applied: [],
-        quality_assessment: "needs_work",
+        quality_assessment: "unknown",
       },
       [Phases.demo_prep]: {
         artifacts: [],

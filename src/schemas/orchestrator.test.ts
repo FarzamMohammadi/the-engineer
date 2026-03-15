@@ -121,16 +121,15 @@ describe("IntakeAnalysisOutputSchema", () => {
     }
   });
 
-  it("validates estimated_phases against PhaseSchema", () => {
-    expect(() =>
-      IntakeAnalysisOutputSchema.parse({
-        complexity: "simple",
-        estimated_phases: ["invalid_phase"],
-        ambiguities: [],
-        fast_path: true,
-        decomposition_likely: false,
-      }),
-    ).toThrow();
+  it("accepts any string values for estimated_phases", () => {
+    const output = IntakeAnalysisOutputSchema.parse({
+      complexity: "simple",
+      estimated_phases: ["custom_phase", "another_phase"],
+      ambiguities: [],
+      fast_path: true,
+      decomposition_likely: false,
+    });
+    expect(output.estimated_phases).toEqual(["custom_phase", "another_phase"]);
   });
 });
 

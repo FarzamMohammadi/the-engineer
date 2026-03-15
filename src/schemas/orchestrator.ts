@@ -31,8 +31,8 @@ export type PhaseOutput = z.infer<typeof PhaseOutputSchema>;
 // ── Phase Outputs ───────────────────────────────────────────────────────────────
 
 export const IntakeAnalysisOutputSchema = z.object({
-  complexity: z.enum(["trivial", "simple", "moderate", "complex", "epic"]),
-  estimated_phases: z.array(PhaseSchema),
+  complexity: z.string(),
+  estimated_phases: z.array(z.string()),
   ambiguities: z.array(z.string()),
   fast_path: z.boolean(),
   decomposition_likely: z.boolean(),
@@ -50,7 +50,7 @@ export type ResearchOutput = z.infer<typeof ResearchOutputSchema>;
 
 export const FileChangeSchema = z.object({
   file: z.string(),
-  change_type: z.enum(["create", "modify", "delete"]),
+  change_type: z.string(),
   description: z.string(),
 });
 export type FileChange = z.infer<typeof FileChangeSchema>;
@@ -71,18 +71,14 @@ export type PlanningOutput = z.infer<typeof PlanningOutputSchema>;
 
 export const ExecutionOutputSchema = z.object({
   files_changed: z.array(z.string()),
-  tests_written: z.array(z.string()),
-  test_results: z.object({
-    passed: z.number().int(),
-    failed: z.number().int(),
-    skipped: z.number().int(),
-  }),
-  build_status: z.enum(["passing", "failing", "unknown"]),
+  tests_written: z.array(z.string()).default([]),
+  test_results: z.record(z.unknown()).default({}),
+  build_status: z.string().default("unknown"),
 });
 export type ExecutionOutput = z.infer<typeof ExecutionOutputSchema>;
 
 export const SelfReviewFindingSchema = z.object({
-  type: z.enum(["style", "logic", "performance", "security", "maintainability"]),
+  type: z.string(),
   file: z.string(),
   description: z.string(),
   fixed: z.boolean(),
@@ -92,30 +88,21 @@ export type SelfReviewFinding = z.infer<typeof SelfReviewFindingSchema>;
 export const SelfReviewOutputSchema = z.object({
   findings: z.array(SelfReviewFindingSchema),
   refactoring_applied: z.array(z.string()),
-  quality_assessment: z.enum(["ship_it", "needs_work", "fundamental_issues"]),
+  quality_assessment: z.string(),
 });
 export type SelfReviewOutput = z.infer<typeof SelfReviewOutputSchema>;
 
 export const DemoPrepOutputSchema = z.object({
-  artifacts: z.array(
-    z.object({
-      type: z.enum(["screenshot", "recording", "tui", "preview_url"]),
-      location: z.string(),
-      permanent: z.boolean(),
-    }),
-  ),
-  pr_number: z.number().int().positive(),
-  pr_description: z.string(),
+  artifacts: z.array(z.record(z.unknown())).default([]),
+  pr_number: z.number().optional(),
+  pr_description: z.string().default(""),
 });
 export type DemoPrepOutput = z.infer<typeof DemoPrepOutputSchema>;
 
 export const IntegrationOutputSchema = z.object({
-  children_verified: z.array(z.string()),
-  integration_tests: z.object({
-    passed: z.number().int(),
-    failed: z.number().int(),
-  }),
-  conflicts_found: z.array(z.string()),
+  children_verified: z.array(z.string()).default([]),
+  integration_tests: z.record(z.unknown()).default({}),
+  conflicts_found: z.array(z.string()).default([]),
   resolution_actions: z.array(z.string()),
 });
 export type IntegrationOutput = z.infer<typeof IntegrationOutputSchema>;

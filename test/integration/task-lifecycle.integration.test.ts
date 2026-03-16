@@ -4,6 +4,7 @@ import { EventBus } from "../../src/core/event-bus/index.js";
 import { TaskEngine } from "../../src/core/task-engine/index.js";
 import type { Event } from "../../src/schemas/events.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
+import { createTestObserverFacade } from "../helpers/test-observer-facade.js";
 
 describe("Task lifecycle (integration)", () => {
   let dbHandle: TestDatabaseHandle;
@@ -12,8 +13,9 @@ describe("Task lifecycle (integration)", () => {
 
   function setup(): void {
     dbHandle = createTestDatabase();
-    eventBus = new EventBus(dbHandle.db);
-    taskEngine = new TaskEngine(dbHandle.db, eventBus);
+    const observer = createTestObserverFacade("event-bus");
+    eventBus = new EventBus(dbHandle.db, { observer });
+    taskEngine = new TaskEngine(dbHandle.db, eventBus, observer.child("task-engine"));
   }
 
   afterEach(() => {

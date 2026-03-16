@@ -2,6 +2,7 @@ import { EventBus, type EventRow, rowToEvent } from "../../src/core/event-bus/in
 import { TaskEngine } from "../../src/core/task-engine/index.js";
 import type { Event } from "../../src/schemas/events.js";
 import { type TestDatabaseHandle, createTestDatabase } from "./test-database.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 
 export interface TestTaskEngineHandle {
   engine: TaskEngine;
@@ -32,8 +33,9 @@ export interface TestTaskEngineHandle {
  */
 export function createTestTaskEngine(): TestTaskEngineHandle {
   const testDb: TestDatabaseHandle = createTestDatabase();
-  const eventBus = new EventBus(testDb.db);
-  const engine = new TaskEngine(testDb.db, eventBus);
+  const observer = createTestObserverFacade("event-bus");
+  const eventBus = new EventBus(testDb.db, { observer });
+  const engine = new TaskEngine(testDb.db, eventBus, observer.child("task-engine"));
 
   const allEventsStmt = testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
   const eventsByTypeStmt = testDb.db.prepare(

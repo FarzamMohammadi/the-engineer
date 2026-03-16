@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { CompletionResult } from "../../schemas/adapters.js";
 import type { ActionResult, PhaseToolConfig } from "../../schemas/orchestrator.js";
 import { type AgentLoopConfig, extractJson, parseAction, runAgentLoop } from "./agent-loop.js";
@@ -28,6 +29,7 @@ function makeConfig(overrides?: Partial<AgentLoopConfig>): AgentLoopConfig {
     initialPrompt: "Do the thing.",
     toolConfig: baseToolConfig,
     worktreePath: "/tmp/test",
+    observer: createTestObserverFacade("orchestrator"),
     ...overrides,
   };
 }

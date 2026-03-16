@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EventBus, matchesPattern } from "../../src/core/event-bus/index.js";
 import type { Event } from "../../src/schemas/events.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
+import { createTestObserverFacade } from "../helpers/test-observer-facade.js";
 
 describe("EventBus delivery (integration)", () => {
   let dbHandle: TestDatabaseHandle;
@@ -10,7 +11,8 @@ describe("EventBus delivery (integration)", () => {
 
   function setup(): void {
     dbHandle = createTestDatabase();
-    bus = new EventBus(dbHandle.db);
+    const observer = createTestObserverFacade("event-bus");
+    bus = new EventBus(dbHandle.db, { observer });
   }
 
   afterEach(() => {

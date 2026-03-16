@@ -7,7 +7,6 @@ import { ActionPipeline } from "../../src/core/action-pipeline/index.js";
 import { type Daemon, createDaemon } from "../../src/core/daemon/index.js";
 import { EventBus } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
-import { createSilentLogger } from "../../src/core/logging.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
@@ -30,6 +29,7 @@ import type { FakeLLMPlugin } from "./fake-plugins/fake-llm/index.js";
 import type { FakeToolPlugin } from "./fake-plugins/fake-tool/index.js";
 import type { FakeTriggerPlugin } from "./fake-plugins/fake-trigger/index.js";
 import { createTestDatabase } from "./test-database.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 import { type TestRegistryFakes, createTestRegistry } from "./test-registry.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -117,22 +117,30 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   const dbHandle = createTestDatabase();
   const db = dbHandle.db;
 
+  // 1.5. Observer (silent for tests)
+  const observer = createTestObserverFacade("cli");
+
   // 2. Event Bus
-  const eventBus = new EventBus(db);
+  const eventBus = new EventBus(db, { observer: observer.child("event-bus") });
 
   // 3. Registry + fake plugins
   const registryHandle = createTestRegistry(eventBus);
   const { registry, fakes } = registryHandle;
 
   // 4. Task Engine
-  const taskEngine = new TaskEngine(db, eventBus);
+  const taskEngine = new TaskEngine(db, eventBus, observer.child("task-engine"));
 
   // 5. Safety Layer
   const safetyConfig = SafetyConfigSchema.parse(options?.safetyConfig ?? {});
   const safetyLayer = new SafetyLayer(db, eventBus, safetyConfig);
 
   // 6. Action Pipeline
-  const actionPipeline = new ActionPipeline(taskEngine, safetyLayer, eventBus);
+  const actionPipeline = new ActionPipeline(
+    taskEngine,
+    safetyLayer,
+    eventBus,
+    observer.child("action-pipeline"),
+  );
 
   // 7. Session Memory
   const sessionMemory = new SessionMemory(db);
@@ -155,11 +163,11 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     sessionMemory,
     workspaceManager,
     peopleDirectory,
+    observer: createTestObserverFacade("orchestrator"),
   });
 
   // 11. Daemon
   const daemonConfig = defaultDaemonConfig(options?.daemonConfig);
-  const logger = createSilentLogger();
 
   const daemon = createDaemon(daemonConfig, {
     eventBus,
@@ -172,7 +180,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     workspaceManager,
     peopleDirectory,
     clock,
-    logger,
+    observer: createTestObserverFacade("daemon"),
     engineerHome,
   });
 

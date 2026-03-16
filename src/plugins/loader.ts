@@ -1,11 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Logger } from "pino";
 import { parse as parseYaml } from "yaml";
 
 import { YAML_EXTENSION_PATTERN } from "../cli/constants.js";
 import { resolveEnvVars } from "../config/loader.js";
+import type { IObserver } from "../core/observer/facade.js";
 import type { Registry } from "../core/registry/index.js";
 import { BUILTIN_PLUGINS } from "./builtin.js";
 
@@ -44,7 +44,7 @@ function loadPluginConfig(
 export async function loadBuiltinPlugins(
   registry: Registry,
   pluginConfigDir: string,
-  logger: Logger,
+  observer: IObserver,
 ): Promise<void> {
   const enabledIds = new Set(
     existsSync(pluginConfigDir)
@@ -61,14 +61,14 @@ export async function loadBuiltinPlugins(
     const instance = plugin.create();
     const registrationResult = registry.register(plugin.manifest, instance);
     if (!registrationResult.success) {
-      logger.warn({ pluginId, reason: registrationResult.message }, "Plugin registration failed");
+      observer.warn("Plugin registration failed", { pluginId, reason: registrationResult.message });
       continue;
     }
 
     const configPath = join(pluginConfigDir, `${pluginId}.yaml`);
     const pluginConfig = loadPluginConfig(configPath, pluginId, plugin.manifest.critical);
     if (pluginConfig === null) {
-      logger.warn({ pluginId }, "Plugin config load failed, skipping");
+      observer.warn("Plugin config load failed, skipping", { pluginId });
       registry.deregister(pluginId);
       continue;
     }
@@ -80,20 +80,21 @@ export async function loadBuiltinPlugins(
           `Critical plugin "${pluginId}" failed to initialize: ${initializationResult.message}`,
         );
       }
-      logger.warn(
-        { pluginId, reason: initializationResult.message },
-        "Plugin init failed, deregistering",
-      );
+      observer.warn("Plugin init failed, deregistering", {
+        pluginId,
+        reason: initializationResult.message,
+      });
       registry.deregister(pluginId);
       continue;
     }
 
     loadedCount++;
-    logger.info(
-      { pluginId, type: plugin.manifest.type, critical: plugin.manifest.critical },
-      "Plugin initialized",
-    );
+    observer.info("Plugin initialized", {
+      pluginId,
+      type: plugin.manifest.type,
+      critical: plugin.manifest.critical,
+    });
   }
 
-  logger.info({ loaded: loadedCount, total: plugins.length }, "Plugin loading complete");
+  observer.info("Plugin loading complete", { loaded: loadedCount, total: plugins.length });
 }

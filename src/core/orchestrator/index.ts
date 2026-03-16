@@ -19,7 +19,8 @@ import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { ObservabilityStore } from "../observability/index.js";
-import type { IObserver } from "../observer/types.js";
+import type { IObserver } from "../observer/facade.js";
+import type { IObservationStore } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import { createDecompositionHandler } from "./decomposition-handler.js";
@@ -99,7 +100,8 @@ export interface OrchestratorDependencies {
   workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
   observability?: ObservabilityStore;
-  observer?: IObserver;
+  observationStore?: IObservationStore;
+  observer: IObserver;
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -148,7 +150,8 @@ export class Orchestrator {
       workspaceManager: deps.workspaceManager,
       peopleDirectory: deps.peopleDirectory,
       observability: deps.observability ?? null,
-      observer: deps.observer ?? null,
+      observationStore: deps.observationStore ?? null,
+      observer: deps.observer,
     };
 
     // Create subsystems

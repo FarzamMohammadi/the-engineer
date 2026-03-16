@@ -13,8 +13,6 @@ describe("createTestRegistry", () => {
   let registryHandle: TestRegistryHandle;
 
   beforeEach(() => {
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console output in tests
-    vi.spyOn(console, "log").mockImplementation(() => {});
     eventBusHandle = createTestEventBus();
     registryHandle = createTestRegistry(eventBusHandle.eventBus);
   });
@@ -22,7 +20,6 @@ describe("createTestRegistry", () => {
   afterEach(() => {
     registryHandle.cleanup();
     eventBusHandle.cleanup();
-    vi.restoreAllMocks();
   });
 
   it("registers all 5 fake plugins", () => {

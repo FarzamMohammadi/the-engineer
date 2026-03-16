@@ -274,9 +274,10 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const result = schema.safeParse(loopResult.phaseData);
 
     if (!result.success) {
-      console.log(
-        `[llm-caller] VALIDATION FAILED for ${phase}: ${result.error.message}. Using fallback output.`,
-      );
+      ctx.observer.warn("Agent loop output validation failed, using fallback", {
+        phase,
+        error: result.error.message,
+      });
       return buildFallbackOutput(
         phase,
         taskId,
@@ -284,9 +285,10 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       );
     }
 
-    console.log(
-      `[llm-caller] Validation passed for ${phase}, data keys: [${Object.keys(result.data as Record<string, unknown>).join(",")}]`,
-    );
+    ctx.observer.debug("Agent loop output validation passed", {
+      phase,
+      dataKeys: Object.keys(result.data as Record<string, unknown>),
+    });
     return buildPhaseOutput(phase, taskId, result.data as Record<string, unknown>, "high", []);
   }
 
@@ -429,6 +431,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         initialPrompt,
         toolConfig,
         worktreePath,
+        observer: ctx.observer,
         ...obsCallbacks,
       },
       (prompt, sysPrompt) => callLlm(prompt, taskId, sysPrompt),

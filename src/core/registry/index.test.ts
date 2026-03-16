@@ -11,6 +11,7 @@ import {
   type TestEventBusHandle,
   createTestEventBus,
 } from "../../../test/helpers/test-event-bus.js";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import type { AdapterType, PluginManifest } from "../../schemas/adapters.js";
 import { Registry, type RegistryOptions } from "./index.js";
@@ -23,6 +24,7 @@ function createTestRegistry(
 ): Registry {
   return new Registry({
     eventBus: handle.eventBus,
+    observer: createTestObserverFacade("registry"),
     healthCheckIntervalMs: 60_000,
     healthCheckTimeoutMs: 1_000,
     consecutiveFailuresThreshold: 3,
@@ -51,16 +53,12 @@ function assertDefined<T>(value: T | null | undefined, label = "value"): T {
 describe("Registry", () => {
   let handle: TestEventBusHandle;
   let registry: Registry;
+  let observer: ReturnType<typeof createTestObserverFacade>;
 
   beforeEach(() => {
     handle = createTestEventBus();
-    registry = createTestRegistry(handle);
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console output in tests
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console output in tests
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console output in tests
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    observer = createTestObserverFacade("registry");
+    registry = createTestRegistry(handle, { observer });
   });
 
   afterEach(() => {
@@ -117,12 +115,14 @@ describe("Registry", () => {
       expect(health.last_error).toBeNull();
     });
 
-    it("logs registration", () => {
+    it("logs registration via observer", () => {
+      const infoSpy = vi.spyOn(observer, "info");
       const manifest = createManifest("trigger", "test-trigger");
       registry.register(manifest, new FakeTriggerPlugin());
 
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('registered "test-trigger"'),
+      expect(infoSpy).toHaveBeenCalledWith(
+        "Plugin registered",
+        expect.objectContaining({ pluginId: "test-trigger" }),
       );
     });
   });
@@ -142,14 +142,16 @@ describe("Registry", () => {
       registry.deregister("nonexistent");
     });
 
-    it("logs deregistration", () => {
+    it("logs deregistration via observer", () => {
+      const infoSpy = vi.spyOn(observer, "info");
       const manifest = createManifest("trigger", "test-trigger");
       registry.register(manifest, new FakeTriggerPlugin());
 
       registry.deregister("test-trigger");
 
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('deregistered "test-trigger"'),
+      expect(infoSpy).toHaveBeenCalledWith(
+        "Plugin deregistered",
+        expect.objectContaining({ pluginId: "test-trigger" }),
       );
     });
   });
@@ -243,12 +245,16 @@ describe("Registry", () => {
       expect(result.message).toContain("not registered");
     });
 
-    it("logs successful initialization with timing", async () => {
+    it("logs successful initialization with timing via observer", async () => {
+      const infoSpy = vi.spyOn(observer, "info");
       registry.register(createManifest("trigger", "t1"), new FakeTriggerPlugin());
 
       await registry.initializePlugin("t1", {});
 
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('initialized "t1"'));
+      expect(infoSpy).toHaveBeenCalledWith(
+        "Plugin initialized",
+        expect.objectContaining({ pluginId: "t1" }),
+      );
     });
   });
 
@@ -319,10 +325,11 @@ describe("Registry", () => {
       expect(stopSpy).toHaveBeenCalled();
     });
 
-    it("logs completion", async () => {
+    it("logs completion via observer", async () => {
+      const infoSpy = vi.spyOn(observer, "info");
       await registry.shutdownAll();
 
-      expect(console.log).toHaveBeenCalledWith("Registry: all plugins shut down");
+      expect(infoSpy).toHaveBeenCalledWith("All plugins shut down");
     });
   });
 

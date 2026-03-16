@@ -2,11 +2,13 @@ import type { PluginHealthRecord, PluginHealthState } from "../../schemas/adapte
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IObserver } from "../observer/facade.js";
 import type { PluginRecord } from "./lifecycle.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface HealthMonitorDeps {
+  observer: IObserver;
   eventBus: IEventBus;
   getRecord: (pluginId: string) => PluginRecord | undefined;
   getAllRecords: () => PluginRecord[];
@@ -23,8 +25,14 @@ export interface HealthMonitor {
 // ── Factory ────────────────────────────────────────────────────────────────
 
 export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
-  const { eventBus, getRecord, getAllRecords, healthCheckTimeoutMs, consecutiveFailuresThreshold } =
-    deps;
+  const {
+    observer,
+    eventBus,
+    getRecord,
+    getAllRecords,
+    healthCheckTimeoutMs,
+    consecutiveFailuresThreshold,
+  } = deps;
 
   function withTimeout<T>(promise: Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -57,7 +65,7 @@ export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
 
     if (previousState !== PluginHealthStates.healthy) {
       health.state = PluginHealthStates.healthy;
-      console.log(`Registry: plugin "${manifest.id}" recovered (was ${previousState})`);
+      observer.info("Plugin recovered", { pluginId: manifest.id, previousState });
       eventBus.publish({
         type: EventTypes["health.plugin_recovered"],
         source: "registry",
@@ -83,9 +91,11 @@ export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
     if (previousState === PluginHealthStates.healthy) {
       // healthy → unhealthy
       health.state = PluginHealthStates.unhealthy;
-      console.warn(
-        `Registry: plugin "${manifest.id}" is unhealthy (${String(health.consecutive_failures)} failures): ${errorMessage}`,
-      );
+      observer.warn("Plugin is unhealthy", {
+        pluginId: manifest.id,
+        consecutiveFailures: health.consecutive_failures,
+        error: errorMessage,
+      });
       eventBus.publish({
         type: EventTypes["health.plugin_unhealthy"],
         source: "registry",
@@ -103,9 +113,12 @@ export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
     ) {
       // unhealthy → failed
       health.state = PluginHealthStates.failed;
-      console.error(
-        `Registry: plugin "${manifest.id}" has FAILED (${String(health.consecutive_failures)}/${String(consecutiveFailuresThreshold)} failures): ${errorMessage}`,
-      );
+      observer.error("Plugin has FAILED", {
+        pluginId: manifest.id,
+        consecutiveFailures: health.consecutive_failures,
+        threshold: consecutiveFailuresThreshold,
+        error: errorMessage,
+      });
       eventBus.publish({
         type: EventTypes["health.plugin_failed"],
         source: "registry",

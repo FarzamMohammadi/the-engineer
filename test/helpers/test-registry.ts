@@ -6,6 +6,7 @@ import { FakeLLMPlugin } from "./fake-plugins/fake-llm/index.js";
 import { FakeToolPlugin } from "./fake-plugins/fake-tool/index.js";
 import { FakeTriggerPlugin } from "./fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "./mock-factories.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 
 export interface TestRegistryFakes {
   trigger: FakeTriggerPlugin;
@@ -33,6 +34,7 @@ export interface TestRegistryHandle {
 export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
   const registry = new Registry({
     eventBus,
+    observer: createTestObserverFacade("registry"),
     healthCheckIntervalMs: 60_000,
     healthCheckTimeoutMs: 1_000,
     consecutiveFailuresThreshold: 3,

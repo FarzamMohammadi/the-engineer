@@ -6,12 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { BlobStore } from "../../src/core/observability/blob-store.js";
-import { type Observer, createObserver } from "../../src/core/observer/index.js";
+import { type ObservationStore, createObservationStore } from "../../src/core/observer/index.js";
 import { createInMemoryDatabase } from "../../src/db/database.js";
 import type { DatabaseHandle } from "../../src/db/database.js";
 
 export interface TestObserverHandle {
-  observer: Observer;
+  observer: ObservationStore;
   db: DatabaseHandle;
   tracesDir: string;
   cleanup: () => void;
@@ -22,7 +22,7 @@ export function createTestObserver(): TestObserverHandle {
   const db = createInMemoryDatabase();
   const tracesDir = mkdtempSync(join(tmpdir(), "engineer-observer-test-"));
   const blobStore = new BlobStore(tracesDir);
-  const observer = createObserver(db.db, blobStore);
+  const observer = createObservationStore(db.db, blobStore);
 
   return {
     observer,

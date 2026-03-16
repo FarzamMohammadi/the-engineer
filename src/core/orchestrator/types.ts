@@ -6,7 +6,8 @@ import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { ObservabilityStore } from "../observability/index.js";
-import type { IObserver } from "../observer/types.js";
+import type { IObserver } from "../observer/facade.js";
+import type { IObservationStore } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 
@@ -23,7 +24,8 @@ export interface OrchestratorContext {
   workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
   observability: ObservabilityStore | null;
-  observer: IObserver | null;
+  observationStore: IObservationStore | null;
+  observer: IObserver;
 }
 
 // ── Per-Execution State ────────────────────────────────────────────────────

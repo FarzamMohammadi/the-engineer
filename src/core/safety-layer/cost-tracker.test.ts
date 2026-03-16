@@ -4,6 +4,7 @@ import {
   type TestDatabaseHandle,
   createTestDatabase,
 } from "../../../test/helpers/test-database.js";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { SafetyConfigSchema } from "../../schemas/config.js";
 import type { CostIncurredPayload, Event } from "../../schemas/events.js";
 import { EventBus } from "../event-bus/index.js";
@@ -22,7 +23,8 @@ afterEach(() => {
 
 function createTracker(limitOverrides: Parameters<typeof SafetyConfigSchema.parse>[0] = {}) {
   testDb = createTestDatabase();
-  eventBus = new EventBus(testDb.db);
+  const observer = createTestObserverFacade("event-bus");
+  eventBus = new EventBus(testDb.db, { observer });
   const config = SafetyConfigSchema.parse(limitOverrides);
   const tracker = new CostTracker(testDb.db, eventBus, config.cost_limits);
   return { tracker, eventBus, db: testDb.db };
@@ -294,7 +296,8 @@ describe("CostTracker — snapshot", () => {
 describe("CostTracker — paginated replay", () => {
   it("replays correctly when events exceed page size", () => {
     testDb = createTestDatabase();
-    eventBus = new EventBus(testDb.db);
+    const observer = createTestObserverFacade("event-bus");
+    eventBus = new EventBus(testDb.db, { observer });
     const config = SafetyConfigSchema.parse({});
 
     // Generate 50 cost events (small but tests pagination logic path)

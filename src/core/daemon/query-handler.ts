@@ -1,10 +1,10 @@
-import type { Logger } from "pino";
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import { type TaskState, TaskStates } from "../../schemas/task.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
+import type { IObserver } from "../observer/facade.js";
 import type { Registry } from "../registry/index.js";
 
 const PROGRESS_RE = /progress.*#(\d+)|#(\d+).*progress/;
@@ -13,7 +13,7 @@ export interface QueryHandlerDeps {
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   registry: Registry;
-  logger: Logger;
+  observer: IObserver;
 }
 
 /**
@@ -31,7 +31,7 @@ export async function handleQuery(
   payload: CommMessageReceivedPayload,
   deps: QueryHandlerDeps,
 ): Promise<void> {
-  const { taskEngine, safetyLayer, registry, logger } = deps;
+  const { taskEngine, safetyLayer, registry, observer } = deps;
   const content = payload.content.toLowerCase();
 
   let response: string;
@@ -60,7 +60,7 @@ export async function handleQuery(
         },
       );
     } catch (err) {
-      logger.error({ err, pluginId: comm.manifest.id }, "Failed to send query response");
+      observer.error("Failed to send query response", { err, pluginId: comm.manifest.id });
     }
   }
 }

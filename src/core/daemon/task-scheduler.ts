@@ -58,7 +58,7 @@ export function createTaskScheduler(
   notifications: NotificationRouter,
   callbacks: SchedulerCallbacks,
 ): TaskScheduler {
-  const { config, eventBus, taskEngine, orchestrator, logger } = ctx;
+  const { config, eventBus, taskEngine, orchestrator, observer } = ctx;
   const { sessionMemory, workspaceManager } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
@@ -143,17 +143,17 @@ export function createTaskScheduler(
     );
 
     if (!transition.success) {
-      logger.warn(
-        { taskId: candidate.id, reason: transition.reason },
-        "Failed to transition task to active.working",
-      );
+      observer.warn("Failed to transition task to active.working", {
+        taskId: candidate.id,
+        reason: transition.reason,
+      });
       return;
     }
 
-    logger.info(
-      { taskId: candidate.id, title: candidate.title },
-      "Dispatching task to Orchestrator",
-    );
+    observer.info("Dispatching task to Orchestrator", {
+      taskId: candidate.id,
+      title: candidate.title,
+    });
 
     // TODO: Emit task.dispatched event for observability (requires schema update)
 
@@ -186,17 +186,17 @@ export function createTaskScheduler(
     try {
       workspaceManager.cleanupWorkspace(taskId, true);
     } catch {
-      logger.warn({ taskId }, "Workspace cleanup failed after completion");
+      observer.warn("Workspace cleanup failed after completion", { taskId });
     }
     notifications.sendCompletion(taskId, taskTitle);
     notifications.commentOnTaskIssue(taskId, "Task completed successfully.");
-    logger.info({ taskId }, "Task completed");
+    observer.info("Task completed", { taskId });
   }
 
   function handleErrorOutcome(taskId: string, taskTitle: string, result: ExecuteTaskResult): void {
     const reason = "reason" in result ? (result.reason as string) : "unknown";
     const phase = "phase" in result ? result.phase : undefined;
-    logger.error({ taskId, phase, reason }, "Task error");
+    observer.error("Task error", { taskId, phase, reason });
     taskEngine.requestTransition(taskId, TaskStates.blocked, null, reason, "daemon");
     checkAndEmitChildrenAllDone(taskId);
     notifications.sendTaskError(taskId, taskTitle, reason);
@@ -227,15 +227,15 @@ export function createTaskScheduler(
       );
       notifications.sendReviewPending(taskId, taskTitle);
       notifications.commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
-      logger.info({ taskId }, "Task awaiting PR review");
+      observer.info("Task awaiting PR review", { taskId });
     } else if (result.outcome === "decomposed") {
-      logger.info(
-        { taskId, childCount: result.childTaskIds.length },
-        "Task decomposed — children queued for scheduling",
-      );
+      observer.info("Task decomposed — children queued for scheduling", {
+        taskId,
+        childCount: result.childTaskIds.length,
+      });
     } else if (result.outcome === "preempted") {
       taskEngine.requestTransition(taskId, TaskStates.queued, null, "preempted", "daemon");
-      logger.info({ taskId, lastPhase: result.lastPhase }, "Task preempted — returned to queue");
+      observer.info("Task preempted — returned to queue", { taskId, lastPhase: result.lastPhase });
     } else if (result.outcome === "error") {
       handleErrorOutcome(taskId, taskTitle, result);
     }
@@ -243,7 +243,7 @@ export function createTaskScheduler(
 
   function handleTaskError(taskId: string, error: unknown): void {
     activeDispatches.delete(taskId);
-    logger.error({ taskId, error }, "Orchestrator crash during task execution");
+    observer.error("Orchestrator crash during task execution", { taskId, error });
 
     eventBus.publish({
       type: EventTypes["health.stuck_detected"],
@@ -292,10 +292,11 @@ export function createTaskScheduler(
       },
     } satisfies PublishInput<"task.children_all_done">);
 
-    logger.info(
-      { parentTaskId: child.parent_id, allSucceeded: failedIds.length === 0, failedIds },
-      "All children completed — emitting children_all_done",
-    );
+    observer.info("All children completed — emitting children_all_done", {
+      parentTaskId: child.parent_id,
+      allSucceeded: failedIds.length === 0,
+      failedIds,
+    });
   }
 
   // ── Priority Aging ──────────────────────────────────────────────────────
@@ -309,10 +310,11 @@ export function createTaskScheduler(
 
       if (newPriority !== null && newPriority > task.priority) {
         taskEngine.updateTaskField(task.id, "priority", newPriority);
-        logger.debug(
-          { taskId: task.id, from: task.priority, to: newPriority },
-          "Task priority aged",
-        );
+        observer.debug("Task priority aged", {
+          taskId: task.id,
+          from: task.priority,
+          to: newPriority,
+        });
       }
     }
   }

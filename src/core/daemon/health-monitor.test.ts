@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
-import { createSilentLogger } from "../logging.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { HealthMonitorContext } from "./types.js";
@@ -143,7 +143,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     orchestrator: orchestrator as unknown as HealthMonitorContext["orchestrator"],
     sessionMemory: sessionMemory as unknown as HealthMonitorContext["sessionMemory"],
     clock: { now: () => Date.now() },
-    logger: createSilentLogger(),
+    observer: createTestObserverFacade("daemon"),
   };
 
   return { ctx, eventBus, taskEngine, safetyLayer, orchestrator, sessionMemory };

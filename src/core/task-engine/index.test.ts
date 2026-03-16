@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import {
   type TestTaskEngineHandle,
   createTestTaskEngine,
 } from "../../../test/helpers/test-task-engine.js";
+import { createInMemoryDatabase } from "../../db/database.js";
 import type { ActionClass, SubState, Task, TaskState } from "../../schemas/task.js";
 import { ValidTransitions } from "../../schemas/task.js";
+import { EventBus } from "../event-bus/index.js";
 import type { CreateTaskInput } from "./index.js";
-import { type TaskEngine, isValidTransition } from "./index.js";
+import { TaskEngine, isValidTransition } from "./index.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -880,8 +883,17 @@ describe("TaskEngine", () => {
     });
 
     it("warns on non-existent task", () => {
-      engine.updateTaskField("nonexistent", "phase", "research");
-      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("nonexistent"));
+      const observer = createTestObserverFacade("task-engine");
+      const warnSpy = vi.spyOn(observer, "warn");
+      const tmpDb = createInMemoryDatabase();
+      const tmpBus = new EventBus(tmpDb.db, { observer });
+      const observedEngine = new TaskEngine(tmpDb.db, tmpBus, observer);
+      observedEngine.updateTaskField("nonexistent", "phase", "research");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("task not found"),
+        expect.objectContaining({ taskId: "nonexistent" }),
+      );
+      tmpDb.db.close();
     });
   });
 
@@ -918,8 +930,17 @@ describe("TaskEngine", () => {
     });
 
     it("warns on non-existent task", () => {
-      engine.updateTracking("nonexistent", 100, 0.01, 50);
-      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("nonexistent"));
+      const observer = createTestObserverFacade("task-engine");
+      const warnSpy = vi.spyOn(observer, "warn");
+      const tmpDb = createInMemoryDatabase();
+      const tmpBus = new EventBus(tmpDb.db, { observer });
+      const observedEngine = new TaskEngine(tmpDb.db, tmpBus, observer);
+      observedEngine.updateTracking("nonexistent", 100, 0.01, 50);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("task not found"),
+        expect.objectContaining({ taskId: "nonexistent" }),
+      );
+      tmpDb.db.close();
     });
   });
 });

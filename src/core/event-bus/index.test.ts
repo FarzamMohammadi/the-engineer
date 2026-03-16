@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type Database from "better-sqlite3";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { createInMemoryDatabase } from "../../db/database.js";
 import type { Event } from "../../schemas/events.js";
 import { EventBus, matchesPattern } from "./index.js";
@@ -62,7 +63,8 @@ describe("EventBus", () => {
   function setup(): void {
     const handle = createInMemoryDatabase();
     db = handle.db;
-    bus = new EventBus(db);
+    const observer = createTestObserverFacade("event-bus");
+    bus = new EventBus(db, { observer });
   }
 
   // ── Publish & persist ───────────────────────────────────────────────────────
@@ -468,10 +470,11 @@ describe("EventBus", () => {
 
   describe("error handling", () => {
     it("continues delivery to remaining subscribers when one throws", () => {
-      setup();
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {
-        // suppress console.error noise in tests
-      });
+      const handle = createInMemoryDatabase();
+      db = handle.db;
+      const observer = createTestObserverFacade("event-bus");
+      const errorSpy = vi.spyOn(observer, "error");
+      bus = new EventBus(db, { observer });
       const received: Event[] = [];
 
       bus.subscribe("bad-sub", "task.created", () => {
@@ -495,15 +498,14 @@ describe("EventBus", () => {
       });
 
       expect(received).toHaveLength(1);
-      expect(consoleSpy).toHaveBeenCalledOnce();
-      consoleSpy.mockRestore();
+      expect(errorSpy).toHaveBeenCalledOnce();
     });
 
     it("still returns the event when a subscriber throws", () => {
-      setup();
-      vi.spyOn(console, "error").mockImplementation(() => {
-        // suppress console.error noise in tests
-      });
+      const handle = createInMemoryDatabase();
+      db = handle.db;
+      const observer = createTestObserverFacade("event-bus");
+      bus = new EventBus(db, { observer });
 
       bus.subscribe("bad-sub", "task.created", () => {
         throw new Error("fail");
@@ -526,15 +528,13 @@ describe("EventBus", () => {
 
       expect(event.id).toBeDefined();
       expect(event.sequence).toBeGreaterThan(0);
-
-      vi.restoreAllMocks();
     });
 
     it("persists event even when subscriber throws", () => {
-      setup();
-      vi.spyOn(console, "error").mockImplementation(() => {
-        // suppress console.error noise in tests
-      });
+      const handle = createInMemoryDatabase();
+      db = handle.db;
+      const observer = createTestObserverFacade("event-bus");
+      bus = new EventBus(db, { observer });
 
       bus.subscribe("bad-sub", "task.created", () => {
         throw new Error("fail");
@@ -557,8 +557,6 @@ describe("EventBus", () => {
 
       const row = db.prepare("SELECT * FROM events WHERE id = ?").get(event.id);
       expect(row).toBeDefined();
-
-      vi.restoreAllMocks();
     });
 
     it("propagates DB INSERT failure (system halt)", () => {
@@ -685,10 +683,10 @@ describe("EventBus", () => {
     });
 
     it("catches subscriber errors during replay (same as publish)", () => {
-      setup();
-      vi.spyOn(console, "error").mockImplementation(() => {
-        // suppress console.error noise in tests
-      });
+      const handle = createInMemoryDatabase();
+      db = handle.db;
+      const observer = createTestObserverFacade("event-bus");
+      bus = new EventBus(db, { observer });
 
       bus.publish({
         type: "task.created",
@@ -710,8 +708,6 @@ describe("EventBus", () => {
       });
 
       expect(() => bus.replay(0)).not.toThrow();
-
-      vi.restoreAllMocks();
     });
   });
 

@@ -28,7 +28,7 @@ export function createDaemonHealthMonitor(
   notifications: NotificationRouter,
   getActiveTaskIds: () => string[],
 ): DaemonHealthMonitor {
-  const { config, eventBus, taskEngine, safetyLayer, orchestrator, sessionMemory, logger } = ctx;
+  const { config, eventBus, taskEngine, safetyLayer, orchestrator, sessionMemory, observer } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const blockedEscalationState = new Map<
@@ -93,7 +93,7 @@ export function createDaemonHealthMonitor(
         last_activity: null,
       },
     } satisfies PublishInput<"health.stuck_detected">);
-    logger.warn({ taskId, condition, elapsedMs }, "Stuck task detected");
+    observer.warn("Stuck task detected", { taskId, condition, elapsedMs });
   }
 
   // ── Blocked Escalation ──────────────────────────────────────────────────
@@ -173,7 +173,7 @@ export function createDaemonHealthMonitor(
   ): void {
     if (stage.action === "send_reminder") {
       notifications.sendBlockedReminder(taskId, taskTitle);
-      logger.info({ taskId, stage: stage.name }, "Blocked task reminder sent");
+      observer.info("Blocked task reminder sent", { taskId, stage: stage.name });
     } else if (stage.action === "evaluate_self_unblock") {
       orchestrator.attemptSelfUnblock(taskId).then(
         (resolved) => {
@@ -186,13 +186,13 @@ export function createDaemonHealthMonitor(
               "daemon",
             );
             blockedEscalationState.delete(taskId);
-            logger.info({ taskId }, "Task self-unblocked");
+            observer.info("Task self-unblocked", { taskId });
           } else {
-            logger.info({ taskId }, "Self-unblock check failed — continuing escalation");
+            observer.info("Self-unblock check failed — continuing escalation", { taskId });
           }
         },
         (err) => {
-          logger.error({ taskId, err }, "Self-unblock check error");
+          observer.error("Self-unblock check error", { taskId, err });
         },
       );
     } else if (stage.action === "escalation_alert") {
@@ -205,7 +205,7 @@ export function createDaemonHealthMonitor(
       );
       notifications.sendEscalationAlert(taskId, taskTitle);
       blockedEscalationState.delete(taskId);
-      logger.warn({ taskId, stage: stage.name }, "Blocked task escalated to failed");
+      observer.warn("Blocked task escalated to failed", { taskId, stage: stage.name });
     }
   }
 
@@ -267,7 +267,7 @@ export function createDaemonHealthMonitor(
     for (const taskId of pending) {
       const task = taskEngine.getTask(taskId);
       if (task && task.state === TaskStates.active) {
-        logger.warn({ taskId }, "Task blocked due to cost limit");
+        observer.warn("Task blocked due to cost limit", { taskId });
         taskEngine.requestTransition(
           taskId,
           TaskStates.blocked,

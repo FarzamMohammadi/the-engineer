@@ -15,7 +15,15 @@ export type ComponentTag =
   | "event-bus"
   | "people-directory"
   | "config"
-  | "cli";
+  | "cli"
+  | "action-pipeline"
+  | "hooks"
+  | "observer"
+  | "pr-manager"
+  | "phase-runner"
+  | "llm-caller"
+  | "agent-loop"
+  | "plugin-loader";
 
 /** Logging config shape from DaemonConfigSchema. */
 export interface LoggingConfig {

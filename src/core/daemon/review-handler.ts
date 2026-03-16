@@ -53,7 +53,7 @@ export function createReviewHandler(
   notifications: NotificationRouter,
   callbacks: ReviewHandlerCallbacks,
 ): ReviewHandler {
-  const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, logger } = ctx;
+  const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, observer } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const processedReviewStates = new Map<string, string>();
@@ -95,15 +95,15 @@ export function createReviewHandler(
     try {
       workspaceManager.cleanupWorkspace(task.id, true);
     } catch {
-      logger.warn({ taskId: task.id }, "Workspace cleanup failed after PR merge");
+      observer.warn("Workspace cleanup failed after PR merge", { taskId: task.id });
     }
     notifications.sendCompletion(task.id, task.title);
     notifications.commentOnTaskIssue(task.id, "PR merged — task completed.");
     callbacks.onTaskMergeComplete(task.id, task.title);
-    logger.info(
-      { taskId: task.id, prNumber: task.review?.pr_number },
-      "PR merged — task completed",
-    );
+    observer.info("PR merged — task completed", {
+      taskId: task.id,
+      prNumber: task.review?.pr_number,
+    });
   }
 
   async function checkSingleTaskMerge(
@@ -119,7 +119,7 @@ export function createReviewHandler(
         completeTaskOnMerge(task);
       }
     } catch (err) {
-      logger.warn({ taskId: task.id, err }, "Failed to check PR status");
+      observer.warn("Failed to check PR status", { taskId: task.id, err });
     }
   }
 
@@ -270,10 +270,11 @@ export function createReviewHandler(
       } satisfies PublishInput<"review.poll_completed">);
 
       if (!aggregateState) {
-        logger.debug(
-          { taskId: task.id, prNumber, reviewerCount: reviewStatus.reviewers.length },
-          "No actionable review activity",
-        );
+        observer.debug("No actionable review activity", {
+          taskId: task.id,
+          prNumber,
+          reviewerCount: reviewStatus.reviewers.length,
+        });
         return;
       }
 
@@ -286,19 +287,22 @@ export function createReviewHandler(
         prStatus.draft,
       );
       if (emitted) {
-        logger.info(
-          { taskId: task.id, aggregateState, prNumber, approvals: approvalCount },
-          "Review feedback detected",
-        );
+        observer.info("Review feedback detected", {
+          taskId: task.id,
+          aggregateState,
+          prNumber,
+          approvals: approvalCount,
+        });
       } else {
-        logger.debug(
-          { taskId: task.id, aggregateState, prNumber },
-          "Review poll: no new feedback (dedup)",
-        );
+        observer.debug("Review poll: no new feedback (dedup)", {
+          taskId: task.id,
+          aggregateState,
+          prNumber,
+        });
       }
     } catch (err) {
       recordReviewApiFailure(now);
-      logger.warn({ taskId: task.id, err }, "Failed to check PR review feedback");
+      observer.warn("Failed to check PR review feedback", { taskId: task.id, err });
     }
   }
 
@@ -312,15 +316,15 @@ export function createReviewHandler(
 
     // Time-windowed failure check
     if (shouldSkipReviewPolling(now)) {
-      logger.debug("Skipping review feedback polling — too many recent API failures");
+      observer.debug("Skipping review feedback polling — too many recent API failures");
       return;
     }
 
     // Prune stale dedup entries for tasks no longer in review_pending
-    logger.debug(
-      { count: reviewTasks.length, taskIds: reviewTasks.map((t) => t.id) },
-      "Polling review feedback",
-    );
+    observer.debug("Polling review feedback", {
+      count: reviewTasks.length,
+      taskIds: reviewTasks.map((t) => t.id),
+    });
 
     const reviewTaskIds = new Set(reviewTasks.map((t) => t.id));
     for (const key of processedReviewStates.keys()) {
@@ -350,10 +354,10 @@ export function createReviewHandler(
 
     // Guard: only handle feedback for tasks in review_pending state
     if (task.state !== TaskStates.review_pending) {
-      logger.debug(
-        { taskId: payload.task_id, state: task.state },
-        "Ignoring feedback for non-review_pending task",
-      );
+      observer.debug("Ignoring feedback for non-review_pending task", {
+        taskId: payload.task_id,
+        state: task.state,
+      });
       return;
     }
 
@@ -439,16 +443,15 @@ export function createReviewHandler(
             payload.task_id,
             "Demo approved — PR marked ready for code review.",
           );
-          logger.info(
-            { taskId: payload.task_id },
-            "Demo approved — PR marked ready for code review",
-          );
+          observer.info("Demo approved — PR marked ready for code review", {
+            taskId: payload.task_id,
+          });
         })
         .catch((err) => {
-          logger.error(
-            { err, taskId: payload.task_id },
-            "Failed to mark PR ready after demo approval",
-          );
+          observer.error("Failed to mark PR ready after demo approval", {
+            err,
+            taskId: payload.task_id,
+          });
         });
     }
   }
@@ -513,9 +516,12 @@ export function createReviewHandler(
         );
         notifications.commentOnTaskIssue(payload.task_id, "Code review approved — ready to merge.");
       }
-      logger.info({ taskId: payload.task_id, autoMergeAllowed }, "Code approved — task completing");
+      observer.info("Code approved — task completing", {
+        taskId: payload.task_id,
+        autoMergeAllowed,
+      });
     } catch (err) {
-      logger.error({ err, taskId: payload.task_id }, "Failed to handle code approval");
+      observer.error("Failed to handle code approval", { err, taskId: payload.task_id });
     }
   }
 
@@ -535,12 +541,15 @@ export function createReviewHandler(
         payload.task_id,
         `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
       );
-      logger.info(
-        { taskId: payload.task_id, feedbackType: payload.feedback_type },
-        "Task re-queued after review feedback",
-      );
+      observer.info("Task re-queued after review feedback", {
+        taskId: payload.task_id,
+        feedbackType: payload.feedback_type,
+      });
     } catch (err) {
-      logger.error({ err, taskId: payload.task_id }, "Failed to re-queue task after feedback");
+      observer.error("Failed to re-queue task after feedback", {
+        err,
+        taskId: payload.task_id,
+      });
     }
   }
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createSilentLogger } from "../logging.js";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { createTriggerPoller } from "./trigger-poller.js";
 import type { TriggerPollerContext } from "./types.js";
 
@@ -57,7 +57,7 @@ function createMockContext(overrides?: Partial<TriggerPollerContext>): TriggerPo
       requestTransition: vi.fn().mockReturnValue({ success: true }),
     },
     clock: { now: () => 1000 },
-    logger: createSilentLogger(),
+    observer: createTestObserverFacade("daemon"),
     ...overrides,
   } as unknown as TriggerPollerContext;
 }

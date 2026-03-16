@@ -7,6 +7,7 @@ import {
   SessionEndReasons,
 } from "../../schemas/session-memory.js";
 import type { PublishInput } from "../event-bus/index.js";
+import type { IObserver } from "../observer/facade.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import { PhaseHandlerMissingError } from "./errors.js";
 import type { PrManager } from "./pr-manager.js";
@@ -107,19 +108,18 @@ export interface PhaseRunnerDeps {
 // ── Pure Helpers ────────────────────────────────────────────────────────────
 
 /** Check if intake output enables fast-path, return updated phases array. */
-function applyFastPathIfNeeded(intakeOutput: PhaseOutput, currentPhases: Phase[]): Phase[] {
+function applyFastPathIfNeeded(
+  intakeOutput: PhaseOutput,
+  currentPhases: Phase[],
+  observer: IObserver,
+): Phase[] {
   const intakeData = intakeOutput.data as { fast_path?: boolean };
-  console.log(
-    `[phase-runner] applyFastPathIfNeeded: fast_path=${String(intakeData.fast_path)} (type=${typeof intakeData.fast_path}) confidence=${intakeOutput.confidence}`,
-  );
   if (intakeData.fast_path === true) {
     const newPhases = [Phases.intake_analysis, ...FAST_PATH_PHASES];
-    console.log(`[phase-runner] Fast-path ENABLED: phases=[${newPhases.join(",")}]`);
+    observer.info("Fast-path enabled", { phases: newPhases });
     return newPhases;
   }
-  console.log(
-    `[phase-runner] Fast-path NOT applied, keeping ${String(currentPhases.length)} phases`,
-  );
+  observer.debug("Fast-path not applied", { phaseCount: currentPhases.length });
   return currentPhases;
 }
 
@@ -416,9 +416,10 @@ async function tryCreatePRAndExitForReview(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const errStack = err instanceof Error ? err.stack : "";
-    console.error(
-      `[phase-runner] BUG: Post-PR bookkeeping threw (PR already created). Error: ${errMsg}\nStack: ${errStack}`,
-    );
+    ctx.observer.error("BUG: Post-PR bookkeeping threw (PR already created)", {
+      error: errMsg,
+      stack: errStack,
+    });
   }
 
   return {
@@ -450,7 +451,7 @@ async function processPhaseCompletion(
 
   // Fast-path: after intake_analysis, check if we should skip phases
   if (phase === Phases.intake_analysis) {
-    phases = applyFastPathIfNeeded(output, phases);
+    phases = applyFastPathIfNeeded(output, phases, ctx.observer);
   }
 
   // Decomposition: after planning, check if task should be split into children
@@ -518,13 +519,16 @@ async function processPhaseCompletion(
   // Protocol P4: Phase transition
   const isLastPhase = currentIndex === phases.length - 1;
 
-  console.log(
-    `[phase-runner] processPhaseCompletion: phase=${phase} currentIndex=${String(currentIndex)} phases.length=${String(phases.length)} isLastPhase=${String(isLastPhase)} phases=[${phases.join(",")}]`,
-  );
+  ctx.observer.debug("Phase completion processing", {
+    phase,
+    currentIndex,
+    phaseCount: phases.length,
+    isLastPhase,
+  });
 
   // Fast-path PR: when self_review is the final phase
   if (phase === Phases.self_review && isLastPhase) {
-    console.log("[phase-runner] Fast-path PR exit: self_review is last phase, creating PR");
+    ctx.observer.info("Fast-path PR exit: self_review is last phase, creating PR");
     const result = await tryCreatePRAndExitForReview(
       sessionId,
       taskId,
@@ -537,11 +541,11 @@ async function processPhaseCompletion(
       prManager,
       workspaceLifecycle,
     );
-    console.log(
-      `[phase-runner] tryCreatePRAndExitForReview returned: ${result ? `result (has reviewPendingResult=${String(!!result.reviewPendingResult)})` : "null"}`,
-    );
+    ctx.observer.debug("Fast-path PR result", {
+      hasResult: !!result,
+      hasReviewPendingResult: !!result?.reviewPendingResult,
+    });
     if (result) {
-      console.log("[phase-runner] RETURNING reviewPendingResult from processPhaseCompletion");
       return { result, updatedLoopbackCount: loopbackCount };
     }
   }
@@ -601,9 +605,12 @@ export async function runPhasePipeline(
   // ── Determine phase sequence ───────────────────────────────────────────
   const { phases: initialPhases, startIndex } = resolveStartState(dispatch, sessionId, taskId, ctx);
   let phases = initialPhases;
-  console.log(
-    `[phase-runner] runPhasePipeline START: taskId=${taskId} startIndex=${String(startIndex)} phases=[${phases.join(",")}] resume_from=${dispatch.resume_from ? dispatch.resume_from.phase : "none"}`,
-  );
+  ctx.observer.info("Phase pipeline starting", {
+    taskId,
+    startIndex,
+    phases,
+    resumeFrom: dispatch.resume_from?.phase ?? "none",
+  });
 
   // Set initial task.phase
   // biome-ignore lint/style/noNonNullAssertion: startIndex is within bounds
@@ -625,9 +632,7 @@ export async function runPhasePipeline(
     // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
     const phase = phases[i]!;
 
-    console.log(
-      `[phase-runner] loop: i=${String(i)} phase=${phase} phases=[${phases.join(",")}] len=${String(phases.length)}`,
-    );
+    ctx.observer.debug("Phase loop iteration", { index: i, phase, phaseCount: phases.length });
 
     // Check AndonCord
     if (deps.workspaceLifecycle.andonCord.isPulled()) {
@@ -672,7 +677,7 @@ export async function runPhasePipeline(
       return postResult.decompositionResult;
     }
     if (postResult.reviewPendingResult) {
-      console.log("[phase-runner] PIPELINE EXITING with reviewPendingResult");
+      ctx.observer.info("Pipeline exiting with review pending result", { taskId });
       return postResult.reviewPendingResult;
     }
     if (postResult.loopbackIndex !== null) {

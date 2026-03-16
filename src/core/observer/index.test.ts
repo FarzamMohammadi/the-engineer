@@ -557,8 +557,8 @@ describe("Observer", () => {
     });
 
     it("works without blobStore (graceful degradation)", async () => {
-      const { createObserver } = await import("./index.js");
-      const noBlobObserver = createObserver(handle.db.db, null);
+      const { createObservationStore } = await import("./index.js");
+      const noBlobObserver = createObservationStore(handle.db.db, null);
 
       expect(noBlobObserver.storeBlob("content")).toBe("");
       expect(noBlobObserver.readBlob("ref")).toBeNull();

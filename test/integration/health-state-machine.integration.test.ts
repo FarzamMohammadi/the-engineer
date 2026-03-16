@@ -7,6 +7,7 @@ import { FakeLLMPlugin } from "../helpers/fake-plugins/fake-llm/index.js";
 import { FakeTriggerPlugin } from "../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../helpers/mock-factories.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
+import { createTestObserverFacade } from "../helpers/test-observer-facade.js";
 
 describe("Health state machine (integration)", () => {
   let dbHandle: TestDatabaseHandle;
@@ -15,9 +16,11 @@ describe("Health state machine (integration)", () => {
 
   function setup(): void {
     dbHandle = createTestDatabase();
-    eventBus = new EventBus(dbHandle.db);
+    const observer = createTestObserverFacade("event-bus");
+    eventBus = new EventBus(dbHandle.db, { observer });
     registry = new Registry({
       eventBus,
+      observer: createTestObserverFacade("registry"),
       healthCheckIntervalMs: 60_000,
       healthCheckTimeoutMs: 5_000,
       consecutiveFailuresThreshold: 3,

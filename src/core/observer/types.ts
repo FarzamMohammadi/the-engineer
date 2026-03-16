@@ -1,5 +1,5 @@
 /**
- * Observer types — IObserver interface and ObservationSpan interface.
+ * Observer types — IObservationStore interface and ObservationSpan interface.
  *
  * Re-exports schema types and defines runtime interfaces that components
  * depend on for dependency injection.
@@ -34,10 +34,10 @@ export interface ObservationSpan {
   setError(error: unknown): void;
 }
 
-// ── IObserver ─────────────────────────────────────────────────────────────────
+// ── IObservationStore ─────────────────────────────────────────────────────────
 
-/** The centralized observer contract. All components call this to report what's happening. */
-export interface IObserver {
+/** Observation-only store contract (SQLite persistence + real-time streaming for War Room). */
+export interface IObservationStore {
   /** Start an observation span. Returns a handle with end(). Duration auto-recorded. */
   startSpan(
     type: import("../../schemas/observer.js").ObservationTypeValue,

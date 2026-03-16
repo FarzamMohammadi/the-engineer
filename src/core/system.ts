@@ -6,11 +6,10 @@
  * Components receive their dependencies through constructor injection.
  */
 import type Database from "better-sqlite3";
-import type { Logger } from "pino";
 
 import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
 import { EVENTS as ACTION_PIPELINE_EVENTS, ActionPipeline } from "./action-pipeline/index.js";
-import { EventBus } from "./event-bus/index.js";
+import { EventBus, type EventBusOptions } from "./event-bus/index.js";
 import { EventTopology } from "./event-bus/topology.js";
 import type { IActionPipeline } from "./interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "./interfaces/event-bus.interface.js";
@@ -37,10 +36,10 @@ export interface CreateCoreInput {
   db: Database.Database;
   safetyConfig: SafetyConfig;
   workspaceConfig: WorkspaceConfig;
+  /** Observer facade for structured logging. */
+  observer: import("./observer/facade.js").IObserver;
   /** EventBus subscriber slow-callback warning threshold (ms). 0 = disabled. */
   subscriberWarnThresholdMs?: number;
-  /** Optional logger for EventBus structured logging. Falls back to console if not provided. */
-  logger?: Logger;
 }
 
 /**
@@ -56,17 +55,19 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponents {
   topology.registerPublisher("safety-layer", SAFETY_LAYER_EVENTS);
   topology.registerPublisher("workspace-manager", WORKSPACE_MANAGER_EVENTS);
 
-  const eventBusOptions: import("./event-bus/index.js").EventBusOptions = { topology };
+  const eventBusOptions: EventBusOptions = { observer: input.observer, topology };
   if (input.subscriberWarnThresholdMs !== undefined) {
     eventBusOptions.subscriberWarnThresholdMs = input.subscriberWarnThresholdMs;
   }
-  if (input.logger) {
-    eventBusOptions.logger = input.logger;
-  }
   const eventBus = new EventBus(input.db, eventBusOptions);
-  const taskEngine = new TaskEngine(input.db, eventBus);
+  const taskEngine = new TaskEngine(input.db, eventBus, input.observer.child("task-engine"));
   const safetyLayer = new SafetyLayer(input.db, eventBus, input.safetyConfig);
-  const actionPipeline = new ActionPipeline(taskEngine, safetyLayer, eventBus);
+  const actionPipeline = new ActionPipeline(
+    taskEngine,
+    safetyLayer,
+    eventBus,
+    input.observer.child("action-pipeline"),
+  );
   const sessionMemory = new SessionMemory(input.db);
   const workspaceManager = new WorkspaceManager(eventBus, input.workspaceConfig);
 

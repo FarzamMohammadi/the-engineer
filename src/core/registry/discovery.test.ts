@@ -2,10 +2,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stringify as yamlStringify } from "yaml";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { PluginManifest } from "../../schemas/adapters.js";
+import type { IObserver } from "../observer/facade.js";
 import {
   type DiscoveredManifest,
   MANIFEST_FILENAME,
@@ -54,19 +56,14 @@ function makeManifest(overrides: Partial<PluginManifest> = {}): Record<string, u
 
 describe("discovery", () => {
   let tempDir: string;
+  let observer: IObserver;
 
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {
-      /* no-op */
-    });
-    vi.spyOn(console, "error").mockImplementation(() => {
-      /* no-op */
-    });
+    observer = createTestObserverFacade("registry");
     tempDir = mkdtempSync(join(tmpdir(), "registry-discovery-"));
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -74,7 +71,7 @@ describe("discovery", () => {
     it("discovers plugins in a directory", () => {
       createPluginDir(tempDir, "my-plugin", makeManifest({ id: "my-plugin" }));
 
-      const result = discoverPlugins([tempDir]);
+      const result = discoverPlugins([tempDir], observer);
 
       expect(result).toHaveLength(1);
       expect(result[0]!.manifest.id).toBe("my-plugin");
@@ -85,7 +82,7 @@ describe("discovery", () => {
       mkdirSync(nested, { recursive: true });
       createPluginDir(nested, "deep-plugin", makeManifest({ id: "deep-plugin" }));
 
-      const result = discoverPlugins([tempDir]);
+      const result = discoverPlugins([tempDir], observer);
 
       expect(result).toHaveLength(1);
       expect(result[0]!.manifest.id).toBe("deep-plugin");
@@ -94,19 +91,19 @@ describe("discovery", () => {
     it("skips disabled plugins", () => {
       createPluginDir(tempDir, "disabled", makeManifest({ id: "disabled", enabled: false }));
 
-      const result = discoverPlugins([tempDir]);
+      const result = discoverPlugins([tempDir], observer);
 
       expect(result).toHaveLength(0);
     });
 
     it("skips nonexistent directories", () => {
-      const result = discoverPlugins(["/nonexistent/path"]);
+      const result = discoverPlugins(["/nonexistent/path"], observer);
 
       expect(result).toHaveLength(0);
     });
 
     it("handles empty directories", () => {
-      const result = discoverPlugins([tempDir]);
+      const result = discoverPlugins([tempDir], observer);
 
       expect(result).toHaveLength(0);
     });
@@ -119,7 +116,7 @@ describe("discovery", () => {
       createPluginDir(dir1, "p1", makeManifest({ id: "p1" }));
       createPluginDir(dir2, "p2", makeManifest({ id: "p2", type: "llm" }));
 
-      const result = discoverPlugins([dir1, dir2]);
+      const result = discoverPlugins([dir1, dir2], observer);
 
       expect(result).toHaveLength(2);
       expect(result.map((r) => r.manifest.id).sort()).toEqual(["p1", "p2"]);
@@ -128,7 +125,7 @@ describe("discovery", () => {
     it("sets correct entryPath from manifest entry field", () => {
       const dir = createPluginDir(tempDir, "ep", makeManifest({ id: "ep", entry: "index.js" }));
 
-      const result = discoverPlugins([tempDir]);
+      const result = discoverPlugins([tempDir], observer);
 
       expect(result[0]!.entryPath).toBe(join(dir, "index.js"));
     });
@@ -146,7 +143,7 @@ describe("discovery", () => {
       // Create the entry file
       writeFileSync(join(tempDir, "index.js"), "");
 
-      expect(() => validateDiscoveredPlugins(discovered)).not.toThrow();
+      expect(() => validateDiscoveredPlugins(discovered, observer)).not.toThrow();
     });
 
     it("rejects duplicate IDs", () => {
@@ -164,7 +161,7 @@ describe("discovery", () => {
       ];
       writeFileSync(join(tempDir, "index.js"), "");
 
-      expect(() => validateDiscoveredPlugins(discovered)).toThrow(DUPLICATE_PLUGIN_ID_RE);
+      expect(() => validateDiscoveredPlugins(discovered, observer)).toThrow(DUPLICATE_PLUGIN_ID_RE);
     });
 
     it("rejects invalid semver versions", () => {
@@ -177,7 +174,7 @@ describe("discovery", () => {
       ];
       writeFileSync(join(tempDir, "index.js"), "");
 
-      expect(() => validateDiscoveredPlugins(discovered)).toThrow(INVALID_VERSION_RE);
+      expect(() => validateDiscoveredPlugins(discovered, observer)).toThrow(INVALID_VERSION_RE);
     });
 
     it("rejects missing entry files", () => {
@@ -189,7 +186,9 @@ describe("discovery", () => {
         },
       ];
 
-      expect(() => validateDiscoveredPlugins(discovered)).toThrow(ENTRY_FILE_NOT_FOUND_RE);
+      expect(() => validateDiscoveredPlugins(discovered, observer)).toThrow(
+        ENTRY_FILE_NOT_FOUND_RE,
+      );
     });
   });
 

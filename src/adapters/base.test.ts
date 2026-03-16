@@ -110,28 +110,37 @@ describe("BaseAdapter", () => {
       expect(result.message).toBe("Connection refused");
     });
 
-    it("logs on success", async () => {
-      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {
-        // Silence console output during test
-      });
+    it("calls observer.info on success", async () => {
+      const obs = { info: vi.fn(), error: vi.fn() };
       const adapter = new TestAdapter();
       adapter.manifest = createManifest({ id: "my-plugin" });
+      adapter.observer = obs;
       await adapter.initialize({});
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("my-plugin"));
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("initialized"));
-      logSpy.mockRestore();
+      expect(obs.info).toHaveBeenCalledWith(
+        expect.stringContaining("my-plugin"),
+        expect.objectContaining({ pluginId: "my-plugin" }),
+      );
     });
 
-    it("logs on failure", async () => {
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {
-        // Silence console output during test
-      });
+    it("calls observer.error on failure", async () => {
+      const obs = { info: vi.fn(), error: vi.fn() };
       const adapter = new TestAdapter();
       adapter.manifest = createManifest({ id: "broken-plugin" });
+      adapter.observer = obs;
       adapter.initError = new Error("Oops");
       await adapter.initialize({});
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("broken-plugin"));
-      errorSpy.mockRestore();
+      expect(obs.error).toHaveBeenCalledWith(
+        expect.stringContaining("broken-plugin"),
+        expect.objectContaining({ pluginId: "broken-plugin", error: "Oops" }),
+      );
+    });
+
+    it("does not throw when observer is not set", async () => {
+      const adapter = new TestAdapter();
+      adapter.manifest = createManifest({ id: "no-observer" });
+      // No observer set — should silently skip logging
+      const result = await adapter.initialize({});
+      expect(result.success).toBe(true);
     });
   });
 
@@ -142,16 +151,25 @@ describe("BaseAdapter", () => {
       await expect(adapter.shutdown()).resolves.toBeUndefined();
     });
 
-    it("swallows errors (does not throw)", async () => {
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {
-        // Silence console output during test
-      });
+    it("swallows errors and calls observer.error", async () => {
+      const obs = { info: vi.fn(), error: vi.fn() };
+      const adapter = new TestAdapter();
+      adapter.manifest = createManifest();
+      adapter.observer = obs;
+      adapter.shutdownError = new Error("Shutdown failed");
+      await expect(adapter.shutdown()).resolves.toBeUndefined();
+      expect(obs.error).toHaveBeenCalledWith(
+        expect.stringContaining("shutdown error"),
+        expect.objectContaining({ error: "Shutdown failed" }),
+      );
+    });
+
+    it("swallows errors silently when observer is not set", async () => {
       const adapter = new TestAdapter();
       adapter.manifest = createManifest();
       adapter.shutdownError = new Error("Shutdown failed");
+      // No observer — should not throw
       await expect(adapter.shutdown()).resolves.toBeUndefined();
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("shutdown error"));
-      errorSpy.mockRestore();
     });
   });
 

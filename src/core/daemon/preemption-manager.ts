@@ -35,7 +35,7 @@ export function createPreemptionManager(
   getActiveTaskIds: () => string[],
   removeActiveDispatch: (taskId: string) => void,
 ): PreemptionManager {
-  const { config, eventBus, taskEngine, logger } = ctx;
+  const { config, eventBus, taskEngine, observer } = ctx;
 
   let pendingPreemption: PendingPreemption | null = null;
 
@@ -111,7 +111,7 @@ export function createPreemptionManager(
       },
     } satisfies PublishInput<"preemption.requested">);
 
-    logger.info({ targetTaskId, replacementTaskId }, "Preemption requested");
+    observer.info("Preemption requested", { targetTaskId, replacementTaskId });
   }
 
   function checkPreemptionTimeout(now: number): void {
@@ -126,10 +126,9 @@ export function createPreemptionManager(
 
     if (pendingPreemption.retried) {
       // Second timeout: force-transition
-      logger.error(
-        { targetTaskId: pendingPreemption.targetTaskId },
-        "Preemption double timeout — force-transitioning task to queued",
-      );
+      observer.error("Preemption double timeout — force-transitioning task to queued", {
+        targetTaskId: pendingPreemption.targetTaskId,
+      });
       taskEngine.requestTransition(
         pendingPreemption.targetTaskId,
         TaskStates.queued,
@@ -141,10 +140,9 @@ export function createPreemptionManager(
       pendingPreemption = null;
     } else {
       // First timeout: re-request
-      logger.warn(
-        { targetTaskId: pendingPreemption.targetTaskId },
-        "Preemption timeout — re-requesting",
-      );
+      observer.warn("Preemption timeout — re-requesting", {
+        targetTaskId: pendingPreemption.targetTaskId,
+      });
       pendingPreemption.retried = true;
       pendingPreemption.requestedAt = now;
 

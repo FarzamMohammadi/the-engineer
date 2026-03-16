@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventBus } from "../event-bus/index.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
@@ -25,10 +26,12 @@ function createMocks() {
   const eventBus = {
     publish: vi.fn(),
   };
+  const observer = createTestObserverFacade("action-pipeline");
   const pipeline = new ActionPipeline(
     taskEngine as unknown as ITaskEngine,
     safetyLayer as unknown as ISafetyLayer,
     eventBus as unknown as EventBus,
+    observer,
   );
   return { pipeline, taskEngine, safetyLayer, eventBus };
 }
@@ -433,12 +436,18 @@ describe("ActionPipeline", () => {
     });
 
     it("logs and swallows notifyFn errors", async () => {
-      const { pipeline, taskEngine, safetyLayer } = createMocks();
+      const observer = createTestObserverFacade("action-pipeline");
+      const errorSpy = vi.spyOn(observer, "error");
+      const { taskEngine, safetyLayer, eventBus } = createMocks();
       allowGate1(taskEngine);
       allowGate2(safetyLayer);
 
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: suppress console.error noise in tests
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const pipeline = new ActionPipeline(
+        taskEngine as unknown as ITaskEngine,
+        safetyLayer as unknown as ISafetyLayer,
+        eventBus as unknown as EventBus,
+        observer,
+      );
 
       const result = await pipeline.execute({
         taskId: "t1",
@@ -452,8 +461,10 @@ describe("ActionPipeline", () => {
       });
 
       expect(result).toStrictEqual({ outcome: "executed", result: "ok" });
-      expect(consoleSpy).toHaveBeenCalledWith("ActionPipeline: notifyFn threw:", expect.any(Error));
-      consoleSpy.mockRestore();
+      expect(errorSpy).toHaveBeenCalledWith(
+        "notifyFn threw",
+        expect.objectContaining({ err: expect.any(Error) }),
+      );
     });
   });
 

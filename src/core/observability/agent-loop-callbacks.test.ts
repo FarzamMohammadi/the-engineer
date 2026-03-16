@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { CompletionResult } from "../../schemas/adapters.js";
 import type { ActionTraceRecord, LlmTraceRecord } from "../../schemas/observability.js";
 import { runAgentLoop } from "../orchestrator/agent-loop.js";
@@ -28,7 +29,7 @@ describe("Agent Loop Observability Callbacks", () => {
       action_classes: [] as string[],
     },
     worktreePath: "/tmp/test-worktree",
-    logger: vi.fn(),
+    observer: createTestObserverFacade("orchestrator"),
   };
 
   it("calls onLlmComplete for each LLM call", async () => {

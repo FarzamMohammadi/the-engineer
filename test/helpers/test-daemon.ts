@@ -17,7 +17,6 @@ import type {
   ITaskEngine,
   TransitionResult,
 } from "../../src/core/interfaces/task-engine.interface.js";
-import { createSilentLogger } from "../../src/core/logging.js";
 import type { ExecuteTaskResult, Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
@@ -25,6 +24,7 @@ import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
 import type { DaemonConfig } from "../../src/schemas/config.js";
 import { FakeClock } from "./fake-clock.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 import { createMockTask } from "./test-orchestrator.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -323,7 +323,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
 
   // ── Build Daemon ──────────────────────────────────────────────────────
   const config = defaultTestConfig(configOverrides);
-  const logger = createSilentLogger();
 
   const deps: DaemonDependencies = {
     eventBus: eventBus as unknown as EventBus,
@@ -336,7 +335,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
     clock,
-    logger,
+    observer: createTestObserverFacade("daemon"),
     engineerHome,
   };
 

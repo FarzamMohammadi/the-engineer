@@ -32,6 +32,7 @@ export interface PrManager {
 
 /** Create a PrManager bound to the given OrchestratorContext. */
 export function createPrManager(ctx: OrchestratorContext): PrManager {
+  const observer = ctx.observer;
   function logPrStepFailure(sessionId: string, taskId: string, step: string, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     ctx.sessionMemory.addJournalEntry({
@@ -55,20 +56,23 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
   ): Promise<boolean> {
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
-      console.warn("[pr-workflow] no workspace path — skipping");
+      observer.warn("No workspace path — skipping PR workflow", { taskId });
       return false;
     }
 
     const record = ctx.workspaceManager.getWorkspaceRecord(taskId);
     if (!record) {
-      console.warn("[pr-workflow] no workspace record — skipping");
+      observer.warn("No workspace record — skipping PR workflow", { taskId });
       return false;
     }
 
     const isRework = dispatch.task.review?.pr_number != null;
-    console.log(
-      `[pr-workflow] starting: repo=${record.repo} branch=${record.branch} rework=${String(isRework)}`,
-    );
+    observer.info("Starting PR workflow", {
+      taskId,
+      repo: record.repo,
+      branch: record.branch,
+      isRework,
+    });
 
     // 1. Deterministic commit: git add -A && git commit
     let hasNewCommit = false;
@@ -103,9 +107,10 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
       }
     } catch (error) {
       logPrStepFailure(sessionId, taskId, "commit", error);
-      console.error(
-        `[pr-workflow] commit failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      observer.error("PR workflow commit failed", {
+        taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
 
@@ -118,28 +123,30 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
           { cwd: worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
         ).trim();
         if (aheadCount === "0") {
-          console.warn("[pr-workflow] no commits ahead of base — skipping");
+          observer.warn("No commits ahead of base — skipping PR workflow", { taskId });
           return false;
         }
-        console.log(`[pr-workflow] ${aheadCount} commits ahead of base`);
+        observer.debug("Commits ahead of base", { taskId, aheadCount });
       } catch (error) {
-        console.warn(
-          `[pr-workflow] can't determine ahead count — skipping: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        observer.warn("Cannot determine ahead count — skipping PR workflow", {
+          taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
         return false;
       }
     }
 
     // 2. Push via WorkspaceManager (D151 — token injection)
-    console.log(`[pr-workflow] pushing branch ${record.branch}...`);
+    observer.info("Pushing branch", { taskId, branch: record.branch });
     try {
       ctx.workspaceManager.pushBranch(taskId);
-      console.log("[pr-workflow] push succeeded");
+      observer.info("Push succeeded", { taskId, branch: record.branch });
     } catch (error) {
       logPrStepFailure(sessionId, taskId, "push", error);
-      console.error(
-        `[pr-workflow] push failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      observer.error("PR workflow push failed", {
+        taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
 
@@ -160,11 +167,11 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
     // 3. Create draft PR via GitHostingAdapter
     const gitHosting = ctx.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!gitHosting) {
-      console.warn("[pr-workflow] no git hosting plugin — skipping PR creation");
+      observer.warn("No git hosting plugin — skipping PR creation", { taskId });
       return false;
     }
 
-    console.log(`[pr-workflow] creating draft PR on ${record.repo}...`);
+    observer.info("Creating draft PR", { taskId, repo: record.repo });
     try {
       const rawDescription =
         (demoPrepOutput.data as { pr_description?: string }).pr_description ??
@@ -191,16 +198,21 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
         feedback_rounds: [],
       });
 
-      console.log(`[pr-workflow] draft PR #${String(prResult.pr_number)} created: ${prResult.url}`);
+      observer.info("Draft PR created", {
+        taskId,
+        prNumber: prResult.pr_number,
+        url: prResult.url,
+      });
 
       notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
       commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
       return true;
     } catch (error) {
       logPrStepFailure(sessionId, taskId, "pr_creation", error);
-      console.error(
-        `[pr-workflow] PR creation failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      observer.error("PR creation failed", {
+        taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }

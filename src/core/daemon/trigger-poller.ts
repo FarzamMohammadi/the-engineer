@@ -35,7 +35,7 @@ const MAX_BACKOFF_EXPONENT = 8;
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
-  const { config, eventBus, registry, taskEngine, logger } = ctx;
+  const { config, eventBus, registry, taskEngine, observer } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const triggerLastPoll = new Map<string, number>();
@@ -86,7 +86,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     } catch (error) {
       const failures = (triggerFailures.get(pluginId) ?? 0) + 1;
       triggerFailures.set(pluginId, failures);
-      logger.warn({ pluginId, failures, error }, "Trigger poll failed");
+      observer.warn("Trigger poll failed", { pluginId, failures, error });
 
       if (failures >= config.plugins.consecutive_failures_threshold) {
         emitHealthTriggerFailure(pluginId, failures, error);
@@ -139,7 +139,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");
     basePriorities.set(task.id, task.priority);
     pendingBasePriorities.set(task.id, task.priority);
-    logger.info({ taskId: task.id, title: event.title }, "Task created from trigger event");
+    observer.info("Task created from trigger event", { taskId: task.id, title: event.title });
   }
 
   // ── Health Events ───────────────────────────────────────────────────────

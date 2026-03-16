@@ -1,5 +1,3 @@
-import type { Logger } from "pino";
-
 import type { DaemonConfig } from "../../schemas/config.js";
 import type { Clock } from "../../utils/clock.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
@@ -8,6 +6,7 @@ import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
+import type { IObserver } from "../observer/facade.js";
 import type { Orchestrator } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
@@ -27,7 +26,7 @@ export interface DaemonContext {
   workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
   clock: Clock;
-  logger: Logger;
+  observer: IObserver;
   engineerHome: string;
 }
 
@@ -35,7 +34,7 @@ export interface DaemonContext {
 
 export type TriggerPollerContext = Pick<
   DaemonContext,
-  "config" | "eventBus" | "registry" | "taskEngine" | "clock" | "logger"
+  "config" | "eventBus" | "registry" | "taskEngine" | "clock" | "observer"
 >;
 
 export type TaskSchedulerContext = Pick<
@@ -47,7 +46,7 @@ export type TaskSchedulerContext = Pick<
   | "sessionMemory"
   | "workspaceManager"
   | "clock"
-  | "logger"
+  | "observer"
 >;
 
 export type HealthMonitorContext = Pick<
@@ -59,12 +58,12 @@ export type HealthMonitorContext = Pick<
   | "orchestrator"
   | "sessionMemory"
   | "clock"
-  | "logger"
+  | "observer"
 >;
 
 export type PreemptionManagerContext = Pick<
   DaemonContext,
-  "config" | "eventBus" | "taskEngine" | "clock" | "logger"
+  "config" | "eventBus" | "taskEngine" | "clock" | "observer"
 >;
 
 export type ReviewHandlerContext = Pick<
@@ -76,10 +75,10 @@ export type ReviewHandlerContext = Pick<
   | "safetyLayer"
   | "workspaceManager"
   | "clock"
-  | "logger"
+  | "observer"
 >;
 
 export type NotificationRouterContext = Pick<
   DaemonContext,
-  "config" | "eventBus" | "registry" | "taskEngine" | "peopleDirectory" | "clock" | "logger"
+  "config" | "eventBus" | "registry" | "taskEngine" | "peopleDirectory" | "clock" | "observer"
 >;

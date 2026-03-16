@@ -77,7 +77,7 @@ export interface NotificationRouter {
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createNotificationRouter(ctx: NotificationRouterContext): NotificationRouter {
-  const { registry, taskEngine, peopleDirectory, logger } = ctx;
+  const { registry, taskEngine, peopleDirectory, observer } = ctx;
 
   function getCommPlugins(): CommunicationAdapter[] {
     return registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
@@ -125,7 +125,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
             { content: formatted, metadata: { task_id: taskId, type: messageType } },
           )
           .catch((err) => {
-            logger.error({ err, taskId }, `Failed to send ${logLabel} notification`);
+            observer.error(`Failed to send ${logLabel} notification`, { err, taskId });
           });
       }
     }
@@ -226,7 +226,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
     }
 
     plugin.commentOnIssue(repo, number, message).catch((err) => {
-      logger.error({ err, taskId }, "Failed to comment on task issue");
+      observer.error("Failed to comment on task issue", { err, taskId });
     });
   }
 
@@ -249,10 +249,11 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
           reason: payload.reason,
         })
         .catch((err) => {
-          logger.error(
-            { err, pluginId: comm.manifest.id, taskId: payload.task_id },
-            "Failed to sync task state to comm plugin",
-          );
+          observer.error("Failed to sync task state to comm plugin", {
+            err,
+            pluginId: comm.manifest.id,
+            taskId: payload.task_id,
+          });
         });
     }
   }

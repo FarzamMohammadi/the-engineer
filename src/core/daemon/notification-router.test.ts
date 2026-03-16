@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
-import { createSilentLogger } from "../logging.js";
 import { createNotificationRouter } from "./notification-router.js";
 import type { NotificationRouterContext } from "./types.js";
 
@@ -65,7 +65,7 @@ function createMockContext(pluginOverrides?: ReturnType<typeof createMockCommPlu
       getReviewers: vi.fn().mockReturnValue([]),
     } as unknown as NotificationRouterContext["peopleDirectory"],
     clock: { now: () => Date.now() },
-    logger: createSilentLogger(),
+    observer: createTestObserverFacade("daemon"),
   } as unknown as NotificationRouterContext;
 }
 

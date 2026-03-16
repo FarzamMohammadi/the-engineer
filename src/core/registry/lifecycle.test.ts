@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FakeLLMPlugin } from "../../../test/helpers/fake-plugins/fake-llm/index.js";
 import { FakeToolPlugin } from "../../../test/helpers/fake-plugins/fake-tool/index.js";
 import { FakeTriggerPlugin } from "../../../test/helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../../../test/helpers/mock-factories.js";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { AdapterType, PluginManifest } from "../../schemas/adapters.js";
 import { createLifecycleManager } from "./lifecycle.js";
 
@@ -19,20 +20,8 @@ describe("createLifecycleManager", () => {
   let lifecycle: ReturnType<typeof createLifecycleManager>;
 
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {
-      /* no-op */
-    });
-    vi.spyOn(console, "error").mockImplementation(() => {
-      /* no-op */
-    });
-    vi.spyOn(console, "warn").mockImplementation(() => {
-      /* no-op */
-    });
-    lifecycle = createLifecycleManager();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
+    const observer = createTestObserverFacade("registry");
+    lifecycle = createLifecycleManager(observer);
   });
 
   describe("register", () => {

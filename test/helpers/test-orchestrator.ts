@@ -27,6 +27,7 @@ import type { Event } from "../../src/schemas/events.js";
 import type { Phase } from "../../src/schemas/orchestrator.js";
 import type { Checkpoint, Session } from "../../src/schemas/session-memory.js";
 import type { Task } from "../../src/schemas/task.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 
 // ── Valid Phase Data Fixtures ─────────────────────────────────────────────────
 
@@ -444,6 +445,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     sessionMemory: sessionMemory as unknown as ISessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
+    observer: createTestObserverFacade("orchestrator"),
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────

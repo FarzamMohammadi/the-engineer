@@ -9,6 +9,7 @@ import { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import type { Event } from "../../src/schemas/events.js";
 import { type TestDatabaseHandle, createTestDatabase } from "./test-database.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 
 type WorkspaceConfig = z.output<typeof WorkspaceConfigSchema>;
 
@@ -80,7 +81,8 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
 
   // Set up DB + EventBus
   const testDb: TestDatabaseHandle = createTestDatabase();
-  const eventBus = new EventBus(testDb.db);
+  const observer = createTestObserverFacade("event-bus");
+  const eventBus = new EventBus(testDb.db, { observer });
 
   const config: WorkspaceConfig = {
     workspace_root: workspaceRoot,

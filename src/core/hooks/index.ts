@@ -1,3 +1,5 @@
+import type { IObserver } from "../observer/facade.js";
+
 // ── Hook Points ───────────────────────────────────────────────────────────────
 
 /** Hook points in The Engineer lifecycle. */
@@ -52,6 +54,11 @@ interface HookEntry {
  */
 export class HookRegistry {
   private readonly hooks = new Map<HookPoint, HookEntry[]>();
+  private readonly observer: IObserver;
+
+  constructor(observer: IObserver) {
+    this.observer = observer;
+  }
 
   /**
    * Register a hook handler for a specific hook point.
@@ -111,7 +118,13 @@ export class HookRegistry {
           throw error;
         }
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`Hook error [${hookPoint}] from plugin "${entry.pluginId}": ${message}`);
+        this.observer.error(
+          `Hook error [${hookPoint}] from plugin "${entry.pluginId}": ${message}`,
+          {
+            hookPoint,
+            pluginId: entry.pluginId,
+          },
+        );
       }
     }
   }

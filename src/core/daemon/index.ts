@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Logger } from "pino";
 
 import type { DaemonConfig } from "../../schemas/config.js";
 import {
@@ -28,6 +27,7 @@ import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
+import type { IObserver } from "../observer/facade.js";
 import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
@@ -116,7 +116,7 @@ export interface DaemonDependencies {
   workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
   clock: Clock;
-  logger: Logger;
+  observer: IObserver;
   engineerHome: string;
   dataLifecycleManager?: DataLifecycleManager;
 }
@@ -261,7 +261,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     orchestrator,
     workspaceManager,
     clock,
-    logger,
+    observer,
     engineerHome,
     dataLifecycleManager,
   } = deps;
@@ -286,7 +286,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     workspaceManager,
     peopleDirectory: deps.peopleDirectory,
     clock,
-    logger,
+    observer,
     engineerHome,
   };
 
@@ -339,18 +339,18 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   function handleChildrenAllDone(payload: TaskChildrenAllDonePayload): void {
     const parent = taskEngine.getTask(payload.parent_task_id);
     if (!parent) {
-      logger.warn(
-        { parentTaskId: payload.parent_task_id },
-        "Parent task not found for children_all_done",
-      );
+      observer.warn("Parent task not found for children_all_done", {
+        parentTaskId: payload.parent_task_id,
+      });
       return;
     }
 
     if (parent.state !== TaskStates.active || parent.sub_state !== SubStates.supervising) {
-      logger.warn(
-        { parentTaskId: payload.parent_task_id, state: parent.state, subState: parent.sub_state },
-        "Parent not in supervising state for children_all_done",
-      );
+      observer.warn("Parent not in supervising state for children_all_done", {
+        parentTaskId: payload.parent_task_id,
+        state: parent.state,
+        subState: parent.sub_state,
+      });
       return;
     }
 
@@ -363,10 +363,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     );
 
     if (!transition.success) {
-      logger.error(
-        { parentTaskId: parent.id, reason: transition.reason },
-        "Failed to transition parent to integrating",
-      );
+      observer.error("Failed to transition parent to integrating", {
+        parentTaskId: parent.id,
+        reason: transition.reason,
+      });
       return;
     }
 
@@ -392,19 +392,16 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Re-fetch parent with updated child_summaries for dispatch
     const updatedParent = taskEngine.getTask(parent.id);
     if (!updatedParent) {
-      logger.error({ parentTaskId: parent.id }, "Parent task disappeared after update");
+      observer.error("Parent task disappeared after update", { parentTaskId: parent.id });
       return;
     }
     scheduler.dispatchTask(updatedParent);
 
-    logger.info(
-      {
-        parentTaskId: parent.id,
-        allSucceeded: payload.all_succeeded,
-        failedIds: payload.failed_ids,
-      },
-      "Parent task resumed for integration after all children completed",
-    );
+    observer.info("Parent task resumed for integration after all children completed", {
+      parentTaskId: parent.id,
+      allSucceeded: payload.all_succeeded,
+      failedIds: payload.failed_ids,
+    });
   }
 
   // ── PID File ───────────────────────────────────────────────────────────
@@ -423,12 +420,12 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       if (isProcessAlive(existingPid)) {
         throw new DaemonAlreadyRunningError(existingPid);
       }
-      logger.warn({ pid: existingPid }, "Removing stale PID file");
+      observer.warn("Removing stale PID file", { pid: existingPid });
       unlinkSync(pidPath);
     }
 
     writeFileSync(pidPath, String(process.pid));
-    logger.info({ pid: process.pid, path: pidPath }, "PID file written");
+    observer.info("PID file written", { pid: process.pid, path: pidPath });
   }
 
   function removePidFile(): void {
@@ -455,10 +452,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
         taskEngine,
         safetyLayer: deps.safetyLayer,
         registry,
-        logger,
+        observer,
       };
       handleQuery(payload, queryDeps).catch((err) => {
-        logger.error({ err }, "Query handler error");
+        observer.error("Query handler error", { err });
       });
     });
 
@@ -497,10 +494,10 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     const activeTasks = taskEngine.getTasksByState(TaskStates.active);
     for (const task of activeTasks) {
       if (isSlotConsuming(task.state, task.sub_state)) {
-        logger.warn(
-          { taskId: task.id, subState: task.sub_state },
-          "Recovering orphaned active task",
-        );
+        observer.warn("Recovering orphaned active task", {
+          taskId: task.id,
+          subState: task.sub_state,
+        });
         taskEngine.requestTransition(task.id, TaskStates.queued, null, "crash_recovery", "daemon");
       }
     }
@@ -568,7 +565,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       throw new DaemonAlreadyRunningError();
     }
 
-    logger.info("Daemon starting (Protocol P1)");
+    observer.info("Daemon starting (Protocol P1)");
 
     // Single instance check + PID file
     checkAndWritePidFile();
@@ -592,7 +589,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Start tick interval
     tickInterval = setInterval(() => {
       tick().catch((error: unknown) => {
-        logger.error({ error }, "Tick loop error");
+        observer.error("Tick loop error", { error });
       });
     }, config.tick_interval_ms);
 
@@ -600,14 +597,14 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     for (const signal of ["SIGTERM", "SIGINT"] as const) {
       const handler = () => {
         stop().catch((error: unknown) => {
-          logger.error({ error }, `Error during ${signal} shutdown`);
+          observer.error(`Error during ${signal} shutdown`, { error });
         });
       };
       signalHandlers.push({ signal, handler });
       process.on(signal, handler);
     }
 
-    logger.info({ startedAt }, "Daemon started — entering main loop");
+    observer.info("Daemon started — entering main loop", { startedAt });
   }
 
   // ── Stop (P15) ────────────────────────────────────────────────────────
@@ -618,7 +615,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     }
 
     shuttingDown = true;
-    logger.info("Daemon shutting down (Protocol P15)");
+    observer.info("Daemon shutting down (Protocol P15)");
 
     // Stop tick interval
     if (tickInterval) {
@@ -650,7 +647,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
     // Final state
     running = false;
-    logger.info("Daemon stopped");
+    observer.info("Daemon stopped");
   }
 
   async function drainActiveDispatches(): Promise<void> {
@@ -667,7 +664,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
           }),
         ]);
       } catch {
-        logger.warn({ taskId }, "Shutdown timeout waiting for task");
+        observer.warn("Shutdown timeout waiting for task", { taskId });
       } finally {
         if (timeoutHandle !== undefined) {
           clearTimeout(timeoutHandle);

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
-import { createSilentLogger } from "../logging.js";
 import type { ExecuteTaskResult } from "../orchestrator/index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import { type SchedulerCallbacks, createTaskScheduler } from "./task-scheduler.js";
@@ -130,7 +130,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     sessionMemory,
     workspaceManager,
     clock,
-    logger: createSilentLogger(),
+    observer: createTestObserverFacade("daemon"),
   } as unknown as TaskSchedulerContext;
 
   return { ctx, eventBus, taskEngine, orchestrator, sessionMemory, workspaceManager, clock };

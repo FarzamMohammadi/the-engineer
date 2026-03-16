@@ -11,6 +11,7 @@ import type {
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
+import type { IObserver } from "../observer/facade.js";
 
 // Re-export interface types so existing consumers don't break
 export type { ExecuteInput, PipelineResult } from "../interfaces/action-pipeline.interface.js";
@@ -38,11 +39,18 @@ export class ActionPipeline implements IActionPipeline {
   private readonly taskEngine: ITaskEngine;
   private readonly safetyLayer: ISafetyLayer;
   private readonly eventBus: EventBus;
+  private readonly observer: IObserver;
 
-  constructor(taskEngine: ITaskEngine, safetyLayer: ISafetyLayer, eventBus: EventBus) {
+  constructor(
+    taskEngine: ITaskEngine,
+    safetyLayer: ISafetyLayer,
+    eventBus: EventBus,
+    observer: IObserver,
+  ) {
     this.taskEngine = taskEngine;
     this.safetyLayer = safetyLayer;
     this.eventBus = eventBus;
+    this.observer = observer;
   }
 
   async execute<T>(input: ExecuteInput<T>): Promise<PipelineResult<T>> {
@@ -94,7 +102,7 @@ export class ActionPipeline implements IActionPipeline {
       try {
         notifyFn(result);
       } catch (err: unknown) {
-        console.error("ActionPipeline: notifyFn threw:", err);
+        this.observer.error("notifyFn threw", { err });
       }
     }
 

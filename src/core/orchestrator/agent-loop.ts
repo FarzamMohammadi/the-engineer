@@ -7,6 +7,7 @@ import {
   type PhaseToolConfig,
 } from "../../schemas/orchestrator.js";
 import { sanitizeSecrets } from "../../utils/sanitize.js";
+import type { IObserver } from "../observer/facade.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────────
 
@@ -40,8 +41,8 @@ export interface AgentLoopConfig {
   toolConfig: PhaseToolConfig;
   /** Worktree path for file operations. Null if no worktree (degraded mode). */
   worktreePath: string | null;
-  /** Optional logger function for action trace. Defaults to console.log. */
-  logger?: (message: string) => void;
+  /** Observer facade for structured logging. */
+  observer: IObserver;
   /** Optional observability callbacks for tracing. */
   callbacks?: AgentLoopCallbacks;
 }
@@ -85,11 +86,13 @@ export async function runAgentLoop(
   const history: HistoryEntry[] = [];
   const totalCost = { tokens_in: 0, tokens_out: 0, spend_usd: null as number | null };
   let iterations = 0;
-  const log = config.logger ?? console.log;
+  const { observer } = config;
 
-  log(
-    `[agent-loop] Starting ${config.phase} (max ${String(config.toolConfig.max_iterations)} iterations, worktree: ${config.worktreePath ?? "none"})`,
-  );
+  observer.info("Starting agent loop", {
+    phase: config.phase,
+    maxIterations: config.toolConfig.max_iterations,
+    worktreePath: config.worktreePath ?? "none",
+  });
 
   while (iterations < config.toolConfig.max_iterations) {
     iterations++;
@@ -104,9 +107,12 @@ export async function runAgentLoop(
     const action = parseAction(completion.content);
 
     if (!action) {
-      log(
-        `[agent-loop] ${config.phase} iter ${String(iterations)}: UNPARSEABLE response (${String(completion.content.length)} chars): ${completion.content.slice(0, 200)}`,
-      );
+      observer.warn("Unparseable LLM response", {
+        phase: config.phase,
+        iteration: iterations,
+        contentLength: completion.content.length,
+        preview: completion.content.slice(0, 200),
+      });
       // Unparseable response — retry once with guidance
       const retryResult = await handleRetry(
         config,
@@ -116,7 +122,7 @@ export async function runAgentLoop(
         iterations,
         callLlm,
         execAction,
-        log,
+        observer,
       );
       if (retryResult) {
         return retryResult;
@@ -127,18 +133,20 @@ export async function runAgentLoop(
 
     // Terminal action
     if (action.action === "done") {
-      log(
-        `[agent-loop] ${config.phase} iter ${String(iterations)}: DONE (keys: ${Object.keys(action.result).join(", ")})`,
-      );
+      observer.info("Agent loop completed", {
+        phase: config.phase,
+        iteration: iterations,
+        resultKeys: Object.keys(action.result),
+      });
       history.push({ action, result: null });
       return buildResult(action.result, iterations, history, totalCost);
     }
 
     // Validate and execute
-    await executeAndLog(config, action, iterations, history, execAction, log);
+    await executeAndLog(config, action, iterations, history, execAction, observer);
   }
 
-  log(`[agent-loop] ${config.phase}: iteration limit reached (${String(iterations)})`);
+  observer.warn("Agent loop iteration limit reached", { phase: config.phase, iterations });
   // Iteration limit reached — force done
   return buildForcedResult(history, iterations, totalCost);
 }
@@ -150,12 +158,15 @@ async function executeAndLog(
   iterations: number,
   history: HistoryEntry[],
   execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
-  log: (message: string) => void,
+  observer: IObserver,
 ): Promise<void> {
   if (!config.toolConfig.allowed_actions.includes(action.action)) {
-    log(
-      `[agent-loop] ${config.phase} iter ${String(iterations)}: BLOCKED ${action.action} (not allowed)`,
-    );
+    observer.warn("Action blocked — not allowed in phase", {
+      phase: config.phase,
+      iteration: iterations,
+      action: action.action,
+      allowed: config.toolConfig.allowed_actions,
+    });
     history.push({
       action,
       result: {
@@ -169,14 +180,27 @@ async function executeAndLog(
 
   const worktreePath = config.worktreePath ?? ".";
   const actionSummary = summarizeAction(action);
-  log(`[agent-loop] ${config.phase} iter ${String(iterations)}: ${action.action} ${actionSummary}`);
+  observer.debug("Executing action", {
+    phase: config.phase,
+    iteration: iterations,
+    action: action.action,
+    summary: actionSummary,
+  });
   const actionStart = Date.now();
   const result = await execAction(action, worktreePath);
   const actionDuration = Date.now() - actionStart;
   if (result.success) {
-    log(`[agent-loop]   -> OK (${String(result.output.length)} chars)`);
+    observer.debug("Action succeeded", {
+      phase: config.phase,
+      iteration: iterations,
+      outputLength: result.output.length,
+    });
   } else {
-    log(`[agent-loop]   -> FAILED: ${sanitizeSecrets(result.error ?? "unknown")}`);
+    observer.warn("Action failed", {
+      phase: config.phase,
+      iteration: iterations,
+      error: sanitizeSecrets(result.error ?? "unknown"),
+    });
   }
   history.push({ action, result });
   emitActionCallback(config.callbacks, action, result, actionDuration, iterations);
@@ -202,14 +226,14 @@ async function handleRetry(
   currentIterations: number,
   callLlm: (prompt: string, systemPrompt: string) => Promise<CompletionResult>,
   execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
-  log: (message: string) => void,
+  observer: IObserver,
 ): Promise<AgentLoopResult | null> {
   if (currentIterations >= config.toolConfig.max_iterations) {
-    log(`[agent-loop] ${config.phase}: retry skipped — at iteration limit`);
+    observer.warn("Retry skipped — at iteration limit", { phase: config.phase });
     return buildForcedResult(history, currentIterations, totalCost);
   }
 
-  log(`[agent-loop] ${config.phase}: retrying after parse failure...`);
+  observer.debug("Retrying after parse failure", { phase: config.phase });
   const retryPrompt = sanitizeSecrets(buildRetryPrompt(config, history, failedContent));
   const retryLlmStart = Date.now();
   const retryCompletion = await callLlm(retryPrompt, sanitizeSecrets(config.systemPrompt));
@@ -225,17 +249,17 @@ async function handleRetry(
 
   const retryAction = parseAction(retryCompletion.content);
   if (!retryAction) {
-    log(`[agent-loop] ${config.phase}: retry also failed to parse — force done`);
+    observer.warn("Retry also failed to parse — force done", { phase: config.phase });
     return buildForcedResult(history, currentIterations + 1, totalCost);
   }
 
   if (retryAction.action === "done") {
-    log(`[agent-loop] ${config.phase}: retry produced done`);
+    observer.debug("Retry produced done", { phase: config.phase });
     history.push({ action: retryAction, result: null });
     return buildResult(retryAction.result, currentIterations + 1, history, totalCost);
   }
 
-  log(`[agent-loop] ${config.phase}: retry produced ${retryAction.action}`);
+  observer.debug("Retry produced action", { phase: config.phase, action: retryAction.action });
   // Execute the retry action and continue the loop
   const worktreePath = config.worktreePath ?? ".";
   const result = await execAction(retryAction, worktreePath);

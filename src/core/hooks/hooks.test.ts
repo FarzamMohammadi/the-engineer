@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { HookAbortError, type HookHandler, HookRegistry } from "./index.js";
 
 describe("HookRegistry", () => {
@@ -7,7 +8,7 @@ describe("HookRegistry", () => {
 
   describe("register / deregister", () => {
     it("registers a handler and reports it in getRegisteredHooks", () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       const handler: HookHandler = vi.fn();
 
       registry.register("plugin-a", "pre:task:create", handler);
@@ -17,7 +18,7 @@ describe("HookRegistry", () => {
     });
 
     it("supports multiple handlers for the same hook point", () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
 
       registry.register("plugin-a", "post:task:create", vi.fn());
       registry.register("plugin-b", "post:task:create", vi.fn());
@@ -27,7 +28,7 @@ describe("HookRegistry", () => {
     });
 
     it("deregister removes all hooks for a plugin", () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
 
       registry.register("plugin-a", "pre:task:create", vi.fn());
       registry.register("plugin-a", "post:task:create", vi.fn());
@@ -41,7 +42,7 @@ describe("HookRegistry", () => {
     });
 
     it("deregister is a no-op for unknown plugin", () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       registry.register("plugin-a", "pre:task:create", vi.fn());
 
       registry.deregister("unknown-plugin");
@@ -54,7 +55,7 @@ describe("HookRegistry", () => {
 
   describe("execution order", () => {
     it("handlers execute in registration order", async () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       const order: string[] = [];
 
       registry.register("plugin-a", "post:task:create", () => {
@@ -77,8 +78,9 @@ describe("HookRegistry", () => {
 
   describe("error isolation", () => {
     it("post: hook errors are caught and do not prevent subsequent handlers", async () => {
-      const registry = new HookRegistry();
-      const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const observer = createTestObserverFacade("hooks");
+      const errorSpy = vi.spyOn(observer, "error");
+      const registry = new HookRegistry(observer);
       const handlerC = vi.fn();
 
       registry.register("plugin-a", "post:phase:complete", () => {
@@ -89,16 +91,15 @@ describe("HookRegistry", () => {
       await registry.execute("post:phase:complete", {});
 
       expect(handlerC).toHaveBeenCalledOnce();
-      expect(consoleError).toHaveBeenCalledWith(
+      expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Hook error [post:phase:complete] from plugin "plugin-a"'),
+        expect.any(Object),
       );
-
-      consoleError.mockRestore();
     });
 
     it("pre: hook non-HookAbortError errors are caught and continue", async () => {
-      const registry = new HookRegistry();
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const observer = createTestObserverFacade("hooks");
+      const registry = new HookRegistry(observer);
       const handlerB = vi.fn();
 
       registry.register("plugin-a", "pre:task:create", () => {
@@ -109,8 +110,6 @@ describe("HookRegistry", () => {
       await registry.execute("pre:task:create", {});
 
       expect(handlerB).toHaveBeenCalledOnce();
-
-      vi.restoreAllMocks();
     });
   });
 
@@ -118,7 +117,7 @@ describe("HookRegistry", () => {
 
   describe("abort", () => {
     it("HookAbortError from pre: hook propagates", async () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       const handlerB = vi.fn();
 
       registry.register("plugin-a", "pre:task:transition", () => {
@@ -133,8 +132,8 @@ describe("HookRegistry", () => {
     });
 
     it("HookAbortError from post: hook does NOT propagate", async () => {
-      const registry = new HookRegistry();
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const observer = createTestObserverFacade("hooks");
+      const registry = new HookRegistry(observer);
 
       registry.register("plugin-a", "post:task:transition", () => {
         throw new HookAbortError("plugin-a", "not allowed");
@@ -142,8 +141,6 @@ describe("HookRegistry", () => {
 
       // Should not throw
       await registry.execute("post:task:transition", {});
-
-      vi.restoreAllMocks();
     });
 
     it("HookAbortError has correct properties", () => {
@@ -159,7 +156,7 @@ describe("HookRegistry", () => {
 
   describe("async handlers", () => {
     it("awaits async handlers correctly", async () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       const order: string[] = [];
 
       registry.register("plugin-a", "pre:tool:execute", async () => {
@@ -176,7 +173,7 @@ describe("HookRegistry", () => {
     });
 
     it("supports synchronous handlers", async () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       const called = vi.fn();
 
       registry.register("plugin-a", "post:publish", () => {
@@ -193,14 +190,14 @@ describe("HookRegistry", () => {
 
   describe("empty hooks", () => {
     it("executing a hook with no handlers is a no-op", async () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
 
       // Should not throw
       await registry.execute("pre:task:create", { someData: true });
     });
 
     it("getRegisteredHooks returns empty map when nothing registered", () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       const hooks = registry.getRegisteredHooks();
       expect(hooks.size).toBe(0);
     });
@@ -210,7 +207,7 @@ describe("HookRegistry", () => {
 
   describe("hook context", () => {
     it("passes correct context to handlers", async () => {
-      const registry = new HookRegistry();
+      const registry = new HookRegistry(createTestObserverFacade("hooks"));
       const handler = vi.fn();
 
       registry.register("plugin-a", "pre:phase:start", handler);

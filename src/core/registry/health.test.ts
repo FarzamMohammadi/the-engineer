@@ -6,8 +6,10 @@ import {
   type TestEventBusHandle,
   createTestEventBus,
 } from "../../../test/helpers/test-event-bus.js";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import type { Event } from "../../schemas/events.js";
+import type { IObserver } from "../observer/facade.js";
 import { type HealthMonitor, type HealthMonitorDeps, createHealthMonitor } from "./health.js";
 import type { PluginRecord } from "./lifecycle.js";
 
@@ -35,10 +37,12 @@ function createRecord(id: string, instance?: FakeTriggerPlugin): PluginRecord {
 function createMonitor(
   records: PluginRecord[],
   handle: TestEventBusHandle,
+  observer: IObserver,
   overrides?: Partial<HealthMonitorDeps>,
 ): HealthMonitor {
   const recordMap = new Map(records.map((r) => [r.manifest.id, r]));
   return createHealthMonitor({
+    observer,
     eventBus: handle.eventBus,
     getRecord: (id) => recordMap.get(id),
     getAllRecords: () => [...recordMap.values()],
@@ -52,22 +56,14 @@ function createMonitor(
 
 describe("createHealthMonitor", () => {
   let handle: TestEventBusHandle;
+  let observer: IObserver;
 
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {
-      /* no-op */
-    });
-    vi.spyOn(console, "warn").mockImplementation(() => {
-      /* no-op */
-    });
-    vi.spyOn(console, "error").mockImplementation(() => {
-      /* no-op */
-    });
+    observer = createTestObserverFacade("registry");
     handle = createTestEventBus();
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     handle.cleanup();
   });
 
@@ -76,7 +72,7 @@ describe("createHealthMonitor", () => {
       const instance = new FakeTriggerPlugin();
       instance.setUnhealthy(true);
       const record = createRecord("t1", instance);
-      const monitor = createMonitor([record], handle);
+      const monitor = createMonitor([record], handle, observer);
 
       await monitor.healthCheckAll();
 
@@ -88,7 +84,9 @@ describe("createHealthMonitor", () => {
       const instance = new FakeTriggerPlugin();
       instance.setUnhealthy(true);
       const record = createRecord("t1", instance);
-      const monitor = createMonitor([record], handle, { consecutiveFailuresThreshold: 3 });
+      const monitor = createMonitor([record], handle, observer, {
+        consecutiveFailuresThreshold: 3,
+      });
 
       // First check: healthy → unhealthy
       await monitor.healthCheckAll();
@@ -105,7 +103,9 @@ describe("createHealthMonitor", () => {
       const instance = new FakeTriggerPlugin();
       instance.setUnhealthy(true);
       const record = createRecord("t1", instance);
-      const monitor = createMonitor([record], handle, { consecutiveFailuresThreshold: 2 });
+      const monitor = createMonitor([record], handle, observer, {
+        consecutiveFailuresThreshold: 2,
+      });
 
       // Drive to failed state
       await monitor.healthCheckAll(); // healthy → unhealthy
@@ -123,7 +123,7 @@ describe("createHealthMonitor", () => {
       const instance = new FakeTriggerPlugin();
       instance.setUnhealthy(true);
       const record = createRecord("t1", instance);
-      const monitor = createMonitor([record], handle);
+      const monitor = createMonitor([record], handle, observer);
       const events: Event[] = [];
       handle.eventBus.subscribe("health-test", "health.*", (e) => events.push(e));
 
@@ -137,7 +137,7 @@ describe("createHealthMonitor", () => {
       const instance = new FakeTriggerPlugin();
       instance.setUnhealthy(true);
       const record = createRecord("t1", instance);
-      const monitor = createMonitor([record], handle);
+      const monitor = createMonitor([record], handle, observer);
 
       await monitor.healthCheckAll(); // healthy → unhealthy
 
@@ -153,7 +153,7 @@ describe("createHealthMonitor", () => {
 
     it("does not emit events on healthy → healthy", async () => {
       const record = createRecord("t1");
-      const monitor = createMonitor([record], handle);
+      const monitor = createMonitor([record], handle, observer);
       const events: Event[] = [];
       handle.eventBus.subscribe("health-test", "health.*", (e) => events.push(e));
 
@@ -166,7 +166,9 @@ describe("createHealthMonitor", () => {
       const instance = new FakeTriggerPlugin();
       instance.setUnhealthy(true);
       const record = createRecord("t1", instance);
-      const monitor = createMonitor([record], handle, { consecutiveFailuresThreshold: 2 });
+      const monitor = createMonitor([record], handle, observer, {
+        consecutiveFailuresThreshold: 2,
+      });
 
       await monitor.healthCheckAll(); // healthy → unhealthy
       await monitor.healthCheckAll(); // unhealthy → failed
@@ -181,7 +183,7 @@ describe("createHealthMonitor", () => {
 
     it("updates last_check_at on every check", async () => {
       const record = createRecord("t1");
-      const monitor = createMonitor([record], handle);
+      const monitor = createMonitor([record], handle, observer);
 
       await monitor.healthCheckAll();
 
@@ -197,7 +199,7 @@ describe("createHealthMonitor", () => {
         }),
       );
       const record = createRecord("t1", instance);
-      const monitor = createMonitor([record], handle, { healthCheckTimeoutMs: 10 });
+      const monitor = createMonitor([record], handle, observer, { healthCheckTimeoutMs: 10 });
 
       await monitor.healthCheckAll();
 
@@ -209,7 +211,7 @@ describe("createHealthMonitor", () => {
   describe("getHealthRecord", () => {
     it("returns a copy of the health record", () => {
       const record = createRecord("t1");
-      const monitor = createMonitor([record], handle);
+      const monitor = createMonitor([record], handle, observer);
 
       const health = monitor.getHealthRecord("t1");
 
@@ -219,7 +221,7 @@ describe("createHealthMonitor", () => {
     });
 
     it("returns null for unknown plugin", () => {
-      const monitor = createMonitor([], handle);
+      const monitor = createMonitor([], handle, observer);
 
       expect(monitor.getHealthRecord("unknown")).toBeNull();
     });
@@ -229,7 +231,7 @@ describe("createHealthMonitor", () => {
     it("returns copies of all health records", () => {
       const r1 = createRecord("t1");
       const r2 = createRecord("t2");
-      const monitor = createMonitor([r1, r2], handle);
+      const monitor = createMonitor([r1, r2], handle, observer);
 
       const records = monitor.getAllHealthRecords();
 

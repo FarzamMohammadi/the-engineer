@@ -6,6 +6,7 @@ import { createTestDatabase } from "../../../test/helpers/test-database.js";
 import type { TestDatabaseHandle } from "../../../test/helpers/test-database.js";
 import { createTestEventBus } from "../../../test/helpers/test-event-bus.js";
 import type { TestEventBusHandle } from "../../../test/helpers/test-event-bus.js";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { createDatabase, runIncrementalVacuum } from "../../db/database.js";
 import {
   DaemonConfigSchema,
@@ -609,11 +610,10 @@ describe("EventBus subscriber timing guard", () => {
   });
 
   it("does not warn for fast subscribers", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {
-      /* no-op */
-    });
+    const observer = createTestObserverFacade("event-bus");
+    const warnSpy = vi.spyOn(observer, "warn");
 
-    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1000 });
+    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1000, observer });
 
     eventBus.subscribe("fast-sub", "*", () => {
       // fast — does nothing
@@ -635,15 +635,13 @@ describe("EventBus subscriber timing guard", () => {
     });
 
     expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
   });
 
   it("warns for slow subscribers", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {
-      /* no-op */
-    });
+    const observer = createTestObserverFacade("event-bus");
+    const warnSpy = vi.spyOn(observer, "warn");
 
-    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1 });
+    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1, observer });
 
     eventBus.subscribe("slow-sub", "*", () => {
       // Simulate slow work
@@ -669,17 +667,17 @@ describe("EventBus subscriber timing guard", () => {
     });
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0]?.[0]).toContain("slow-sub");
-    expect(warnSpy.mock.calls[0]?.[0]).toContain("threshold: 1ms");
-    warnSpy.mockRestore();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("slow"),
+      expect.objectContaining({ subscriberId: "slow-sub", thresholdMs: 1 }),
+    );
   });
 
   it("does not warn when threshold is 0 (disabled)", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {
-      /* no-op */
-    });
+    const observer = createTestObserverFacade("event-bus");
+    const warnSpy = vi.spyOn(observer, "warn");
 
-    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 0 });
+    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 0, observer });
 
     eventBus.subscribe("any-sub", "*", () => {
       const start = Date.now();
@@ -704,13 +702,13 @@ describe("EventBus subscriber timing guard", () => {
     });
 
     expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
   });
 
   it("still delivers event to subscriber regardless of timing", () => {
     const received: string[] = [];
 
-    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1 });
+    const observer = createTestObserverFacade("event-bus");
+    const eventBus = new EventBus(dbHandle.db, { subscriberWarnThresholdMs: 1, observer });
 
     eventBus.subscribe("tracked-sub", "*", (event) => {
       received.push(event.type);

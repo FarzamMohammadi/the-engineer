@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { type DatabaseHandle, createInMemoryDatabase } from "../../db/database.js";
 import { EventTypeSchema } from "../../schemas/events.js";
 import { EventBus } from "./index.js";
@@ -239,8 +240,9 @@ describe("EventTopology", () => {
       handle = createInMemoryDatabase();
       const topology = new EventTopology();
       topology.registerPublisher("comp-a", [makeDeclaration()]);
+      const observer = createTestObserverFacade("event-bus");
 
-      const bus = new EventBus(handle.db, { topology, validateOnPublish: true });
+      const bus = new EventBus(handle.db, { observer, topology, validateOnPublish: true });
 
       expect(() =>
         bus.publish({
@@ -256,8 +258,9 @@ describe("EventTopology", () => {
       handle = createInMemoryDatabase();
       const topology = new EventTopology();
       topology.registerPublisher("comp-a", [makeDeclaration()]);
+      const observer = createTestObserverFacade("event-bus");
 
-      const bus = new EventBus(handle.db, { topology, validateOnPublish: true });
+      const bus = new EventBus(handle.db, { observer, topology, validateOnPublish: true });
 
       const event = bus.publish({
         type: "test.event",
@@ -273,11 +276,12 @@ describe("EventTopology", () => {
       const topology = new EventTopology();
       topology.registerPublisher("comp-a", [makeDeclaration()]);
 
-      const bus = new EventBus(handle.db, { topology, validateOnPublish: true });
+      const observer = createTestObserverFacade("event-bus");
+      const warnSpy = vi.spyOn(observer, "warn");
+      const bus = new EventBus(handle.db, { topology, validateOnPublish: true, observer });
 
       const originalEnv = process.env["NODE_ENV"];
       process.env["NODE_ENV"] = "production";
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
       try {
         const event = bus.publish({
@@ -287,17 +291,20 @@ describe("EventTopology", () => {
           payload: { wrong: "payload" },
         });
         expect(event.type).toBe("test.event");
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("payload validation failed"));
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("payload validation failed"),
+          expect.any(Object),
+        );
       } finally {
         process.env["NODE_ENV"] = originalEnv;
-        warnSpy.mockRestore();
       }
     });
 
     it("skips validation for unknown event types", () => {
       handle = createInMemoryDatabase();
       const topology = new EventTopology();
-      const bus = new EventBus(handle.db, { topology, validateOnPublish: true });
+      const observer = createTestObserverFacade("event-bus");
+      const bus = new EventBus(handle.db, { observer, topology, validateOnPublish: true });
 
       // Unknown event type should pass through without error
       const event = bus.publish({
@@ -314,7 +321,8 @@ describe("EventTopology", () => {
       const topology = new EventTopology();
       topology.registerPublisher("comp-a", [makeDeclaration()]);
 
-      const bus = new EventBus(handle.db, { topology });
+      const observer = createTestObserverFacade("event-bus");
+      const bus = new EventBus(handle.db, { observer, topology });
 
       // Invalid payload should succeed without validation
       const event = bus.publish({

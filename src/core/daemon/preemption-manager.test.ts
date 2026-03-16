@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
-import { createSilentLogger } from "../logging.js";
 import { createPreemptionManager } from "./preemption-manager.js";
 import type { PreemptionManagerContext } from "./types.js";
 
@@ -75,7 +75,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>): {
     eventBus: eventBus as unknown as PreemptionManagerContext["eventBus"],
     taskEngine: taskEngine as unknown as PreemptionManagerContext["taskEngine"],
     clock: { now: () => Date.now() },
-    logger: createSilentLogger(),
+    observer: createTestObserverFacade("daemon"),
   };
 
   return { ctx, eventBus, taskEngine };

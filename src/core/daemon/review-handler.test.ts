@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { TaskFeedbackReceivedPayload } from "../../schemas/events.js";
-import { createSilentLogger } from "../logging.js";
 import type { NotificationRouter } from "./notification-router.js";
 import {
   type ReviewHandler,
@@ -152,7 +152,7 @@ function buildContext(
       cleanupWorkspace: vi.fn(),
     } as unknown as ReviewHandlerContext["workspaceManager"],
     clock: { now: () => clockNow },
-    logger: createSilentLogger(),
+    observer: createTestObserverFacade("daemon"),
   } as unknown as ReviewHandlerContext;
 
   handler = createReviewHandler(ctx, notifications, callbacks);

@@ -24,11 +24,9 @@ export class ObserverStream {
     for (const callback of this.subscribers) {
       try {
         callback(obs);
-      } catch (error) {
-        console.error(
-          "[Observer] Subscriber error (fire-and-forget):",
-          error instanceof Error ? error.message : String(error),
-        );
+      } catch (_error) {
+        // Fire-and-forget: subscriber errors are silently swallowed.
+        // Logging here would create a circular dependency (Observer → Logger → Observer).
       }
     }
   }

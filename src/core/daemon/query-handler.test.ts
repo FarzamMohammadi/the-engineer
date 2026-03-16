@@ -18,11 +18,12 @@ function createMockDeps(): QueryHandlerDeps {
     registry: {
       getPluginsByType: vi.fn().mockReturnValue([]),
     } as unknown as QueryHandlerDeps["registry"],
-    logger: {
+    observer: {
       error: vi.fn(),
       debug: vi.fn(),
       info: vi.fn(),
-    } as unknown as QueryHandlerDeps["logger"],
+      warn: vi.fn(),
+    } as unknown as QueryHandlerDeps["observer"],
   };
 }
 
@@ -144,7 +145,7 @@ describe("handleQuery", () => {
 
     await handleQuery(payload("status"), deps);
 
-    expect(deps.logger.error).toHaveBeenCalled();
+    expect(deps.observer.error).toHaveBeenCalled();
   });
 
   it("handles task not found for progress query", async () => {

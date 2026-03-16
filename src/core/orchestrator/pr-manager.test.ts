@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
@@ -48,7 +49,8 @@ function createMockContext(): OrchestratorContext {
       getOwner: vi.fn().mockReturnValue(null),
     } as unknown as OrchestratorContext["peopleDirectory"],
     observability: null,
-    observer: null,
+    observationStore: null,
+    observer: createTestObserverFacade("orchestrator"),
   };
 }
 

@@ -1,6 +1,18 @@
 import type { HealthStatus, InitResult, PluginManifest } from "../schemas/adapters.js";
 
 /**
+ * Minimal observer interface used by BaseAdapter for structured logging.
+ *
+ * Matches the subset of `IObserver` (from `../core/observer/facade.js`) that
+ * adapters need. Defined locally to avoid tier import violations (adapters
+ * cannot import core). The Registry injects the real IObserver instance.
+ */
+interface AdapterObserver {
+  info(msg: string, data?: Record<string, unknown>): void;
+  error(msg: string, data?: Record<string, unknown>): void;
+}
+
+/**
  * Base class for all adapter implementations.
  *
  * Provides shared infrastructure: manifest storage (injected by Registry),
@@ -26,6 +38,16 @@ export abstract class BaseAdapter {
   hookRegistry?: unknown;
 
   /**
+   * Observer facade, injected by the Registry before initialize() is called.
+   * Provides structured logging (info/error/warn/debug) and tracing.
+   * Typed as `unknown` to avoid tier import violations (adapters cannot import core).
+   * Internally cast to `AdapterObserver` for safe usage.
+   *
+   * When not set, lifecycle logging is silently skipped.
+   */
+  observer?: unknown;
+
+  /**
    * Check whether this adapter supports a named capability.
    *
    * Reads the `capabilities` array from `manifest.adapter_meta`.
@@ -46,17 +68,22 @@ export abstract class BaseAdapter {
    * If `doInitialize()` throws, returns `{ success: false, message }`.
    */
   async initialize(config: Record<string, unknown>): Promise<InitResult> {
+    const obs = this.observer as AdapterObserver | undefined;
     const start = Date.now();
     try {
       const result = await this.doInitialize(config);
       const elapsed = Date.now() - start;
-      console.log(`Plugin "${this.manifest.id}" initialized in ${String(elapsed)}ms`);
+      obs?.info(`Plugin "${this.manifest.id}" initialized in ${String(elapsed)}ms`, {
+        pluginId: this.manifest.id,
+        elapsedMs: elapsed,
+      });
       return result;
     } catch (error) {
       const elapsed = Date.now() - start;
       const message = error instanceof Error ? error.message : String(error);
-      console.error(
+      obs?.error(
         `Plugin "${this.manifest.id}" failed to initialize after ${String(elapsed)}ms: ${message}`,
+        { pluginId: this.manifest.id, elapsedMs: elapsed, error: message },
       );
       return { success: false, message };
     }
@@ -68,11 +95,15 @@ export abstract class BaseAdapter {
    * Wraps `doShutdown()` with error swallowing — shutdown must never throw.
    */
   async shutdown(): Promise<void> {
+    const obs = this.observer as AdapterObserver | undefined;
     try {
       await this.doShutdown();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`Plugin "${this.manifest.id}" shutdown error (non-fatal): ${message}`);
+      obs?.error(`Plugin "${this.manifest.id}" shutdown error (non-fatal): ${message}`, {
+        pluginId: this.manifest.id,
+        error: message,
+      });
     }
   }
 

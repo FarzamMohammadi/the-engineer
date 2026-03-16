@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { CompletionResult } from "../../schemas/adapters.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
@@ -61,7 +62,8 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
       resolveContact: vi.fn().mockReturnValue(null),
     } as unknown as OrchestratorContext["peopleDirectory"],
     observability: null,
-    observer: null,
+    observationStore: null,
+    observer: createTestObserverFacade("orchestrator"),
     ...overrides,
   };
 }

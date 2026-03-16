@@ -8,6 +8,7 @@ import {
   type PluginManifest,
   PluginManifestSchema,
 } from "../../schemas/adapters.js";
+import type { IObserver } from "../observer/facade.js";
 import { RegistryValidationError } from "./errors.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -41,14 +42,14 @@ export interface DiscoveredManifest {
  * Parses and validates each manifest via Zod schema.
  * Skips disabled plugins. Skips nonexistent directories.
  */
-export function discoverPlugins(dirs: string[]): DiscoveredManifest[] {
+export function discoverPlugins(dirs: string[], observer: IObserver): DiscoveredManifest[] {
   const results: DiscoveredManifest[] = [];
 
   for (const dir of dirs) {
     if (!existsSync(dir)) {
       continue;
     }
-    scanDirectory(dir, results);
+    scanDirectory(dir, results, observer);
   }
 
   return results;
@@ -58,7 +59,10 @@ export function discoverPlugins(dirs: string[]): DiscoveredManifest[] {
  * Validate discovered plugins: unique IDs, valid semver versions, entry file existence.
  * Throws on the first validation failure.
  */
-export function validateDiscoveredPlugins(discovered: DiscoveredManifest[]): void {
+export function validateDiscoveredPlugins(
+  discovered: DiscoveredManifest[],
+  observer: IObserver,
+): void {
   const seenIds = new Set<string>();
 
   for (const item of discovered) {
@@ -67,7 +71,7 @@ export function validateDiscoveredPlugins(discovered: DiscoveredManifest[]): voi
     // Unique ID
     if (seenIds.has(manifest.id)) {
       const message = `duplicate plugin ID "${manifest.id}"`;
-      console.error(`Registry: validation failed for "${manifest.id}": ${message}`);
+      observer.error("Plugin validation failed", { pluginId: manifest.id, error: message });
       throw new RegistryValidationError(manifest.id, message);
     }
     seenIds.add(manifest.id);
@@ -75,14 +79,14 @@ export function validateDiscoveredPlugins(discovered: DiscoveredManifest[]): voi
     // Semver version
     if (!SEMVER_REGEX.test(manifest.version)) {
       const message = `invalid version "${manifest.version}" (must be semver)`;
-      console.error(`Registry: validation failed for "${manifest.id}": ${message}`);
+      observer.error("Plugin validation failed", { pluginId: manifest.id, error: message });
       throw new RegistryValidationError(manifest.id, message);
     }
 
     // Entry file exists
     if (!existsSync(entryPath)) {
       const message = `entry file not found: ${entryPath}`;
-      console.error(`Registry: validation failed for "${manifest.id}": ${message}`);
+      observer.error("Plugin validation failed", { pluginId: manifest.id, error: message });
       throw new RegistryValidationError(manifest.id, message);
     }
   }
@@ -104,25 +108,25 @@ export function orderByTypePriority(discovered: DiscoveredManifest[]): Discovere
 
 // ── Private Helpers ────────────────────────────────────────────────────────
 
-function scanDirectory(dir: string, results: DiscoveredManifest[]): void {
+function scanDirectory(dir: string, results: DiscoveredManifest[], observer: IObserver): void {
   const entries = readdirSync(dir, { withFileTypes: true });
 
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      scanDirectory(fullPath, results);
+      scanDirectory(fullPath, results, observer);
     } else if (entry.name === MANIFEST_FILENAME) {
       const raw = readFileSync(fullPath, "utf-8");
       const parsed = parseYaml(raw) as Record<string, unknown>;
       const manifest = PluginManifestSchema.parse(parsed);
 
       if (!manifest.enabled) {
-        console.log(`Registry: skipping disabled plugin "${manifest.id}" at ${dir}`);
+        observer.info("Skipping disabled plugin", { pluginId: manifest.id, dir });
         continue;
       }
 
       const entryPath = join(dir, manifest.entry);
-      console.log(`Registry: discovered plugin "${manifest.id}" (${manifest.type}) at ${dir}`);
+      observer.info("Discovered plugin", { pluginId: manifest.id, type: manifest.type, dir });
       results.push({ manifest, dir, entryPath });
     }
   }

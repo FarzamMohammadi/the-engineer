@@ -6,6 +6,7 @@ import { SafetyConfigSchema } from "../../src/schemas/config.js";
 import type { CostIncurredPayload } from "../../src/schemas/events.js";
 import type { Event } from "../../src/schemas/events.js";
 import { type TestDatabaseHandle, createTestDatabase } from "./test-database.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 
 /** Zod input type — allows partial nested objects that get filled by defaults. */
 type SafetyConfigInput = z.input<typeof SafetyConfigSchema>;
@@ -38,7 +39,8 @@ export interface TestSafetyLayerHandle {
  */
 export function createTestSafetyLayer(configOverrides?: SafetyConfigInput): TestSafetyLayerHandle {
   const testDb: TestDatabaseHandle = createTestDatabase();
-  const eventBus = new EventBus(testDb.db);
+  const observer = createTestObserverFacade("event-bus");
+  const eventBus = new EventBus(testDb.db, { observer });
 
   const config = SafetyConfigSchema.parse(configOverrides ?? {});
   const safetyLayer = new SafetyLayer(testDb.db, eventBus, config);

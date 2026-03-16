@@ -14,6 +14,7 @@ import {
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { HookRegistry } from "../hooks/index.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IObserver } from "../observer/facade.js";
 import { discoverPlugins, orderByTypePriority, validateDiscoveredPlugins } from "./discovery.js";
 import { createHealthMonitor } from "./health.js";
 import { type ConfigResolver, createLifecycleManager } from "./lifecycle.js";
@@ -62,6 +63,7 @@ export const EVENTS: EventDeclaration[] = [
 
 export interface RegistryOptions {
   eventBus: IEventBus;
+  observer: IObserver;
   healthCheckIntervalMs?: number;
   healthCheckTimeoutMs?: number;
   consecutiveFailuresThreshold?: number;
@@ -84,18 +86,22 @@ export interface RegistryOptions {
  * - `register(manifest, instance)` — programmatic registration (tests, runtime)
  */
 export class Registry {
-  private readonly lifecycle = createLifecycleManager();
+  private readonly lifecycle;
   private readonly healthMonitor;
   private readonly eventBus: IEventBus;
+  private readonly observer: IObserver;
   private readonly hookRegistry?: HookRegistry | undefined;
   private readonly healthCheckIntervalMs: number;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: RegistryOptions) {
     this.eventBus = options.eventBus;
+    this.observer = options.observer;
     this.hookRegistry = options.hookRegistry;
+    this.lifecycle = createLifecycleManager(options.observer);
     this.healthCheckIntervalMs = options.healthCheckIntervalMs ?? 60_000;
     this.healthMonitor = createHealthMonitor({
+      observer: options.observer,
       eventBus: options.eventBus,
       getRecord: (pluginId) => this.lifecycle.getRecord(pluginId),
       getAllRecords: () => this.lifecycle.getAllRecords(),
@@ -110,16 +116,18 @@ export class Registry {
     dirs: string[],
     configResolver: ConfigResolver = () => Promise.resolve({}),
   ): Promise<void> {
-    const discovered = discoverPlugins(dirs);
+    const discovered = discoverPlugins(dirs, this.observer);
     if (discovered.length === 0) {
-      console.log("Registry: no plugins discovered");
+      this.observer.info("No plugins discovered");
       return;
     }
 
-    validateDiscoveredPlugins(discovered);
+    validateDiscoveredPlugins(discovered, this.observer);
 
     const ordered = orderByTypePriority(discovered);
-    console.log(`Registry: loading order: [${ordered.map((d) => d.manifest.id).join(", ")}]`);
+    this.observer.info("Loading order determined", {
+      order: ordered.map((d) => d.manifest.id),
+    });
 
     await this.lifecycle.loadModules(ordered);
     await this.lifecycle.initializeAll(configResolver);
@@ -131,6 +139,7 @@ export class Registry {
     if (this.hookRegistry) {
       instance.hookRegistry = this.hookRegistry;
     }
+    instance.observer = this.observer.child("plugin-loader");
     return this.lifecycle.register(manifest, instance);
   }
 

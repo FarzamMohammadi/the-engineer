@@ -7,6 +7,7 @@ import {
   type RegistrationResult,
 } from "../../schemas/adapters.js";
 import type { PluginHealthRecord } from "../../schemas/adapters.js";
+import type { IObserver } from "../observer/facade.js";
 import type { DiscoveredManifest } from "./discovery.js";
 import { RegistryLoadError } from "./errors.js";
 
@@ -38,7 +39,7 @@ export interface LifecycleManager {
 
 // ── Factory ────────────────────────────────────────────────────────────────
 
-export function createLifecycleManager(): LifecycleManager {
+export function createLifecycleManager(observer: IObserver): LifecycleManager {
   const plugins = new Map<string, PluginRecord>();
   const typeCache = new Map<AdapterType, BaseAdapter[]>();
   let nextInitOrder = 1;
@@ -49,7 +50,7 @@ export function createLifecycleManager(): LifecycleManager {
 
   function register(manifest: PluginManifest, instance: BaseAdapter): RegistrationResult {
     if (plugins.has(manifest.id)) {
-      console.error(`Registry: rejected duplicate plugin ID "${manifest.id}"`);
+      observer.error("Rejected duplicate plugin ID", { pluginId: manifest.id });
       return {
         success: false,
         plugin_id: manifest.id,
@@ -74,7 +75,7 @@ export function createLifecycleManager(): LifecycleManager {
     });
 
     invalidateTypeCache(manifest.type);
-    console.log(`Registry: registered "${manifest.id}" (${manifest.type})`);
+    observer.info("Plugin registered", { pluginId: manifest.id, type: manifest.type });
     return { success: true, plugin_id: manifest.id, message: null };
   }
 
@@ -83,7 +84,7 @@ export function createLifecycleManager(): LifecycleManager {
     if (record) {
       invalidateTypeCache(record.manifest.type);
       plugins.delete(pluginId);
-      console.log(`Registry: deregistered "${pluginId}"`);
+      observer.info("Plugin deregistered", { pluginId });
     }
   }
 
@@ -141,7 +142,7 @@ export function createLifecycleManager(): LifecycleManager {
     const elapsed = Date.now() - start;
 
     if (result.success) {
-      console.log(`Registry: initialized "${pluginId}" in ${String(elapsed)}ms`);
+      observer.info("Plugin initialized", { pluginId, elapsedMs: elapsed });
     }
 
     return result;
@@ -156,18 +157,21 @@ export function createLifecycleManager(): LifecycleManager {
       const result = await initializePlugin(manifest.id, config);
 
       if (!result.success) {
+        const errorMessage = result.message ?? "unknown error";
         if (manifest.critical) {
-          console.error(
-            `Registry: CRITICAL plugin "${manifest.id}" failed to initialize: ${result.message ?? "unknown error"}. Aborting startup.`,
-          );
+          observer.error("Critical plugin failed to initialize, aborting startup", {
+            pluginId: manifest.id,
+            error: errorMessage,
+          });
           throw new RegistryLoadError(
             manifest.id,
-            `critical plugin failed to initialize: ${result.message ?? "unknown error"}`,
+            `critical plugin failed to initialize: ${errorMessage}`,
           );
         }
-        console.warn(
-          `Registry: plugin "${manifest.id}" failed to initialize: ${result.message ?? "unknown error"}. Skipping (non-critical).`,
-        );
+        observer.warn("Plugin failed to initialize, skipping (non-critical)", {
+          pluginId: manifest.id,
+          error: errorMessage,
+        });
         deregister(manifest.id);
       }
     }
@@ -180,7 +184,7 @@ export function createLifecycleManager(): LifecycleManager {
       const module = (await import(entryPath)) as { createPlugin?: () => BaseAdapter };
       if (typeof module.createPlugin !== "function") {
         const message = `entry module does not export createPlugin(): ${entryPath}`;
-        console.error(`Registry: load failed for "${manifest.id}": ${message}`);
+        observer.error("Plugin load failed", { pluginId: manifest.id, error: message });
         throw new RegistryLoadError(manifest.id, message);
       }
 
@@ -193,18 +197,19 @@ export function createLifecycleManager(): LifecycleManager {
     const records = [...plugins.values()].sort((a, b) => b.initOrder - a.initOrder);
 
     for (const record of records) {
-      console.log(`Registry: shutting down "${record.manifest.id}"...`);
+      observer.info("Shutting down plugin", { pluginId: record.manifest.id });
       try {
         await record.instance.shutdown();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(
-          `Registry: shutdown error for "${record.manifest.id}" (non-fatal): ${message}`,
-        );
+        observer.error("Plugin shutdown error (non-fatal)", {
+          pluginId: record.manifest.id,
+          error: message,
+        });
       }
     }
 
-    console.log("Registry: all plugins shut down");
+    observer.info("All plugins shut down");
   }
 
   function getRecord(pluginId: string): PluginRecord | undefined {

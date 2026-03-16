@@ -26,6 +26,7 @@ import type {
 
 // Import EventBus class for constructor injection
 import type { EventBus } from "../event-bus/index.js";
+import type { IObserver } from "../observer/facade.js";
 
 // Internal modules
 import { UnknownFieldError } from "./errors.js";
@@ -117,6 +118,7 @@ const JSON_FIELDS: ReadonlySet<UpdatableField> = new Set([
  */
 export class TaskEngine implements ITaskEngine {
   private readonly eventBus: EventBus;
+  private readonly observer: IObserver;
   private readonly stateMachine: StateMachine;
   private readonly queries: TaskQueries;
 
@@ -126,8 +128,9 @@ export class TaskEngine implements ITaskEngine {
   private readonly updateTrackingStmt: Database.Statement;
   private readonly updateFieldStmts: Map<UpdatableField, Database.Statement>;
 
-  constructor(db: Database.Database, eventBus: EventBus) {
+  constructor(db: Database.Database, eventBus: EventBus, observer: IObserver) {
     this.eventBus = eventBus;
+    this.observer = observer;
     this.stateMachine = new StateMachine(db, eventBus);
     this.queries = new TaskQueries(db);
 
@@ -357,7 +360,7 @@ export class TaskEngine implements ITaskEngine {
     const result = stmt.run(serialized, taskId);
 
     if (result.changes === 0) {
-      console.warn(`TaskEngine: updateTaskField — task ${taskId} not found`);
+      this.observer.warn("updateTaskField — task not found", { taskId });
     }
   }
 
@@ -372,7 +375,7 @@ export class TaskEngine implements ITaskEngine {
   updateTracking(taskId: string, tokens: number, costUsd: number, computeMs: number): void {
     const result = this.updateTrackingStmt.run(tokens, costUsd, computeMs, taskId);
     if (result.changes === 0) {
-      console.warn(`TaskEngine: updateTracking — task ${taskId} not found`);
+      this.observer.warn("updateTracking — task not found", { taskId });
     }
   }
 }

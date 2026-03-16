@@ -10,6 +10,7 @@ import { EVENTS as SAFETY_LAYER_EVENTS } from "../../src/core/safety-layer/index
 import { EVENTS as TASK_ENGINE_EVENTS } from "../../src/core/task-engine/index.js";
 import { EVENTS as WORKSPACE_MANAGER_EVENTS } from "../../src/core/workspace-manager/index.js";
 import { type TestDatabaseHandle, createTestDatabase } from "./test-database.js";
+import { createTestObserverFacade } from "./test-observer-facade.js";
 
 /** Create an EventTopology pre-loaded with all component event declarations. */
 export function createTestTopology(): EventTopology {
@@ -57,7 +58,8 @@ export interface TestEventBusHandle {
 export function createTestEventBus(): TestEventBusHandle {
   const testDb: TestDatabaseHandle = createTestDatabase();
   const topology = createTestTopology();
-  const eventBus = new EventBus(testDb.db, { topology, validateOnPublish: true });
+  const observer = createTestObserverFacade("event-bus");
+  const eventBus = new EventBus(testDb.db, { observer, topology, validateOnPublish: true });
 
   const allEventsStmt = testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
   const eventsByTypeStmt = testDb.db.prepare(

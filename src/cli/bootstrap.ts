@@ -10,7 +10,8 @@ import { HookRegistry } from "../core/hooks/index.js";
 import { createChildLogger, createLogger } from "../core/logging.js";
 import { BlobStore } from "../core/observability/blob-store.js";
 import { ObservabilityStore } from "../core/observability/index.js";
-import { createObserver } from "../core/observer/index.js";
+import { createObserverFacade } from "../core/observer/facade.js";
+import { createObservationStore } from "../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
@@ -57,6 +58,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     loggingConfig.console = true;
   }
   const logger = createLogger(loggingConfig, engineerHome);
+  const observer = createObserverFacade(logger, "cli");
   const cliLogger = createChildLogger(logger, "cli");
   const bootstrapStartMs = Date.now();
   cliLogger.info("Bootstrapping The Engineer...");
@@ -87,19 +89,20 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       workspaceManager,
     } = createCoreComponents({
       db: dbHandle.db,
+      observer: observer.child("event-bus"),
       safetyConfig: config.safety,
       workspaceConfig: config.workspace,
       subscriberWarnThresholdMs: config.daemon.subscriber_warn_threshold_ms,
-      logger: createChildLogger(logger, "event-bus"),
     });
 
     // 4. Hook Registry
-    const hookRegistry = new HookRegistry();
+    const hookRegistry = new HookRegistry(observer.child("hooks"));
 
     // 5. Registry (needs eventBus + health config + hook registry)
     topology.registerPublisher("registry", REGISTRY_EVENTS);
     const registry = new Registry({
       eventBus,
+      observer: observer.child("registry"),
       healthCheckIntervalMs: config.daemon.plugins.health_check_interval_ms,
       healthCheckTimeoutMs: config.daemon.plugins.health_check_timeout_ms,
       consecutiveFailuresThreshold: config.daemon.plugins.consecutive_failures_threshold,
@@ -111,7 +114,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     const observability = new ObservabilityStore(dbHandle.db, blobStore);
 
     // 7. Observer (centralized visibility for War Room)
-    const observer = createObserver(dbHandle.db, blobStore);
+    const observationStore = createObservationStore(dbHandle.db, blobStore);
+    observer.upgrade(observationStore);
 
     // 8. People Directory
     const peopleDirectory = new PeopleDirectory({ people: config.people });
@@ -128,7 +132,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       workspaceManager,
       peopleDirectory,
       observability,
-      observer,
+      observationStore,
+      observer: observer.child("orchestrator"),
     });
 
     // 10. Data Lifecycle Manager
@@ -154,7 +159,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       workspaceManager,
       peopleDirectory,
       clock: new RealClock(),
-      logger: createChildLogger(logger, "daemon"),
+      observer: observer.child("daemon"),
       engineerHome,
       dataLifecycleManager,
     });
@@ -179,7 +184,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // plugin, the instance is deregistered without calling shutdown(), which is safe.
     progress?.("Loading plugins", "start");
     const pluginConfigDir = join(engineerHome, "config", "plugins");
-    await loadBuiltinPlugins(registry, pluginConfigDir, cliLogger);
+    await loadBuiltinPlugins(registry, pluginConfigDir, observer.child("plugin-loader"));
     progress?.("Plugins loaded", "done");
 
     cliLogger.info({ elapsedMs: Date.now() - bootstrapStartMs, dbPath }, "Bootstrap complete");

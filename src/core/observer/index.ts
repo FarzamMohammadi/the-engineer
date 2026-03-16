@@ -13,11 +13,11 @@ import type { BlobStore } from "../observability/blob-store.js";
 import { ObserverStore } from "./store.js";
 import { ObserverStream } from "./stream.js";
 import type { Observation, ObservationQuery, ObservationTypeValue, SpanOptions } from "./types.js";
-import type { IObserver, ObservationSpan } from "./types.js";
+import type { IObservationStore, ObservationSpan } from "./types.js";
 
 // ── Re-exports ───────────────────────────────────────────────────────────────
 
-export type { IObserver, ObservationSpan } from "./types.js";
+export type { IObservationStore, ObservationSpan } from "./types.js";
 export type { Observation, ObservationQuery, SpanOptions } from "./types.js";
 export { ObservationType } from "./types.js";
 export type { ObservationTypeValue } from "./types.js";
@@ -74,7 +74,7 @@ function buildObservation(
 
 // ── Observer ─────────────────────────────────────────────────────────────────
 
-export class Observer implements IObserver {
+export class ObservationStore implements IObservationStore {
   private readonly store: ObserverStore;
   private readonly stream: ObserverStream;
   private readonly blobStore: BlobStore | null;
@@ -261,10 +261,10 @@ export class Observer implements IObserver {
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-/** Create an Observer instance. */
-export function createObserver(
+/** Create an ObservationStore instance (internal — prefer the Observer facade). */
+export function createObservationStore(
   db: import("better-sqlite3").Database,
   blobStore?: BlobStore | null,
-): Observer {
-  return new Observer(db, blobStore ?? null);
+): ObservationStore {
+  return new ObservationStore(db, blobStore ?? null);
 }

@@ -169,30 +169,54 @@ export function createTaskScheduler(
 
   // ── Task Completion ─────────────────────────────────────────────────────
 
+  /** Whether a task outcome represents a terminal state (for cleanup). */
+  function isTerminalOutcome(outcome: string): boolean {
+    return outcome === "completed" || outcome === "error";
+  }
+
+  function handleCompletedOutcome(taskId: string, taskTitle: string): void {
+    taskEngine.requestTransition(
+      taskId,
+      TaskStates.completed,
+      null,
+      "pipeline_completed",
+      "daemon",
+    );
+    checkAndEmitChildrenAllDone(taskId);
+    try {
+      workspaceManager.cleanupWorkspace(taskId, true);
+    } catch {
+      logger.warn({ taskId }, "Workspace cleanup failed after completion");
+    }
+    notifications.sendCompletion(taskId, taskTitle);
+    notifications.commentOnTaskIssue(taskId, "Task completed successfully.");
+    logger.info({ taskId }, "Task completed");
+  }
+
+  function handleErrorOutcome(taskId: string, taskTitle: string, result: ExecuteTaskResult): void {
+    const reason = "reason" in result ? (result.reason as string) : "unknown";
+    const phase = "phase" in result ? result.phase : undefined;
+    logger.error({ taskId, phase, reason }, "Task error");
+    taskEngine.requestTransition(taskId, TaskStates.blocked, null, reason, "daemon");
+    checkAndEmitChildrenAllDone(taskId);
+    notifications.sendTaskError(taskId, taskTitle, reason);
+    notifications.commentOnTaskIssue(taskId, `Task encountered an error: ${reason}`);
+  }
+
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
     activeDispatches.delete(taskId);
     tasksCompleted++;
+
+    // Clean up base priority for terminal outcomes (prevents unbounded map growth)
+    if (isTerminalOutcome(result.outcome)) {
+      basePriorities.delete(taskId);
+    }
 
     const task = taskEngine.getTask(taskId);
     const taskTitle = task?.title ?? taskId;
 
     if (result.outcome === "completed") {
-      taskEngine.requestTransition(
-        taskId,
-        TaskStates.completed,
-        null,
-        "pipeline_completed",
-        "daemon",
-      );
-      checkAndEmitChildrenAllDone(taskId);
-      try {
-        workspaceManager.cleanupWorkspace(taskId, true);
-      } catch {
-        logger.warn({ taskId }, "Workspace cleanup failed after completion");
-      }
-      notifications.sendCompletion(taskId, taskTitle);
-      notifications.commentOnTaskIssue(taskId, "Task completed successfully.");
-      logger.info({ taskId }, "Task completed");
+      handleCompletedOutcome(taskId, taskTitle);
     } else if (result.outcome === "review_pending") {
       taskEngine.requestTransition(
         taskId,
@@ -213,11 +237,7 @@ export function createTaskScheduler(
       taskEngine.requestTransition(taskId, TaskStates.queued, null, "preempted", "daemon");
       logger.info({ taskId, lastPhase: result.lastPhase }, "Task preempted — returned to queue");
     } else if (result.outcome === "error") {
-      logger.error({ taskId, phase: result.phase, reason: result.reason }, "Task error");
-      taskEngine.requestTransition(taskId, TaskStates.blocked, null, result.reason, "daemon");
-      checkAndEmitChildrenAllDone(taskId);
-      notifications.sendTaskError(taskId, taskTitle, result.reason);
-      notifications.commentOnTaskIssue(taskId, `Task encountered an error: ${result.reason}`);
+      handleErrorOutcome(taskId, taskTitle, result);
     }
   }
 

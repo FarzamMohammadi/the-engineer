@@ -6,6 +6,7 @@
  * Components receive their dependencies through constructor injection.
  */
 import type Database from "better-sqlite3";
+import type { Logger } from "pino";
 
 import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
 import { EVENTS as ACTION_PIPELINE_EVENTS, ActionPipeline } from "./action-pipeline/index.js";
@@ -38,6 +39,8 @@ export interface CreateCoreInput {
   workspaceConfig: WorkspaceConfig;
   /** EventBus subscriber slow-callback warning threshold (ms). 0 = disabled. */
   subscriberWarnThresholdMs?: number;
+  /** Optional logger for EventBus structured logging. Falls back to console if not provided. */
+  logger?: Logger;
 }
 
 /**
@@ -56,6 +59,9 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponents {
   const eventBusOptions: import("./event-bus/index.js").EventBusOptions = { topology };
   if (input.subscriberWarnThresholdMs !== undefined) {
     eventBusOptions.subscriberWarnThresholdMs = input.subscriberWarnThresholdMs;
+  }
+  if (input.logger) {
+    eventBusOptions.logger = input.logger;
   }
   const eventBus = new EventBus(input.db, eventBusOptions);
   const taskEngine = new TaskEngine(input.db, eventBus);

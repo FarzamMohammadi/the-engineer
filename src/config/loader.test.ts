@@ -370,6 +370,35 @@ describe("loadConfig", () => {
     }
   });
 
+  it("includes duration string hint for _ms field type errors", () => {
+    const yamlPath = path.join(tmpDir, "bad-ms.yaml");
+    fs.writeFileSync(yamlPath, "tick_interval_ms: not-a-number\n");
+    try {
+      loadConfig(yamlPath, DaemonConfigSchema);
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ValidationError);
+      const msg = (error as ValidationError).message;
+      expect(msg).toContain("tick_interval_ms");
+      expect(msg).toContain("duration strings");
+    }
+  });
+
+  it("includes valid values for enum field errors", () => {
+    const yamlPath = path.join(tmpDir, "bad-enum.yaml");
+    fs.writeFileSync(yamlPath, "logging:\n  level: invalid_level\n");
+    try {
+      loadConfig(yamlPath, DaemonConfigSchema);
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ValidationError);
+      const msg = (error as ValidationError).message;
+      expect(msg).toContain("logging.level");
+      expect(msg).toContain("valid values:");
+      expect(msg).toContain("info");
+    }
+  });
+
   it("throws EnvVarError for undefined env vars", () => {
     const yamlPath = path.join(tmpDir, "bad-env.yaml");
     fs.writeFileSync(yamlPath, 'scope:\n  repos:\n    allowed:\n      - "${UNDEFINED_VAR}"\n');

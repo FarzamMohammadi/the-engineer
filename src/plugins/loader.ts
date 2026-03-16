@@ -54,36 +54,46 @@ export async function loadBuiltinPlugins(
       : [],
   );
   const plugins = BUILTIN_PLUGINS.filter((plugin) => enabledIds.has(plugin.manifest.id));
+  let loadedCount = 0;
 
   for (const plugin of plugins) {
+    const pluginId = plugin.manifest.id;
     const instance = plugin.create();
     const registrationResult = registry.register(plugin.manifest, instance);
     if (!registrationResult.success) {
-      logger.warn(
-        `Failed to register plugin "${plugin.manifest.id}": ${registrationResult.message}`,
-      );
+      logger.warn({ pluginId, reason: registrationResult.message }, "Plugin registration failed");
       continue;
     }
 
-    const configPath = join(pluginConfigDir, `${plugin.manifest.id}.yaml`);
-    const pluginConfig = loadPluginConfig(configPath, plugin.manifest.id, plugin.manifest.critical);
+    const configPath = join(pluginConfigDir, `${pluginId}.yaml`);
+    const pluginConfig = loadPluginConfig(configPath, pluginId, plugin.manifest.critical);
     if (pluginConfig === null) {
-      logger.warn(`Failed to load config for "${plugin.manifest.id}". Skipping.`);
-      registry.deregister(plugin.manifest.id);
+      logger.warn({ pluginId }, "Plugin config load failed, skipping");
+      registry.deregister(pluginId);
       continue;
     }
 
-    const initializationResult = await registry.initializePlugin(plugin.manifest.id, pluginConfig);
+    const initializationResult = await registry.initializePlugin(pluginId, pluginConfig);
     if (!initializationResult.success) {
       if (plugin.manifest.critical) {
         throw new Error(
-          `Critical plugin "${plugin.manifest.id}" failed to initialize: ${initializationResult.message}`,
+          `Critical plugin "${pluginId}" failed to initialize: ${initializationResult.message}`,
         );
       }
       logger.warn(
-        `Plugin "${plugin.manifest.id}" failed to initialize: ${initializationResult.message}. Deregistering.`,
+        { pluginId, reason: initializationResult.message },
+        "Plugin init failed, deregistering",
       );
-      registry.deregister(plugin.manifest.id);
+      registry.deregister(pluginId);
+      continue;
     }
+
+    loadedCount++;
+    logger.info(
+      { pluginId, type: plugin.manifest.type, critical: plugin.manifest.critical },
+      "Plugin initialized",
+    );
   }
+
+  logger.info({ loaded: loadedCount, total: plugins.length }, "Plugin loading complete");
 }

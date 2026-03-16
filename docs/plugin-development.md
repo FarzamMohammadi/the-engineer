@@ -234,15 +234,63 @@ Available contract suites:
 
 Plugin configuration lives in `~/.engineer/config/plugins/{plugin-id}.yaml`. The Registry resolves config through a `configResolver` callback during initialization.
 
-Environment variables can be referenced in config files:
+### Defining Your Config Schema
+
+Create a Zod schema in your plugin's `config.ts`. This schema is used during `doInitialize()` to validate incoming config:
+
+```typescript
+// config.ts
+import { z } from "zod";
+
+export const MyTriggerConfigSchema = z.object({
+  // Secrets: reference env vars with ${VAR} — never hardcode tokens
+  api_token: z.string().min(1),
+
+  // Duration fields: use the _ms suffix so the config loader
+  // automatically accepts human-readable strings like "30s", "5m", "2h"
+  poll_interval_ms: z.number().int().positive().default(30_000),
+  request_timeout_ms: z.number().int().positive().default(10_000),
+
+  // Regular fields with defaults
+  max_retries: z.number().int().min(0).default(3),
+  labels: z.array(z.string()).default([]),
+});
+
+export type MyTriggerConfig = z.output<typeof MyTriggerConfigSchema>;
+```
+
+### Config File
+
+Environment variables can be referenced using `${ENV_VAR}` syntax — resolved at load time, never stored on disk:
 
 ```yaml
 # ~/.engineer/config/plugins/my-trigger.yaml
-api_url: ${MY_TRIGGER_API_URL}
-poll_timeout_ms: 5000
+api_token: ${MY_TRIGGER_API_TOKEN}
+poll_interval_ms: "30s"    # Duration strings accepted for _ms fields
+request_timeout_ms: "10s"
+max_retries: 3
+labels: ["bug", "feature"]
 ```
 
-The `${ENV_VAR}` syntax is resolved at config load time.
+### Validating in doInitialize()
+
+```typescript
+protected async doInitialize(config: Record<string, unknown>): Promise<InitResult> {
+  const parsed = MyTriggerConfigSchema.safeParse(config);
+  if (!parsed.success) {
+    return { success: false, message: `Invalid config: ${parsed.error.message}` };
+  }
+  this.config = parsed.data;
+  return { success: true, message: null };
+}
+```
+
+### Conventions
+
+- **`_ms` suffix** for all duration fields — enables the config loader's automatic duration string parsing
+- **`z.default()`** on every optional field — ensures missing fields don't break validation
+- **`z.string().min(1)`** for required strings — catches empty strings early
+- **`${ENV_VAR}`** for secrets — keeps credentials out of config files on disk
 
 ## Lifecycle
 

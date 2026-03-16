@@ -49,11 +49,32 @@ export class ValidationError extends ConfigError {
   readonly zodError: z.ZodError;
 
   constructor(zodError: z.ZodError, filePath: string) {
-    const details = zodError.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ");
-    super(`Config validation failed in ${filePath}: ${details}`, filePath);
+    const details = zodError.issues.map((i) => formatZodIssue(i)).join("\n  ");
+    super(`Config validation failed in ${filePath}:\n  ${details}`, filePath);
     this.name = "ValidationError";
     this.zodError = zodError;
   }
+}
+
+/** Format a single Zod issue with contextual hints. */
+function formatZodIssue(issue: z.ZodIssue): string {
+  const path = issue.path.join(".");
+  let msg = `${path}: ${issue.message}`;
+
+  // For enum errors, show the valid options
+  if (issue.code === "invalid_enum_value") {
+    const enumIssue = issue as z.ZodIssue & { options?: unknown[] };
+    if (enumIssue.options) {
+      msg += ` (valid values: ${enumIssue.options.map((o) => String(o)).join(", ")})`;
+    }
+  }
+
+  // For type errors on _ms fields, hint about duration strings
+  if (issue.code === "invalid_type" && path.endsWith("_ms")) {
+    msg += ' (accepts duration strings like "30s", "5m", "8h", "1d")';
+  }
+
+  return msg;
 }
 
 // ── Result Types ─────────────────────────────────────────────────────────────────

@@ -125,6 +125,7 @@ async function runForeground(
 
   let daemon: Awaited<ReturnType<typeof bootstrap>>["daemon"];
   let cleanup: Awaited<ReturnType<typeof bootstrap>>["cleanup"];
+  let bootstrapLogger: Awaited<ReturnType<typeof bootstrap>>["logger"] | undefined;
   try {
     const result = await bootstrap({
       engineerHome,
@@ -134,6 +135,7 @@ async function runForeground(
     });
     daemon = result.daemon;
     cleanup = result.cleanup;
+    bootstrapLogger = result.logger;
   } catch (error) {
     spinner.fail("Bootstrap failed");
     out.error(`Bootstrap failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -154,12 +156,28 @@ async function runForeground(
   };
 
   process.on("SIGTERM", () => {
-    shutdown().catch(() => {
+    shutdown().catch((err) => {
+      try {
+        bootstrapLogger?.error({ err }, "Shutdown failed");
+      } catch {
+        // Logger transport may be broken during shutdown — stderr fallback below
+      }
+      process.stderr.write(
+        `Shutdown failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
       process.exit(1);
     });
   });
   process.on("SIGINT", () => {
-    shutdown().catch(() => {
+    shutdown().catch((err) => {
+      try {
+        bootstrapLogger?.error({ err }, "Shutdown failed");
+      } catch {
+        // Logger transport may be broken during shutdown — stderr fallback below
+      }
+      process.stderr.write(
+        `Shutdown failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
       process.exit(1);
     });
   });

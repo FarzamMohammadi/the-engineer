@@ -319,6 +319,11 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
     scheduler.handleTaskCompletion(taskId, result);
 
+    // Clean up triggerPoller base priority for terminal outcomes
+    if (result.outcome === "completed" || result.outcome === "error") {
+      triggerPoller.removeBasePriority(taskId);
+    }
+
     // Clear pending preemption on preempted outcome
     if (result.outcome === "preempted") {
       preemption.clearPending();
@@ -504,8 +509,8 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     const queuedTasks = taskEngine.getTasksByState(TaskStates.queued);
     scheduler.initializeBasePriorities(queuedTasks);
 
-    // Copy trigger poller's base priorities
-    const triggerBasePriorities = triggerPoller.getBasePriorities();
+    // Copy trigger poller's base priorities (drain all pending from startup)
+    const triggerBasePriorities = triggerPoller.drainNewBasePriorities();
     for (const [taskId, priority] of triggerBasePriorities) {
       scheduler.trackBasePriority(taskId, priority);
     }
@@ -526,9 +531,9 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Step 2: Poll triggers
     await triggerPoller.poll(now);
 
-    // Sync new base priorities from trigger poller to scheduler
-    const triggerBasePriorities = triggerPoller.getBasePriorities();
-    for (const [taskId, priority] of triggerBasePriorities) {
+    // Sync only newly added base priorities from trigger poller to scheduler
+    const newBasePriorities = triggerPoller.drainNewBasePriorities();
+    for (const [taskId, priority] of newBasePriorities) {
       scheduler.trackBasePriority(taskId, priority);
     }
 
@@ -650,15 +655,23 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
   async function drainActiveDispatches(): Promise<void> {
     for (const [taskId, promise] of scheduler.getActiveDispatches()) {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
           promise,
           new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error("shutdown_timeout")), config.shutdown_timeout_ms);
+            timeoutHandle = setTimeout(
+              () => reject(new Error("shutdown_timeout")),
+              config.shutdown_timeout_ms,
+            );
           }),
         ]);
       } catch {
         logger.warn({ taskId }, "Shutdown timeout waiting for task");
+      } finally {
+        if (timeoutHandle !== undefined) {
+          clearTimeout(timeoutHandle);
+        }
       }
 
       // Transition active tasks to queued

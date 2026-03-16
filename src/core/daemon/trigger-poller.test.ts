@@ -353,7 +353,7 @@ describe("TriggerPoller", () => {
     const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
 
-    const priorities = poller.getBasePriorities();
+    const priorities = poller.drainNewBasePriorities();
     expect(priorities.get("task-001")).toBe(50);
   });
 

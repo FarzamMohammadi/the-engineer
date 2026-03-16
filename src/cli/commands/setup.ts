@@ -20,25 +20,39 @@ interface SetupAnswers {
 }
 
 // ── Safety Presets ───────────────────────────────────────────────────────────
+// Field names must match SafetyConfigSchema in src/schemas/config.ts exactly.
+// Zod strips unknown keys, so wrong names silently become defaults.
 
 const SAFETY_PRESETS = {
   conservative: {
-    autonomy_level: "gated",
-    auto_merge: false,
-    max_cost_per_task_usd: 1.0,
-    require_human_review: true,
+    cost_limits: {
+      api: {
+        per_task: { cost_usd: 1.0 },
+        daily: { cost_usd: 10.0 },
+        monthly: { cost_usd: 100.0 },
+      },
+    },
+    merge: { auto_merge_after_approval: { default: false } },
   },
   balanced: {
-    autonomy_level: "supervised",
-    auto_merge: false,
-    max_cost_per_task_usd: 5.0,
-    require_human_review: false,
+    cost_limits: {
+      api: {
+        per_task: { cost_usd: 5.0 },
+        daily: { cost_usd: 50.0 },
+        monthly: { cost_usd: 500.0 },
+      },
+    },
+    merge: { auto_merge_after_approval: { default: false } },
   },
   autonomous: {
-    autonomy_level: "autonomous",
-    auto_merge: true,
-    max_cost_per_task_usd: 20.0,
-    require_human_review: false,
+    cost_limits: {
+      api: {
+        per_task: { cost_usd: 20.0 },
+        daily: { cost_usd: 200.0 },
+        monthly: { cost_usd: 2000.0 },
+      },
+    },
+    merge: { auto_merge_after_approval: { default: true } },
   },
 } as const;
 
@@ -205,63 +219,71 @@ async function generateConfigs(answers: SetupAnswers): Promise<string[]> {
   const safetyPath = join(dirs.config, "safety.yaml");
   await writeConfigIfOk(safetyPath, SAFETY_PRESETS[answers.safetyLevel], created);
 
-  // Workspace config
+  // Workspace config (field names match WorkspaceConfigSchema)
   const workspacePath = join(dirs.config, "workspace.yaml");
   await writeConfigIfOk(
     workspacePath,
     {
-      base_dir: dirs.workspaces,
-      cleanup_on_complete: true,
+      workspace_root: dirs.workspaces,
+      branch_prefix: "engineer/",
+      default_base_branch: "main",
+      pr: { default_merge_strategy: "squash", delete_branch_after_merge: true },
+      cleanup: { preserve_branch_on_failure: true, preserve_branch_on_cancel: false },
     },
     created,
   );
 
-  // People config
+  // People config (field names match PersonSchema: id, name, roles, contacts[{channel, handle}])
   const peoplePath = join(dirs.config, "people.yaml");
+  const contacts: Array<{ channel: string; handle: string }> = [
+    { channel: "github", handle: "your-github-username" },
+  ];
+  if (answers.telegramEnabled) {
+    contacts.push({ channel: "telegram", handle: "${TELEGRAM_CHAT_ID}" });
+  }
   await writeConfigIfOk(
     peoplePath,
     {
       people: [
         {
-          handle: "owner",
-          role: "owner",
-          contacts: answers.telegramEnabled
-            ? [{ type: "telegram", chat_id: "${TELEGRAM_CHAT_ID}" }]
-            : [],
+          id: "owner",
+          name: "Project Owner",
+          roles: ["owner"],
+          contacts,
+          preferences: { notification_level: "milestones" },
         },
       ],
     },
     created,
   );
 
-  // GitHub trigger plugin config
+  // GitHub trigger plugin config (field names match GitHubTriggerConfigSchema)
   const triggerPath = join(dirs.plugins, "github-trigger.yaml");
   await writeConfigIfOk(
     triggerPath,
     {
-      token: "${GITHUB_TOKEN}",
-      repos: answers.repos.map((r) => ({ owner: r.split("/")[0], repo: r.split("/")[1] })),
-      assignee: "",
+      github_token: "${GITHUB_TOKEN}",
+      repos: answers.repos.map((r) => ({ owner: r.split("/")[0], name: r.split("/")[1] })),
     },
     created,
   );
 
-  // GitHub comm plugin config
+  // GitHub comm plugin config (field names match GitHubCommConfigSchema)
   const commPath = join(dirs.plugins, "github-comm.yaml");
   await writeConfigIfOk(
     commPath,
     {
-      token: "${GITHUB_TOKEN}",
+      github_token: "${GITHUB_TOKEN}",
     },
     created,
   );
 
-  // GitHub hosting plugin config
+  // GitHub hosting plugin config (field names match GitHubHostingConfigSchema)
   const hostingPath = join(dirs.plugins, "github-hosting.yaml");
   await writeConfigIfOk(
     hostingPath,
     {
-      token: "${GITHUB_TOKEN}",
+      github_token: "${GITHUB_TOKEN}",
     },
     created,
   );

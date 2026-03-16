@@ -308,7 +308,12 @@ ${template.abstractMethods}
   const configContent = `import { z } from "zod";
 
 export const ${toPascalCase(name)}ConfigSchema = z.object({
-  // Add your config fields here
+  // Define your config fields here. Conventions:
+  //   - Use _ms suffix for durations (enables "30s", "5m", "2h" string parsing)
+  //   - Use z.default() on optional fields
+  //   - Use z.string().min(1) for required strings
+  //   - Reference secrets via \${ENV_VAR} in YAML, not here
+  // See docs/plugin-development.md for full guidance.
 });
 
 export type ${toPascalCase(name)}Config = z.infer<typeof ${toPascalCase(name)}ConfigSchema>;

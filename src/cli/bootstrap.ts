@@ -58,6 +58,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   }
   const logger = createLogger(loggingConfig, engineerHome);
   const cliLogger = createChildLogger(logger, "cli");
+  const bootstrapStartMs = Date.now();
   cliLogger.info("Bootstrapping The Engineer...");
   progress?.("Initializing logger", "done");
 
@@ -75,6 +76,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     // 3-9. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
     progress?.("Creating core components", "start");
+    cliLogger.debug("Creating core components");
     const {
       eventBus,
       topology,
@@ -88,6 +90,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       safetyConfig: config.safety,
       workspaceConfig: config.workspace,
       subscriberWarnThresholdMs: config.daemon.subscriber_warn_threshold_ms,
+      logger: createChildLogger(logger, "event-bus"),
     });
 
     // 4. Hook Registry
@@ -179,7 +182,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     await loadBuiltinPlugins(registry, pluginConfigDir, cliLogger);
     progress?.("Plugins loaded", "done");
 
-    cliLogger.info("Bootstrap complete.");
+    cliLogger.info({ elapsedMs: Date.now() - bootstrapStartMs, dbPath }, "Bootstrap complete");
 
     return {
       daemon,
@@ -190,6 +193,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       },
     };
   } catch (error) {
+    cliLogger.error({ err: error }, "Bootstrap failed");
     // Clean up resources allocated before the failure point
     dbHandle?.close();
     throw error;

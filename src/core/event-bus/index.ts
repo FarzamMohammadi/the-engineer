@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { Logger } from "pino";
 import { ulid } from "ulid";
 
 import type { Event, EventType } from "../../schemas/events.js";
@@ -90,6 +91,8 @@ export interface EventBusOptions {
   validateOnPublish?: boolean;
   /** Log a warning when a subscriber callback exceeds this duration (ms). 0 = disabled. Default: 0. */
   subscriberWarnThresholdMs?: number;
+  /** Optional pino logger. Falls back to console if not provided. */
+  logger?: Logger;
 }
 
 export class EventBus implements IEventBus {
@@ -98,6 +101,7 @@ export class EventBus implements IEventBus {
   private readonly topology: EventTopology | undefined;
   private readonly validateOnPublish: boolean;
   private readonly subscriberWarnThresholdMs: number;
+  private readonly logger: Logger | undefined;
 
   private readonly insertStmt: Database.Statement;
   private readonly byTaskStmt: Database.Statement;
@@ -109,6 +113,7 @@ export class EventBus implements IEventBus {
     this.topology = options?.topology;
     this.validateOnPublish = options?.validateOnPublish ?? false;
     this.subscriberWarnThresholdMs = options?.subscriberWarnThresholdMs ?? 0;
+    this.logger = options?.logger;
     this.insertStmt = db.prepare(
       "INSERT INTO events (id, type, source, task_id, timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)",
     );
@@ -140,7 +145,11 @@ export class EventBus implements IEventBus {
         if (process.env["NODE_ENV"] === "test") {
           throw new EventReplayError(msg);
         }
-        console.warn(msg);
+        if (this.logger) {
+          this.logger.warn({ eventType: input.type }, msg);
+        } else {
+          console.warn(msg);
+        }
       }
     }
 
@@ -228,12 +237,34 @@ export class EventBus implements IEventBus {
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
+  private logSubscriberError(subscriberId: string, eventType: string, error: unknown): void {
+    if (this.logger) {
+      this.logger.error(
+        { subscriberId, eventType, err: error },
+        "EventBus: subscriber threw during event delivery",
+      );
+    } else {
+      console.error(`EventBus: subscriber "${subscriberId}" threw on event "${eventType}":`, error);
+    }
+  }
+
   private warnIfSlow(subscriberId: string, eventType: string, startMs: number): void {
     const elapsed = performance.now() - startMs;
     if (elapsed > this.subscriberWarnThresholdMs) {
-      console.warn(
-        `EventBus: subscriber "${subscriberId}" took ${elapsed.toFixed(1)}ms processing "${eventType}" (threshold: ${this.subscriberWarnThresholdMs}ms)`,
-      );
+      const msg = `EventBus: subscriber "${subscriberId}" took ${elapsed.toFixed(1)}ms processing "${eventType}" (threshold: ${this.subscriberWarnThresholdMs}ms)`;
+      if (this.logger) {
+        this.logger.warn(
+          {
+            subscriberId,
+            eventType,
+            elapsedMs: Math.round(elapsed),
+            thresholdMs: this.subscriberWarnThresholdMs,
+          },
+          msg,
+        );
+      } else {
+        console.warn(msg);
+      }
     }
   }
 
@@ -247,10 +278,7 @@ export class EventBus implements IEventBus {
         try {
           sub.callback(event);
         } catch (error) {
-          console.error(
-            `EventBus: subscriber "${sub.subscriberId}" threw on event "${event.type}":`,
-            error,
-          );
+          this.logSubscriberError(sub.subscriberId, event.type, error);
         }
         if (measureTiming) {
           this.warnIfSlow(sub.subscriberId, event.type, start);

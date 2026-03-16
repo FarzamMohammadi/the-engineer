@@ -103,9 +103,10 @@ export function createDaemonHealthMonitor(
     const timeoutPolicy = safetyLayer.getTimeoutPolicy();
     const stages = timeoutPolicy.blocked.stages;
 
-    // Clean up escalation state for tasks no longer blocked
+    // Clean up escalation state for tasks no longer blocked (Set for O(1) lookup)
+    const blockedIds = new Set(blockedTasks.map((t) => t.id));
     for (const taskId of blockedEscalationState.keys()) {
-      if (!blockedTasks.some((t) => t.id === taskId)) {
+      if (!blockedIds.has(taskId)) {
         blockedEscalationState.delete(taskId);
       }
     }
@@ -223,8 +224,9 @@ export function createDaemonHealthMonitor(
   }
 
   function cleanupStaleReminderTimes(activeTasks: Array<{ id: string }>): void {
+    const activeIds = new Set(activeTasks.map((t) => t.id));
     for (const taskId of reviewReminderTimes.keys()) {
-      if (!activeTasks.some((t) => t.id === taskId)) {
+      if (!activeIds.has(taskId)) {
         reviewReminderTimes.delete(taskId);
       }
     }

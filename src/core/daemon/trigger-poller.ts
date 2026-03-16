@@ -18,8 +18,10 @@ export interface TriggerPoller {
   getTriggerFailures(): Record<string, number>;
   /** Clean up expired seen keys. */
   cleanupExpiredKeys(now: number): void;
-  /** Track a base priority for a newly created task (for aging). */
-  getBasePriorities(): Map<string, number>;
+  /** Drain base priorities added since last drain (for tick-loop sync). */
+  drainNewBasePriorities(): Map<string, number>;
+  /** Remove a base priority entry when a task reaches terminal state. */
+  removeBasePriority(taskId: string): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -40,6 +42,8 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   const triggerFailures = new Map<string, number>();
   const seenTriggerKeys = new Map<string, number>();
   const basePriorities = new Map<string, number>();
+  /** Buffer for priorities added since last drain — avoids full-map scan every tick. */
+  const pendingBasePriorities = new Map<string, number>();
 
   // ── Adaptive Polling ────────────────────────────────────────────────────
 
@@ -134,6 +138,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
 
     taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");
     basePriorities.set(task.id, task.priority);
+    pendingBasePriorities.set(task.id, task.priority);
     logger.info({ taskId: task.id, title: event.title }, "Task created from trigger event");
   }
 
@@ -178,8 +183,19 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     return failures;
   }
 
-  function getBasePriorities(): Map<string, number> {
-    return basePriorities;
+  /** Return only priorities added since last drain, then clear the buffer. */
+  function drainNewBasePriorities(): Map<string, number> {
+    if (pendingBasePriorities.size === 0) {
+      return pendingBasePriorities;
+    }
+    const snapshot = new Map(pendingBasePriorities);
+    pendingBasePriorities.clear();
+    return snapshot;
+  }
+
+  function removeBasePriority(taskId: string): void {
+    basePriorities.delete(taskId);
+    pendingBasePriorities.delete(taskId);
   }
 
   return {
@@ -187,7 +203,8 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     getSeenKeyCount,
     getTriggerFailures,
     cleanupExpiredKeys,
-    getBasePriorities,
+    drainNewBasePriorities,
+    removeBasePriority,
   };
 }
 

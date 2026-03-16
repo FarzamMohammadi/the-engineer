@@ -2,33 +2,34 @@
 
 export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # All fields are optional — defaults shown as comments
+# Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
 # --- Capacity ---
 # max_concurrent: 1                   # Number of concurrent tasks (default: 1)
 
 # --- Tick loop ---
-# tick_interval_ms: 5000              # Main loop tick interval in ms
+# tick_interval_ms: "5s"              # Main loop tick interval (default: 5s)
 
 # --- Preemption ---
 # preemption_threshold: 20            # Priority gap to trigger preemption
-# preemption_timeout_ms: 60000        # Time to checkpoint before forced swap (ms)
+# preemption_timeout_ms: "1m"         # Time to checkpoint before forced swap (default: 1m)
 
 # --- Stuck/runaway detection ---
-# stuck_threshold_ms: 1800000         # 30 min — flag task as stuck
-# max_active_duration_ms: 28800000    # 8 hours — max time for a single task
+# stuck_threshold_ms: "30m"           # Flag task as stuck (default: 30m)
+# max_active_duration_ms: "8h"        # Max time for a single task (default: 8h)
 
 # --- Priority aging (starvation prevention) ---
-# aging_threshold_ms: 86400000        # 24 hours before aging kicks in
+# aging_threshold_ms: "1d"            # Wait before aging kicks in (default: 1d)
 # aging_increment: 5                  # Priority bump per aging interval
-# aging_interval_ms: 86400000         # How often to age (24 hours)
+# aging_interval_ms: "1d"             # Aging cycle length (default: 1d)
 # aging_cap: 75                       # Maximum priority after aging (1-100)
 
 # --- Shutdown ---
-# shutdown_timeout_ms: 30000          # Time to drain active tasks on shutdown
+# shutdown_timeout_ms: "30s"          # Time to drain active tasks on shutdown (default: 30s)
 
 # --- Trigger polling ---
-# trigger_poll_interval_ms: 30000     # How often to poll triggers
-# seen_keys_ttl_ms: 86400000          # TTL for dedup keys (24 hours)
+# trigger_poll_interval_ms: "30s"     # How often to poll triggers (default: 30s)
+# seen_keys_ttl_ms: "1d"              # TTL for dedup keys (default: 1d)
 
 # --- Logging ---
 # logging:
@@ -42,13 +43,14 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # plugins:
 #   dirs:
 #     - ~/.engineer/plugins            # Plugin discovery directories (auto-populated by engineer init)
-#   health_check_interval_ms: 60000   # How often to health-check plugins
-#   health_check_timeout_ms: 5000     # Timeout per health check
+#   health_check_interval_ms: "1m"    # How often to health-check plugins (default: 1m)
+#   health_check_timeout_ms: "5s"     # Timeout per health check (default: 5s)
 #   consecutive_failures_threshold: 3  # Failures before marking plugin as failed
 `;
 
 export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engineer
 # All fields are optional — defaults shown as comments
+# Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
 # --- Fast path (trivial task shortcut) ---
 # fast_path:
@@ -60,8 +62,8 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # --- Notifications ---
 # notification:
 #   milestone_based: true             # Notify only on milestones (not every step)
-#   suppress_window_ms: 300000        # 5 min — suppress duplicate notifications
-#   batch_window_ms: 120000           # 2 min — batch rapid notifications
+#   suppress_window_ms: "5m"          # Suppress duplicate notifications (default: 5m)
+#   batch_window_ms: "2m"             # Batch rapid notifications (default: 2m)
 #   fast_path_collapse: true          # Collapse fast-path to single notification
 #   quiet_hours:
 #     enabled: false
@@ -78,14 +80,14 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # --- Question batching ---
 # question_batching:
 #   enabled: true
-#   batch_window_ms: 30000            # 30 sec — batch questions before asking
+#   batch_window_ms: "30s"            # Batch questions before asking (default: 30s)
 #   max_batch_size: 5
 
 # --- Task decomposition ---
 # decomposition:
-#   auto_threshold_ms: 14400000       # 4 hours — auto-decompose above this
-#   suggest_threshold_ms: 7200000     # 2 hours — suggest decomposition
-#   min_child_size_ms: 1800000        # 30 min — minimum child task size
+#   auto_threshold_ms: "4h"           # Auto-decompose above this (default: 4h)
+#   suggest_threshold_ms: "2h"        # Suggest decomposition (default: 2h)
+#   min_child_size_ms: "30m"          # Minimum child task size (default: 30m)
 
 # --- Demo gate ---
 # demo:
@@ -95,7 +97,7 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # --- Phase pipeline ---
 # phases:
 #   checkpoint_on_transition: true    # Checkpoint on every phase transition
-#   periodic_checkpoint_interval_ms: 900000  # 15 min periodic checkpoints
+#   periodic_checkpoint_interval_ms: "15m"  # Periodic checkpoints (default: 15m)
 #   max_loopbacks_before_alert: 3     # Alert after N phase loopbacks
 
 # --- Journal ---
@@ -106,19 +108,18 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 export const SAFETY_TEMPLATE = `# Safety configuration for The Engineer
 # Hot-reloadable — changes take effect without restart.
 # All fields are optional — conservative defaults applied when missing.
+# Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
 # --- Cost limits ---
-# cost_limits:
-#   api:
-#     per_task:
-#       cost_usd: null                # No per-task limit (null = unlimited)
-#       auto_resume_on_reset: false
-#     daily:
-#       cost_usd: null                # No daily limit
-#       auto_resume_on_reset: false
-#     monthly:
-#       cost_usd: null                # No monthly limit
-#       auto_resume_on_reset: false
+# Uncomment and adjust to prevent runaway spending.
+cost_limits:
+  api:
+    per_task:
+      cost_usd: 5.0                   # Per-task USD limit (null = unlimited)
+    daily:
+      cost_usd: 25.0                  # Daily USD limit
+    monthly:
+      cost_usd: 250.0                 # Monthly USD limit
 #   cli: {}                           # Per-CLI-provider limits (keyed by provider name)
 
 # --- Scope boundaries ---
@@ -148,19 +149,19 @@ export const SAFETY_TEMPLATE = `# Safety configuration for The Engineer
 #   blocked:
 #     stages:
 #       - name: reminder
-#         after_ms: 14400000          # 4 hours
+#         after_ms: "4h"
 #         action: send_reminder
 #         repeat: true
-#         repeat_interval_ms: 14400000
+#         repeat_interval_ms: "4h"
 #       - name: self_unblock_check
-#         after_ms: 28800000          # 8 hours
+#         after_ms: "8h"
 #         action: evaluate_self_unblock
 #       - name: escalation
-#         after_ms: 172800000         # 48 hours
+#         after_ms: "2d"
 #         action: escalation_alert
 #   review_pending:
-#     reminder_after_ms: 86400000     # 24 hours
-#     repeat_interval_ms: 86400000
+#     reminder_after_ms: "1d"
+#     repeat_interval_ms: "1d"
 
 # --- Merge policy ---
 # merge:
@@ -269,11 +270,12 @@ export const CLAUDE_CODE_LLM_TEMPLATE = `# Claude Code LLM plugin
 
 export const BASH_TOOL_TEMPLATE = `# Bash tool plugin
 # Executes shell commands in task workspaces
+# Duration fields accept human-readable strings: "5s", "30m", "8h"
 
 # --- Optional settings ---
 # env_passthrough: []                     # Extra env vars to pass through
 # max_output_bytes: 10485760              # 10 MB output limit
-# command_timeout_ms: 300000              # 5 min command timeout
+# command_timeout_ms: "5m"                # Command timeout (default: 5m)
 `;
 
 // ── Example Templates (fully documented reference files) ─────────────────────
@@ -284,34 +286,35 @@ export const EXAMPLE_DAEMON = `# ┌──────────────�
 # │  DAEMON CONFIGURATION — Full Reference                                    │
 # │  Copy to ~/.engineer/config/daemon.yaml and customize.                    │
 # │  All fields are optional — defaults are applied automatically.            │
+# │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # ── Capacity ──────────────────────────────────────────────────────────────────
 max_concurrent: 1                         # How many tasks run in parallel (default: 1)
 
 # ── Tick Loop ─────────────────────────────────────────────────────────────────
-tick_interval_ms: 5000                    # Main loop interval in ms (default: 5000)
+tick_interval_ms: "5s"                    # Main loop interval (default: 5s)
 
 # ── Preemption ────────────────────────────────────────────────────────────────
 preemption_threshold: 20                  # Priority gap to trigger preemption (default: 20)
-preemption_timeout_ms: 60000              # Time to checkpoint before forced swap (default: 60000)
+preemption_timeout_ms: "1m"               # Time to checkpoint before forced swap (default: 1m)
 
 # ── Stuck/Runaway Detection ──────────────────────────────────────────────────
-stuck_threshold_ms: 1800000               # Flag task as stuck after 30 min (default: 1800000)
-max_active_duration_ms: 28800000          # Kill task after 8 hours (default: 28800000)
+stuck_threshold_ms: "30m"                 # Flag task as stuck (default: 30m)
+max_active_duration_ms: "8h"              # Kill task after this duration (default: 8h)
 
 # ── Priority Aging (starvation prevention) ───────────────────────────────────
-aging_threshold_ms: 86400000              # Wait 24h before aging starts (default: 86400000)
+aging_threshold_ms: "1d"                  # Wait before aging starts (default: 1d)
 aging_increment: 5                        # Priority bump per aging cycle (default: 5)
-aging_interval_ms: 86400000               # Aging cycle length — 24h (default: 86400000)
+aging_interval_ms: "1d"                   # Aging cycle length (default: 1d)
 aging_cap: 75                             # Max priority after aging, 1-100 (default: 75)
 
 # ── Shutdown ──────────────────────────────────────────────────────────────────
-shutdown_timeout_ms: 30000                # Drain timeout on SIGTERM (default: 30000)
+shutdown_timeout_ms: "30s"                # Drain timeout on SIGTERM (default: 30s)
 
 # ── Trigger Polling ──────────────────────────────────────────────────────────
-trigger_poll_interval_ms: 30000           # How often to poll triggers (default: 30000)
-seen_keys_ttl_ms: 86400000                # Dedup key TTL — 24h (default: 86400000)
+trigger_poll_interval_ms: "30s"           # How often to poll triggers (default: 30s)
+seen_keys_ttl_ms: "1d"                    # Dedup key TTL (default: 1d)
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging:
@@ -324,8 +327,8 @@ logging:
 # ── Plugin Lifecycle ─────────────────────────────────────────────────────────
 plugins:
   dirs: []                                  # Additional plugin directories (default: [], ~/.engineer/plugins/ always scanned)
-  health_check_interval_ms: 60000         # Health check frequency (default: 60000)
-  health_check_timeout_ms: 5000           # Timeout per health check (default: 5000)
+  health_check_interval_ms: "1m"          # Health check frequency (default: 1m)
+  health_check_timeout_ms: "5s"           # Timeout per health check (default: 5s)
   consecutive_failures_threshold: 3       # Failures before marking failed (default: 3)
 `;
 
@@ -333,6 +336,7 @@ export const EXAMPLE_ORCHESTRATOR = `# ┌────────────�
 # │  ORCHESTRATOR CONFIGURATION — Full Reference                              │
 # │  Copy to ~/.engineer/config/orchestrator.yaml and customize.              │
 # │  All fields are optional — defaults are applied automatically.            │
+# │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # ── Fast Path (trivial task shortcut) ────────────────────────────────────────
@@ -345,8 +349,8 @@ fast_path:
 # ── Notifications ────────────────────────────────────────────────────────────
 notification:
   milestone_based: true                   # Notify only on milestones (default: true)
-  suppress_window_ms: 300000              # Suppress duplicate notifications — 5 min (default: 300000)
-  batch_window_ms: 120000                 # Batch rapid notifications — 2 min (default: 120000)
+  suppress_window_ms: "5m"                # Suppress duplicate notifications (default: 5m)
+  batch_window_ms: "2m"                   # Batch rapid notifications (default: 2m)
   fast_path_collapse: true                # Collapse fast-path to single notification (default: true)
   quiet_hours:
     enabled: false                        # Enable quiet hours (default: false)
@@ -366,14 +370,14 @@ notification:
 # ── Question Batching ───────────────────────────────────────────────────────
 question_batching:
   enabled: true                           # Batch questions before asking (default: true)
-  batch_window_ms: 30000                  # Batch window — 30 sec (default: 30000)
+  batch_window_ms: "30s"                  # Batch window (default: 30s)
   max_batch_size: 5                       # Max questions per batch (default: 5)
 
 # ── Task Decomposition ──────────────────────────────────────────────────────
 decomposition:
-  auto_threshold_ms: 14400000             # Auto-decompose above 4 hours (default: 14400000)
-  suggest_threshold_ms: 7200000           # Suggest decomposition above 2 hours (default: 7200000)
-  min_child_size_ms: 1800000              # Minimum child task size — 30 min (default: 1800000)
+  auto_threshold_ms: "4h"                 # Auto-decompose above this (default: 4h)
+  suggest_threshold_ms: "2h"              # Suggest decomposition above this (default: 2h)
+  min_child_size_ms: "30m"                # Minimum child task size (default: 30m)
 
 # ── Demo Gate ────────────────────────────────────────────────────────────────
 demo:
@@ -383,7 +387,7 @@ demo:
 # ── Phase Pipeline ───────────────────────────────────────────────────────────
 phases:
   checkpoint_on_transition: true          # Checkpoint on every phase transition (default: true)
-  periodic_checkpoint_interval_ms: 900000 # Periodic checkpoint — 15 min (default: 900000)
+  periodic_checkpoint_interval_ms: "15m"  # Periodic checkpoint interval (default: 15m)
   max_loopbacks_before_alert: 3           # Alert after N phase loopbacks (default: 3)
 
 # ── Journal ──────────────────────────────────────────────────────────────────
@@ -396,19 +400,20 @@ export const EXAMPLE_SAFETY = `# ┌──────────────�
 # │  Copy to ~/.engineer/config/safety.yaml and customize.                    │
 # │  HOT-RELOADABLE — changes take effect without restart.                    │
 # │  All fields are optional — conservative defaults applied.                 │
+# │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # ── Cost Limits ──────────────────────────────────────────────────────────────
 cost_limits:
   api:
     per_task:
-      cost_usd: null                      # Per-task USD limit, null = unlimited (default: null)
+      cost_usd: 5.0                       # Per-task USD limit, null = unlimited (default: null)
       auto_resume_on_reset: false         # Auto-resume when limit resets (default: false)
     daily:
-      cost_usd: null                      # Daily USD limit (default: null)
+      cost_usd: 25.0                      # Daily USD limit (default: null)
       auto_resume_on_reset: false
     monthly:
-      cost_usd: null                      # Monthly USD limit (default: null)
+      cost_usd: 250.0                     # Monthly USD limit (default: null)
       auto_resume_on_reset: false
   cli: {}                                 # Per-CLI-provider limits, keyed by provider name
 
@@ -443,19 +448,19 @@ response_timeout:
   blocked:
     stages:
       - name: reminder
-        after_ms: 14400000                # Send reminder after 4 hours
+        after_ms: "4h"                    # Send reminder after 4 hours
         action: send_reminder
         repeat: true
-        repeat_interval_ms: 14400000      # Repeat every 4 hours
+        repeat_interval_ms: "4h"          # Repeat every 4 hours
       - name: self_unblock_check
-        after_ms: 28800000                # Try self-unblock after 8 hours
+        after_ms: "8h"                    # Try self-unblock after 8 hours
         action: evaluate_self_unblock
       - name: escalation
-        after_ms: 172800000               # Escalate after 48 hours
+        after_ms: "2d"                    # Escalate after 48 hours
         action: escalation_alert
   review_pending:
-    reminder_after_ms: 86400000           # Remind after 24 hours (default: 86400000)
-    repeat_interval_ms: 86400000          # Repeat every 24 hours (default: 86400000)
+    reminder_after_ms: "1d"               # Remind after 24 hours (default: 1d)
+    repeat_interval_ms: "1d"              # Repeat every 24 hours (default: 1d)
 
 # ── Merge Policy ─────────────────────────────────────────────────────────────
 merge:
@@ -601,12 +606,13 @@ export const EXAMPLE_BASH_TOOL = `# ┌─────────────�
 # │  BASH TOOL PLUGIN — Full Reference                                       │
 # │  Copy to ~/.engineer/config/plugins/bash-tool.yaml and customize.        │
 # │  Executes shell commands in task workspaces.                              │
+# │  Duration fields accept human-readable strings: "5s", "30m", "8h"        │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # All fields are optional — defaults shown below.
 env_passthrough: []                       # Extra env vars to pass through (default: [])
 max_output_bytes: 10485760                # Output limit — 10 MB (default: 10485760)
-command_timeout_ms: 300000                # Command timeout — 5 min (default: 300000)
+command_timeout_ms: "5m"                  # Command timeout (default: 5m)
 `;
 
 // ── Template Manifest ───────────────────────────────────────────────────────

@@ -62,19 +62,22 @@ describe("runSetup", () => {
     const daemonConfig = yamlParse(readFileSync(daemonPath, "utf8"));
     expect(daemonConfig.tick_interval_ms).toBe(30000);
 
-    // Check safety config
+    // Check safety config uses correct schema field names
     const safetyPath = join(tempDir, "config", "safety.yaml");
     expect(existsSync(safetyPath)).toBe(true);
     const safetyConfig = yamlParse(readFileSync(safetyPath, "utf8"));
-    expect(safetyConfig.autonomy_level).toBe("supervised");
+    expect(safetyConfig.cost_limits.api.per_task.cost_usd).toBe(5);
+    expect(safetyConfig.cost_limits.api.daily.cost_usd).toBe(50);
+    expect(safetyConfig.merge.auto_merge_after_approval.default).toBe(false);
 
-    // Check trigger plugin config
+    // Check trigger plugin config uses correct schema field names
     const triggerPath = join(tempDir, "config", "plugins", "github-trigger.yaml");
     expect(existsSync(triggerPath)).toBe(true);
     const triggerConfig = yamlParse(readFileSync(triggerPath, "utf8"));
+    expect(triggerConfig.github_token).toBe("${GITHUB_TOKEN}");
     expect(triggerConfig.repos).toHaveLength(1);
     expect(triggerConfig.repos[0].owner).toBe("owner");
-    expect(triggerConfig.repos[0].repo).toBe("my-repo");
+    expect(triggerConfig.repos[0].name).toBe("my-repo");
   });
 
   it("does not store secrets in config files", async () => {
@@ -146,9 +149,9 @@ describe("runSetup", () => {
 
     const safetyPath = join(tempDir, "config", "safety.yaml");
     const safetyConfig = yamlParse(readFileSync(safetyPath, "utf8"));
-    expect(safetyConfig.autonomy_level).toBe("autonomous");
-    expect(safetyConfig.auto_merge).toBe(true);
-    expect(safetyConfig.max_cost_per_task_usd).toBe(20);
+    expect(safetyConfig.cost_limits.api.per_task.cost_usd).toBe(20);
+    expect(safetyConfig.cost_limits.api.daily.cost_usd).toBe(200);
+    expect(safetyConfig.merge.auto_merge_after_approval.default).toBe(true);
   });
 
   it("generates Telegram config when enabled", async () => {

@@ -59,7 +59,7 @@
 | # | Phase | Trigger | Produces | Key Files |
 |---|-------|---------|----------|-----------|
 | 0 | CLI Entry & Environment | `engineer start` | dirs, config, pre-flight pass | `src/cli/commands/start.ts` |
-| 1 | Bootstrap & Component Wiring | Phase 0 complete | 12 core components wired | `src/cli/bootstrap.ts`, `src/core/system.ts` |
+| 1 | Bootstrap & Component Wiring | Phase 0 complete | 16 components wired (7 core + 9 infrastructure) | `src/cli/bootstrap.ts`, `src/core/system.ts` |
 | 2 | Plugin Loading & Initialization | Phase 1 complete | 6 plugins registered + initialized | `src/plugins/builtin.ts`, `src/core/registry/` |
 | 3 | Daemon Startup (Protocol P1) | Phase 2 complete | PID file, crash recovery, subscriptions, tick loop | `src/core/daemon/index.ts` |
 | 4 | Trigger Polling & Task Creation | Tick loop step 2 | New tasks (intake→queued) | `src/core/daemon/trigger-poller.ts`, `src/plugins/trigger/` |

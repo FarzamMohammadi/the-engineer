@@ -19,17 +19,18 @@ import {
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
-import type { ActionPipeline } from "../action-pipeline/index.js";
+import type { Clock } from "../../utils/clock.js";
 import type { DataLifecycleManager } from "../data-lifecycle/index.js";
-import type { EventBus } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
+import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
+import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
-import type { WorkspaceManager } from "../workspace-manager/index.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import { createNotificationRouter } from "./notification-router.js";
@@ -38,6 +39,7 @@ import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 import { createReviewHandler } from "./review-handler.js";
 import { createTaskScheduler } from "./task-scheduler.js";
 import { createTriggerPoller } from "./trigger-poller.js";
+import type { DaemonContext } from "./types.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -100,32 +102,18 @@ export const EVENTS: EventDeclaration[] = [
   },
 ];
 
-// ── Clock ───────────────────────────────────────────────────────────────────
-
-/** Minimal clock interface for injectable time control. */
-export interface Clock {
-  now(): number;
-}
-
-/** Production clock that delegates to Date.now(). */
-export class RealClock implements Clock {
-  now(): number {
-    return Date.now();
-  }
-}
-
 // ── Types ───────────────────────────────────────────────────────────────────
 
 /** All dependencies injected into the Daemon. */
 export interface DaemonDependencies {
-  eventBus: EventBus;
+  eventBus: IEventBus;
   registry: Registry;
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
-  actionPipeline: ActionPipeline;
+  actionPipeline: IActionPipeline;
   orchestrator: Orchestrator;
   sessionMemory: ISessionMemory;
-  workspaceManager: WorkspaceManager;
+  workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
   clock: Clock;
   logger: Logger;
@@ -286,12 +274,13 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   const signalHandlers: { signal: string; handler: () => void }[] = [];
 
   // ── DaemonContext (shared across subsystems) ──────────────────────────
-  const ctx = {
+  const ctx: DaemonContext = {
     config,
     eventBus,
     registry,
     taskEngine,
     safetyLayer: deps.safetyLayer,
+    actionPipeline: deps.actionPipeline,
     orchestrator,
     sessionMemory: deps.sessionMemory,
     workspaceManager,

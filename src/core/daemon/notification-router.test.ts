@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
-import { createSilentLogger } from "./logging.js";
-import { type DaemonContext, createNotificationRouter } from "./notification-router.js";
+import { createSilentLogger } from "../logging.js";
+import { createNotificationRouter } from "./notification-router.js";
+import type { NotificationRouterContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -52,20 +53,20 @@ function createMockContext(pluginOverrides?: ReturnType<typeof createMockCommPlu
   const commPlugins = pluginOverrides ?? [];
   return {
     config: createMockDaemonConfig(),
-    eventBus: {} as DaemonContext["eventBus"],
+    eventBus: {} as NotificationRouterContext["eventBus"],
     registry: {
       getPluginsByType: vi.fn().mockReturnValue(commPlugins),
-    } as unknown as DaemonContext["registry"],
+    } as unknown as NotificationRouterContext["registry"],
     taskEngine: {
       getTask: vi.fn().mockReturnValue(null),
-    } as unknown as DaemonContext["taskEngine"],
+    } as unknown as NotificationRouterContext["taskEngine"],
     peopleDirectory: {
       getOwner: vi.fn().mockReturnValue(null),
       getReviewers: vi.fn().mockReturnValue([]),
-    } as unknown as DaemonContext["peopleDirectory"],
+    } as unknown as NotificationRouterContext["peopleDirectory"],
     clock: { now: () => Date.now() },
     logger: createSilentLogger(),
-  } as unknown as DaemonContext;
+  } as unknown as NotificationRouterContext;
 }
 
 /** Flush microtask queue so fire-and-forget promises resolve. */

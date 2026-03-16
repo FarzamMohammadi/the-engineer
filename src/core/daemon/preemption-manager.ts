@@ -1,23 +1,9 @@
-import type { Logger } from "pino";
-
-import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import { TaskStates } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { Clock } from "./index.js";
 import { shouldPreempt } from "./index.js";
-
-// ── DaemonContext (subset) ───────────────────────────────────────────────────
-
-export interface DaemonContext {
-  config: DaemonConfig;
-  eventBus: EventBus;
-  taskEngine: ITaskEngine;
-  clock: Clock;
-  logger: Logger;
-  [key: string]: unknown;
-}
+import type { PreemptionManagerContext } from "./types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,7 +31,7 @@ export interface PreemptionManager {
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createPreemptionManager(
-  ctx: DaemonContext,
+  ctx: PreemptionManagerContext,
   getActiveTaskIds: () => string[],
   removeActiveDispatch: (taskId: string) => void,
 ): PreemptionManager {

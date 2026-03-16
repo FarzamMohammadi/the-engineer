@@ -11,22 +11,25 @@ import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
 import { EVENTS as ACTION_PIPELINE_EVENTS, ActionPipeline } from "./action-pipeline/index.js";
 import { EventBus } from "./event-bus/index.js";
 import { EventTopology } from "./event-bus/topology.js";
+import type { IActionPipeline } from "./interfaces/action-pipeline.interface.js";
+import type { IEventBus } from "./interfaces/event-bus.interface.js";
 import type { ISafetyLayer } from "./interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "./interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "./interfaces/task-engine.interface.js";
+import type { IWorkspaceManager } from "./interfaces/workspace-manager.interface.js";
 import { EVENTS as SAFETY_LAYER_EVENTS, SafetyLayer } from "./safety-layer/index.js";
 import { SessionMemory } from "./session-memory/index.js";
 import { EVENTS as TASK_ENGINE_EVENTS, TaskEngine } from "./task-engine/index.js";
 import { EVENTS as WORKSPACE_MANAGER_EVENTS, WorkspaceManager } from "./workspace-manager/index.js";
 
 export interface CoreComponents {
-  eventBus: EventBus;
+  eventBus: IEventBus;
   topology: EventTopology;
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
-  actionPipeline: ActionPipeline;
+  actionPipeline: IActionPipeline;
   sessionMemory: ISessionMemory;
-  workspaceManager: WorkspaceManager;
+  workspaceManager: IWorkspaceManager;
 }
 
 export interface CreateCoreInput {

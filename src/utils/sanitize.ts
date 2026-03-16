@@ -7,7 +7,7 @@
 
 // ── Known secret environment variable names ──────────────────────────────────
 
-const SECRET_ENV_VARS = [
+export const SECRET_ENV_VARS = [
   "GITHUB_TOKEN",
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_CHAT_ID",

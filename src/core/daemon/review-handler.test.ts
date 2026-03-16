@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TaskFeedbackReceivedPayload } from "../../schemas/events.js";
-import { createSilentLogger } from "./logging.js";
+import { createSilentLogger } from "../logging.js";
 import type { NotificationRouter } from "./notification-router.js";
 import {
-  type DaemonContext,
   type ReviewHandler,
   type ReviewHandlerCallbacks,
   createReviewHandler,
 } from "./review-handler.js";
+import type { ReviewHandlerContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ function createReviewTask(overrides?: Record<string, unknown>) {
 let hostingPlugin: ReturnType<typeof createMockHostingPlugin>;
 let notifications: NotificationRouter;
 let callbacks: ReviewHandlerCallbacks;
-let ctx: DaemonContext;
+let ctx: ReviewHandlerContext;
 let handler: ReviewHandler;
 let clockNow: number;
 
@@ -125,7 +125,7 @@ function buildContext(
       replay: vi.fn(),
       getEventsForTask: vi.fn(),
       getEventsSince: vi.fn(),
-    } as unknown as DaemonContext["eventBus"],
+    } as unknown as ReviewHandlerContext["eventBus"],
     registry: {
       getPluginsByType: vi.fn().mockImplementation((type: string) => {
         if (type === "git_hosting") {
@@ -133,7 +133,7 @@ function buildContext(
         }
         return [];
       }),
-    } as unknown as DaemonContext["registry"],
+    } as unknown as ReviewHandlerContext["registry"],
     taskEngine: {
       getTasksByState: vi.fn().mockImplementation((state: string) => {
         if (state === "review_pending") {
@@ -144,16 +144,16 @@ function buildContext(
       getTask: vi.fn().mockImplementation((id: string) => taskMap.get(id) ?? null),
       requestTransition: vi.fn(),
       updateTaskField: vi.fn(),
-    } as unknown as DaemonContext["taskEngine"],
+    } as unknown as ReviewHandlerContext["taskEngine"],
     safetyLayer: {
       checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
-    } as unknown as DaemonContext["safetyLayer"],
+    } as unknown as ReviewHandlerContext["safetyLayer"],
     workspaceManager: {
       cleanupWorkspace: vi.fn(),
-    } as unknown as DaemonContext["workspaceManager"],
+    } as unknown as ReviewHandlerContext["workspaceManager"],
     clock: { now: () => clockNow },
     logger: createSilentLogger(),
-  } as unknown as DaemonContext;
+  } as unknown as ReviewHandlerContext;
 
   handler = createReviewHandler(ctx, notifications, callbacks);
 }

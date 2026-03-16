@@ -15,29 +15,22 @@ import {
 import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import type {
+  IWorkspaceManager,
+  WorkspaceRecord,
+  WorkspaceVerification,
+} from "../interfaces/workspace-manager.interface.js";
 import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
+
+export type {
+  WorkspaceRecord,
+  WorkspaceVerification,
+} from "../interfaces/workspace-manager.interface.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Parsed workspace config (all defaults applied). */
 type WorkspaceConfig = z.output<typeof WorkspaceConfigSchema>;
-
-/** Internal record tracking a workspace's state. */
-export interface WorkspaceRecord {
-  taskId: string;
-  repo: string;
-  branch: string;
-  worktreePath: string;
-  baseBranch: string;
-  baseCommit: string;
-}
-
-/** Result of verifyWorkspace(). */
-export interface WorkspaceVerification {
-  status: "valid" | "recoverable" | "lost";
-  currentCommit: string | null;
-  recoveryAction: string | null;
-}
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -161,7 +154,7 @@ export function validateWorkspacePath(targetPath: string, workspaceRoot: string)
  * via the `git_token_env` config field. The token never appears in config
  * files, the database, or git remote URLs on disk.
  */
-export class WorkspaceManager {
+export class WorkspaceManager implements IWorkspaceManager {
   private readonly eventBus: EventBus;
   private readonly config: WorkspaceConfig;
   private readonly workspaces = new Map<string, WorkspaceRecord>();

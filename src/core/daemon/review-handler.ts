@@ -1,32 +1,11 @@
-import type { Logger } from "pino";
-
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
-import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
-import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { Registry } from "../registry/index.js";
-import type { WorkspaceManager } from "../workspace-manager/index.js";
-import type { Clock } from "./index.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { deriveAggregateReviewState } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
-
-// ── DaemonContext (subset) ───────────────────────────────────────────────────
-
-export interface DaemonContext {
-  config: DaemonConfig;
-  eventBus: EventBus;
-  registry: Registry;
-  taskEngine: ITaskEngine;
-  safetyLayer: ISafetyLayer;
-  workspaceManager: WorkspaceManager;
-  clock: Clock;
-  logger: Logger;
-  [key: string]: unknown;
-}
+import type { ReviewHandlerContext } from "./types.js";
 
 // ── ReviewHandler Interface ──────────────────────────────────────────────────
 
@@ -70,13 +49,11 @@ const MAX_RECENT_FAILURES = 3;
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createReviewHandler(
-  ctx: DaemonContext,
+  ctx: ReviewHandlerContext,
   notifications: NotificationRouter,
   callbacks: ReviewHandlerCallbacks,
 ): ReviewHandler {
-  const { eventBus, registry, taskEngine, logger } = ctx;
-  const safetyLayer = ctx.safetyLayer as ISafetyLayer;
-  const workspaceManager = ctx.workspaceManager as WorkspaceManager;
+  const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, logger } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const processedReviewStates = new Map<string, string>();
@@ -331,7 +308,7 @@ export function createReviewHandler(
       return;
     }
 
-    const now = (ctx.clock as { now(): number }).now();
+    const now = ctx.clock.now();
 
     // Time-windowed failure check
     if (shouldSkipReviewPolling(now)) {

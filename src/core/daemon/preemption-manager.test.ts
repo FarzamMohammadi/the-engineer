@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DaemonConfig } from "../../schemas/config.js";
-import { createSilentLogger } from "./logging.js";
-import { type DaemonContext, createPreemptionManager } from "./preemption-manager.js";
+import { createSilentLogger } from "../logging.js";
+import { createPreemptionManager } from "./preemption-manager.js";
+import type { PreemptionManagerContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
 }
 
 function makeContext(configOverrides?: Partial<DaemonConfig>): {
-  ctx: DaemonContext;
+  ctx: PreemptionManagerContext;
   eventBus: { publish: ReturnType<typeof vi.fn> };
   taskEngine: {
     getQueuedByPriority: ReturnType<typeof vi.fn>;
@@ -69,10 +70,10 @@ function makeContext(configOverrides?: Partial<DaemonConfig>): {
     requestTransition: vi.fn(),
   };
 
-  const ctx: DaemonContext = {
+  const ctx: PreemptionManagerContext = {
     config: makeDaemonConfig(configOverrides),
-    eventBus: eventBus as unknown as DaemonContext["eventBus"],
-    taskEngine: taskEngine as unknown as DaemonContext["taskEngine"],
+    eventBus: eventBus as unknown as PreemptionManagerContext["eventBus"],
+    taskEngine: taskEngine as unknown as PreemptionManagerContext["taskEngine"],
     clock: { now: () => Date.now() },
     logger: createSilentLogger(),
   };

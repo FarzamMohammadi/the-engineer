@@ -6,7 +6,7 @@ import { runLLMContractSuite } from "../../../../test/helpers/contract-suites/ll
 import { createMockCompletionRequest } from "../../../../test/helpers/mock-factories.js";
 import { AdapterMethodError } from "../../../adapters/index.js";
 import { PluginManifestSchema } from "../../../schemas/adapters.js";
-import { ClaudeCodeLLMPlugin, parseCliOutput } from "./claude-code-llm.js";
+import { ClaudeCodeLLMPlugin, buildLlmEnv, parseCliOutput } from "./claude-code-llm.js";
 
 // ── Mock CLI Scripts (created synchronously at module level) ────────────────
 
@@ -233,5 +233,66 @@ describe("parseCliOutput", () => {
     const raw = '{"type":"result","subtype":"success","result":"Hello world"}\n';
     const result = parseCliOutput(raw);
     expect(result.content).toBe("Hello world");
+  });
+});
+
+// ── buildLlmEnv (env isolation) ──────────────────────────────────────────────
+
+describe("buildLlmEnv", () => {
+  it("includes standard shell vars", () => {
+    const env = buildLlmEnv({ HOME: "/home/test", PATH: "/usr/bin", USER: "test" });
+    expect(env["HOME"]).toBe("/home/test");
+    expect(env["PATH"]).toBe("/usr/bin");
+    expect(env["USER"]).toBe("test");
+  });
+
+  it("excludes secret env vars", () => {
+    const env = buildLlmEnv({
+      HOME: "/home/test",
+      PATH: "/usr/bin",
+      GITHUB_TOKEN: "ghp_secret123456",
+      TELEGRAM_BOT_TOKEN: "bot_secret",
+      ANTHROPIC_API_KEY: "sk-ant-secret",
+      AWS_SECRET_ACCESS_KEY: "aws_secret",
+      CLAUDECODE: "nested-session",
+    });
+    expect(env["GITHUB_TOKEN"]).toBeUndefined();
+    expect(env["TELEGRAM_BOT_TOKEN"]).toBeUndefined();
+    expect(env["ANTHROPIC_API_KEY"]).toBeUndefined();
+    expect(env["AWS_SECRET_ACCESS_KEY"]).toBeUndefined();
+    expect(env["CLAUDECODE"]).toBeUndefined();
+    // But standard vars are still present
+    expect(env["HOME"]).toBe("/home/test");
+  });
+
+  it("includes LC_* locale vars via prefix match", () => {
+    const env = buildLlmEnv({
+      LC_ALL: "en_US.UTF-8",
+      LC_CTYPE: "UTF-8",
+      LANG: "en_US.UTF-8",
+    });
+    expect(env["LC_ALL"]).toBe("en_US.UTF-8");
+    expect(env["LC_CTYPE"]).toBe("UTF-8");
+    expect(env["LANG"]).toBe("en_US.UTF-8");
+  });
+
+  it("includes proxy vars (both cases)", () => {
+    const env = buildLlmEnv({
+      HTTP_PROXY: "http://proxy:8080",
+      HTTPS_PROXY: "http://proxy:8443",
+      NO_PROXY: "localhost",
+      http_proxy: "http://proxy:8080",
+      https_proxy: "http://proxy:8443",
+      no_proxy: "localhost",
+    });
+    expect(env["HTTP_PROXY"]).toBe("http://proxy:8080");
+    expect(env["http_proxy"]).toBe("http://proxy:8080");
+    expect(env["NO_PROXY"]).toBe("localhost");
+  });
+
+  it("skips undefined values", () => {
+    const env = buildLlmEnv({ HOME: undefined, PATH: "/usr/bin" });
+    expect(env["HOME"]).toBeUndefined();
+    expect(env["PATH"]).toBe("/usr/bin");
   });
 });

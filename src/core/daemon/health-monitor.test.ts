@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DaemonConfig } from "../../schemas/config.js";
-import { type DaemonContext, createDaemonHealthMonitor } from "./health-monitor.js";
-import { createSilentLogger } from "./logging.js";
+import { createSilentLogger } from "../logging.js";
+import { createDaemonHealthMonitor } from "./health-monitor.js";
 import type { NotificationRouter } from "./notification-router.js";
+import type { HealthMonitorContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -134,13 +135,13 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     queryJournal: vi.fn().mockReturnValue([]),
   };
 
-  const ctx: DaemonContext = {
+  const ctx: HealthMonitorContext = {
     config: makeDaemonConfig(configOverrides),
-    eventBus: eventBus as unknown as DaemonContext["eventBus"],
-    taskEngine: taskEngine as unknown as DaemonContext["taskEngine"],
-    safetyLayer: safetyLayer as unknown as DaemonContext["safetyLayer"],
-    orchestrator: orchestrator as unknown as DaemonContext["orchestrator"],
-    sessionMemory: sessionMemory as unknown as DaemonContext["sessionMemory"],
+    eventBus: eventBus as unknown as HealthMonitorContext["eventBus"],
+    taskEngine: taskEngine as unknown as HealthMonitorContext["taskEngine"],
+    safetyLayer: safetyLayer as unknown as HealthMonitorContext["safetyLayer"],
+    orchestrator: orchestrator as unknown as HealthMonitorContext["orchestrator"],
+    sessionMemory: sessionMemory as unknown as HealthMonitorContext["sessionMemory"],
     clock: { now: () => Date.now() },
     logger: createSilentLogger(),
   };

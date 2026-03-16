@@ -5,9 +5,9 @@ import type Database from "better-sqlite3";
 
 import { ActionPipeline } from "../../src/core/action-pipeline/index.js";
 import { type Daemon, createDaemon } from "../../src/core/daemon/index.js";
-import { createSilentLogger } from "../../src/core/daemon/logging.js";
 import { EventBus } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
+import { createSilentLogger } from "../../src/core/logging.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";

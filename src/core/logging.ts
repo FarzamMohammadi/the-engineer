@@ -34,7 +34,14 @@ export interface LoggingConfig {
  */
 export function createLogger(config: LoggingConfig, engineerHome: string): Logger {
   const resolvedDir = isAbsolute(config.dir) ? config.dir : join(engineerHome, config.dir);
-  mkdirSync(resolvedDir, { recursive: true });
+  try {
+    mkdirSync(resolvedDir, { recursive: true });
+  } catch (error) {
+    throw new Error(
+      `Failed to create log directory "${resolvedDir}": ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 
   const targets: pino.TransportTargetOptions[] = [
     {

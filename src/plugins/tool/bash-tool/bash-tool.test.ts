@@ -230,6 +230,48 @@ describe("BashToolPlugin", () => {
 
   // ── Existing tests ────────────────────────────────────────────────────────
 
+  // ── Secret Passthrough Guard ─────────────────────────────────────────────
+
+  it("filters secret env vars from env_passthrough", async () => {
+    const plugin = createInitializedPlugin();
+    const result = await plugin.initialize({
+      env_passthrough: ["GITHUB_TOKEN", "MY_CUSTOM_VAR"],
+    });
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("GITHUB_TOKEN");
+    expect(result.message).toContain("removed for safety");
+    // MY_CUSTOM_VAR should still work
+    process.env["MY_CUSTOM_VAR"] = "custom_value";
+    const execResult = await plugin.execute(
+      "read",
+      { command: "echo $MY_CUSTOM_VAR" },
+      makeContext(),
+    );
+    expect(execResult.output.trim()).toBe("custom_value");
+    // biome-ignore lint/performance/noDelete: test cleanup
+    delete process.env["MY_CUSTOM_VAR"];
+  });
+
+  it("allows non-secret vars in env_passthrough without warning", async () => {
+    const plugin = createInitializedPlugin();
+    const result = await plugin.initialize({
+      env_passthrough: ["MY_SAFE_VAR", "ANOTHER_VAR"],
+    });
+    expect(result.success).toBe(true);
+    expect(result.message).toBeNull();
+  });
+
+  it("filters multiple secret vars from env_passthrough", async () => {
+    const plugin = createInitializedPlugin();
+    const result = await plugin.initialize({
+      env_passthrough: ["GITHUB_TOKEN", "TELEGRAM_BOT_TOKEN", "MY_VAR", "AWS_SECRET_ACCESS_KEY"],
+    });
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("GITHUB_TOKEN");
+    expect(result.message).toContain("TELEGRAM_BOT_TOKEN");
+    expect(result.message).toContain("AWS_SECRET_ACCESS_KEY");
+  });
+
   it("shutdown kills active processes", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({ command_timeout_ms: 60_000 });

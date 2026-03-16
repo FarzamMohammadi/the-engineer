@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
 
-const YAML_EXT_RE = /\.yaml$/;
 import { startDashboard } from "../../dashboard/index.js";
 import { type ProgressCallback, bootstrap } from "../bootstrap.js";
+import { YAML_EXTENSION_PATTERN } from "../constants.js";
 import { type EngineerDirs, resolveSubdirs } from "../home.js";
 import { getOutput } from "../output.js";
 import { Spinner } from "../progress.js";
@@ -21,14 +21,30 @@ interface StartOptions {
   dryRun: boolean;
 }
 
+/** Create all required directories, returning null on success or exit code on failure. */
+function ensureDirectories(dirs: EngineerDirs): number | null {
+  const out = getOutput();
+  for (const dirPath of Object.values(dirs)) {
+    try {
+      mkdirSync(dirPath, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      out.error(`Cannot create directory "${dirPath}": ${msg}. Check file permissions.`);
+      return 1;
+    }
+  }
+  return null;
+}
+
 /** Boots the daemon. Returns exit code. */
 export async function runStart(engineerHome: string, options: StartOptions): Promise<number> {
   const out = getOutput();
 
   // 1. Auto-create directories
   const dirs = resolveSubdirs(engineerHome);
-  for (const dirPath of Object.values(dirs)) {
-    mkdirSync(dirPath, { recursive: true });
+  const dirError = ensureDirectories(dirs);
+  if (dirError !== null) {
+    return dirError;
   }
 
   // 2. Load config
@@ -36,8 +52,8 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   try {
     const result = loadConfigDir(dirs.config);
     bundle = result.bundle;
-    for (const w of result.warnings) {
-      out.warn(`${w.file}: ${w.message}`);
+    for (const warning of result.warnings) {
+      out.warn(`${warning.file}: ${warning.message}`);
     }
   } catch (error) {
     out.error(`Config error: ${error instanceof Error ? error.message : String(error)}`);
@@ -74,7 +90,20 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     return spawnBackground(engineerHome, options.verbose);
   }
 
-  // 6. Foreground mode: bootstrap and start with progress indicators
+  // 6. Foreground mode: bootstrap and start
+  return await runForeground(engineerHome, bundle, dirs, preFlightResults, options.verbose);
+}
+
+// ── Foreground ────────────────────────────────────────────────────────────────
+
+async function runForeground(
+  engineerHome: string,
+  bundle: ConfigBundle,
+  dirs: EngineerDirs,
+  preFlightResults: import("./doctor.js").DoctorCategory[],
+  verbose: boolean,
+): Promise<number> {
+  const out = getOutput();
   const spinner = new Spinner("");
   const progress: ProgressCallback = (step, status) => {
     if (status === "start") {
@@ -91,15 +120,32 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   progress("Configuration loaded", "done");
 
   // Pre-flight already passed — report it
-  const totalChecks = preFlightResults.reduce((sum, c) => sum + c.checks.length, 0);
+  const totalChecks = preFlightResults.reduce((sum, category) => sum + category.checks.length, 0);
   progress(`Pre-flight: ${String(totalChecks)}/${String(totalChecks)} checks passed`, "done");
 
-  const { daemon, cleanup } = await bootstrap(engineerHome, bundle, options.verbose, progress);
+  let daemon: Awaited<ReturnType<typeof bootstrap>>["daemon"];
+  let cleanup: Awaited<ReturnType<typeof bootstrap>>["cleanup"];
+  try {
+    const result = await bootstrap({
+      engineerHome,
+      config: bundle,
+      verbose,
+      progress,
+    });
+    daemon = result.daemon;
+    cleanup = result.cleanup;
+  } catch (error) {
+    spinner.fail("Bootstrap failed");
+    out.error(`Bootstrap failed: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
 
-  // 7. Start dashboard alongside daemon
+  // Start dashboard alongside daemon
   const { cleanup: cleanupDashboard } = launchDashboard(dirs);
 
-  // Signal handlers for graceful shutdown
+  // NOTE: Signal handlers are registered after bootstrap completes. If the process
+  // receives SIGTERM/SIGINT during bootstrap, cleanup won't run. This is an accepted
+  // gap — bootstrap is typically <2s, and the OS reclaims all resources on exit.
   const shutdown = async () => {
     await daemon.stop();
     cleanupDashboard();
@@ -144,16 +190,16 @@ function runDryRun(
   preFlightResults: import("./doctor.js").DoctorCategory[],
 ): number {
   const out = getOutput();
-  const totalChecks = preFlightResults.reduce((sum, c) => sum + c.checks.length, 0);
+  const totalChecks = preFlightResults.reduce((sum, category) => sum + category.checks.length, 0);
   const enabledIds = new Set(
     existsSync(dirs.plugins)
       ? readdirSync(dirs.plugins)
-          .filter((f) => f.endsWith(".yaml"))
-          .map((f) => f.replace(YAML_EXT_RE, ""))
+          .filter((filename) => filename.endsWith(".yaml"))
+          .map((filename) => filename.replace(YAML_EXTENSION_PATTERN, ""))
       : [],
   );
-  const enabledPlugins = BUILTIN_PLUGINS.filter((p) => enabledIds.has(p.manifest.id));
-  const criticalCount = enabledPlugins.filter((p) => p.manifest.critical).length;
+  const enabledPlugins = BUILTIN_PLUGINS.filter((plugin) => enabledIds.has(plugin.manifest.id));
+  const criticalCount = enabledPlugins.filter((plugin) => plugin.manifest.critical).length;
 
   if (out.mode === "json") {
     out.data({
@@ -162,10 +208,10 @@ function runDryRun(
         path: join(dirs.data, "engineer.db"),
         exists: existsSync(join(dirs.data, "engineer.db")),
       },
-      plugins: enabledPlugins.map((p) => ({
-        id: p.manifest.id,
-        type: p.manifest.type,
-        critical: p.manifest.critical,
+      plugins: enabledPlugins.map((plugin) => ({
+        id: plugin.manifest.id,
+        type: plugin.manifest.type,
+        critical: plugin.manifest.critical,
       })),
       preflight: { total: totalChecks, passed: totalChecks, categories: preFlightResults },
     });
@@ -185,9 +231,9 @@ function runDryRun(
 
   out.blank();
   out.log("  Plugin loading order:");
-  for (const [i, p] of enabledPlugins.entries()) {
-    const label = p.manifest.critical ? "CRITICAL" : "non-critical";
-    out.log(`    ${String(i + 1)}. ${p.manifest.id} (${p.manifest.type}) — ${label}`);
+  for (const [index, plugin] of enabledPlugins.entries()) {
+    const label = plugin.manifest.critical ? "CRITICAL" : "non-critical";
+    out.log(`    ${String(index + 1)}. ${plugin.manifest.id} (${plugin.manifest.type}) — ${label}`);
   }
 
   out.blank();
@@ -201,21 +247,24 @@ function launchDashboard(dirs: EngineerDirs): { cleanup: () => void } {
   const out = getOutput();
   const dbPath = join(dirs.data, "engineer.db");
   const pidPath = join(dirs.run, "dashboard.pid");
-  let handle: { close: () => void } | null = null;
+  let dashboardHandle: { close: () => void } | null = null;
 
   if (existsSync(dbPath)) {
     try {
-      handle = startDashboard({ dbPath, tracesDir: dirs.traces, runDir: dirs.run }, DASHBOARD_PORT);
+      dashboardHandle = startDashboard(
+        { dbPath, tracesDir: dirs.traces, runDir: dirs.run },
+        DASHBOARD_PORT,
+      );
       writeFileSync(pidPath, String(process.pid), "utf8");
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      out.warn(`Dashboard failed to start: ${msg}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      out.warn(`Dashboard failed to start: ${errorMessage}`);
     }
   }
 
   return {
     cleanup() {
-      handle?.close();
+      dashboardHandle?.close();
       try {
         unlinkSync(pidPath);
       } catch {
@@ -238,9 +287,19 @@ function spawnBackground(engineerHome: string, verbose: boolean): number {
     stdio: "ignore",
   });
 
+  child.on("error", (err) => {
+    // Best-effort — parent process may already be exiting
+    out.error(`Background process error: ${err.message}`);
+  });
+
+  if (!child.pid) {
+    out.error("Failed to spawn background process.");
+    return 1;
+  }
+
   child.unref();
 
-  out.success(`The Engineer started in background (PID ${child.pid}).`);
+  out.success(`The Engineer started in background (PID ${String(child.pid)}).`);
   out.log("  Use 'engineer status' to check, 'engineer shutdown' to stop.");
   return 0;
 }

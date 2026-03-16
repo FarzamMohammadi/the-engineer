@@ -33,7 +33,14 @@ export class BlobStore {
 
   constructor(tracesDir: string) {
     this.blobsDir = join(tracesDir, "blobs");
-    mkdirSync(this.blobsDir, { recursive: true });
+    try {
+      mkdirSync(this.blobsDir, { recursive: true });
+    } catch (error) {
+      throw new Error(
+        `Failed to create blob store directory "${this.blobsDir}": ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
   }
 
   /**

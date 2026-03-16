@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { Daemon } from "../../src/core/daemon/index.js";
 import { createDaemon } from "../../src/core/daemon/index.js";
-import { createSilentLogger } from "../../src/core/daemon/logging.js";
+import { createSilentLogger } from "../../src/core/logging.js";
 import type { CompletionResult } from "../../src/schemas/adapters.js";
 import { type DaemonConfig, DaemonConfigSchema } from "../../src/schemas/config.js";
 import {

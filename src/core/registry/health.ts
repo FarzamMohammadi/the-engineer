@@ -1,13 +1,13 @@
 import type { PluginHealthRecord, PluginHealthState } from "../../schemas/adapters.js";
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
-import type { EventBus } from "../event-bus/index.js";
+import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { PluginRecord } from "./lifecycle.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface HealthMonitorDeps {
-  eventBus: EventBus;
+  eventBus: IEventBus;
   getRecord: (pluginId: string) => PluginRecord | undefined;
   getAllRecords: () => PluginRecord[];
   healthCheckTimeoutMs: number;

@@ -31,3 +31,8 @@ export type {
   ExecuteInput,
   PipelineResult,
 } from "./action-pipeline.interface.js";
+export type {
+  IWorkspaceManager,
+  WorkspaceRecord,
+  WorkspaceVerification,
+} from "./workspace-manager.interface.js";

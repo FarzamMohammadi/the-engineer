@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import type { ToolAdapter } from "../../adapters/tool.js";
 import type { ActionResult, AgentAction } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
-import type { ActionPipeline } from "../action-pipeline/index.js";
+import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import { WorkspaceEscapeError } from "./errors.js";
 
 /**
@@ -14,7 +14,7 @@ import { WorkspaceEscapeError } from "./errors.js";
  * and must not escape it (security boundary).
  */
 export interface ActionExecutorDeps {
-  actionPipeline: ActionPipeline;
+  actionPipeline: IActionPipeline;
   toolAdapter: ToolAdapter | null;
   taskId: string;
 }

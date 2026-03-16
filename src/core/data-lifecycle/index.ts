@@ -6,7 +6,7 @@ import type Database from "better-sqlite3";
 import { runIncrementalVacuum } from "../../db/database.js";
 import type { DataLifecycleConfig } from "../../schemas/config.js";
 import type { EventType } from "../../schemas/events.js";
-import type { Clock } from "../daemon/index.js";
+import type { Clock } from "../../utils/clock.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 
 const BLOB_TXT_SUFFIX = /\.txt$/;

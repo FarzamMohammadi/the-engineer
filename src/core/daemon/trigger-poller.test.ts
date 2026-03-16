@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createSilentLogger } from "./logging.js";
-import { type DaemonContext, createTriggerPoller } from "./trigger-poller.js";
+import { createSilentLogger } from "../logging.js";
+import { createTriggerPoller } from "./trigger-poller.js";
+import type { TriggerPollerContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ function createMockConfig() {
   };
 }
 
-function createMockContext(overrides?: Partial<DaemonContext>): DaemonContext {
+function createMockContext(overrides?: Partial<TriggerPollerContext>): TriggerPollerContext {
   return {
     config: createMockConfig(),
     eventBus: {
@@ -58,7 +59,7 @@ function createMockContext(overrides?: Partial<DaemonContext>): DaemonContext {
     clock: { now: () => 1000 },
     logger: createSilentLogger(),
     ...overrides,
-  } as unknown as DaemonContext;
+  } as unknown as TriggerPollerContext;
 }
 
 function makeTriggerEvent(key: string, title = "Test issue") {
@@ -86,7 +87,7 @@ function makeTriggerPlugin(events: unknown[] = [makeTriggerEvent("key-1")]) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("TriggerPoller", () => {
-  let ctx: DaemonContext;
+  let ctx: TriggerPollerContext;
 
   beforeEach(() => {
     ctx = createMockContext();

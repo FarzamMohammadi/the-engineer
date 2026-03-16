@@ -10,7 +10,6 @@ import {
   type DaemonState,
   createDaemon,
 } from "../../src/core/daemon/index.js";
-import { createSilentLogger } from "../../src/core/daemon/logging.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../../src/core/interfaces/session-memory.interface.js";
@@ -18,6 +17,7 @@ import type {
   ITaskEngine,
   TransitionResult,
 } from "../../src/core/interfaces/task-engine.interface.js";
+import { createSilentLogger } from "../../src/core/logging.js";
 import type { ExecuteTaskResult, Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";

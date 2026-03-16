@@ -2,8 +2,6 @@ import { execSync } from "node:child_process";
 import { constants, accessSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const YAML_EXT_RE = /\.yaml$/;
-
 import { loadConfigSafe } from "../../config/loader.js";
 import type { ConfigBundle } from "../../config/loader.js";
 import {
@@ -13,6 +11,7 @@ import {
   SafetyConfigSchema,
   WorkspaceConfigSchema,
 } from "../../schemas/config.js";
+import { YAML_EXTENSION_PATTERN } from "../constants.js";
 import { resolveSubdirs } from "../home.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -186,8 +185,8 @@ function extractEnvVarsFromFile(
 ): void {
   try {
     const content = readFileSync(filePath, "utf8");
-    for (const m of content.matchAll(pattern)) {
-      const varName = m[1];
+    for (const match of content.matchAll(pattern)) {
+      const varName = match[1];
       if (!varName) {
         continue;
       }
@@ -270,7 +269,7 @@ export function checkPluginManifests(engineerHome: string): DoctorCategory {
     return { category: "Plugins", checks };
   }
 
-  const configFiles = readdirSync(pluginConfigDir).filter((f) => f.endsWith(".yaml"));
+  const configFiles = readdirSync(pluginConfigDir).filter((filename) => filename.endsWith(".yaml"));
 
   if (configFiles.length === 0) {
     checks.push({
@@ -281,7 +280,7 @@ export function checkPluginManifests(engineerHome: string): DoctorCategory {
     });
   } else {
     for (const file of configFiles) {
-      const pluginId = file.replace(YAML_EXT_RE, "");
+      const pluginId = file.replace(YAML_EXTENSION_PATTERN, "");
       checks.push({ label: pluginId, status: "pass", message: "Config present (enabled)" });
     }
   }
@@ -522,8 +521,8 @@ export function computeExitCode(categories: DoctorCategory[]): number {
   let hasFail = false;
   let hasWarn = false;
 
-  for (const cat of categories) {
-    for (const check of cat.checks) {
+  for (const category of categories) {
+    for (const check of category.checks) {
       if (check.status === "fail") {
         hasFail = true;
       }
@@ -571,9 +570,9 @@ function exitCodeSummary(exitCode: number): string {
 export function formatDoctorResults(categories: DoctorCategory[]): string {
   const lines: string[] = [];
 
-  for (const cat of categories) {
-    lines.push(`\n  ${cat.category}`);
-    for (const check of cat.checks) {
+  for (const category of categories) {
+    lines.push(`\n  ${category.category}`);
+    for (const check of category.checks) {
       lines.push(...formatCheck(check));
     }
   }

@@ -11,6 +11,61 @@ import {
 } from "../../../adapters/index.js";
 import { type ClaudeCodeLLMConfig, ClaudeCodeLLMConfigSchema } from "./config.js";
 
+// ── LLM subprocess env isolation ─────────────────────────────────────────────
+
+/**
+ * Environment variable allowlist for Claude CLI child processes.
+ * Only these vars (plus LC_* prefix matches) are forwarded.
+ * Prevents leaking GITHUB_TOKEN, TELEGRAM_BOT_TOKEN, etc. to the LLM subprocess.
+ *
+ * No credential env vars are included — users authenticate with their CLI
+ * provider separately before starting The Engineer (see docs/assumptions.md).
+ */
+const LLM_ENV_ALLOWLIST = [
+  "HOME",
+  "PATH",
+  "USER",
+  "SHELL",
+  "LANG",
+  "TERM",
+  "TMPDIR",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "NODE_OPTIONS",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "NODE_TLS_REJECT_UNAUTHORIZED",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+];
+
+/** Prefixes to match (for locale vars like LC_ALL, LC_CTYPE, etc.). */
+const LLM_ENV_PREFIX_ALLOWLIST = ["LC_"];
+
+/**
+ * Build a sanitized environment for LLM child processes.
+ * Only forwards allowlisted vars — no secrets leak to the subprocess.
+ */
+export function buildLlmEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const result: Record<string, string> = {};
+  const allowed = new Set(LLM_ENV_ALLOWLIST);
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (allowed.has(key) || LLM_ENV_PREFIX_ALLOWLIST.some((p) => key.startsWith(p))) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 /**
  * ClaudeCodeLLMPlugin — the Engineer's thinking engine.
  *
@@ -102,10 +157,9 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
   // ── Private Helpers ──────────────────────────────────────────────────
 
-  /** Build a clean env for child processes, stripping CLAUDECODE to avoid nested-session detection. */
-  private cleanEnv(): NodeJS.ProcessEnv {
-    const { CLAUDECODE: _, ...env } = process.env;
-    return env;
+  /** Build an allowlisted env for child processes — no secrets leak. */
+  private cleanEnv(): Record<string, string> {
+    return buildLlmEnv(process.env);
   }
 
   private spawnAndParse(

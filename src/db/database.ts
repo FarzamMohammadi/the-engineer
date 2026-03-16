@@ -141,6 +141,20 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
   }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────────
+
+/** Best-effort chmod 0o600 — non-fatal on unsupported filesystems (e.g. FAT32). */
+function restrictFilePermissions(filePath: string): void {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // Non-fatal: chmod may fail on some filesystems
+  }
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────────
 
 /**
@@ -150,8 +164,17 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
  * Creates the database file and parent directories if they don't exist.
  */
 export function createDatabase(dbPath: string, options?: DatabaseOptions): DatabaseHandle {
-  // Ensure parent directories exist
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  // Ensure parent directories exist (owner-only access)
+  const dbDir = path.dirname(dbPath);
+  try {
+    fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    throw new DatabaseError(
+      `Cannot create database directory "${dbDir}": ${error instanceof Error ? error.message : String(error)}`,
+      dbPath,
+      { cause: error },
+    );
+  }
 
   let db: Database.Database;
   try {
@@ -163,6 +186,8 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
       { cause: error },
     );
   }
+
+  restrictFilePermissions(dbPath);
 
   // FK enforcement must be set before migrations — per-connection, not persisted
   db.pragma("foreign_keys = ON");
@@ -176,13 +201,27 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
   runMigrations(db, dbPath, MIGRATIONS_DIR);
 
   // WAL mode + pragmas after migrations (per sqlite.md startup flow)
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
-  db.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
+  try {
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL");
+    db.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
 
-  // Cache size: negative value = KiB (SQLite convention)
-  const cacheSizeMb = options?.cacheSizeMb ?? DEFAULT_CACHE_SIZE_MB;
-  db.pragma(`cache_size = -${cacheSizeMb * 1_024}`);
+    // Cache size: negative value = KiB (SQLite convention)
+    const cacheSizeMb = options?.cacheSizeMb ?? DEFAULT_CACHE_SIZE_MB;
+    db.pragma(`cache_size = -${cacheSizeMb * 1_024}`);
+  } catch (error) {
+    db.close();
+    throw new DatabaseError(
+      `Database pragma configuration failed at ${dbPath}: ${error instanceof Error ? error.message : String(error)}`,
+      dbPath,
+      { cause: error },
+    );
+  }
+
+  // Restrict WAL/SHM sidecar files to owner-only access
+  for (const suffix of ["-wal", "-shm"]) {
+    restrictFilePermissions(dbPath + suffix);
+  }
 
   return {
     db,

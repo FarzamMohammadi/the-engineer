@@ -1,27 +1,10 @@
-import type { Logger } from "pino";
-
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import { AdapterTypes, type TriggerEvent } from "../../schemas/adapters.js";
-import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { ExternalRef } from "../../schemas/task.js";
 import { TaskStates } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { Registry } from "../registry/index.js";
-import type { Clock } from "./index.js";
-
-// ── DaemonContext (subset) ───────────────────────────────────────────────────
-
-export interface DaemonContext {
-  config: DaemonConfig;
-  eventBus: EventBus;
-  registry: Registry;
-  taskEngine: ITaskEngine;
-  clock: Clock;
-  logger: Logger;
-  [key: string]: unknown;
-}
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import type { TriggerPollerContext } from "./types.js";
 
 // ── TriggerPoller Interface ──────────────────────────────────────────────────
 
@@ -49,7 +32,7 @@ const MAX_BACKOFF_EXPONENT = 8;
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createTriggerPoller(ctx: DaemonContext): TriggerPoller {
+export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   const { config, eventBus, registry, taskEngine, logger } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────

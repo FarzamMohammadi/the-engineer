@@ -1,4 +1,4 @@
-import type { Clock } from "../../src/core/daemon/index.js";
+import type { Clock } from "../../src/utils/clock.js";
 
 /**
  * Deterministic clock for testing. Time only advances when explicitly told to.

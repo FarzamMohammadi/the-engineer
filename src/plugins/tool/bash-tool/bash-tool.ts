@@ -10,6 +10,7 @@ import {
   type ToolResult,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { SECRET_ENV_VARS } from "../../../utils/sanitize.js";
 import { type BashToolConfig, BashToolConfigSchema } from "./config.js";
 
 /**
@@ -116,6 +117,21 @@ export class BashToolPlugin extends ToolAdapter {
       });
     }
     this.config = parsed.data;
+
+    // Validate env_passthrough doesn't include known secret env vars
+    const secretSet = new Set(SECRET_ENV_VARS);
+    const leaked = this.config.env_passthrough.filter((v) => secretSet.has(v));
+    if (leaked.length > 0) {
+      this.config = {
+        ...this.config,
+        env_passthrough: this.config.env_passthrough.filter((v) => !secretSet.has(v)),
+      };
+      return Promise.resolve({
+        success: true,
+        message: `env_passthrough contained secret vars (${leaked.join(", ")}), removed for safety`,
+      });
+    }
+
     return Promise.resolve({ success: true, message: null });
   }
 

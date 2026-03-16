@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BlobStore, computeHash, hashToRef, refToPath } from "./blob-store.js";
 
 const BLOB_REF_PATTERN = /^[a-f0-9]{2}\/[a-f0-9]{64}$/;
+const BLOB_DIR_ERROR_PATTERN = /Failed to create blob store directory/;
 
 describe("BlobStore", () => {
   let tracesDir: string;
@@ -96,5 +97,10 @@ describe("BlobStore", () => {
     const ref = newStore.store("test");
     expect(newStore.read(ref)).toBe("test");
     rmSync(newDir, { recursive: true, force: true });
+  });
+
+  it("throws descriptive error when blobs directory cannot be created", () => {
+    // /dev/null is a file, not a directory — mkdirSync will fail
+    expect(() => new BlobStore("/dev/null/impossible")).toThrow(BLOB_DIR_ERROR_PATTERN);
   });
 });

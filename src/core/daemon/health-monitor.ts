@@ -1,30 +1,9 @@
-import type { Logger } from "pino";
-
-import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
-import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { Orchestrator } from "../orchestrator/index.js";
-import type { Clock } from "./index.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { evaluateTaskStuckness } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
-
-// ── DaemonContext (subset) ───────────────────────────────────────────────────
-
-export interface DaemonContext {
-  config: DaemonConfig;
-  eventBus: EventBus;
-  taskEngine: ITaskEngine;
-  safetyLayer: ISafetyLayer;
-  orchestrator: Orchestrator;
-  sessionMemory: ISessionMemory;
-  clock: Clock;
-  logger: Logger;
-  [key: string]: unknown;
-}
+import type { HealthMonitorContext } from "./types.js";
 
 // ── DaemonHealthMonitor Interface ────────────────────────────────────────────
 
@@ -45,14 +24,11 @@ export interface DaemonHealthMonitor {
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createDaemonHealthMonitor(
-  ctx: DaemonContext,
+  ctx: HealthMonitorContext,
   notifications: NotificationRouter,
   getActiveTaskIds: () => string[],
 ): DaemonHealthMonitor {
-  const { config, eventBus, taskEngine, logger } = ctx;
-  const safetyLayer = ctx.safetyLayer as ISafetyLayer;
-  const orchestrator = ctx.orchestrator as Orchestrator;
-  const sessionMemory = ctx.sessionMemory as ISessionMemory;
+  const { config, eventBus, taskEngine, safetyLayer, orchestrator, sessionMemory, logger } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const blockedEscalationState = new Map<

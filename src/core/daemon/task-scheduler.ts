@@ -1,31 +1,12 @@
-import type { Logger } from "pino";
-
-import type { DaemonConfig } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { EventTypes } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
-import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
-import type { WorkspaceManager } from "../workspace-manager/index.js";
-import type { Clock } from "./index.js";
+import type { ExecuteTaskResult } from "../orchestrator/index.js";
 import { computeAgedPriority } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
-
-// ── DaemonContext (subset) ───────────────────────────────────────────────────
-
-export interface DaemonContext {
-  config: DaemonConfig;
-  eventBus: EventBus;
-  taskEngine: ITaskEngine;
-  orchestrator: Orchestrator;
-  sessionMemory: ISessionMemory;
-  workspaceManager: WorkspaceManager;
-  clock: Clock;
-  logger: Logger;
-  [key: string]: unknown;
-}
+import type { TaskSchedulerContext } from "./types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,13 +54,12 @@ export interface TaskScheduler {
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createTaskScheduler(
-  ctx: DaemonContext,
+  ctx: TaskSchedulerContext,
   notifications: NotificationRouter,
   callbacks: SchedulerCallbacks,
 ): TaskScheduler {
   const { config, eventBus, taskEngine, orchestrator, logger } = ctx;
-  const sessionMemory = ctx.sessionMemory as ISessionMemory;
-  const workspaceManager = ctx.workspaceManager as WorkspaceManager;
+  const { sessionMemory, workspaceManager } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const activeDispatches = new Map<string, Promise<ExecuteTaskResult>>();

@@ -1,28 +1,7 @@
-import type { Logger } from "pino";
-
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
-import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
-import type { EventBus } from "../event-bus/index.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { PeopleDirectory } from "../people-directory/index.js";
-import type { Registry } from "../registry/index.js";
-import type { Clock } from "./index.js";
-
-// ── DaemonContext (subset) ───────────────────────────────────────────────────
-
-/** Shared dependencies available to all Daemon subsystems. */
-export interface DaemonContext {
-  config: DaemonConfig;
-  eventBus: EventBus;
-  registry: Registry;
-  taskEngine: ITaskEngine;
-  peopleDirectory: PeopleDirectory;
-  clock: Clock;
-  logger: Logger;
-  [key: string]: unknown;
-}
+import type { NotificationRouterContext } from "./types.js";
 
 // ── Notification Templates ───────────────────────────────────────────────────
 
@@ -97,9 +76,8 @@ export interface NotificationRouter {
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createNotificationRouter(ctx: DaemonContext): NotificationRouter {
-  const { registry, taskEngine, logger } = ctx;
-  const peopleDirectory = ctx.peopleDirectory as PeopleDirectory;
+export function createNotificationRouter(ctx: NotificationRouterContext): NotificationRouter {
+  const { registry, taskEngine, peopleDirectory, logger } = ctx;
 
   function getCommPlugins(): CommunicationAdapter[] {
     return registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);

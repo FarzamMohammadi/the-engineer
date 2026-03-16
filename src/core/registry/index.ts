@@ -11,9 +11,9 @@ import {
   HealthPluginRecoveredPayloadSchema,
   HealthPluginUnhealthyPayloadSchema,
 } from "../../schemas/events.js";
-import type { EventBus } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { HookRegistry } from "../hooks/index.js";
+import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import { discoverPlugins, orderByTypePriority, validateDiscoveredPlugins } from "./discovery.js";
 import { createHealthMonitor } from "./health.js";
 import { type ConfigResolver, createLifecycleManager } from "./lifecycle.js";
@@ -61,7 +61,7 @@ export const EVENTS: EventDeclaration[] = [
 // ── Options ────────────────────────────────────────────────────────────────
 
 export interface RegistryOptions {
-  eventBus: EventBus;
+  eventBus: IEventBus;
   healthCheckIntervalMs?: number;
   healthCheckTimeoutMs?: number;
   consecutiveFailuresThreshold?: number;
@@ -86,7 +86,7 @@ export interface RegistryOptions {
 export class Registry {
   private readonly lifecycle = createLifecycleManager();
   private readonly healthMonitor;
-  private readonly eventBus: EventBus;
+  private readonly eventBus: IEventBus;
   private readonly hookRegistry?: HookRegistry | undefined;
   private readonly healthCheckIntervalMs: number;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;

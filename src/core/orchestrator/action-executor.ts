@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import type { ToolAdapter } from "../../adapters/tool.js";
 import type { ActionResult, AgentAction } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
+import { extractErrorMessage } from "../../utils/errors.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import { WorkspaceEscapeError } from "./errors.js";
 
@@ -83,7 +84,7 @@ async function executeReadFile(path: string, worktreePath: string): Promise<Acti
     const content = await readFile(resolved, "utf-8");
     return { success: true, output: content };
   } catch (err) {
-    return { success: false, output: "", error: errorMessage(err) };
+    return { success: false, output: "", error: extractErrorMessage(err) };
   }
 }
 
@@ -114,7 +115,7 @@ async function executeWriteFile(
 
     return { success: true, output: `Wrote ${path}` };
   } catch (err) {
-    return { success: false, output: "", error: errorMessage(err) };
+    return { success: false, output: "", error: extractErrorMessage(err) };
   }
 }
 
@@ -161,7 +162,7 @@ async function executeEditFile(
 
     return { success: true, output: `Edited ${path}` };
   } catch (err) {
-    return { success: false, output: "", error: errorMessage(err) };
+    return { success: false, output: "", error: extractErrorMessage(err) };
   }
 }
 
@@ -237,10 +238,6 @@ async function runToolCommand(
       error: result.error ? result.error.message : undefined,
     };
   } catch (err) {
-    return { success: false, output: "", error: errorMessage(err) };
+    return { success: false, output: "", error: extractErrorMessage(err) };
   }
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

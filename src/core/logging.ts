@@ -3,6 +3,8 @@ import { isAbsolute, join } from "node:path";
 import pino from "pino";
 import type { Logger } from "pino";
 
+import { extractErrorMessage } from "../utils/errors.js";
+
 /** Component tags for child loggers (Decision #110). */
 export type ComponentTag =
   | "daemon"
@@ -46,7 +48,7 @@ export function createLogger(config: LoggingConfig, engineerHome: string): Logge
     mkdirSync(resolvedDir, { recursive: true });
   } catch (error) {
     throw new Error(
-      `Failed to create log directory "${resolvedDir}": ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to create log directory "${resolvedDir}": ${extractErrorMessage(error)}`,
       { cause: error },
     );
   }

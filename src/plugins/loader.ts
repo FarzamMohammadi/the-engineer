@@ -7,6 +7,7 @@ import { YAML_EXTENSION_PATTERN } from "../cli/constants.js";
 import { resolveEnvVars } from "../config/loader.js";
 import type { IObserver } from "../core/observer/facade.js";
 import type { Registry } from "../core/registry/index.js";
+import { extractErrorMessage } from "../utils/errors.js";
 import { BUILTIN_PLUGINS } from "./builtin.js";
 
 // ── Plugin Config Loading ─────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ function loadPluginConfig(
     const parsed = parseYaml(raw) as Record<string, unknown> | null;
     return (parsed ? resolveEnvVars(parsed, configPath) : {}) as Record<string, unknown>;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = extractErrorMessage(error);
     if (critical) {
       throw new Error(`Failed to load config for critical plugin "${pluginId}": ${errorMessage}`);
     }

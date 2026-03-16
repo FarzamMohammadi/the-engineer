@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+import { extractErrorMessage } from "../../utils/errors.js";
 
 import { startDashboard } from "../../dashboard/index.js";
 import { type ProgressCallback, bootstrap } from "../bootstrap.js";
@@ -28,7 +29,7 @@ function ensureDirectories(dirs: EngineerDirs): number | null {
     try {
       mkdirSync(dirPath, { recursive: true, mode: 0o700 });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = extractErrorMessage(error);
       out.error(`Cannot create directory "${dirPath}": ${msg}. Check file permissions.`);
       return 1;
     }
@@ -56,7 +57,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
       out.warn(`${warning.file}: ${warning.message}`);
     }
   } catch (error) {
-    out.error(`Config error: ${error instanceof Error ? error.message : String(error)}`);
+    out.error(`Config error: ${extractErrorMessage(error)}`);
     return 1;
   }
 
@@ -138,7 +139,7 @@ async function runForeground(
     bootstrapLogger = result.logger;
   } catch (error) {
     spinner.fail("Bootstrap failed");
-    out.error(`Bootstrap failed: ${error instanceof Error ? error.message : String(error)}`);
+    out.error(`Bootstrap failed: ${extractErrorMessage(error)}`);
     return 1;
   }
 
@@ -162,9 +163,7 @@ async function runForeground(
       } catch {
         // Logger transport may be broken during shutdown — stderr fallback below
       }
-      process.stderr.write(
-        `Shutdown failed: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
+      process.stderr.write(`Shutdown failed: ${extractErrorMessage(err)}\n`);
       process.exit(1);
     });
   });
@@ -175,14 +174,15 @@ async function runForeground(
       } catch {
         // Logger transport may be broken during shutdown — stderr fallback below
       }
-      process.stderr.write(
-        `Shutdown failed: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
+      process.stderr.write(`Shutdown failed: ${extractErrorMessage(err)}\n`);
       process.exit(1);
     });
   });
 
   try {
+    // INVARIANT: Events published between bootstrap() return and daemon.start()
+    // are persisted to DB but not delivered — subscribers register in daemon.start().
+    // Accepted: no component publishes during this window.
     const startSpinner = new Spinner("Starting daemon");
     startSpinner.start();
     await daemon.start();
@@ -191,7 +191,7 @@ async function runForeground(
     out.blank();
     out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
   } catch (error) {
-    out.error(`Startup failed: ${error instanceof Error ? error.message : String(error)}`);
+    out.error(`Startup failed: ${extractErrorMessage(error)}`);
     cleanupDashboard();
     cleanup();
     return 1;
@@ -275,8 +275,7 @@ function launchDashboard(dirs: EngineerDirs): { cleanup: () => void } {
       );
       writeFileSync(pidPath, String(process.pid), "utf8");
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      out.warn(`Dashboard failed to start: ${errorMessage}`);
+      out.warn(`Dashboard failed to start: ${extractErrorMessage(error)}`);
     }
   }
 

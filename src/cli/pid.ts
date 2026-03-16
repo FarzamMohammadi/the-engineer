@@ -6,11 +6,6 @@ export function pidFilePath(engineerHome: string): string {
   return join(engineerHome, "run", "engineer.pid");
 }
 
-/** Dashboard PID file path within ENGINEER_HOME. */
-export function dashboardPidFilePath(engineerHome: string): string {
-  return join(engineerHome, "run", "dashboard.pid");
-}
-
 /**
  * Reads the PID from the engineer.pid file.
  * Returns the PID number or null if the file is missing/invalid.

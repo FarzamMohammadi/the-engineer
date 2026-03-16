@@ -9,6 +9,7 @@
  */
 import { ulid } from "ulid";
 
+import { extractErrorMessage } from "../../utils/errors.js";
 import type { BlobStore } from "../observability/blob-store.js";
 import { ObserverStore } from "./store.js";
 import { ObserverStream } from "./stream.js";
@@ -23,14 +24,6 @@ export { ObservationType } from "./types.js";
 export type { ObservationTypeValue } from "./types.js";
 
 // ── Pure Helpers ─────────────────────────────────────────────────────────────
-
-/** Extract a safe error message from an unknown value. */
-function extractErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
 
 /** Extract a stack trace from an unknown value. */
 function extractStack(error: unknown): string | undefined {

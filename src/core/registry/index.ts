@@ -15,23 +15,8 @@ import type { EventDeclaration } from "../event-bus/topology.js";
 import type { HookRegistry } from "../hooks/index.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/facade.js";
-import { discoverPlugins, orderByTypePriority, validateDiscoveredPlugins } from "./discovery.js";
 import { createHealthMonitor } from "./health.js";
-import { type ConfigResolver, createLifecycleManager } from "./lifecycle.js";
-
-// ── Re-exports ─────────────────────────────────────────────────────────────
-
-export {
-  discoverPlugins,
-  validateDiscoveredPlugins,
-  orderByTypePriority,
-  MANIFEST_FILENAME,
-  SEMVER_REGEX,
-  TYPE_PRIORITY,
-} from "./discovery.js";
-export type { DiscoveredManifest } from "./discovery.js";
-export type { PluginRecord, LifecycleManager, ConfigResolver } from "./lifecycle.js";
-export type { HealthMonitor, HealthMonitorDeps } from "./health.js";
+import { createLifecycleManager } from "./lifecycle.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -73,17 +58,12 @@ export interface RegistryOptions {
 // ── Registry Facade ────────────────────────────────────────────────────────
 
 /**
- * Core component that manages plugin lifecycle — discovery, validation,
- * loading, initialization, health monitoring, and shutdown.
+ * Core component that manages plugin lifecycle — registration,
+ * initialization, health monitoring, and shutdown.
  *
  * Thin facade that delegates to focused subsystems:
- * - Discovery: pure functions for finding and validating plugins
  * - Lifecycle: plugin registration, initialization, lookup, and shutdown
  * - Health: periodic health checks and state machine transitions
- *
- * Two entry paths:
- * - `loadFromDirectories(dirs)` — five-phase startup pipeline
- * - `register(manifest, instance)` — programmatic registration (tests, runtime)
  */
 export class Registry {
   private readonly lifecycle;
@@ -108,29 +88,6 @@ export class Registry {
       healthCheckTimeoutMs: options.healthCheckTimeoutMs ?? 5_000,
       consecutiveFailuresThreshold: options.consecutiveFailuresThreshold ?? 3,
     });
-  }
-
-  // ── Five-Phase Loading Pipeline ────────────────────────────────────────
-
-  async loadFromDirectories(
-    dirs: string[],
-    configResolver: ConfigResolver = () => Promise.resolve({}),
-  ): Promise<void> {
-    const discovered = discoverPlugins(dirs, this.observer);
-    if (discovered.length === 0) {
-      this.observer.info("No plugins discovered");
-      return;
-    }
-
-    validateDiscoveredPlugins(discovered, this.observer);
-
-    const ordered = orderByTypePriority(discovered);
-    this.observer.info("Loading order determined", {
-      order: ordered.map((d) => d.manifest.id),
-    });
-
-    await this.lifecycle.loadModules(ordered);
-    await this.lifecycle.initializeAll(configResolver);
   }
 
   // ── Registration ───────────────────────────────────────────────────────

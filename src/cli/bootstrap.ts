@@ -5,7 +5,6 @@ import type { Logger } from "pino";
 import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
 import { createDataLifecycleManager } from "../core/data-lifecycle/index.js";
-import type { EventTopology } from "../core/event-bus/topology.js";
 import { HookRegistry } from "../core/hooks/index.js";
 import { createChildLogger, createLogger } from "../core/logging.js";
 import { BlobStore } from "../core/observability/blob-store.js";
@@ -25,7 +24,6 @@ import { RealClock } from "../utils/clock.js";
 /** Result of bootstrapping all components. */
 export interface BootstrapResult {
   daemon: Daemon;
-  topology: EventTopology;
   logger: Logger;
   cleanup: () => void;
 }
@@ -46,6 +44,9 @@ export interface BootstrapOptions {
 /**
  * Instantiates all Core components in dependency order, discovers and initializes
  * plugins via auto-discovery, and creates the Daemon.
+ *
+ * Convention: `new` for classes with pure constructor injection (no I/O).
+ * `create*()` factories for components needing setup logic or returning interfaces.
  */
 export async function bootstrap(options: BootstrapOptions): Promise<BootstrapResult> {
   const { engineerHome, config, verbose, progress } = options;
@@ -191,7 +192,6 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     return {
       daemon,
-      topology,
       logger,
       cleanup() {
         dbHandle?.close();

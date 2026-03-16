@@ -8,8 +8,6 @@ import {
 } from "../../schemas/adapters.js";
 import type { PluginHealthRecord } from "../../schemas/adapters.js";
 import type { IObserver } from "../observer/facade.js";
-import type { DiscoveredManifest } from "./discovery.js";
-import { RegistryLoadError } from "./errors.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -20,14 +18,10 @@ export interface PluginRecord {
   initOrder: number;
 }
 
-export type ConfigResolver = (pluginId: string) => Promise<Record<string, unknown>>;
-
 export interface LifecycleManager {
   register(manifest: PluginManifest, instance: BaseAdapter): RegistrationResult;
   deregister(pluginId: string): void;
   initializePlugin(pluginId: string, config: Record<string, unknown>): Promise<InitResult>;
-  initializeAll(configResolver: ConfigResolver): Promise<void>;
-  loadModules(ordered: DiscoveredManifest[]): Promise<void>;
   shutdownAll(): Promise<void>;
   getPlugin<T extends BaseAdapter>(type: AdapterType, id: string): T | null;
   getPluginsByType<T extends BaseAdapter>(type: AdapterType): T[];
@@ -148,51 +142,6 @@ export function createLifecycleManager(observer: IObserver): LifecycleManager {
     return result;
   }
 
-  async function initializeAll(configResolver: ConfigResolver): Promise<void> {
-    const records = [...plugins.values()].sort((a, b) => a.initOrder - b.initOrder);
-
-    for (const record of records) {
-      const { manifest } = record;
-      const config = await configResolver(manifest.id);
-      const result = await initializePlugin(manifest.id, config);
-
-      if (!result.success) {
-        const errorMessage = result.message ?? "unknown error";
-        if (manifest.critical) {
-          observer.error("Critical plugin failed to initialize, aborting startup", {
-            pluginId: manifest.id,
-            error: errorMessage,
-          });
-          throw new RegistryLoadError(
-            manifest.id,
-            `critical plugin failed to initialize: ${errorMessage}`,
-          );
-        }
-        observer.warn("Plugin failed to initialize, skipping (non-critical)", {
-          pluginId: manifest.id,
-          error: errorMessage,
-        });
-        deregister(manifest.id);
-      }
-    }
-  }
-
-  async function loadModules(ordered: DiscoveredManifest[]): Promise<void> {
-    for (const item of ordered) {
-      const { manifest, entryPath } = item;
-
-      const module = (await import(entryPath)) as { createPlugin?: () => BaseAdapter };
-      if (typeof module.createPlugin !== "function") {
-        const message = `entry module does not export createPlugin(): ${entryPath}`;
-        observer.error("Plugin load failed", { pluginId: manifest.id, error: message });
-        throw new RegistryLoadError(manifest.id, message);
-      }
-
-      const instance = module.createPlugin();
-      register(manifest, instance);
-    }
-  }
-
   async function shutdownAll(): Promise<void> {
     const records = [...plugins.values()].sort((a, b) => b.initOrder - a.initOrder);
 
@@ -224,8 +173,6 @@ export function createLifecycleManager(observer: IObserver): LifecycleManager {
     register,
     deregister,
     initializePlugin,
-    initializeAll,
-    loadModules,
     shutdownAll,
     getPlugin,
     getPluginsByType,

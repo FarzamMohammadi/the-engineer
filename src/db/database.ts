@@ -4,6 +4,8 @@ import path from "node:path";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 
+import { extractErrorMessage } from "../utils/errors.js";
+
 // ── Error Classes ────────────────────────────────────────────────────────────────
 
 export class DatabaseError extends Error {
@@ -125,7 +127,7 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
         db.exec(migration.sql);
       } catch (error) {
         throw new MigrationError(
-          `Migration ${migration.filename} failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Migration ${migration.filename} failed: ${extractErrorMessage(error)}`,
           dbPath,
           migration.filename,
           migration.version,
@@ -170,7 +172,7 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
     fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
   } catch (error) {
     throw new DatabaseError(
-      `Cannot create database directory "${dbDir}": ${error instanceof Error ? error.message : String(error)}`,
+      `Cannot create database directory "${dbDir}": ${extractErrorMessage(error)}`,
       dbPath,
       { cause: error },
     );
@@ -181,7 +183,7 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
     db = new BetterSqlite3(dbPath);
   } catch (error) {
     throw new DatabaseError(
-      `Failed to open database at ${dbPath}: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to open database at ${dbPath}: ${extractErrorMessage(error)}`,
       dbPath,
       { cause: error },
     );
@@ -212,7 +214,7 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
   } catch (error) {
     db.close();
     throw new DatabaseError(
-      `Database pragma configuration failed at ${dbPath}: ${error instanceof Error ? error.message : String(error)}`,
+      `Database pragma configuration failed at ${dbPath}: ${extractErrorMessage(error)}`,
       dbPath,
       { cause: error },
     );

@@ -1,6 +1,6 @@
 # Task State Machine
 
-> **Note:** This is the Layer 1 conceptual state machine (6 states). The authoritative version — 7 states (Review-Pending added), sub-states, and 23 valid transitions — is in [`../2-components/task-engine.md`](../2-components/task-engine.md). Open questions at the bottom of this file were resolved in Layers 2-4.
+> **Note:** This is the Layer 1 conceptual state machine (6 states). The authoritative version — 7 states (Review-Pending added), sub-states, and 27 valid transitions — is in [`../2-components/task-engine.md`](../2-components/task-engine.md). Open questions at the bottom of this file were resolved in Layers 2-4.
 
 Derived from CPU process state management — see [`../0-foundation/philosophy.md`](../0-foundation/philosophy.md) § Derive from Proven Systems.
 

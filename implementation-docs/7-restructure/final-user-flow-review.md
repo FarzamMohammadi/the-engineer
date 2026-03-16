@@ -715,6 +715,6 @@ All integration seams are correctly wired. Every event published has at least on
 
 Every state transition is valid. Every event is published and consumed correctly. Every DB write targets the right table. Every notification fires at the right moment. The cost tracking pipeline is complete. The Observer integrates cleanly. Error handling is comprehensive with proper escalation. Crash recovery preserves progress through checkpoints.
 
-The Engineer's codebase, after Layer 7 restructuring, is not just decomposed and modular — it is **provably correct at the integration level**. The 28 ValidTransitions cover every possible path. The 5 EventBus subscriptions wire all cross-component coordination. The 7 notification templates cover all user-facing milestones.
+The Engineer's codebase, after Layer 7 restructuring, is not just decomposed and modular — it is **provably correct at the integration level**. The 27 ValidTransitions cover every possible path. The 5 EventBus subscriptions wire all cross-component coordination. The 7 notification templates cover all user-facing milestones.
 
 **Layer 7 is complete.**

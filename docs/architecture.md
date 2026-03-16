@@ -28,6 +28,9 @@ graph TB
         WM[WorkspaceManager]
         R[Registry]
         PD[PeopleDirectory]
+        OB[Observer]
+        HR[HookRegistry]
+        DLM[DataLifecycleManager]
     end
 
     subgraph Adapters["Adapter Tier"]
@@ -92,6 +95,9 @@ graph LR
 | **WorkspaceManager** | Git worktree creation/cleanup per task |
 | **Registry** | Plugin discovery, five-phase loading, health monitoring, lifecycle management |
 | **PeopleDirectory** | Config-driven contact resolution for notifications and escalations |
+| **Observer** | Structured tracing facade — spans, observations, blob storage for War Room dashboard |
+| **HookRegistry** | Lifecycle hook system for plugin-injected callbacks at key system events |
+| **DataLifecycleManager** | Retention cleanup, blob orphan pruning, incremental vacuum |
 
 ## Task Lifecycle
 
@@ -131,28 +137,27 @@ stateDiagram-v2
     queued --> active : Scheduled
     active --> blocked : Waiting on external
     blocked --> active : Unblocked
+    blocked --> failed : Escalation timeout
     active --> queued : Preempted
     active --> review_pending : PR created
     review_pending --> active : Feedback received
-    active --> done : Completed
+    review_pending --> queued : Rework needed
+    review_pending --> completed : Approved + merged
+    active --> completed : Direct completion
     active --> failed : Unrecoverable error
-    active --> cancelled : User cancelled
-    queued --> cancelled : User cancelled
-    blocked --> cancelled : User cancelled
 ```
 
-**States:**
+**States** (7 base states, 5 sub-states):
 
-| State | Description |
-|-------|-------------|
-| `intake` | Task received, being analyzed |
-| `queued` | Ready for execution, waiting to be scheduled |
-| `active` | Currently being worked on by the Orchestrator |
-| `blocked` | Waiting on external input (human response, review feedback) |
-| `review_pending` | PR created, awaiting code review |
-| `done` | Successfully completed |
-| `failed` | Failed after exhausting recovery options |
-| `cancelled` | Cancelled by user or system |
+| State | Sub-states | Description |
+|-------|------------|-------------|
+| `intake` | — | Task received, being analyzed |
+| `queued` | — | Ready for execution, waiting to be scheduled |
+| `active` | `working`, `supervising`, `integrating` | Currently being worked on by the Orchestrator |
+| `blocked` | — | Waiting on external input (human response, review feedback) |
+| `review_pending` | `demo`, `code` | PR created, awaiting review (draft → ready) |
+| `completed` | — | Successfully completed, PR merged |
+| `failed` | — | Failed after exhausting recovery options |
 
 ## Plugin System
 

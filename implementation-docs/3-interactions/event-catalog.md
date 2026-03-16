@@ -821,6 +821,53 @@ payload {
 |-----------|-----|
 | (audit trail only) | Communication record |
 
+### `review.*` — Review Lifecycle Events
+
+**Owner:** Daemon (ReviewHandler)
+
+#### `review.poll_completed`
+
+A PR review poll cycle completed. Emitted every time the daemon checks review status for a task, regardless of whether the state changed. Primary use: observability and audit trail.
+
+```
+payload {
+  task_id:         string          // Task owning the PR
+  pr_number:       number          // PR number checked
+  aggregate_state: string?         // "approved" | "changes_requested" | "comment" | null
+  reviewer_count:  number          // Number of reviewers detected
+}
+```
+
+**Subscribers:**
+| Subscriber | Why |
+|-----------|-----|
+| (audit trail only) | Review cycle observability |
+
+---
+
+### `system.*` — System Lifecycle Events
+
+**Owner:** DataLifecycleManager
+
+#### `system.cleanup_completed`
+
+A data lifecycle cleanup cycle completed. Emitted after retention pruning, blob orphan cleanup, and optional vacuum.
+
+```
+payload {
+  tables_cleaned:  string[]        // Tables that had rows deleted
+  rows_deleted:    number          // Total rows removed across all tables
+  blobs_removed:   number          // Orphaned blob files cleaned up
+  vacuum_run:      boolean         // Whether incremental vacuum was executed
+  duration_ms:     number          // Total cleanup duration
+}
+```
+
+**Subscribers:**
+| Subscriber | Why |
+|-----------|-----|
+| (audit trail only) | Cleanup observability |
+
 ---
 
 ## Delivery Model
@@ -888,12 +935,14 @@ The Orchestrator receiving events via the Daemon (not direct subscription) keeps
 | `preemption.*` | `requested`, `ready` | Daemon, Orchestrator |
 | `timeout.*` | `reminder`, `self_unblock_check`, `alert` | Daemon |
 | `trigger.*` | `new_event`, `pr_review` | Daemon |
-| `health.*` | `stuck_detected`, `trigger_failure`, `config_reload_failed` | Daemon |
+| `health.*` | `stuck_detected`, `trigger_failure`, `config_reload_failed`, `plugin_unhealthy`, `plugin_failed`, `plugin_recovered` | Daemon, Registry |
 | `workspace.*` | `created`, `verified`, `cleaned`, `merge_conflict` | Workspace Manager |
 | `git.*` | `branch_created`, `committed`, `pushed`, `pr_opened`, `pr_updated`, `pr_merged`, `merge_completed` | Workspace Manager |
 | `comm.*` | `message_received`, `message_sent` | Communication Plugins |
+| `review.*` | `poll_completed` | Daemon (ReviewHandler) |
+| `system.*` | `cleanup_completed` | DataLifecycleManager |
 
-**Total: 30 event types** across 10 groups.
+**Total: 36 event types** across 12 groups.
 
 ---
 

@@ -53,7 +53,8 @@ Deep dives live in [`implementation-docs/`](implementation-docs/), organized by 
 ## Development
 
 ```bash
-pnpm test             # 2414 tests (unit + integration + E2E)
+pnpm test             # Unit tests (~2300+)
+pnpm test:all         # All tiers (unit + integration + E2E)
 pnpm run typecheck    # tsc --noEmit (strict)
 pnpm run lint         # Biome (all rules)
 pnpm run build        # Production build
@@ -62,7 +63,7 @@ npx tsx src/index.ts  # Run CLI in dev mode
 
 ## Status
 
-Layer 5 (19-phase build) complete. Layer 6 refinement in progress — agent loop, prompts, workspace integration, communication, decomposition, and observability dashboard all shipped. Live end-to-end tested against real repos.
+Layer 7 (structural restructuring) complete. Full 7-phase pipeline, 6 built-in plugins, declarative event topology, plugin discovery, CLI polish, security hardening, typed errors, data lifecycle management, and observability tracing. Live end-to-end tested against real repos.
 
 ## License
 

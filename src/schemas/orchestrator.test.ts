@@ -218,7 +218,7 @@ describe("ExecutionOutputSchema", () => {
       test_results: { passed: 10, failed: 0, skipped: 1 },
       build_status: "passing",
     });
-    expect(output.test_results.passed).toBe(10);
+    expect(output.test_results["passed"]).toBe(10);
   });
 
   it("accepts both build statuses", () => {
@@ -295,7 +295,7 @@ describe("DemoPrepOutputSchema", () => {
           artifacts: [{ type, location: "/tmp/x", permanent: true }],
           pr_number: 1,
           pr_description: "x",
-        }).artifacts[0]?.type,
+        }).artifacts[0]?.["type"],
       ).toBe(type);
     }
   });

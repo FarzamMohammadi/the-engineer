@@ -105,7 +105,7 @@ CREATE TABLE sessions (
   task_id             TEXT NOT NULL REFERENCES tasks(id),
   started_at          TEXT NOT NULL,              -- ISO 8601
   ended_at            TEXT,                       -- null if active
-  end_reason          TEXT CHECK(end_reason IN ('completed','preempted','crashed','new_session')),
+  end_reason          TEXT CHECK(end_reason IN ('completed','preempted','crashed','new_session','decomposed','review_pending')),
   previous_session_id TEXT,                       -- for multi-session tasks
   resumed_from_checkpoint TEXT                    -- checkpoint ID used to resume
 );

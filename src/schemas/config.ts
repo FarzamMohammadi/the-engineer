@@ -26,9 +26,7 @@ export const DataLifecycleConfigSchema = z.object({
   retention: z
     .object({
       events: TableRetentionSchema.default({}),
-      action_traces: TableRetentionSchema.default({ max_age_days: 60 }),
-      phase_metrics: TableRetentionSchema.default({ max_age_days: 180 }),
-      llm_traces: TableRetentionSchema.default({ max_age_days: 60 }),
+      observations: TableRetentionSchema.default({ max_age_days: 90 }),
       journal_entries: TableRetentionSchema.default({}),
       checkpoints: TableRetentionSchema.default({}),
     })

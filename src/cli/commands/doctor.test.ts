@@ -448,9 +448,7 @@ function makeSafeBundle() {
         interval_ms: 3_600_000,
         retention: {
           events: { max_age_days: 90, max_count: null },
-          action_traces: { max_age_days: 60, max_count: null },
-          phase_metrics: { max_age_days: 180, max_count: null },
-          llm_traces: { max_age_days: 60, max_count: null },
+          observations: { max_age_days: 90, max_count: null },
           journal_entries: { max_age_days: 90, max_count: null },
           checkpoints: { max_age_days: 90, max_count: null },
         },

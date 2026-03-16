@@ -324,7 +324,7 @@ CREATE TABLE observations (
 
 ### Blob Store
 
-**File:** `src/core/observability/blob-store.ts`
+**File:** `src/core/observer/blob-store.ts`
 
 Content-addressable storage for large content (LLM prompts/responses). Uses SHA-256 hashing with Git-like directory structure:
 
@@ -410,7 +410,7 @@ handle.cleanup(); // Closes DB + removes temp dir
 | `src/schemas/observer.ts` | Zod schemas, observation types enum, row mapper |
 | `src/db/migrations/003_observer.sql` | Database schema (table + 8 indexes) |
 | `src/core/logging.ts` | `ComponentTag` type, `createLogger`, `createSilentLogger` |
-| `src/core/observability/blob-store.ts` | Content-addressable blob storage (SHA-256) |
+| `src/core/observer/blob-store.ts` | Content-addressable blob storage (SHA-256) |
 | `src/cli/bootstrap.ts` | Observer creation, upgrade, and threading to all components |
 | `test/helpers/test-observer-facade.ts` | Test helper: silent observer (no tracing) |
 | `test/helpers/test-observer.ts` | Test helper: full observer with in-memory DB |

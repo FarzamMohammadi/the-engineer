@@ -30,9 +30,7 @@ function defaultConfig(overrides?: Partial<DataLifecycleConfig>): DataLifecycleC
     interval_ms: 3_600_000,
     retention: {
       events: { max_age_days: 90, max_count: null },
-      action_traces: { max_age_days: 60, max_count: null },
-      phase_metrics: { max_age_days: 180, max_count: null },
-      llm_traces: { max_age_days: 60, max_count: null },
+      observations: { max_age_days: 90, max_count: null },
       journal_entries: { max_age_days: 90, max_count: null },
       checkpoints: { max_age_days: 90, max_count: null },
     },
@@ -47,52 +45,41 @@ function insertEvent(db: TestDatabaseHandle["db"], timestamp: string, id?: strin
   ).run(id ?? `evt-${Date.now()}-${Math.random()}`, "test.event", "test", null, timestamp, "{}");
 }
 
-function insertActionTrace(db: TestDatabaseHandle["db"], timestamp: string): void {
+function insertObservation(
+  db: TestDatabaseHandle["db"],
+  timestamp: string,
+  type: string,
+  name: string,
+  input?: Record<string, unknown> | null,
+): void {
   db.prepare(
-    "INSERT INTO action_traces (id, task_id, session_id, trace_id, phase, iteration, action_type, result_success, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    `INSERT INTO observations (id, type, name, task_id, start_time, end_time, level, status, input)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    `at-${Date.now()}-${Math.random()}`,
+    `obs-${Date.now()}-${Math.random()}`,
+    type,
+    name,
     "task-1",
-    "sess-1",
-    "trace-1",
-    "execution",
-    1,
-    "read_file",
-    1,
     timestamp,
+    timestamp,
+    "info",
+    "ok",
+    input ? JSON.stringify(input) : null,
   );
 }
 
-function insertPhaseMetric(db: TestDatabaseHandle["db"], startedAt: string): void {
-  db.prepare(
-    "INSERT INTO phase_metrics (id, task_id, session_id, trace_id, phase, started_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(`pm-${Date.now()}-${Math.random()}`, "task-1", "sess-1", "trace-1", "execution", startedAt);
-}
-
-function insertLlmTrace(
+function insertLlmObservation(
   db: TestDatabaseHandle["db"],
   timestamp: string,
   promptRef?: string | null,
   responseRef?: string | null,
 ): void {
-  db.prepare(
-    "INSERT INTO llm_traces (id, task_id, trace_id, phase, iteration, prompt_length, response_length, tokens_in, tokens_out, latency_ms, provider_id, prompt_ref, response_ref, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(
-    `lt-${Date.now()}-${Math.random()}`,
-    "task-1",
-    "trace-1",
-    "execution",
-    1,
-    100,
-    200,
-    50,
-    100,
-    1000,
-    "claude-code-llm",
-    promptRef ?? null,
-    responseRef ?? null,
-    timestamp,
-  );
+  insertObservation(db, timestamp, "llm_call", "completion", {
+    prompt_ref: promptRef ?? null,
+    response_ref: responseRef ?? null,
+    tokens_in: 50,
+    tokens_out: 100,
+  });
 }
 
 function daysAgo(days: number): string {
@@ -101,38 +88,6 @@ function daysAgo(days: number): string {
 
 function createFakeClock(now = Date.now()): { now: () => number } {
   return { now: () => now };
-}
-
-/** Insert prerequisite task and session rows for FK constraints */
-function ensureTaskAndSession(db: TestDatabaseHandle["db"]): void {
-  const taskExists = db.prepare("SELECT 1 FROM tasks WHERE id = 'task-1'").get();
-  if (taskExists) {
-    return;
-  }
-  db.prepare(
-    "INSERT INTO tasks (id, state, sub_state, phase, title, description, repo, source_text, priority, llm_tokens, llm_cost_usd, compute_time_ms, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(
-    "task-1",
-    "completed",
-    null,
-    "execution",
-    "Test task",
-    "",
-    "test/repo",
-    "",
-    50,
-    0,
-    0,
-    0,
-    daysAgo(200),
-    daysAgo(1),
-  );
-
-  db.prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)").run(
-    "sess-1",
-    "task-1",
-    daysAgo(200),
-  );
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -210,25 +165,12 @@ describe("cleanupTable", () => {
     expect(second.remaining).toBe(1);
   });
 
-  it("works with action_traces table and timestamp column", () => {
-    ensureTaskAndSession(dbHandle.db);
-    insertActionTrace(dbHandle.db, daysAgo(100));
-    insertActionTrace(dbHandle.db, daysAgo(10));
+  it("works with observations table and start_time column", () => {
+    insertObservation(dbHandle.db, daysAgo(100), "tool_execution", "read_file");
+    insertObservation(dbHandle.db, daysAgo(10), "tool_execution", "write_file");
 
     const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "action_traces", "timestamp", null, cutoff, false);
-
-    expect(result.deleted).toBe(1);
-    expect(result.remaining).toBe(1);
-  });
-
-  it("works with phase_metrics table and started_at column", () => {
-    ensureTaskAndSession(dbHandle.db);
-    insertPhaseMetric(dbHandle.db, daysAgo(200));
-    insertPhaseMetric(dbHandle.db, daysAgo(100));
-
-    const cutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "phase_metrics", "started_at", null, cutoff, false);
+    const result = cleanupTable(dbHandle.db, "observations", "start_time", null, cutoff, false);
 
     expect(result.deleted).toBe(1);
     expect(result.remaining).toBe(1);
@@ -270,10 +212,9 @@ describe("collectReferencedBlobRefs", () => {
     dbHandle.cleanup();
   });
 
-  it("returns all distinct prompt_ref and response_ref", () => {
-    ensureTaskAndSession(dbHandle.db);
-    insertLlmTrace(dbHandle.db, new Date().toISOString(), "ab/abc123", "cd/cde456");
-    insertLlmTrace(dbHandle.db, new Date().toISOString(), "ef/efg789", null);
+  it("returns all distinct prompt_ref and response_ref from llm_call observations", () => {
+    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ab/abc123", "cd/cde456");
+    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ef/efg789", null);
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
 
@@ -284,22 +225,20 @@ describe("collectReferencedBlobRefs", () => {
   });
 
   it("skips null refs", () => {
-    ensureTaskAndSession(dbHandle.db);
-    insertLlmTrace(dbHandle.db, new Date().toISOString(), null, null);
+    insertLlmObservation(dbHandle.db, new Date().toISOString(), null, null);
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
     expect(refs.size).toBe(0);
   });
 
-  it("returns empty set when no traces exist", () => {
+  it("returns empty set when no observations exist", () => {
     const refs = collectReferencedBlobRefs(dbHandle.db);
     expect(refs.size).toBe(0);
   });
 
   it("deduplicates shared refs", () => {
-    ensureTaskAndSession(dbHandle.db);
-    insertLlmTrace(dbHandle.db, new Date().toISOString(), "ab/same", "cd/same2");
-    insertLlmTrace(dbHandle.db, new Date().toISOString(), "ab/same", "cd/same2");
+    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ab/same", "cd/same2");
+    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ab/same", "cd/same2");
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
     expect(refs.size).toBe(2);
@@ -388,7 +327,7 @@ describe("createDataLifecycleManager", () => {
     ebHandle.cleanup();
   });
 
-  it("runCleanup processes all 6 tables", () => {
+  it("runCleanup processes all 4 tables", () => {
     // Insert old data in events table
     insertEvent(dbHandle.db, daysAgo(100));
     insertEvent(dbHandle.db, new Date().toISOString());
@@ -404,9 +343,7 @@ describe("createDataLifecycleManager", () => {
     const stats = manager.runCleanup();
 
     expect(stats.tables).toHaveProperty("events");
-    expect(stats.tables).toHaveProperty("action_traces");
-    expect(stats.tables).toHaveProperty("phase_metrics");
-    expect(stats.tables).toHaveProperty("llm_traces");
+    expect(stats.tables).toHaveProperty("observations");
     expect(stats.tables).toHaveProperty("journal_entries");
     expect(stats.tables).toHaveProperty("checkpoints");
     expect(stats.tables["events"]?.deleted).toBe(1);
@@ -559,16 +496,15 @@ describe("DataLifecycleManager integration", () => {
   });
 
   it("insert data, run cleanup, verify deletions and event emission", () => {
-    ensureTaskAndSession(dbHandle.db);
     // Insert old and new events
     insertEvent(dbHandle.db, daysAgo(100));
     insertEvent(dbHandle.db, daysAgo(95));
     insertEvent(dbHandle.db, daysAgo(50));
     insertEvent(dbHandle.db, new Date().toISOString());
 
-    // Insert old action trace
-    insertActionTrace(dbHandle.db, daysAgo(70));
-    insertActionTrace(dbHandle.db, daysAgo(10));
+    // Insert old observation
+    insertObservation(dbHandle.db, daysAgo(100), "tool_execution", "read_file");
+    insertObservation(dbHandle.db, daysAgo(10), "tool_execution", "write_file");
 
     const config = defaultConfig();
     const manager = createDataLifecycleManager({
@@ -585,9 +521,9 @@ describe("DataLifecycleManager integration", () => {
     expect(stats.tables["events"]?.deleted).toBe(2);
     expect(stats.tables["events"]?.remaining).toBe(2);
 
-    // 1 action trace older than 60 days deleted
-    expect(stats.tables["action_traces"]?.deleted).toBe(1);
-    expect(stats.tables["action_traces"]?.remaining).toBe(1);
+    // 1 observation older than 90 days deleted
+    expect(stats.tables["observations"]?.deleted).toBe(1);
+    expect(stats.tables["observations"]?.remaining).toBe(1);
 
     // Cleanup event emitted
     ebHandle.assertEventEmitted("system.cleanup_completed");
@@ -785,9 +721,7 @@ describe("Config schema", () => {
     expect(config.interval_ms).toBe(3_600_000);
     expect(config.retention.events.max_age_days).toBe(90);
     expect(config.retention.events.max_count).toBeNull();
-    expect(config.retention.action_traces.max_age_days).toBe(60);
-    expect(config.retention.phase_metrics.max_age_days).toBe(180);
-    expect(config.retention.llm_traces.max_age_days).toBe(60);
+    expect(config.retention.observations.max_age_days).toBe(90);
     expect(config.retention.journal_entries.max_age_days).toBe(90);
     expect(config.retention.checkpoints.max_age_days).toBe(90);
     expect(config.vacuum_on_cleanup).toBe(true);

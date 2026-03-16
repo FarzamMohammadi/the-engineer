@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { CompletionResult } from "../../schemas/adapters.js";
-import type { ActionTraceRecord, LlmTraceRecord } from "../../schemas/observability.js";
-import { runAgentLoop } from "../orchestrator/agent-loop.js";
+import type { ActionTraceRecord, LlmTraceRecord } from "./agent-loop.js";
+import { runAgentLoop } from "./agent-loop.js";
 
 function mockCompletion(
   content: string,

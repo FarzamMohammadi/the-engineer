@@ -12,8 +12,8 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import { BlobStore } from "../core/observability/blob-store.js";
-import { ObservabilityStore } from "../core/observability/index.js";
+import { BlobStore } from "../core/observer/blob-store.js";
+import { createObservationStore } from "../core/observer/index.js";
 import { eventRoutes } from "./api/events.js";
 import { metricsRoutes } from "./api/metrics.js";
 import { systemRoutes } from "./api/system.js";
@@ -36,7 +36,7 @@ export function createDashboardApp(config: DashboardConfig): {
   db.pragma("busy_timeout = 5000");
 
   const blobStore = new BlobStore(config.tracesDir);
-  const observability = new ObservabilityStore(db, blobStore);
+  const observationStore = createObservationStore(db, blobStore);
 
   const app = new Hono();
 
@@ -44,12 +44,12 @@ export function createDashboardApp(config: DashboardConfig): {
   app.use("/*", cors());
 
   // Mount API routes
-  app.route("/api/system", systemRoutes({ db, observability, runDir: config.runDir }));
-  app.route("/api/tasks", taskRoutes({ db, observability }));
+  app.route("/api/system", systemRoutes({ db, observationStore, runDir: config.runDir }));
+  app.route("/api/tasks", taskRoutes({ db, observationStore }));
   app.route("/api/events", eventRoutes({ db }));
-  app.route("/api/metrics", metricsRoutes({ db, observability }));
-  app.route("/api/traces", traceRoutes({ observability }));
-  app.route("/api/blob", blobRoutes({ observability }));
+  app.route("/api/metrics", metricsRoutes({ db, observationStore }));
+  app.route("/api/traces", traceRoutes({ observationStore }));
+  app.route("/api/blob", blobRoutes({ observationStore }));
 
   // Serve static dashboard HTML
   app.get("/", (c) => {

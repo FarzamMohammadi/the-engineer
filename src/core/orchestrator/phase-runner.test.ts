@@ -52,7 +52,6 @@ function createMockContext(): OrchestratorContext {
       verifyWorkspace: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],
     peopleDirectory: {} as OrchestratorContext["peopleDirectory"],
-    observability: null,
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
   };

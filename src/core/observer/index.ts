@@ -10,7 +10,7 @@
 import { ulid } from "ulid";
 
 import { extractErrorMessage } from "../../utils/errors.js";
-import type { BlobStore } from "../observability/blob-store.js";
+import type { BlobStore } from "./blob-store.js";
 import { ObserverStore } from "./store.js";
 import { ObserverStream } from "./stream.js";
 import type { Observation, ObservationQuery, ObservationTypeValue, SpanOptions } from "./types.js";

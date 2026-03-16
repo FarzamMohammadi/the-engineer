@@ -218,49 +218,52 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     traceId: string,
     phase: string,
   ): AgentLoopCallbacks {
-    // biome-ignore lint/style/noNonNullAssertion: caller checks observability is not null
-    const obs = ctx.observability!;
+    // biome-ignore lint/style/noNonNullAssertion: caller checks observationStore is not null
+    const store = ctx.observationStore!;
+    const spanOpts = { task_id: taskId, session_id: sessionId, trace_id: traceId, phase };
     return {
       onActionComplete: (trace) => {
-        obs.insertActionTrace({
-          task_id: taskId,
-          session_id: sessionId,
-          trace_id: traceId,
-          phase,
-          iteration: trace.iteration,
-          action_type: trace.action_type,
-          action_params: trace.action_params,
-          result_success: trace.result_success,
-          result_output: trace.result_output,
-          result_error: trace.result_error,
-          duration_ms: trace.duration_ms,
-        });
+        store.observe(
+          "tool_execution",
+          trace.action_type,
+          {
+            action_params: trace.action_params,
+            result_success: trace.result_success,
+            result_output: trace.result_output,
+            result_error: trace.result_error,
+            duration_ms: trace.duration_ms,
+            iteration: trace.iteration,
+          },
+          spanOpts,
+        );
       },
       onLlmComplete: (trace) => {
         const promptRef = trace.prompt_content
-          ? obs.storeBlob(trace.prompt_content)
+          ? store.storeBlob(trace.prompt_content)
           : trace.prompt_ref;
         const responseRef = trace.response_content
-          ? obs.storeBlob(trace.response_content)
+          ? store.storeBlob(trace.response_content)
           : trace.response_ref;
 
-        obs.insertLlmTrace({
-          task_id: taskId,
-          trace_id: traceId,
-          phase,
-          iteration: trace.iteration,
-          prompt_length: trace.prompt_length,
-          response_length: trace.response_length,
-          tokens_in: trace.tokens_in,
-          tokens_out: trace.tokens_out,
-          spend_usd: trace.spend_usd,
-          latency_ms: trace.latency_ms,
-          provider_id: "llm",
-          model_id: null,
-          finish_reason: null,
-          prompt_ref: promptRef,
-          response_ref: responseRef,
-        });
+        store.observe(
+          "llm_call",
+          "completion",
+          {
+            prompt_length: trace.prompt_length,
+            response_length: trace.response_length,
+            tokens_in: trace.tokens_in,
+            tokens_out: trace.tokens_out,
+            spend_usd: trace.spend_usd,
+            latency_ms: trace.latency_ms,
+            provider_id: "llm",
+            model_id: null,
+            finish_reason: null,
+            prompt_ref: promptRef,
+            response_ref: responseRef,
+            iteration: trace.iteration,
+          },
+          spanOpts,
+        );
       },
     };
   }
@@ -406,20 +409,22 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const { traceId, sessionId } = state;
 
     // ── Phase metrics: start ─────────────────────────────────────────────
-    const phaseMetricsId =
-      ctx.observability && traceId && sessionId
-        ? ctx.observability.createPhaseMetrics({
-            task_id: taskId,
-            session_id: sessionId,
-            trace_id: traceId,
+    const phaseSpan =
+      ctx.observationStore && traceId && sessionId
+        ? ctx.observationStore.startSpan(
+            "phase_transition",
             phase,
-          })
+            {
+              task_id: taskId,
+              session_id: sessionId,
+            },
+            { task_id: taskId, session_id: sessionId, trace_id: traceId, phase },
+          )
         : null;
-    const phaseStart = Date.now();
 
     // ── Observability callbacks ──────────────────────────────────────────
     const obsCallbacks =
-      ctx.observability && traceId && sessionId
+      ctx.observationStore && traceId && sessionId
         ? { callbacks: buildObservabilityCallbacks(taskId, sessionId, traceId, phase) }
         : {};
 
@@ -444,12 +449,10 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     );
 
     // ── Phase metrics: complete ──────────────────────────────────────────
-    if (phaseMetricsId && ctx.observability) {
-      const phaseDuration = Date.now() - phaseStart;
+    if (phaseSpan) {
       const actionsExecuted = loopResult.actions.length;
       const actionsFailed = loopResult.actions.filter((a) => a.result && !a.result.success).length;
-      ctx.observability.completePhaseMetrics(phaseMetricsId, {
-        duration_ms: phaseDuration,
+      phaseSpan.end({
         llm_iterations: loopResult.iterations,
         tokens_in: loopResult.totalCost.tokens_in,
         tokens_out: loopResult.totalCost.tokens_out,

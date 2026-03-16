@@ -1,5 +1,4 @@
 import type { CompletionResult } from "../../schemas/adapters.js";
-import type { ActionTraceRecord, LlmTraceRecord } from "../../schemas/observability.js";
 import {
   type ActionResult,
   type AgentAction,
@@ -16,6 +15,36 @@ const CODE_BLOCK_RE = /```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/;
 
 /** Max action-result pairs to include in context (rolling window). */
 const MAX_HISTORY_WINDOW = 20;
+
+// ── Callback Record Types ────────────────────────────────────────────────────────
+
+/** Record passed to agent loop action callback. */
+export interface ActionTraceRecord {
+  action_type: string;
+  action_params: string | null;
+  result_success: boolean;
+  result_output: string | null;
+  result_error: string | null;
+  duration_ms: number;
+  iteration: number;
+}
+
+/** Record passed to agent loop LLM callback. */
+export interface LlmTraceRecord {
+  prompt_length: number;
+  response_length: number;
+  tokens_in: number;
+  tokens_out: number;
+  spend_usd: number | null;
+  latency_ms: number;
+  iteration: number;
+  prompt_ref: string | null;
+  response_ref: string | null;
+  /** Raw prompt content for blob storage (not persisted in DB). */
+  prompt_content?: string;
+  /** Raw response content for blob storage (not persisted in DB). */
+  response_content?: string;
+}
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 

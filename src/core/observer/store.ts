@@ -1,7 +1,7 @@
 /**
  * Observer persistence layer — prepared statements for the observations table.
  *
- * Follows the same pattern as ObservabilityStore: prepared statements compiled
+ * Persistence layer for the unified Observer: prepared statements compiled
  * in constructor, synchronous writes, row mappers for reads.
  */
 import type Database from "better-sqlite3";

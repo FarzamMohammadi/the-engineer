@@ -4,17 +4,18 @@ import type Database from "better-sqlite3";
  */
 import { Hono } from "hono";
 
-import type { ObservabilityStore } from "../../core/observability/index.js";
+import type { ObservationStore } from "../../core/observer/index.js";
 
 export interface MetricsRoutesDeps {
   db: Database.Database;
-  observability: ObservabilityStore;
+  observationStore: ObservationStore;
 }
 
 export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
   const app = new Hono();
 
   /** Cost aggregations: per task, per day, per phase. */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: aggregation logic is inherently branchy
   app.get("/cost", (c) => {
     // Per-task cost (top 20 by spend)
     const perTask = deps.db
@@ -25,58 +26,87 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       )
       .all() as Record<string, unknown>[];
 
-    // Per-day cost from phase_metrics
-    const perDay = deps.db
-      .prepare(
-        `SELECT DATE(started_at) as day,
-                SUM(spend_usd) as spend_usd,
-                SUM(tokens_in) as tokens_in,
-                SUM(tokens_out) as tokens_out
-         FROM phase_metrics
-         WHERE spend_usd IS NOT NULL
-         GROUP BY DATE(started_at)
-         ORDER BY day DESC
-         LIMIT 30`,
-      )
-      .all() as Record<string, unknown>[];
+    // Aggregate cost from phase_transition observations
+    const phaseObs = deps.observationStore.query({ type: "phase_transition", limit: 10000 });
 
-    // Per-phase cost aggregate (across all tasks)
-    const perPhase = deps.db
-      .prepare(
-        `SELECT phase,
-                SUM(spend_usd) as spend_usd,
-                SUM(tokens_in) as tokens_in,
-                SUM(tokens_out) as tokens_out,
-                SUM(llm_iterations) as llm_iterations,
-                COUNT(*) as executions
-         FROM phase_metrics
-         WHERE spend_usd IS NOT NULL
-         GROUP BY phase
-         ORDER BY spend_usd DESC`,
-      )
-      .all() as Record<string, unknown>[];
+    // Per-day cost
+    const dayMap = new Map<string, { spend_usd: number; tokens_in: number; tokens_out: number }>();
+    // Per-phase cost
+    const phaseMap = new Map<
+      string,
+      {
+        spend_usd: number;
+        tokens_in: number;
+        tokens_out: number;
+        llm_iterations: number;
+        executions: number;
+      }
+    >();
+    let todaySpend = 0;
+    let monthSpend = 0;
 
-    // Today's total
-    const todayRow = deps.db
-      .prepare(
-        `SELECT COALESCE(SUM(spend_usd), 0) as spend
-         FROM phase_metrics
-         WHERE DATE(started_at) = DATE('now')`,
-      )
-      .get() as { spend: number };
+    const today = new Date().toISOString().slice(0, 10);
+    const month = new Date().toISOString().slice(0, 7);
 
-    // Monthly total
-    const monthRow = deps.db
-      .prepare(
-        `SELECT COALESCE(SUM(spend_usd), 0) as spend
-         FROM phase_metrics
-         WHERE strftime('%Y-%m', started_at) = strftime('%Y-%m', 'now')`,
-      )
-      .get() as { spend: number };
+    for (const obs of phaseObs) {
+      const output = obs.output as Record<string, unknown> | null;
+      if (!output) {
+        continue;
+      }
+      const spend = typeof output["spend_usd"] === "number" ? output["spend_usd"] : 0;
+      const tokensIn = typeof output["tokens_in"] === "number" ? output["tokens_in"] : 0;
+      const tokensOut = typeof output["tokens_out"] === "number" ? output["tokens_out"] : 0;
+      const llmIter = typeof output["llm_iterations"] === "number" ? output["llm_iterations"] : 0;
+
+      if (spend === 0) {
+        continue;
+      }
+
+      // Per-day
+      const day = obs.start_time.slice(0, 10);
+      const dayEntry = dayMap.get(day) ?? { spend_usd: 0, tokens_in: 0, tokens_out: 0 };
+      dayEntry.spend_usd += spend;
+      dayEntry.tokens_in += tokensIn;
+      dayEntry.tokens_out += tokensOut;
+      dayMap.set(day, dayEntry);
+
+      // Per-phase
+      const phaseName = obs.name;
+      const phaseEntry = phaseMap.get(phaseName) ?? {
+        spend_usd: 0,
+        tokens_in: 0,
+        tokens_out: 0,
+        llm_iterations: 0,
+        executions: 0,
+      };
+      phaseEntry.spend_usd += spend;
+      phaseEntry.tokens_in += tokensIn;
+      phaseEntry.tokens_out += tokensOut;
+      phaseEntry.llm_iterations += llmIter;
+      phaseEntry.executions += 1;
+      phaseMap.set(phaseName, phaseEntry);
+
+      // Today / month
+      if (day === today) {
+        todaySpend += spend;
+      }
+      if (obs.start_time.slice(0, 7) === month) {
+        monthSpend += spend;
+      }
+    }
+
+    const perDay = [...dayMap.entries()]
+      .map(([day, v]) => ({ day, ...v }))
+      .sort((a, b) => b.day.localeCompare(a.day))
+      .slice(0, 30);
+
+    const perPhase = [...phaseMap.entries()]
+      .map(([phase, v]) => ({ phase, ...v }))
+      .sort((a, b) => b.spend_usd - a.spend_usd);
 
     return c.json({
-      today_spend_usd: todayRow.spend,
-      month_spend_usd: monthRow.spend,
+      today_spend_usd: todaySpend,
+      month_spend_usd: monthSpend,
       per_task: perTask,
       per_day: perDay,
       per_phase: perPhase,
@@ -88,16 +118,20 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
     const taskId = c.req.query("task_id");
 
     if (taskId) {
-      const metrics = deps.observability.getPhaseMetrics(taskId);
-      return c.json({ phases: metrics });
+      const phases = deps.observationStore.query({
+        type: "phase_transition",
+        task_id: taskId,
+        limit: 100,
+      });
+      return c.json({ phases });
     }
 
-    // Recent phase metrics across all tasks
-    const rows = deps.db
-      .prepare("SELECT * FROM phase_metrics ORDER BY started_at DESC LIMIT 50")
-      .all() as Record<string, unknown>[];
-
-    return c.json({ phases: rows });
+    // Recent phase observations across all tasks
+    const phases = deps.observationStore.query({
+      type: "phase_transition",
+      limit: 50,
+    });
+    return c.json({ phases });
   });
 
   return app;

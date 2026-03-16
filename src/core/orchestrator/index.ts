@@ -18,7 +18,6 @@ import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
-import type { ObservabilityStore } from "../observability/index.js";
 import type { IObserver } from "../observer/facade.js";
 import type { IObservationStore } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
@@ -99,7 +98,6 @@ export interface OrchestratorDependencies {
   sessionMemory: ISessionMemory;
   workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
-  observability?: ObservabilityStore;
   observationStore?: IObservationStore;
   observer: IObserver;
 }
@@ -149,7 +147,6 @@ export class Orchestrator {
       sessionMemory: deps.sessionMemory,
       workspaceManager: deps.workspaceManager,
       peopleDirectory: deps.peopleDirectory,
-      observability: deps.observability ?? null,
       observationStore: deps.observationStore ?? null,
       observer: deps.observer,
     };

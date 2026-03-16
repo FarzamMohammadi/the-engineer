@@ -90,7 +90,7 @@ describe("createInMemoryDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("5");
+    expect(row.value).toBe("6");
   });
 
   it("can insert and query a task row", () => {
@@ -196,7 +196,7 @@ describe("createDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("5");
+    expect(row.value).toBe("6");
   });
 });
 
@@ -455,18 +455,6 @@ describe("table structure", () => {
       "idx_knowledge_natural_key",
       "idx_knowledge_active",
       "idx_knowledge_domain",
-      // action_traces (002_observability)
-      "idx_action_traces_task_id",
-      "idx_action_traces_trace_id",
-      "idx_action_traces_phase",
-      "idx_action_traces_timestamp",
-      // phase_metrics (002_observability)
-      "idx_phase_metrics_task_id",
-      "idx_phase_metrics_trace_id",
-      // llm_traces (002_observability)
-      "idx_llm_traces_task_id",
-      "idx_llm_traces_trace_id",
-      "idx_llm_traces_timestamp",
       // observations (003_observer)
       "idx_obs_task",
       "idx_obs_trace",

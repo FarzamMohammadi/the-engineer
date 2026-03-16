@@ -3,11 +3,11 @@ import { cors } from "hono/cors";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  type TestObservabilityHandle,
-  createTestObservabilityStore,
-  insertTestSession,
-  insertTestTask,
-} from "../../../test/helpers/test-observability.js";
+  type TestObserverHandle,
+  createTestObserver,
+} from "../../../test/helpers/test-observer.js";
+import { createInMemoryDatabase } from "../../db/database.js";
+import type { DatabaseHandle } from "../../db/database.js";
 import { eventRoutes } from "./events.js";
 import { metricsRoutes } from "./metrics.js";
 import { systemRoutes } from "./system.js";
@@ -20,10 +20,11 @@ const TASK_ID = "TASK_DASH_01";
 const SESSION_ID = "SESS_DASH_01";
 const TRACE_ID = "TRACE_DASH_01";
 
-let handle: TestObservabilityHandle;
+let observerHandle: TestObserverHandle;
+let dbHandle: DatabaseHandle;
 let app: Hono;
 
-function seedEvent(db: TestObservabilityHandle["db"], overrides: Record<string, unknown> = {}) {
+function seedEvent(db: DatabaseHandle, overrides: Record<string, unknown> = {}) {
   const defaults = {
     id: `EVT_${Math.random().toString(36).slice(2, 8)}`,
     type: "task.created",
@@ -41,6 +42,17 @@ function seedEvent(db: TestObservabilityHandle["db"], overrides: Record<string, 
     .run(row.id, row.type, row.source, row.task_id, row.timestamp, row.payload);
 }
 
+function insertTestTask(db: DatabaseHandle, taskId: string): void {
+  const now = new Date().toISOString();
+  db.db
+    .prepare(
+      `INSERT INTO tasks (id, state, title, children, cascade_policy, description, source_text,
+        acceptance_criteria, team, related, decisions, child_summaries, created_at, last_transition_at)
+       VALUES (?, 'active', 'Test Task', '[]', 'pause_siblings', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)`,
+    )
+    .run(taskId, now, now);
+}
+
 async function req(path: string): Promise<{ status: number; body: Record<string, unknown> }> {
   const res = await app.request(path);
   const body = (await res.json()) as Record<string, unknown>;
@@ -56,31 +68,34 @@ async function reqText(path: string): Promise<{ status: number; body: string }> 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  handle = createTestObservabilityStore();
-  insertTestTask(handle.db, TASK_ID);
-  insertTestSession(handle.db, SESSION_ID, TASK_ID);
+  // Use one shared DB for both observations and tasks/events
+  dbHandle = createInMemoryDatabase();
+  observerHandle = createTestObserver();
+
+  insertTestTask(dbHandle, TASK_ID);
 
   const testApp = new Hono();
   testApp.use("/*", cors());
 
   const deps = {
-    db: handle.db.db,
-    observability: handle.store,
-    runDir: handle.tracesDir,
+    db: dbHandle.db,
+    observationStore: observerHandle.observer,
+    runDir: observerHandle.tracesDir,
   };
 
   testApp.route("/api/system", systemRoutes(deps));
   testApp.route("/api/tasks", taskRoutes(deps));
   testApp.route("/api/events", eventRoutes({ db: deps.db }));
   testApp.route("/api/metrics", metricsRoutes(deps));
-  testApp.route("/api/traces", traceRoutes({ observability: deps.observability }));
-  testApp.route("/api/blob", blobRoutes({ observability: deps.observability }));
+  testApp.route("/api/traces", traceRoutes({ observationStore: deps.observationStore }));
+  testApp.route("/api/blob", blobRoutes({ observationStore: deps.observationStore }));
 
   app = testApp;
 });
 
 afterEach(() => {
-  handle.cleanup();
+  dbHandle.close();
+  observerHandle.cleanup();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -100,7 +115,7 @@ describe("Dashboard API", () => {
     it("counts tasks by state", async () => {
       const { body } = await req("/api/system/status");
       const byState = body["tasks_by_state"] as Record<string, number>;
-      expect(byState["active"]).toBe(1); // from insertTestTask
+      expect(byState["active"]).toBe(1);
     });
   });
 
@@ -158,8 +173,7 @@ describe("Dashboard API", () => {
 
   describe("GET /api/tasks/:id/timeline", () => {
     it("returns timeline items", async () => {
-      // Seed an event for the task
-      seedEvent(handle.db, {
+      seedEvent(dbHandle, {
         type: "task.created",
         payload: JSON.stringify({ task_id: TASK_ID }),
       });
@@ -172,13 +186,18 @@ describe("Dashboard API", () => {
   });
 
   describe("GET /api/tasks/:id/phases", () => {
-    it("returns phase metrics", async () => {
-      handle.store.createPhaseMetrics({
-        task_id: TASK_ID,
-        session_id: SESSION_ID,
-        trace_id: TRACE_ID,
-        phase: "research",
-      });
+    it("returns phase observations", async () => {
+      observerHandle.observer.startSpan(
+        "phase_transition",
+        "research",
+        {},
+        {
+          task_id: TASK_ID,
+          trace_id: TRACE_ID,
+          session_id: SESSION_ID,
+          phase: "research",
+        },
+      );
 
       const { status, body } = await req(`/api/tasks/${TASK_ID}/phases`);
       expect(status).toBe(200);
@@ -188,20 +207,16 @@ describe("Dashboard API", () => {
   });
 
   describe("GET /api/tasks/:id/traces", () => {
-    it("returns action traces", async () => {
-      handle.store.insertActionTrace({
-        task_id: TASK_ID,
-        session_id: SESSION_ID,
-        trace_id: TRACE_ID,
-        phase: "execution",
-        iteration: 1,
-        action_type: "read_file",
-        action_params: null,
-        result_success: true,
-        result_output: "ok",
-        result_error: null,
-        duration_ms: 10,
-      });
+    it("returns action observations", async () => {
+      observerHandle.observer.observe(
+        "tool_execution",
+        "read_file",
+        {
+          result_success: true,
+          duration_ms: 10,
+        },
+        { task_id: TASK_ID, trace_id: TRACE_ID, phase: "execution" },
+      );
 
       const { status, body } = await req(`/api/tasks/${TASK_ID}/traces`);
       expect(status).toBe(200);
@@ -210,19 +225,16 @@ describe("Dashboard API", () => {
     });
 
     it("filters by phase", async () => {
-      handle.store.insertActionTrace({
-        task_id: TASK_ID,
-        session_id: SESSION_ID,
-        trace_id: TRACE_ID,
-        phase: "research",
-        iteration: 1,
-        action_type: "read_file",
-        action_params: null,
-        result_success: true,
-        result_output: null,
-        result_error: null,
-        duration_ms: 5,
-      });
+      observerHandle.observer.observe(
+        "tool_execution",
+        "read_file",
+        {},
+        {
+          task_id: TASK_ID,
+          trace_id: TRACE_ID,
+          phase: "research",
+        },
+      );
 
       const { body: all } = await req(`/api/tasks/${TASK_ID}/traces`);
       const { body: filtered } = await req(`/api/tasks/${TASK_ID}/traces?phase=research`);
@@ -233,24 +245,17 @@ describe("Dashboard API", () => {
   });
 
   describe("GET /api/tasks/:id/llm-traces", () => {
-    it("returns LLM traces", async () => {
-      handle.store.insertLlmTrace({
-        task_id: TASK_ID,
-        trace_id: TRACE_ID,
-        phase: "research",
-        iteration: 1,
-        prompt_length: 100,
-        response_length: 50,
-        tokens_in: 10,
-        tokens_out: 5,
-        spend_usd: 0.01,
-        latency_ms: 200,
-        provider_id: "test-llm",
-        model_id: "test-model",
-        finish_reason: "end_turn",
-        prompt_ref: null,
-        response_ref: null,
-      });
+    it("returns LLM observations", async () => {
+      observerHandle.observer.observe(
+        "llm_call",
+        "completion",
+        {
+          tokens_in: 10,
+          tokens_out: 5,
+          spend_usd: 0.01,
+        },
+        { task_id: TASK_ID, trace_id: TRACE_ID, phase: "research" },
+      );
 
       const { status, body } = await req(`/api/tasks/${TASK_ID}/llm-traces`);
       expect(status).toBe(200);
@@ -261,7 +266,7 @@ describe("Dashboard API", () => {
 
   describe("GET /api/events", () => {
     it("returns events", async () => {
-      seedEvent(handle.db);
+      seedEvent(dbHandle);
 
       const { status, body } = await req("/api/events");
       expect(status).toBe(200);
@@ -269,24 +274,22 @@ describe("Dashboard API", () => {
     });
 
     it("supports since parameter for incremental polling", async () => {
-      seedEvent(handle.db, { id: "EVT_001" });
-      seedEvent(handle.db, { id: "EVT_002" });
+      seedEvent(dbHandle, { id: "EVT_001" });
+      seedEvent(dbHandle, { id: "EVT_002" });
 
       const { body: all } = await req("/api/events?since=0");
       const allEvents = all["events"] as Record<string, unknown>[];
       expect(allEvents.length).toBe(2);
 
-      // Get the max sequence
       const maxSeq = Math.max(...allEvents.map((e) => e["sequence"] as number));
 
-      // Should return no new events
       const { body: newer } = await req(`/api/events?since=${maxSeq}`);
       expect(newer["events"] as unknown[]).toHaveLength(0);
     });
 
     it("filters by type", async () => {
-      seedEvent(handle.db, { type: "task.created" });
-      seedEvent(handle.db, { type: "cost.incurred" });
+      seedEvent(dbHandle, { type: "task.created" });
+      seedEvent(dbHandle, { type: "cost.incurred" });
 
       const { body } = await req("/api/events?type=task.created");
       const events = body["events"] as Record<string, unknown>[];
@@ -309,19 +312,23 @@ describe("Dashboard API", () => {
   });
 
   describe("GET /api/metrics/phases", () => {
-    it("returns phase metrics", async () => {
+    it("returns phase observations", async () => {
       const { status, body } = await req("/api/metrics/phases");
       expect(status).toBe(200);
       expect(body).toHaveProperty("phases");
     });
 
     it("filters by task_id", async () => {
-      handle.store.createPhaseMetrics({
-        task_id: TASK_ID,
-        session_id: SESSION_ID,
-        trace_id: TRACE_ID,
-        phase: "planning",
-      });
+      observerHandle.observer.startSpan(
+        "phase_transition",
+        "planning",
+        {},
+        {
+          task_id: TASK_ID,
+          trace_id: TRACE_ID,
+          phase: "planning",
+        },
+      );
 
       const { body } = await req(`/api/metrics/phases?task_id=${TASK_ID}`);
       expect((body["phases"] as unknown[]).length).toBe(1);
@@ -330,19 +337,15 @@ describe("Dashboard API", () => {
 
   describe("GET /api/traces/:taskId", () => {
     it("returns traces for a task", async () => {
-      handle.store.insertActionTrace({
-        task_id: TASK_ID,
-        session_id: SESSION_ID,
-        trace_id: TRACE_ID,
-        phase: "execution",
-        iteration: 1,
-        action_type: "write_file",
-        action_params: '{"path":"test.ts"}',
-        result_success: true,
-        result_output: "written",
-        result_error: null,
-        duration_ms: 15,
-      });
+      observerHandle.observer.observe(
+        "tool_execution",
+        "write_file",
+        {
+          path: "test.ts",
+          result_success: true,
+        },
+        { task_id: TASK_ID, trace_id: TRACE_ID, phase: "execution" },
+      );
 
       const { status, body } = await req(`/api/traces/${TASK_ID}`);
       expect(status).toBe(200);
@@ -351,38 +354,27 @@ describe("Dashboard API", () => {
   });
 
   describe("GET /api/traces/:taskId/:phase", () => {
-    it("returns both action and LLM traces for a phase", async () => {
-      handle.store.insertActionTrace({
-        task_id: TASK_ID,
-        session_id: SESSION_ID,
-        trace_id: TRACE_ID,
-        phase: "research",
-        iteration: 1,
-        action_type: "read_file",
-        action_params: null,
-        result_success: true,
-        result_output: null,
-        result_error: null,
-        duration_ms: 5,
-      });
+    it("returns both action and LLM observations for a phase", async () => {
+      observerHandle.observer.observe(
+        "tool_execution",
+        "read_file",
+        {},
+        {
+          task_id: TASK_ID,
+          trace_id: TRACE_ID,
+          phase: "research",
+        },
+      );
 
-      handle.store.insertLlmTrace({
-        task_id: TASK_ID,
-        trace_id: TRACE_ID,
-        phase: "research",
-        iteration: 1,
-        prompt_length: 50,
-        response_length: 25,
-        tokens_in: 5,
-        tokens_out: 3,
-        spend_usd: null,
-        latency_ms: 100,
-        provider_id: "llm",
-        model_id: null,
-        finish_reason: null,
-        prompt_ref: null,
-        response_ref: null,
-      });
+      observerHandle.observer.observe(
+        "llm_call",
+        "completion",
+        {
+          tokens_in: 5,
+          tokens_out: 3,
+        },
+        { task_id: TASK_ID, trace_id: TRACE_ID, phase: "research" },
+      );
 
       const { status, body } = await req(`/api/traces/${TASK_ID}/research`);
       expect(status).toBe(200);
@@ -395,11 +387,8 @@ describe("Dashboard API", () => {
 
   describe("GET /api/blob/:prefix/:hash", () => {
     it("returns blob content", async () => {
-      const ref = handle.store.storeBlob("test blob content");
-      expect(ref).not.toBeNull();
-      if (ref === null) {
-        return;
-      }
+      const ref = observerHandle.observer.storeBlob("test blob content");
+      expect(ref).not.toBe("");
 
       const { status, body } = await reqText(`/api/blob/${ref}`);
       expect(status).toBe(200);

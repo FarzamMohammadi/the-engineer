@@ -7,8 +7,7 @@ import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daem
 import { createDataLifecycleManager } from "../core/data-lifecycle/index.js";
 import { HookRegistry } from "../core/hooks/index.js";
 import { createChildLogger, createLogger } from "../core/logging.js";
-import { BlobStore } from "../core/observability/blob-store.js";
-import { ObservabilityStore } from "../core/observability/index.js";
+import { BlobStore } from "../core/observer/blob-store.js";
 import { createObserverFacade } from "../core/observer/facade.js";
 import { createObservationStore } from "../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
@@ -110,11 +109,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       hookRegistry,
     });
 
-    // 6. Observability (BlobStore + ObservabilityStore)
+    // 6. Observability (BlobStore + ObservationStore for War Room)
     const blobStore = new BlobStore(join(engineerHome, "traces"));
-    const observability = new ObservabilityStore(dbHandle.db, blobStore);
-
-    // 7. Observer (centralized visibility for War Room)
     const observationStore = createObservationStore(dbHandle.db, blobStore);
     observer.upgrade(observationStore);
 
@@ -132,7 +128,6 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       sessionMemory,
       workspaceManager,
       peopleDirectory,
-      observability,
       observationStore,
       observer: observer.child("orchestrator"),
     });

@@ -57,21 +57,9 @@ interface TableDef {
 const MANAGED_TABLES: TableDef[] = [
   { name: "events", timestampColumn: "timestamp", configKey: "events", excludeActiveTasks: false },
   {
-    name: "action_traces",
-    timestampColumn: "timestamp",
-    configKey: "action_traces",
-    excludeActiveTasks: false,
-  },
-  {
-    name: "phase_metrics",
-    timestampColumn: "started_at",
-    configKey: "phase_metrics",
-    excludeActiveTasks: false,
-  },
-  {
-    name: "llm_traces",
-    timestampColumn: "timestamp",
-    configKey: "llm_traces",
+    name: "observations",
+    timestampColumn: "start_time",
+    configKey: "observations",
     excludeActiveTasks: false,
   },
   {
@@ -144,22 +132,30 @@ export function cleanupTable(
 }
 
 /**
- * Collect all blob references still used by llm_traces rows.
+ * Collect all blob references still used by llm_call observations.
+ * Blob refs are stored inside the input JSON as prompt_ref / response_ref.
  */
 export function collectReferencedBlobRefs(db: Database.Database): Set<string> {
   const refs = new Set<string>();
 
-  const rows = db.prepare("SELECT prompt_ref, response_ref FROM llm_traces").all() as {
-    prompt_ref: string | null;
-    response_ref: string | null;
+  const rows = db.prepare("SELECT input FROM observations WHERE type = 'llm_call'").all() as {
+    input: string | null;
   }[];
 
   for (const row of rows) {
-    if (row.prompt_ref) {
-      refs.add(row.prompt_ref);
+    if (!row.input) {
+      continue;
     }
-    if (row.response_ref) {
-      refs.add(row.response_ref);
+    try {
+      const parsed = JSON.parse(row.input) as Record<string, unknown>;
+      if (typeof parsed["prompt_ref"] === "string" && parsed["prompt_ref"]) {
+        refs.add(parsed["prompt_ref"]);
+      }
+      if (typeof parsed["response_ref"] === "string" && parsed["response_ref"]) {
+        refs.add(parsed["response_ref"]);
+      }
+    } catch {
+      // malformed JSON — skip
     }
   }
 
@@ -233,7 +229,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       );
     }
 
-    // Blob orphan cleanup after llm_traces pruning
+    // Blob orphan cleanup after observation pruning
     let blobsDeleted = 0;
     if (blobsDir) {
       const blobsDirPath = path.join(blobsDir, "blobs");

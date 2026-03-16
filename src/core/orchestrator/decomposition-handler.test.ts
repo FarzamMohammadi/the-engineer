@@ -35,7 +35,6 @@ function createMockContext(): OrchestratorContext {
     } as unknown as OrchestratorContext["sessionMemory"],
     workspaceManager: {} as OrchestratorContext["workspaceManager"],
     peopleDirectory: {} as OrchestratorContext["peopleDirectory"],
-    observability: null,
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
   };

@@ -4,11 +4,11 @@ import type Database from "better-sqlite3";
  */
 import { Hono } from "hono";
 
-import type { ObservabilityStore } from "../../core/observability/index.js";
+import type { ObservationStore } from "../../core/observer/index.js";
 
 export interface TaskRoutesDeps {
   db: Database.Database;
-  observability: ObservabilityStore;
+  observationStore: ObservationStore;
 }
 
 /** Columns for the lightweight task list. Avoids needing rowToTask. */
@@ -113,19 +113,24 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
 
     const tasks = rows.map(mapListRow);
 
-    // Bulk-fetch which phases actually ran for each task
+    // Bulk-fetch which phases actually ran for each task (from observations)
     const taskIds = tasks.map((t) => t.id);
     const phasesRanMap: Record<string, string[]> = {};
     if (taskIds.length > 0) {
-      const phaseRows = deps.db
-        .prepare(
-          `SELECT task_id, phase FROM phase_metrics WHERE task_id IN (${taskIds.map(() => "?").join(",")})`,
-        )
-        .all(...taskIds) as Array<{ task_id: string; phase: string }>;
-      for (const row of phaseRows) {
-        const arr = phasesRanMap[row.task_id] ?? [];
-        arr.push(row.phase);
-        phasesRanMap[row.task_id] = arr;
+      try {
+        const phaseRows = deps.db
+          .prepare(
+            `SELECT task_id, name as phase FROM observations
+             WHERE type = 'phase_transition' AND task_id IN (${taskIds.map(() => "?").join(",")})`,
+          )
+          .all(...taskIds) as Array<{ task_id: string; phase: string }>;
+        for (const row of phaseRows) {
+          const arr = phasesRanMap[row.task_id] ?? [];
+          arr.push(row.phase);
+          phasesRanMap[row.task_id] = arr;
+        }
+      } catch {
+        // table may not have data yet
       }
     }
 
@@ -151,7 +156,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     return c.json({ task: mapFullTask(row) });
   });
 
-  /** Task timeline: state transitions + journal + action traces, chronological. */
+  /** Task timeline: state transitions + journal + action observations, chronological. */
   app.get("/:id/timeline", (c) => {
     const taskId = c.req.param("id");
 
@@ -172,8 +177,12 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       )
       .all(taskId) as Record<string, unknown>[];
 
-    // Action traces
-    const actionTraces = deps.observability.getActionTraces(taskId);
+    // Action observations (tool_execution type)
+    const actionObs = deps.observationStore.query({
+      type: "tool_execution",
+      task_id: taskId,
+      limit: 1000,
+    });
 
     // Merge into unified timeline
     type TimelineItem = {
@@ -212,10 +221,10 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       });
     }
 
-    for (const a of actionTraces) {
+    for (const a of actionObs) {
       timeline.push({
         kind: "action",
-        timestamp: a.timestamp,
+        timestamp: a.start_time,
         data: a as unknown as Record<string, unknown>,
       });
     }
@@ -226,18 +235,27 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     return c.json({ timeline });
   });
 
-  /** Phase metrics for a task. */
+  /** Phase metrics for a task (from phase_transition observations). */
   app.get("/:id/phases", (c) => {
     const taskId = c.req.param("id");
-    const metrics = deps.observability.getPhaseMetrics(taskId);
-    return c.json({ phases: metrics });
+    const phases = deps.observationStore.query({
+      type: "phase_transition",
+      task_id: taskId,
+      limit: 100,
+    });
+    return c.json({ phases });
   });
 
   /** Action traces for a task, optional phase filter. */
   app.get("/:id/traces", (c) => {
     const taskId = c.req.param("id");
     const phase = c.req.query("phase");
-    const traces = deps.observability.getActionTraces(taskId, phase);
+    const traces = deps.observationStore.query({
+      type: "tool_execution",
+      task_id: taskId,
+      phase: phase ?? undefined,
+      limit: 1000,
+    });
     return c.json({ traces });
   });
 
@@ -245,7 +263,12 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
   app.get("/:id/llm-traces", (c) => {
     const taskId = c.req.param("id");
     const phase = c.req.query("phase");
-    const traces = deps.observability.getLlmTraces(taskId, phase);
+    const traces = deps.observationStore.query({
+      type: "llm_call",
+      task_id: taskId,
+      phase: phase ?? undefined,
+      limit: 1000,
+    });
     return c.json({ traces });
   });
 

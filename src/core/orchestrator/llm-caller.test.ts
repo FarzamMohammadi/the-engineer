@@ -61,7 +61,6 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
       getOwner: vi.fn().mockReturnValue(null),
       resolveContact: vi.fn().mockReturnValue(null),
     } as unknown as OrchestratorContext["peopleDirectory"],
-    observability: null,
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
     ...overrides,

@@ -4,6 +4,25 @@
 
 ---
 
+## Worktree Setup (DO THIS FIRST)
+
+This lens runs in an **isolated git worktree**. Before doing anything else:
+
+```bash
+# From the main repo directory:
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree add ../engineer-J-{PHASE_GROUP} -b review/J-{PHASE_GROUP} main
+cd ../engineer-J-{PHASE_GROUP}
+```
+
+**Rules:**
+- Work ONLY in this worktree (`../engineer-J-{PHASE_GROUP}/`)
+- Commit your changes to the `review/J-{PHASE_GROUP}` branch
+- Do NOT push — the merge prompt will collect this branch
+- When done: use `/commit`, verify tests pass, write recap, stop. The merge prompt handles the rest.
+
+---
+
 ## Context
 
 We just completed Layer 7 (structural restructuring) of The Engineer — an autonomous software engineering agent. The full layer 7 process:
@@ -100,3 +119,27 @@ For each finding:
 ## Summary
 [2-3 sentences: overall minimalism assessment — how much cruft is there?]
 ```
+
+---
+
+## Final Step: Write Recap
+
+After all changes are committed (use `/commit`), write a `recap.md` at the worktree root:
+
+```markdown
+# Recap: Lens J (Minimalism & Dead Code) — {PHASE_GROUP}
+
+## Findings Applied
+- [1-sentence summary of each finding that resulted in code changes]
+
+## Files Changed
+- [list every file modified, created, or deleted]
+
+## Commits
+- [list commit hashes and messages]
+
+## Findings Deferred
+- [any findings flagged for discussion but not yet applied]
+```
+
+This recap is consumed by the merge prompt to efficiently integrate your changes with other parallel lenses.

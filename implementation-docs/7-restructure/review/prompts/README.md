@@ -34,9 +34,6 @@ For each phase:
 
   All 5 finish → run MERGE-ROUND1.md from main repo
   → move to next phase
-
-After all phases in a group complete:
-  Run INTEGRATION.md on main (no worktree needed)
 ```
 
 ### Round 2 — Polish (3 lenses in parallel per phase)
@@ -92,12 +89,6 @@ Run Lens K (Docs Sync) directly on main
 | E | Security & Trust Boundaries | `E-security-trust-boundaries.md` |
 | — | **Merge** | `MERGE-ROUND1.md` |
 
-### Integration (per group, sequential on main)
-
-| ID | Lens | File |
-|----|------|------|
-| — | Cross-Phase Seam Review | `INTEGRATION.md` |
-
 ### Round 2 — Polish (per phase, parallel)
 
 | ID | Lens | File |
@@ -111,7 +102,7 @@ Run Lens K (Docs Sync) directly on main
 
 | ID | Lens | File |
 |----|------|------|
-| I | Consistency & Patterns | `I-consistency-patterns.md` |
+| I | Consistency, Patterns & Integration Seams | `I-consistency-patterns.md` |
 | J | Minimalism & Dead Code | `J-minimalism-dead-code.md` |
 | — | **Merge** | `MERGE-ROUND3.md` |
 
@@ -128,21 +119,20 @@ Run Lens K (Docs Sync) directly on main
 | Round | Lenses | Per-phase | Phases/Groups | Lens sessions | Merge sessions | Total |
 |-------|--------|-----------|---------------|---------------|----------------|-------|
 | Round 1 | A-E | 5 parallel | 12 phases | 60 | 12 | 72 |
-| Integration | — | 1 sequential | 4 groups | 4 | — | 4 |
 | Round 2 | F-H | 3 parallel | 12 phases | 36 | 12 | 48 |
 | Round 3 | I-J | 2 parallel | 4 groups | 8 | 4 | 12 |
 | Round 4 | K | 1 | 1 | 1 | — | 1 |
-| **Total** | | | | **109** | **28** | **137** |
+| **Total** | | | | **105** | **28** | **133** |
 
 ### Wall-Clock Batches
 
 | Round | Batches (parallel execution) |
 |-------|------------------------------|
-| Round 1 | 12 lens batches + 12 merges + 4 integration = **28** |
+| Round 1 | 12 lens batches + 12 merges = **24** |
 | Round 2 | 12 lens batches + 12 merges = **24** |
 | Round 3 | 4 lens batches + 4 merges = **8** |
 | Round 4 | **1** |
-| **Total wall-clock batches** | **61** |
+| **Total wall-clock batches** | **57** |
 
 ---
 

@@ -1,6 +1,25 @@
-# Lens I: Consistency & Patterns
+# Lens I: Consistency, Patterns & Integration Seams
 
-> "Is the same problem solved the same way everywhere?"
+> "Is the same problem solved the same way everywhere — and do the phases actually fit together?"
+
+---
+
+## Worktree Setup (DO THIS FIRST)
+
+This lens runs in an **isolated git worktree**. Before doing anything else:
+
+```bash
+# From the main repo directory:
+cd /Users/farzammohammadi/Documents/Repos/the-engineer
+git worktree add ../engineer-I-{PHASE_GROUP} -b review/I-{PHASE_GROUP} main
+cd ../engineer-I-{PHASE_GROUP}
+```
+
+**Rules:**
+- Work ONLY in this worktree (`../engineer-I-{PHASE_GROUP}/`)
+- Commit your changes to the `review/I-{PHASE_GROUP}` branch
+- Do NOT push — the merge prompt will collect this branch
+- When done: use `/commit`, verify tests pass, write recap, stop. The merge prompt handles the rest.
 
 ---
 
@@ -26,7 +45,12 @@ Phase docs to review together:
 
 ## Your Role
 
-You are a codebase gardener looking for inconsistency — the silent killer of maintainability. This project's persona is in @docs/persona.md — that engineer's codebase has ONE way to do each thing. Not because of rigid rules, but because the patterns are so natural that doing it differently would feel wrong. When a contributor sees how errors are handled in Phase 3, they know exactly how to handle errors in Phase 9 — without looking.
+You are a codebase gardener AND a systems integration engineer. This lens has two jobs:
+
+1. **Consistency** — find inconsistencies BETWEEN phases in this group (same problem solved differently)
+2. **Integration seams** — verify the HANDOFFS between phases actually work (data shapes match, state transitions align, events are consumed)
+
+This project's persona is in @docs/persona.md — that engineer's codebase has ONE way to do each thing, and components fit together like precision-machined parts. No gaps, no overlaps, no impedance mismatches.
 
 **You are my partner, not my tool.** We collaborate on everything:
 - **Never assume** — if something is ambiguous, ask me
@@ -35,9 +59,9 @@ You are a codebase gardener looking for inconsistency — the silent killer of m
 
 ---
 
-## Lens Scope: Consistency Across Phases ONLY
+## Part 1: Consistency Across Phases
 
-This lens runs across a GROUP of phases, not a single one. You're looking for inconsistencies BETWEEN phases in this group.
+You're looking for inconsistencies BETWEEN phases in this group.
 
 ### What you're evaluating:
 
@@ -63,27 +87,51 @@ This lens runs across a GROUP of phases, not a single one. You're looking for in
 
 ---
 
+## Part 2: Cross-Phase Integration Seams
+
+Now look at the BOUNDARIES between phases. Individual phases may be perfect in isolation — this checks the seams.
+
+### What you're evaluating:
+
+1. **Data handoffs** — When Phase N produces data that Phase N+1 consumes, does the shape match exactly? Are there implicit contracts (one phase assumes a field exists that another might not set)? Could one phase mutate shared state unexpectedly?
+
+2. **State transition boundaries** — When Phase N transitions a task to state X, does Phase N+1 correctly handle that state? Are there edge cases where a task could be in an unexpected state at a phase boundary? Is the transition reason string consistent between producer and consumer?
+
+3. **Event contracts** — When Phase N publishes an event, does Phase N+1's subscriber handle all possible payload shapes? Are there dead-letter events (published but never consumed)? Are there subscribers waiting for events never published?
+
+4. **Error propagation across phases** — When Phase N fails, does Phase N+1 handle the failure correctly? Are errors properly translated when crossing phase boundaries? Is the error chain traceable?
+
+5. **Timing & ordering** — Are there assumptions about execution order the tick loop doesn't guarantee? Could a race condition occur between two phases in the same tick? Are there timing windows where data is inconsistent?
+
+6. **Resource handoffs** — When Phase N creates a resource (workspace, session, checkpoint), does Phase N+1 use it correctly? Could a resource be used after cleanup?
+
+### Seams per group:
+
+| Group | Seams to Check |
+|-------|---------------|
+| Startup (0-3) | CLI→Bootstrap, Bootstrap→Plugins, Plugins→Daemon |
+| Task Lifecycle (4-7) | Trigger→Scheduler, Scheduler→Workspace, Workspace→Pipeline |
+| Review Lifecycle (8-10) | Pipeline→PR, PR→Feedback, Feedback→Completion |
+| Resilience (11-12) | Error→Recovery, Health→Cost→Background |
+
+---
+
 ## How to Work
 
 1. **Read ALL phase docs** in this group to understand the landscape
-2. **Read the production files** across all phases in this group — side by side mentally
-3. **Look for the same problem solved two different ways** — that's an inconsistency
-4. **For each inconsistency, decide which way is BETTER** — then propose standardizing on that
+2. **Read the production files** across all phases — side by side mentally
+3. **For consistency**: look for the same problem solved two different ways, decide which is better
+4. **For integration**: map every boundary between consecutive phases, trace 3 scenarios end-to-end (happy path, error path, edge case), look for assumptions one phase makes about another
 5. **Check test files too** — test patterns should be consistent
 
-For each finding:
-- Show both (or more) inconsistent approaches with file references
-- Explain which approach is better and why
-- Note how many places need to change
-
-**Push boundaries.** Consistency is the compound interest of code quality. Every inconsistency is a decision the next contributor has to make. Eliminate decisions.
+**Push boundaries.** Consistency is the compound interest of code quality. Integration bugs are invisible when you look at either side alone — you have to look at BOTH sides simultaneously.
 
 ---
 
 ## Output Format
 
 ```markdown
-## Findings
+## Consistency Findings
 
 ### [Finding title]
 **Pattern:** [what's inconsistent]
@@ -92,8 +140,40 @@ For each finding:
 **Better:** [which and why]
 **Scope:** [how many files need to change]
 
-...repeat for each finding...
+## Integration Seam Findings
+
+### [Finding title]
+**Seam:** Phase X → Phase Y
+**Handoff:** [what crosses the boundary]
+**Issue:** [mismatch, assumption, gap, or risk]
+**Phase X side:** [code/behavior]
+**Phase Y side:** [code/behavior]
+**Proposal:** [which side changes and how]
 
 ## Summary
-[2-3 sentences: overall consistency assessment for this phase group]
+[2-3 sentences: overall consistency and integration health for this phase group]
 ```
+
+---
+
+## Final Step: Write Recap
+
+After all changes are committed (use `/commit`), write a `recap.md` at the worktree root:
+
+```markdown
+# Recap: Lens I (Consistency, Patterns & Integration Seams) — {PHASE_GROUP}
+
+## Findings Applied
+- [1-sentence summary of each finding that resulted in code changes]
+
+## Files Changed
+- [list every file modified, created, or deleted]
+
+## Commits
+- [list commit hashes and messages]
+
+## Findings Deferred
+- [any findings flagged for discussion but not yet applied]
+```
+
+This recap is consumed by the merge prompt to efficiently integrate your changes with other parallel lenses.

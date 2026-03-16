@@ -4,6 +4,12 @@
 
 ---
 
+## No Worktree — Run Directly on Main
+
+This is the final verification pass. Run it directly on the main branch — no worktree needed. When done, use `/commit` to commit fixes.
+
+---
+
 ## Context
 
 We just completed Layer 7 (structural restructuring) of The Engineer — an autonomous software engineering agent, followed by a multi-round review process that may have changed code across all phases. The full layer 7 process:
@@ -102,3 +108,9 @@ For each finding:
 ## Summary
 [Overall sync health — percentage of docs that are accurate, areas of greatest drift]
 ```
+
+---
+
+## Final Step
+
+After all fixes are applied, use `/commit` to commit directly to main.

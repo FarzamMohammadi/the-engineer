@@ -116,14 +116,11 @@ describe("WorkspaceLifecycle", () => {
 
       wl.setupWorkspace(dispatch);
 
-      expect(ctx.workspaceManager.createWorkspace).toHaveBeenCalledWith(
-        "task-001",
-        "owner/repo",
-        "Test task",
-        undefined,
-        undefined,
-        "https://github.com/owner/repo.git",
-      );
+      expect(ctx.workspaceManager.createWorkspace).toHaveBeenCalledWith("task-001", "owner/repo", {
+        title: "Test task",
+        parentBranch: undefined,
+        cloneUrl: "https://github.com/owner/repo.git",
+      });
       expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
         "task-001",
         "workspace",
@@ -160,14 +157,11 @@ describe("WorkspaceLifecycle", () => {
 
       wl.setupWorkspace(dispatch);
 
-      expect(ctx.workspaceManager.createWorkspace).toHaveBeenCalledWith(
-        "task-001",
-        "owner/repo",
-        "Test task",
-        undefined,
-        "engineer/parent-branch",
-        "https://github.com/owner/repo.git",
-      );
+      expect(ctx.workspaceManager.createWorkspace).toHaveBeenCalledWith("task-001", "owner/repo", {
+        title: "Test task",
+        parentBranch: "engineer/parent-branch",
+        cloneUrl: "https://github.com/owner/repo.git",
+      });
     });
 
     it("registers existing workspace on resume", () => {

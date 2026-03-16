@@ -15,7 +15,7 @@
  */
 import type { Logger } from "pino";
 
-import type { ComponentTag } from "../logging.js";
+import type { ComponentTag } from "./logging.js";
 import type { ObservationTypeValue, SpanOptions } from "./types.js";
 import type { IObservationStore, ObservationSpan } from "./types.js";
 

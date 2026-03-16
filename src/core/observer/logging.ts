@@ -3,7 +3,7 @@ import { isAbsolute, join } from "node:path";
 import pino from "pino";
 import type { Logger } from "pino";
 
-import { extractErrorMessage } from "../utils/errors.js";
+import { extractErrorMessage } from "../../utils/errors.js";
 
 /** Component tags for child loggers (Decision #110). */
 export type ComponentTag =
@@ -45,7 +45,7 @@ export interface LoggingConfig {
 export function createLogger(config: LoggingConfig, engineerHome: string): Logger {
   const resolvedDir = isAbsolute(config.dir) ? config.dir : join(engineerHome, config.dir);
   try {
-    mkdirSync(resolvedDir, { recursive: true });
+    mkdirSync(resolvedDir, { recursive: true, mode: 0o700 });
   } catch (error) {
     throw new Error(
       `Failed to create log directory "${resolvedDir}": ${extractErrorMessage(error)}`,

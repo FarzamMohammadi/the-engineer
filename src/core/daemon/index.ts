@@ -567,20 +567,31 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
 
     observer.info("Daemon starting (Protocol P1)");
 
-    // Single instance check + PID file
-    checkAndWritePidFile();
+    // Pre-running initialization — if any step fails, undo everything in reverse
+    // order so start() is atomic (either fully initialized or fully rolled back).
+    try {
+      // Single instance check + PID file
+      checkAndWritePidFile();
 
-    // Start Registry health check loop
-    registry.startHealthCheckLoop();
+      // Start Registry health check loop
+      registry.startHealthCheckLoop();
 
-    // Start data lifecycle manager
-    dataLifecycleManager?.start();
+      // Start data lifecycle manager
+      dataLifecycleManager?.start();
 
-    // Rebuild state from Task Engine (crash recovery)
-    rebuildStateFromTaskEngine();
+      // Rebuild state from Task Engine (crash recovery)
+      rebuildStateFromTaskEngine();
 
-    // Register Event Bus subscriptions
-    registerSubscriptions();
+      // Register Event Bus subscriptions
+      registerSubscriptions();
+    } catch (error) {
+      // Reverse-order cleanup — each is idempotent/safe if the step never ran
+      unregisterSubscriptions();
+      dataLifecycleManager?.stop();
+      registry.stopHealthCheckLoop();
+      removePidFile();
+      throw error;
+    }
 
     // Set running state
     running = true;

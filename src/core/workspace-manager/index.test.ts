@@ -73,7 +73,7 @@ describe("createWorkspace", () => {
   it("creates a worktree directory on disk", () => {
     const { workspaceManager, repoName } = setup();
 
-    const record = workspaceManager.createWorkspace("task-1", repoName, "Dark Mode");
+    const record = workspaceManager.createWorkspace("task-1", repoName, { title: "Dark Mode" });
 
     expect(existsSync(record.worktreePath)).toBe(true);
   });
@@ -81,7 +81,7 @@ describe("createWorkspace", () => {
   it("creates the correct branch name", () => {
     const { workspaceManager, repoName } = setup();
 
-    const record = workspaceManager.createWorkspace("task-1", repoName, "Dark Mode");
+    const record = workspaceManager.createWorkspace("task-1", repoName, { title: "Dark Mode" });
 
     expect(record.branch).toBe("engineer/task-1-dark-mode");
   });
@@ -89,7 +89,7 @@ describe("createWorkspace", () => {
   it("populates all record fields", () => {
     const { workspaceManager, repoName } = setup();
 
-    const record = workspaceManager.createWorkspace("task-1", repoName, "Dark Mode");
+    const record = workspaceManager.createWorkspace("task-1", repoName, { title: "Dark Mode" });
 
     expect(record.taskId).toBe("task-1");
     expect(record.repo).toBe(repoName);
@@ -100,7 +100,7 @@ describe("createWorkspace", () => {
   it("emits workspace.created event", () => {
     const h = setup();
 
-    h.workspaceManager.createWorkspace("task-1", h.repoName, "Dark Mode");
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Dark Mode" });
 
     h.assertEventEmitted("workspace.created", (p) => p["task_id"] === "task-1");
     const events = h.getEmittedEvents("workspace.created");
@@ -119,7 +119,7 @@ describe("createWorkspace", () => {
     const { workspaceManager } = setup();
 
     expect(() => {
-      workspaceManager.createWorkspace("task-1", "nonexistent-repo", "Title");
+      workspaceManager.createWorkspace("task-1", "nonexistent-repo", { title: "Title" });
     }).toThrow("repo clone directory does not exist");
   });
 });
@@ -129,7 +129,7 @@ describe("createWorkspace", () => {
 describe("verifyWorkspace", () => {
   it('returns "valid" for existing healthy worktree', () => {
     const { workspaceManager, repoName } = setup();
-    workspaceManager.createWorkspace("task-1", repoName, "Test");
+    workspaceManager.createWorkspace("task-1", repoName, { title: "Test" });
 
     const result = workspaceManager.verifyWorkspace("task-1");
 
@@ -140,7 +140,7 @@ describe("verifyWorkspace", () => {
 
   it('returns "recoverable" when worktree directory is removed but branch exists', () => {
     const h = setup();
-    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, "Test");
+    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Test" });
 
     // Manually remove the worktree directory (simulate crash)
     rmSync(record.worktreePath, { recursive: true, force: true });
@@ -169,7 +169,7 @@ describe("verifyWorkspace", () => {
 
   it("emits workspace.verified event", () => {
     const h = setup();
-    h.workspaceManager.createWorkspace("task-1", h.repoName, "Test");
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Test" });
 
     h.workspaceManager.verifyWorkspace("task-1");
 
@@ -185,7 +185,7 @@ describe("verifyWorkspace", () => {
 describe("cleanupWorkspace", () => {
   it("removes worktree directory", () => {
     const h = setup();
-    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, "Test");
+    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Test" });
 
     h.workspaceManager.cleanupWorkspace("task-1", false);
 
@@ -194,7 +194,7 @@ describe("cleanupWorkspace", () => {
 
   it("deletes branch when preserveBranch is false", () => {
     const h = setup();
-    h.workspaceManager.createWorkspace("task-1", h.repoName, "Test");
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Test" });
 
     h.workspaceManager.cleanupWorkspace("task-1", false);
 
@@ -209,7 +209,7 @@ describe("cleanupWorkspace", () => {
 
   it("preserves branch when preserveBranch is true", () => {
     const h = setup();
-    h.workspaceManager.createWorkspace("task-1", h.repoName, "Test");
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Test" });
 
     h.workspaceManager.cleanupWorkspace("task-1", true);
 
@@ -224,7 +224,7 @@ describe("cleanupWorkspace", () => {
 
   it("emits workspace.cleaned event", () => {
     const h = setup();
-    h.workspaceManager.createWorkspace("task-1", h.repoName, "Test");
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Test" });
 
     h.workspaceManager.cleanupWorkspace("task-1", true);
 
@@ -247,7 +247,7 @@ describe("cleanupWorkspace", () => {
 describe("getWorktreePath", () => {
   it("returns correct path for known task", () => {
     const h = setup();
-    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, "Test");
+    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Test" });
 
     expect(h.workspaceManager.getWorktreePath("task-1")).toBe(record.worktreePath);
   });

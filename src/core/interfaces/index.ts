@@ -32,6 +32,7 @@ export type {
   PipelineResult,
 } from "./action-pipeline.interface.js";
 export type {
+  CreateWorkspaceOptions,
   IWorkspaceManager,
   WorkspaceRecord,
   WorkspaceVerification,

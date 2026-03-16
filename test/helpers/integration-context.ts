@@ -3,17 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 
-import { ActionPipeline } from "../../src/core/action-pipeline/index.js";
 import { type Daemon, createDaemon } from "../../src/core/daemon/index.js";
-import { EventBus } from "../../src/core/event-bus/index.js";
+import type { IActionPipeline } from "../../src/core/interfaces/action-pipeline.interface.js";
+import type { IEventBus } from "../../src/core/interfaces/event-bus.interface.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
+import type { ISessionMemory } from "../../src/core/interfaces/session-memory.interface.js";
+import type { ITaskEngine } from "../../src/core/interfaces/task-engine.interface.js";
+import type { IWorkspaceManager } from "../../src/core/interfaces/workspace-manager.interface.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
-import { SafetyLayer } from "../../src/core/safety-layer/index.js";
-import { SessionMemory } from "../../src/core/session-memory/index.js";
-import { TaskEngine } from "../../src/core/task-engine/index.js";
-import { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
+import { createCoreComponents } from "../../src/core/system.js";
 import type { Person } from "../../src/schemas/adapters.js";
 import type { DaemonConfig, SafetyConfig, WorkspaceConfig } from "../../src/schemas/config.js";
 import {
@@ -46,14 +46,14 @@ export interface IntegrationContext {
   daemon: Daemon;
   clock: FakeClock;
   db: Database.Database;
-  eventBus: EventBus;
+  eventBus: IEventBus;
   registry: Registry;
-  taskEngine: TaskEngine;
+  taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
-  actionPipeline: ActionPipeline;
+  actionPipeline: IActionPipeline;
   orchestrator: Orchestrator;
-  sessionMemory: SessionMemory;
-  workspaceManager: WorkspaceManager;
+  sessionMemory: ISessionMemory;
+  workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
   fakes: IntegrationContextFakes;
   engineerHome: string;
@@ -120,34 +120,22 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   // 1.5. Observer (silent for tests)
   const observer = createTestObserverFacade("cli");
 
-  // 2. Event Bus
-  const eventBus = new EventBus(db, { observer: observer.child("event-bus") });
-
-  // 3. Registry + fake plugins
-  const registryHandle = createTestRegistry(eventBus);
-  const { registry, fakes } = registryHandle;
-
-  // 4. Task Engine
-  const taskEngine = new TaskEngine(db, eventBus, observer.child("task-engine"));
-
-  // 5. Safety Layer
+  // 2-8. Core components via shared factory (mirrors bootstrap.ts wiring)
   const safetyConfig = SafetyConfigSchema.parse(options?.safetyConfig ?? {});
-  const safetyLayer = new SafetyLayer(db, eventBus, safetyConfig);
-
-  // 6. Action Pipeline
-  const actionPipeline = new ActionPipeline(
-    taskEngine,
-    safetyLayer,
-    eventBus,
-    observer.child("action-pipeline"),
-  );
-
-  // 7. Session Memory
-  const sessionMemory = new SessionMemory(db);
-
-  // 8. Workspace Manager
   const workspaceConfig = WorkspaceConfigSchema.parse(options?.workspaceConfig ?? {});
-  const workspaceManager = new WorkspaceManager(eventBus, workspaceConfig);
+  const { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager } =
+    createCoreComponents({
+      db,
+      observer: observer.child("event-bus"),
+      safetyConfig,
+      workspaceConfig,
+    });
+
+  // 3. Registry + fake plugins (needs eventBus from core components)
+  const registryHandle = createTestRegistry(
+    eventBus as import("../../src/core/event-bus/index.js").EventBus,
+  );
+  const { registry, fakes } = registryHandle;
 
   // 9. People Directory
   const peopleConfig = PeopleConfigSchema.parse({ people: options?.people ?? [] });

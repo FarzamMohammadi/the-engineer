@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { ToolAdapter } from "../../adapters/tool.js";
@@ -21,6 +22,15 @@ export interface ActionExecutorDeps {
 }
 
 /**
+ * Escape a string for safe inclusion in a shell command.
+ * Wraps in single quotes, escaping internal single quotes with the
+ * standard POSIX pattern: end quote, escaped literal quote, start quote.
+ */
+export function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
  * Resolve a user-provided path against the worktree root.
  * Rejects paths that escape the worktree (e.g., `../../etc/passwd`).
  */
@@ -30,6 +40,30 @@ export function resolveWorktreePath(worktreePath: string, filePath: string): str
     throw new WorkspaceEscapeError(filePath);
   }
   return resolved;
+}
+
+/**
+ * Resolve a path with symlink resolution for read operations on existing files.
+ * Catches symlink-based worktree escapes that `resolveWorktreePath` misses.
+ */
+export function resolveWorktreePathReal(worktreePath: string, filePath: string): string {
+  const resolved = resolve(worktreePath, filePath);
+  if (!resolved.startsWith(worktreePath)) {
+    throw new WorkspaceEscapeError(filePath);
+  }
+  // Resolve symlinks to catch symlink-based escape
+  let real: string;
+  try {
+    real = realpathSync(resolved);
+  } catch {
+    // File doesn't exist — no symlink to follow, use the logical path
+    return resolved;
+  }
+  const realWorktree = realpathSync(worktreePath);
+  if (!real.startsWith(realWorktree)) {
+    throw new WorkspaceEscapeError(filePath);
+  }
+  return real;
 }
 
 /**
@@ -80,7 +114,7 @@ export function executeAction(
 
 async function executeReadFile(path: string, worktreePath: string): Promise<ActionResult> {
   try {
-    const resolved = resolveWorktreePath(worktreePath, path);
+    const resolved = resolveWorktreePathReal(worktreePath, path);
     const content = await readFile(resolved, "utf-8");
     return { success: true, output: content };
   } catch (err) {
@@ -127,7 +161,7 @@ async function executeEditFile(
   deps: ActionExecutorDeps,
 ): Promise<ActionResult> {
   try {
-    const resolved = resolveWorktreePath(worktreePath, path);
+    const resolved = resolveWorktreePathReal(worktreePath, path);
     const content = await readFile(resolved, "utf-8");
 
     if (!content.includes(oldString)) {
@@ -174,7 +208,7 @@ function executeSearchFiles(
 ): Promise<ActionResult> {
   const dir = searchPath ? resolveWorktreePath(worktreePath, searchPath) : worktreePath;
   return runToolCommand(
-    `find ${dir} -name '${pattern}' -type f 2>/dev/null | head -50`,
+    `find ${shellEscape(dir)} -name ${shellEscape(pattern)} -type f 2>/dev/null | head -50`,
     worktreePath,
     deps,
   );
@@ -188,9 +222,9 @@ function executeSearchContent(
   deps: ActionExecutorDeps,
 ): Promise<ActionResult> {
   const dir = searchPath ? resolveWorktreePath(worktreePath, searchPath) : worktreePath;
-  const globFlag = globPattern ? `--include='${globPattern}'` : "";
+  const globFlag = globPattern ? `--include=${shellEscape(globPattern)}` : "";
   return runToolCommand(
-    `grep -rn ${globFlag} '${pattern}' ${dir} 2>/dev/null | head -100`,
+    `grep -rn ${globFlag} -- ${shellEscape(pattern)} ${shellEscape(dir)} 2>/dev/null | head -100`,
     worktreePath,
     deps,
   );

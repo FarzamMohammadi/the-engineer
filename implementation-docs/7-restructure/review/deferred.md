@@ -41,3 +41,24 @@ Accumulated across all merge rounds. Nothing gets lost.
 ### Lens J (Minimalism & Dead Code)
 - `getManifest()`, `getAllHealthRecords()`, `getHealthRecord()` have test-only callers but are useful diagnostic APIs (~3 lines each) — kept deliberately
 - `LifecycleManager` interface has single implementation but provides documentation value as closure type — kept deliberately
+
+## Round 1 — 2-plugin-loading
+
+### Lens A (Structure & Organization)
+- `system.ts` loose in `src/core/` — intentionally left as the sole loose file (83-line boundary factory, acceptable)
+- Topology registration split across `system.ts` and `bootstrap.ts` — correct as-is (follows "whoever creates registers")
+- No unit tests for `bootstrap.ts` / `system.ts` — out of scope for structure lens
+
+### Lens B (Naming & Readability)
+- `opts` vs `options` inconsistency in `facade.ts` — skipped because `recordDecision` has a real name collision (3rd param is already `options: ReadonlyArray<...>`); the `opts` abbreviation is pragmatic disambiguation
+
+### Lens C (Abstractions & API Design)
+- `requestTransition` (5 positional params, ~70 call sites) — `reason` and `triggeredBy` are both strings, easy to swap silently. Deferred due to blast radius across daemon, orchestrator, and tests.
+- `updateTracking` (3 positional numbers, 0 production callers) — possibly dead code. Not worth refactoring unused method.
+- Observer `upgrade()` on concrete only — correct by design; bootstrap is the composition root and should know concrete types.
+
+### Lens D (Error Handling & Edge Cases)
+- None — all 6 findings applied
+
+### Lens E (Security & Trust Boundaries)
+- None — all 6 findings applied

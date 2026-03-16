@@ -17,16 +17,21 @@ export interface WorkspaceRecord {
   baseCommit: string;
 }
 
+/** Optional parameters for createWorkspace(). */
+export interface CreateWorkspaceOptions {
+  /** Task title for slug generation (defaults to taskId). */
+  title?: string | undefined;
+  /** Branch to create from (defaults to config.default_base_branch). */
+  baseBranch?: string | undefined;
+  /** Parent task's branch (for child tasks, takes precedence over baseBranch). */
+  parentBranch?: string | undefined;
+  /** Unauthenticated clone URL (required if repo not yet cloned). */
+  cloneUrl?: string | undefined;
+}
+
 export interface IWorkspaceManager {
   /** Create an isolated workspace for a task. */
-  createWorkspace(
-    taskId: string,
-    repo: string,
-    title?: string,
-    baseBranch?: string,
-    parentBranch?: string,
-    cloneUrl?: string,
-  ): WorkspaceRecord;
+  createWorkspace(taskId: string, repo: string, options?: CreateWorkspaceOptions): WorkspaceRecord;
 
   /** Verify the integrity of an existing workspace. */
   verifyWorkspace(taskId: string): WorkspaceVerification;

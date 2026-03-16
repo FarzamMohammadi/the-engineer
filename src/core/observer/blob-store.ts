@@ -34,7 +34,7 @@ export class BlobStore {
   constructor(tracesDir: string) {
     this.blobsDir = join(tracesDir, "blobs");
     try {
-      mkdirSync(this.blobsDir, { recursive: true });
+      mkdirSync(this.blobsDir, { recursive: true, mode: 0o700 });
     } catch (error) {
       throw new Error(
         `Failed to create blob store directory "${this.blobsDir}": ${error instanceof Error ? error.message : String(error)}`,
@@ -53,8 +53,8 @@ export class BlobStore {
     const filePath = refToPath(ref, this.blobsDir);
 
     if (!existsSync(filePath)) {
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, content, "utf-8");
+      mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+      writeFileSync(filePath, content, { encoding: "utf-8", mode: 0o600 });
     }
 
     return ref;

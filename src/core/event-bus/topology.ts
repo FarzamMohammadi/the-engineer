@@ -78,16 +78,16 @@ export class EventTopology {
 
   /**
    * Register a subscription interest.
-   * Called during bootstrap. Records that `subscriberId` listens to `eventType`.
+   * Called during bootstrap. Records that `componentId` listens to `eventType`.
    *
    * For glob patterns (e.g., "task.*"), the subscriber is added to every
    * matching declaration. For exact types, only the specific declaration.
    */
-  registerSubscriber(subscriberId: string, eventType: string): void {
-    for (const [declType, decl] of this.declarations) {
-      if (matchesPattern(eventType, declType)) {
-        if (!decl.subscribers.includes(subscriberId)) {
-          decl.subscribers.push(subscriberId);
+  registerSubscriber(componentId: string, eventType: string): void {
+    for (const [registeredType, declaration] of this.declarations) {
+      if (matchesPattern(eventType, registeredType)) {
+        if (!declaration.subscribers.includes(componentId)) {
+          declaration.subscribers.push(componentId);
         }
       }
     }
@@ -111,12 +111,12 @@ export class EventTopology {
    * Returns { valid: true } for unknown event types (forward compatibility).
    */
   validatePayload(eventType: string, payload: Record<string, unknown>): ValidationResult {
-    const decl = this.declarations.get(eventType);
-    if (!decl) {
+    const declaration = this.declarations.get(eventType);
+    if (!declaration) {
       return { valid: true };
     }
 
-    const result = decl.payloadSchema.safeParse(payload);
+    const result = declaration.payloadSchema.safeParse(payload);
     if (result.success) {
       return { valid: true };
     }
@@ -133,33 +133,39 @@ export class EventTopology {
     const events: EventTopologyGraph["events"] = [];
     const componentMap = new Map<string, { publishes: Set<string>; subscribes: Set<string> }>();
 
-    for (const decl of this.declarations.values()) {
+    for (const declaration of this.declarations.values()) {
       events.push({
-        type: decl.type,
-        description: decl.description,
-        publishers: [...decl.publishers],
-        subscribers: [...decl.subscribers],
+        type: declaration.type,
+        description: declaration.description,
+        publishers: [...declaration.publishers],
+        subscribers: [...declaration.subscribers],
       });
 
-      for (const pub of decl.publishers) {
-        const entry = componentMap.get(pub) ?? { publishes: new Set(), subscribes: new Set() };
-        entry.publishes.add(decl.type);
-        componentMap.set(pub, entry);
+      for (const publisherId of declaration.publishers) {
+        const component = componentMap.get(publisherId) ?? {
+          publishes: new Set(),
+          subscribes: new Set(),
+        };
+        component.publishes.add(declaration.type);
+        componentMap.set(publisherId, component);
       }
 
-      for (const sub of decl.subscribers) {
-        const entry = componentMap.get(sub) ?? { publishes: new Set(), subscribes: new Set() };
-        entry.subscribes.add(decl.type);
-        componentMap.set(sub, entry);
+      for (const subscriberId of declaration.subscribers) {
+        const component = componentMap.get(subscriberId) ?? {
+          publishes: new Set(),
+          subscribes: new Set(),
+        };
+        component.subscribes.add(declaration.type);
+        componentMap.set(subscriberId, component);
       }
     }
 
     const components: EventTopologyGraph["components"] = [];
-    for (const [id, entry] of componentMap) {
+    for (const [id, component] of componentMap) {
       components.push({
         id,
-        publishes: [...entry.publishes],
-        subscribes: [...entry.subscribes],
+        publishes: [...component.publishes],
+        subscribes: [...component.subscribes],
       });
     }
 

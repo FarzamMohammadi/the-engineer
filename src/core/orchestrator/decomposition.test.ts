@@ -358,10 +358,10 @@ describe("Orchestrator — Decomposition", () => {
     expect(h.workspaceManager.createWorkspace).toHaveBeenCalledWith(
       "child-001",
       "test/repo",
-      expect.any(String),
-      undefined,
-      "engineer/parent-001-feature", // parentBranch
-      "https://example.com/repo.git",
+      expect.objectContaining({
+        parentBranch: "engineer/parent-001-feature",
+        cloneUrl: "https://example.com/repo.git",
+      }),
     );
   });
 

@@ -94,14 +94,11 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
             const parentTask = ctx.taskEngine.getTask(dispatch.task.parent_id);
             parentBranch = parentTask?.workspace?.branch ?? undefined;
           }
-          const record = ctx.workspaceManager.createWorkspace(
-            taskId,
-            repo,
-            dispatch.task.title,
-            undefined,
+          const record = ctx.workspaceManager.createWorkspace(taskId, repo, {
+            title: dispatch.task.title,
             parentBranch,
             cloneUrl,
-          );
+          });
           ctx.taskEngine.updateTaskField(taskId, "workspace", {
             repo,
             branch: record.branch,

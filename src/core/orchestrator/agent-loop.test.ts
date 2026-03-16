@@ -291,4 +291,54 @@ describe("runAgentLoop", () => {
     expect(result.phaseData).toEqual({});
     expect(execAction).not.toHaveBeenCalled();
   });
+
+  it("sanitizes secrets in LLM response content passed to onLlmComplete", async () => {
+    const tokenValue = "ghp_TestToken1234567890abcdefghijklmnopqrst";
+    const callLlm = vi
+      .fn()
+      .mockResolvedValue(
+        makeCompletion(`{"action": "done", "result": {"note": "found token ${tokenValue}"}}`),
+      );
+    const execAction = vi.fn();
+    const llmTraces: Array<{ response_content: string | undefined }> = [];
+    const config = makeConfig({
+      callbacks: {
+        onLlmComplete: (trace) => {
+          llmTraces.push({ response_content: trace.response_content });
+        },
+      },
+    });
+
+    await runAgentLoop(config, callLlm, execAction);
+
+    expect(llmTraces).toHaveLength(1);
+    expect(llmTraces[0]?.response_content).not.toContain(tokenValue);
+    expect(llmTraces[0]?.response_content).toContain("[REDACTED:github_token]");
+  });
+
+  it("sanitizes secrets in action trace output passed to onActionComplete", async () => {
+    const tokenValue = "ghp_ActionSecretToken123456789012345678901";
+    const callLlm = vi
+      .fn()
+      .mockResolvedValueOnce(makeCompletion('{"action": "read_file", "params": {"path": "a.ts"}}'))
+      .mockResolvedValueOnce(makeCompletion('{"action": "done", "result": {}}'));
+    const execAction = vi.fn().mockResolvedValue({
+      success: true,
+      output: `env dump: GITHUB_TOKEN=${tokenValue}`,
+    });
+    const actionTraces: Array<{ result_output: string | null }> = [];
+    const config = makeConfig({
+      callbacks: {
+        onActionComplete: (trace) => {
+          actionTraces.push({ result_output: trace.result_output });
+        },
+      },
+    });
+
+    await runAgentLoop(config, callLlm, execAction);
+
+    expect(actionTraces).toHaveLength(1);
+    expect(actionTraces[0]?.result_output).not.toContain(tokenValue);
+    expect(actionTraces[0]?.result_output).toContain("[REDACTED:github_token]");
+  });
 });

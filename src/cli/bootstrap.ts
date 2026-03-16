@@ -6,10 +6,10 @@ import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
 import { createDataLifecycleManager } from "../core/data-lifecycle/index.js";
 import { HookRegistry } from "../core/hooks/index.js";
-import { createChildLogger, createLogger } from "../core/logging.js";
 import { BlobStore } from "../core/observer/blob-store.js";
 import { createObserverFacade } from "../core/observer/facade.js";
 import { createObservationStore } from "../core/observer/index.js";
+import { createChildLogger, createLogger } from "../core/observer/logging.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
@@ -64,8 +64,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   cliLogger.info("Bootstrapping The Engineer...");
   progress?.("Initializing logger", "done");
 
-  // Database handle declared before try block so it can be cleaned up on failure
+  // Handles declared before try block so they can be cleaned up on failure
   let dbHandle: DatabaseHandle | undefined;
+  let registry: Registry | undefined;
 
   try {
     // 2. Database
@@ -76,7 +77,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     });
     progress?.("Initializing database", "done");
 
-    // 3-9. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
+    // 3. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
     progress?.("Creating core components", "start");
     cliLogger.debug("Creating core components");
     const {
@@ -95,12 +96,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       subscriberWarnThresholdMs: config.daemon.subscriber_warn_threshold_ms,
     });
 
-    // 4. Hook Registry
+    // 4. Hook Registry (after core components so it can observe them)
     const hookRegistry = new HookRegistry(observer.child("hooks"));
 
     // 5. Registry (needs eventBus + health config + hook registry)
     topology.registerPublisher("registry", REGISTRY_EVENTS);
-    const registry = new Registry({
+    registry = new Registry({
       eventBus,
       observer: observer.child("registry"),
       healthCheckIntervalMs: config.daemon.plugins.health_check_interval_ms,
@@ -114,10 +115,10 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     const observationStore = createObservationStore(dbHandle.db, blobStore);
     observer.upgrade(observationStore);
 
-    // 8. People Directory
+    // 7. People Directory
     const peopleDirectory = new PeopleDirectory({ people: config.people });
 
-    // 9. Orchestrator
+    // 8. Orchestrator
     topology.registerPublisher("orchestrator", ORCHESTRATOR_EVENTS);
     const orchestrator = new Orchestrator({
       eventBus,
@@ -132,7 +133,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       observer: observer.child("orchestrator"),
     });
 
-    // 10. Data Lifecycle Manager
+    // 9. Data Lifecycle Manager
     const tracesDir = join(engineerHome, "traces");
     const dataLifecycleManager = createDataLifecycleManager({
       db: dbHandle.db,
@@ -142,7 +143,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       clock: new RealClock(),
     });
 
-    // 11. Daemon
+    // 10. Daemon
     topology.registerPublisher("daemon", DAEMON_EVENTS);
     const daemon = createDaemon(config.daemon, {
       eventBus,
@@ -163,7 +164,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     // ── Event Topology: Subscribers ──────────────────────────────────────────
 
-    // 12. Register event topology subscriptions
+    // 11. Register event topology subscriptions
     topology.registerSubscriber("orchestrator", "preemption.requested");
     topology.registerSubscriber("safety_layer", "cost.incurred");
     topology.registerSubscriber("daemon:cost", "cost.limit_reached");
@@ -174,7 +175,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     // ── Plugin Loading ───────────────────────────────────────────────────────
 
-    // 13. Load built-in plugins
+    // 12. Load built-in plugins
     // Note: Plugin instances created via create() are lightweight — no OS resources
     // are allocated until initialize(). If config loading fails for a non-critical
     // plugin, the instance is deregistered without calling shutdown(), which is safe.
@@ -194,7 +195,14 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     };
   } catch (error) {
     cliLogger.error({ err: error }, "Bootstrap failed");
-    // Clean up resources allocated before the failure point
+    // Clean up resources allocated before the failure point — reverse order
+    if (registry) {
+      try {
+        await registry.shutdownAll();
+      } catch (shutdownError) {
+        cliLogger.warn({ err: shutdownError }, "Registry shutdown during bootstrap cleanup failed");
+      }
+    }
     dbHandle?.close();
     throw error;
   }

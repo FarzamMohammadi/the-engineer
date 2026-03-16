@@ -1,9 +1,15 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentAction } from "../../schemas/orchestrator.js";
-import { type ActionExecutorDeps, executeAction, resolveWorktreePath } from "./action-executor.js";
+import {
+  type ActionExecutorDeps,
+  executeAction,
+  resolveWorktreePath,
+  resolveWorktreePathReal,
+  shellEscape,
+} from "./action-executor.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -183,6 +189,74 @@ describe("executeAction: path security", () => {
     const action: AgentAction = {
       action: "write_file",
       params: { path: "../../../tmp/evil.txt", content: "bad" },
+    };
+    const result = await executeAction(action, worktree, makeDeps());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("escapes worktree");
+  });
+});
+
+// ── shellEscape ──────────────────────────────────────────────────────────────
+
+describe("shellEscape", () => {
+  it("wraps simple string in single quotes", () => {
+    expect(shellEscape("simple")).toBe("'simple'");
+  });
+
+  it("escapes internal single quotes", () => {
+    expect(shellEscape("it's")).toBe("'it'\\''s'");
+  });
+
+  it("neutralizes injection attempts", () => {
+    const escaped = shellEscape("'; rm -rf / #");
+    // The single quote is escaped: end-quote, backslash-quote, start-quote
+    expect(escaped).toBe("''\\''; rm -rf / #'");
+  });
+
+  it("handles empty string", () => {
+    expect(shellEscape("")).toBe("''");
+  });
+
+  it("handles string with multiple single quotes", () => {
+    const escaped = shellEscape("a'b'c");
+    expect(escaped).toBe("'a'\\''b'\\''c'");
+  });
+});
+
+// ── resolveWorktreePathReal ──────────────────────────────────────────────────
+
+describe("resolveWorktreePathReal", () => {
+  it("resolves normal files within worktree", () => {
+    writeFileSync(join(worktree, "normal.txt"), "ok");
+    const result = resolveWorktreePathReal(worktree, "normal.txt");
+    expect(result).toContain("normal.txt");
+  });
+
+  it("gracefully handles non-existent files (returns logical path)", () => {
+    const result = resolveWorktreePathReal(worktree, "does-not-exist.txt");
+    expect(result).toBe(join(worktree, "does-not-exist.txt"));
+  });
+
+  it("rejects path traversal", () => {
+    expect(() => resolveWorktreePathReal(worktree, "../../etc/passwd")).toThrow("escapes worktree");
+  });
+
+  it("rejects symlinks pointing outside the worktree", () => {
+    const outsideFile = join(tmpdir(), "outside-secret.txt");
+    writeFileSync(outsideFile, "secret data");
+    symlinkSync(outsideFile, join(worktree, "sneaky-link"));
+
+    expect(() => resolveWorktreePathReal(worktree, "sneaky-link")).toThrow("escapes worktree");
+  });
+
+  it("read_file rejects symlink escape via executeAction", async () => {
+    const outsideFile = join(tmpdir(), "outside-read-test.txt");
+    writeFileSync(outsideFile, "should not be readable");
+    symlinkSync(outsideFile, join(worktree, "escape-link"));
+
+    const action: AgentAction = {
+      action: "read_file",
+      params: { path: "escape-link" },
     };
     const result = await executeAction(action, worktree, makeDeps());
     expect(result.success).toBe(false);

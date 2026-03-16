@@ -92,7 +92,7 @@ const manifests = [
 ] as const;
 
 // Validate all manifests at import time
-const validatedManifests = manifests.map((m) => PluginManifestSchema.parse(m));
+const validatedManifests = manifests.map((manifest) => PluginManifestSchema.parse(manifest));
 
 // ── Factory map (id → constructor) ──────────────────────────────────────────
 

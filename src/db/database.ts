@@ -68,8 +68,17 @@ interface MigrationFile {
   sql: string;
 }
 
-function loadMigrations(migrationsDir: string): MigrationFile[] {
-  const files = fs.readdirSync(migrationsDir).sort();
+function loadMigrations(migrationsDir: string, dbPath: string): MigrationFile[] {
+  let files: string[];
+  try {
+    files = fs.readdirSync(migrationsDir).sort();
+  } catch (error) {
+    throw new DatabaseError(
+      `Cannot read migrations directory "${migrationsDir}": ${extractErrorMessage(error)}`,
+      dbPath,
+      { cause: error },
+    );
+  }
   const migrations: MigrationFile[] = [];
 
   for (const filename of files) {
@@ -78,7 +87,16 @@ function loadMigrations(migrationsDir: string): MigrationFile[] {
       continue;
     }
     const version = Number.parseInt(match[1], 10);
-    const sql = fs.readFileSync(path.join(migrationsDir, filename), "utf-8");
+    let sql: string;
+    try {
+      sql = fs.readFileSync(path.join(migrationsDir, filename), "utf-8");
+    } catch (error) {
+      throw new DatabaseError(
+        `Cannot read migration file "${filename}": ${extractErrorMessage(error)}`,
+        dbPath,
+        { cause: error },
+      );
+    }
     migrations.push({ version, filename, sql });
   }
 
@@ -106,7 +124,7 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
   const currentVersion = row ? Number.parseInt(row.value, 10) : 0;
 
   // 3. Load and filter migrations
-  const migrations = loadMigrations(migrationsDir);
+  const migrations = loadMigrations(migrationsDir, dbPath);
   const unapplied = migrations.filter((m) => m.version > currentVersion);
 
   // 4. Apply each migration in its own transaction
@@ -191,19 +209,21 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
 
   restrictFilePermissions(dbPath);
 
-  // FK enforcement must be set before migrations — per-connection, not persisted
-  db.pragma("foreign_keys = ON");
-
-  // auto_vacuum must be set before any tables exist. For existing databases where
-  // tables already exist, this is silently ignored (correct SQLite behavior).
-  // Only new installations benefit from incremental vacuum.
-  db.pragma("auto_vacuum = INCREMENTAL");
-
-  // Run migrations
-  runMigrations(db, dbPath, MIGRATIONS_DIR);
-
-  // WAL mode + pragmas after migrations (per sqlite.md startup flow)
+  // All post-open work in a single try/catch — if anything fails, close the DB
+  // handle so it doesn't leak (the handle is never returned on error).
   try {
+    // FK enforcement must be set before migrations — per-connection, not persisted
+    db.pragma("foreign_keys = ON");
+
+    // auto_vacuum must be set before any tables exist. For existing databases where
+    // tables already exist, this is silently ignored (correct SQLite behavior).
+    // Only new installations benefit from incremental vacuum.
+    db.pragma("auto_vacuum = INCREMENTAL");
+
+    // Run migrations
+    runMigrations(db, dbPath, MIGRATIONS_DIR);
+
+    // WAL mode + pragmas after migrations (per sqlite.md startup flow)
     db.pragma("journal_mode = WAL");
     db.pragma("synchronous = NORMAL");
     db.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
@@ -213,8 +233,12 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
     db.pragma(`cache_size = -${cacheSizeMb * 1_024}`);
   } catch (error) {
     db.close();
+    // MigrationError already has full context (file, version) — re-throw directly
+    if (error instanceof MigrationError) {
+      throw error;
+    }
     throw new DatabaseError(
-      `Database pragma configuration failed at ${dbPath}: ${extractErrorMessage(error)}`,
+      `Database initialization failed at ${dbPath}: ${extractErrorMessage(error)}`,
       dbPath,
       { cause: error },
     );

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -102,5 +102,14 @@ describe("BlobStore", () => {
   it("throws descriptive error when blobs directory cannot be created", () => {
     // /dev/null is a file, not a directory — mkdirSync will fail
     expect(() => new BlobStore("/dev/null/impossible")).toThrow(BLOB_DIR_ERROR_PATTERN);
+  });
+
+  it("writes blob files with restrictive permissions (0o600)", () => {
+    const ref = store.store("sensitive LLM content");
+    const filePath = join(tracesDir, "blobs", `${ref}.txt`);
+    const stats = statSync(filePath);
+    // eslint-disable-next-line no-bitwise
+    const mode = stats.mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 });

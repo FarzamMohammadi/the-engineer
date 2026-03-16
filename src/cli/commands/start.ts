@@ -1,20 +1,18 @@
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
 import { extractErrorMessage } from "../../utils/errors.js";
 
-import { startDashboard } from "../../dashboard/index.js";
-import { type ProgressCallback, bootstrap } from "../bootstrap.js";
+import { type BootstrapResult, type ProgressCallback, bootstrap } from "../bootstrap.js";
 import { YAML_EXTENSION_PATTERN } from "../constants.js";
 import { type EngineerDirs, resolveSubdirs } from "../home.js";
 import { getOutput } from "../output.js";
 import { Spinner } from "../progress.js";
 import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "./doctor.js";
-
-const DASHBOARD_PORT = 3847;
+import { spawnBackground } from "./start-background.js";
+import { DASHBOARD_PORT, launchDashboard } from "./start-dashboard.js";
 
 interface StartOptions {
   daemon: boolean;
@@ -29,8 +27,8 @@ function ensureDirectories(dirs: EngineerDirs): number | null {
     try {
       mkdirSync(dirPath, { recursive: true, mode: 0o700 });
     } catch (error) {
-      const msg = extractErrorMessage(error);
-      out.error(`Cannot create directory "${dirPath}": ${msg}. Check file permissions.`);
+      const message = extractErrorMessage(error);
+      out.error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`);
       return 1;
     }
   }
@@ -43,9 +41,9 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 
   // 1. Auto-create directories
   const dirs = resolveSubdirs(engineerHome);
-  const dirError = ensureDirectories(dirs);
-  if (dirError !== null) {
-    return dirError;
+  const exitCode = ensureDirectories(dirs);
+  if (exitCode !== null) {
+    return exitCode;
   }
 
   // 2. Load config
@@ -124,9 +122,9 @@ async function runForeground(
   const totalChecks = preFlightResults.reduce((sum, category) => sum + category.checks.length, 0);
   progress(`Pre-flight: ${String(totalChecks)}/${String(totalChecks)} checks passed`, "done");
 
-  let daemon: Awaited<ReturnType<typeof bootstrap>>["daemon"];
-  let cleanup: Awaited<ReturnType<typeof bootstrap>>["cleanup"];
-  let bootstrapLogger: Awaited<ReturnType<typeof bootstrap>>["logger"] | undefined;
+  let daemon: BootstrapResult["daemon"];
+  let cleanup: BootstrapResult["cleanup"];
+  let logger: BootstrapResult["logger"] | undefined;
   try {
     const result = await bootstrap({
       engineerHome,
@@ -136,7 +134,7 @@ async function runForeground(
     });
     daemon = result.daemon;
     cleanup = result.cleanup;
-    bootstrapLogger = result.logger;
+    logger = result.logger;
   } catch (error) {
     spinner.fail("Bootstrap failed");
     out.error(`Bootstrap failed: ${extractErrorMessage(error)}`);
@@ -150,16 +148,22 @@ async function runForeground(
   // receives SIGTERM/SIGINT during bootstrap, cleanup won't run. This is an accepted
   // gap — bootstrap is typically <2s, and the OS reclaims all resources on exit.
   const shutdown = async () => {
-    await daemon.stop();
-    cleanupDashboard();
-    cleanup();
+    try {
+      await daemon.stop();
+    } finally {
+      try {
+        cleanupDashboard();
+      } finally {
+        cleanup();
+      }
+    }
     process.exit(0);
   };
 
   process.on("SIGTERM", () => {
     shutdown().catch((err) => {
       try {
-        bootstrapLogger?.error({ err }, "Shutdown failed");
+        logger?.error({ err }, "Shutdown failed");
       } catch {
         // Logger transport may be broken during shutdown — stderr fallback below
       }
@@ -170,7 +174,7 @@ async function runForeground(
   process.on("SIGINT", () => {
     shutdown().catch((err) => {
       try {
-        bootstrapLogger?.error({ err }, "Shutdown failed");
+        logger?.error({ err }, "Shutdown failed");
       } catch {
         // Logger transport may be broken during shutdown — stderr fallback below
       }
@@ -192,6 +196,11 @@ async function runForeground(
     out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
   } catch (error) {
     out.error(`Startup failed: ${extractErrorMessage(error)}`);
+    try {
+      await daemon.stop();
+    } catch {
+      // Best-effort: daemon may be partially initialized
+    }
     cleanupDashboard();
     cleanup();
     return 1;
@@ -256,67 +265,5 @@ function runDryRun(
 
   out.blank();
   out.success("Everything looks good. Run without --dry-run to start.");
-  return 0;
-}
-
-// ── Dashboard ────────────────────────────────────────────────────────────────
-
-function launchDashboard(dirs: EngineerDirs): { cleanup: () => void } {
-  const out = getOutput();
-  const dbPath = join(dirs.data, "engineer.db");
-  const pidPath = join(dirs.run, "dashboard.pid");
-  let dashboardHandle: { close: () => void } | null = null;
-
-  if (existsSync(dbPath)) {
-    try {
-      dashboardHandle = startDashboard(
-        { dbPath, tracesDir: dirs.traces, runDir: dirs.run },
-        DASHBOARD_PORT,
-      );
-      writeFileSync(pidPath, String(process.pid), "utf8");
-    } catch (error) {
-      out.warn(`Dashboard failed to start: ${extractErrorMessage(error)}`);
-    }
-  }
-
-  return {
-    cleanup() {
-      dashboardHandle?.close();
-      try {
-        unlinkSync(pidPath);
-      } catch {
-        // already removed
-      }
-    },
-  };
-}
-
-function spawnBackground(engineerHome: string, verbose: boolean): number {
-  const out = getOutput();
-  const args = [process.argv[1] ?? "engineer", "start", "--home", engineerHome];
-  if (verbose) {
-    args.push("--verbose");
-  }
-  // Don't pass --daemon to child — it should run in foreground within the detached process
-
-  const child = spawn(process.execPath, args, {
-    detached: true,
-    stdio: "ignore",
-  });
-
-  child.on("error", (err) => {
-    // Best-effort — parent process may already be exiting
-    out.error(`Background process error: ${err.message}`);
-  });
-
-  if (!child.pid) {
-    out.error("Failed to spawn background process.");
-    return 1;
-  }
-
-  child.unref();
-
-  out.success(`The Engineer started in background (PID ${String(child.pid)}).`);
-  out.log("  Use 'engineer status' to check, 'engineer shutdown' to stop.");
   return 0;
 }

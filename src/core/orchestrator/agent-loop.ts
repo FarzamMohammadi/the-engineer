@@ -555,8 +555,8 @@ function emitActionCallback(
     action_type: action.action,
     action_params: JSON.stringify(params),
     result_success: result.success,
-    result_output: result.output,
-    result_error: result.error ?? null,
+    result_output: sanitizeSecrets(result.output),
+    result_error: result.error ? sanitizeSecrets(result.error) : null,
     duration_ms: durationMs,
     iteration,
   });
@@ -584,6 +584,6 @@ function emitLlmCallback(
     prompt_ref: null,
     response_ref: null,
     prompt_content: prompt,
-    response_content: completion.content,
+    response_content: sanitizeSecrets(completion.content),
   });
 }

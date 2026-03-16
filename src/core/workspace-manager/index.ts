@@ -16,6 +16,7 @@ import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type {
+  CreateWorkspaceOptions,
   IWorkspaceManager,
   WorkspaceRecord,
   WorkspaceVerification,
@@ -23,6 +24,7 @@ import type {
 import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
 
 export type {
+  CreateWorkspaceOptions,
   WorkspaceRecord,
   WorkspaceVerification,
 } from "../interfaces/workspace-manager.interface.js";
@@ -178,22 +180,9 @@ export class WorkspaceManager implements IWorkspaceManager {
    * If the repo is not yet cloned locally, clones it first using the provided
    * cloneUrl. Fetches from remote (if configured), creates a named branch
    * from the base, and sets up a git worktree. Emits `workspace.created`.
-   *
-   * @param taskId - The task this workspace belongs to
-   * @param repo - Repository name (e.g., "owner/repo")
-   * @param title - Optional task title for slug generation (defaults to taskId)
-   * @param baseBranch - Branch to create from (defaults to config.default_base_branch)
-   * @param parentBranch - Parent task's branch (for child tasks, takes precedence over baseBranch)
-   * @param cloneUrl - Unauthenticated clone URL (required if repo not yet cloned)
    */
-  createWorkspace(
-    taskId: string,
-    repo: string,
-    title?: string,
-    baseBranch?: string,
-    parentBranch?: string,
-    cloneUrl?: string,
-  ): WorkspaceRecord {
+  createWorkspace(taskId: string, repo: string, options?: CreateWorkspaceOptions): WorkspaceRecord {
+    const { title, baseBranch, parentBranch, cloneUrl } = options ?? {};
     const resolvedBase = parentBranch ?? baseBranch ?? this.config.default_base_branch;
     const slug = slugify(title ?? taskId, this.config.slug_max_length);
     const branch = branchName(this.config.branch_prefix, taskId, slug);

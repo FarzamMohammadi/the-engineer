@@ -103,13 +103,16 @@ describe("runSetup", () => {
     // The input mock's validate function is called by inquirer
     // We test the validate function by extracting it
     let validateFn: ((val: string) => string | boolean | Promise<string | boolean>) | undefined;
+    let inputCallCount = 0;
     vi.mocked(prompts.input).mockImplementation(
       // biome-ignore lint/suspicious/noExplicitAny: test mock type coercion
       (opts: any) => {
+        inputCallCount++;
         if (opts.validate) {
           validateFn = opts.validate;
         }
-        return Promise.resolve("owner/repo");
+        // First call is home dir, second is repos
+        return Promise.resolve(inputCallCount === 1 ? tempDir : "owner/repo");
       },
     );
 

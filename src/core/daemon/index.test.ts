@@ -1338,6 +1338,9 @@ describe("Daemon", () => {
         }
         return [];
       });
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) =>
+        type === "git_hosting" ? fakeHosting : null,
+      );
 
       await handle.daemon.tick();
 
@@ -1397,6 +1400,9 @@ describe("Daemon", () => {
         }
         return [];
       });
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) =>
+        type === "git_hosting" ? fakeHosting : null,
+      );
 
       await handle.daemon.tick();
 
@@ -1468,6 +1474,9 @@ describe("Daemon", () => {
       handle.registry.getPluginsByType.mockImplementation((type: string) =>
         type === "git_hosting" ? [hosting] : [],
       );
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) =>
+        type === "git_hosting" ? hosting : null,
+      );
 
       await handle.daemon.tick();
 
@@ -1501,6 +1510,9 @@ describe("Daemon", () => {
       handle.registry.getPluginsByType.mockImplementation((type: string) =>
         type === "git_hosting" ? [hosting] : [],
       );
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) =>
+        type === "git_hosting" ? hosting : null,
+      );
 
       await handle.daemon.tick();
 
@@ -1532,6 +1544,9 @@ describe("Daemon", () => {
       handle.registry.getPluginsByType.mockImplementation((type: string) =>
         type === "git_hosting" ? [hosting] : [],
       );
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) =>
+        type === "git_hosting" ? hosting : null,
+      );
 
       await handle.daemon.tick();
       await handle.daemon.tick();
@@ -1557,6 +1572,9 @@ describe("Daemon", () => {
       );
       handle.registry.getPluginsByType.mockImplementation((type: string) =>
         type === "git_hosting" ? [hosting] : [],
+      );
+      handle.registry.getPrimaryPlugin.mockImplementation((type: string) =>
+        type === "git_hosting" ? hosting : null,
       );
 
       await handle.daemon.tick();
@@ -1650,6 +1668,7 @@ describe("Daemon", () => {
         hasCapability: vi.fn().mockReturnValue(false),
       };
       handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
+      handle.registry.getPrimaryPlugin.mockReturnValue(fakeHosting);
 
       const callback = handle.getSubscriptionCallback("task.feedback_received");
       callback?.({
@@ -1746,6 +1765,7 @@ describe("Daemon", () => {
         hasCapability: vi.fn().mockReturnValue(false),
       };
       handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
+      handle.registry.getPrimaryPlugin.mockReturnValue(fakeHosting);
 
       const callback = handle.getSubscriptionCallback("task.feedback_received");
       callback?.({
@@ -1802,6 +1822,7 @@ describe("Daemon", () => {
         hasCapability: vi.fn().mockReturnValue(false),
       };
       handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
+      handle.registry.getPrimaryPlugin.mockReturnValue(fakeHosting);
 
       const callback = handle.getSubscriptionCallback("task.feedback_received");
       callback?.({

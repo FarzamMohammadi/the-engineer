@@ -122,3 +122,12 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **`subscriber_warn_threshold_ms` at daemon config top level** — This is an EventBus concern living in daemon config. Moving it would be a schema-level change affecting config migration. Flagged for future consideration.
 - **No `--quiet` flag** — Only `--json` and `--verbose` exist. A `--quiet` mode (suppress non-error output) could be useful for scripting but isn't urgent.
 - **`engineer stop` alias for `engineer shutdown`** — Some users may expect `stop` as the inverse of `start`. Could add as a Commander alias. Not applied to avoid scope creep.
+
+## Round 3 — 3
+
+### Lens I (Consistency & Patterns)
+- **C1 (Duplicate completion logic):** `handleCompletedOutcome` in task-scheduler.ts and `completeTaskOnMerge` in review-handler.ts implement similar completion sequences. The merge path has extra logic (demo→code transition hop) that makes extraction non-trivial without overcomplicating. Both paths are now tested. Could be refactored in a future pass if the completion sequence grows more complex.
+
+### Lens J (Minimalism & Dead Code)
+- **GitHub-specific code in Core tier** (`trigger-poller.ts` lines ~211-229): `parseGitHubUrl` + `toExternalRef` are GitHub-specific URL parsing that doesn't belong in Core. Per Farzam: "the system should not know of 'github' — GitHub is a plugin and its tooling should be extracted." Proper fix requires the TriggerAdapter contract to provide structured `ExternalRef` data instead of raw URLs. This is a schema/contract change beyond Lens J scope.
+- **`DaemonError` abstract base with single subclass**: All 7 core modules follow this identical pattern (abstract base + concrete subclasses). It's a project convention from the L7 typed errors initiative — not over-abstraction.

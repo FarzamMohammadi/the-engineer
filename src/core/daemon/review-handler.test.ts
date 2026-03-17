@@ -147,6 +147,13 @@ function buildContext(
         }
         return [];
       }),
+      getPrimaryPlugin: vi.fn().mockImplementation((type: string) => {
+        if (type === "git_hosting") {
+          const plugins = hostingPlugins ?? [hostingPlugin];
+          return plugins[0] ?? null;
+        }
+        return null;
+      }),
     } as unknown as ReviewHandlerContext["registry"],
     taskEngine: {
       getTasksByState: vi.fn().mockImplementation((state: string) => {
@@ -215,14 +222,14 @@ describe("ReviewHandler", () => {
 
       await handler.checkMerges();
 
-      expect(ctx.registry.getPluginsByType).not.toHaveBeenCalled();
+      expect(ctx.registry.getPrimaryPlugin).not.toHaveBeenCalled();
     });
 
     it("skips when no git_hosting plugin", async () => {
       const task = createReviewTask();
       buildContext([task], []);
-      // Override to return empty array
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([]);
+      // Override to return null
+      (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
       await handler.checkMerges();
 
@@ -236,7 +243,7 @@ describe("ReviewHandler", () => {
 
       await handler.checkMerges();
 
-      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1", "Fix the bug");
+      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
     });
 
     it("sends completion notification and issue comment on merge", async () => {
@@ -509,7 +516,7 @@ describe("ReviewHandler", () => {
       );
     });
 
-    it("on approved/code without auto-merge: transitions to completed", () => {
+    it("on approved/code without auto-merge: transitions to completed with cleanup", () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
       (
@@ -539,9 +546,16 @@ describe("ReviewHandler", () => {
         "task-1",
         "Code review approved — ready to merge.",
       );
+      // Completion cleanup: workspace, notification, child-done check
+      const ws = ctx.workspaceManager as unknown as {
+        cleanupWorkspace: ReturnType<typeof vi.fn>;
+      };
+      expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
+      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1", "Fix the bug");
+      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
     });
 
-    it("on approved/code with auto-merge: merges PR and completes", async () => {
+    it("on approved/code with auto-merge: merges PR and completes with cleanup", async () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
       (
@@ -578,6 +592,55 @@ describe("ReviewHandler", () => {
         "review",
         expect.objectContaining({ pr_state: "merged" }),
       );
+      // Completion cleanup: workspace, notification, child-done check
+      const ws = ctx.workspaceManager as unknown as {
+        cleanupWorkspace: ReturnType<typeof vi.fn>;
+      };
+      expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
+      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1", "Fix the bug");
+      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
+    });
+
+    it("on approved/code with auto-merge failure: completes with cleanup", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.mergePR.mockRejectedValue(new Error("merge conflict"));
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+
+      await flush();
+
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+      };
+      expect(te.requestTransition).toHaveBeenCalledWith(
+        "task-1",
+        "completed",
+        null,
+        "code_approved",
+        "daemon",
+      );
+      expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+        "task-1",
+        "Code approved — auto-merge failed, please merge manually.",
+      );
+      // Completion cleanup still runs even on merge failure
+      const ws = ctx.workspaceManager as unknown as {
+        cleanupWorkspace: ReturnType<typeof vi.fn>;
+      };
+      expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
+      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1", "Fix the bug");
+      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
     });
 
     it("ignores feedback for non-review_pending tasks", () => {

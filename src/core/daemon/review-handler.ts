@@ -22,7 +22,7 @@ export interface ReviewHandler {
 /** Callbacks for cross-subsystem coordination. */
 export interface ReviewHandlerCallbacks {
   /** Called when a task should be completed (PR merged). */
-  onTaskMergeComplete(taskId: string, taskTitle: string): void;
+  onTaskMergeComplete(taskId: string): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ export function createReviewHandler(
     }
     notifications.sendCompletion(task.id, task.title);
     notifications.commentOnTaskIssue(task.id, "PR merged — task completed.");
-    callbacks.onTaskMergeComplete(task.id, task.title);
+    callbacks.onTaskMergeComplete(task.id);
     observer.info("PR merged — task completed", {
       taskId: task.id,
       prNumber: task.review?.pr_number,
@@ -129,8 +129,7 @@ export function createReviewHandler(
       return;
     }
 
-    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting);
-    const hosting = hostingPlugins[0];
+    const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!hosting) {
       return;
     }
@@ -333,8 +332,7 @@ export function createReviewHandler(
       }
     }
 
-    const hostingPlugins = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting);
-    const hosting = hostingPlugins[0];
+    const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!hosting) {
       return;
     }
@@ -411,7 +409,7 @@ export function createReviewHandler(
     task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
     payload: TaskFeedbackReceivedPayload,
   ): void {
-    const hosting = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting)[0];
+    const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (hosting && task.repo && task.review?.pr_number) {
       hosting
         .updatePR(task.repo, task.review.pr_number, {
@@ -456,6 +454,17 @@ export function createReviewHandler(
     }
   }
 
+  /** Run post-completion cleanup: workspace, notification, child-done check. */
+  function completeTaskCleanup(taskId: string, taskTitle: string): void {
+    try {
+      workspaceManager.cleanupWorkspace(taskId, true);
+    } catch {
+      observer.warn("Workspace cleanup failed after code approval", { taskId });
+    }
+    notifications.sendCompletion(taskId, taskTitle);
+    callbacks.onTaskMergeComplete(taskId);
+  }
+
   function handleCodeApproval(
     task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
     payload: TaskFeedbackReceivedPayload,
@@ -465,7 +474,7 @@ export function createReviewHandler(
       const prNumber = task.review?.pr_number;
       const autoMergeAllowed = repo ? safetyLayer.checkAutoMergeAllowed(repo) : false;
 
-      const hosting = registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting)[0];
+      const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
       if (autoMergeAllowed && prNumber && repo && hosting) {
         hosting
           .mergePR(repo, prNumber, "squash")
@@ -492,6 +501,7 @@ export function createReviewHandler(
               "code_approved_merged",
               "daemon",
             );
+            completeTaskCleanup(payload.task_id, task.title);
           })
           .catch(() => {
             taskEngine.requestTransition(
@@ -505,6 +515,7 @@ export function createReviewHandler(
               payload.task_id,
               "Code approved — auto-merge failed, please merge manually.",
             );
+            completeTaskCleanup(payload.task_id, task.title);
           });
       } else {
         taskEngine.requestTransition(
@@ -515,6 +526,7 @@ export function createReviewHandler(
           "daemon",
         );
         notifications.commentOnTaskIssue(payload.task_id, "Code review approved — ready to merge.");
+        completeTaskCleanup(payload.task_id, task.title);
       }
       observer.info("Code approved — task completing", {
         taskId: payload.task_id,

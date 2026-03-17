@@ -710,12 +710,3 @@ function isProcessAlive(pid: number): boolean {
     return false;
   }
 }
-
-// ── Barrel Exports ──────────────────────────────────────────────────────────
-
-export type { TriggerPoller } from "./trigger-poller.js";
-export type { TaskScheduler } from "./task-scheduler.js";
-export type { PreemptionManager } from "./preemption-manager.js";
-export type { NotificationRouter } from "./notification-router.js";
-export type { ReviewHandler } from "./review-handler.js";
-export type { DaemonHealthMonitor } from "./health-monitor.js";

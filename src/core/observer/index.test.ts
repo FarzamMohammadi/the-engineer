@@ -4,6 +4,7 @@ import {
   type TestObserverHandle,
   createTestObserver,
 } from "../../../test/helpers/test-observer.js";
+import { ObserverStream } from "./stream.js";
 import { ObservationType } from "./types.js";
 import type { Observation } from "./types.js";
 
@@ -573,6 +574,94 @@ describe("Observer", () => {
       consoleSpy.mockRestore();
 
       expect(received).toHaveLength(1);
+    });
+  });
+
+  // ── ObserverStream direct tests ──────────────────────────────────────────
+
+  describe("ObserverStream", () => {
+    it("clear() removes all subscribers", () => {
+      const stream = new ObserverStream();
+      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop subscriber
+      stream.subscribe(() => {});
+      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop subscriber
+      stream.subscribe(() => {});
+      expect(stream.subscriberCount()).toBe(2);
+
+      stream.clear();
+      expect(stream.subscriberCount()).toBe(0);
+    });
+
+    it("clear() prevents delivery to previously-registered subscribers", () => {
+      const stream = new ObserverStream();
+      const received: string[] = [];
+      stream.subscribe((obs) => received.push(obs.name));
+
+      stream.clear();
+      stream.notify({ name: "after-clear" } as Observation);
+      expect(received).toHaveLength(0);
+    });
+
+    it("auto-removes subscriber after 3 consecutive errors", () => {
+      const stream = new ObserverStream();
+      stream.subscribe(() => {
+        throw new Error("dead subscriber");
+      });
+      expect(stream.subscriberCount()).toBe(1);
+
+      // First two errors: subscriber survives
+      stream.notify({ name: "1" } as Observation);
+      expect(stream.subscriberCount()).toBe(1);
+      stream.notify({ name: "2" } as Observation);
+      expect(stream.subscriberCount()).toBe(1);
+
+      // Third consecutive error: auto-removed
+      stream.notify({ name: "3" } as Observation);
+      expect(stream.subscriberCount()).toBe(0);
+    });
+
+    it("resets error count on successful delivery", () => {
+      const stream = new ObserverStream();
+      let shouldThrow = true;
+      stream.subscribe(() => {
+        if (shouldThrow) {
+          throw new Error("intermittent");
+        }
+      });
+
+      // Two errors
+      stream.notify({ name: "1" } as Observation);
+      stream.notify({ name: "2" } as Observation);
+      expect(stream.subscriberCount()).toBe(1);
+
+      // One success resets the counter
+      shouldThrow = false;
+      stream.notify({ name: "3" } as Observation);
+      expect(stream.subscriberCount()).toBe(1);
+
+      // Two more errors: still alive (counter was reset)
+      shouldThrow = true;
+      stream.notify({ name: "4" } as Observation);
+      stream.notify({ name: "5" } as Observation);
+      expect(stream.subscriberCount()).toBe(1);
+    });
+
+    it("auto-removal does not affect healthy subscribers", () => {
+      const stream = new ObserverStream();
+      const received: string[] = [];
+
+      stream.subscribe(() => {
+        throw new Error("dead");
+      });
+      stream.subscribe((obs) => received.push(obs.name));
+
+      // Trigger auto-removal of the failing subscriber
+      stream.notify({ name: "a" } as Observation);
+      stream.notify({ name: "b" } as Observation);
+      stream.notify({ name: "c" } as Observation);
+
+      expect(stream.subscriberCount()).toBe(1);
+      expect(received).toEqual(["a", "b", "c"]);
     });
   });
 

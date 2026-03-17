@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import { Command } from "commander";
+import ms from "ms";
 
 import { loadConfigDir } from "../config/loader.js";
 import { runConfigMigrate } from "./commands/config-migrate.js";
@@ -21,6 +22,19 @@ import { resolveEngineerHome, resolveSubdirs } from "./home.js";
 import { type OutputMode, createOutput, getOutput } from "./output.js";
 
 export const VERSION = "0.0.1";
+
+/** Parse a duration string ("30s", "1m") or raw millisecond number. */
+function parseDuration(value: string): number {
+  const asNumber = Number(value);
+  if (!Number.isNaN(asNumber) && asNumber > 0) {
+    return asNumber;
+  }
+  const parsed = ms(value as ms.StringValue);
+  if (parsed === undefined || parsed <= 0) {
+    throw new Error(`Invalid duration: "${value}". Use e.g. "30s", "1m", or a number in ms.`);
+  }
+  return parsed;
+}
 
 export const program = new Command()
   .name("engineer")
@@ -66,11 +80,11 @@ program
 program
   .command("shutdown")
   .description("Shut down the daemon and all subsidiary processes")
-  .option("--timeout <ms>", "Shutdown timeout in milliseconds", "30000")
+  .option("--timeout <duration>", "Shutdown timeout (e.g. 30s, 1m)", "30s")
   .action(async (options: { timeout: string }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
-    const code = await runShutdown(home, Number.parseInt(options.timeout, 10));
+    const code = await runShutdown(home, parseDuration(options.timeout));
     if (code !== 0) {
       process.exitCode = code;
     }
@@ -127,7 +141,9 @@ program
 
 program
   .command("init")
-  .description("Create directory structure and config files (uses seed/ if available)")
+  .description(
+    "Create directory structure and config files from templates (for experienced users or CI)",
+  )
   .option("--force", "Overwrite existing config files")
   .option("--all-plugins", "Install all available plugins without prompting")
   .action(async (options: { force?: boolean; allPlugins?: boolean }) => {
@@ -224,7 +240,7 @@ program
 
 program
   .command("setup")
-  .description("Interactive first-run setup wizard")
+  .description("Interactive first-run setup wizard (recommended for new users)")
   .action(async () => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);

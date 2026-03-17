@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { discoverEnabledPlugins } from "../../plugins/loader.js";
 import { extractErrorMessage } from "../../utils/errors.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 
 import { type BootstrapResult, type ProgressCallback, bootstrap } from "../bootstrap.js";
 import { type EngineerDirs, resolveSubdirs } from "../home.js";
@@ -134,6 +135,13 @@ async function runForeground(
     daemon = result.daemon;
     cleanup = result.cleanup;
     observer = result.observer;
+
+    // Log pre-bootstrap steps that ran before the observer existed
+    observer.debug("Configuration loaded", { configDir: dirs.config });
+    observer.debug("Pre-flight checks passed", {
+      categories: preFlightResults.length,
+      totalChecks,
+    });
   } catch (error) {
     spinner.fail("Bootstrap failed");
     out.error(`Bootstrap failed: ${extractErrorMessage(error)}`);
@@ -162,7 +170,7 @@ async function runForeground(
   process.on("SIGTERM", () => {
     shutdown().catch((err) => {
       try {
-        observer?.error("Shutdown failed", { err });
+        observer?.error("Shutdown failed", { err: sanitizeErrorMessage(err) });
       } catch {
         // Observer transport may be broken during shutdown — stderr fallback below
       }
@@ -173,7 +181,7 @@ async function runForeground(
   process.on("SIGINT", () => {
     shutdown().catch((err) => {
       try {
-        observer?.error("Shutdown failed", { err });
+        observer?.error("Shutdown failed", { err: sanitizeErrorMessage(err) });
       } catch {
         // Observer transport may be broken during shutdown — stderr fallback below
       }
@@ -191,9 +199,11 @@ async function runForeground(
     await daemon.start();
     startSpinner.succeed("Daemon running");
     const warRoomUrl = `http://localhost:${String(DASHBOARD_PORT)}`;
+    observer.info("The Engineer is ready", { engineerHome, warRoomUrl });
     out.blank();
     out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
   } catch (error) {
+    observer.error("Daemon start failed", { err: sanitizeErrorMessage(error) });
     out.error(`Startup failed: ${extractErrorMessage(error)}`);
     try {
       await daemon.stop();

@@ -17,6 +17,7 @@ import {
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
@@ -435,6 +436,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       const payload = event.payload as TaskFeedbackReceivedPayload;
       reviewHandler.handleFeedbackEvent(payload);
     });
+
+    observer.debug("Event subscriptions registered", { count: 5 });
   }
 
   function unregisterSubscriptions(): void {
@@ -459,6 +462,12 @@ export function createDaemon(ctx: DaemonContext): Daemon {
         taskEngine.requestTransition(task.id, TaskStates.queued, null, "crash_recovery", "daemon");
       }
     }
+
+    const orphanCount = activeTasks.filter((t) => isSlotConsuming(t.state, t.sub_state)).length;
+    observer.debug("Crash recovery scan complete", {
+      activeTasks: activeTasks.length,
+      orphansRecovered: orphanCount,
+    });
 
     // Initialize base priorities for queued tasks (aging)
     const queuedTasks = taskEngine.getTasksByState(TaskStates.queued);
@@ -561,7 +570,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Start tick interval
     tickInterval = setInterval(() => {
       tick().catch((error: unknown) => {
-        observer.error("Tick loop error", { error });
+        observer.error("Tick loop error", { err: sanitizeErrorMessage(error) });
       });
     }, config.tick_interval_ms);
 
@@ -569,7 +578,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     for (const signal of ["SIGTERM", "SIGINT"] as const) {
       const handler = () => {
         stop().catch((error: unknown) => {
-          observer.error(`Error during ${signal} shutdown`, { error });
+          observer.error(`Error during ${signal} shutdown`, { err: sanitizeErrorMessage(error) });
         });
       };
       signalHandlers.push({ signal, handler });
@@ -618,12 +627,18 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     removePidFile();
 
     // Final state
+    const uptimeMs = startedAt ? clock.now() - new Date(startedAt).getTime() : 0;
     running = false;
-    observer.info("Daemon stopped");
+    observer.info("Daemon stopped", { uptimeMs });
   }
 
   async function drainActiveDispatches(): Promise<void> {
-    for (const [taskId, promise] of scheduler.getActiveDispatches()) {
+    const dispatches = scheduler.getActiveDispatches();
+    const total = dispatches.size;
+    let drained = 0;
+    let transitioned = 0;
+
+    for (const [taskId, promise] of dispatches) {
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
@@ -635,6 +650,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
             );
           }),
         ]);
+        drained++;
       } catch {
         observer.warn("Shutdown timeout waiting for task", { taskId });
       } finally {
@@ -653,9 +669,14 @@ export function createDaemon(ctx: DaemonContext): Daemon {
           "graceful_shutdown",
           "daemon",
         );
+        transitioned++;
       }
     }
-    scheduler.getActiveDispatches().clear();
+    dispatches.clear();
+
+    if (total > 0) {
+      observer.info("Active dispatches drained", { total, drained, transitioned });
+    }
   }
 
   // ── State Inspector ───────────────────────────────────────────────────

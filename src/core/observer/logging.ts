@@ -36,13 +36,23 @@ export interface LoggingConfig {
   console: boolean;
 }
 
+/** Logger with a closeable transport handle. */
+export interface LoggerHandle {
+  logger: Logger;
+  /** Flush and close the transport worker thread. Call during shutdown. */
+  close: () => void;
+}
+
 /**
  * Create a root pino logger with rolling file transport (Decision #110-111).
  *
  * Uses pino-roll for daily rotation with size cap. Log directory is resolved
  * relative to engineerHome unless an absolute path is given.
+ *
+ * Returns a LoggerHandle so the caller can close the transport on shutdown,
+ * flushing buffered log messages and releasing the worker thread.
  */
-export function createLogger(config: LoggingConfig, engineerHome: string): Logger {
+export function createLogger(config: LoggingConfig, engineerHome: string): LoggerHandle {
   const resolvedDir = isAbsolute(config.dir) ? config.dir : join(engineerHome, config.dir);
   try {
     mkdirSync(resolvedDir, { recursive: true, mode: 0o700 });
@@ -75,14 +85,20 @@ export function createLogger(config: LoggingConfig, engineerHome: string): Logge
   }
 
   const transport = pino.transport({ targets });
-
-  return pino(
+  const logger = pino(
     {
       level: config.level,
       timestamp: pino.stdTimeFunctions.isoTime,
     },
     transport,
   );
+
+  return {
+    logger,
+    close() {
+      transport.end();
+    },
+  };
 }
 
 /** Create a child logger tagged with a component name. */
@@ -90,7 +106,8 @@ export function createChildLogger(parent: Logger, component: ComponentTag): Logg
   return parent.child({ component });
 }
 
-/** Create a silent logger for tests (no output). */
-export function createSilentLogger(): Logger {
-  return pino({ level: "silent" });
+/** Create a silent logger for tests (no output, no transport to close). */
+export function createSilentLogger(): LoggerHandle {
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop — silent logger has no transport
+  return { logger: pino({ level: "silent" }), close() {} };
 }

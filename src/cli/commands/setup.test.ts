@@ -60,7 +60,7 @@ describe("runSetup", () => {
     const daemonPath = join(tempDir, "config", "daemon.yaml");
     expect(existsSync(daemonPath)).toBe(true);
     const daemonConfig = yamlParse(readFileSync(daemonPath, "utf8"));
-    expect(daemonConfig.tick_interval_ms).toBe(30000);
+    expect(daemonConfig.tick_interval_ms).toBe("30s");
 
     // Check safety config uses correct schema field names
     const safetyPath = join(tempDir, "config", "safety.yaml");

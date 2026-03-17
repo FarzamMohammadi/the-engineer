@@ -10,26 +10,26 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # --- Tick loop ---
 # tick_interval_ms: "5s"              # Main loop tick interval (default: 5s)
 
-# --- Preemption ---
-# preemption_threshold: 20            # Priority gap to trigger preemption
-# preemption_timeout_ms: "1m"         # Time to checkpoint before forced swap (default: 1m)
+# --- Preemption (swap a running task for a higher-priority one) ---
+# preemption_threshold: 20            # Min priority gap to trigger preemption (e.g. p50 task won't preempt p40)
+# preemption_timeout_ms: "1m"         # Grace period to checkpoint before forced swap (default: 1m)
 
-# --- Stuck/runaway detection ---
-# stuck_threshold_ms: "30m"           # Flag task as stuck (default: 30m)
-# max_active_duration_ms: "8h"        # Max time for a single task (default: 8h)
+# --- Stuck/runaway detection (auto-flag tasks that seem hung) ---
+# stuck_threshold_ms: "30m"           # No progress for this long → flag as stuck (default: 30m)
+# max_active_duration_ms: "8h"        # Hard cap on total task runtime (default: 8h)
 
-# --- Priority aging (starvation prevention) ---
-# aging_threshold_ms: "1d"            # Wait before aging kicks in (default: 1d)
-# aging_increment: 5                  # Priority bump per aging interval
-# aging_interval_ms: "1d"             # Aging cycle length (default: 1d)
-# aging_cap: 75                       # Maximum priority after aging (1-100)
+# --- Priority aging (prevents low-priority tasks from waiting forever) ---
+# aging_threshold_ms: "1d"            # How long a queued task waits before aging starts (default: 1d)
+# aging_increment: 5                  # Priority points added each aging cycle (higher = sooner scheduled)
+# aging_interval_ms: "1d"             # How often aging bumps priority (default: 1d)
+# aging_cap: 75                       # Max priority reachable via aging, 1-100 (default: 75)
 
 # --- Shutdown ---
 # shutdown_timeout_ms: "30s"          # Time to drain active tasks on shutdown (default: 30s)
 
 # --- Trigger polling ---
 # trigger_poll_interval_ms: "30s"     # How often to poll triggers (default: 30s)
-# seen_keys_ttl_ms: "1d"              # TTL for dedup keys (default: 1d)
+# seen_keys_ttl_ms: "1d"              # How long to remember trigger events for dedup (default: 1d)
 
 # --- Logging ---
 # logging:

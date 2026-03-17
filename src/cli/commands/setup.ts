@@ -204,11 +204,11 @@ async function generateConfigs(answers: SetupAnswers): Promise<string[]> {
   await writeConfigIfOk(
     daemonPath,
     {
-      tick_interval_ms: 30000,
-      max_concurrent: 2,
+      tick_interval_ms: "30s",
+      max_concurrent: 1,
       plugins: {
-        health_check_interval_ms: 60000,
-        health_check_timeout_ms: 5000,
+        health_check_interval_ms: "1m",
+        health_check_timeout_ms: "5s",
         consecutive_failures_threshold: 3,
       },
     },
@@ -305,7 +305,7 @@ async function generateConfigs(answers: SetupAnswers): Promise<string[]> {
       telegramPath,
       {
         bot_token: "${TELEGRAM_BOT_TOKEN}",
-        default_chat_id: "${TELEGRAM_CHAT_ID}",
+        chat_id: "${TELEGRAM_CHAT_ID}",
       },
       created,
     );

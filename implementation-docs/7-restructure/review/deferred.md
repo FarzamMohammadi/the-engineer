@@ -103,3 +103,22 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **PID file TOCTOU race** — Single-user desktop, informational file, millisecond race window. Accepted.
 - **Config hot-reload without path validation** — Config files are user-controlled (same trust level as env vars). Accepted.
 - **`engineerHome` path traversal** — Self-attack only (user controls their own env vars). Accepted.
+
+## Round 2 — 3
+
+### Lens F (Logging & Observability)
+- **F12:** `system.ts` is completely silent — skipped because `bootstrap.ts` already logs the component creation step
+
+### Lens G (Performance & Resources)
+- **EventBus `matchesPattern` O(subscriptions) per event** — non-issue at 7 subscribers (Phase 3 lens)
+- **`seenTriggerKeys` O(n) cleanup per tick** — non-issue at ~50 entries (Phase 4 lens)
+- **Data lifecycle blob cleanup uses sync I/O** — hourly, bounded cost (Phase 12 lens)
+- **Priority aging queries all queued tasks per tick** — indexed SELECT, ~1-10 rows (Phase 5 lens)
+- **`reviewReminderTimes`** — false positive, already cleaned every tick
+- **`blockedEscalationState`** — false positive, already cleaned every tick
+- **`getEventsSince()` unbounded** — false positive, only caller uses paginated replay
+
+### Lens H (Config & DX)
+- **`subscriber_warn_threshold_ms` at daemon config top level** — This is an EventBus concern living in daemon config. Moving it would be a schema-level change affecting config migration. Flagged for future consideration.
+- **No `--quiet` flag** — Only `--json` and `--verbose` exist. A `--quiet` mode (suppress non-error output) could be useful for scripting but isn't urgent.
+- **`engineer stop` alias for `engineer shutdown`** — Some users may expect `stop` as the inverse of `start`. Could add as a Commander alias. Not applied to avoid scope creep.

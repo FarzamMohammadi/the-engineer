@@ -49,14 +49,15 @@ export interface BootstrapOptions {
 export async function bootstrap(options: BootstrapOptions): Promise<BootstrapResult> {
   const { engineerHome, config, verbose, progress } = options;
 
-  // 1. Logger — created first, outside the cleanup scope (no close method)
+  // 1. Logger — created first; transport handle captured for shutdown cleanup
   progress?.("Initializing logger", "start");
   const loggingConfig = { ...config.daemon.logging };
   if (verbose) {
     loggingConfig.level = "debug";
     loggingConfig.console = true;
   }
-  const logger = createLogger(loggingConfig, engineerHome);
+  const loggerHandle = createLogger(loggingConfig, engineerHome);
+  const logger = loggerHandle.logger;
   const observer = createObserverFacade(logger, "cli");
   const bootstrapStartMs = Date.now();
   const milestones: Record<string, number> = {};
@@ -217,6 +218,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       observer,
       cleanup() {
         dbHandle?.close();
+        loggerHandle.close();
       },
     };
   } catch (error) {
@@ -234,6 +236,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       }
     }
     dbHandle?.close();
+    loggerHandle.close();
     throw error;
   }
 }

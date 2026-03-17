@@ -139,6 +139,6 @@ Registered via `topology.registerSubscriber()` in `bootstrap.ts` (lines 172-178)
 
 | File | Type |
 |------|------|
-| `src/cli/bootstrap.test.ts` | Unit |
-| `src/core/system.test.ts` | Unit (if exists) |
 | `test/e2e/daemon-lifecycle.e2e.test.ts` | E2E — full startup/shutdown |
+
+Note: `src/cli/bootstrap.test.ts` and `src/core/system.test.ts` do not currently exist. Bootstrap is covered by the E2E tests.

@@ -47,7 +47,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   }
 
   // 2. Load config
-  let bundle: ConfigBundle | undefined;
+  let bundle: ConfigBundle;
   try {
     const result = loadConfigDir(dirs.config);
     bundle = result.bundle;
@@ -56,11 +56,6 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     }
   } catch (error) {
     out.error(`Config error: ${extractErrorMessage(error)}`);
-    return 1;
-  }
-
-  if (!bundle) {
-    out.error("Config loading failed unexpectedly.");
     return 1;
   }
 
@@ -198,8 +193,10 @@ async function runForeground(
     out.error(`Startup failed: ${extractErrorMessage(error)}`);
     try {
       await daemon.stop();
-    } catch {
-      // Best-effort: daemon may be partially initialized
+    } catch (stopError) {
+      process.stderr.write(
+        `Warning: cleanup failed during startup error: ${extractErrorMessage(stopError)}\n`,
+      );
     }
     cleanupDashboard();
     cleanup();

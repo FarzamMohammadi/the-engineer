@@ -28,7 +28,7 @@ import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/facade.js";
-import type { ExecuteTaskResult, Orchestrator } from "../orchestrator/index.js";
+import { type ExecuteTaskResult, type Orchestrator, Outcomes } from "../orchestrator/index.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
@@ -319,13 +319,18 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
     scheduler.handleTaskCompletion(taskId, result);
 
-    // Clean up triggerPoller base priority for terminal outcomes
-    if (result.outcome === "completed" || result.outcome === "error") {
+    // Clean up triggerPoller base priority when task leaves the scheduling queue
+    if (
+      result.outcome === Outcomes.completed ||
+      result.outcome === Outcomes.error ||
+      result.outcome === Outcomes.review_pending ||
+      result.outcome === Outcomes.decomposed
+    ) {
       triggerPoller.removeBasePriority(taskId);
     }
 
     // Clear pending preemption on preempted outcome
-    if (result.outcome === "preempted") {
+    if (result.outcome === Outcomes.preempted) {
       preemption.clearPending();
     }
   }
@@ -546,13 +551,16 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
     // Step 6: Stuck detection + blocked escalation + review reminders
     healthMonitor.checkStuckTasks(now);
     healthMonitor.checkBlockedEscalation(now);
-    healthMonitor.checkReviewPendingReminders(now);
+
+    // Query review_pending tasks once, pass to all consumers (avoids 3 redundant DB queries/tick)
+    const reviewPendingTasks = taskEngine.getTasksByState(TaskStates.review_pending);
+    healthMonitor.checkReviewPendingReminders(now, reviewPendingTasks);
 
     // Step 7: Check if review-pending PRs have been merged
-    await reviewHandler.checkMerges();
+    await reviewHandler.checkMerges(reviewPendingTasks);
 
     // Step 8: Check for PR review feedback on review-pending tasks
-    await reviewHandler.checkFeedback();
+    await reviewHandler.checkFeedback(reviewPendingTasks);
 
     // Step 9: Cleanup expired seen keys
     triggerPoller.cleanupExpiredKeys(now);

@@ -41,7 +41,8 @@ import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
 
-export type { ExecuteTaskResult } from "./types.js";
+export type { ExecuteTaskResult, Outcome } from "./types.js";
+export { Outcomes } from "./types.js";
 export type { OrchestratorContext, PipelineState, ProcessPhaseResult } from "./types.js";
 export { PHASE_SEQUENCE } from "./phase-runner.js";
 export type { PhaseHandler, PhaseHandlerRegistry } from "./phase-runner.js";

@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { Command } from "commander";
 
+import { loadConfigDir } from "../config/loader.js";
 import { runConfigMigrate } from "./commands/config-migrate.js";
 import { runConfigValidate } from "./commands/config-validate.js";
 import { runCreatePlugin } from "./commands/create-plugin.js";
@@ -26,14 +27,18 @@ export const program = new Command()
   .description("The Engineer — Autonomous Software Engineering Agent")
   .version(VERSION)
   .option("--home <path>", "Override ENGINEER_HOME directory")
+  .option("--config-dir <path>", "Override config directory (default: $ENGINEER_HOME/config)")
   .option("--verbose", "Enable debug logging")
   .option("--json", "Output in JSON format");
 
-// Initialize Output singleton before any command runs
+// Initialize Output singleton and apply global overrides before any command runs
 program.hook("preAction", () => {
-  const globals = program.opts<{ json?: boolean }>();
+  const globals = program.opts<{ json?: boolean; configDir?: string }>();
   const mode: OutputMode = globals.json ? "json" : "human";
   createOutput({ mode });
+  if (globals.configDir) {
+    process.env["ENGINEER_CONFIG_DIR"] = globals.configDir;
+  }
 });
 
 // ── start ────────────────────────────────────────────────────────────────────
@@ -144,8 +149,19 @@ program
   .action(() => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
+    const dirs = resolveSubdirs(home);
     const out = getOutput();
-    const categories = runAllChecks(home);
+
+    // Try to load config for risky config checks (category 11)
+    let bundle: import("../config/loader.js").ConfigBundle | undefined;
+    try {
+      const result = loadConfigDir(dirs.config);
+      bundle = result.bundle;
+    } catch {
+      // Config loading failed — skip category 11, other checks still run
+    }
+
+    const categories = runAllChecks(home, bundle);
     const code = computeExitCode(categories);
 
     if (out.mode === "json") {

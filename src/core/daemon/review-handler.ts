@@ -1,7 +1,7 @@
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
-import { SubStates, TaskStates } from "../../schemas/task.js";
+import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { deriveAggregateReviewState } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -11,10 +11,10 @@ import type { ReviewHandlerContext } from "./types.js";
 
 /** Handles review feedback detection, merge detection, and approval/rework flows. */
 export interface ReviewHandler {
-  /** Check for PR merges on review-pending tasks. */
-  checkMerges(): Promise<void>;
-  /** Check for PR review feedback on review-pending tasks. */
-  checkFeedback(): Promise<void>;
+  /** Check for PR merges on review-pending tasks. Pre-fetched tasks avoid redundant DB queries. */
+  checkMerges(reviewPendingTasks?: Task[]): Promise<void>;
+  /** Check for PR review feedback on review-pending tasks. Pre-fetched tasks avoid redundant DB queries. */
+  checkFeedback(reviewPendingTasks?: Task[]): Promise<void>;
   /** Handle a feedback event (called from EventBus subscription). */
   handleFeedbackEvent(payload: TaskFeedbackReceivedPayload): void;
 }
@@ -123,8 +123,8 @@ export function createReviewHandler(
     }
   }
 
-  async function checkMerges(): Promise<void> {
-    const reviewTasks = taskEngine.getTasksByState(TaskStates.review_pending);
+  async function checkMerges(reviewPendingTasks?: Task[]): Promise<void> {
+    const reviewTasks = reviewPendingTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
     if (reviewTasks.length === 0) {
       return;
     }
@@ -135,9 +135,7 @@ export function createReviewHandler(
       return;
     }
 
-    for (const task of reviewTasks) {
-      await checkSingleTaskMerge(task, hosting);
-    }
+    await Promise.allSettled(reviewTasks.map((task) => checkSingleTaskMerge(task, hosting)));
   }
 
   // ── Feedback Detection ──────────────────────────────────────────────────
@@ -245,29 +243,31 @@ export function createReviewHandler(
         (r) => r.state === "changes_requested",
       ).length;
 
-      // Emit poll event (every cycle, so the dashboard can show polling is alive)
+      // Emit poll event only when review state actually changed (avoids ~60K no-op events/week)
       const dedupKey = aggregateState
         ? `${aggregateState}:${String(allComments.length)}`
         : "none:0";
       const dedupSkipped = processedReviewStates.get(task.id) === dedupKey;
 
-      eventBus.publish({
-        type: EventTypes["review.poll_completed"],
-        source: "daemon",
-        task_id: task.id,
-        payload: {
+      if (!dedupSkipped) {
+        eventBus.publish({
+          type: EventTypes["review.poll_completed"],
+          source: "daemon",
           task_id: task.id,
-          pr_number: prNumber,
-          repo,
-          aggregate_state: aggregateState ?? "none",
-          approvals: approvalCount,
-          changes_requested_count: changesCount,
-          comment_count: allComments.length,
-          reviewer_count: reviewStatus.reviewers.length,
-          pr_draft: prStatus.draft,
-          dedup_skipped: dedupSkipped,
-        },
-      } satisfies PublishInput<"review.poll_completed">);
+          payload: {
+            task_id: task.id,
+            pr_number: prNumber,
+            repo,
+            aggregate_state: aggregateState ?? "none",
+            approvals: approvalCount,
+            changes_requested_count: changesCount,
+            comment_count: allComments.length,
+            reviewer_count: reviewStatus.reviewers.length,
+            pr_draft: prStatus.draft,
+            dedup_skipped: false,
+          },
+        } satisfies PublishInput<"review.poll_completed">);
+      }
 
       if (!aggregateState) {
         observer.debug("No actionable review activity", {
@@ -306,8 +306,8 @@ export function createReviewHandler(
     }
   }
 
-  async function checkFeedback(): Promise<void> {
-    const reviewTasks = taskEngine.getTasksByState(TaskStates.review_pending);
+  async function checkFeedback(reviewPendingTasks?: Task[]): Promise<void> {
+    const reviewTasks = reviewPendingTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
     if (reviewTasks.length === 0) {
       return;
     }
@@ -339,9 +339,9 @@ export function createReviewHandler(
       return;
     }
 
-    for (const task of reviewTasks) {
-      await checkSingleTaskReviewFeedback(task, hosting, now);
-    }
+    await Promise.allSettled(
+      reviewTasks.map((task) => checkSingleTaskReviewFeedback(task, hosting, now)),
+    );
   }
 
   // ── Feedback Event Handler ──────────────────────────────────────────────

@@ -61,6 +61,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   const observer = createObserverFacade(logger, "cli");
   const cliLogger = createChildLogger(logger, "cli");
   const bootstrapStartMs = Date.now();
+  const milestones: Record<string, number> = {};
   cliLogger.info("Bootstrapping The Engineer...");
   progress?.("Initializing logger", "done");
 
@@ -75,11 +76,15 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     dbHandle = createDatabase(dbPath, {
       cacheSizeMb: config.daemon.database.cache_size_mb,
     });
+    milestones["db"] = Date.now() - bootstrapStartMs;
+    cliLogger.debug(
+      { dbPath, cacheSizeMb: config.daemon.database.cache_size_mb },
+      "Database initialized",
+    );
     progress?.("Initializing database", "done");
 
     // 3. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
     progress?.("Creating core components", "start");
-    cliLogger.debug("Creating core components");
     const {
       eventBus,
       topology,
@@ -95,6 +100,10 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       workspaceConfig: config.workspace,
       subscriberWarnThresholdMs: config.daemon.subscriber_warn_threshold_ms,
     });
+    milestones["components"] = Date.now() - bootstrapStartMs;
+    cliLogger.debug(
+      "Core components created: EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager",
+    );
 
     // 4. Hook Registry (after core components so it can observe them)
     const hookRegistry = new HookRegistry(observer.child("hooks"));
@@ -114,6 +123,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     const blobStore = new BlobStore(join(engineerHome, "traces"));
     const observationStore = createObservationStore(dbHandle.db, blobStore);
     observer.upgrade(observationStore);
+    milestones["observability"] = Date.now() - bootstrapStartMs;
+    cliLogger.info("Observer upgraded — tracing enabled");
 
     // 7. People Directory
     const peopleDirectory = new PeopleDirectory({ people: config.people });
@@ -173,6 +184,18 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     topology.registerSubscriber("daemon:children-done", "task.children_all_done");
     topology.registerSubscriber("daemon:feedback", "task.feedback_received");
 
+    const declarations = topology.getAllDeclarations();
+    const publisherIds = new Set(declarations.flatMap((d) => d.publishers));
+    const subscriberIds = new Set(declarations.flatMap((d) => d.subscribers));
+    cliLogger.debug(
+      {
+        eventTypes: declarations.length,
+        publishers: publisherIds.size,
+        subscribers: subscriberIds.size,
+      },
+      "Event topology registered",
+    );
+
     // ── Plugin Loading ───────────────────────────────────────────────────────
 
     // 12. Load built-in plugins
@@ -182,9 +205,13 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     progress?.("Loading plugins", "start");
     const pluginConfigDir = join(engineerHome, "config", "plugins");
     await loadBuiltinPlugins(registry, pluginConfigDir, observer.child("plugin-loader"));
+    milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");
 
-    cliLogger.info({ elapsedMs: Date.now() - bootstrapStartMs, dbPath }, "Bootstrap complete");
+    cliLogger.info(
+      { elapsedMs: Date.now() - bootstrapStartMs, dbPath, milestones },
+      "Bootstrap complete",
+    );
 
     return {
       daemon,

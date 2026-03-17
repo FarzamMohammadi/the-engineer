@@ -1,5 +1,5 @@
 import { EventTypes } from "../../schemas/events.js";
-import { SubStates, TaskStates } from "../../schemas/task.js";
+import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { evaluateTaskStuckness } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -13,8 +13,8 @@ export interface DaemonHealthMonitor {
   checkStuckTasks(now: number): void;
   /** Check blocked task escalation. */
   checkBlockedEscalation(now: number): void;
-  /** Check review pending reminders. */
-  checkReviewPendingReminders(now: number): void;
+  /** Check review pending reminders. Pre-fetched tasks avoid redundant DB queries. */
+  checkReviewPendingReminders(now: number, reviewPendingTasks?: Task[]): void;
   /** Process cost limit events (drain pending cost limit tasks). */
   processCostLimits(): void;
   /** Register a cost limit task (called from EventBus subscription). */
@@ -211,8 +211,9 @@ export function createDaemonHealthMonitor(
 
   // ── Review Pending Reminders ────────────────────────────────────────────
 
-  function checkReviewPendingReminders(now: number): void {
-    const reviewPendingTasks = taskEngine.getTasksByState(TaskStates.review_pending);
+  function checkReviewPendingReminders(now: number, prefetchedTasks?: Task[]): void {
+    const reviewPendingTasks =
+      prefetchedTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
     const timeoutPolicy = safetyLayer.getTimeoutPolicy();
     const reviewConfig = timeoutPolicy.review_pending;
 

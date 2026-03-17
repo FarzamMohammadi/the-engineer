@@ -62,3 +62,17 @@ Accumulated across all merge rounds. Nothing gets lost.
 
 ### Lens E (Security & Trust Boundaries)
 - None — all 6 findings applied
+
+## Round 2 — 2-plugin-loading
+
+### Lens F (Logging & Observability)
+- **No tracing spans in bootstrap** — observer store unavailable until mid-bootstrap, and startup is <2s one-shot. Pino structured logs are sufficient.
+- **start.ts has no structured logging for pre-bootstrap operations** — logger doesn't exist yet at those points. CLI output layer (`out.error/warn`) is the correct mechanism.
+
+### Lens G (Performance & Resources)
+- **`Date.parse()` per queued task per tick in `applyPriorityAging()`** — ~1us per call on V8, 50 tasks = 50us/tick. Not worth caching complexity.
+- **`cleanupTable()` uncached prepared statements** — runs hourly, sub-ms compile time. Dynamic SQL makes caching awkward.
+- **`collectReferencedBlobRefs()` JSON.parse on every observation** — runs hourly, <50ms even at 10K rows. Adding a `blob_refs` column would require migration for negligible gain.
+
+### Lens H (Config & DX)
+- **No escape syntax for `${...}` in config values** — Documented limitation in `loader.ts:119`. Unlikely to hit in practice — all config values using `${...}` are env var references by convention. Could add `\${...}` escape if needed later.

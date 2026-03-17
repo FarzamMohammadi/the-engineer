@@ -3,7 +3,7 @@ import { EventTypes } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { ExecuteTaskResult } from "../orchestrator/index.js";
+import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { computeAgedPriority } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { TaskSchedulerContext } from "./types.js";
@@ -169,9 +169,16 @@ export function createTaskScheduler(
 
   // ── Task Completion ─────────────────────────────────────────────────────
 
-  /** Whether a task outcome represents a terminal state (for cleanup). */
-  function isTerminalOutcome(outcome: string): boolean {
-    return outcome === "completed" || outcome === "error";
+  /** Whether a task outcome means it no longer needs base priority tracking. */
+  function shouldCleanupBasePriority(outcome: string): boolean {
+    // review_pending and decomposed tasks leave the scheduling queue.
+    // If they return (rework), dispatchTask re-tracks via trackBasePriority.
+    return (
+      outcome === Outcomes.completed ||
+      outcome === Outcomes.error ||
+      outcome === Outcomes.review_pending ||
+      outcome === Outcomes.decomposed
+    );
   }
 
   function handleCompletedOutcome(taskId: string, taskTitle: string): void {
@@ -207,17 +214,17 @@ export function createTaskScheduler(
     activeDispatches.delete(taskId);
     tasksCompleted++;
 
-    // Clean up base priority for terminal outcomes (prevents unbounded map growth)
-    if (isTerminalOutcome(result.outcome)) {
+    // Clean up base priority when task leaves the scheduling queue
+    if (shouldCleanupBasePriority(result.outcome)) {
       basePriorities.delete(taskId);
     }
 
     const task = taskEngine.getTask(taskId);
     const taskTitle = task?.title ?? taskId;
 
-    if (result.outcome === "completed") {
+    if (result.outcome === Outcomes.completed) {
       handleCompletedOutcome(taskId, taskTitle);
-    } else if (result.outcome === "review_pending") {
+    } else if (result.outcome === Outcomes.review_pending) {
       taskEngine.requestTransition(
         taskId,
         TaskStates.review_pending,
@@ -228,15 +235,15 @@ export function createTaskScheduler(
       notifications.sendReviewPending(taskId, taskTitle);
       notifications.commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
       observer.info("Task awaiting PR review", { taskId });
-    } else if (result.outcome === "decomposed") {
+    } else if (result.outcome === Outcomes.decomposed) {
       observer.info("Task decomposed — children queued for scheduling", {
         taskId,
         childCount: result.childTaskIds.length,
       });
-    } else if (result.outcome === "preempted") {
+    } else if (result.outcome === Outcomes.preempted) {
       taskEngine.requestTransition(taskId, TaskStates.queued, null, "preempted", "daemon");
       observer.info("Task preempted — returned to queue", { taskId, lastPhase: result.lastPhase });
-    } else if (result.outcome === "error") {
+    } else if (result.outcome === Outcomes.error) {
       handleErrorOutcome(taskId, taskTitle, result);
     }
   }

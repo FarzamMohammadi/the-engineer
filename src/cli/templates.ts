@@ -46,6 +46,29 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 #   health_check_interval_ms: "1m"    # How often to health-check plugins (default: 1m)
 #   health_check_timeout_ms: "5s"     # Timeout per health check (default: 5s)
 #   consecutive_failures_threshold: 3  # Failures before marking plugin as failed
+
+# --- Data lifecycle (automatic cleanup) ---
+# data_lifecycle:
+#   enabled: true                      # Enable automatic data cleanup (default: true)
+#   interval_ms: "1h"                  # Cleanup check interval (default: 1h)
+#   retention:
+#     events:
+#       max_age_days: 90               # Event retention in days (default: 90)
+#       max_count: null                # Max event count, null = unlimited (default: null)
+#     observations:
+#       max_age_days: 90
+#     journal_entries:
+#       max_age_days: 90
+#     checkpoints:
+#       max_age_days: 90
+#   vacuum_on_cleanup: true            # Run VACUUM after cleanup (default: true)
+
+# --- Database tuning ---
+# database:
+#   cache_size_mb: 64                  # SQLite cache size in MB (default: 64)
+
+# --- Event bus ---
+# subscriber_warn_threshold_ms: 50    # Warn if a subscriber callback takes longer than this (default: 50)
 `;
 
 export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engineer

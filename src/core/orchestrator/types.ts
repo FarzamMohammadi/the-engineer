@@ -37,13 +37,28 @@ export interface PipelineState {
 
 // ── Process Phase Result ───────────────────────────────────────────────────
 
+/** Constant enum for executeTask outcome values. */
+export const Outcomes = {
+  completed: "completed",
+  review_pending: "review_pending",
+  decomposed: "decomposed",
+  preempted: "preempted",
+  error: "error",
+} as const;
+
+export type Outcome = (typeof Outcomes)[keyof typeof Outcomes];
+
 /** Discriminated union of executeTask outcomes. */
 export type ExecuteTaskResult =
-  | { outcome: "completed"; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: "review_pending"; phase: Phase; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: "decomposed"; childTaskIds: string[]; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: "preempted"; lastPhase: Phase; checkpointId: string }
-  | { outcome: "error"; phase: Phase; reason: string };
+  | { outcome: typeof Outcomes.completed; phaseOutputs: Map<Phase, PhaseOutput> }
+  | { outcome: typeof Outcomes.review_pending; phase: Phase; phaseOutputs: Map<Phase, PhaseOutput> }
+  | {
+      outcome: typeof Outcomes.decomposed;
+      childTaskIds: string[];
+      phaseOutputs: Map<Phase, PhaseOutput>;
+    }
+  | { outcome: typeof Outcomes.preempted; lastPhase: Phase; checkpointId: string }
+  | { outcome: typeof Outcomes.error; phase: Phase; reason: string };
 
 /** Return type of processPhaseCompletion. */
 export interface ProcessPhaseResult {

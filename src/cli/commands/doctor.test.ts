@@ -393,21 +393,21 @@ describe("formatDoctorResults", () => {
 });
 
 describe("runPreFlightChecks", () => {
-  it("runs exactly 6 categories", () => {
+  it("runs exactly 7 categories", () => {
     const results = runPreFlightChecks(tempDir);
-    expect(results).toHaveLength(6);
+    expect(results).toHaveLength(7);
   });
 });
 
 describe("runAllChecks", () => {
-  it("runs 9 categories without bundle", () => {
+  it("runs 10 categories without bundle", () => {
     const results = runAllChecks(tempDir);
-    expect(results).toHaveLength(9);
+    expect(results).toHaveLength(10);
   });
 
-  it("runs 10 categories with bundle", () => {
+  it("runs 11 categories with bundle", () => {
     const results = runAllChecks(tempDir, makeSafeBundle());
-    expect(results).toHaveLength(10);
+    expect(results).toHaveLength(11);
   });
 });
 

@@ -301,14 +301,16 @@ export function checkGitHubConnectivity(configDir?: string): DoctorCategory {
       message: `GITHUB_TOKEN set (${String(envToken.length)} chars)`,
     });
   } else if (configDir) {
-    // Check if any plugin config might contain a github_token
-    const pluginConfigPath = join(configDir, "plugins.yaml");
+    // Check if GitHub trigger plugin config exists (config/plugins/github-trigger.yaml)
+    const pluginConfigPath = join(configDir, "plugins", "github-trigger.yaml");
     if (existsSync(pluginConfigPath)) {
       checks.push({
         label: "GitHub token",
         status: "warn",
-        message: "GITHUB_TOKEN not in env — check plugins.yaml for github_token config",
-        remedy: "Set GITHUB_TOKEN environment variable or configure github_token in plugins.yaml",
+        message:
+          "GITHUB_TOKEN not in env — check config/plugins/github-trigger.yaml for github_token",
+        remedy:
+          "Set GITHUB_TOKEN environment variable or configure github_token in config/plugins/github-trigger.yaml",
       });
     } else {
       checks.push({
@@ -343,14 +345,16 @@ export function checkTelegramConnectivity(configDir?: string): DoctorCategory {
       message: `TELEGRAM_BOT_TOKEN set (${String(envToken.length)} chars)`,
     });
   } else if (configDir) {
-    const pluginConfigPath = join(configDir, "plugins.yaml");
+    // Check if Telegram plugin config exists (config/plugins/telegram-comm.yaml)
+    const pluginConfigPath = join(configDir, "plugins", "telegram-comm.yaml");
     if (existsSync(pluginConfigPath)) {
       checks.push({
         label: "Telegram bot token",
         status: "warn",
-        message: "TELEGRAM_BOT_TOKEN not in env — check plugins.yaml for bot_token config",
+        message:
+          "TELEGRAM_BOT_TOKEN not in env — check config/plugins/telegram-comm.yaml for bot_token",
         remedy:
-          "Set TELEGRAM_BOT_TOKEN environment variable or configure bot_token in plugins.yaml",
+          "Set TELEGRAM_BOT_TOKEN environment variable or configure bot_token in config/plugins/telegram-comm.yaml",
       });
     } else {
       checks.push({
@@ -382,7 +386,8 @@ export function checkTelegramConnectivity(configDir?: string): DoctorCategory {
       label: "Telegram chat ID",
       status: "warn",
       message: "No Telegram chat ID found in environment",
-      remedy: "Set TELEGRAM_CHAT_ID environment variable or configure chat_id in plugins.yaml",
+      remedy:
+        "Set TELEGRAM_CHAT_ID environment variable or configure chat_id in config/plugins/telegram-comm.yaml",
     });
   }
 
@@ -431,7 +436,27 @@ export function checkWorkspace(engineerHome: string): DoctorCategory {
   return { category: "Workspace", checks };
 }
 
-/** Category 10: Risky config warnings. */
+/** Category 10: External dependency availability. */
+export function checkExternalDependencies(): DoctorCategory {
+  const checks: DoctorCheck[] = [];
+
+  // Check claude CLI binary (required by ClaudeCodeLLMPlugin)
+  try {
+    const version = execSync("claude --version", { encoding: "utf8", timeout: 5000 }).trim();
+    checks.push({ label: "Claude CLI", status: "pass", message: version });
+  } catch {
+    checks.push({
+      label: "Claude CLI",
+      status: "warn",
+      message: "claude CLI is not available — required by the default LLM plugin",
+      remedy: "Install Claude CLI: https://docs.anthropic.com/en/docs/claude-cli",
+    });
+  }
+
+  return { category: "External Dependencies", checks };
+}
+
+/** Category 11: Risky config warnings. */
 export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
   const checks: DoctorCheck[] = [];
 
@@ -480,7 +505,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
 
 // ── Aggregation ──────────────────────────────────────────────────────────────
 
-/** Run all 10 doctor check categories. */
+/** Run all 11 doctor check categories. */
 export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
   const dirs = resolveSubdirs(engineerHome);
   const categories: DoctorCategory[] = [
@@ -493,9 +518,10 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
     checkGitHubConnectivity(dirs.config),
     checkTelegramConnectivity(dirs.config),
     checkWorkspace(engineerHome),
+    checkExternalDependencies(),
   ];
 
-  // Category 10 requires loaded config — if available
+  // Category 11 requires loaded config — if available
   if (bundle) {
     categories.push(checkRiskyConfig(bundle));
   }
@@ -503,7 +529,7 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
   return categories;
 }
 
-/** Run pre-flight checks (categories 1-6 only). Used by `start` command. */
+/** Run pre-flight checks (categories 1-7 only). Used by `start` command. */
 export function runPreFlightChecks(engineerHome: string): DoctorCategory[] {
   const dirs = resolveSubdirs(engineerHome);
   return [
@@ -513,6 +539,7 @@ export function runPreFlightChecks(engineerHome: string): DoctorCategory[] {
     checkRequiredSecrets(dirs.config),
     checkDatabase(engineerHome),
     checkPluginManifests(engineerHome),
+    checkExternalDependencies(),
   ];
 }
 

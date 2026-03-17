@@ -76,3 +76,14 @@ Accumulated across all merge rounds. Nothing gets lost.
 
 ### Lens H (Config & DX)
 - **No escape syntax for `${...}` in config values** — Documented limitation in `loader.ts:119`. Unlikely to hit in practice — all config values using `${...}` are env var references by convention. Could add `\${...}` escape if needed later.
+
+## Round 3 — 2
+
+### Lens I (Consistency & Patterns)
+- **C2:** Test helper naming conventions (`create*` vs `make*`) are inconsistent across orchestrator vs daemon tests — track for future convention doc, not worth a mass rename
+- **C4:** `OrchestratorContext` is not narrowed per-subsystem (unlike `DaemonContext` which uses `Pick<>`), but this is pragmatic given tighter coupling — revisit if accidental coupling becomes a problem
+- **S4:** Error transition reasons in `state_transitions` table are arbitrary strings for error outcomes vs structured constants for normal outcomes — consider typed reason enum in future
+
+### Lens J (Minimalism & Dead Code)
+- Ephemeral schemas (`src/schemas/ephemeral.ts`) contain ~15 schemas used only in their own test file — these are specification/documentation schemas by Layer 4 design, not dead code. Left as-is.
+- Pure helper exports in `workspace-manager/index.ts` (`slugify`, `branchName`, `injectAuth`, `validateWorkspacePath`) and `action-executor.ts` (`shellEscape`, `resolveWorktreePath`, `resolveWorktreePathReal`) are exported only for test access. Kept for test coverage of complex logic.

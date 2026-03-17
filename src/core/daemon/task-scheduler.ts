@@ -155,8 +155,6 @@ export function createTaskScheduler(
       title: candidate.title,
     });
 
-    // TODO: Emit task.dispatched event for observability (requires schema update)
-
     // Fire-and-forget dispatch
     const promise = orchestrator.executeTask(dispatch);
     activeDispatches.set(candidate.id, promise);

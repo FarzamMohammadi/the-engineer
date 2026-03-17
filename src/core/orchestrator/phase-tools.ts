@@ -7,7 +7,7 @@ import { type Phase, type PhaseToolConfig, Phases } from "../../schemas/orchestr
  * and action classes. Principle of least privilege: research can't write files,
  * execution can't merge PRs.
  */
-export const PHASE_TOOL_CONFIG: Record<Phase, PhaseToolConfig> = {
+const PHASE_TOOL_CONFIG: Record<Phase, PhaseToolConfig> = {
   [Phases.intake_analysis]: {
     allowed_actions: ["read_file", "search_files", "search_content", "done"],
     max_iterations: 5,

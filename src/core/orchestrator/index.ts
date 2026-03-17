@@ -43,23 +43,14 @@ import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 export type { ExecuteTaskResult, Outcome } from "./types.js";
 export { Outcomes } from "./types.js";
-export type { OrchestratorContext, PipelineState, ProcessPhaseResult } from "./types.js";
-export { PHASE_SEQUENCE } from "./phase-runner.js";
-export type { PhaseHandler, PhaseHandlerRegistry } from "./phase-runner.js";
-export { createPhaseHandlerRegistry, buildPhaseHandoff } from "./phase-runner.js";
-export { runPhasePipeline } from "./phase-runner.js";
+export type { OrchestratorContext, PipelineState } from "./types.js";
 export type { WorkspaceLifecycle, AndonCord } from "./workspace-lifecycle.js";
-export {
-  createWorkspaceLifecycle,
-  createAndonCord,
-  isCriticalPhase,
-} from "./workspace-lifecycle.js";
+export { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 export type { PrManager } from "./pr-manager.js";
 export { createPrManager } from "./pr-manager.js";
 export type { DecompositionHandler } from "./decomposition-handler.js";
 export { createDecompositionHandler } from "./decomposition-handler.js";
 export type { LlmCaller } from "./llm-caller.js";
-export { createLlmCaller, isRetryableError } from "./llm-caller.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 

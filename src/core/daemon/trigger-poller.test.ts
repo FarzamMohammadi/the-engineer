@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import type { DaemonConfig } from "../../schemas/config.js";
 import { createTriggerPoller } from "./trigger-poller.js";
 import type { TriggerPollerContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createMockConfig() {
+function makeDaemonConfig(): DaemonConfig {
   return {
     max_concurrent: 1,
     tick_interval_ms: 5_000,
@@ -33,12 +34,25 @@ function createMockConfig() {
       health_check_timeout_ms: 5_000,
       consecutive_failures_threshold: 3,
     },
+    subscriber_warn_threshold_ms: 50,
+    data_lifecycle: {
+      enabled: false,
+      interval_ms: 3_600_000,
+      retention: {
+        events: { max_age_days: 90, max_count: null },
+        observations: { max_age_days: 90, max_count: null },
+        journal_entries: { max_age_days: 90, max_count: null },
+        checkpoints: { max_age_days: 90, max_count: null },
+      },
+      vacuum_on_cleanup: true,
+    },
+    database: { cache_size_mb: 64 },
   };
 }
 
 function createMockContext(overrides?: Partial<TriggerPollerContext>): TriggerPollerContext {
   return {
-    config: createMockConfig(),
+    config: makeDaemonConfig(),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),

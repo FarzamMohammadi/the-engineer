@@ -23,12 +23,6 @@ import type {
 } from "../interfaces/workspace-manager.interface.js";
 import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
 
-export type {
-  CreateWorkspaceOptions,
-  WorkspaceRecord,
-  WorkspaceVerification,
-} from "../interfaces/workspace-manager.interface.js";
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Parsed workspace config (all defaults applied). */

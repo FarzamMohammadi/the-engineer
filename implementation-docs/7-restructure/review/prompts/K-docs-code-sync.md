@@ -39,26 +39,31 @@ This is a whole-project verification pass. You're checking every documentation a
 
 ### Documents to verify:
 
-1. **Phase review docs** (`implementation-docs/7-restructure/review/*.md`)
+1. **Phase architecture doc** (`implementation-docs/7-restructure/review/0-phase-architecture.md`)
+   - This is the runtime phase reference used by all review lenses — if review rounds changed code, this doc may now be stale
+   - Verify every file path, function name, signature, flow diagram, and state transition against the actual code
+   - Update it first, since other docs depend on it being accurate
+
+2. **Phase review docs** (`implementation-docs/7-restructure/review/*.md`)
    - Do the file lists match what actually exists?
    - Do the flow diagrams match the actual code paths?
    - Do the state transitions match the ValidTransitions table?
    - Are the function names and signatures still accurate?
 
-2. **Architecture docs** (`implementation-docs/`)
+3. **Architecture docs** (`implementation-docs/`)
    - `0-foundation/goals.md` — still accurate?
    - `1-system/overview.md` — component list still correct?
    - `1-system/task-states.md` — state machine still matches code?
    - `3-interactions/event-catalog.md` — events still match `EventTypes`?
    - `3-interactions/protocols.md` — protocols still implemented as described?
 
-3. **OSS docs** (`docs/`, root files)
+4. **OSS docs** (`docs/`, root files)
    - `CONTRIBUTING.md` — commands still work?
    - `docs/architecture.md` — diagrams still accurate?
    - `docs/plugin-development.md` — plugin API still matches?
    - `README.md` — setup steps still work?
 
-4. **Code-level docs**
+5. **Code-level docs**
    - JSDoc on public APIs — still accurate?
    - Inline comments — still true?
    - Type descriptions — still matching?

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
 import { createNotificationRouter } from "./notification-router.js";
 import type { NotificationRouterContext } from "./types.js";
@@ -18,7 +19,7 @@ function createMockCommPlugin(overrides?: { id?: string; capabilities?: string[]
   };
 }
 
-function createMockDaemonConfig() {
+function makeDaemonConfig(): DaemonConfig {
   return {
     max_concurrent: 1,
     tick_interval_ms: 5_000,
@@ -34,7 +35,7 @@ function createMockDaemonConfig() {
     trigger_poll_interval_ms: 30_000,
     seen_keys_ttl_ms: 86_400_000,
     logging: {
-      level: "silent" as const,
+      level: "error" as const,
       dir: "logs",
       max_size_bytes: 524_288_000,
       max_files: 7,
@@ -46,13 +47,26 @@ function createMockDaemonConfig() {
       health_check_timeout_ms: 5_000,
       consecutive_failures_threshold: 3,
     },
+    subscriber_warn_threshold_ms: 50,
+    data_lifecycle: {
+      enabled: false,
+      interval_ms: 3_600_000,
+      retention: {
+        events: { max_age_days: 90, max_count: null },
+        observations: { max_age_days: 90, max_count: null },
+        journal_entries: { max_age_days: 90, max_count: null },
+        checkpoints: { max_age_days: 90, max_count: null },
+      },
+      vacuum_on_cleanup: true,
+    },
+    database: { cache_size_mb: 64 },
   };
 }
 
 function createMockContext(pluginOverrides?: ReturnType<typeof createMockCommPlugin>[]) {
   const commPlugins = pluginOverrides ?? [];
   return {
-    config: createMockDaemonConfig(),
+    config: makeDaemonConfig(),
     eventBus: {} as NotificationRouterContext["eventBus"],
     registry: {
       getPluginsByType: vi.fn().mockReturnValue(commPlugins),

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { CompletionResult } from "../../schemas/adapters.js";
-import { Phases } from "../../schemas/orchestrator.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
 import type { OrchestratorContext } from "./types.js";
 
@@ -190,86 +189,6 @@ describe("LlmCaller", () => {
     });
   });
 
-  describe("callLlmAndParse", () => {
-    it("returns validated PhaseOutput for valid JSON", async () => {
-      const data = {
-        complexity: "moderate",
-        estimated_phases: ["intake_analysis"],
-        ambiguities: [],
-        fast_path: false,
-        decomposition_likely: false,
-      };
-      const fakeLlm = {
-        complete: vi.fn().mockResolvedValue(makeCompletion(JSON.stringify(data))),
-        getCapabilities: vi.fn(),
-      };
-      const ctx = createMockContext();
-      (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeLlm);
-
-      const caller = createLlmCaller(ctx);
-      const result = await caller.callLlmAndParse(Phases.intake_analysis, "task-001", "prompt");
-
-      expect(result.confidence).toBe("high");
-      expect(result.phase).toBe("intake_analysis");
-    });
-
-    it("returns fallback for invalid JSON", async () => {
-      const fakeLlm = {
-        complete: vi.fn().mockResolvedValue(makeCompletion("not json")),
-        getCapabilities: vi.fn(),
-      };
-      const ctx = createMockContext();
-      (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeLlm);
-
-      const caller = createLlmCaller(ctx);
-      const result = await caller.callLlmAndParse(Phases.intake_analysis, "task-001", "prompt");
-
-      expect(result.confidence).toBe("low");
-      expect(result.open_questions[0]).toContain("Invalid JSON");
-    });
-  });
-
-  describe("buildPhaseOutput", () => {
-    it("builds correct envelope structure", () => {
-      const ctx = createMockContext();
-      const caller = createLlmCaller(ctx);
-      const output = caller.buildPhaseOutput(
-        Phases.research,
-        "task-001",
-        { relevant_files: ["a.ts"] },
-        "medium",
-        ["question 1"],
-      );
-
-      expect(output.phase).toBe("research");
-      expect(output.task_id).toBe("task-001");
-      expect(output.confidence).toBe("medium");
-      expect(output.open_questions).toEqual(["question 1"]);
-      expect(output.timestamp).toBeDefined();
-    });
-  });
-
-  describe("getDefaultData", () => {
-    it("returns defaults for all 7 phases", () => {
-      const ctx = createMockContext();
-      const caller = createLlmCaller(ctx);
-
-      for (const phase of [
-        Phases.intake_analysis,
-        Phases.research,
-        Phases.planning,
-        Phases.execution,
-        Phases.self_review,
-        Phases.demo_prep,
-        Phases.integration,
-      ]) {
-        const data = caller.getDefaultData(phase);
-        expect(data).toBeDefined();
-        expect(typeof data).toBe("object");
-      }
-    });
-  });
-
   describe("emitCostIncurred", () => {
     it("publishes cost.incurred event with correct payload", () => {
       const ctx = createMockContext();
@@ -289,18 +208,6 @@ describe("LlmCaller", () => {
           }),
         }),
       );
-    });
-  });
-
-  describe("buildFallbackOutput", () => {
-    it("returns low confidence with error message", () => {
-      const ctx = createMockContext();
-      const caller = createLlmCaller(ctx);
-      const output = caller.buildFallbackOutput(Phases.execution, "task-001", "parse error");
-
-      expect(output.confidence).toBe("low");
-      expect(output.open_questions).toContain("parse error");
-      expect(output.data).toHaveProperty("files_changed");
     });
   });
 });

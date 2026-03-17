@@ -14,13 +14,11 @@ import type {
   ISessionMemory,
 } from "../../src/core/interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../../src/core/interfaces/task-engine.interface.js";
+import type { WorkspaceVerification } from "../../src/core/interfaces/workspace-manager.interface.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
-import type {
-  WorkspaceManager,
-  WorkspaceVerification,
-} from "../../src/core/workspace-manager/index.js";
+import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { CompletionResult } from "../../src/schemas/adapters.js";
 import type { Dispatch } from "../../src/schemas/ephemeral.js";
 import type { Event } from "../../src/schemas/events.js";

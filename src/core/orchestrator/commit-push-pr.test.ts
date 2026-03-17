@@ -18,7 +18,7 @@ import {
   createMockDispatch,
   createTestOrchestrator,
 } from "../../../test/helpers/test-orchestrator.js";
-import type { WorkspaceRecord } from "../workspace-manager/index.js";
+import type { WorkspaceRecord } from "../interfaces/workspace-manager.interface.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

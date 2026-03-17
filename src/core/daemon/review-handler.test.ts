@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskFeedbackReceivedPayload } from "../../schemas/events.js";
 import type { NotificationRouter } from "./notification-router.js";
 import {
@@ -11,7 +12,7 @@ import type { ReviewHandlerContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createMockDaemonConfig() {
+function makeDaemonConfig(): DaemonConfig {
   return {
     max_concurrent: 1,
     tick_interval_ms: 5_000,
@@ -39,6 +40,19 @@ function createMockDaemonConfig() {
       health_check_timeout_ms: 5_000,
       consecutive_failures_threshold: 3,
     },
+    subscriber_warn_threshold_ms: 50,
+    data_lifecycle: {
+      enabled: false,
+      interval_ms: 3_600_000,
+      retention: {
+        events: { max_age_days: 90, max_count: null },
+        observations: { max_age_days: 90, max_count: null },
+        journal_entries: { max_age_days: 90, max_count: null },
+        checkpoints: { max_age_days: 90, max_count: null },
+      },
+      vacuum_on_cleanup: true,
+    },
+    database: { cache_size_mb: 64 },
   };
 }
 
@@ -117,7 +131,7 @@ function buildContext(
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
   ctx = {
-    config: createMockDaemonConfig(),
+    config: makeDaemonConfig(),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),

@@ -19,6 +19,7 @@ import type { PublishInput } from "../event-bus/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { LlmCallRejectedError, NoLlmPluginError } from "./errors.js";
+import { PHASE_SEQUENCE } from "./phase-runner.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
 import type { OrchestratorContext, PipelineState } from "./types.js";
 
@@ -65,8 +66,6 @@ export function isRetryableError(error: unknown): boolean {
 export interface LlmCaller {
   /** Call LLM through ActionPipeline. Throws on rejection or no plugin. */
   callLlm(prompt: string, taskId: string, systemPrompt?: string | null): Promise<CompletionResult>;
-  /** Call LLM, parse JSON response, validate against phase schema. */
-  callLlmAndParse(phase: Phase, taskId: string, prompt: string): Promise<PhaseOutput>;
   /** Run a phase through the agent loop (multi-turn LLM + tool execution). */
   runPhaseWithAgentLoop(
     phase: Phase,
@@ -77,32 +76,7 @@ export interface LlmCaller {
   ): Promise<PhaseOutput>;
   /** Emit cost.incurred event from completion usage data. */
   emitCostIncurred(taskId: string, completion: CompletionResult): void;
-  /** Build a PhaseOutput envelope. */
-  buildPhaseOutput(
-    phase: Phase,
-    taskId: string,
-    data: Record<string, unknown>,
-    confidence: "high" | "medium" | "low",
-    openQuestions: string[],
-  ): PhaseOutput;
-  /** Build a fallback PhaseOutput when validation fails (Decision #85). */
-  buildFallbackOutput(phase: Phase, taskId: string, errorMessage: string): PhaseOutput;
-  /** Get default/empty data for a phase when LLM output is invalid. */
-  getDefaultData(phase: Phase): Record<string, unknown>;
 }
-
-// ── PHASE_SEQUENCE (needed for default data) ────────────────────────────────
-
-/** The standard 7-phase pipeline sequence (re-exported from phase-runner). */
-const PHASE_SEQUENCE_FOR_DEFAULTS: Phase[] = [
-  Phases.intake_analysis,
-  Phases.research,
-  Phases.planning,
-  Phases.execution,
-  Phases.self_review,
-  Phases.demo_prep,
-  Phases.integration,
-];
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
@@ -316,7 +290,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const defaults: Record<Phase, Record<string, unknown>> = {
       [Phases.intake_analysis]: {
         complexity: "moderate",
-        estimated_phases: [...PHASE_SEQUENCE_FOR_DEFAULTS],
+        estimated_phases: [...PHASE_SEQUENCE],
         ambiguities: [],
         fast_path: false,
         decomposition_likely: false,
@@ -362,38 +336,6 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
   function buildFallbackOutput(phase: Phase, taskId: string, errorMessage: string): PhaseOutput {
     return buildPhaseOutput(phase, taskId, getDefaultData(phase), "low", [errorMessage]);
-  }
-
-  async function callLlmAndParse(
-    phase: Phase,
-    taskId: string,
-    prompt: string,
-  ): Promise<PhaseOutput> {
-    const completion = await callLlm(prompt, taskId);
-    emitCostIncurred(taskId, completion);
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(completion.content);
-    } catch {
-      return buildFallbackOutput(
-        phase,
-        taskId,
-        `Invalid JSON from LLM: ${completion.content.slice(0, 200)}`,
-      );
-    }
-
-    const schema = PHASE_SCHEMAS[phase];
-    const result = schema.safeParse(parsed);
-    if (!result.success) {
-      return buildFallbackOutput(
-        phase,
-        taskId,
-        `Schema validation failed: ${result.error.message}`,
-      );
-    }
-
-    return buildPhaseOutput(phase, taskId, result.data as Record<string, unknown>, "high", []);
   }
 
   async function runPhaseWithAgentLoop(
@@ -469,11 +411,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
   return {
     callLlm,
-    callLlmAndParse,
     runPhaseWithAgentLoop,
     emitCostIncurred,
-    buildPhaseOutput,
-    buildFallbackOutput,
-    getDefaultData,
   };
 }

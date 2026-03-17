@@ -8,7 +8,7 @@ import {
   createMockTask,
   createTestOrchestrator,
 } from "../../../test/helpers/test-orchestrator.js";
-import { PHASE_SEQUENCE } from "./index.js";
+import { PHASE_SEQUENCE } from "./phase-runner.js";
 
 describe("Orchestrator", () => {
   let handle: TestOrchestratorHandle;

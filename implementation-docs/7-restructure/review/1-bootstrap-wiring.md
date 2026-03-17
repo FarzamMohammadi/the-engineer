@@ -25,7 +25,7 @@ Phase 1: bootstrap()                         ← src/cli/bootstrap.ts
     ├─ createCoreComponents()                → 7 core components (see below)
     ├─ new HookRegistry(observer)
     ├─ new Registry({ eventBus, observer, ... hookRegistry })
-    ├─ BlobStore + ObservabilityStore        → observability stack
+    ├─ BlobStore + ObservationStore           → observability stack
     ├─ createObservationStore() + observer.upgrade()  → War Room tracing
     ├─ new PeopleDirectory()
     ├─ new Orchestrator()
@@ -99,8 +99,7 @@ Phase 1: bootstrap()                         ← src/cli/bootstrap.ts
 | 10 | HookRegistry | `new HookRegistry(observer.child("hooks"))` | observer |
 | 11 | Registry | `new Registry({ eventBus, observer, healthCheckIntervalMs, healthCheckTimeoutMs, consecutiveFailuresThreshold, hookRegistry })` | eventBus, observer, hookRegistry |
 | 12 | BlobStore | `new BlobStore(tracesDir)` | — |
-| 12b | ObservabilityStore | `new ObservabilityStore(db, blobStore)` | db, blobStore |
-| 12c | ObservationStore | `createObservationStore(db, blobStore)` + `observer.upgrade(observationStore)` | db, blobStore |
+| 12b | ObservationStore | `createObservationStore(db, blobStore)` + `observer.upgrade(observationStore)` | db, blobStore |
 | 13 | PeopleDirectory | `new PeopleDirectory({ people: config.people })` | config |
 | 14 | Orchestrator | `new Orchestrator({ eventBus, registry, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager, peopleDirectory, observability, observationStore, observer })` | all above |
 | 15 | DataLifecycleManager | `createDataLifecycleManager({ db, eventBus, config, blobsDir, clock })` | db, eventBus |

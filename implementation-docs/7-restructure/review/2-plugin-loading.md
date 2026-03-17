@@ -5,7 +5,7 @@
 ## Flow
 
 ```
-loadBuiltinPlugins(registry, pluginConfigDir, config, logger)
+loadBuiltinPlugins(registry, pluginConfigDir, observer)
     │
     ▼
 Scan ~/.engineer/config/plugins/ for YAML files
@@ -31,11 +31,11 @@ For each enabled plugin:
 | # | File | Role |
 |---|------|------|
 | 1 | `src/plugins/builtin.ts` | 6 plugin manifests + factory functions |
-| 2 | `src/cli/bootstrap.ts` (loadBuiltinPlugins) | Discovery, config loading, init orchestration |
-| 3 | `src/core/registry/index.ts` | Registry class: register, init, type lookups |
-| 4 | `src/core/registry/lifecycle.ts` | LifecycleManager: plugin storage, init ordering |
-| 5 | `src/core/registry/health.ts` | HealthMonitor: health state machine per plugin |
-| 6 | `src/core/registry/discovery.ts` | Plugin discovery from filesystem |
+| 2 | `src/plugins/loader.ts` | `loadBuiltinPlugins()`: discovery, config loading, init orchestration |
+| 3 | `src/cli/bootstrap.ts` | Calls `loadBuiltinPlugins()`, wires all 16 components |
+| 4 | `src/core/registry/index.ts` | Registry class: register, init, type lookups |
+| 5 | `src/core/registry/lifecycle.ts` | LifecycleManager: plugin storage, init ordering |
+| 6 | `src/core/registry/health.ts` | HealthMonitor: health state machine per plugin |
 
 ---
 

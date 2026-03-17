@@ -833,10 +833,18 @@ A PR review poll cycle completed. Emitted every time the daemon checks review st
 payload {
   task_id:         string          // Task owning the PR
   pr_number:       number          // PR number checked
-  aggregate_state: string?         // "approved" | "changes_requested" | "comment" | null
+  repo:            string          // Repository (owner/name)
+  aggregate_state: string          // "approved" | "changes_requested" | "comment" | "none"
+  approvals:       number          // Number of approvals
+  changes_requested_count: number  // Number of change requests
+  comment_count:   number          // Number of comments
   reviewer_count:  number          // Number of reviewers detected
+  pr_draft:        boolean         // Whether PR is still a draft
+  dedup_skipped:   boolean         // Whether this poll was deduped (no state change)
 }
 ```
+
+> **L4 note:** The authoritative payload schema is `ReviewPollCompletedPayloadSchema` in `src/schemas/events.ts`.
 
 **Subscribers:**
 | Subscriber | Why |
@@ -942,7 +950,7 @@ The Orchestrator receiving events via the Daemon (not direct subscription) keeps
 | `review.*` | `poll_completed` | Daemon (ReviewHandler) |
 | `system.*` | `cleanup_completed` | DataLifecycleManager |
 
-**Total: 36 event types** across 12 groups.
+**Total: 35 event types** across 12 groups.
 
 ---
 

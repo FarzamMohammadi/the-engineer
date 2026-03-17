@@ -22,7 +22,7 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **Event topology registration is silent** — static deterministic wirings that never fail. Logging them adds noise with zero diagnostic value. A `topology.summary()` method logged once at startup would be the right approach if topology visibility is ever needed, but that's a feature rather than a logging fix.
 
 ### Lens G (Performance & Resources)
-- **Bootstrap cleanup() only closes DB** — Logger streams, BlobStore, ObservabilityStore not explicitly closed. Not actionable: Node.js process exit handles cleanup. Only relevant if daemon is embedded/restarted in-process.
+- **Bootstrap cleanup() only closes DB** — Logger streams, BlobStore, ObservationStore not explicitly closed. Not actionable: Node.js process exit handles cleanup. Only relevant if daemon is embedded/restarted in-process.
 - **getActiveTaskIds() allocates new array per call** — Minor given max_concurrent is 3-5. Could return `IterableIterator<string>` for iteration paths but would require interface changes across multiple consumers. Left as-is.
 
 ### Lens H (Config & DX)

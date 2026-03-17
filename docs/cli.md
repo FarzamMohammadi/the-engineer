@@ -129,8 +129,8 @@ engineer doctor                  # Run all 10 categories
 | 4 | Required Secrets | All `${ENV_VAR}` references in configs resolve |
 | 5 | Database | SQLite file accessible |
 | 6 | Plugin Manifests | `engineer.plugin.yaml` files parse correctly |
-| 7 | GitHub Connectivity | *Stub — Phase 14b* |
-| 8 | Telegram Connectivity | *Stub — Phase 14c* |
+| 7 | GitHub Connectivity | GITHUB_TOKEN present (env or plugin config) |
+| 8 | Telegram Connectivity | TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID present (env or plugin config) |
 | 9 | Workspace | Git binary available, workspace dir exists |
 | 10 | Risky Config | Warnings for auto-merge enabled, missing cost limits |
 
@@ -245,3 +245,51 @@ engineer dashboard --open           # Auto-open browser
 - No frontend build step — zero React, zero Vite, one HTML file
 
 Source: [`src/cli/commands/dashboard.ts`](../src/cli/commands/dashboard.ts), [`src/dashboard/`](../src/dashboard/)
+
+### why
+
+Displays a timeline of significant events for a task — state transitions, events, journal entries, and cost. Opens the database read-only; no daemon required.
+
+```bash
+engineer why <task-id>            # Human-readable timeline
+engineer why <task-id> --json     # Machine-readable JSON output
+```
+
+Shows: current state, priority, creation time, full transition history merged with events (chronological), last 5 journal entries, and cumulative cost.
+
+Source: [`src/cli/commands/why.ts`](../src/cli/commands/why.ts)
+
+### setup
+
+Interactive first-run setup wizard. Walks through GitHub token guidance, repository selection, LLM provider, Telegram notifications, and safety level presets. Generates all required config files.
+
+```bash
+engineer setup                    # Interactive wizard
+```
+
+Produces the same config files as `engineer init` but with answers tailored to your choices. Safe to run if configs already exist — prompts before overwriting.
+
+Source: [`src/cli/commands/setup.ts`](../src/cli/commands/setup.ts)
+
+### config migrate
+
+Runs config schema migrations. Currently infrastructure-only (version 1 is the only version), so it reports that all configs are current.
+
+```bash
+engineer config migrate           # Check and apply pending migrations
+```
+
+Source: [`src/cli/commands/config-migrate.ts`](../src/cli/commands/config-migrate.ts)
+
+### create-plugin
+
+Scaffolds a new plugin directory with all required files: manifest (`engineer.plugin.yaml`), entry point, adapter class, config schema, and contract compliance test.
+
+```bash
+engineer create-plugin <name> --type <adapter-type>
+# adapter-type: trigger | communication | llm | tool | git_hosting
+```
+
+Creates the plugin under `src/plugins/<type>/<name>/` with 5 files ready to implement. The generated test file runs the contract compliance suite automatically.
+
+Source: [`src/cli/commands/create-plugin.ts`](../src/cli/commands/create-plugin.ts)

@@ -216,4 +216,41 @@ describe("JournalStore", () => {
       tags: ["testing"],
     });
   }
+
+  it("getLatestJournalTimestamp returns latest timestamp", () => {
+    setup();
+    const taskId = insertTask();
+    const sessionId = createSession(taskId);
+
+    journal.addJournalEntry({
+      sessionId,
+      taskId,
+      phase: "intake_analysis",
+      type: "finding",
+      summary: "First entry",
+    });
+    journal.addJournalEntry({
+      sessionId,
+      taskId,
+      phase: "research",
+      type: "finding",
+      summary: "Second entry",
+    });
+
+    const latest = journal.getLatestJournalTimestamp(taskId);
+    expect(latest).not.toBeNull();
+
+    const entries = journal.queryJournal(taskId);
+    const maxTimestamp = entries
+      .map((e) => e.timestamp)
+      .sort()
+      .pop();
+    expect(latest).toBe(maxTimestamp);
+  });
+
+  it("getLatestJournalTimestamp returns null for task with no entries", () => {
+    setup();
+    const taskId = insertTask();
+    expect(journal.getLatestJournalTimestamp(taskId)).toBeNull();
+  });
 });

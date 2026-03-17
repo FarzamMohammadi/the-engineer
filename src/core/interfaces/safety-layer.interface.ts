@@ -40,4 +40,6 @@ export interface ISafetyLayer {
   getTimeoutPolicy(): ResponseTimeout;
   updateConfig(newConfig: SafetyConfig): void;
   checkAutoMergeAllowed(repo: string): boolean;
+  /** Flush pending cost tracker snapshot to DB. Call during graceful shutdown. */
+  flushCostSnapshot(): void;
 }

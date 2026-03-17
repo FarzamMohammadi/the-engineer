@@ -77,6 +77,8 @@ export interface ISessionMemory {
   endSession(id: string, reason: SessionEndReason): void;
   addJournalEntry(input: AddJournalEntryInput): JournalEntry;
   queryJournal(taskId: string, filters?: JournalQueryFilters): JournalEntry[];
+  /** Get the latest journal entry timestamp for a task (single MAX query, avoids loading all entries). */
+  getLatestJournalTimestamp(taskId: string): string | null;
   createCheckpoint(input: CreateCheckpointInput): Checkpoint;
   getLatestCheckpoint(taskId: string): Checkpoint | null;
   storeKnowledge(input: StoreKnowledgeInput): KnowledgeEntry;

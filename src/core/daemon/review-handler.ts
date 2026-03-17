@@ -17,6 +17,8 @@ export interface ReviewHandler {
   checkFeedback(reviewPendingTasks?: Task[]): Promise<void>;
   /** Handle a feedback event (called from EventBus subscription). */
   handleFeedbackEvent(payload: TaskFeedbackReceivedPayload): void;
+  /** Clear per-tick PR status cache. Call at start of each tick to avoid stale data. */
+  clearTickCache(): void;
 }
 
 /** Callbacks for cross-subsystem coordination. */
@@ -58,6 +60,9 @@ export function createReviewHandler(
   // ── Internal State ──────────────────────────────────────────────────────
   const processedReviewStates = new Map<string, string>();
 
+  // Per-tick cache for PR status to avoid duplicate API calls across checkMerges + checkFeedback
+  const prStatusCache = new Map<string, Awaited<ReturnType<GitHostingAdapter["getPRStatus"]>>>();
+
   // Time-windowed failure counting for review API
   const reviewApiFailures: Array<{ timestamp: number }> = [];
 
@@ -72,6 +77,25 @@ export function createReviewHandler(
 
   function recordReviewApiFailure(now: number): void {
     reviewApiFailures.push({ timestamp: now });
+  }
+
+  async function getCachedPRStatus(
+    hosting: GitHostingAdapter,
+    repo: string,
+    prNumber: number,
+  ): Promise<Awaited<ReturnType<GitHostingAdapter["getPRStatus"]>>> {
+    const cacheKey = `${repo}#${String(prNumber)}`;
+    const cached = prStatusCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const status = await hosting.getPRStatus(repo, prNumber);
+    prStatusCache.set(cacheKey, status);
+    return status;
+  }
+
+  function clearTickCache(): void {
+    prStatusCache.clear();
   }
 
   // ── Merge Detection ─────────────────────────────────────────────────────
@@ -114,7 +138,7 @@ export function createReviewHandler(
       return;
     }
     try {
-      const status = await hosting.getPRStatus(task.repo, task.review.pr_number);
+      const status = await getCachedPRStatus(hosting, task.repo, task.review.pr_number);
       if (status.state === "merged") {
         completeTaskOnMerge(task);
       }
@@ -229,9 +253,11 @@ export function createReviewHandler(
     const repo = task.repo;
 
     try {
-      const reviewStatus = await hosting.getReviewStatus(repo, prNumber);
-      const prStatus = await hosting.getPRStatus(repo, prNumber);
-      const prComments = await fetchPRCommentStrings(hosting, repo, prNumber);
+      const [reviewStatus, prStatus, prComments] = await Promise.all([
+        hosting.getReviewStatus(repo, prNumber),
+        getCachedPRStatus(hosting, repo, prNumber),
+        fetchPRCommentStrings(hosting, repo, prNumber),
+      ]);
       const allComments = [...(reviewStatus.comments ?? []), ...prComments];
 
       const aggregateState = resolveAggregateState(reviewStatus, prComments);
@@ -569,5 +595,6 @@ export function createReviewHandler(
     checkMerges,
     checkFeedback,
     handleFeedbackEvent,
+    clearTickCache,
   };
 }

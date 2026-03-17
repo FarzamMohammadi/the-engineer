@@ -146,3 +146,18 @@ Accumulated across all merge rounds. Nothing gets lost.
 ### Lens E (Security & Trust Boundaries)
 - **EventBus payload sanitization at publish() level** — Intentionally not added. Would corrupt legitimate data. Documented as publisher responsibility instead. No current publisher includes raw secrets in payloads.
 - **Observer-level auto-sanitization of data payloads** — Rejected as too expensive and prone to false-positive redaction. Kept as caller-responsibility with documented contract.
+
+## Round 2 — 4
+
+### Lens F (Logging & Observability)
+- **Dashboard failure not logged to observer** — `launchDashboard()` uses `out.warn()` (CLI output only). Observer isn't threaded to it. Low priority: dashboard is non-critical, warning is visible in CLI output. Would require signature change.
+- **`system.ts` has zero logging** — Intentionally left as-is. Pure factory with no I/O; bootstrap caller logs before/after. No debugging value in adding logging here.
+
+### Lens G (Performance & Resources)
+- **`getActiveTaskIds` array allocation** — Allocates a tiny array (max 5 elements) 2-3x per tick. Code clarity outweighs microseconds saved.
+
+### Lens H (Config & DX)
+- **`_ms` suffix confusing when fields accept duration strings** — Renaming is a breaking schema change. `.describe()` annotations + template comments mitigate for now.
+- **`autonomy.decisions` open-key catalog** — Intentionally free-form by design. `.describe()` explaining this is sufficient.
+- **Timezone IANA validation** — `Intl.supportedValuesOf('timeZone')` requires Node 21+. Defer to validation utility.
+- **Progressive `engineer init`** — The `setup` wizard handles "just get started". Full phased init is a larger UX redesign.

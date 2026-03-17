@@ -189,6 +189,11 @@ export class SafetyLayer implements ISafetyLayer {
     this.policyEngine.updateConfig(newConfig);
   }
 
+  /** Flush pending cost tracker snapshot to DB. Call during graceful shutdown. */
+  flushCostSnapshot(): void {
+    this.costTracker.flush();
+  }
+
   // ── Auto-Merge ─────────────────────────────────────────────────────────────
 
   /** Simple boolean check: is auto-merge allowed for this repo? */

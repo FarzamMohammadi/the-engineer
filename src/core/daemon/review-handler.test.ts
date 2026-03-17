@@ -168,6 +168,7 @@ function buildContext(
     } as unknown as ReviewHandlerContext["taskEngine"],
     safetyLayer: {
       checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
+      flushCostSnapshot: vi.fn(),
     } as unknown as ReviewHandlerContext["safetyLayer"],
     workspaceManager: {
       cleanupWorkspace: vi.fn(),

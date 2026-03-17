@@ -2,7 +2,8 @@ import type Database from "better-sqlite3";
 
 import type { CostLimits } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
-import type { CostIncurredPayload, Event } from "../../schemas/events.js";
+import type { CostIncurredPayload, Event, TaskStateChangedPayload } from "../../schemas/events.js";
+import { TaskStates } from "../../schemas/task.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { CostStatus, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 
@@ -45,6 +46,8 @@ interface AccumulatorSnapshot {
 const META_KEY = "safety_snapshot";
 const COST_WARNING_THRESHOLD = 0.8;
 const REPLAY_PAGE_SIZE = 1000;
+/** Minimum interval between snapshot saves (ms). Replay handles the gap on crash. */
+const SNAPSHOT_DEBOUNCE_MS = 5_000;
 
 // ── Pure Functions ───────────────────────────────────────────────────────────
 
@@ -78,6 +81,8 @@ export class CostTracker {
   private costLimits: CostLimits;
   private accumulators: CostAccumulators;
   private lastSequence: number;
+  private snapshotDirty = false;
+  private lastSnapshotAt = 0;
 
   private readonly getSnapshotStmt: Database.Statement;
   private readonly saveSnapshotStmt: Database.Statement;
@@ -105,6 +110,11 @@ export class CostTracker {
 
     eventBus.subscribe("safety_layer", EventTypes["cost.incurred"], (event) => {
       this.onCostEvent(event);
+    });
+
+    // Prune per_task entries when tasks reach terminal state (prevents unbounded growth)
+    eventBus.subscribe("safety_layer:cleanup", EventTypes["task.state_changed"], (event) => {
+      this.onTaskStateChanged(event);
     });
   }
 
@@ -210,6 +220,13 @@ export class CostTracker {
     this.costLimits = newLimits;
   }
 
+  /** Flush any pending snapshot to DB. Call during graceful shutdown. */
+  flush(): void {
+    if (this.snapshotDirty) {
+      this.saveSnapshot();
+    }
+  }
+
   // ── Private: Cost Event Handling ───────────────────────────────────────────
 
   private onCostEvent(event: Event): void {
@@ -225,9 +242,16 @@ export class CostTracker {
     }
 
     this.lastSequence = event.sequence;
-    this.saveSnapshot();
+    this.maybeSaveSnapshot();
 
     this.checkAndEmitLimitBreaches(payload);
+  }
+
+  private onTaskStateChanged(event: Event): void {
+    const payload = event.payload as unknown as TaskStateChangedPayload;
+    if (payload.to_state === TaskStates.completed || payload.to_state === TaskStates.failed) {
+      this.accumulators.api_spend.per_task.delete(payload.task_id);
+    }
   }
 
   private accumulateApiSpend(payload: CostIncurredPayload): void {
@@ -408,6 +432,14 @@ export class CostTracker {
 
   // ── Private: Snapshot ──────────────────────────────────────────────────────
 
+  private maybeSaveSnapshot(): void {
+    this.snapshotDirty = true;
+    const now = Date.now();
+    if (now - this.lastSnapshotAt >= SNAPSHOT_DEBOUNCE_MS) {
+      this.saveSnapshot();
+    }
+  }
+
   private saveSnapshot(): void {
     const snapshot: AccumulatorSnapshot = {
       api_spend: {
@@ -420,6 +452,8 @@ export class CostTracker {
       snapshot_at: new Date().toISOString(),
     };
     this.saveSnapshotStmt.run(META_KEY, JSON.stringify(snapshot));
+    this.snapshotDirty = false;
+    this.lastSnapshotAt = Date.now();
   }
 
   private restoreFromSnapshot(): void {

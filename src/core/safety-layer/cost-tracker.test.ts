@@ -128,6 +128,78 @@ describe("CostTracker — accumulation", () => {
   });
 });
 
+// ── CostTracker — Terminal Task Cleanup ──────────────────────────────────────
+
+describe("CostTracker — per_task cleanup on terminal state", () => {
+  it("prunes per_task entry when task completes", () => {
+    const { tracker, eventBus: eb } = createTracker();
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.5 });
+    expect(tracker.getCostStatus("task-1").per_task_usd).toBeCloseTo(0.5);
+
+    // Simulate task completion via state change event
+    eb.publish({
+      type: "task.state_changed" as const,
+      source: "task_engine",
+      task_id: "task-1",
+      payload: {
+        task_id: "task-1",
+        from_state: "active",
+        from_sub: "working",
+        to_state: "completed",
+        to_sub: null,
+        reason: "pipeline_completed",
+        triggered_by: "daemon",
+      },
+    });
+
+    expect(tracker.getCostStatus("task-1").per_task_usd).toBe(0);
+  });
+
+  it("prunes per_task entry when task fails", () => {
+    const { tracker, eventBus: eb } = createTracker();
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.3 });
+
+    eb.publish({
+      type: "task.state_changed" as const,
+      source: "task_engine",
+      task_id: "task-1",
+      payload: {
+        task_id: "task-1",
+        from_state: "blocked",
+        from_sub: null,
+        to_state: "failed",
+        to_sub: null,
+        reason: "escalation",
+        triggered_by: "daemon",
+      },
+    });
+
+    expect(tracker.getCostStatus("task-1").per_task_usd).toBe(0);
+  });
+
+  it("does not prune active tasks", () => {
+    const { tracker, eventBus: eb } = createTracker();
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.2 });
+
+    eb.publish({
+      type: "task.state_changed" as const,
+      source: "task_engine",
+      task_id: "task-1",
+      payload: {
+        task_id: "task-1",
+        from_state: "queued",
+        from_sub: null,
+        to_state: "active",
+        to_sub: "working",
+        reason: "scheduled",
+        triggered_by: "daemon",
+      },
+    });
+
+    expect(tracker.getCostStatus("task-1").per_task_usd).toBeCloseTo(0.2);
+  });
+});
+
 // ── CostTracker — Limit Detection ────────────────────────────────────────────
 
 describe("CostTracker — limit detection", () => {

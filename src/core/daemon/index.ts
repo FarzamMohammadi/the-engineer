@@ -504,11 +504,10 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Step 3: Evaluate preemption
     preemption.evaluate(now);
 
-    // Step 4: Schedule
-    scheduler.scheduleNext();
-
-    // Step 5: Priority aging
-    scheduler.applyPriorityAging(now);
+    // Step 4+5: Schedule + priority aging (shared query avoids redundant DB fetch)
+    const queuedTasks = taskEngine.getQueuedByPriority();
+    scheduler.scheduleNext(queuedTasks);
+    scheduler.applyPriorityAging(now, queuedTasks);
 
     // Step 6: Stuck detection + blocked escalation + review reminders
     healthMonitor.checkStuckTasks(now);
@@ -518,10 +517,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     const reviewPendingTasks = taskEngine.getTasksByState(TaskStates.review_pending);
     healthMonitor.checkReviewPendingReminders(now, reviewPendingTasks);
 
-    // Step 7: Check if review-pending PRs have been merged
+    // Step 7+8: Check merges and feedback (shared PR status cache avoids duplicate API calls)
+    reviewHandler.clearTickCache();
     await reviewHandler.checkMerges(reviewPendingTasks);
-
-    // Step 8: Check for PR review feedback on review-pending tasks
     await reviewHandler.checkFeedback(reviewPendingTasks);
 
     // Step 9: Cleanup expired seen keys
@@ -603,6 +601,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       clearInterval(tickInterval);
       tickInterval = null;
     }
+
+    // Flush pending cost tracker snapshot before shutdown
+    ctx.safetyLayer.flushCostSnapshot();
 
     // Stop data lifecycle manager
     dataLifecycleManager?.stop();

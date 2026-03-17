@@ -184,6 +184,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // 11. Register event topology subscriptions
     eventTopology.registerSubscriber("orchestrator", "preemption.requested");
     eventTopology.registerSubscriber("safety_layer", "cost.incurred");
+    eventTopology.registerSubscriber("safety_layer:cleanup", "task.state_changed");
     eventTopology.registerSubscriber("daemon:cost", "cost.limit_reached");
     eventTopology.registerSubscriber("daemon:comm", "comm.message_received");
     eventTopology.registerSubscriber("daemon:state-sync", "task.state_changed");
@@ -198,6 +199,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       publishers: publisherIds.size,
       subscribers: subscriberIds.size,
     });
+    observer.debug("Event topology detail", {
+      events: eventDeclarations.map((d) => d.type),
+      publisherList: [...publisherIds],
+      subscriberList: [...subscriberIds],
+    });
 
     // ── Plugin Loading ───────────────────────────────────────────────────────
 
@@ -211,10 +217,17 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");
 
+    const bootstrapElapsedMs = Date.now() - bootstrapStartMs;
     observer.info("Bootstrap complete", {
-      elapsedMs: Date.now() - bootstrapStartMs,
+      elapsedMs: bootstrapElapsedMs,
       dbPath,
       milestones,
+    });
+    // Record bootstrap summary as a lifecycle observation for War Room visibility
+    observer.observe("lifecycle", "bootstrap_complete", {
+      elapsedMs: bootstrapElapsedMs,
+      milestones,
+      dbPath,
     });
 
     return {

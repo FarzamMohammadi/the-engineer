@@ -151,11 +151,13 @@ export async function runInit(engineerHome: string, options: InitOptions): Promi
   if (!hasSeed) {
     out.log("    0. Run `engineer prepare` to create a reusable seed directory");
   }
-  out.log(`    1. Browse examples:    ls ${dirs.examples}/`);
-  out.log(`    2. Edit config files:  $EDITOR ${dirs.plugins}/github-trigger.yaml`);
+  out.log("    1. Edit people.yaml:   Add your name, GitHub handle, and Telegram handle");
+  out.log(`    2. Edit plugins:       $EDITOR ${dirs.plugins}/github-trigger.yaml`);
   out.log("    3. Set env variables:  export GITHUB_TOKEN=ghp_...");
   out.log("    4. Validate setup:     engineer doctor");
   out.log("    5. Start:              engineer start");
+  out.blank();
+  out.log(`  Tip: ${dirs.examples}/ has fully documented configs showing every field.`);
 }
 
 function createDirectories(out: Output, dirs: EngineerDirectories): void {

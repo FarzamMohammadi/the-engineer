@@ -5,13 +5,13 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
 # --- Capacity ---
-# max_concurrent: 1                   # Number of concurrent tasks (default: 1)
+# max_concurrent: 1                   # Concurrent tasks (default: 1). Increase only after testing stability.
 
 # --- Tick loop ---
 # tick_interval_ms: "5s"              # Main loop tick interval (default: 5s)
 
 # --- Preemption (swap a running task for a higher-priority one) ---
-# preemption_threshold: 20            # Min priority gap to trigger preemption (e.g. p50 task won't preempt p40)
+# preemption_threshold: 20            # Min priority gap to trigger preemption (p70 preempts p50, but not p55)
 # preemption_timeout_ms: "1m"         # Grace period to checkpoint before forced swap (default: 1m)
 
 # --- Stuck/runaway detection (auto-flag tasks that seem hung) ---
@@ -22,7 +22,7 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # aging_threshold_ms: "1d"            # How long a queued task waits before aging starts (default: 1d)
 # aging_increment: 5                  # Priority points added each aging cycle (higher = sooner scheduled)
 # aging_interval_ms: "1d"             # How often aging bumps priority (default: 1d)
-# aging_cap: 75                       # Max priority reachable via aging, 1-100 (default: 75)
+# aging_cap: 75                       # Max priority via aging, 1-100 (leaves 76-100 for urgent tasks)
 
 # --- Shutdown ---
 # shutdown_timeout_ms: "30s"          # Time to drain active tasks on shutdown (default: 30s)
@@ -34,7 +34,7 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # --- Logging ---
 # logging:
 #   level: info                       # trace | debug | info | warn | error | fatal
-#   dir: logs                         # Relative to ENGINEER_HOME or absolute
+#   dir: logs                         # Relative to ENGINEER_HOME (~/.engineer/) or absolute
 #   max_size_bytes: 524288000         # 500 MB per file
 #   max_files: 7                      # 7-day retention
 #   console: false                    # Also log to stdout
@@ -143,7 +143,7 @@ cost_limits:
       cost_usd: 25.0                  # Daily USD limit
     monthly:
       cost_usd: 250.0                 # Monthly USD limit
-#   cli: {}                           # Per-CLI-provider limits (keyed by provider name)
+#   cli: {}                           # Per-CLI-provider limits (keyed by plugin ID, e.g. "claude-code-llm")
 
 # --- Scope boundaries ---
 # scope:
@@ -164,7 +164,7 @@ cost_limits:
 
 # --- Autonomy ---
 # autonomy:
-#   decisions: {}                     # Per-decision autonomy levels
+#   decisions: {}                     # Per-category overrides (keys are free-form, e.g. "code_style")
 #   repo_overrides: {}                # Per-repo overrides
 
 # --- Response timeouts ---
@@ -313,13 +313,13 @@ export const EXAMPLE_DAEMON = `# ┌──────────────�
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # ── Capacity ──────────────────────────────────────────────────────────────────
-max_concurrent: 1                         # How many tasks run in parallel (default: 1)
+max_concurrent: 1                         # Concurrent tasks (default: 1). Increase only after testing stability.
 
 # ── Tick Loop ─────────────────────────────────────────────────────────────────
 tick_interval_ms: "5s"                    # Main loop interval (default: 5s)
 
 # ── Preemption ────────────────────────────────────────────────────────────────
-preemption_threshold: 20                  # Priority gap to trigger preemption (default: 20)
+preemption_threshold: 20                  # Min priority gap to preempt (p70 preempts p50, but not p55)
 preemption_timeout_ms: "1m"               # Time to checkpoint before forced swap (default: 1m)
 
 # ── Stuck/Runaway Detection ──────────────────────────────────────────────────
@@ -330,7 +330,7 @@ max_active_duration_ms: "8h"              # Kill task after this duration (defau
 aging_threshold_ms: "1d"                  # Wait before aging starts (default: 1d)
 aging_increment: 5                        # Priority bump per aging cycle (default: 5)
 aging_interval_ms: "1d"                   # Aging cycle length (default: 1d)
-aging_cap: 75                             # Max priority after aging, 1-100 (default: 75)
+aging_cap: 75                             # Max priority via aging, 1-100 (leaves 76-100 for urgent tasks)
 
 # ── Shutdown ──────────────────────────────────────────────────────────────────
 shutdown_timeout_ms: "30s"                # Drain timeout on SIGTERM (default: 30s)
@@ -342,7 +342,7 @@ seen_keys_ttl_ms: "1d"                    # Dedup key TTL (default: 1d)
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging:
   level: info                             # trace | debug | info | warn | error | fatal (default: info)
-  dir: logs                               # Relative to ENGINEER_HOME or absolute (default: logs)
+  dir: logs                               # Relative to ENGINEER_HOME (~/.engineer/) or absolute (default: logs)
   max_size_bytes: 524288000               # Max log file size — 500 MB (default: 524288000)
   max_files: 7                            # Rolling file count — 7 days (default: 7)
   console: false                          # Also log to stdout (default: false)
@@ -438,7 +438,7 @@ cost_limits:
     monthly:
       cost_usd: 250.0                     # Monthly USD limit (default: null)
       auto_resume_on_reset: false
-  cli: {}                                 # Per-CLI-provider limits, keyed by provider name
+  cli: {}                                 # Per-CLI-provider limits, keyed by plugin ID (e.g. "claude-code-llm")
 
 # ── Scope Boundaries ────────────────────────────────────────────────────────
 scope:
@@ -460,10 +460,10 @@ scope:
     allowed_domains: null                 # Allowed external domains, null = all (default: null)
 
 # ── Autonomy ─────────────────────────────────────────────────────────────────
-# Per-decision autonomy levels. Keys are decision type names.
+# Per-category autonomy levels. Keys are free-form names (e.g. "code_style", "architecture").
 # Each decision can be: always_ask | threshold | always_decide
 autonomy:
-  decisions: {}                           # Per-decision overrides (default: {})
+  decisions: {}                           # Per-category overrides; unknown keys default to always_ask
   repo_overrides: {}                      # Per-repo autonomy overrides (default: {})
 
 # ── Response Timeouts ────────────────────────────────────────────────────────

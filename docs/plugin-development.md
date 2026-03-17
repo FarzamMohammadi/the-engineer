@@ -27,7 +27,10 @@ type: trigger                   # One of: trigger, communication, llm, tool, git
 version: "1.0.0"               # SemVer version
 name: My Custom Trigger         # Human-readable name
 description: Polls a custom source for new tasks
-critical: true                  # If true, daemon won't start if this plugin fails
+critical: true                  # IMPORTANT: If true, the daemon WILL NOT START if this
+                                # plugin fails to initialize. Use for essential plugins
+                                # (e.g., your only LLM provider). Non-critical plugins
+                                # degrade gracefully — the daemon starts but logs a warning.
 enabled: true                   # Can be disabled without removing
 entry: index.ts                 # Relative path to module exporting createPlugin()
 
@@ -183,6 +186,10 @@ export class MyTriggerPlugin extends TriggerAdapter {
 }
 ```
 
+### Why `do*` methods?
+
+The adapter base classes use the Template Method pattern. Public methods like `initialize()`, `shutdown()`, and `healthCheck()` are defined on the base class — they handle lifecycle bookkeeping (state transitions, error wrapping, timing, structured logging). Your plugin overrides the `do*` variants (`doInitialize()`, `doShutdown()`, `doHealthCheck()`) which contain only your business logic. Never override the public methods directly.
+
 ## Testing Your Plugin
 
 Use the contract compliance suites in `test/helpers/contract-suites/` to validate your plugin implements the adapter contract correctly:
@@ -313,6 +320,30 @@ healthy ──(1 failed check)──> unhealthy ──(3 consecutive failures)�
 Health checks run every 60 seconds with a 5-second timeout per check.
 
 During shutdown, plugins receive `shutdown()` in reverse initialization order. The `doShutdown()` method should clean up resources but must never throw — errors are logged and swallowed.
+
+## External Plugin Discovery
+
+Built-in plugins live in `src/plugins/`. External plugins are discovered from directories listed in `daemon.yaml`:
+
+```yaml
+plugins:
+  dirs:
+    - ~/.engineer/plugins
+    - /opt/engineer-plugins
+```
+
+Each directory is scanned for subdirectories containing an `engineer.plugin.yaml` manifest. The directory structure should mirror built-in plugins:
+
+```
+~/.engineer/plugins/
+  my-slack-comm/
+    engineer.plugin.yaml
+    index.ts
+    my-slack-comm.ts
+    config.ts
+```
+
+You can also scaffold a new plugin instantly with `engineer create-plugin <name> <type> <output-dir>`, which generates all required files with TODOs marking what to implement.
 
 ## Best Practices
 

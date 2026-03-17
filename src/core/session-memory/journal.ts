@@ -17,11 +17,15 @@ import { type JournalEntryRow, rowToJournalEntry } from "./row-mappers.js";
  */
 export class JournalStore {
   private readonly insertJournalStmt: Database.Statement;
+  private readonly latestTimestampStmt: Database.Statement;
 
   private readonly db: Database.Database;
 
   constructor(db: Database.Database) {
     this.db = db;
+    this.latestTimestampStmt = db.prepare(
+      "SELECT MAX(timestamp) as latest FROM journal_entries WHERE task_id = ?",
+    );
     this.insertJournalStmt = db.prepare(`
       INSERT INTO journal_entries (
         id, session_id, task_id, timestamp, phase, type,
@@ -112,5 +116,11 @@ export class JournalStore {
     const sql = `SELECT * FROM journal_entries WHERE ${conditions.join(" AND ")} ORDER BY timestamp ASC`;
     const rows = this.db.prepare(sql).all(...params) as JournalEntryRow[];
     return rows.map(rowToJournalEntry);
+  }
+
+  /** Get the latest journal entry timestamp for a task (single MAX query). */
+  getLatestJournalTimestamp(taskId: string): string | null {
+    const row = this.latestTimestampStmt.get(taskId) as { latest: string | null } | undefined;
+    return row?.latest ?? null;
   }
 }

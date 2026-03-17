@@ -53,12 +53,11 @@ export function createDaemonHealthMonitor(
     }
 
     const activeElapsed = now - Date.parse(task.started_at);
-    const entries =
-      activeElapsed > config.stuck_threshold_ms ? sessionMemory.queryJournal(taskId) : [];
-    const latestTimestamp =
-      entries.length > 0
-        ? entries.map((e) => Date.parse(e.timestamp)).reduce((a, b) => Math.max(a, b), 0)
+    const latestTimestampStr =
+      activeElapsed > config.stuck_threshold_ms
+        ? sessionMemory.getLatestJournalTimestamp(taskId)
         : null;
+    const latestTimestamp = latestTimestampStr ? Date.parse(latestTimestampStr) : null;
 
     const result = evaluateTaskStuckness(
       activeElapsed,

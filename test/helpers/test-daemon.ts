@@ -68,6 +68,7 @@ export interface TestDaemonHandle {
     getLatestCheckpoint: Mock;
     getKnowledge: Mock;
     queryJournal: Mock;
+    getLatestJournalTimestamp: Mock;
     createSession: Mock;
     endSession: Mock;
     addJournalEntry: Mock;
@@ -84,6 +85,7 @@ export interface TestDaemonHandle {
     getCostStatus: Mock;
     updateConfig: Mock;
     checkAutoMergeAllowed: Mock;
+    flushCostSnapshot: Mock;
   };
   actionPipeline: {
     execute: Mock;
@@ -238,6 +240,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     getLatestCheckpoint: vi.fn().mockReturnValue(null),
     getKnowledge: vi.fn().mockReturnValue([]),
     queryJournal: vi.fn().mockReturnValue([]),
+    getLatestJournalTimestamp: vi.fn().mockReturnValue(null),
     createSession: vi.fn(),
     endSession: vi.fn(),
     addJournalEntry: vi.fn(),
@@ -288,6 +291,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     getCostStatus: vi.fn().mockReturnValue({}),
     updateConfig: vi.fn(),
     checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
+    flushCostSnapshot: vi.fn(),
   };
 
   // ── ActionPipeline mock ───────────────────────────────────────────────

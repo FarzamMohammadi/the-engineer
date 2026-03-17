@@ -221,6 +221,7 @@ export interface TestOrchestratorHandle {
     evaluateAction: Mock;
     consultJudgment: Mock;
     checkAutoMergeAllowed: Mock;
+    flushCostSnapshot: Mock;
   };
   actionPipeline: {
     execute: Mock;
@@ -234,6 +235,7 @@ export interface TestOrchestratorHandle {
     storeKnowledge: Mock;
     getKnowledge: Mock;
     queryJournal: Mock;
+    getLatestJournalTimestamp: Mock;
     getSessionChain: Mock;
     supersedeKnowledge: Mock;
     confirmKnowledge: Mock;
@@ -341,6 +343,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     }),
     consultJudgment: vi.fn(),
     checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
+    flushCostSnapshot: vi.fn(),
   };
 
   // ── ActionPipeline mock — passthrough by default ───────────────────────
@@ -408,6 +411,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     storeKnowledge: vi.fn(),
     getKnowledge: vi.fn().mockReturnValue([]),
     queryJournal: vi.fn().mockReturnValue([]),
+    getLatestJournalTimestamp: vi.fn().mockReturnValue(null),
     getSessionChain: vi.fn().mockReturnValue([]),
     supersedeKnowledge: vi.fn(),
     confirmKnowledge: vi.fn(),

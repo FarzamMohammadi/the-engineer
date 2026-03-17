@@ -137,6 +137,12 @@ async function runForeground(
 
     // Log pre-bootstrap steps that ran before the observer existed
     observer.debug("Configuration loaded", { configDir: dirs.config });
+    observer.debug("Config summary", {
+      logLevel: bundle.daemon.logging.level,
+      maxConcurrent: bundle.daemon.max_concurrent,
+      tickIntervalMs: bundle.daemon.tick_interval_ms,
+      autoMergeDefault: bundle.safety.merge.auto_merge_after_approval.default,
+    });
     observer.debug("Pre-flight checks passed", {
       categories: preFlightResults.length,
       totalChecks,
@@ -144,6 +150,7 @@ async function runForeground(
   } catch (error) {
     spinner.fail("Bootstrap failed");
     out.error(`Bootstrap failed: ${sanitizeErrorMessage(error)}`);
+    out.log("  Run 'engineer doctor' to diagnose common issues.");
     return 1;
   }
 
@@ -154,6 +161,7 @@ async function runForeground(
   // receives SIGTERM/SIGINT during bootstrap, cleanup won't run. This is an accepted
   // gap — bootstrap is typically <2s, and the OS reclaims all resources on exit.
   const shutdown = async () => {
+    observer?.info("Shutdown signal received, stopping daemon...");
     try {
       await daemon.stop();
     } finally {
@@ -163,13 +171,14 @@ async function runForeground(
         cleanup();
       }
     }
+    observer?.info("Shutdown complete");
     process.exit(0);
   };
 
   const handleShutdownSignal = () => {
     shutdown().catch((err) => {
       try {
-        observer?.error("Shutdown failed", { err: sanitizeErrorMessage(err) });
+        observer?.recordError(err, { operation: "shutdown", component: "cli" });
       } catch {
         // Observer transport may be broken during shutdown — stderr fallback below
       }
@@ -193,7 +202,7 @@ async function runForeground(
     out.blank();
     out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
   } catch (error) {
-    observer.error("Daemon start failed", { err: sanitizeErrorMessage(error) });
+    observer.recordError(error, { operation: "daemon-start", component: "cli" });
     out.error(`Startup failed: ${sanitizeErrorMessage(error)}`);
     try {
       await daemon.stop();

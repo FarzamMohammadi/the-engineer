@@ -20,12 +20,12 @@ export interface SchedulerCallbacks {
 
 /** Schedules, dispatches, and tracks task execution. */
 export interface TaskScheduler {
-  /** Schedule eligible queued tasks into available slots. */
-  scheduleNext(): void;
+  /** Schedule eligible queued tasks into available slots. Pre-fetched tasks avoid redundant DB query. */
+  scheduleNext(queuedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>): void;
   /** Dispatch a specific task to the Orchestrator. */
   dispatchTask(candidate: ReturnType<ITaskEngine["getQueuedByPriority"]>[number]): void;
-  /** Apply priority aging to queued tasks. */
-  applyPriorityAging(now: number): void;
+  /** Apply priority aging to queued tasks. Pre-fetched tasks avoid redundant DB query. */
+  applyPriorityAging(now: number, queuedTasks?: ReturnType<ITaskEngine["getTasksByState"]>): void;
   /** Get currently active dispatch task IDs. */
   getActiveTaskIds(): string[];
   /** Get count of completed tasks. */
@@ -97,13 +97,13 @@ export function createTaskScheduler(
     return true;
   }
 
-  function scheduleNext(): void {
+  function scheduleNext(prefetchedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>): void {
     const available = getAvailableSlots();
     if (available <= 0) {
       return;
     }
 
-    const queuedTasks = taskEngine.getQueuedByPriority();
+    const queuedTasks = prefetchedTasks ?? taskEngine.getQueuedByPriority();
     const eligible = queuedTasks.filter(isTaskEligible);
 
     const toSchedule = eligible.slice(0, available);
@@ -306,8 +306,11 @@ export function createTaskScheduler(
 
   // ── Priority Aging ──────────────────────────────────────────────────────
 
-  function applyPriorityAging(now: number): void {
-    const queuedTasks = taskEngine.getTasksByState(TaskStates.queued);
+  function applyPriorityAging(
+    now: number,
+    prefetchedTasks?: ReturnType<ITaskEngine["getTasksByState"]>,
+  ): void {
+    const queuedTasks = prefetchedTasks ?? taskEngine.getTasksByState(TaskStates.queued);
     for (const task of queuedTasks) {
       const base = basePriorities.get(task.id) ?? task.priority;
       const elapsed = now - Date.parse(task.created_at);

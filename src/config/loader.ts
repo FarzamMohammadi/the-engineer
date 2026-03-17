@@ -74,6 +74,11 @@ function formatZodIssue(issue: z.ZodIssue): string {
     msg += ' (accepts duration strings like "30s", "5m", "8h", "1d")';
   }
 
+  // For deeply nested paths, hint at the top-level section to check
+  if (issue.path.length > 2) {
+    msg += ` (in the "${String(issue.path[0])}" section)`;
+  }
+
   return msg;
 }
 

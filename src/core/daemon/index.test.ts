@@ -329,7 +329,7 @@ describe("Daemon", () => {
         priority: 50,
         created_at: new Date(handle.clock.now()).toISOString(),
       });
-      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
       await handle.daemon.tick();
 
@@ -350,7 +350,7 @@ describe("Daemon", () => {
         priority: 50,
         created_at: new Date(handle.clock.now()).toISOString(),
       });
-      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
       handle.clock.advance(86_400_001); // Just past 24h
       await handle.daemon.tick();
@@ -372,7 +372,7 @@ describe("Daemon", () => {
         priority: 50,
         created_at: new Date(handle.clock.now()).toISOString(),
       });
-      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
       handle.clock.advance(864_000_000); // 10 days — would be 50 + 50 = 100, but capped at 75
       await handle.daemon.tick();

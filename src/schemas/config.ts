@@ -47,24 +47,58 @@ export type DatabaseTuningConfig = z.infer<typeof DatabaseTuningConfigSchema>;
 
 export const DaemonConfigSchema = z.object({
   // Capacity (concurrency-ready: default 1 = single-core era)
-  max_concurrent: z.number().int().positive().default(1),
+  max_concurrent: z
+    .number()
+    .int()
+    .positive()
+    .default(1)
+    .describe(
+      "Number of tasks the daemon runs in parallel. Start with 1; increase after testing stability.",
+    ),
 
   // Tick loop
   tick_interval_ms: z.number().int().positive().default(5_000),
 
   // Preemption
-  preemption_threshold: z.number().int().positive().default(20),
+  preemption_threshold: z
+    .number()
+    .int()
+    .positive()
+    .default(20)
+    .describe(
+      "Minimum priority gap to trigger preemption. A p70 task preempts a p50 task (gap=20), but not a p55 task (gap=15).",
+    ),
   preemption_timeout_ms: z.number().int().positive().default(60_000),
 
   // Stuck/runaway detection
-  stuck_threshold_ms: z.number().int().positive().default(1_800_000),
-  max_active_duration_ms: z.number().int().positive().default(28_800_000),
+  stuck_threshold_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(1_800_000)
+    .describe(
+      "Duration of no progress after which a task is flagged as stuck. Default: 30 minutes.",
+    ),
+  max_active_duration_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(28_800_000)
+    .describe("Hard cap on total wall-clock time a task can remain active. Default: 8 hours."),
 
   // Priority aging (starvation prevention)
   aging_threshold_ms: z.number().int().positive().default(86_400_000),
   aging_increment: z.number().int().positive().default(5),
   aging_interval_ms: z.number().int().positive().default(86_400_000),
-  aging_cap: z.number().int().min(1).max(100).default(75),
+  aging_cap: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(75)
+    .describe(
+      "Maximum priority reachable via aging (1-100). Leaves 76-100 for manually urgent tasks.",
+    ),
 
   // Shutdown
   shutdown_timeout_ms: z.number().int().positive().default(30_000),
@@ -77,7 +111,12 @@ export const DaemonConfigSchema = z.object({
   logging: z
     .object({
       level: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
-      dir: z.string().default("logs"),
+      dir: z
+        .string()
+        .default("logs")
+        .describe(
+          "Log directory. Relative paths resolve against ENGINEER_HOME (~/.engineer/). Absolute paths used as-is.",
+        ),
       max_size_bytes: z.number().int().positive().default(524_288_000),
       max_files: z.number().int().positive().default(7),
       console: z.boolean().default(false),
@@ -101,8 +140,12 @@ export const DaemonConfigSchema = z.object({
   database: DatabaseTuningConfigSchema.default({}),
 
   // EventBus subscriber slow-callback warning threshold in ms (R10)
-  // 0 = disabled. When > 0, logs a warning if any subscriber callback exceeds this duration.
-  subscriber_warn_threshold_ms: z.number().int().min(0).default(50),
+  subscriber_warn_threshold_ms: z
+    .number()
+    .int()
+    .min(0)
+    .default(50)
+    .describe("Warn if an EventBus subscriber callback exceeds this duration (ms). 0 = disabled."),
 });
 export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 
@@ -121,7 +164,10 @@ export const QuietHoursConfigSchema = z.object({
   enabled: z.boolean().default(false),
   start: z.string().default("22:00"),
   end: z.string().default("08:00"),
-  timezone: z.string().default("UTC"),
+  timezone: z
+    .string()
+    .default("UTC")
+    .describe("IANA timezone identifier (e.g. 'America/New_York', 'Europe/London', 'UTC')."),
   allow_alerts: z.boolean().default(true),
 });
 export type QuietHoursConfig = z.infer<typeof QuietHoursConfigSchema>;
@@ -204,7 +250,12 @@ export const CleanupConfigSchema = z.object({
 export type CleanupConfig = z.infer<typeof CleanupConfigSchema>;
 
 export const MultiRepoConfigSchema = z.object({
-  enabled: z.boolean().default(true),
+  enabled: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Allow tasks to span multiple repositories. Safe to leave enabled even for single-repo setups.",
+    ),
   max_repos_per_task: z.number().int().positive().default(5),
 });
 export type MultiRepoConfig = z.infer<typeof MultiRepoConfigSchema>;
@@ -251,7 +302,10 @@ export const CostLimitsSchema = z.object({
       monthly: ApiLimitSchema.default({}),
     })
     .default({}),
-  cli: z.record(CliLimitSchema).default({}),
+  cli: z
+    .record(CliLimitSchema)
+    .default({})
+    .describe("Per-CLI-provider cost limits. Keys are plugin IDs (e.g. 'claude-code-llm')."),
 });
 export type CostLimits = z.infer<typeof CostLimitsSchema>;
 
@@ -295,7 +349,12 @@ export const AutonomyDecisionSchema = z.object({
 export type AutonomyDecision = z.infer<typeof AutonomyDecisionSchema>;
 
 export const AutonomyBoundariesSchema = z.object({
-  decisions: z.record(AutonomyDecisionSchema).default({}),
+  decisions: z
+    .record(AutonomyDecisionSchema)
+    .default({})
+    .describe(
+      "Per-category autonomy overrides. Keys are free-form category names (e.g. 'code_style', 'architecture'). Unknown categories default to always_ask.",
+    ),
   repo_overrides: z
     .record(
       z.object({
@@ -306,10 +365,20 @@ export const AutonomyBoundariesSchema = z.object({
 });
 export type AutonomyBoundaries = z.infer<typeof AutonomyBoundariesSchema>;
 
+export const TimeoutStageActionSchema = z.enum([
+  "send_reminder",
+  "evaluate_self_unblock",
+  "escalation_alert",
+]);
+export type TimeoutStageAction = z.infer<typeof TimeoutStageActionSchema>;
+
+/** Constant enum values for TimeoutStageAction. Use instead of raw strings. */
+export const TimeoutStageActions = TimeoutStageActionSchema.enum;
+
 export const TimeoutStageSchema = z.object({
   name: z.string(),
   after_ms: z.number().int().positive(),
-  action: z.string(),
+  action: TimeoutStageActionSchema.describe("Action to take when this timeout stage fires."),
   repeat: z.boolean().nullable().default(null),
   repeat_interval_ms: z.number().int().positive().nullable().default(null),
 });

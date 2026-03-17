@@ -78,6 +78,9 @@ export class SessionMemory implements ISessionMemory {
   queryJournal(taskId: string, filters?: JournalQueryFilters): JournalEntry[] {
     return this.journal.queryJournal(taskId, filters);
   }
+  getLatestJournalTimestamp(taskId: string): string | null {
+    return this.journal.getLatestJournalTimestamp(taskId);
+  }
 
   // ── Checkpoints ────────────────────────────────────────────────────────────
   createCheckpoint(input: CreateCheckpointInput): Checkpoint {

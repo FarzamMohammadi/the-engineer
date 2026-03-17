@@ -5,8 +5,8 @@ import { Separator, checkbox } from "@inquirer/prompts";
 import chalk from "chalk";
 
 import { BUILTIN_PLUGINS, type BuiltinPlugin } from "../../plugins/builtin.js";
-import type { EngineerDirs } from "../home.js";
-import { resolveSubdirs } from "../home.js";
+import type { EngineerDirectories } from "../home.js";
+import { resolveDirectories } from "../home.js";
 import { type Output, getOutput } from "../output.js";
 import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES, type TemplateFile } from "../templates.js";
 
@@ -119,7 +119,7 @@ function writeExamples(out: Output, engineerHome: string): void {
 /** Creates ~/.engineer/ directory structure, prompts for plugin selection, and generates config files. */
 export async function runInit(engineerHome: string, options: InitOptions): Promise<void> {
   const out = getOutput();
-  const dirs = resolveSubdirs(engineerHome);
+  const dirs = resolveDirectories(engineerHome);
   const hasSeed = existsSync(options.seedDir);
 
   createDirectories(out, dirs);
@@ -158,7 +158,7 @@ export async function runInit(engineerHome: string, options: InitOptions): Promi
   out.log("    5. Start:              engineer start");
 }
 
-function createDirectories(out: Output, dirs: EngineerDirs): void {
+function createDirectories(out: Output, dirs: EngineerDirectories): void {
   const dirPaths = [
     dirs.config,
     dirs.plugins,

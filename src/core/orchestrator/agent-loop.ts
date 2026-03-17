@@ -6,7 +6,7 @@ import {
   type PhaseToolConfig,
 } from "../../schemas/orchestrator.js";
 import { sanitizeSecrets } from "../../utils/sanitize.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────────
 

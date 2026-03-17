@@ -32,7 +32,7 @@ export interface CoreComponents {
 }
 
 /** Return type of createCoreComponents — components + wiring infrastructure. */
-export interface CoreSystemSetup {
+export interface CoreComponentGraph {
   components: CoreComponents;
   topology: EventTopology;
 }
@@ -42,7 +42,7 @@ export interface CreateCoreInput {
   safetyConfig: SafetyConfig;
   workspaceConfig: WorkspaceConfig;
   /** Observer facade for structured logging. */
-  observer: import("./observer/facade.js").IObserver;
+  observer: import("./observer/index.js").IObserver;
   /** EventBus subscriber slow-callback warning threshold (ms). 0 = disabled. */
   subscriberWarnThresholdMs?: number;
 }
@@ -52,17 +52,17 @@ export interface CreateCoreInput {
  * Does NOT create Registry, Orchestrator, Daemon, or PeopleDirectory —
  * those have additional dependencies (config, logger, etc.).
  */
-export function createCoreComponents(input: CreateCoreInput): CoreSystemSetup {
+export function createCoreComponents(input: CreateCoreInput): CoreComponentGraph {
   // Build event topology from core component declarations
-  const topology = new EventTopology();
-  topology.registerPublisher("task-engine", TASK_ENGINE_EVENTS);
-  topology.registerPublisher("action-pipeline", ACTION_PIPELINE_EVENTS);
-  topology.registerPublisher("safety-layer", SAFETY_LAYER_EVENTS);
-  topology.registerPublisher("workspace-manager", WORKSPACE_MANAGER_EVENTS);
+  const eventTopology = new EventTopology();
+  eventTopology.registerPublisher("task-engine", TASK_ENGINE_EVENTS);
+  eventTopology.registerPublisher("action-pipeline", ACTION_PIPELINE_EVENTS);
+  eventTopology.registerPublisher("safety-layer", SAFETY_LAYER_EVENTS);
+  eventTopology.registerPublisher("workspace-manager", WORKSPACE_MANAGER_EVENTS);
 
   const eventBusOptions: EventBusOptions = {
     observer: input.observer.child("event-bus"),
-    topology,
+    topology: eventTopology,
   };
   if (input.subscriberWarnThresholdMs !== undefined) {
     eventBusOptions.subscriberWarnThresholdMs = input.subscriberWarnThresholdMs;
@@ -88,6 +88,6 @@ export function createCoreComponents(input: CreateCoreInput): CoreSystemSetup {
       sessionMemory,
       workspaceManager,
     },
-    topology,
+    topology: eventTopology,
   };
 }

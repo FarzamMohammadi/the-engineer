@@ -5,8 +5,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { BlobStore } from "../../src/core/observer/blob-store.js";
-import { type ObservationStore, createObservationStore } from "../../src/core/observer/index.js";
+import {
+  BlobStore,
+  type ObservationStore,
+  createObservationStore,
+} from "../../src/core/observer/index.js";
 import { createInMemoryDatabase } from "../../src/db/database.js";
 import type { DatabaseHandle } from "../../src/db/database.js";
 

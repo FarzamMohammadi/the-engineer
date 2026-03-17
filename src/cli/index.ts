@@ -18,7 +18,7 @@ import { runShutdown } from "./commands/shutdown.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
 import { runWhy } from "./commands/why.js";
-import { resolveEngineerHome, resolveSubdirs } from "./home.js";
+import { resolveDirectories, resolveEngineerHome } from "./home.js";
 import { type OutputMode, createOutput, getOutput } from "./output.js";
 
 export const VERSION = "0.0.1";
@@ -165,7 +165,7 @@ program
   .action(() => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
-    const dirs = resolveSubdirs(home);
+    const dirs = resolveDirectories(home);
     const out = getOutput();
 
     // Try to load config for risky config checks (category 11)
@@ -215,7 +215,7 @@ program
   .action(async (options: { port: string; open?: boolean }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
-    const dirs = resolveSubdirs(home);
+    const dirs = resolveDirectories(home);
     await runDashboard(dirs, {
       port: Number.parseInt(options.port, 10),
       open: options.open ?? false,

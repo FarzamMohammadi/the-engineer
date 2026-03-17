@@ -1,4 +1,4 @@
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 
 // ── Hook Points ───────────────────────────────────────────────────────────────
 

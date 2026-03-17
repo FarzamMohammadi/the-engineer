@@ -3,11 +3,10 @@ import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { discoverEnabledPlugins } from "../../plugins/loader.js";
-import { extractErrorMessage } from "../../utils/errors.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 
 import { type BootstrapResult, type ProgressCallback, bootstrap } from "../bootstrap.js";
-import { type EngineerDirs, resolveSubdirs } from "../home.js";
+import { type EngineerDirectories, resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 import { Spinner } from "../progress.js";
 import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "./doctor.js";
@@ -21,12 +20,12 @@ interface StartOptions {
 }
 
 /** Create all required directories. Throws on failure. */
-function ensureDirectories(dirs: EngineerDirs): void {
+function ensureDirectories(dirs: EngineerDirectories): void {
   for (const dirPath of Object.values(dirs)) {
     try {
       mkdirSync(dirPath, { recursive: true, mode: 0o700 });
     } catch (error) {
-      const message = extractErrorMessage(error);
+      const message = sanitizeErrorMessage(error);
       throw new Error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`);
     }
   }
@@ -37,11 +36,11 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   const out = getOutput();
 
   // 1. Auto-create directories
-  const dirs = resolveSubdirs(engineerHome);
+  const dirs = resolveDirectories(engineerHome);
   try {
     ensureDirectories(dirs);
   } catch (error) {
-    out.error(extractErrorMessage(error));
+    out.error(sanitizeErrorMessage(error));
     return 1;
   }
 
@@ -54,7 +53,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
       out.warn(`${warning.file}: ${warning.message}`);
     }
   } catch (error) {
-    out.error(`Config error: ${extractErrorMessage(error)}`);
+    out.error(`Config error: ${sanitizeErrorMessage(error)}`);
     return 1;
   }
 
@@ -63,7 +62,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   try {
     preFlightResults = runPreFlightChecks(engineerHome);
   } catch (error) {
-    out.error(`Pre-flight checks encountered an unexpected error: ${extractErrorMessage(error)}`);
+    out.error(`Pre-flight checks encountered an unexpected error: ${sanitizeErrorMessage(error)}`);
     return 1;
   }
   const preFlightCode = computeExitCode(preFlightResults);
@@ -98,7 +97,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 async function runForeground(
   engineerHome: string,
   bundle: ConfigBundle,
-  dirs: EngineerDirs,
+  dirs: EngineerDirectories,
   preFlightResults: import("./doctor.js").DoctorCategory[],
   verbose: boolean,
 ): Promise<number> {
@@ -144,7 +143,7 @@ async function runForeground(
     });
   } catch (error) {
     spinner.fail("Bootstrap failed");
-    out.error(`Bootstrap failed: ${extractErrorMessage(error)}`);
+    out.error(`Bootstrap failed: ${sanitizeErrorMessage(error)}`);
     return 1;
   }
 
@@ -167,28 +166,19 @@ async function runForeground(
     process.exit(0);
   };
 
-  process.on("SIGTERM", () => {
+  const handleShutdownSignal = () => {
     shutdown().catch((err) => {
       try {
         observer?.error("Shutdown failed", { err: sanitizeErrorMessage(err) });
       } catch {
         // Observer transport may be broken during shutdown — stderr fallback below
       }
-      process.stderr.write(`Shutdown failed: ${extractErrorMessage(err)}\n`);
+      process.stderr.write(`Shutdown failed: ${sanitizeErrorMessage(err)}\n`);
       process.exit(1);
     });
-  });
-  process.on("SIGINT", () => {
-    shutdown().catch((err) => {
-      try {
-        observer?.error("Shutdown failed", { err: sanitizeErrorMessage(err) });
-      } catch {
-        // Observer transport may be broken during shutdown — stderr fallback below
-      }
-      process.stderr.write(`Shutdown failed: ${extractErrorMessage(err)}\n`);
-      process.exit(1);
-    });
-  });
+  };
+  process.on("SIGTERM", handleShutdownSignal);
+  process.on("SIGINT", handleShutdownSignal);
 
   try {
     // INVARIANT: Events published between bootstrap() return and daemon.start()
@@ -204,12 +194,12 @@ async function runForeground(
     out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
   } catch (error) {
     observer.error("Daemon start failed", { err: sanitizeErrorMessage(error) });
-    out.error(`Startup failed: ${extractErrorMessage(error)}`);
+    out.error(`Startup failed: ${sanitizeErrorMessage(error)}`);
     try {
       await daemon.stop();
     } catch (stopError) {
       process.stderr.write(
-        `Warning: cleanup failed during startup error: ${extractErrorMessage(stopError)}\n`,
+        `Warning: cleanup failed during startup error: ${sanitizeErrorMessage(stopError)}\n`,
       );
     }
     cleanupDashboard();
@@ -224,7 +214,7 @@ async function runForeground(
 
 function runDryRun(
   _engineerHome: string,
-  dirs: EngineerDirs,
+  dirs: EngineerDirectories,
   preFlightResults: import("./doctor.js").DoctorCategory[],
 ): number {
   const out = getOutput();

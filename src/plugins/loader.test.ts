@@ -21,11 +21,14 @@ vi.mock("./builtin.js", () => ({
 }));
 
 import { BUILTIN_PLUGINS } from "./builtin.js";
-import { loadBuiltinPlugins } from "./loader.js";
+import { discoverEnabledPlugins, loadBuiltinPlugins } from "./loader.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const CRITICAL_REGISTRATION_ERROR = /Critical plugin "critical-trigger" failed to register/;
+const CRITICAL_CREATE_ERROR = /Critical plugin "broken-trigger" failed to create/;
+const CRITICAL_CONFIG_ERROR = /Failed to load config for critical plugin/;
+const PLUGIN_DIR_UNREADABLE = /Cannot read plugin config directory/;
 
 function makeManifest(overrides: Partial<PluginManifest>): PluginManifest {
   return PluginManifestSchema.parse({
@@ -129,6 +132,73 @@ describe("loadBuiltinPlugins", () => {
     expect(pluginInfo).not.toBeNull();
   });
 
+  it("throws with cause when critical plugin create() fails", async () => {
+    const manifest = makeManifest({ id: "broken-trigger", critical: true });
+    const originalError = new Error("Constructor exploded");
+    const plugin: BuiltinPlugin = {
+      manifest,
+      create: () => {
+        throw originalError;
+      },
+    };
+    setTestPlugins([plugin]);
+    writeFileSync(join(tmpDir, "broken-trigger.yaml"), "enabled: true");
+
+    await expect(loadBuiltinPlugins(registry, tmpDir, observer)).rejects.toThrow(
+      CRITICAL_CREATE_ERROR,
+    );
+
+    try {
+      await loadBuiltinPlugins(registry, tmpDir, observer);
+    } catch (error) {
+      expect((error as Error).cause).toBe(originalError);
+    }
+  });
+
+  it("continues when non-critical plugin create() fails", async () => {
+    const brokenManifest = makeManifest({ id: "broken-trigger", critical: false });
+    const goodManifest = makeManifest({ id: "good-trigger", critical: false });
+    setTestPlugins([
+      {
+        manifest: brokenManifest,
+        create: () => {
+          throw new Error("Constructor exploded");
+        },
+      },
+      {
+        manifest: goodManifest,
+        create: () => new FakeTriggerPlugin(),
+      },
+    ]);
+    writeFileSync(join(tmpDir, "broken-trigger.yaml"), "enabled: true");
+    writeFileSync(join(tmpDir, "good-trigger.yaml"), "enabled: true");
+
+    await loadBuiltinPlugins(registry, tmpDir, observer);
+
+    // Broken plugin skipped, good plugin loaded
+    expect(registry.getPlugin("trigger", "broken-trigger")).toBeNull();
+    expect(registry.getPlugin("trigger", "good-trigger")).not.toBeNull();
+  });
+
+  it("preserves cause chain when critical plugin config loading fails", async () => {
+    const manifest = makeManifest({ id: "bad-config", critical: true });
+    const plugin: BuiltinPlugin = {
+      manifest,
+      create: () => new FakeTriggerPlugin(),
+    };
+    setTestPlugins([plugin]);
+    writeFileSync(join(tmpDir, "bad-config.yaml"), ":\ninvalid: [");
+
+    try {
+      await loadBuiltinPlugins(registry, tmpDir, observer);
+      expect.unreachable("Should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(CRITICAL_CONFIG_ERROR);
+      expect((error as Error).cause).toBeDefined();
+    }
+  });
+
   it("skips plugins without config files", async () => {
     const manifest = makeManifest({ id: "no-config", critical: false });
     const plugin: BuiltinPlugin = {
@@ -142,5 +212,20 @@ describe("loadBuiltinPlugins", () => {
 
     const pluginInfo = registry.getPlugin("trigger", "no-config");
     expect(pluginInfo).toBeNull();
+  });
+});
+
+describe("discoverEnabledPlugins", () => {
+  it("returns empty array for non-existent directory", () => {
+    const result = discoverEnabledPlugins("/nonexistent/path");
+    expect(result).toEqual([]);
+  });
+
+  it("throws descriptive error when directory is unreadable", () => {
+    // On macOS/Linux, /proc or a restricted directory will throw EACCES
+    // Use a path that exists but cannot be read as a directory
+    const filePath = join(mkdtempSync(join(tmpdir(), "discover-test-")), "not-a-dir");
+    writeFileSync(filePath, "content");
+    expect(() => discoverEnabledPlugins(filePath)).toThrow(PLUGIN_DIR_UNREADABLE);
   });
 });

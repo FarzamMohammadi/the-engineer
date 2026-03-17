@@ -9,7 +9,7 @@ import {
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import type { Event } from "../../schemas/events.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import { type HealthMonitor, type HealthMonitorDeps, createHealthMonitor } from "./health.js";
 import type { PluginRecord } from "./lifecycle.js";
 

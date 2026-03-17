@@ -38,3 +38,4 @@ export type {
   WorkspaceVerification,
 } from "./workspace-manager.interface.js";
 export type { IPluginLookup } from "./plugin-lookup.interface.js";
+export type { IPeopleDirectory } from "./people-directory.interface.js";

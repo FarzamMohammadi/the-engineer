@@ -607,6 +607,39 @@ describe("EventBus", () => {
       expect(row).toBeDefined();
     });
 
+    it("sanitizes subscriber error messages before logging", () => {
+      const handle = createInMemoryDatabase();
+      db = handle.db;
+      const observer = createTestObserverFacade("event-bus");
+      const errorSpy = vi.spyOn(observer, "error");
+      bus = new EventBus(db, { observer });
+
+      const fakeToken = "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+      bus.subscribe("leaky-sub", "task.created", () => {
+        throw new Error(`Auth failed for https://git:${fakeToken}@github.com`);
+      });
+
+      bus.publish({
+        type: "task.created",
+        source: "test",
+        task_id: null,
+        payload: {
+          task_id: "t",
+          parent_id: null,
+          title: "t",
+          external_ref: null,
+          source: "manual",
+          priority: 50,
+          repo: "r",
+        },
+      });
+
+      expect(errorSpy).toHaveBeenCalledOnce();
+      const loggedErr = errorSpy.mock.calls[0]?.[1]?.["err"] as string;
+      expect(loggedErr).not.toContain(fakeToken);
+      expect(loggedErr).toContain("https://git:***@");
+    });
+
     it("propagates DB INSERT failure (system halt)", () => {
       setup();
       // Close the DB to force an error

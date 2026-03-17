@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { confirm, input, select } from "@inquirer/prompts";
 import { stringify as yamlStringify } from "yaml";
 
-import { resolveSubdirs } from "../home.js";
+import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 
 const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
@@ -192,7 +192,7 @@ export async function runSetup(engineerHome: string): Promise<number> {
 
 async function generateConfigs(answers: SetupAnswers): Promise<string[]> {
   const _out = getOutput();
-  const dirs = resolveSubdirs(answers.home);
+  const dirs = resolveDirectories(answers.home);
   const created: string[] = [];
 
   // Ensure directories exist

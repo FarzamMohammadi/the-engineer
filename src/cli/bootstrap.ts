@@ -4,15 +4,18 @@ import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
 import { createDataLifecycleManager } from "../core/data-lifecycle/index.js";
 import { HookRegistry } from "../core/hooks/index.js";
-import { BlobStore } from "../core/observer/blob-store.js";
-import { type IObserver, createObserverFacade } from "../core/observer/facade.js";
-import { createObservationStore } from "../core/observer/index.js";
-import { createLogger } from "../core/observer/logging.js";
+import {
+  BlobStore,
+  type IObserver,
+  createLogger,
+  createObservationStore,
+  createObserverFacade,
+} from "../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
 import { createCoreComponents } from "../core/system.js";
-import { type DatabaseHandle, createDatabase } from "../db/database.js";
+import { type DatabaseHandle, createDatabase } from "../db/index.js";
 import { loadBuiltinPlugins } from "../plugins/loader.js";
 import { RealClock } from "../utils/clock.js";
 import { sanitizeErrorMessage } from "../utils/sanitize.js";
@@ -58,6 +61,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   }
   const loggerHandle = createLogger(loggingConfig, engineerHome);
   const logger = loggerHandle.logger;
+  // Safe outside try: createObserverFacade is a pure constructor (no I/O, cannot throw).
   const observer = createObserverFacade(logger, "cli");
   const bootstrapStartMs = Date.now();
   const milestones: Record<string, number> = {};
@@ -93,7 +97,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
         sessionMemory,
         workspaceManager,
       },
-      topology,
+      topology: eventTopology,
     } = createCoreComponents({
       db: dbHandle.db,
       observer,
@@ -110,7 +114,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     const hookRegistry = new HookRegistry(observer.child("hooks"));
 
     // 5. Registry (needs eventBus + health config + hook registry)
-    topology.registerPublisher("registry", REGISTRY_EVENTS);
+    eventTopology.registerPublisher("registry", REGISTRY_EVENTS);
     registry = new Registry({
       eventBus,
       observer: observer.child("registry"),
@@ -132,7 +136,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     const peopleDirectory = new PeopleDirectory({ people: config.people });
 
     // 8. Orchestrator
-    topology.registerPublisher("orchestrator", ORCHESTRATOR_EVENTS);
+    eventTopology.registerPublisher("orchestrator", ORCHESTRATOR_EVENTS);
     const orchestrator = new Orchestrator({
       eventBus,
       registry,
@@ -156,7 +160,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     });
 
     // 10. Daemon
-    topology.registerPublisher("daemon", DAEMON_EVENTS);
+    eventTopology.registerPublisher("daemon", DAEMON_EVENTS);
     const daemon = createDaemon({
       config: config.daemon,
       eventBus,
@@ -178,19 +182,19 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // ── Event Topology: Subscribers ──────────────────────────────────────────
 
     // 11. Register event topology subscriptions
-    topology.registerSubscriber("orchestrator", "preemption.requested");
-    topology.registerSubscriber("safety_layer", "cost.incurred");
-    topology.registerSubscriber("daemon:cost", "cost.limit_reached");
-    topology.registerSubscriber("daemon:comm", "comm.message_received");
-    topology.registerSubscriber("daemon:state-sync", "task.state_changed");
-    topology.registerSubscriber("daemon:children-done", "task.children_all_done");
-    topology.registerSubscriber("daemon:feedback", "task.feedback_received");
+    eventTopology.registerSubscriber("orchestrator", "preemption.requested");
+    eventTopology.registerSubscriber("safety_layer", "cost.incurred");
+    eventTopology.registerSubscriber("daemon:cost", "cost.limit_reached");
+    eventTopology.registerSubscriber("daemon:comm", "comm.message_received");
+    eventTopology.registerSubscriber("daemon:state-sync", "task.state_changed");
+    eventTopology.registerSubscriber("daemon:children-done", "task.children_all_done");
+    eventTopology.registerSubscriber("daemon:feedback", "task.feedback_received");
 
-    const declarations = topology.getAllDeclarations();
-    const publisherIds = new Set(declarations.flatMap((d) => d.publishers));
-    const subscriberIds = new Set(declarations.flatMap((d) => d.subscribers));
+    const eventDeclarations = eventTopology.getAllDeclarations();
+    const publisherIds = new Set(eventDeclarations.flatMap((d) => d.publishers));
+    const subscriberIds = new Set(eventDeclarations.flatMap((d) => d.subscribers));
     observer.debug("Event topology registered", {
-      eventTypes: declarations.length,
+      eventTypes: eventDeclarations.length,
       publishers: publisherIds.size,
       subscribers: subscriberIds.size,
     });

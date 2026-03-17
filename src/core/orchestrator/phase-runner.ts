@@ -7,7 +7,7 @@ import {
   SessionEndReasons,
 } from "../../schemas/session-memory.js";
 import type { PublishInput } from "../event-bus/index.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import { PhaseHandlerMissingError } from "./errors.js";
 import type { PrManager } from "./pr-manager.js";

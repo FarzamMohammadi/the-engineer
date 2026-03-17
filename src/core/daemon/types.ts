@@ -3,13 +3,13 @@ import type { Clock } from "../../utils/clock.js";
 import type { DataLifecycleManager } from "../data-lifecycle/index.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import type { Orchestrator } from "../orchestrator/index.js";
-import type { PeopleDirectory } from "../people-directory/index.js";
 import type { Registry } from "../registry/index.js";
 
 // ── Canonical Daemon Context ────────────────────────────────────────────────
@@ -25,7 +25,7 @@ export interface DaemonContext {
   orchestrator: Orchestrator;
   sessionMemory: ISessionMemory;
   workspaceManager: IWorkspaceManager;
-  peopleDirectory: PeopleDirectory;
+  peopleDirectory: IPeopleDirectory;
   clock: Clock;
   observer: IObserver;
   engineerHome: string;

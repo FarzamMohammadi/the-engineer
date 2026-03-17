@@ -131,3 +131,18 @@ Accumulated across all merge rounds. Nothing gets lost.
 ### Lens J (Minimalism & Dead Code)
 - **GitHub-specific code in Core tier** (`trigger-poller.ts` lines ~211-229): `parseGitHubUrl` + `toExternalRef` are GitHub-specific URL parsing that doesn't belong in Core. Per Farzam: "the system should not know of 'github' — GitHub is a plugin and its tooling should be extracted." Proper fix requires the TriggerAdapter contract to provide structured `ExternalRef` data instead of raw URLs. This is a schema/contract change beyond Lens J scope.
 - **`DaemonError` abstract base with single subclass**: All 7 core modules follow this identical pattern (abstract base + concrete subclasses). It's a project convention from the L7 typed errors initiative — not over-abstraction.
+
+## Round 1 — 4
+
+### Lens B (Naming & Readability)
+- `this.ctx` in Observer (facade.ts) — decided to keep as-is (private field, small class, common abbreviation)
+- `source: "safety"` in daemon/index.test.ts:756 — inconsistent with actual `"safety_layer"` source used in cost-tracker.ts, but outside bootstrap phase scope
+
+### Lens D (Error Handling & Edge Cases)
+- **Bootstrap failure doesn't report which step failed** — User sees "Bootstrap failed: [error]" without knowing which bootstrap step (DB, plugins, observability) caused it. The spinner shows the last started step, but the error message doesn't include step context. Low priority — the error message itself usually makes the step obvious.
+- **`createLogger` throws bare `Error` instead of typed error** — Inconsistent with the rest of the codebase (DatabaseError, ConfigError, etc.). Low priority — the error message is descriptive, and bootstrap doesn't need to discriminate logger errors from others.
+- **Signal handlers not registered during bootstrap** — Documented accepted gap (~2s window, OS reclaims resources). No change needed.
+
+### Lens E (Security & Trust Boundaries)
+- **EventBus payload sanitization at publish() level** — Intentionally not added. Would corrupt legitimate data. Documented as publisher responsibility instead. No current publisher includes raw secrets in payloads.
+- **Observer-level auto-sanitization of data payloads** — Rejected as too expensive and prone to false-positive redaction. Kept as caller-responsibility with documented contract.

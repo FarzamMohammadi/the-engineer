@@ -26,7 +26,7 @@ import type {
 
 // Import EventBus class for constructor injection
 import type { EventBus } from "../event-bus/index.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 
 // Internal modules
 import { UnknownFieldError } from "./errors.js";

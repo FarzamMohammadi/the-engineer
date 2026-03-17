@@ -1,11 +1,12 @@
 import type { ContactInfo, Person } from "../../schemas/adapters.js";
 import type { PeopleConfig } from "../../schemas/config.js";
+import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 
 // ── PeopleDirectory ──────────────────────────────────────────────────────────
 // Config-driven contact resolution for notifications and escalation.
 // Pure lookup table — no DB, no EventBus. Hot-reloadable via updateConfig().
 
-export class PeopleDirectory {
+export class PeopleDirectory implements IPeopleDirectory {
   private people: Map<string, Person>;
 
   constructor(config: PeopleConfig) {

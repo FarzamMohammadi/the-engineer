@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolveEngineerHome, resolveSubdirs } from "./home.js";
+import { resolveDirectories, resolveEngineerHome } from "./home.js";
 
 describe("resolveEngineerHome", () => {
   const originalEnv = process.env["ENGINEER_HOME"];
@@ -43,9 +43,9 @@ describe("resolveEngineerHome", () => {
   });
 });
 
-describe("resolveSubdirs", () => {
+describe("resolveDirectories", () => {
   it("returns all standard subdirectory paths", () => {
-    const dirs = resolveSubdirs("/home/user/.engineer");
+    const dirs = resolveDirectories("/home/user/.engineer");
     expect(dirs.config).toBe("/home/user/.engineer/config");
     expect(dirs.plugins).toBe("/home/user/.engineer/config/plugins");
     expect(dirs.data).toBe("/home/user/.engineer/data");
@@ -55,7 +55,7 @@ describe("resolveSubdirs", () => {
   });
 
   it("handles trailing slash in input", () => {
-    const dirs = resolveSubdirs("/tmp/test");
+    const dirs = resolveDirectories("/tmp/test");
     expect(dirs.config).toBe("/tmp/test/config");
   });
 });

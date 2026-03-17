@@ -8,7 +8,7 @@ import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { startDashboard } from "../../dashboard/index.js";
-import type { EngineerDirs } from "../home.js";
+import type { EngineerDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 
 export interface DashboardOptions {
@@ -16,7 +16,10 @@ export interface DashboardOptions {
   open: boolean;
 }
 
-export async function runDashboard(dirs: EngineerDirs, options: DashboardOptions): Promise<void> {
+export async function runDashboard(
+  dirs: EngineerDirectories,
+  options: DashboardOptions,
+): Promise<void> {
   const out = getOutput();
   const dbPath = join(dirs.data, "engineer.db");
 

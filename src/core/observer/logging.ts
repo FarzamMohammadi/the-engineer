@@ -11,7 +11,7 @@ export type ComponentTag =
   | "registry"
   | "orchestrator"
   | "task-engine"
-  | "safety"
+  | "safety-layer"
   | "session-memory"
   | "workspace-manager"
   | "event-bus"
@@ -84,7 +84,17 @@ export function createLogger(config: LoggingConfig, engineerHome: string): Logge
     });
   }
 
-  const transport = pino.transport({ targets });
+  let transport: ReturnType<typeof pino.transport>;
+  try {
+    transport = pino.transport({ targets });
+  } catch (error) {
+    const targetNames = targets.map((t) => t.target).join(", ");
+    throw new Error(
+      `Failed to create log transport (targets: ${targetNames}): ${extractErrorMessage(error)}`,
+      { cause: error },
+    );
+  }
+
   const logger = pino(
     {
       level: config.level,

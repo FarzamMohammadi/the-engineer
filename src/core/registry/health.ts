@@ -2,7 +2,7 @@ import type { PluginHealthRecord, PluginHealthState } from "../../schemas/adapte
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import type { PluginRecord } from "./lifecycle.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────

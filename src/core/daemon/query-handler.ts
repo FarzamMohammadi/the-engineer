@@ -4,7 +4,7 @@ import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import { type TaskState, TaskStates } from "../../schemas/task.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import type { Registry } from "../registry/index.js";
 
 const PROGRESS_RE = /progress.*#(\d+)|#(\d+).*progress/;

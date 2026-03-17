@@ -55,6 +55,10 @@ interface SharedContext {
 /** Unified observability facade. Every component gets one. */
 export interface IObserver {
   // ── Structured Logging (→ pino rolling JSON files) ──────────────────
+  //
+  // SECURITY: These methods do NOT auto-sanitize `data` payloads. Callers MUST
+  // use `sanitizeErrorMessage()` for any error messages or values that could
+  // contain secrets. Only `recordError()` sanitizes automatically.
   info(msg: string, data?: Record<string, unknown>): void;
   warn(msg: string, data?: Record<string, unknown>): void;
   error(msg: string, data?: Record<string, unknown>): void;

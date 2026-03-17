@@ -15,7 +15,7 @@ import type { EventDeclaration } from "../event-bus/topology.js";
 import type { HookRegistry } from "../hooks/index.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import { createHealthMonitor } from "./health.js";
 import { createLifecycleManager } from "./lifecycle.js";
 

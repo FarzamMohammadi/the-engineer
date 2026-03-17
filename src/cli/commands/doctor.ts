@@ -12,7 +12,7 @@ import {
   WorkspaceConfigSchema,
 } from "../../schemas/config.js";
 import { YAML_EXTENSION_PATTERN } from "../constants.js";
-import { resolveSubdirs } from "../home.js";
+import { resolveDirectories } from "../home.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ export function checkNodeRuntime(): DoctorCategory {
 
 /** Category 2: Data directory existence and writability. */
 export function checkDataDirectory(engineerHome: string): DoctorCategory {
-  const dirs = resolveSubdirs(engineerHome);
+  const dirs = resolveDirectories(engineerHome);
   const checks: DoctorCheck[] = [];
 
   // Check ENGINEER_HOME exists
@@ -507,7 +507,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
 
 /** Run all 11 doctor check categories. */
 export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
-  const dirs = resolveSubdirs(engineerHome);
+  const dirs = resolveDirectories(engineerHome);
   const categories: DoctorCategory[] = [
     checkNodeRuntime(),
     checkDataDirectory(engineerHome),
@@ -531,7 +531,7 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
 
 /** Run pre-flight checks (categories 1-7 only). Used by `start` command. */
 export function runPreFlightChecks(engineerHome: string): DoctorCategory[] {
-  const dirs = resolveSubdirs(engineerHome);
+  const dirs = resolveDirectories(engineerHome);
   return [
     checkNodeRuntime(),
     checkDataDirectory(engineerHome),

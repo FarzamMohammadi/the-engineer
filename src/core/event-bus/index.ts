@@ -2,13 +2,14 @@ import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
 import type { Event, EventType } from "../../schemas/events.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type {
   EventCallback,
   IEventBus,
   PublishInput,
   PublishInputGeneral,
 } from "../interfaces/event-bus.interface.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import { EventReplayError } from "./errors.js";
 import type { EventTopology } from "./topology.js";
 
@@ -160,6 +161,9 @@ export class EventBus implements IEventBus {
 
     const id = ulid();
     const timestamp = new Date().toISOString();
+    // SECURITY: Payloads are persisted to SQLite as-is. Publishers MUST sanitize
+    // any error messages or user-controlled data before including them in payloads.
+    // The EventBus does not sanitize payloads to avoid corrupting legitimate data.
     const payloadJson = JSON.stringify(input.payload);
 
     const result = this.insertStmt.run(
@@ -246,7 +250,7 @@ export class EventBus implements IEventBus {
     this.observer.error("Subscriber threw during event delivery", {
       subscriberId,
       eventType,
-      err: error,
+      err: sanitizeErrorMessage(error),
     });
   }
 

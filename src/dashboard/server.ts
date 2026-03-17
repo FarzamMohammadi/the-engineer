@@ -12,7 +12,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import { BlobStore } from "../core/observer/blob-store.js";
+import { BlobStore } from "../core/observer/index.js";
 import { createObservationStore } from "../core/observer/index.js";
 import { eventRoutes } from "./api/events.js";
 import { metricsRoutes } from "./api/metrics.js";

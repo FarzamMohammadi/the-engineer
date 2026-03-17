@@ -9,7 +9,7 @@ import {
   SafetyConfigSchema,
   WorkspaceConfigSchema,
 } from "../../schemas/config.js";
-import { resolveSubdirs } from "../home.js";
+import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 
 interface ConfigFileEntry {
@@ -28,7 +28,7 @@ const CONFIG_FILES: ConfigFileEntry[] = [
 /** Validates all config files and reports results per-file. Returns exit code. */
 export function runConfigValidate(engineerHome: string): number {
   const out = getOutput();
-  const dirs = resolveSubdirs(engineerHome);
+  const dirs = resolveDirectories(engineerHome);
   const configDir = dirs.config;
 
   if (!existsSync(configDir)) {

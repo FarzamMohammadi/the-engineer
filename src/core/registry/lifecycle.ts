@@ -7,7 +7,7 @@ import {
   type RegistrationResult,
 } from "../../schemas/adapters.js";
 import type { PluginHealthRecord } from "../../schemas/adapters.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

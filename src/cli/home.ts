@@ -17,7 +17,7 @@ export function resolveEngineerHome(flagValue?: string): string {
 }
 
 /** Standard subdirectory paths under ENGINEER_HOME. */
-export interface EngineerDirs {
+export interface EngineerDirectories {
   config: string;
   plugins: string;
   data: string;
@@ -29,7 +29,7 @@ export interface EngineerDirs {
 }
 
 /** Returns all standard subdirectory paths under ENGINEER_HOME. */
-export function resolveSubdirs(engineerHome: string): EngineerDirs {
+export function resolveDirectories(engineerHome: string): EngineerDirectories {
   return {
     config: join(engineerHome, "config"),
     plugins: join(engineerHome, "config", "plugins"),

@@ -1,14 +1,14 @@
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
-import type { IObserver } from "../observer/facade.js";
+import type { IObserver } from "../observer/index.js";
 import type { IObservationStore } from "../observer/types.js";
-import type { PeopleDirectory } from "../people-directory/index.js";
 
 // ── Shared Dependencies ────────────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ export interface OrchestratorContext {
   actionPipeline: IActionPipeline;
   sessionMemory: ISessionMemory;
   workspaceManager: IWorkspaceManager;
-  peopleDirectory: PeopleDirectory;
+  peopleDirectory: IPeopleDirectory;
   observationStore: IObservationStore | null;
   observer: IObserver;
 }

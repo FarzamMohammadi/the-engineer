@@ -32,7 +32,16 @@ daemon.start()
 
 | # | File | Role |
 |---|------|------|
-| 1 | `src/core/daemon/index.ts` | `createDaemon()` factory, `start()`, `stop()`, `tick()` |
+| 1 | `src/core/daemon/index.ts` | `createDaemon()` factory, `start()`, `stop()`, `tick()`, exported helpers |
+| 2 | `src/core/daemon/types.ts` | `DaemonContext` + 6 narrowed context type aliases |
+| 3 | `src/core/daemon/errors.ts` | `DaemonAlreadyRunningError` and daemon error types |
+| 4 | `src/core/daemon/query-handler.ts` | `handleQuery()` for `comm.message_received` events |
+| 5 | `src/core/daemon/trigger-poller.ts` | `createTriggerPoller()` — polls trigger plugins for new events |
+| 6 | `src/core/daemon/task-scheduler.ts` | `createTaskScheduler()` — active dispatch queue, completion callbacks |
+| 7 | `src/core/daemon/health-monitor.ts` | `createDaemonHealthMonitor()` — cost limits, stuck tasks, blocked escalation |
+| 8 | `src/core/daemon/preemption-manager.ts` | `createPreemptionManager()` — priority-based cooperative preemption |
+| 9 | `src/core/daemon/notification-router.ts` | `createNotificationRouter()` — fire-and-forget Telegram + GitHub notifications |
+| 10 | `src/core/daemon/review-handler.ts` | `createReviewHandler()` — PR merge/feedback polling |
 
 ---
 
@@ -51,7 +60,7 @@ daemon.start()
 Handles the case where daemon died mid-dispatch:
 
 1. Query all tasks with `state = active`
-2. For each with `sub_state ∈ {working, integrating}`:
+2. For each where `isSlotConsuming(state, sub_state)` is true (working/integrating, excludes supervising):
    - `taskEngine.requestTransition(taskId, queued, null, "crash_recovery", "daemon")`
 3. Initialize `basePriorities` for all queued tasks
 4. Sync trigger poller priorities to scheduler
@@ -108,14 +117,14 @@ Runs every `config.tick_interval_ms` (default ~5s):
 
 Created inside `createDaemon()`:
 
-| Subsystem | Factory | Purpose |
-|-----------|---------|---------|
-| NotificationRouter | inline | Fire-and-forget Telegram + GitHub notifications |
-| TaskScheduler | inline | Active dispatch queue, completion callbacks |
-| PreemptionManager | inline | Priority-based cooperative preemption |
-| TriggerPoller | `createTriggerPoller()` | Polls trigger plugins for new events |
-| ReviewHandler | inline | PR merge/feedback polling |
-| DaemonHealthMonitor | inline | Cost limits, stuck tasks, blocked escalation |
+| Subsystem | Factory | File |
+|-----------|---------|------|
+| NotificationRouter | `createNotificationRouter()` | `notification-router.ts` |
+| TaskScheduler | `createTaskScheduler()` | `task-scheduler.ts` |
+| PreemptionManager | `createPreemptionManager()` | `preemption-manager.ts` |
+| TriggerPoller | `createTriggerPoller()` | `trigger-poller.ts` |
+| ReviewHandler | `createReviewHandler()` | `review-handler.ts` |
+| DaemonHealthMonitor | `createDaemonHealthMonitor()` | `health-monitor.ts` |
 
 ---
 
@@ -141,6 +150,16 @@ Created inside `createDaemon()`:
 
 | File | Type |
 |------|------|
-| `src/core/daemon/index.test.ts` | Unit — start/stop/tick, subscriptions |
+| `src/core/daemon/index.test.ts` | Unit — start/stop/tick, subscriptions, `isSlotConsuming` |
+| `src/core/daemon/task-scheduler.test.ts` | Unit — scheduling, dispatch, aging, completion |
+| `src/core/daemon/health-monitor.test.ts` | Unit — cost limits, stuck tasks, blocked escalation |
+| `src/core/daemon/preemption-manager.test.ts` | Unit — cooperative preemption |
+| `src/core/daemon/notification-router.test.ts` | Unit — Telegram + GitHub notification routing |
+| `src/core/daemon/review-handler.test.ts` | Unit — PR merge/feedback polling |
+| `src/core/daemon/query-handler.test.ts` | Unit — comm message handling |
+| `src/core/daemon/trigger-poller.test.ts` | Unit — trigger polling, dedup, cleanup |
+| `src/core/daemon/decomposition.test.ts` | Unit — task decomposition handling |
+| `src/core/daemon/notifications.test.ts` | Unit — notification helpers |
+| `test/integration/daemon-trigger-polling.integration.test.ts` | Integration — trigger polling flow |
 | `test/e2e/daemon-lifecycle.e2e.test.ts` | E2E — full lifecycle |
 | `test/e2e/crash-recovery.e2e.test.ts` | E2E — orphan recovery |

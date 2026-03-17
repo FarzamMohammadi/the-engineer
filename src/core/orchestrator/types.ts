@@ -1,6 +1,7 @@
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -8,14 +9,13 @@ import type { IWorkspaceManager } from "../interfaces/workspace-manager.interfac
 import type { IObserver } from "../observer/facade.js";
 import type { IObservationStore } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
-import type { Registry } from "../registry/index.js";
 
 // ── Shared Dependencies ────────────────────────────────────────────────────
 
 /** Shared dependencies available to all Orchestrator subsystems. */
 export interface OrchestratorContext {
   eventBus: IEventBus;
-  registry: Registry;
+  registry: IPluginLookup;
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   actionPipeline: IActionPipeline;

@@ -15,6 +15,7 @@
  */
 import type { Logger } from "pino";
 
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { ComponentTag } from "./logging.js";
 import type { ObservationTypeValue, SpanOptions } from "./types.js";
 import type { IObservationStore, ObservationSpan } from "./types.js";
@@ -185,9 +186,12 @@ export class Observer implements IObserver {
     recovery?: { action: string; success: boolean },
     opts?: SpanOptions,
   ): string {
-    // DUAL: always log to pino, regardless of store availability
+    // DUAL: always log to pino, regardless of store availability.
+    // Sanitize the error message to prevent secret leakage to log files
+    // (e.g., HTTP errors containing token-bearing URLs).
+    const sanitizedMsg = sanitizeErrorMessage(error);
     this.pino.error(
-      { err: error, operation: context.operation, component: context.component },
+      { err: sanitizedMsg, operation: context.operation, component: context.component },
       `Error in ${context.operation}`,
     );
     return this.ctx.store?.recordError(error, context, recovery, opts) ?? "";

@@ -14,6 +14,7 @@ import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -21,7 +22,6 @@ import type { IWorkspaceManager } from "../interfaces/workspace-manager.interfac
 import type { IObserver } from "../observer/facade.js";
 import type { IObservationStore } from "../observer/types.js";
 import type { PeopleDirectory } from "../people-directory/index.js";
-import type { Registry } from "../registry/index.js";
 import { createDecompositionHandler } from "./decomposition-handler.js";
 import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
 import { createPhaseHandlerRegistry, runPhasePipeline } from "./phase-runner.js";
@@ -83,14 +83,14 @@ export const EVENTS: EventDeclaration[] = [
 /** Constructor dependencies for the Orchestrator. */
 export interface OrchestratorDependencies {
   eventBus: IEventBus;
-  registry: Registry;
+  registry: IPluginLookup;
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   actionPipeline: IActionPipeline;
   sessionMemory: ISessionMemory;
   workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
-  observationStore?: IObservationStore;
+  observationStore: IObservationStore | null;
   observer: IObserver;
 }
 
@@ -139,7 +139,7 @@ export class Orchestrator {
       sessionMemory: deps.sessionMemory,
       workspaceManager: deps.workspaceManager,
       peopleDirectory: deps.peopleDirectory,
-      observationStore: deps.observationStore ?? null,
+      observationStore: deps.observationStore,
       observer: deps.observer,
     };
 

@@ -87,3 +87,19 @@ Accumulated across all merge rounds. Nothing gets lost.
 ### Lens J (Minimalism & Dead Code)
 - Ephemeral schemas (`src/schemas/ephemeral.ts`) contain ~15 schemas used only in their own test file — these are specification/documentation schemas by Layer 4 design, not dead code. Left as-is.
 - Pure helper exports in `workspace-manager/index.ts` (`slugify`, `branchName`, `injectAuth`, `validateWorkspacePath`) and `action-executor.ts` (`shellEscape`, `resolveWorktreePath`, `resolveWorktreePathReal`) are exported only for test access. Kept for test coverage of complex logic.
+
+## Round 1 — 3
+
+### Lens A (Structure & Organization)
+- **Topology registration pattern** — evaluated consolidating all publisher registrations into one block; decided the current colocated pattern (register publisher alongside component creation) is correct and intentional
+- **logging.ts location** — evaluated moving `src/core/observer/logging.ts` back to `src/core/logging.ts`; decided to keep in observer/ since it's the primary consumer, and the conceptual benefit of moving is marginal
+
+### Lens C (Abstractions & API Design)
+- **No interfaces for Orchestrator or PeopleDirectory** — Orchestrator is a true singleton consumed only by the Daemon; PeopleDirectory is tiny (6 methods, all used). Low ROI for interface extraction.
+
+### Lens E (Security & Trust Boundaries)
+- **EventBus payloads not sanitized** — Current event schemas contain only structured data (states, costs, task IDs). Risk is future-facing only. Convention: publishers must not include secrets in payloads.
+- **EventBus has no subscription ACLs** — All plugins are builtin. If third-party plugins are ever supported, EventBus subscription should be gated by the Registry.
+- **PID file TOCTOU race** — Single-user desktop, informational file, millisecond race window. Accepted.
+- **Config hot-reload without path validation** — Config files are user-controlled (same trust level as env vars). Accepted.
+- **`engineerHome` path traversal** — Self-attack only (user controls their own env vars). Accepted.

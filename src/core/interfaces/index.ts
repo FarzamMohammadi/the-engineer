@@ -37,3 +37,4 @@ export type {
   WorkspaceRecord,
   WorkspaceVerification,
 } from "./workspace-manager.interface.js";
+export type { IPluginLookup } from "./plugin-lookup.interface.js";

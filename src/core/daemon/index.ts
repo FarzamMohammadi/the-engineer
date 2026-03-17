@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { DaemonConfig } from "../../schemas/config.js";
 import {
   type Event,
   type EventPayloads,
@@ -18,19 +17,8 @@ import {
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
-import type { Clock } from "../../utils/clock.js";
-import type { DataLifecycleManager } from "../data-lifecycle/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
-import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
-import type { IEventBus } from "../interfaces/event-bus.interface.js";
-import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
-import type { IObserver } from "../observer/facade.js";
-import { type ExecuteTaskResult, type Orchestrator, Outcomes } from "../orchestrator/index.js";
-import type { PeopleDirectory } from "../people-directory/index.js";
-import type { Registry } from "../registry/index.js";
+import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import { createNotificationRouter } from "./notification-router.js";
@@ -103,23 +91,6 @@ export const EVENTS: EventDeclaration[] = [
 ];
 
 // ── Types ───────────────────────────────────────────────────────────────────
-
-/** All dependencies injected into the Daemon. */
-export interface DaemonDependencies {
-  eventBus: IEventBus;
-  registry: Registry;
-  taskEngine: ITaskEngine;
-  safetyLayer: ISafetyLayer;
-  actionPipeline: IActionPipeline;
-  orchestrator: Orchestrator;
-  sessionMemory: ISessionMemory;
-  workspaceManager: IWorkspaceManager;
-  peopleDirectory: PeopleDirectory;
-  clock: Clock;
-  observer: IObserver;
-  engineerHome: string;
-  dataLifecycleManager?: DataLifecycleManager;
-}
 
 /** Observable Daemon state (for testing and debugging). */
 export interface DaemonState {
@@ -253,18 +224,17 @@ export function evaluateTaskStuckness(
  * dispatches to the Orchestrator, manages preemption/aging/health, handles
  * signals, and coordinates graceful startup (P1) and shutdown (P15).
  */
-export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Daemon {
+export function createDaemon(ctx: DaemonContext): Daemon {
   const {
+    config,
     eventBus,
     registry,
     taskEngine,
-    orchestrator,
-    workspaceManager,
     clock,
     observer,
     engineerHome,
     dataLifecycleManager,
-  } = deps;
+  } = ctx;
 
   // ── Facade State ──────────────────────────────────────────────────────
   let running = false;
@@ -272,23 +242,6 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
   let startedAt: string | null = null;
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   const signalHandlers: { signal: string; handler: () => void }[] = [];
-
-  // ── DaemonContext (shared across subsystems) ──────────────────────────
-  const ctx: DaemonContext = {
-    config,
-    eventBus,
-    registry,
-    taskEngine,
-    safetyLayer: deps.safetyLayer,
-    actionPipeline: deps.actionPipeline,
-    orchestrator,
-    sessionMemory: deps.sessionMemory,
-    workspaceManager,
-    peopleDirectory: deps.peopleDirectory,
-    clock,
-    observer,
-    engineerHome,
-  };
 
   // ── Create Subsystems ─────────────────────────────────────────────────
   const notifications = createNotificationRouter(ctx);
@@ -455,7 +408,7 @@ export function createDaemon(config: DaemonConfig, deps: DaemonDependencies): Da
       const payload = event.payload as EventPayloads["comm.message_received"];
       const queryDeps: QueryHandlerDeps = {
         taskEngine,
-        safetyLayer: deps.safetyLayer,
+        safetyLayer: ctx.safetyLayer,
         registry,
         observer,
       };

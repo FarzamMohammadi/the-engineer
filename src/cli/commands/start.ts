@@ -1,12 +1,11 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
-import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+import { discoverEnabledPlugins } from "../../plugins/loader.js";
 import { extractErrorMessage } from "../../utils/errors.js";
 
 import { type BootstrapResult, type ProgressCallback, bootstrap } from "../bootstrap.js";
-import { YAML_EXTENSION_PATTERN } from "../constants.js";
 import { type EngineerDirs, resolveSubdirs } from "../home.js";
 import { getOutput } from "../output.js";
 import { Spinner } from "../progress.js";
@@ -20,19 +19,16 @@ interface StartOptions {
   dryRun: boolean;
 }
 
-/** Create all required directories, returning null on success or exit code on failure. */
-function ensureDirectories(dirs: EngineerDirs): number | null {
-  const out = getOutput();
+/** Create all required directories. Throws on failure. */
+function ensureDirectories(dirs: EngineerDirs): void {
   for (const dirPath of Object.values(dirs)) {
     try {
       mkdirSync(dirPath, { recursive: true, mode: 0o700 });
     } catch (error) {
       const message = extractErrorMessage(error);
-      out.error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`);
-      return 1;
+      throw new Error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`);
     }
   }
-  return null;
 }
 
 /** Boots the daemon. Returns exit code. */
@@ -41,9 +37,11 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 
   // 1. Auto-create directories
   const dirs = resolveSubdirs(engineerHome);
-  const exitCode = ensureDirectories(dirs);
-  if (exitCode !== null) {
-    return exitCode;
+  try {
+    ensureDirectories(dirs);
+  } catch (error) {
+    out.error(extractErrorMessage(error));
+    return 1;
   }
 
   // 2. Load config
@@ -60,7 +58,13 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   }
 
   // 3. Run pre-flight checks (doctor categories 1-6)
-  const preFlightResults = runPreFlightChecks(engineerHome);
+  let preFlightResults: ReturnType<typeof runPreFlightChecks>;
+  try {
+    preFlightResults = runPreFlightChecks(engineerHome);
+  } catch (error) {
+    out.error(`Pre-flight checks encountered an unexpected error: ${extractErrorMessage(error)}`);
+    return 1;
+  }
   const preFlightCode = computeExitCode(preFlightResults);
 
   if (preFlightCode === 1) {
@@ -119,7 +123,7 @@ async function runForeground(
 
   let daemon: BootstrapResult["daemon"];
   let cleanup: BootstrapResult["cleanup"];
-  let logger: BootstrapResult["logger"] | undefined;
+  let observer: BootstrapResult["observer"] | undefined;
   try {
     const result = await bootstrap({
       engineerHome,
@@ -129,7 +133,7 @@ async function runForeground(
     });
     daemon = result.daemon;
     cleanup = result.cleanup;
-    logger = result.logger;
+    observer = result.observer;
   } catch (error) {
     spinner.fail("Bootstrap failed");
     out.error(`Bootstrap failed: ${extractErrorMessage(error)}`);
@@ -158,9 +162,9 @@ async function runForeground(
   process.on("SIGTERM", () => {
     shutdown().catch((err) => {
       try {
-        logger?.error({ err }, "Shutdown failed");
+        observer?.error("Shutdown failed", { err });
       } catch {
-        // Logger transport may be broken during shutdown — stderr fallback below
+        // Observer transport may be broken during shutdown — stderr fallback below
       }
       process.stderr.write(`Shutdown failed: ${extractErrorMessage(err)}\n`);
       process.exit(1);
@@ -169,9 +173,9 @@ async function runForeground(
   process.on("SIGINT", () => {
     shutdown().catch((err) => {
       try {
-        logger?.error({ err }, "Shutdown failed");
+        observer?.error("Shutdown failed", { err });
       } catch {
-        // Logger transport may be broken during shutdown — stderr fallback below
+        // Observer transport may be broken during shutdown — stderr fallback below
       }
       process.stderr.write(`Shutdown failed: ${extractErrorMessage(err)}\n`);
       process.exit(1);
@@ -215,14 +219,7 @@ function runDryRun(
 ): number {
   const out = getOutput();
   const totalChecks = preFlightResults.reduce((sum, category) => sum + category.checks.length, 0);
-  const enabledIds = new Set(
-    existsSync(dirs.plugins)
-      ? readdirSync(dirs.plugins)
-          .filter((filename) => filename.endsWith(".yaml"))
-          .map((filename) => filename.replace(YAML_EXTENSION_PATTERN, ""))
-      : [],
-  );
-  const enabledPlugins = BUILTIN_PLUGINS.filter((plugin) => enabledIds.has(plugin.manifest.id));
+  const enabledPlugins = discoverEnabledPlugins(dirs.plugins);
   const criticalCount = enabledPlugins.filter((plugin) => plugin.manifest.critical).length;
 
   if (out.mode === "json") {

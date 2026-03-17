@@ -100,6 +100,16 @@ export function sanitizeSecrets(text: string): string {
   return result;
 }
 
+/**
+ * Extract a human-readable message from an unknown caught value and sanitize it.
+ * Combines `extractErrorMessage()` + `sanitizeSecrets()` in one call.
+ * Use this at error-logging boundaries (observer, pino, bootstrap).
+ */
+export function sanitizeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return sanitizeSecrets(message);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Replace all literal occurrences of `search` in `text` with `replacement`. */

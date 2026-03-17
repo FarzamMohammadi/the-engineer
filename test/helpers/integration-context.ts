@@ -123,13 +123,21 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   // 2-8. Core components via shared factory (mirrors bootstrap.ts wiring)
   const safetyConfig = SafetyConfigSchema.parse(options?.safetyConfig ?? {});
   const workspaceConfig = WorkspaceConfigSchema.parse(options?.workspaceConfig ?? {});
-  const { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager } =
-    createCoreComponents({
-      db,
-      observer: observer.child("event-bus"),
-      safetyConfig,
-      workspaceConfig,
-    });
+  const {
+    components: {
+      eventBus,
+      taskEngine,
+      safetyLayer,
+      actionPipeline,
+      sessionMemory,
+      workspaceManager,
+    },
+  } = createCoreComponents({
+    db,
+    observer: observer.child("event-bus"),
+    safetyConfig,
+    workspaceConfig,
+  });
 
   // 3. Registry + fake plugins (needs eventBus from core components)
   const registryHandle = createTestRegistry(
@@ -151,13 +159,15 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     sessionMemory,
     workspaceManager,
     peopleDirectory,
+    observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
   });
 
   // 11. Daemon
   const daemonConfig = defaultDaemonConfig(options?.daemonConfig);
 
-  const daemon = createDaemon(daemonConfig, {
+  const daemon = createDaemon({
+    config: daemonConfig,
     eventBus,
     registry,
     taskEngine,

@@ -3,12 +3,13 @@ import { join } from "node:path";
 
 import { parse as parseYaml } from "yaml";
 
-import { YAML_EXTENSION_PATTERN } from "../cli/constants.js";
 import { resolveEnvVars } from "../config/loader.js";
 import type { IObserver } from "../core/observer/facade.js";
 import type { Registry } from "../core/registry/index.js";
 import { extractErrorMessage } from "../utils/errors.js";
-import { BUILTIN_PLUGINS } from "./builtin.js";
+import { BUILTIN_PLUGINS, type BuiltinPlugin } from "./builtin.js";
+
+const YAML_EXTENSION = /\.yaml$/;
 
 // ── Plugin Config Loading ─────────────────────────────────────────────────────
 
@@ -34,27 +35,39 @@ function loadPluginConfig(
   }
 }
 
-// ── Plugin Discovery & Loading ────────────────────────────────────────────────
+// ── Plugin Discovery ──────────────────────────────────────────────────────────
+
+/**
+ * Discover which builtin plugins are enabled by checking for config YAML files.
+ *
+ * A plugin is "enabled" if its config YAML exists in pluginConfigDir
+ * (e.g. ~/.engineer/config/plugins/github-trigger.yaml).
+ */
+export function discoverEnabledPlugins(pluginConfigDir: string): BuiltinPlugin[] {
+  const enabledIds = new Set(
+    existsSync(pluginConfigDir)
+      ? readdirSync(pluginConfigDir)
+          .filter((filename) => filename.endsWith(".yaml"))
+          .map((filename) => filename.replace(YAML_EXTENSION, ""))
+      : [],
+  );
+  return BUILTIN_PLUGINS.filter((plugin) => enabledIds.has(plugin.manifest.id));
+}
+
+// ── Plugin Loading ───────────────────────────────────────────────────────────
 
 /**
  * Discover and load all enabled builtin plugins.
  *
- * A plugin is "enabled" if its config YAML exists in pluginConfigDir
- * (e.g. ~/.engineer/config/plugins/github-trigger.yaml).
+ * Uses {@link discoverEnabledPlugins} for discovery, then registers,
+ * configures, and initializes each plugin via the Registry.
  */
 export async function loadBuiltinPlugins(
   registry: Registry,
   pluginConfigDir: string,
   observer: IObserver,
 ): Promise<void> {
-  const enabledIds = new Set(
-    existsSync(pluginConfigDir)
-      ? readdirSync(pluginConfigDir)
-          .filter((filename) => filename.endsWith(".yaml"))
-          .map((filename) => filename.replace(YAML_EXTENSION_PATTERN, ""))
-      : [],
-  );
-  const plugins = BUILTIN_PLUGINS.filter((plugin) => enabledIds.has(plugin.manifest.id));
+  const plugins = discoverEnabledPlugins(pluginConfigDir);
   let loadedCount = 0;
 
   for (const plugin of plugins) {
@@ -63,6 +76,11 @@ export async function loadBuiltinPlugins(
     const registrationResult = registry.register(plugin.manifest, instance);
     if (!registrationResult.success) {
       observer.warn("Plugin registration failed", { pluginId, reason: registrationResult.message });
+      if (plugin.manifest.critical) {
+        throw new Error(
+          `Critical plugin "${pluginId}" failed to register: ${registrationResult.message}`,
+        );
+      }
       continue;
     }
 

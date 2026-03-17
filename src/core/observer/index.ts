@@ -8,8 +8,7 @@
  * Complements (does not replace) EventBus (audit trail) and Logger (ops logs).
  */
 import { ulid } from "ulid";
-
-import { extractErrorMessage } from "../../utils/errors.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { BlobStore } from "./blob-store.js";
 import { ObserverStore } from "./store.js";
 import { ObserverStream } from "./stream.js";
@@ -147,7 +146,7 @@ export class ObservationStore implements IObservationStore {
       context.operation,
       {
         component: context.component,
-        error_message: extractErrorMessage(error),
+        error_message: sanitizeErrorMessage(error),
         stack: extractStack(error),
         recovery: recovery ?? null,
       },
@@ -156,7 +155,7 @@ export class ObservationStore implements IObservationStore {
       "error",
     );
     obs.end_time = obs.start_time;
-    obs.error_message = extractErrorMessage(error);
+    obs.error_message = sanitizeErrorMessage(error);
 
     this.store.insertObservation(obs);
     this.stream.notify(obs);
@@ -246,7 +245,7 @@ export class ObservationStore implements IObservationStore {
 
       setError(error: unknown): void {
         status = "error";
-        errorMessage = extractErrorMessage(error);
+        errorMessage = sanitizeErrorMessage(error);
       },
     };
   }

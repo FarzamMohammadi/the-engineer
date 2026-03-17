@@ -27,7 +27,15 @@ export function spawnBackground(engineerHome: string, verbose: boolean): number 
 
   child.unref();
 
+  // Sanity check — if the child already crashed (e.g., immediate bootstrap failure), warn
+  try {
+    process.kill(child.pid, 0);
+  } catch {
+    out.warn("Background process may have exited immediately. Use 'engineer status' to verify.");
+    return 1;
+  }
+
   out.success(`The Engineer started in background (PID ${String(child.pid)}).`);
-  out.log("  Use 'engineer status' to check, 'engineer shutdown' to stop.");
+  out.log("  Use 'engineer status' to verify startup, 'engineer shutdown' to stop.");
   return 0;
 }

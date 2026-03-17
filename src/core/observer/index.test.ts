@@ -380,6 +380,43 @@ describe("Observer", () => {
     });
   });
 
+  // ── Security: secret sanitization in error paths ──────────────────────────
+
+  describe("error secret sanitization", () => {
+    it("recordError sanitizes token-bearing URLs in error_message field", () => {
+      handle.observer.recordError(
+        new Error("request to https://ghp_abc123xyz@api.github.com/repos failed"),
+        { operation: "github_api", component: "trigger" },
+      );
+
+      const results = handle.observer.query({ type: "error" });
+      expect(results[0]?.error_message).not.toContain("ghp_abc123xyz");
+      expect(results[0]?.error_message).toContain("https://***@api.github.com/repos failed");
+    });
+
+    it("recordError sanitizes token-bearing URLs in input.error_message", () => {
+      handle.observer.recordError(
+        new Error("push to https://git:secret_token@github.com/org/repo.git failed"),
+        { operation: "git_push", component: "workspace-manager" },
+      );
+
+      const results = handle.observer.query({ type: "error" });
+      const input = results[0]?.input as Record<string, unknown>;
+      expect(input["error_message"]).not.toContain("secret_token");
+      expect(input["error_message"]).toContain("https://git:***@github.com/org/repo.git");
+    });
+
+    it("setError on spans sanitizes token-bearing URLs", () => {
+      const span = handle.observer.startSpan("tool_execution", "git_push");
+      span.setError(new Error("https://ghp_leaked_token@github.com/org/repo.git: 403"));
+      span.end();
+
+      const results = handle.observer.query({ type: "tool_execution" });
+      expect(results[0]?.error_message).not.toContain("ghp_leaked_token");
+      expect(results[0]?.error_message).toContain("https://***@github.com/org/repo.git");
+    });
+  });
+
   // ── query() ────────────────────────────────────────────────────────────────
 
   describe("query()", () => {

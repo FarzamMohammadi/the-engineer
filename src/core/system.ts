@@ -24,12 +24,17 @@ import { EVENTS as WORKSPACE_MANAGER_EVENTS, WorkspaceManager } from "./workspac
 
 export interface CoreComponents {
   eventBus: IEventBus;
-  topology: EventTopology;
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   actionPipeline: IActionPipeline;
   sessionMemory: ISessionMemory;
   workspaceManager: IWorkspaceManager;
+}
+
+/** Return type of createCoreComponents — components + wiring infrastructure. */
+export interface CoreSystemSetup {
+  components: CoreComponents;
+  topology: EventTopology;
 }
 
 export interface CreateCoreInput {
@@ -47,7 +52,7 @@ export interface CreateCoreInput {
  * Does NOT create Registry, Orchestrator, Daemon, or PeopleDirectory —
  * those have additional dependencies (config, logger, etc.).
  */
-export function createCoreComponents(input: CreateCoreInput): CoreComponents {
+export function createCoreComponents(input: CreateCoreInput): CoreSystemSetup {
   // Build event topology from core component declarations
   const topology = new EventTopology();
   topology.registerPublisher("task-engine", TASK_ENGINE_EVENTS);
@@ -55,7 +60,10 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponents {
   topology.registerPublisher("safety-layer", SAFETY_LAYER_EVENTS);
   topology.registerPublisher("workspace-manager", WORKSPACE_MANAGER_EVENTS);
 
-  const eventBusOptions: EventBusOptions = { observer: input.observer, topology };
+  const eventBusOptions: EventBusOptions = {
+    observer: input.observer.child("event-bus"),
+    topology,
+  };
   if (input.subscriberWarnThresholdMs !== undefined) {
     eventBusOptions.subscriberWarnThresholdMs = input.subscriberWarnThresholdMs;
   }
@@ -72,12 +80,14 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponents {
   const workspaceManager = new WorkspaceManager(eventBus, input.workspaceConfig);
 
   return {
-    eventBus,
+    components: {
+      eventBus,
+      taskEngine,
+      safetyLayer,
+      actionPipeline,
+      sessionMemory,
+      workspaceManager,
+    },
     topology,
-    taskEngine,
-    safetyLayer,
-    actionPipeline,
-    sessionMemory,
-    workspaceManager,
   };
 }

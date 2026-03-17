@@ -443,6 +443,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     sessionMemory: sessionMemory as unknown as ISessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
+    observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
   });
 

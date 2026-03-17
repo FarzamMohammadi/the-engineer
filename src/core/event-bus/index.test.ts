@@ -5,10 +5,58 @@ import type Database from "better-sqlite3";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { createInMemoryDatabase } from "../../db/database.js";
 import type { Event } from "../../schemas/events.js";
-import { EventBus, matchesPattern } from "./index.js";
+import { EventBus, type EventRow, matchesPattern, rowToEvent } from "./index.js";
 
 const ULID_PATTERN = /^[0-9A-Z]{26}$/;
 const ISO_8601_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+// ── rowToEvent ────────────────────────────────────────────────────────────────
+
+describe("rowToEvent", () => {
+  const baseRow: EventRow = {
+    id: "01ABC",
+    sequence: 1,
+    type: "task.created",
+    source: "test",
+    task_id: "task-1",
+    timestamp: "2026-01-01T00:00:00.000Z",
+    payload: '{"key":"value"}',
+  };
+
+  it("parses valid JSON payload", () => {
+    const event = rowToEvent(baseRow);
+    expect(event.payload).toEqual({ key: "value" });
+    expect(event.id).toBe("01ABC");
+    expect(event.type).toBe("task.created");
+  });
+
+  it("returns fallback payload for corrupted JSON", () => {
+    const row = { ...baseRow, payload: "{not valid json" };
+    const event = rowToEvent(row);
+    expect(event.payload).toEqual({
+      _parse_error: true,
+      _raw: "{not valid json",
+    });
+    expect(event.id).toBe("01ABC");
+    expect(event.type).toBe("task.created");
+  });
+
+  it("returns fallback payload for empty string", () => {
+    const row = { ...baseRow, payload: "" };
+    const event = rowToEvent(row);
+    expect(event.payload).toEqual({
+      _parse_error: true,
+      _raw: "",
+    });
+  });
+
+  it("truncates raw payload in fallback to 200 characters", () => {
+    const longPayload = "x".repeat(300);
+    const row = { ...baseRow, payload: longPayload };
+    const event = rowToEvent(row);
+    expect(event.payload["_raw"]).toHaveLength(200);
+  });
+});
 
 // ── matchesPattern ────────────────────────────────────────────────────────────
 

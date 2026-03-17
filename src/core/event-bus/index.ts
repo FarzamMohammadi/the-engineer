@@ -40,6 +40,15 @@ export interface EventRow {
 
 /** Convert an `events` table row to an `Event` object (parses JSON payload). */
 export function rowToEvent(row: EventRow): Event {
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(row.payload) as Record<string, unknown>;
+  } catch {
+    // Corrupted payload — return diagnostic fallback instead of crashing callers.
+    // Callers (replay, getEventsForTask, getEventsSince) process many rows;
+    // one bad row should not abort the entire operation.
+    payload = { _parse_error: true, _raw: row.payload.substring(0, 200) };
+  }
   return {
     id: row.id,
     sequence: row.sequence,
@@ -47,7 +56,7 @@ export function rowToEvent(row: EventRow): Event {
     source: row.source,
     task_id: row.task_id,
     timestamp: row.timestamp,
-    payload: JSON.parse(row.payload) as Record<string, unknown>,
+    payload,
   };
 }
 

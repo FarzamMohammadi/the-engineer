@@ -4,12 +4,7 @@ import { join } from "node:path";
 import { type Mock, vi } from "vitest";
 
 import type { ActionPipeline } from "../../src/core/action-pipeline/index.js";
-import {
-  type Daemon,
-  type DaemonDependencies,
-  type DaemonState,
-  createDaemon,
-} from "../../src/core/daemon/index.js";
+import { type Daemon, type DaemonState, createDaemon } from "../../src/core/daemon/index.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../../src/core/interfaces/session-memory.interface.js";
@@ -322,7 +317,8 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
   // ── Build Daemon ──────────────────────────────────────────────────────
   const config = defaultTestConfig(configOverrides);
 
-  const deps: DaemonDependencies = {
+  const daemon = createDaemon({
+    config,
     eventBus: eventBus as unknown as EventBus,
     registry: registry as unknown as Registry,
     taskEngine: taskEngine as unknown as ITaskEngine,
@@ -335,9 +331,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     clock,
     observer: createTestObserverFacade("daemon"),
     engineerHome,
-  };
-
-  const daemon = createDaemon(config, deps);
+  });
 
   return {
     daemon,

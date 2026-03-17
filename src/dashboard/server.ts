@@ -40,8 +40,8 @@ export function createDashboardApp(config: DashboardConfig): {
 
   const app = new Hono();
 
-  // CORS for local development
-  app.use("/*", cors());
+  // CORS restricted to localhost — dashboard must not be accessible from the LAN
+  app.use("/*", cors({ origin: "http://localhost:3847" }));
 
   // Mount API routes
   app.route("/api/system", systemRoutes({ db, observationStore, runDir: config.runDir }));

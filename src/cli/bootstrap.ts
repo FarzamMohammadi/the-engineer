@@ -1,15 +1,13 @@
 import { join } from "node:path";
 
-import type { Logger } from "pino";
-
 import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
 import { createDataLifecycleManager } from "../core/data-lifecycle/index.js";
 import { HookRegistry } from "../core/hooks/index.js";
 import { BlobStore } from "../core/observer/blob-store.js";
-import { createObserverFacade } from "../core/observer/facade.js";
+import { type IObserver, createObserverFacade } from "../core/observer/facade.js";
 import { createObservationStore } from "../core/observer/index.js";
-import { createChildLogger, createLogger } from "../core/observer/logging.js";
+import { createLogger } from "../core/observer/logging.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
 import { PeopleDirectory } from "../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
@@ -17,13 +15,14 @@ import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/database.js";
 import { loadBuiltinPlugins } from "../plugins/loader.js";
 import { RealClock } from "../utils/clock.js";
+import { sanitizeErrorMessage } from "../utils/sanitize.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Result of bootstrapping all components. */
 export interface BootstrapResult {
   daemon: Daemon;
-  logger: Logger;
+  observer: IObserver;
   cleanup: () => void;
 }
 
@@ -59,10 +58,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   }
   const logger = createLogger(loggingConfig, engineerHome);
   const observer = createObserverFacade(logger, "cli");
-  const cliLogger = createChildLogger(logger, "cli");
   const bootstrapStartMs = Date.now();
   const milestones: Record<string, number> = {};
-  cliLogger.info("Bootstrapping The Engineer...");
+  observer.info("Bootstrapping The Engineer...");
   progress?.("Initializing logger", "done");
 
   // Handles declared before try block so they can be cleaned up on failure
@@ -77,31 +75,33 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       cacheSizeMb: config.daemon.database.cache_size_mb,
     });
     milestones["db"] = Date.now() - bootstrapStartMs;
-    cliLogger.debug(
-      { dbPath, cacheSizeMb: config.daemon.database.cache_size_mb },
-      "Database initialized",
-    );
+    observer.debug("Database initialized", {
+      dbPath,
+      cacheSizeMb: config.daemon.database.cache_size_mb,
+    });
     progress?.("Initializing database", "done");
 
     // 3. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
-    progress?.("Creating core components", "start");
+    progress?.("Wiring system", "start");
     const {
-      eventBus,
+      components: {
+        eventBus,
+        taskEngine,
+        safetyLayer,
+        actionPipeline,
+        sessionMemory,
+        workspaceManager,
+      },
       topology,
-      taskEngine,
-      safetyLayer,
-      actionPipeline,
-      sessionMemory,
-      workspaceManager,
     } = createCoreComponents({
       db: dbHandle.db,
-      observer: observer.child("event-bus"),
+      observer,
       safetyConfig: config.safety,
       workspaceConfig: config.workspace,
       subscriberWarnThresholdMs: config.daemon.subscriber_warn_threshold_ms,
     });
     milestones["components"] = Date.now() - bootstrapStartMs;
-    cliLogger.debug(
+    observer.debug(
       "Core components created: EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager",
     );
 
@@ -120,11 +120,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     });
 
     // 6. Observability (BlobStore + ObservationStore for War Room)
-    const blobStore = new BlobStore(join(engineerHome, "traces"));
+    const tracesDir = join(engineerHome, "traces");
+    const blobStore = new BlobStore(tracesDir);
     const observationStore = createObservationStore(dbHandle.db, blobStore);
     observer.upgrade(observationStore);
     milestones["observability"] = Date.now() - bootstrapStartMs;
-    cliLogger.info("Observer upgraded — tracing enabled");
+    observer.info("Observer upgraded — tracing enabled");
 
     // 7. People Directory
     const peopleDirectory = new PeopleDirectory({ people: config.people });
@@ -145,7 +146,6 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     });
 
     // 9. Data Lifecycle Manager
-    const tracesDir = join(engineerHome, "traces");
     const dataLifecycleManager = createDataLifecycleManager({
       db: dbHandle.db,
       eventBus,
@@ -156,7 +156,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     // 10. Daemon
     topology.registerPublisher("daemon", DAEMON_EVENTS);
-    const daemon = createDaemon(config.daemon, {
+    const daemon = createDaemon({
+      config: config.daemon,
       eventBus,
       registry,
       taskEngine,
@@ -171,7 +172,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       engineerHome,
       dataLifecycleManager,
     });
-    progress?.("Creating core components", "done");
+    progress?.("Wiring system", "done");
 
     // ── Event Topology: Subscribers ──────────────────────────────────────────
 
@@ -187,14 +188,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     const declarations = topology.getAllDeclarations();
     const publisherIds = new Set(declarations.flatMap((d) => d.publishers));
     const subscriberIds = new Set(declarations.flatMap((d) => d.subscribers));
-    cliLogger.debug(
-      {
-        eventTypes: declarations.length,
-        publishers: publisherIds.size,
-        subscribers: subscriberIds.size,
-      },
-      "Event topology registered",
-    );
+    observer.debug("Event topology registered", {
+      eventTypes: declarations.length,
+      publishers: publisherIds.size,
+      subscribers: subscriberIds.size,
+    });
 
     // ── Plugin Loading ───────────────────────────────────────────────────────
 
@@ -208,26 +206,31 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");
 
-    cliLogger.info(
-      { elapsedMs: Date.now() - bootstrapStartMs, dbPath, milestones },
-      "Bootstrap complete",
-    );
+    observer.info("Bootstrap complete", {
+      elapsedMs: Date.now() - bootstrapStartMs,
+      dbPath,
+      milestones,
+    });
 
     return {
       daemon,
-      logger,
+      observer,
       cleanup() {
         dbHandle?.close();
       },
     };
   } catch (error) {
-    cliLogger.error({ err: error }, "Bootstrap failed");
-    // Clean up resources allocated before the failure point — reverse order
+    observer.error("Bootstrap failed", { err: sanitizeErrorMessage(error) });
+    // Clean up resources allocated before the failure point — reverse order.
+    // BlobStore (no open handles), ObservationStore (shares dbHandle, closed below),
+    // and DataLifecycleManager (start() not yet called) need no explicit cleanup.
     if (registry) {
       try {
         await registry.shutdownAll();
       } catch (shutdownError) {
-        cliLogger.warn({ err: shutdownError }, "Registry shutdown during bootstrap cleanup failed");
+        observer.warn("Registry shutdown during bootstrap cleanup failed", {
+          err: sanitizeErrorMessage(shutdownError),
+        });
       }
     }
     dbHandle?.close();

@@ -11,7 +11,7 @@ export type { DashboardConfig } from "./server.js";
 export function startDashboard(config: DashboardConfig, port: number): { close: () => void } {
   const { app, db } = createDashboardApp(config);
 
-  const server = serve({ fetch: app.fetch, port }, (info) => {
+  const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
     console.log("\n  The Engineer — War Room Dashboard");
     console.log(`  http://localhost:${String(info.port)}\n`);
   });

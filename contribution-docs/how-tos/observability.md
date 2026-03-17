@@ -185,7 +185,7 @@ interface SpanOptions {
 
 ## Component Tags
 
-**File:** `src/core/logging.ts`
+**File:** `src/core/observer/logging.ts`
 
 Every observer child is tagged with a `ComponentTag` — a TypeScript string union:
 
@@ -271,7 +271,7 @@ This is the ONE place where observer is optional (`obs?.`) — because plugin in
 
 ## Pino Configuration
 
-**File:** `src/core/logging.ts`
+**File:** `src/core/observer/logging.ts`
 
 ```typescript
 interface LoggingConfig {
@@ -409,7 +409,7 @@ handle.cleanup(); // Closes DB + removes temp dir
 | `src/core/observer/stream.ts` | `ObserverStream` (real-time pub/sub for dashboard SSE) |
 | `src/schemas/observer.ts` | Zod schemas, observation types enum, row mapper |
 | `src/db/migrations/003_observer.sql` | Database schema (table + 8 indexes) |
-| `src/core/logging.ts` | `ComponentTag` type, `createLogger`, `createSilentLogger` |
+| `src/core/observer/logging.ts` | `ComponentTag` type, `createLogger`, `createSilentLogger` |
 | `src/core/observer/blob-store.ts` | Content-addressable blob storage (SHA-256) |
 | `src/cli/bootstrap.ts` | Observer creation, upgrade, and threading to all components |
 | `test/helpers/test-observer-facade.ts` | Test helper: silent observer (no tracing) |

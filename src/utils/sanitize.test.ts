@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { sanitizeSecrets } from "./sanitize.js";
+import { sanitizeErrorMessage, sanitizeSecrets } from "./sanitize.js";
 
 describe("sanitizeSecrets", () => {
   const originalEnv = { ...process.env };
@@ -163,5 +163,30 @@ describe("sanitizeSecrets", () => {
     const result = sanitizeSecrets(input);
     expect(result).toContain("https://git:***@github.com/org/repo.git/");
     expect(result).not.toContain("ghp_x9k2m4n7");
+  });
+});
+
+describe("sanitizeErrorMessage", () => {
+  it("sanitizes Error objects with token-bearing URLs", () => {
+    const error = new Error("request to https://ghp_abc123xyz@api.github.com/repos failed");
+    const result = sanitizeErrorMessage(error);
+    expect(result).toContain("https://***@api.github.com/repos failed");
+    expect(result).not.toContain("ghp_abc123xyz");
+  });
+
+  it("sanitizes non-Error values", () => {
+    const result = sanitizeErrorMessage("failed at https://git:token123@github.com/org/repo");
+    expect(result).toContain("https://git:***@github.com/org/repo");
+    expect(result).not.toContain("token123");
+  });
+
+  it("passes through clean error messages unchanged", () => {
+    const error = new Error("connection refused");
+    expect(sanitizeErrorMessage(error)).toBe("connection refused");
+  });
+
+  it("handles non-Error non-string values", () => {
+    expect(sanitizeErrorMessage(null)).toBe("null");
+    expect(sanitizeErrorMessage(42)).toBe("42");
   });
 });

@@ -147,7 +147,8 @@ function createSecondDaemon(ctx: IntegrationContext): Daemon {
     },
   };
 
-  return createDaemon(config, {
+  return createDaemon({
+    config,
     eventBus: ctx.eventBus,
     registry: ctx.registry,
     taskEngine: ctx.taskEngine,

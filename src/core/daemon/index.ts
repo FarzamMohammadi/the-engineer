@@ -9,7 +9,6 @@ import {
   HealthTriggerFailurePayloadSchema,
   PreemptionRequestedPayloadSchema,
   ReviewPollCompletedPayloadSchema,
-  SystemCleanupCompletedPayloadSchema,
   type TaskChildrenAllDonePayload,
   TaskChildrenAllDonePayloadSchema,
   type TaskFeedbackReceivedPayload,
@@ -23,7 +22,7 @@ import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import { createNotificationRouter } from "./notification-router.js";
-import { createPreemptionManager } from "./preemption-manager.js";
+import { type PendingPreemption, createPreemptionManager } from "./preemption-manager.js";
 import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 import { createReviewHandler } from "./review-handler.js";
 import { createTaskScheduler } from "./task-scheduler.js";
@@ -82,13 +81,6 @@ export const EVENTS: EventDeclaration[] = [
     publishers: ["daemon"],
     subscribers: [],
   },
-  {
-    type: "system.cleanup_completed",
-    description: "Emitted after data lifecycle cleanup completes",
-    payloadSchema: SystemCleanupCompletedPayloadSchema,
-    publishers: ["daemon"],
-    subscribers: [],
-  },
 ];
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -104,13 +96,6 @@ export interface DaemonState {
   tasksCompleted: number;
   seenKeyCount: number;
   triggerFailures: Record<string, number>;
-}
-
-interface PendingPreemption {
-  targetTaskId: string;
-  replacementTaskId: string;
-  requestedAt: number;
-  retried: boolean;
 }
 
 /** The Daemon public API. */

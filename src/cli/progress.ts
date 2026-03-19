@@ -76,55 +76,6 @@ export class Spinner {
   }
 }
 
-// ── ProgressBar ──────────────────────────────────────────────────────────────
-
-const BAR_WIDTH = 30;
-
-/**
- * Progress bar for determinate progress.
- * Writes to stderr. No-op if not a TTY or in json/quiet mode.
- */
-export class ProgressBar {
-  private readonly total: number;
-  private current = 0;
-  private readonly message: string;
-  private readonly silent: boolean;
-
-  constructor(total: number, message: string, silent?: boolean) {
-    this.total = total;
-    this.message = message;
-    this.silent = silent ?? detectSilent();
-  }
-
-  /** Increment progress by `amount` (default 1). */
-  tick(amount = 1): void {
-    this.current = Math.min(this.current + amount, this.total);
-    if (this.silent) {
-      return;
-    }
-    this.render();
-  }
-
-  /** Complete the progress bar. */
-  complete(): void {
-    this.current = this.total;
-    if (this.silent) {
-      return;
-    }
-    this.render();
-    process.stderr.write("\n");
-  }
-
-  private render(): void {
-    const ratio = this.total > 0 ? this.current / this.total : 1;
-    const filled = Math.round(ratio * BAR_WIDTH);
-    const empty = BAR_WIDTH - filled;
-    const bar = `${"█".repeat(filled)}${"░".repeat(empty)}`;
-    const pct = Math.round(ratio * 100);
-    process.stderr.write(`${CLEAR_LINE}  ${bar} ${String(pct)}% ${this.message}`);
-  }
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function detectSilent(): boolean {

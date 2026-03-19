@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { _resetOutput, createOutput } from "./output.js";
-import { ProgressBar, Spinner } from "./progress.js";
+import { Spinner } from "./progress.js";
 
 let stderrWrites: string[];
 
@@ -109,48 +109,5 @@ describe("Spinner", () => {
     spinner.succeed();
     const lastWrites = stderrWrites.join("");
     expect(lastWrites).toContain("original");
-  });
-});
-
-// ── ProgressBar ──────────────────────────────────────────────────────────────
-
-describe("ProgressBar", () => {
-  it("renders progress to stderr", () => {
-    const bar = new ProgressBar(10, "items", false);
-    bar.tick(5);
-    const output = stderrWrites.join("");
-    expect(output).toContain("50%");
-    expect(output).toContain("items");
-  });
-
-  it("complete renders 100%", () => {
-    const bar = new ProgressBar(10, "items", false);
-    bar.tick(3);
-    bar.complete();
-    const output = stderrWrites.join("");
-    expect(output).toContain("100%");
-  });
-
-  it("does not exceed total", () => {
-    const bar = new ProgressBar(5, "items", false);
-    bar.tick(10);
-    const output = stderrWrites.join("");
-    expect(output).toContain("100%");
-  });
-
-  it("is silent when explicitly set", () => {
-    const bar = new ProgressBar(10, "items", true);
-    bar.tick(5);
-    bar.complete();
-    expect(stderrWrites).toHaveLength(0);
-  });
-
-  it("is silent in quiet mode", () => {
-    _resetOutput();
-    createOutput({ mode: "quiet" });
-    const bar = new ProgressBar(10, "items");
-    bar.tick(5);
-    bar.complete();
-    expect(stderrWrites).toHaveLength(0);
   });
 });

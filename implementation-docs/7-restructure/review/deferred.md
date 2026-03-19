@@ -161,3 +161,15 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **`autonomy.decisions` open-key catalog** — Intentionally free-form by design. `.describe()` explaining this is sufficient.
 - **Timezone IANA validation** — `Intl.supportedValuesOf('timeZone')` requires Node 21+. Defer to validation utility.
 - **Progressive `engineer init`** — The `setup` wizard handles "just get started". Full phased init is a larger UX redesign.
+
+## Round 3 — startup
+
+### Lens I (Consistency & Patterns)
+- **`extractErrorMessage` beyond phases 0-4 scope:** ~25+ additional files (adapter base classes, all plugin implementations, CLI commands, orchestrator subsystems) still use the inline `error instanceof Error ? error.message : String(error)` pattern — needs a dedicated sweep across the full codebase in respective phase-group reviews
+- **Test mock divergence in `trigger-poller.test.ts`:** Uses inline `createMockContext()`/`makeDaemonConfig()` mocks instead of shared test helpers. Functional and correct; test-local mocks are acceptable for focused unit tests
+- **Dead event types in schema:** ~9 forward-looking event types (`timeout.*`, `workspace.merge_conflict`, `git.*`, `health.config_reload_failed`) defined in `events.ts` but never published or subscribed — by design for future features
+
+### Lens J (Minimalism & Dead Code)
+- **`trigger.pr_review` event placeholder:** Schema and manifest contribution exist but no code publishes or subscribes. Left in place — documents planned feature intent, only ~10 lines
+- **`DaemonError` abstract base with single subclass:** Only `DaemonAlreadyRunningError` extends it. Kept — 4-line cost, plausible second subclass, sound pattern
+- **SDK barrel completeness:** Many re-exported schemas never imported by built-in plugins. Intentional — barrel is the future `packages/plugin-sdk/` extraction point

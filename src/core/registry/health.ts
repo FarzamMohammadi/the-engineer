@@ -1,6 +1,7 @@
 import type { PluginHealthRecord, PluginHealthState } from "../../schemas/adapters.js";
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
+import { extractErrorMessage } from "../../utils/errors.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
 import type { PluginRecord } from "./lifecycle.js";
@@ -145,7 +146,7 @@ export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
     try {
       status = await withTimeout(record.instance.healthCheck());
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       status = { healthy: false, message };
     }
 

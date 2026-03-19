@@ -153,7 +153,6 @@ function createSecondDaemon(ctx: IntegrationContext): Daemon {
     registry: ctx.registry,
     taskEngine: ctx.taskEngine,
     safetyLayer: ctx.safetyLayer,
-    actionPipeline: ctx.actionPipeline,
     orchestrator: ctx.orchestrator,
     sessionMemory: ctx.sessionMemory,
     workspaceManager: ctx.workspaceManager,

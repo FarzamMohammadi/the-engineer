@@ -6,8 +6,23 @@ import type Database from "better-sqlite3";
 import { runIncrementalVacuum } from "../../db/database.js";
 import type { DataLifecycleConfig } from "../../schemas/config.js";
 import type { EventType } from "../../schemas/events.js";
+import { SystemCleanupCompletedPayloadSchema } from "../../schemas/events.js";
 import type { Clock } from "../../utils/clock.js";
+import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+
+// ── Event Declarations ────────────────────────────────────────────────────────
+
+/** Events published by the data-lifecycle manager. */
+export const EVENTS: EventDeclaration[] = [
+  {
+    type: "system.cleanup_completed",
+    description: "Emitted after data lifecycle cleanup completes",
+    payloadSchema: SystemCleanupCompletedPayloadSchema,
+    publishers: ["data-lifecycle"],
+    subscribers: [],
+  },
+];
 
 const BLOB_TXT_SUFFIX = /\.txt$/;
 

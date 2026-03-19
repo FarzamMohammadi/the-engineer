@@ -1,7 +1,6 @@
 import type { DaemonConfig } from "../../schemas/config.js";
 import type { Clock } from "../../utils/clock.js";
 import type { DataLifecycleManager } from "../data-lifecycle/index.js";
-import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
@@ -21,7 +20,6 @@ export interface DaemonContext {
   registry: Registry;
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
-  actionPipeline: IActionPipeline;
   orchestrator: Orchestrator;
   sessionMemory: ISessionMemory;
   workspaceManager: IWorkspaceManager;

@@ -6,6 +6,8 @@ import ms from "ms";
 import YAML from "yaml";
 import type { z } from "zod";
 
+import { extractErrorMessage } from "../utils/errors.js";
+
 import type { Person } from "../schemas/adapters.js";
 import {
   CURRENT_CONFIG_VERSION,
@@ -323,7 +325,7 @@ export function loadConfig<S extends z.ZodTypeAny>(
     parsed = YAML.parse(content) as unknown;
   } catch (error) {
     throw new ConfigError(
-      `Failed to parse YAML in ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to parse YAML in ${filePath}: ${extractErrorMessage(error)}`,
       filePath,
       { cause: error },
     );
@@ -364,7 +366,7 @@ export function loadConfigSafe<S extends z.ZodTypeAny>(
     return {
       ok: false,
       error: new ConfigError(
-        `Unexpected error loading ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+        `Unexpected error loading ${filePath}: ${extractErrorMessage(error)}`,
         filePath,
         { cause: error },
       ),

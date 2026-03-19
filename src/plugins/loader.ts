@@ -3,13 +3,12 @@ import { join } from "node:path";
 
 import { parse as parseYaml } from "yaml";
 
+import { YAML_EXTENSION_PATTERN } from "../cli/constants.js";
 import { resolveEnvVars } from "../config/loader.js";
 import type { IObserver } from "../core/observer/index.js";
 import type { Registry } from "../core/registry/index.js";
 import { extractErrorMessage } from "../utils/errors.js";
 import { BUILTIN_PLUGINS, type BuiltinPlugin } from "./builtin.js";
-
-const YAML_EXTENSION = /\.yaml$/;
 
 // ── Plugin Config Loading ─────────────────────────────────────────────────────
 
@@ -51,7 +50,7 @@ export function discoverEnabledPlugins(pluginConfigDir: string): BuiltinPlugin[]
     try {
       filenames = readdirSync(pluginConfigDir)
         .filter((filename) => filename.endsWith(".yaml"))
-        .map((filename) => filename.replace(YAML_EXTENSION, ""));
+        .map((filename) => filename.replace(YAML_EXTENSION_PATTERN, ""));
     } catch (error) {
       throw new Error(
         `Cannot read plugin config directory "${pluginConfigDir}": ${extractErrorMessage(error)}`,

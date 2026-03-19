@@ -172,7 +172,6 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     registry,
     taskEngine,
     safetyLayer,
-    actionPipeline,
     orchestrator,
     sessionMemory,
     workspaceManager,

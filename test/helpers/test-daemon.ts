@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Mock, vi } from "vitest";
 
-import type { ActionPipeline } from "../../src/core/action-pipeline/index.js";
 import { type Daemon, type DaemonState, createDaemon } from "../../src/core/daemon/index.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
@@ -86,9 +85,6 @@ export interface TestDaemonHandle {
     updateConfig: Mock;
     checkAutoMergeAllowed: Mock;
     flushCostSnapshot: Mock;
-  };
-  actionPipeline: {
-    execute: Mock;
   };
   workspaceManager: {
     createWorkspace: Mock;
@@ -294,11 +290,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     flushCostSnapshot: vi.fn(),
   };
 
-  // ── ActionPipeline mock ───────────────────────────────────────────────
-  const actionPipeline = {
-    execute: vi.fn(),
-  };
-
   // ── WorkspaceManager mock ─────────────────────────────────────────────
   const workspaceManager = {
     createWorkspace: vi.fn(),
@@ -327,7 +318,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     registry: registry as unknown as Registry,
     taskEngine: taskEngine as unknown as ITaskEngine,
     safetyLayer: safetyLayer as unknown as ISafetyLayer,
-    actionPipeline: actionPipeline as unknown as ActionPipeline,
     orchestrator: orchestrator as unknown as Orchestrator,
     sessionMemory: sessionMemory as unknown as ISessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
@@ -347,7 +337,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     orchestrator,
     sessionMemory,
     safetyLayer,
-    actionPipeline,
     workspaceManager,
     peopleDirectory,
     getSubscriptionCallback: (eventType: string) => subscriptions.get(eventType),

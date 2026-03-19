@@ -2,7 +2,10 @@ import { join } from "node:path";
 
 import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
-import { createDataLifecycleManager } from "../core/data-lifecycle/index.js";
+import {
+  EVENTS as DATA_LIFECYCLE_EVENTS,
+  createDataLifecycleManager,
+} from "../core/data-lifecycle/index.js";
 import { HookRegistry } from "../core/hooks/index.js";
 import {
   BlobStore,
@@ -151,6 +154,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     });
 
     // 9. Data Lifecycle Manager
+    eventTopology.registerPublisher("data-lifecycle", DATA_LIFECYCLE_EVENTS);
     const dataLifecycleManager = createDataLifecycleManager({
       db: dbHandle.db,
       eventBus,
@@ -167,7 +171,6 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       registry,
       taskEngine,
       safetyLayer,
-      actionPipeline,
       orchestrator,
       sessionMemory,
       workspaceManager,
@@ -186,7 +189,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     eventTopology.registerSubscriber("safety_layer", "cost.incurred");
     eventTopology.registerSubscriber("safety_layer:cleanup", "task.state_changed");
     eventTopology.registerSubscriber("daemon:cost", "cost.limit_reached");
-    eventTopology.registerSubscriber("daemon:comm", "comm.message_received");
+    // daemon:comm subscribes to comm.message_received — topology registration deferred until
+    // CommunicationAdapter.receive capability is implemented (see future-considerations.md)
     eventTopology.registerSubscriber("daemon:state-sync", "task.state_changed");
     eventTopology.registerSubscriber("daemon:children-done", "task.children_all_done");
     eventTopology.registerSubscriber("daemon:feedback", "task.feedback_received");

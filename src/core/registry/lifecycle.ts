@@ -7,6 +7,7 @@ import {
   type RegistrationResult,
 } from "../../schemas/adapters.js";
 import type { PluginHealthRecord } from "../../schemas/adapters.js";
+import { extractErrorMessage } from "../../utils/errors.js";
 import type { IObserver } from "../observer/index.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -150,7 +151,7 @@ export function createLifecycleManager(observer: IObserver): LifecycleManager {
       try {
         await record.instance.shutdown();
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = extractErrorMessage(error);
         observer.error("Plugin shutdown error (non-fatal)", {
           pluginId: record.manifest.id,
           error: message,

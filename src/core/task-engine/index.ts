@@ -24,8 +24,7 @@ import type {
   UpdatableField,
 } from "../interfaces/task-engine.interface.js";
 
-// Import EventBus class for constructor injection
-import type { EventBus } from "../event-bus/index.js";
+import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
 
 // Internal modules
@@ -117,7 +116,7 @@ const JSON_FIELDS: ReadonlySet<UpdatableField> = new Set([
  * Emits events on creation and state changes.
  */
 export class TaskEngine implements ITaskEngine {
-  private readonly eventBus: EventBus;
+  private readonly eventBus: IEventBus;
   private readonly observer: IObserver;
   private readonly stateMachine: StateMachine;
   private readonly queries: TaskQueries;
@@ -128,7 +127,7 @@ export class TaskEngine implements ITaskEngine {
   private readonly updateTrackingStmt: Database.Statement;
   private readonly updateFieldStmts: Map<UpdatableField, Database.Statement>;
 
-  constructor(db: Database.Database, eventBus: EventBus, observer: IObserver) {
+  constructor(db: Database.Database, eventBus: IEventBus, observer: IObserver) {
     this.eventBus = eventBus;
     this.observer = observer;
     this.stateMachine = new StateMachine(db, eventBus);

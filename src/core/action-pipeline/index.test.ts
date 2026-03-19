@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { ActionClass } from "../../schemas/task.js";
-import type { EventBus } from "../event-bus/index.js";
+import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine, PermissionResult } from "../interfaces/task-engine.interface.js";
 import { ActionPipeline } from "./index.js";
@@ -30,7 +30,7 @@ function createMocks() {
   const pipeline = new ActionPipeline(
     taskEngine as unknown as ITaskEngine,
     safetyLayer as unknown as ISafetyLayer,
-    eventBus as unknown as EventBus,
+    eventBus as unknown as IEventBus,
     observer,
   );
   return { pipeline, taskEngine, safetyLayer, eventBus };
@@ -445,7 +445,7 @@ describe("ActionPipeline", () => {
       const pipeline = new ActionPipeline(
         taskEngine as unknown as ITaskEngine,
         safetyLayer as unknown as ISafetyLayer,
-        eventBus as unknown as EventBus,
+        eventBus as unknown as IEventBus,
         observer,
       );
 

@@ -363,6 +363,49 @@ describe("PhaseRunner", () => {
       }
     });
 
+    it("closes session with 'crashed' when phase handler throws (F4)", async () => {
+      const ctx = createMockContext();
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          vi.fn(() => {
+            if (phase === Phases.research) {
+              return Promise.reject(new Error("tool timeout"));
+            }
+            return Promise.resolve(makeOutput(phase));
+          }),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+      const state = createState({ sessionId: "session-abc" });
+
+      await runPhasePipeline(createDispatch(), state, deps);
+
+      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-abc", "crashed");
+    });
+
+    it("closes session with 'crashed' when processPhaseCompletion throws (F7)", async () => {
+      const ctx = createMockContext();
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+      const state = createState({ sessionId: "session-xyz" });
+
+      // Make PR creation throw (happens inside processPhaseCompletion after demo_prep)
+      (deps.prManager.commitPushAndCreatePR as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("git push failed: remote rejected"),
+      );
+
+      const result = await runPhasePipeline(createDispatch(), state, deps);
+
+      expect(result.outcome).toBe("error");
+      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-xyz", "crashed");
+    });
+
     it("exits with decomposed when decomposition handler returns result", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();

@@ -75,7 +75,12 @@ export const TriggerEventSchema = z.object({
   title: z.string(),
   body: z.string().nullable(),
   repo: z.string(),
-  clone_url: z.string(),
+  clone_url: z
+    .string()
+    .url()
+    .refine((u) => u.startsWith("https://"), {
+      message: "clone_url must use HTTPS",
+    }),
   metadata: z.record(z.unknown()).nullable(),
 });
 export type TriggerEvent = z.infer<typeof TriggerEventSchema>;

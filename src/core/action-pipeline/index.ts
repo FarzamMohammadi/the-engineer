@@ -1,14 +1,13 @@
 import { ActionRejectedPayloadSchema, EventTypes } from "../../schemas/events.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
-import type { EventBus } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type {
   ExecuteInput,
   IActionPipeline,
   PipelineResult,
 } from "../interfaces/action-pipeline.interface.js";
-import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IObserver } from "../observer/index.js";
@@ -38,13 +37,13 @@ export const EVENTS: EventDeclaration[] = [
 export class ActionPipeline implements IActionPipeline {
   private readonly taskEngine: ITaskEngine;
   private readonly safetyLayer: ISafetyLayer;
-  private readonly eventBus: EventBus;
+  private readonly eventBus: IEventBus;
   private readonly observer: IObserver;
 
   constructor(
     taskEngine: ITaskEngine,
     safetyLayer: ISafetyLayer,
-    eventBus: EventBus,
+    eventBus: IEventBus,
     observer: IObserver,
   ) {
     this.taskEngine = taskEngine;

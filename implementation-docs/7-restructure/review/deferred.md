@@ -173,3 +173,20 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **`trigger.pr_review` event placeholder:** Schema and manifest contribution exist but no code publishes or subscribes. Left in place — documents planned feature intent, only ~10 lines
 - **`DaemonError` abstract base with single subclass:** Only `DaemonAlreadyRunningError` extends it. Kept — 4-line cost, plausible second subclass, sound pattern
 - **SDK barrel completeness:** Many re-exported schemas never imported by built-in plugins. Intentional — barrel is the future `packages/plugin-sdk/` extraction point
+
+## Round 1 — phases5-6 (Scheduling & Workspace)
+
+### Lens A (Structure & Organization)
+- None — all actionable findings applied
+
+### Lens B (Naming & Readability)
+- **`getTaskRepo` possibly dead code** (`workspace-lifecycle.ts`): Method takes `Dispatch` but name says "Task." Only called in tests, never in production code. Candidate for removal in a future cleanup pass.
+
+### Lens C (Abstractions & API Design)
+- **`WorkspaceLifecycle` mixes 4 concerns**: Bundles workspace setup, session creation, milestone notifications, GitHub issue commenting, and AndonCord under one name. "WorkspaceLifecycle" accurately describes only 1-2 of these. Clean split: `WorkspaceSetup` + `PipelineNotifier` with `AndonCord` as a standalone dependency — each testable in isolation. Deferred because it touches the Orchestrator constructor and `executeTask` call sites.
+
+### Lens D (Error Handling & Edge Cases)
+- None — all 13 findings applied
+
+### Lens E (Security & Trust Boundaries)
+- None — all findings applied

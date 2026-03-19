@@ -1,12 +1,46 @@
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { EventTypes } from "../../schemas/events.js";
-import { SubStates, TaskStates } from "../../schemas/task.js";
+import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
-import { computeAgedPriority } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { TaskSchedulerContext } from "./types.js";
+
+// ── Pure Functions ────────────────────────────────────────────────────────────
+
+/** Whether a task in the given state consumes a working slot. */
+export function isSlotConsuming(state: string, subState: string | null): boolean {
+  return (
+    state === TaskStates.active &&
+    (subState === SubStates.working || subState === SubStates.integrating)
+  );
+}
+
+/**
+ * Compute the aged priority for a queued task.
+ * Returns the new priority or null if no change needed.
+ */
+export function computeAgedPriority(
+  basePriority: number,
+  elapsedMs: number,
+  config: {
+    aging_threshold_ms: number;
+    aging_interval_ms: number;
+    aging_increment: number;
+    aging_cap: number;
+  },
+): number | null {
+  if (elapsedMs < config.aging_threshold_ms) {
+    return null;
+  }
+
+  const periods =
+    Math.floor((elapsedMs - config.aging_threshold_ms) / config.aging_interval_ms) + 1;
+  const aged = Math.min(basePriority + periods * config.aging_increment, config.aging_cap);
+
+  return aged > basePriority ? aged : null;
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,11 +55,11 @@ export interface SchedulerCallbacks {
 /** Schedules, dispatches, and tracks task execution. */
 export interface TaskScheduler {
   /** Schedule eligible queued tasks into available slots. Pre-fetched tasks avoid redundant DB query. */
-  scheduleNext(queuedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>): void;
+  scheduleNext(queuedTasks?: Task[]): void;
   /** Dispatch a specific task to the Orchestrator. */
-  dispatchTask(candidate: ReturnType<ITaskEngine["getQueuedByPriority"]>[number]): void;
+  dispatchTask(task: Task): void;
   /** Apply priority aging to queued tasks. Pre-fetched tasks avoid redundant DB query. */
-  applyPriorityAging(now: number, queuedTasks?: ReturnType<ITaskEngine["getTasksByState"]>): void;
+  applyPriorityAging(now: number, queuedTasks?: Task[]): void;
   /** Get currently active dispatch task IDs. */
   getActiveTaskIds(): string[];
   /** Get count of completed tasks. */
@@ -38,8 +72,11 @@ export interface TaskScheduler {
   initializeBasePriorities(tasks: Array<{ id: string; priority: number }>): void;
   /** Remove an active dispatch (for preemption/shutdown). */
   removeActiveDispatch(taskId: string): void;
-  /** Get the active dispatches map (for shutdown drain). */
-  getActiveDispatches(): Map<string, Promise<ExecuteTaskResult>>;
+  /**
+   * Drain all active dispatches during shutdown.
+   * Waits up to timeoutMs for each task, then transitions active tasks back to queued.
+   */
+  drainForShutdown(timeoutMs: number): Promise<void>;
   /** Handle task completion after orchestrator finishes. */
   handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void;
   /** Handle task error from orchestrator crash. */
@@ -88,8 +125,10 @@ export function createTaskScheduler(
 
     if (parent.cascade_policy === "pause_siblings") {
       const siblings = taskEngine.getChildren(task.parent_id);
-      const activeSibling = siblings.find((s) => s.id !== task.id && s.state === TaskStates.active);
-      if (activeSibling) {
+      const hasActiveSibling = siblings.some(
+        (s) => s.id !== task.id && s.state === TaskStates.active,
+      );
+      if (hasActiveSibling) {
         return false;
       }
     }
@@ -97,7 +136,7 @@ export function createTaskScheduler(
     return true;
   }
 
-  function scheduleNext(prefetchedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>): void {
+  function scheduleNext(prefetchedTasks?: Task[]): void {
     const available = getAvailableSlots();
     if (available <= 0) {
       return;
@@ -106,36 +145,35 @@ export function createTaskScheduler(
     const queuedTasks = prefetchedTasks ?? taskEngine.getQueuedByPriority();
     const eligible = queuedTasks.filter(isTaskEligible);
 
-    const toSchedule = eligible.slice(0, available);
-    for (const candidate of toSchedule) {
-      dispatchTask(candidate);
+    const tasksToDispatch = eligible.slice(0, available);
+    for (const task of tasksToDispatch) {
+      dispatchTask(task);
     }
   }
 
-  function dispatchTask(candidate: ReturnType<ITaskEngine["getQueuedByPriority"]>[number]): void {
+  function dispatchTask(task: Task): void {
     // Build dispatch package
-    const rawCheckpoint = sessionMemory.getLatestCheckpoint(candidate.id);
+    const rawCheckpoint = sessionMemory.getLatestCheckpoint(task.id);
 
     // Rework dispatches (unapplied feedback) must restart from intake so the LLM
     // sees the reviewer's comments — NOT resume from the old checkpoint.
-    const hasUnappliedFeedback =
-      candidate.review?.feedback_rounds?.some((r) => !r.applied) ?? false;
+    const hasUnappliedFeedback = task.review?.feedback_rounds?.some((r) => !r.applied) ?? false;
     const checkpoint = hasUnappliedFeedback ? null : rawCheckpoint;
 
-    const repoKnowledge = candidate.workspace
-      ? sessionMemory.getKnowledge("repo", candidate.workspace.repo)
+    const repoKnowledge = task.workspace
+      ? sessionMemory.getKnowledge("repo", task.workspace.repo)
       : [];
     const userKnowledge = sessionMemory.getKnowledge("user");
 
     const dispatch: Dispatch = {
-      task: candidate,
+      task,
       resume_from: checkpoint,
       knowledge: { repo: repoKnowledge, user: userKnowledge },
     };
 
     // Transition to active.working
     const transition = taskEngine.requestTransition(
-      candidate.id,
+      task.id,
       TaskStates.active,
       SubStates.working,
       checkpoint ? "resumed_from_checkpoint" : "scheduled",
@@ -144,24 +182,42 @@ export function createTaskScheduler(
 
     if (!transition.success) {
       observer.warn("Failed to transition task to active.working", {
-        taskId: candidate.id,
+        taskId: task.id,
         reason: transition.reason,
       });
       return;
     }
 
     observer.info("Dispatching task to Orchestrator", {
-      taskId: candidate.id,
-      title: candidate.title,
+      taskId: task.id,
+      title: task.title,
     });
 
     // Fire-and-forget dispatch
     const promise = orchestrator.executeTask(dispatch);
-    activeDispatches.set(candidate.id, promise);
+    activeDispatches.set(task.id, promise);
 
     promise.then(
-      (result) => callbacks.onTaskCompleted(candidate.id, result),
-      (error) => callbacks.onTaskError(candidate.id, error),
+      (result) => {
+        try {
+          callbacks.onTaskCompleted(task.id, result);
+        } catch (callbackError) {
+          observer.error("onTaskCompleted callback threw unexpectedly", {
+            taskId: task.id,
+            error: callbackError,
+          });
+        }
+      },
+      (error) => {
+        try {
+          callbacks.onTaskError(task.id, error);
+        } catch (callbackError) {
+          observer.error("onTaskError callback threw unexpectedly", {
+            taskId: task.id,
+            error: callbackError,
+          });
+        }
+      },
     );
   }
 
@@ -180,13 +236,20 @@ export function createTaskScheduler(
   }
 
   function handleCompletedOutcome(taskId: string, taskTitle: string): void {
-    taskEngine.requestTransition(
+    const transition = taskEngine.requestTransition(
       taskId,
       TaskStates.completed,
       null,
       "pipeline_completed",
       "daemon",
     );
+    if (!transition.success) {
+      observer.warn("Failed to transition task to completed — skipping cleanup and notifications", {
+        taskId,
+        reason: transition.reason,
+      });
+      return;
+    }
     checkAndEmitChildrenAllDone(taskId);
     try {
       workspaceManager.cleanupWorkspace(taskId, true);
@@ -202,10 +265,72 @@ export function createTaskScheduler(
     const reason = "reason" in result ? (result.reason as string) : "unknown";
     const phase = "phase" in result ? result.phase : undefined;
     observer.error("Task error", { taskId, phase, reason });
-    taskEngine.requestTransition(taskId, TaskStates.blocked, null, reason, "daemon");
+    const transition = taskEngine.requestTransition(
+      taskId,
+      TaskStates.blocked,
+      null,
+      reason,
+      "daemon",
+    );
+    if (!transition.success) {
+      observer.warn("Failed to transition task to blocked — skipping notifications", {
+        taskId,
+        reason: transition.reason,
+      });
+      return;
+    }
     checkAndEmitChildrenAllDone(taskId);
     notifications.sendTaskError(taskId, taskTitle, reason);
     notifications.commentOnTaskIssue(taskId, `Task encountered an error: ${reason}`);
+  }
+
+  function handleReviewPendingOutcome(taskId: string, taskTitle: string): void {
+    const reviewTransition = taskEngine.requestTransition(
+      taskId,
+      TaskStates.review_pending,
+      SubStates.demo,
+      "pr_created",
+      "daemon",
+    );
+    if (reviewTransition.success) {
+      notifications.sendReviewPending(taskId, taskTitle);
+      notifications.commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
+      observer.info("Task awaiting PR review", { taskId });
+    } else {
+      observer.warn("Failed to transition task to review_pending — skipping notifications", {
+        taskId,
+        reason: reviewTransition.reason,
+      });
+    }
+  }
+
+  function handlePreemptedOutcome(taskId: string, lastPhase: unknown): void {
+    const preemptTransition = taskEngine.requestTransition(
+      taskId,
+      TaskStates.queued,
+      null,
+      "preempted",
+      "daemon",
+    );
+    if (preemptTransition.success) {
+      observer.info("Task preempted — returned to queue", { taskId, lastPhase });
+    } else {
+      observer.warn("Failed to transition preempted task back to queued", {
+        taskId,
+        reason: preemptTransition.reason,
+      });
+    }
+  }
+
+  function handleUnknownOutcome(taskId: string, outcome: string): void {
+    observer.error("Unknown task outcome — transitioning task to blocked", { taskId, outcome });
+    taskEngine.requestTransition(
+      taskId,
+      TaskStates.blocked,
+      null,
+      `unknown_outcome_${outcome}`,
+      "daemon",
+    );
   }
 
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
@@ -223,47 +348,62 @@ export function createTaskScheduler(
     if (result.outcome === Outcomes.completed) {
       handleCompletedOutcome(taskId, taskTitle);
     } else if (result.outcome === Outcomes.review_pending) {
-      taskEngine.requestTransition(
-        taskId,
-        TaskStates.review_pending,
-        SubStates.demo,
-        "pr_created",
-        "daemon",
-      );
-      notifications.sendReviewPending(taskId, taskTitle);
-      notifications.commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
-      observer.info("Task awaiting PR review", { taskId });
+      handleReviewPendingOutcome(taskId, taskTitle);
     } else if (result.outcome === Outcomes.decomposed) {
       observer.info("Task decomposed — children queued for scheduling", {
         taskId,
         childCount: result.childTaskIds.length,
       });
     } else if (result.outcome === Outcomes.preempted) {
-      taskEngine.requestTransition(taskId, TaskStates.queued, null, "preempted", "daemon");
-      observer.info("Task preempted — returned to queue", { taskId, lastPhase: result.lastPhase });
+      handlePreemptedOutcome(taskId, result.lastPhase);
     } else if (result.outcome === Outcomes.error) {
       handleErrorOutcome(taskId, taskTitle, result);
+    } else {
+      handleUnknownOutcome(taskId, (result as { outcome: string }).outcome);
     }
   }
 
   function handleTaskError(taskId: string, error: unknown): void {
     activeDispatches.delete(taskId);
-    observer.error("Orchestrator crash during task execution", { taskId, error });
+    try {
+      observer.error("Orchestrator crash during task execution", {
+        taskId,
+        error: sanitizeErrorMessage(error),
+      });
 
-    eventBus.publish({
-      type: EventTypes["health.stuck_detected"],
-      source: "daemon",
-      task_id: taskId,
-      payload: {
+      eventBus.publish({
+        type: EventTypes["health.stuck_detected"],
+        source: "daemon",
         task_id: taskId,
-        condition: "orchestrator_crash",
-        threshold_ms: config.stuck_threshold_ms,
-        elapsed_ms: 0,
-        last_activity: null,
-      },
-    } satisfies PublishInput<"health.stuck_detected">);
+        payload: {
+          task_id: taskId,
+          condition: "orchestrator_crash",
+          threshold_ms: config.stuck_threshold_ms,
+          elapsed_ms: 0,
+          last_activity: null,
+        },
+      } satisfies PublishInput<"health.stuck_detected">);
 
-    taskEngine.requestTransition(taskId, TaskStates.queued, null, "crash_recovery", "daemon");
+      const transition = taskEngine.requestTransition(
+        taskId,
+        TaskStates.queued,
+        null,
+        "crash_recovery",
+        "daemon",
+      );
+      if (!transition.success) {
+        observer.warn("Failed to transition crashed task back to queued", {
+          taskId,
+          reason: transition.reason,
+        });
+      }
+    } catch (innerError) {
+      // Last-resort: if crash recovery itself fails, log and leave stuck detection to find it
+      observer.error("Critical: handleTaskError recovery failed — task may be stuck", {
+        taskId,
+        recoveryError: innerError,
+      });
+    }
   }
 
   // ── Child Completion Detection ──────────────────────────────────────────
@@ -275,15 +415,23 @@ export function createTaskScheduler(
     }
 
     const siblings = taskEngine.getChildren(child.parent_id);
+    // blocked counts as terminal: an errored child transitions to blocked, not failed.
+    // The parent must not wait forever for a child that cannot make progress.
     const allTerminal = siblings.every(
-      (s) => s.state === TaskStates.completed || s.state === TaskStates.failed,
+      (s) =>
+        s.state === TaskStates.completed ||
+        s.state === TaskStates.failed ||
+        s.state === TaskStates.blocked,
     );
 
     if (!allTerminal) {
       return;
     }
 
-    const failedIds = siblings.filter((s) => s.state === TaskStates.failed).map((s) => s.id);
+    // Include blocked tasks alongside failed ones so the parent knows not all succeeded
+    const failedIds = siblings
+      .filter((s) => s.state === TaskStates.failed || s.state === TaskStates.blocked)
+      .map((s) => s.id);
 
     eventBus.publish({
       type: EventTypes["task.children_all_done"],
@@ -306,10 +454,7 @@ export function createTaskScheduler(
 
   // ── Priority Aging ──────────────────────────────────────────────────────
 
-  function applyPriorityAging(
-    now: number,
-    prefetchedTasks?: ReturnType<ITaskEngine["getTasksByState"]>,
-  ): void {
+  function applyPriorityAging(now: number, prefetchedTasks?: Task[]): void {
     const queuedTasks = prefetchedTasks ?? taskEngine.getTasksByState(TaskStates.queued);
     for (const task of queuedTasks) {
       const base = basePriorities.get(task.id) ?? task.priority;
@@ -351,8 +496,47 @@ export function createTaskScheduler(
     activeDispatches.delete(taskId);
   }
 
-  function getActiveDispatches(): Map<string, Promise<ExecuteTaskResult>> {
-    return activeDispatches;
+  async function drainForShutdown(timeoutMs: number): Promise<void> {
+    const total = activeDispatches.size;
+    let drained = 0;
+    let transitioned = 0;
+
+    for (const [taskId, promise] of activeDispatches) {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          promise,
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => reject(new Error("shutdown_timeout")), timeoutMs);
+          }),
+        ]);
+        drained++;
+      } catch {
+        observer.warn("Shutdown timeout waiting for task", { taskId });
+      } finally {
+        if (timeoutHandle !== undefined) {
+          clearTimeout(timeoutHandle);
+        }
+      }
+
+      // Transition active tasks back to queued so they resume on next start
+      const task = taskEngine.getTask(taskId);
+      if (task && task.state === TaskStates.active) {
+        taskEngine.requestTransition(
+          taskId,
+          TaskStates.queued,
+          null,
+          "graceful_shutdown",
+          "daemon",
+        );
+        transitioned++;
+      }
+    }
+    activeDispatches.clear();
+
+    if (total > 0) {
+      observer.info("Active dispatches drained", { total, drained, transitioned });
+    }
   }
 
   return {
@@ -365,7 +549,7 @@ export function createTaskScheduler(
     trackBasePriority,
     initializeBasePriorities,
     removeActiveDispatch,
-    getActiveDispatches,
+    drainForShutdown,
     handleTaskCompletion,
     handleTaskError,
     checkAndEmitChildrenAllDone,

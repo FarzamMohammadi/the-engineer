@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -13,8 +13,8 @@ import {
   WorkspaceVerifiedPayloadSchema,
 } from "../../schemas/events.js";
 import type { TaskWorkspace } from "../../schemas/task.js";
-import type { EventBus, PublishInput } from "../event-bus/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type {
   CreateWorkspaceOptions,
   IWorkspaceManager,
@@ -151,11 +151,11 @@ export function validateWorkspacePath(targetPath: string, workspaceRoot: string)
  * files, the database, or git remote URLs on disk.
  */
 export class WorkspaceManager implements IWorkspaceManager {
-  private readonly eventBus: EventBus;
+  private readonly eventBus: IEventBus;
   private readonly config: WorkspaceConfig;
   private readonly workspaces = new Map<string, WorkspaceRecord>();
 
-  constructor(eventBus: EventBus, config: WorkspaceConfig) {
+  constructor(eventBus: IEventBus, config: WorkspaceConfig) {
     this.eventBus = eventBus;
     // Expand ~ to actual home directory — Node APIs don't handle tilde
     this.config = {
@@ -200,7 +200,7 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Fetch latest from remote
     if (this.config.fetch_before_create) {
-      this.gitExecAuth(["fetch", "origin"], repoCloneDir);
+      this.gitExecWithAuth(["fetch", "origin"], repoCloneDir);
     }
 
     // Determine the ref to branch from
@@ -212,10 +212,19 @@ export class WorkspaceManager implements IWorkspaceManager {
     // Get the base commit
     const baseCommit = this.gitExec(["rev-parse", branch], repoCloneDir);
 
-    // Create the worktree
-    this.gitExec(["worktree", "add", worktreePath, branch], repoCloneDir);
+    // Create the worktree — if this fails, roll back the branch so we don't leave orphaned refs
+    try {
+      this.gitExec(["worktree", "add", worktreePath, branch], repoCloneDir);
+    } catch (worktreeError) {
+      try {
+        this.gitExec(["branch", "-D", branch], repoCloneDir);
+      } catch {
+        // Branch rollback best-effort — the stuck detection loop will surface this
+      }
+      throw worktreeError;
+    }
 
-    const record: WorkspaceRecord = {
+    const workspace: WorkspaceRecord = {
       taskId,
       repo,
       branch,
@@ -224,7 +233,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       baseCommit,
     };
 
-    this.workspaces.set(taskId, record);
+    this.workspaces.set(taskId, workspace);
 
     this.eventBus.publish({
       type: EventTypes["workspace.created"],
@@ -240,7 +249,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       },
     } satisfies PublishInput<"workspace.created">);
 
-    return record;
+    return workspace;
   }
 
   /**
@@ -268,15 +277,26 @@ export class WorkspaceManager implements IWorkspaceManager {
     const worktreeExists = existsSync(record.worktreePath);
 
     if (worktreeExists) {
-      // Worktree exists — check it's on the correct branch and get current commit
-      const currentCommit = this.gitExec(["rev-parse", "HEAD"], record.worktreePath);
-      const result: WorkspaceVerification = {
-        status: "valid",
-        currentCommit,
-        recoveryAction: null,
-      };
-      this.emitVerified(taskId, result);
-      return result;
+      // Worktree exists — check it's on the correct branch and get current commit.
+      // If rev-parse fails (e.g. corrupted .git file), treat as recoverable rather than crashing.
+      try {
+        const currentCommit = this.gitExec(["rev-parse", "HEAD"], record.worktreePath);
+        const result: WorkspaceVerification = {
+          status: "valid",
+          currentCommit,
+          recoveryAction: null,
+        };
+        this.emitVerified(taskId, result);
+        return result;
+      } catch {
+        const result: WorkspaceVerification = {
+          status: "recoverable",
+          currentCommit: null,
+          recoveryAction: "worktree directory exists but HEAD is unreadable — recreate worktree",
+        };
+        this.emitVerified(taskId, result);
+        return result;
+      }
     }
 
     // Worktree is missing — check if branch still exists
@@ -314,9 +334,15 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     const repoCloneDir = path.join(this.config.workspace_root, record.repo);
 
-    // Remove worktree (--force handles dirty working trees)
+    // Remove worktree (--force handles dirty working trees).
+    // Wrapped in try/catch so a failed removal doesn't prevent branch cleanup and map removal.
     if (existsSync(record.worktreePath)) {
-      this.gitExec(["worktree", "remove", record.worktreePath, "--force"], repoCloneDir);
+      try {
+        this.gitExec(["worktree", "remove", record.worktreePath, "--force"], repoCloneDir);
+      } catch {
+        // Worktree removal failed — continue with cleanup. Stale worktree dirs are
+        // harmless until the next git worktree prune cycle.
+      }
     }
 
     // Delete branch unless preserving
@@ -360,16 +386,30 @@ export class WorkspaceManager implements IWorkspaceManager {
     // Create parent directory
     mkdirSync(path.dirname(repoCloneDir), { recursive: true });
 
-    // Clone with auth token (transient)
+    // Clone with auth token (transient). Disable credential helpers so the
+    // token is never cached to disk by git-credential-store or similar.
     const token = this.resolveToken();
     const authUrl = injectAuth(cloneUrl, token);
-    execFileSync("git", ["clone", authUrl, repoCloneDir], {
+    execFileSync("git", ["-c", "credential.helper=", "clone", authUrl, repoCloneDir], {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    // Reset remote to unauthenticated URL — token never persisted on disk
-    this.gitExec(["remote", "set-url", "origin", cloneUrl], repoCloneDir);
+    // Reset remote to unauthenticated URL — token must never persist on disk (D148).
+    // If set-url fails, the auth token remains in .git/config, so delete the entire clone
+    // to prevent credential persistence, then re-throw so the caller can retry.
+    try {
+      this.gitExec(["remote", "set-url", "origin", cloneUrl], repoCloneDir);
+    } catch (setUrlError) {
+      try {
+        rmSync(repoCloneDir, { recursive: true, force: true });
+      } catch {
+        // Removal best-effort — deletion failure is logged by the outer error
+      }
+      throw new WorkspaceCreationError(
+        `Failed to reset git remote after clone — removed clone to prevent token persistence: ${setUrlError instanceof Error ? setUrlError.message : String(setUrlError)}`,
+      );
+    }
 
     return repoCloneDir;
   }
@@ -437,7 +477,7 @@ export class WorkspaceManager implements IWorkspaceManager {
   }
 
   /** Run a git command with auth injected into the remote URL for fetch/push. */
-  private gitExecAuth(args: string[], cwd: string): string {
+  private gitExecWithAuth(args: string[], cwd: string): string {
     const token = this.resolveToken();
     if (token && (args[0] === "fetch" || args[0] === "push")) {
       // Get remote URL and inject auth for this operation only
@@ -451,7 +491,8 @@ export class WorkspaceManager implements IWorkspaceManager {
   }
 
   private gitExec(args: string[], cwd: string): string {
-    return execFileSync("git", args, {
+    // Disable credential helpers so auth tokens are never cached to disk.
+    return execFileSync("git", ["-c", "credential.helper=", ...args], {
       cwd,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],

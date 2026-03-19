@@ -1,9 +1,39 @@
 import { EventTypes } from "../../schemas/events.js";
 import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
-import { evaluateTaskStuckness } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { HealthMonitorContext } from "./types.js";
+
+// ── Pure Functions ────────────────────────────────────────────────────────────
+
+/** Check if an active task is stuck based on journal entry staleness. */
+export function evaluateTaskStuckness(
+  activeElapsedMs: number,
+  latestEntryTimestamp: number | null,
+  nowMs: number,
+  stuckThresholdMs: number,
+  maxActiveDurationMs: number,
+): {
+  stuck: boolean;
+  condition: "no_journal_entries" | "no_state_transition";
+  elapsedMs: number;
+} | null {
+  if (activeElapsedMs > maxActiveDurationMs) {
+    return { stuck: true, condition: "no_state_transition", elapsedMs: activeElapsedMs };
+  }
+
+  if (activeElapsedMs > stuckThresholdMs) {
+    if (latestEntryTimestamp === null) {
+      return { stuck: true, condition: "no_journal_entries", elapsedMs: activeElapsedMs };
+    }
+    const staleness = nowMs - latestEntryTimestamp;
+    if (staleness > stuckThresholdMs) {
+      return { stuck: true, condition: "no_journal_entries", elapsedMs: staleness };
+    }
+  }
+
+  return null;
+}
 
 // ── DaemonHealthMonitor Interface ────────────────────────────────────────────
 

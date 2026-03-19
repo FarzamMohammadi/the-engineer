@@ -596,6 +596,22 @@ describe("Orchestrator", () => {
         expect(result.phase).toBe("intake_analysis");
       }
     });
+
+    it("closes session with 'crashed' when setupWorkspace throws (F3)", async () => {
+      handle.workspaceManager.createWorkspace.mockImplementation(() => {
+        throw new Error("git clone failed: authentication required");
+      });
+      // task must have repo + clone_url so setupWorkspace actually calls createWorkspace
+      const dispatch = createMockDispatch({
+        task: { repo: "owner/repo", clone_url: "https://github.com/owner/repo.git" },
+      });
+
+      await expect(handle.orchestrator.executeTask(dispatch)).rejects.toThrow(
+        "git clone failed: authentication required",
+      );
+
+      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "crashed");
+    });
   });
 
   // ── Cost Tracking ──────────────────────────────────────────────────────────

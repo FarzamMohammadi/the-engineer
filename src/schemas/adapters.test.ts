@@ -191,6 +191,23 @@ describe("TriggerEventSchema", () => {
     expect(result.body).toBeNull();
     expect(result.metadata).toBeNull();
   });
+
+  // SECURITY: clone_url must be HTTPS to prevent token injection into arbitrary URLs
+  it("rejects http:// clone_url", () => {
+    expect(() =>
+      TriggerEventSchema.parse({ ...validEvent, clone_url: "http://github.com/owner/repo.git" }),
+    ).toThrow("clone_url must use HTTPS");
+  });
+
+  it("rejects non-URL clone_url", () => {
+    expect(() => TriggerEventSchema.parse({ ...validEvent, clone_url: "not-a-url" })).toThrow();
+  });
+
+  it("rejects ssh clone_url", () => {
+    expect(() =>
+      TriggerEventSchema.parse({ ...validEvent, clone_url: "git@github.com:owner/repo.git" }),
+    ).toThrow();
+  });
 });
 
 // ── Communication Adapter ───────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ import { createNotificationRouter } from "./notification-router.js";
 import { type PendingPreemption, createPreemptionManager } from "./preemption-manager.js";
 import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 import { createReviewHandler } from "./review-handler.js";
-import { createTaskScheduler } from "./task-scheduler.js";
+import { createTaskScheduler, isSlotConsuming } from "./task-scheduler.js";
 import { createTriggerPoller } from "./trigger-poller.js";
 import type { DaemonContext } from "./types.js";
 
@@ -106,100 +106,13 @@ export interface Daemon {
   getState(): DaemonState;
 }
 
-// ── Pure Functions (exported for testing + Biome complexity) ─────────────────
+// ── Pure Function Re-exports ──────────────────────────────────────────────────
+// Each function lives in its subsystem file — re-exported here for backward compatibility.
 
-/** Whether a task in the given state consumes a working slot. */
-export function isSlotConsuming(state: string, subState: string | null): boolean {
-  return (
-    state === TaskStates.active &&
-    (subState === SubStates.working || subState === SubStates.integrating)
-  );
-}
-
-/** Whether a higher-priority task should preempt a lower-priority one. */
-export function shouldPreempt(
-  currentPriority: number,
-  candidatePriority: number,
-  threshold: number,
-): boolean {
-  return candidatePriority - currentPriority >= threshold;
-}
-
-/**
- * Compute the aged priority for a queued task.
- * Returns the new priority or null if no change needed.
- */
-export function computeAgedPriority(
-  basePriority: number,
-  elapsedMs: number,
-  config: {
-    aging_threshold_ms: number;
-    aging_interval_ms: number;
-    aging_increment: number;
-    aging_cap: number;
-  },
-): number | null {
-  if (elapsedMs < config.aging_threshold_ms) {
-    return null;
-  }
-
-  const periods =
-    Math.floor((elapsedMs - config.aging_threshold_ms) / config.aging_interval_ms) + 1;
-  const aged = Math.min(basePriority + periods * config.aging_increment, config.aging_cap);
-
-  return aged > basePriority ? aged : null;
-}
-
-/**
- * Derive aggregate review state from per-reviewer statuses.
- * changes_requested dominates over approved. Returns null if no actionable reviews.
- */
-export function deriveAggregateReviewState(reviewStatus: {
-  changes_requested: boolean;
-  approved: boolean;
-  reviewers: Array<{ state: string }>;
-}): "changes_requested" | "approved" | "comment" | null {
-  if (reviewStatus.changes_requested) {
-    return "changes_requested";
-  }
-  if (reviewStatus.approved) {
-    return "approved";
-  }
-  // A reviewer submitted a review with comments (not approve/reject)
-  if (reviewStatus.reviewers.some((r) => r.state === "commented")) {
-    return "comment";
-  }
-  return null;
-}
-
-/** Check if an active task is stuck based on journal entry staleness. */
-export function evaluateTaskStuckness(
-  activeElapsedMs: number,
-  latestEntryTimestamp: number | null,
-  nowMs: number,
-  stuckThresholdMs: number,
-  maxActiveDurationMs: number,
-): {
-  stuck: boolean;
-  condition: "no_journal_entries" | "no_state_transition";
-  elapsedMs: number;
-} | null {
-  if (activeElapsedMs > maxActiveDurationMs) {
-    return { stuck: true, condition: "no_state_transition", elapsedMs: activeElapsedMs };
-  }
-
-  if (activeElapsedMs > stuckThresholdMs) {
-    if (latestEntryTimestamp === null) {
-      return { stuck: true, condition: "no_journal_entries", elapsedMs: activeElapsedMs };
-    }
-    const staleness = nowMs - latestEntryTimestamp;
-    if (staleness > stuckThresholdMs) {
-      return { stuck: true, condition: "no_journal_entries", elapsedMs: staleness };
-    }
-  }
-
-  return null;
-}
+export { isSlotConsuming, computeAgedPriority } from "./task-scheduler.js";
+export { shouldPreempt } from "./preemption-manager.js";
+export { deriveAggregateReviewState } from "./review-handler.js";
+export { evaluateTaskStuckness } from "./health-monitor.js";
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
@@ -594,7 +507,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     dataLifecycleManager?.stop();
 
     // Drain active dispatches with shutdown timeout
-    await drainActiveDispatches();
+    await scheduler.drainForShutdown(config.shutdown_timeout_ms);
 
     // Shutdown plugins (reverse init order)
     await registry.shutdownAll();
@@ -616,53 +529,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     const uptimeMs = startedAt ? clock.now() - new Date(startedAt).getTime() : 0;
     running = false;
     observer.info("Daemon stopped", { uptimeMs });
-  }
-
-  async function drainActiveDispatches(): Promise<void> {
-    const dispatches = scheduler.getActiveDispatches();
-    const total = dispatches.size;
-    let drained = 0;
-    let transitioned = 0;
-
-    for (const [taskId, promise] of dispatches) {
-      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          promise,
-          new Promise<never>((_, reject) => {
-            timeoutHandle = setTimeout(
-              () => reject(new Error("shutdown_timeout")),
-              config.shutdown_timeout_ms,
-            );
-          }),
-        ]);
-        drained++;
-      } catch {
-        observer.warn("Shutdown timeout waiting for task", { taskId });
-      } finally {
-        if (timeoutHandle !== undefined) {
-          clearTimeout(timeoutHandle);
-        }
-      }
-
-      // Transition active tasks to queued
-      const task = taskEngine.getTask(taskId);
-      if (task && task.state === TaskStates.active) {
-        taskEngine.requestTransition(
-          taskId,
-          TaskStates.queued,
-          null,
-          "graceful_shutdown",
-          "daemon",
-        );
-        transitioned++;
-      }
-    }
-    dispatches.clear();
-
-    if (total > 0) {
-      observer.info("Active dispatches drained", { total, drained, transitioned });
-    }
   }
 
   // ── State Inspector ───────────────────────────────────────────────────

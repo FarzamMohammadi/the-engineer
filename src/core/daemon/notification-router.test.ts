@@ -382,4 +382,42 @@ describe("NotificationRouter", () => {
 
     expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
   });
+
+  // SECURITY: sendTaskError strips auth tokens from reason before external delivery
+  it("sendTaskError sanitizes token-bearing reason before sending to Telegram/GitHub", async () => {
+    const commPlugin = createMockCommPlugin();
+    const ctx = createMockContext([commPlugin]);
+    (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({ id: "owner-1" });
+
+    const router = createNotificationRouter(ctx);
+    const poisonedReason =
+      "push failed: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
+    router.sendTaskError("task-sec", "Deploy service", poisonedReason);
+    await flush();
+
+    const formattedArg = (commPlugin.formatMessage as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as string;
+    expect(formattedArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
+    expect(formattedArg).not.toContain("https://git:ghp_");
+  });
+
+  // SECURITY: commentOnTaskIssue strips auth tokens from message before posting to GitHub
+  it("commentOnTaskIssue sanitizes token-bearing message before posting to GitHub", async () => {
+    const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+    const ctx = createMockContext([commPlugin]);
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+      external_ref: { type: "github_issue", repo: "org/repo", number: 42 },
+    });
+
+    const router = createNotificationRouter(ctx);
+    const poisonedMessage =
+      "Error: clone failed at https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
+    router.commentOnTaskIssue("task-sec", poisonedMessage);
+    await flush();
+
+    const commentArg = (commPlugin.commentOnIssue as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[2] as string;
+    expect(commentArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
+    expect(commentArg).not.toContain("https://git:ghp_");
+  });
 });

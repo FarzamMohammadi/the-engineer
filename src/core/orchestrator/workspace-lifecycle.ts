@@ -1,8 +1,8 @@
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
-import type { Phase } from "../../schemas/orchestrator.js";
-import { Phases } from "../../schemas/orchestrator.js";
+import type { Session } from "../../schemas/session-memory.js";
+import { sanitizeSecrets } from "../../utils/sanitize.js";
 import type { OrchestratorContext } from "./types.js";
 
 // ── AndonCord (Toyota Production System) ────────────────────────────────────
@@ -22,33 +22,23 @@ export interface AndonCord {
 /** Create an AndonCord instance. */
 export function createAndonCord(): AndonCord {
   let pulled = false;
-  let reason: string | null = null;
+  let pulledReason: string | null = null;
   return {
-    pull(r) {
+    pull(reason) {
       pulled = true;
-      reason = r;
+      pulledReason = reason;
     },
     isPulled() {
       return pulled;
     },
     getReason() {
-      return reason;
+      return pulledReason;
     },
     reset() {
       pulled = false;
-      reason = null;
+      pulledReason = null;
     },
   };
-}
-
-// ── Sterile Cockpit (Aviation) ──────────────────────────────────────────────
-
-/** Phases where non-critical notifications should be suppressed. */
-const CRITICAL_PHASES: Set<Phase> = new Set([Phases.execution, Phases.self_review]);
-
-/** Check if a phase is critical (execution, self_review). */
-export function isCriticalPhase(phase: Phase): boolean {
-  return CRITICAL_PHASES.has(phase);
 }
 
 // ── WorkspaceLifecycle Interface ────────────────────────────────────────────
@@ -58,7 +48,7 @@ export interface WorkspaceLifecycle {
   /** Set up workspace for a task dispatch (create or re-register). */
   setupWorkspace(dispatch: Dispatch): void;
   /** Create or resume a session for a dispatch. */
-  createSession(dispatch: Dispatch): { id: string; [key: string]: unknown };
+  createSession(dispatch: Dispatch): Session;
   /** Send a milestone notification via PeopleDirectory + comm plugins (D152). */
   notifyMilestone(dispatch: Dispatch, message: string): void;
   /** Post a comment on the source GitHub issue/PR. */
@@ -111,7 +101,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
     }
   }
 
-  function createSession(dispatch: Dispatch): { id: string; [key: string]: unknown } {
+  function createSession(dispatch: Dispatch): Session {
     if (dispatch.resume_from) {
       return ctx.sessionMemory.createSession({
         taskId: dispatch.task.id,
@@ -154,12 +144,17 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
         };
 
         const formatted = {
-          content: plugin.formatMessage(message, "milestone"),
+          content: plugin.formatMessage(sanitizeSecrets(message), "milestone"),
           metadata: { task_id: taskId, type: "milestone" as const },
         };
 
-        plugin.sendMessage(target, formatted).catch(() => {
-          // Silent — notification failure must never block the pipeline
+        plugin.sendMessage(target, formatted).catch((err: unknown) => {
+          // Non-blocking — notification failures must never interrupt the pipeline.
+          ctx.observer.debug("Milestone notification send failed", {
+            taskId,
+            channel: contact.channel,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
       }
     } catch {
@@ -185,9 +180,16 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
         return;
       }
 
-      plugin.commentOnIssue(externalRef.repo, externalRef.number, message).catch(() => {
-        // Silent — issue comment failure must never block the pipeline
-      });
+      plugin
+        .commentOnIssue(externalRef.repo, externalRef.number, sanitizeSecrets(message))
+        .catch((err: unknown) => {
+          // Non-blocking — issue comment failures must never interrupt the pipeline.
+          ctx.observer.debug("Issue comment failed", {
+            repo: externalRef.repo,
+            number: externalRef.number,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
     } catch {
       // Silent — notification failure must never block the pipeline
     }

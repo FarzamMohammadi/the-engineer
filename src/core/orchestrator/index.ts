@@ -10,6 +10,7 @@ import {
   PreemptionReadyPayloadSchema,
 } from "../../schemas/events.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
+import { SessionEndReasons } from "../../schemas/session-memory.js";
 import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
@@ -194,7 +195,14 @@ export class Orchestrator {
     this.ctx.taskEngine.updateTaskField(taskId, "session_id", sessionId);
 
     // ── Workspace setup (D144) ──────────────────────────────────────────
-    this.workspaceLifecycle.setupWorkspace(dispatch);
+    // If workspace creation fails (git failure, disk full, auth error), close the
+    // session before re-throwing so it doesn't remain open indefinitely.
+    try {
+      this.workspaceLifecycle.setupWorkspace(dispatch);
+    } catch (workspaceError) {
+      this.ctx.sessionMemory.endSession(sessionId, SessionEndReasons.crashed);
+      throw workspaceError;
+    }
 
     // Notify task pickup (D152) — personal channels + GitHub issue comment
     this.workspaceLifecycle.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
@@ -505,8 +513,8 @@ export class Orchestrator {
       return false;
     }
 
-    const entries = this.ctx.sessionMemory.queryJournal(taskId);
-    const recentEntries = entries.slice(-5);
+    const journalEntries = this.ctx.sessionMemory.queryJournal(taskId);
+    const recentEntries = journalEntries.slice(-5);
     const blockedReason = task.blocked?.reason ?? "unknown";
 
     const prompt = [

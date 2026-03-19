@@ -1,6 +1,7 @@
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
+import { sanitizeSecrets } from "../../utils/sanitize.js";
 import type { NotificationRouterContext } from "./types.js";
 
 // ── Notification Templates ───────────────────────────────────────────────────
@@ -111,6 +112,9 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
       return;
     }
 
+    // SECURITY: sanitize before sending to external channels (Telegram, GitHub).
+    // Error reasons may contain auth URLs from failed git operations.
+    const safeContent = sanitizeSecrets(content);
     const commPlugins = getCommPlugins();
 
     for (const person of people) {
@@ -118,7 +122,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
         if (!comm.hasCapability("send")) {
           continue;
         }
-        const formatted = comm.formatMessage(content, messageType);
+        const formatted = comm.formatMessage(safeContent, messageType);
         comm
           .sendMessage(
             { user_id: person.id, channel: null },
@@ -225,7 +229,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
       return;
     }
 
-    plugin.commentOnIssue(repo, number, message).catch((err) => {
+    plugin.commentOnIssue(repo, number, sanitizeSecrets(message)).catch((err) => {
       observer.error("Failed to comment on task issue", { err, taskId });
     });
   }

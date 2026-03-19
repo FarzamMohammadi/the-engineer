@@ -235,7 +235,7 @@ function recordPhaseTransition(
   }
 }
 
-/** Log error and build error result for a failed phase. */
+/** Log error and build error result for a failed phase. Closes the session. */
 function handlePhaseError(
   sessionId: string,
   taskId: string,
@@ -255,6 +255,10 @@ function handlePhaseError(
     errorDetail: stack,
     tags: ["phase_error"],
   });
+
+  // Close the session so it doesn't remain open indefinitely in the DB.
+  // Crash recovery re-dispatch will create a new session.
+  ctx.sessionMemory.endSession(sessionId, SessionEndReasons.crashed);
 
   return { outcome: "error", phase, reason: message };
 }
@@ -657,36 +661,43 @@ export async function runPhasePipeline(
 
     priorOutputs.set(phase, output);
 
-    // Post-phase processing
-    const { result: postResult, updatedLoopbackCount } = await processPhaseCompletion(
-      sessionId,
-      taskId,
-      phase,
-      output,
-      phases,
-      i,
-      priorOutputs,
-      dispatch,
-      currentState,
-      deps,
-    );
-
-    currentState = { ...currentState, loopbackCount: updatedLoopbackCount };
-
-    if (postResult.decompositionResult) {
-      return postResult.decompositionResult;
+    // Post-phase processing: decomposition, PR creation, transitions, loopback, preemption.
+    // Wrapped separately so errors here (e.g. DB failure, PR creation exception) are caught
+    // and routed through handlePhaseError, which also closes the session.
+    let completionResult: ProcessPhaseResult;
+    try {
+      const { result, updatedLoopbackCount } = await processPhaseCompletion(
+        sessionId,
+        taskId,
+        phase,
+        output,
+        phases,
+        i,
+        priorOutputs,
+        dispatch,
+        currentState,
+        deps,
+      );
+      completionResult = result;
+      currentState = { ...currentState, loopbackCount: updatedLoopbackCount };
+    } catch (postError) {
+      return handlePhaseError(sessionId, taskId, phase, postError, ctx);
     }
-    if (postResult.reviewPendingResult) {
+
+    if (completionResult.decompositionResult) {
+      return completionResult.decompositionResult;
+    }
+    if (completionResult.reviewPendingResult) {
       ctx.observer.info("Pipeline exiting with review pending result", { taskId });
-      return postResult.reviewPendingResult;
+      return completionResult.reviewPendingResult;
     }
-    if (postResult.loopbackIndex !== null) {
-      i = postResult.loopbackIndex;
+    if (completionResult.loopbackIndex !== null) {
+      i = completionResult.loopbackIndex;
       continue;
     }
-    phases = postResult.phases;
-    if (postResult.preemptionResult) {
-      return postResult.preemptionResult;
+    phases = completionResult.phases;
+    if (completionResult.preemptionResult) {
+      return completionResult.preemptionResult;
     }
   }
 

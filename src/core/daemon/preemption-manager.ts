@@ -2,8 +2,18 @@ import { EventTypes } from "../../schemas/events.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import { shouldPreempt } from "./index.js";
 import type { PreemptionManagerContext } from "./types.js";
+
+// ── Pure Functions ────────────────────────────────────────────────────────────
+
+/** Whether a higher-priority task should preempt a lower-priority one. */
+export function shouldPreempt(
+  currentPriority: number,
+  candidatePriority: number,
+  threshold: number,
+): boolean {
+  return candidatePriority - currentPriority >= threshold;
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

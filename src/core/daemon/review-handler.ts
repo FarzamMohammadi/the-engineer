@@ -3,9 +3,32 @@ import { AdapterTypes } from "../../schemas/adapters.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
 import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
-import { deriveAggregateReviewState } from "./index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { ReviewHandlerContext } from "./types.js";
+
+// ── Pure Functions ────────────────────────────────────────────────────────────
+
+/**
+ * Derive aggregate review state from per-reviewer statuses.
+ * changes_requested dominates over approved. Returns null if no actionable reviews.
+ */
+export function deriveAggregateReviewState(reviewStatus: {
+  changes_requested: boolean;
+  approved: boolean;
+  reviewers: Array<{ state: string }>;
+}): "changes_requested" | "approved" | "comment" | null {
+  if (reviewStatus.changes_requested) {
+    return "changes_requested";
+  }
+  if (reviewStatus.approved) {
+    return "approved";
+  }
+  // A reviewer submitted a review with comments (not approve/reject)
+  if (reviewStatus.reviewers.some((r) => r.state === "commented")) {
+    return "comment";
+  }
+  return null;
+}
 
 // ── ReviewHandler Interface ──────────────────────────────────────────────────
 

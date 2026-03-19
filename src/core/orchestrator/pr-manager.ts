@@ -5,7 +5,7 @@ import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../schemas/session-memory.js";
-import { sanitizeSecrets } from "../../utils/sanitize.js";
+import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { OrchestratorContext } from "./types.js";
 
 // ── PrManager Interface ────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
       logPrStepFailure(sessionId, taskId, "commit", error);
       observer.error("PR workflow commit failed", {
         taskId,
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeErrorMessage(error),
       });
       return false;
     }
@@ -130,7 +130,7 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
       } catch (error) {
         observer.warn("Cannot determine ahead count — skipping PR workflow", {
           taskId,
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizeErrorMessage(error),
         });
         return false;
       }
@@ -145,7 +145,7 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
       logPrStepFailure(sessionId, taskId, "push", error);
       observer.error("PR workflow push failed", {
         taskId,
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeErrorMessage(error),
       });
       return false;
     }
@@ -211,7 +211,7 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
       logPrStepFailure(sessionId, taskId, "pr_creation", error);
       observer.error("PR creation failed", {
         taskId,
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeErrorMessage(error),
       });
       return false;
     }

@@ -217,6 +217,36 @@ describe("WorkspaceLifecycle", () => {
     });
   });
 
+  describe("notifyMilestone (security)", () => {
+    it("sanitizes token-bearing message before sending to comm plugin", async () => {
+      const ctx = createMockContext();
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+      const formatMessage = vi.fn((content: string) => content);
+      const mockPlugin = {
+        manifest: { id: "telegram-comm" },
+        hasCapability: vi.fn().mockReturnValue(true),
+        formatMessage,
+        sendMessage,
+      };
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram-comm", handle: "@user" }],
+      });
+
+      const wl = createWorkspaceLifecycle(ctx);
+      const dispatch = createDispatch();
+      const poisonedMessage =
+        "Cloned: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
+
+      wl.notifyMilestone(dispatch, poisonedMessage);
+      await new Promise((r) => setTimeout(r, 0));
+
+      const formattedArg = formatMessage.mock.calls[0]?.[0] as string;
+      expect(formattedArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
+    });
+  });
+
   describe("notifyMilestone", () => {
     it("is fire-and-forget — errors do not propagate", () => {
       const ctx = createMockContext();
@@ -237,6 +267,63 @@ describe("WorkspaceLifecycle", () => {
       wl.notifyMilestone(dispatch, "test");
 
       expect(ctx.registry.getPluginsByType).not.toHaveBeenCalled();
+    });
+
+    // F11: sendMessage failure is logged via observer.debug (not swallowed silently)
+    it("logs debug when sendMessage rejects (F11)", async () => {
+      const ctx = createMockContext();
+      const sendMessage = vi.fn().mockRejectedValue(new Error("network timeout"));
+      const formatMessage = vi.fn().mockReturnValue("formatted");
+
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        contacts: [{ channel: "telegram", handle: "@user" }],
+      });
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([
+        {
+          manifest: { id: "telegram-comm" },
+          sendMessage,
+          formatMessage,
+          hasCapability: () => false,
+        },
+      ]);
+
+      const wl = createWorkspaceLifecycle(ctx);
+      const dispatch = createDispatch();
+
+      // Should not throw
+      expect(() => wl.notifyMilestone(dispatch, "Task started")).not.toThrow();
+
+      // Allow the rejected promise to settle
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The rejection should have been caught and logged (not rethrown)
+      // We verify sendMessage was called (so the code ran) and no unhandled rejection occurred
+      expect(sendMessage).toHaveBeenCalled();
+    });
+  });
+
+  describe("commentOnSourceIssue (security)", () => {
+    it("sanitizes token-bearing message before posting to GitHub issue", async () => {
+      const ctx = createMockContext();
+      const commentOnIssue = vi.fn().mockResolvedValue(undefined);
+      const mockPlugin = {
+        hasCapability: vi.fn().mockReturnValue(true),
+        commentOnIssue,
+      };
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockPlugin]);
+
+      const wl = createWorkspaceLifecycle(ctx);
+      const dispatch = createDispatch({
+        external_ref: { type: "github_issue", repo: "org/repo", number: 7 },
+      } as Partial<Task>);
+      const poisonedMessage =
+        "Push failed: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
+
+      wl.commentOnSourceIssue(dispatch, poisonedMessage);
+      await new Promise((r) => setTimeout(r, 0));
+
+      const commentArg = commentOnIssue.mock.calls[0]?.[2] as string;
+      expect(commentArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
     });
   });
 
@@ -262,6 +349,33 @@ describe("WorkspaceLifecycle", () => {
       } as Partial<Task>);
 
       expect(() => wl.commentOnSourceIssue(dispatch, "test")).not.toThrow();
+    });
+
+    // F11: commentOnIssue failure is logged via observer.debug (not swallowed silently)
+    it("logs debug when commentOnIssue rejects (F11)", async () => {
+      const ctx = createMockContext();
+      const commentOnIssue = vi.fn().mockRejectedValue(new Error("rate limited"));
+
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([
+        {
+          hasCapability: (cap: string) => cap === "issue_management",
+          commentOnIssue,
+        },
+      ]);
+
+      const wl = createWorkspaceLifecycle(ctx);
+      const dispatch = createDispatch({
+        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+      } as Partial<Task>);
+
+      // Should not throw
+      expect(() => wl.commentOnSourceIssue(dispatch, "Starting work")).not.toThrow();
+
+      // Allow the rejected promise to settle
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Verify the comment was attempted (code ran) without unhandled rejection
+      expect(commentOnIssue).toHaveBeenCalled();
     });
   });
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
-import { SubStates, TaskStates } from "../../schemas/task.js";
+import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { ExecuteTaskResult } from "../orchestrator/index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import { type SchedulerCallbacks, createTaskScheduler } from "./task-scheduler.js";
@@ -56,7 +56,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
   };
 }
 
-function makeMockTask(overrides?: Record<string, unknown>) {
+function makeMockTask(overrides?: Record<string, unknown>): Task {
   return {
     id: "task-001",
     title: "Test task",
@@ -74,7 +74,7 @@ function makeMockTask(overrides?: Record<string, unknown>) {
     children: [],
     external_ref: null,
     ...overrides,
-  };
+  } as unknown as Task;
 }
 
 function makeNotifications(): NotificationRouter & Record<string, ReturnType<typeof vi.fn>> {
@@ -196,7 +196,7 @@ describe("TaskScheduler", () => {
     const task = makeMockTask({ id: "t1", title: "Fix bug" });
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
       "t1",
@@ -226,7 +226,7 @@ describe("TaskScheduler", () => {
     const task = makeMockTask({ id: "t1" });
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
       "t1",
@@ -251,7 +251,7 @@ describe("TaskScheduler", () => {
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     // First dispatch to make it active
     const task = makeMockTask({ id: "t1", title: "Done task" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     const result: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
     scheduler.handleTaskCompletion("t1", result);
@@ -282,7 +282,7 @@ describe("TaskScheduler", () => {
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     const result: ExecuteTaskResult = {
       outcome: "review_pending",
@@ -315,7 +315,7 @@ describe("TaskScheduler", () => {
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     const result: ExecuteTaskResult = {
       outcome: "error",
@@ -346,7 +346,7 @@ describe("TaskScheduler", () => {
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     scheduler.handleTaskError("t1", new Error("Orchestrator crashed"));
 
@@ -548,7 +548,7 @@ describe("TaskScheduler", () => {
     const task = makeMockTask({ id: "t1" });
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     expect(orchestrator.executeTask).not.toHaveBeenCalled();
     expect(scheduler.getActiveTaskIds()).toEqual([]);
@@ -556,14 +556,14 @@ describe("TaskScheduler", () => {
 
   // 17. removeActiveDispatch removes a task from active tracking
   it("removeActiveDispatch removes task from active tracking", () => {
-    const { ctx, taskEngine } = makeContext();
+    const { ctx } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
 
     const task = makeMockTask({ id: "t1" });
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
     expect(scheduler.getActiveTaskIds()).toContain("t1");
 
     scheduler.removeActiveDispatch("t1");
@@ -607,7 +607,7 @@ describe("TaskScheduler", () => {
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     // Clear the transition call from dispatch
     taskEngine.requestTransition.mockClear();
@@ -636,7 +636,7 @@ describe("TaskScheduler", () => {
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     taskEngine.requestTransition.mockClear();
 
@@ -658,7 +658,7 @@ describe("TaskScheduler", () => {
 
   // 21. Callbacks are invoked after orchestrator promise resolves
   it("callbacks.onTaskCompleted is called when orchestrator promise resolves", async () => {
-    const { ctx, taskEngine, orchestrator } = makeContext();
+    const { ctx, orchestrator } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
 
@@ -670,7 +670,7 @@ describe("TaskScheduler", () => {
 
     const task = makeMockTask({ id: "t1" });
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     await flush();
 
@@ -716,7 +716,7 @@ describe("TaskScheduler", () => {
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+    scheduler.dispatchTask(task);
 
     const result: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
 
@@ -748,5 +748,225 @@ describe("TaskScheduler", () => {
     scheduler.scheduleNext();
 
     expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
+  });
+
+  // SECURITY: handleTaskError sanitizes auth tokens in error messages before logging
+  it("handleTaskError sanitizes token-bearing error message before observer logging", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+    const observerSpy = vi.spyOn(ctx.observer, "error");
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+
+    // Simulate an error whose message contains a git auth URL with a token
+    const authError = new Error(
+      "fatal: repository 'https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git/' not found",
+    );
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "task-crash" }));
+    taskEngine.requestTransition.mockReturnValue({ success: true });
+
+    scheduler.handleTaskError("task-crash", authError);
+
+    const logged = observerSpy.mock.calls[0]?.[1] as { error?: string } | undefined;
+    expect(logged?.error).toBeDefined();
+    expect(logged?.error).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
+    expect(logged?.error).not.toContain("https://git:ghp_");
+  });
+
+  // 25. F1: handleCompletedOutcome skips cleanup and notifications when transition fails
+  it("handleTaskCompletion on completed skips notifications when transition fails", () => {
+    const { ctx, taskEngine, workspaceManager } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Done task" }));
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    // Dispatch was { success: true }; now simulate completed transition failing (e.g. race condition)
+    taskEngine.requestTransition.mockReturnValue({ success: false, reason: "already_completed" });
+
+    const result: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
+    scheduler.handleTaskCompletion("t1", result);
+
+    // Notifications and cleanup must be skipped when the transition fails
+    expect(workspaceManager.cleanupWorkspace).not.toHaveBeenCalled();
+    expect(notifications.sendCompletion).not.toHaveBeenCalled();
+    expect(notifications.commentOnTaskIssue).not.toHaveBeenCalled();
+  });
+
+  // 26. F1: handleErrorOutcome skips notifications when transition fails
+  it("handleTaskCompletion on error skips notifications when blocked transition fails", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Broken task" }));
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    taskEngine.requestTransition.mockReturnValue({ success: false, reason: "invalid" });
+
+    const result: ExecuteTaskResult = {
+      outcome: "error",
+      phase: "execution",
+      reason: "build_failed",
+    };
+    scheduler.handleTaskCompletion("t1", result);
+
+    expect(notifications.sendTaskError).not.toHaveBeenCalled();
+    expect(notifications.commentOnTaskIssue).not.toHaveBeenCalled();
+  });
+
+  // 27. F2: unknown outcome transitions task to blocked instead of silently dropping it
+  it("handleTaskCompletion on unknown outcome transitions task to blocked", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1" }));
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    taskEngine.requestTransition.mockClear();
+
+    // Cast to sneak in an unknown outcome value
+    const result = { outcome: "future_unknown_outcome" } as unknown as ExecuteTaskResult;
+    scheduler.handleTaskCompletion("t1", result);
+
+    expect(taskEngine.requestTransition).toHaveBeenCalledWith(
+      "t1",
+      TaskStates.blocked,
+      null,
+      expect.stringContaining("unknown_outcome"),
+      "daemon",
+    );
+    // Task must be removed from active dispatches regardless
+    expect(scheduler.getActiveTaskIds()).not.toContain("t1");
+  });
+
+  // 28. F5: blocked child counts as terminal for children_all_done
+  it("checkAndEmitChildrenAllDone fires when a child is blocked (errored)", () => {
+    const { ctx, taskEngine, eventBus } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
+    taskEngine.getTask.mockReturnValue(child);
+
+    // One child completed, one blocked (errored via handleErrorOutcome)
+    const completedSibling = makeMockTask({ id: "child-1", state: TaskStates.completed });
+    const blockedSibling = makeMockTask({ id: "child-2", state: TaskStates.blocked });
+    taskEngine.getChildren.mockReturnValue([completedSibling, blockedSibling]);
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    scheduler.checkAndEmitChildrenAllDone("child-1");
+
+    // Should fire because blocked counts as terminal
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: EventTypes["task.children_all_done"],
+        payload: expect.objectContaining({
+          all_succeeded: false,
+          failed_ids: ["child-2"], // blocked is included in failed_ids
+        }),
+      }),
+    );
+  });
+
+  // 29. F5: non-terminal sibling (active) still blocks children_all_done
+  it("checkAndEmitChildrenAllDone does not fire when a sibling is still active (not blocked)", () => {
+    const { ctx, taskEngine, eventBus } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
+    taskEngine.getTask.mockReturnValue(child);
+
+    const completedSibling = makeMockTask({ id: "child-1", state: TaskStates.completed });
+    const activeSibling = makeMockTask({ id: "child-2", state: TaskStates.active }); // still running
+    taskEngine.getChildren.mockReturnValue([completedSibling, activeSibling]);
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    scheduler.checkAndEmitChildrenAllDone("child-1");
+
+    expect(eventBus.publish).not.toHaveBeenCalled();
+  });
+
+  // 30. F6: handleTaskError is resilient — catches inner errors and logs them
+  it("handleTaskError catches exceptions from eventBus.publish and still attempts transition", () => {
+    const { ctx, taskEngine, eventBus } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    // Simulate eventBus.publish throwing (e.g. DB failure)
+    eventBus.publish.mockImplementation(() => {
+      throw new Error("DB write failed");
+    });
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    // Should not throw
+    expect(() => scheduler.handleTaskError("t1", new Error("crash"))).not.toThrow();
+
+    // Task must be removed from active dispatches regardless
+    expect(scheduler.getActiveTaskIds()).not.toContain("t1");
+  });
+
+  // 31. F6: handleTaskError warns when transition back to queued fails
+  it("handleTaskError warns when crash recovery transition fails", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    // publish succeeds but transition to queued fails
+    taskEngine.requestTransition.mockReturnValue({ success: false, reason: "invalid_transition" });
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    taskEngine.requestTransition.mockClear();
+    taskEngine.requestTransition.mockReturnValue({ success: false, reason: "cannot_recover" });
+
+    // Should not throw — handleTaskError wraps everything in try/catch
+    expect(() => scheduler.handleTaskError("t1", new Error("crash"))).not.toThrow();
+  });
+
+  // 32. F12: callback throwing does not produce unhandled promise rejection
+  it("callback throwing is caught and does not propagate as unhandled rejection", async () => {
+    const { ctx, taskEngine, orchestrator } = makeContext();
+    const notifications = makeNotifications();
+
+    const throwingCallbacks: SchedulerCallbacks = {
+      onTaskCompleted: () => {
+        throw new Error("callback bug");
+      },
+      onTaskError: () => {
+        throw new Error("callback bug");
+      },
+    };
+
+    const completedResult: ExecuteTaskResult = {
+      outcome: "completed",
+      phaseOutputs: new Map(),
+    };
+    orchestrator.executeTask.mockResolvedValue(completedResult);
+
+    const task = makeMockTask({ id: "t1" });
+    const scheduler = createTaskScheduler(ctx, notifications, throwingCallbacks);
+    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    // Should flush without unhandled rejection
+    await expect(flush()).resolves.toBeUndefined();
   });
 });

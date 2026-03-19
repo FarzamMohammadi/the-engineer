@@ -9,6 +9,7 @@ import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
 import type { IObservationStore } from "../observer/types.js";
+import type { RepoContext } from "./prompts/context.js";
 
 // ── Shared Dependencies ────────────────────────────────────────────────────
 
@@ -33,6 +34,8 @@ export interface PipelineState {
   traceId: string;
   sessionId: string;
   loopbackCount: number;
+  /** Cached repo context — gathered once at task start, refreshed after execution phase. */
+  repoContext: RepoContext | null;
 }
 
 // ── Process Phase Result ───────────────────────────────────────────────────

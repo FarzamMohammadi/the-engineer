@@ -11,6 +11,7 @@ import type { IObserver } from "../observer/index.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import { PhaseHandlerMissingError } from "./errors.js";
 import type { PrManager } from "./pr-manager.js";
+import { gatherRepoContextSafe } from "./prompts/context.js";
 import type {
   ExecuteTaskResult,
   OrchestratorContext,
@@ -661,6 +662,13 @@ export async function runPhasePipeline(
 
     priorOutputs.set(phase, output);
 
+    // Refresh cached repo context after execution (the only phase that modifies files).
+    // This ensures self_review, demo_prep, and integration see the updated state.
+    if (phase === Phases.execution) {
+      const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
+      currentState = { ...currentState, repoContext: gatherRepoContextSafe(worktreePath) };
+    }
+
     // Post-phase processing: decomposition, PR creation, transitions, loopback, preemption.
     // Wrapped separately so errors here (e.g. DB failure, PR creation exception) are caught
     // and routed through handlePhaseError, which also closes the session.
@@ -703,5 +711,10 @@ export async function runPhasePipeline(
 
   // ── Pipeline complete ──────────────────────────────────────────────────
   ctx.sessionMemory.endSession(sessionId, SessionEndReasons.completed);
+  ctx.observer.info("Phase pipeline completed", {
+    taskId,
+    sessionId,
+    phasesRun: phases.length - startIndex,
+  });
   return { outcome: "completed", phaseOutputs: priorOutputs };
 }

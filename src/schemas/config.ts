@@ -57,7 +57,14 @@ export const DaemonConfigSchema = z.object({
     ),
 
   // Tick loop
-  tick_interval_ms: z.number().int().positive().default(5_000),
+  tick_interval_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(5_000)
+    .describe(
+      "Main daemon loop interval. Each tick polls triggers, checks scheduling, and runs housekeeping. Default: 5 seconds.",
+    ),
 
   // Preemption
   preemption_threshold: z
@@ -68,7 +75,14 @@ export const DaemonConfigSchema = z.object({
     .describe(
       "Minimum priority gap to trigger preemption. A p70 task preempts a p50 task (gap=20), but not a p55 task (gap=15).",
     ),
-  preemption_timeout_ms: z.number().int().positive().default(60_000),
+  preemption_timeout_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(60_000)
+    .describe(
+      "Grace period for a preempted task to checkpoint before forced swap. Default: 1 minute.",
+    ),
 
   // Stuck/runaway detection
   stuck_threshold_ms: z
@@ -87,9 +101,26 @@ export const DaemonConfigSchema = z.object({
     .describe("Hard cap on total wall-clock time a task can remain active. Default: 8 hours."),
 
   // Priority aging (starvation prevention)
-  aging_threshold_ms: z.number().int().positive().default(86_400_000),
-  aging_increment: z.number().int().positive().default(5),
-  aging_interval_ms: z.number().int().positive().default(86_400_000),
+  aging_threshold_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(86_400_000)
+    .describe("How long a queued task waits before priority aging begins. Default: 1 day."),
+  aging_increment: z
+    .number()
+    .int()
+    .positive()
+    .default(5)
+    .describe(
+      "Priority points added each aging cycle. Higher values promote starved tasks faster. Default: 5.",
+    ),
+  aging_interval_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(86_400_000)
+    .describe("Time between priority aging bumps after the threshold is reached. Default: 1 day."),
   aging_cap: z
     .number()
     .int()
@@ -101,11 +132,30 @@ export const DaemonConfigSchema = z.object({
     ),
 
   // Shutdown
-  shutdown_timeout_ms: z.number().int().positive().default(30_000),
+  shutdown_timeout_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(30_000)
+    .describe(
+      "Time to wait for active tasks to checkpoint during graceful shutdown. Default: 30 seconds.",
+    ),
 
   // Trigger polling (Decision #74)
-  trigger_poll_interval_ms: z.number().int().positive().default(30_000),
-  seen_keys_ttl_ms: z.number().int().positive().default(86_400_000),
+  trigger_poll_interval_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(30_000)
+    .describe("How often the daemon polls trigger adapters for new work. Default: 30 seconds."),
+  seen_keys_ttl_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(86_400_000)
+    .describe(
+      "How long trigger dedup keys are remembered. Events older than this may re-trigger. Default: 1 day.",
+    ),
 
   // Logging (Decision #111)
   logging: z
@@ -237,15 +287,37 @@ export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
 // Loaded from workspace.yaml. Startup-only — not hot-reloadable.
 
 export const PrConfigSchema = z.object({
-  default_merge_strategy: z.enum(["squash", "merge", "rebase"]).default("squash"),
-  delete_branch_after_merge: z.boolean().default(true),
-  branch_retention_days: z.number().int().positive().nullable().default(null),
+  default_merge_strategy: z
+    .enum(["squash", "merge", "rebase"])
+    .default("squash")
+    .describe(
+      "How PRs are merged: squash (single commit), merge (merge commit), or rebase. Default: squash.",
+    ),
+  delete_branch_after_merge: z
+    .boolean()
+    .default(true)
+    .describe("Delete the task branch after its PR is merged. Default: true."),
+  branch_retention_days: z
+    .number()
+    .int()
+    .positive()
+    .nullable()
+    .default(null)
+    .describe(
+      "Days to retain merged branches before cleanup. Null means no automatic deletion. Default: null.",
+    ),
 });
 export type PrConfig = z.infer<typeof PrConfigSchema>;
 
 export const CleanupConfigSchema = z.object({
-  preserve_branch_on_failure: z.boolean().default(true),
-  preserve_branch_on_cancel: z.boolean().default(false),
+  preserve_branch_on_failure: z
+    .boolean()
+    .default(true)
+    .describe("Keep the task branch when a task fails, for debugging. Default: true."),
+  preserve_branch_on_cancel: z
+    .boolean()
+    .default(false)
+    .describe("Keep the task branch when a task is cancelled. Default: false."),
 });
 export type CleanupConfig = z.infer<typeof CleanupConfigSchema>;
 
@@ -256,20 +328,56 @@ export const MultiRepoConfigSchema = z.object({
     .describe(
       "Allow tasks to span multiple repositories. Safe to leave enabled even for single-repo setups.",
     ),
-  max_repos_per_task: z.number().int().positive().default(5),
+  max_repos_per_task: z
+    .number()
+    .int()
+    .positive()
+    .default(5)
+    .describe("Maximum number of repositories a single task can span. Default: 5."),
 });
 export type MultiRepoConfig = z.infer<typeof MultiRepoConfigSchema>;
 
 export const WorkspaceConfigSchema = z.object({
-  workspace_root: z.string().default("~/.engineer/workspaces/"),
-  branch_prefix: z.string().default("engineer/"),
-  slug_max_length: z.number().int().positive().default(30),
-  fetch_before_create: z.boolean().default(true),
-  default_base_branch: z.string().default("main"),
-  git_token_env: z.string().default("GIT_TOKEN"),
+  workspace_root: z
+    .string()
+    .default("~/.engineer/workspaces/")
+    .describe(
+      "Directory where git worktrees are created. Supports ~ expansion. Default: ~/.engineer/workspaces/",
+    ),
+  branch_prefix: z
+    .string()
+    .default("engineer/")
+    .describe("Prefix for all branches created by The Engineer. Default: engineer/"),
+  slug_max_length: z
+    .number()
+    .int()
+    .positive()
+    .default(30)
+    .describe("Maximum character length for the task slug portion of branch names. Default: 30."),
+  fetch_before_create: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Fetch from remote before creating a worktree, ensuring the base branch is up to date. Default: true.",
+    ),
+  default_base_branch: z
+    .string()
+    .default("main")
+    .describe("Default base branch for PRs when not specified by the task. Default: main."),
+  git_token_env: z
+    .string()
+    .default("GIT_TOKEN")
+    .describe(
+      "Name of the environment variable holding the git authentication token. Set to GITHUB_TOKEN if using GitHub. Default: GIT_TOKEN.",
+    ),
   pr: PrConfigSchema.default({}),
   cleanup: CleanupConfigSchema.default({}),
-  child_pr_strategy: z.enum(["merge_into_parent", "individual_prs"]).default("merge_into_parent"),
+  child_pr_strategy: z
+    .enum(["merge_into_parent", "individual_prs"])
+    .default("merge_into_parent")
+    .describe(
+      "How child task branches integrate: merge_into_parent (single PR) or individual_prs (one PR per child). Default: merge_into_parent.",
+    ),
   multi_repo: MultiRepoConfigSchema.default({}),
 });
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

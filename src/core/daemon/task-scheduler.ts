@@ -70,6 +70,8 @@ export interface TaskScheduler {
   trackBasePriority(taskId: string, priority: number): void;
   /** Initialize base priorities from existing tasks (for crash recovery). */
   initializeBasePriorities(tasks: Array<{ id: string; priority: number }>): void;
+  /** Remove a tracked base priority (for cleanup when tasks leave scheduling). */
+  removeBasePriority(taskId: string): void;
   /** Remove an active dispatch (for preemption/shutdown). */
   removeActiveDispatch(taskId: string): void;
   /**
@@ -116,10 +118,20 @@ export function createTaskScheduler(
 
     const parent = taskEngine.getTask(task.parent_id);
     if (!parent) {
+      observer.debug("Task eligible: orphaned child (no parent record)", {
+        taskId: task.id,
+        parentId: task.parent_id,
+      });
       return true; // Orphaned child — allow scheduling
     }
 
     if (parent.state !== TaskStates.active || parent.sub_state !== SubStates.supervising) {
+      observer.debug("Task not eligible: parent not in active.supervising", {
+        taskId: task.id,
+        parentId: task.parent_id,
+        parentState: parent.state,
+        parentSubState: parent.sub_state,
+      });
       return false;
     }
 
@@ -129,6 +141,14 @@ export function createTaskScheduler(
         (s) => s.id !== task.id && s.state === TaskStates.active,
       );
       if (hasActiveSibling) {
+        const activeSiblingId = siblings.find(
+          (s) => s.id !== task.id && s.state === TaskStates.active,
+        )?.id;
+        observer.debug("Task not eligible: pause_siblings — sibling still active", {
+          taskId: task.id,
+          parentId: task.parent_id,
+          activeSiblingId,
+        });
         return false;
       }
     }
@@ -144,8 +164,15 @@ export function createTaskScheduler(
 
     const queuedTasks = prefetchedTasks ?? taskEngine.getQueuedByPriority();
     const eligible = queuedTasks.filter(isTaskEligible);
-
     const tasksToDispatch = eligible.slice(0, available);
+
+    observer.debug("scheduleNext: slot evaluation", {
+      available,
+      queued: queuedTasks.length,
+      eligible: eligible.length,
+      dispatching: tasksToDispatch.length,
+    });
+
     for (const task of tasksToDispatch) {
       dispatchTask(task);
     }
@@ -191,6 +218,9 @@ export function createTaskScheduler(
     observer.info("Dispatching task to Orchestrator", {
       taskId: task.id,
       title: task.title,
+      resumeFrom: checkpoint?.phase ?? null,
+      isRework: hasUnappliedFeedback,
+      knowledgeEntries: { repo: repoKnowledge.length, user: userKnowledge.length },
     });
 
     // Fire-and-forget dispatch
@@ -492,31 +522,57 @@ export function createTaskScheduler(
     }
   }
 
+  function removeBasePriority(taskId: string): void {
+    basePriorities.delete(taskId);
+  }
+
   function removeActiveDispatch(taskId: string): void {
     activeDispatches.delete(taskId);
   }
 
   async function drainForShutdown(timeoutMs: number): Promise<void> {
     const total = activeDispatches.size;
-    let drained = 0;
-    let transitioned = 0;
+    if (total === 0) {
+      return;
+    }
 
-    for (const [taskId, promise] of activeDispatches) {
-      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
+    // Drain all dispatches in parallel — worst-case shutdown time is timeoutMs,
+    // not timeoutMs × activeDispatches.size.
+    const entries = [...activeDispatches.entries()];
+    const results = await Promise.allSettled(
+      entries.map(([taskId, promise], index) => {
+        observer.debug("Draining active dispatch for shutdown", {
+          taskId,
+          index: index + 1,
+          total,
+        });
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        return Promise.race([
           promise,
           new Promise<never>((_, reject) => {
             timeoutHandle = setTimeout(() => reject(new Error("shutdown_timeout")), timeoutMs);
           }),
-        ]);
+        ]).finally(() => {
+          if (timeoutHandle !== undefined) {
+            clearTimeout(timeoutHandle);
+          }
+        });
+      }),
+    );
+
+    let drained = 0;
+    let transitioned = 0;
+
+    for (let i = 0; i < entries.length; i++) {
+      // biome-ignore lint/style/noNonNullAssertion: entries and results have same length
+      const [taskId] = entries[i]!;
+      // biome-ignore lint/style/noNonNullAssertion: entries and results have same length
+      const result = results[i]!;
+
+      if (result.status === "fulfilled") {
         drained++;
-      } catch {
+      } else {
         observer.warn("Shutdown timeout waiting for task", { taskId });
-      } finally {
-        if (timeoutHandle !== undefined) {
-          clearTimeout(timeoutHandle);
-        }
       }
 
       // Transition active tasks back to queued so they resume on next start
@@ -534,9 +590,7 @@ export function createTaskScheduler(
     }
     activeDispatches.clear();
 
-    if (total > 0) {
-      observer.info("Active dispatches drained", { total, drained, transitioned });
-    }
+    observer.info("Active dispatches drained", { total, drained, transitioned });
   }
 
   return {
@@ -548,6 +602,7 @@ export function createTaskScheduler(
     getAvailableSlots,
     trackBasePriority,
     initializeBasePriorities,
+    removeBasePriority,
     removeActiveDispatch,
     drainForShutdown,
     handleTaskCompletion,

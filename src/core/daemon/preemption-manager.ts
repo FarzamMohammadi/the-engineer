@@ -28,8 +28,8 @@ export interface PendingPreemption {
 
 /** Evaluates preemption conditions and manages pending preemptions. */
 export interface PreemptionManager {
-  /** Evaluate whether preemption should occur. */
-  evaluate(now: number): void;
+  /** Evaluate whether preemption should occur. Pre-fetched tasks avoid redundant DB query. */
+  evaluate(now: number, queuedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>): void;
   /** Get the current pending preemption (if any). */
   getPending(): PendingPreemption | null;
   /** Clear the pending preemption (called after preemption completes). */
@@ -49,7 +49,10 @@ export function createPreemptionManager(
 
   let pendingPreemption: PendingPreemption | null = null;
 
-  function evaluate(now: number): void {
+  function evaluate(
+    now: number,
+    prefetchedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>,
+  ): void {
     if (pendingPreemption) {
       checkPreemptionTimeout(now);
       return;
@@ -60,7 +63,7 @@ export function createPreemptionManager(
       return;
     }
 
-    const queuedTasks = taskEngine.getQueuedByPriority();
+    const queuedTasks = prefetchedTasks ?? taskEngine.getQueuedByPriority();
     if (queuedTasks.length === 0) {
       return;
     }

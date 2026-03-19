@@ -115,7 +115,13 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
 }
 
 function createState(overrides?: Partial<PipelineState>): PipelineState {
-  return { traceId: "trace-001", sessionId: "session-001", loopbackCount: 0, ...overrides };
+  return {
+    traceId: "trace-001",
+    sessionId: "session-001",
+    loopbackCount: 0,
+    repoContext: null,
+    ...overrides,
+  };
 }
 
 function createHandlersThatReturn(outputs: Map<Phase, PhaseOutput>) {

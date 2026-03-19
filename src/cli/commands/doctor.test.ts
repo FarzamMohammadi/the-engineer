@@ -329,6 +329,39 @@ describe("checkRiskyConfig", () => {
     const costWarn = result.checks.find((c) => c.label === "Cost limits");
     expect(costWarn?.status).toBe("warn");
   });
+
+  it("warns when max_concurrent exceeds 5", () => {
+    const bundle = makeSafeBundle();
+    bundle.daemon.max_concurrent = 10;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "High concurrency");
+    expect(warn?.status).toBe("warn");
+  });
+
+  it("warns when stuck_threshold_ms >= max_active_duration_ms", () => {
+    const bundle = makeSafeBundle();
+    bundle.daemon.stuck_threshold_ms = bundle.daemon.max_active_duration_ms;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Stuck detection");
+    expect(warn?.status).toBe("warn");
+  });
+
+  it("warns when aging_cap <= aging_increment", () => {
+    const bundle = makeSafeBundle();
+    bundle.daemon.aging_cap = 5;
+    bundle.daemon.aging_increment = 5;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Priority aging");
+    expect(warn?.status).toBe("warn");
+  });
+
+  it("does not warn about scheduling with safe defaults", () => {
+    const bundle = makeSafeBundle();
+    const result = checkRiskyConfig(bundle);
+    const schedulingLabels = ["High concurrency", "Stuck detection", "Priority aging"];
+    const schedulingWarns = result.checks.filter((c) => schedulingLabels.includes(c.label));
+    expect(schedulingWarns).toHaveLength(0);
+  });
 });
 
 // ── Aggregation ───────────────────────────────────────────────────────────

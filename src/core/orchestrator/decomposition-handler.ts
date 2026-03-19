@@ -47,6 +47,10 @@ export function createDecompositionHandler(ctx: OrchestratorContext): Decomposit
 
     const parseResult = LLMDecompositionPlanSchema.safeParse(planData.decomposition_plan);
     if (!parseResult.success) {
+      ctx.observer.warn("Invalid decomposition plan from LLM — skipping decomposition", {
+        taskId,
+        error: parseResult.error.message,
+      });
       ctx.sessionMemory.addJournalEntry({
         sessionId,
         taskId,
@@ -104,6 +108,12 @@ export function createDecompositionHandler(ctx: OrchestratorContext): Decomposit
       "decomposed_into_children",
       "orchestrator",
     );
+
+    ctx.observer.info("Task decomposed into children", {
+      taskId,
+      childCount: childIds.length,
+      childIds,
+    });
 
     ctx.sessionMemory.addJournalEntry({
       sessionId,

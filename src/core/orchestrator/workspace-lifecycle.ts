@@ -68,6 +68,10 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: workspace setup has inherent branching (new/rework/resume/child)
   function setupWorkspace(dispatch: Dispatch): void {
     const taskId = dispatch.task.id;
+    const isResume = !!dispatch.resume_from;
+    const isChild = !!dispatch.task.parent_id;
+
+    ctx.observer.info("Setting up workspace", { taskId, isResume, isChild });
 
     if (!dispatch.resume_from) {
       const repo = dispatch.task.repo;
@@ -76,6 +80,10 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
         // Rework dispatch: workspace already exists (preserved during review_pending)
         const existingWorktree = ctx.workspaceManager.getWorktreePath(taskId);
         if (existingWorktree && dispatch.task.workspace) {
+          ctx.observer.debug("Workspace setup: re-registering existing workspace (rework)", {
+            taskId,
+            repo,
+          });
           ctx.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
         } else {
           // Child tasks branch from parent's branch
@@ -83,6 +91,11 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
           if (dispatch.task.parent_id) {
             const parentTask = ctx.taskEngine.getTask(dispatch.task.parent_id);
             parentBranch = parentTask?.workspace?.branch ?? undefined;
+            ctx.observer.debug("Workspace setup: child task branching from parent", {
+              taskId,
+              parentId: dispatch.task.parent_id,
+              parentBranch: parentBranch ?? null,
+            });
           }
           const record = ctx.workspaceManager.createWorkspace(taskId, repo, {
             title: dispatch.task.title,
@@ -95,8 +108,13 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
             worktree_path: record.worktreePath,
           });
         }
+      } else {
+        ctx.observer.debug("Workspace setup: no repo/cloneUrl — skipping workspace creation", {
+          taskId,
+        });
       }
     } else if (dispatch.task.workspace) {
+      ctx.observer.debug("Workspace setup: re-registering workspace for resume", { taskId });
       ctx.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
     }
   }
@@ -157,8 +175,12 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
           });
         });
       }
-    } catch {
-      // Silent — notification failure must never block the pipeline
+    } catch (err) {
+      // Unexpected error in the notification helper itself (not a send failure).
+      // Send failures are caught above; this catch guards against bugs in the routing logic.
+      ctx.observer.debug("Unexpected error in notifyMilestone", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -190,8 +212,11 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
             error: err instanceof Error ? err.message : String(err),
           });
         });
-    } catch {
-      // Silent — notification failure must never block the pipeline
+    } catch (err) {
+      // Unexpected error in the comment helper itself (not a send failure).
+      ctx.observer.debug("Unexpected error in commentOnSourceIssue", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

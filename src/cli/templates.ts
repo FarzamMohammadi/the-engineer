@@ -201,6 +201,9 @@ export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
 # slug_max_length: 30                        # Max length for branch slug
 # fetch_before_create: true                  # Fetch remote before creating worktree
 # default_base_branch: main                  # Default base branch for PRs
+# git_token_env: GIT_TOKEN                   # Env var name for git auth token (default: GIT_TOKEN)
+#                                            # Using GitHub? Set this to GITHUB_TOKEN, or alias:
+#                                            # export GIT_TOKEN=$GITHUB_TOKEN
 
 # --- PR settings ---
 # pr:
@@ -504,6 +507,8 @@ slug_max_length: 30                       # Max length for branch slug (default:
 fetch_before_create: true                 # Fetch remote before creating worktree (default: true)
 default_base_branch: main                 # Default base branch for PRs (default: main)
 git_token_env: GIT_TOKEN                  # Env var name for git auth token (default: GIT_TOKEN)
+                                          # Generic default works with any git host.
+                                          # For GitHub: export GIT_TOKEN=$GITHUB_TOKEN
 
 # ── PR Settings ──────────────────────────────────────────────────────────────
 pr:

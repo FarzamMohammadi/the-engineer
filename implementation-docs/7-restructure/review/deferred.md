@@ -190,3 +190,16 @@ Accumulated across all merge rounds. Nothing gets lost.
 
 ### Lens E (Security & Trust Boundaries)
 - None — all findings applied
+
+## Round 2 — phases5-6 (Scheduling & Workspace)
+
+### Lens F (Logging & Observability)
+- None — all 11 findings applied
+
+### Lens G (Performance & Resources)
+- **F5:** `reviewApiFailures` array uses `shift()` for FIFO cleanup — O(n) per shift, but bounded to `MAX_RECENT_FAILURES=3`. Non-issue at this scale.
+
+### Lens H (Config & DX)
+- **`engineer status` is bare-bones**: Shows running/stopped and task state counts only — no concurrency slot usage, queue depth, or aging state. The Daemon's `getState()` already exposes this data; wiring it to `status` is a feature addition, not a quick fix.
+- **No upper-bound validation on duration fields in schema**: `stuck_threshold_ms: 1` (1ms) would flag every task as stuck. Doctor warnings (F5) are the right layer — adding schema constraints would break configs that deliberately use extreme values in tests.
+- **Test config defaults differ from schema defaults**: `makeDaemonConfig()` in tests uses `stuck_threshold_ms: 600_000` (10m) vs schema default of 1.8M (30m). Intentional and acceptable — not a user-facing DX issue.

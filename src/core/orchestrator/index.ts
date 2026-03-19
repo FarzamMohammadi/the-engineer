@@ -188,11 +188,23 @@ export class Orchestrator {
   async executeTask(dispatch: Dispatch): Promise<ExecuteTaskResult> {
     const taskId = dispatch.task.id;
     const traceId = ulid();
+    const isResume = !!dispatch.resume_from;
+    const isRework = (dispatch.task.review?.feedback_rounds ?? []).some((r) => !r.applied) ?? false;
+
+    this.ctx.observer.info("Task execution starting", {
+      taskId,
+      traceId,
+      title: dispatch.task.title,
+      isResume,
+      resumeFromPhase: dispatch.resume_from?.phase ?? null,
+      isRework,
+    });
 
     // ── Session setup ──────────────────────────────────────────────────────
     const session = this.workspaceLifecycle.createSession(dispatch);
     const sessionId = session.id;
     this.ctx.taskEngine.updateTaskField(taskId, "session_id", sessionId);
+    this.ctx.observer.debug("Session created", { taskId, traceId, sessionId });
 
     // ── Workspace setup (D144) ──────────────────────────────────────────
     // If workspace creation fails (git failure, disk full, auth error), close the
@@ -209,10 +221,16 @@ export class Orchestrator {
     this.workspaceLifecycle.commentOnSourceIssue(dispatch, "Starting work on this issue.");
 
     // ── Build pipeline state ───────────────────────────────────────────────
+    // Gather repo context once — avoids 5 sync I/O ops × 7 phases per task.
+    // Re-gathered after execution phase (the only phase that modifies files).
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
+    const repoContext = gatherRepoContextSafe(worktreePath);
+
     const state: PipelineState = {
       traceId,
       sessionId,
       loopbackCount: 0,
+      repoContext,
     };
 
     // ── Run phase pipeline ─────────────────────────────────────────────────
@@ -239,8 +257,7 @@ export class Orchestrator {
     _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = state.repoContext;
     const systemPrompt = buildSystemPrompt(Phases.intake_analysis);
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
       (r) => !r.applied,
@@ -269,8 +286,7 @@ export class Orchestrator {
     priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = state.repoContext;
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
@@ -298,8 +314,7 @@ export class Orchestrator {
     priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = state.repoContext;
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
@@ -331,8 +346,7 @@ export class Orchestrator {
     priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = state.repoContext;
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
@@ -378,8 +392,7 @@ export class Orchestrator {
     priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = state.repoContext;
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
@@ -418,8 +431,7 @@ export class Orchestrator {
     priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = state.repoContext;
     const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
       | Record<string, unknown>
       | undefined;
@@ -457,8 +469,7 @@ export class Orchestrator {
     priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = state.repoContext;
     const execData = priorOutputs.get(Phases.execution)?.data as
       | Record<string, unknown>
       | undefined;

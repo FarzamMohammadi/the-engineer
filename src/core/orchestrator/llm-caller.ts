@@ -123,6 +123,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
   }
 
   /** Call LLM with retry for transient failures. */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: retry loop with observability logging — extraction would fragment the retry state
   async function callLlm(
     prompt: string,
     taskId: string,
@@ -139,6 +140,13 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         }
         if (attempt < MAX_LLM_RETRIES - 1) {
           const delay = LLM_RETRY_BASE_MS * 2 ** attempt;
+          ctx.observer.warn("LLM call failed (transient) — retrying", {
+            taskId,
+            attempt: attempt + 1,
+            maxRetries: MAX_LLM_RETRIES,
+            delayMs: delay,
+            error: error instanceof Error ? error.message : String(error),
+          });
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }

@@ -53,10 +53,17 @@ export interface DaemonHealthMonitor {
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
+/** Callbacks for cross-subsystem cleanup on escalation. */
+export interface HealthMonitorCallbacks {
+  /** Called when a blocked task is escalated to failed — clean up stale priority tracking. */
+  onTaskEscalated(taskId: string): void;
+}
+
 export function createDaemonHealthMonitor(
   ctx: HealthMonitorContext,
   notifications: NotificationRouter,
   getActiveTaskIds: () => string[],
+  callbacks?: HealthMonitorCallbacks,
 ): DaemonHealthMonitor {
   const { config, eventBus, taskEngine, safetyLayer, orchestrator, sessionMemory, observer } = ctx;
 
@@ -232,6 +239,7 @@ export function createDaemonHealthMonitor(
         "blocked_timeout_escalation",
         "daemon",
       );
+      callbacks?.onTaskEscalated(taskId);
       notifications.sendEscalationAlert(taskId, taskTitle);
       blockedEscalationState.delete(taskId);
       observer.warn("Blocked task escalated to failed", { taskId, stage: stage.name });

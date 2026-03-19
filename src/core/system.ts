@@ -77,7 +77,11 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponentGraph
     input.observer.child("action-pipeline"),
   );
   const sessionMemory = new SessionMemory(input.db);
-  const workspaceManager = new WorkspaceManager(eventBus, input.workspaceConfig);
+  const workspaceManager = new WorkspaceManager(
+    eventBus,
+    input.workspaceConfig,
+    input.observer.child("workspace-manager"),
+  );
 
   return {
     components: {

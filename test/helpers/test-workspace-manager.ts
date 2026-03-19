@@ -107,7 +107,8 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
     git_token_env: "GITHUB_TOKEN",
   };
 
-  const workspaceManager = new WorkspaceManager(eventBus, config);
+  const workspaceManagerObserver = createTestObserverFacade("workspace-manager");
+  const workspaceManager = new WorkspaceManager(eventBus, config, workspaceManagerObserver);
 
   const allEventsStmt = testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
   const eventsByTypeStmt = testDb.db.prepare(

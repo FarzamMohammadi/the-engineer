@@ -492,6 +492,35 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
     });
   }
 
+  // High concurrency warning
+  if (bundle.daemon.max_concurrent > 5) {
+    checks.push({
+      label: "High concurrency",
+      status: "warn",
+      message: `max_concurrent is ${bundle.daemon.max_concurrent} — high concurrency increases resource usage and LLM costs`,
+    });
+  }
+
+  // Stuck detection never fires before the hard cap
+  if (bundle.daemon.stuck_threshold_ms >= bundle.daemon.max_active_duration_ms) {
+    checks.push({
+      label: "Stuck detection",
+      status: "warn",
+      message: `stuck_threshold_ms (${bundle.daemon.stuck_threshold_ms}ms) >= max_active_duration_ms (${bundle.daemon.max_active_duration_ms}ms) — stuck detection will never fire before the hard cap`,
+      remedy: "Set stuck_threshold_ms lower than max_active_duration_ms",
+    });
+  }
+
+  // Priority aging overshoot
+  if (bundle.daemon.aging_cap <= bundle.daemon.aging_increment) {
+    checks.push({
+      label: "Priority aging",
+      status: "warn",
+      message: `aging_cap (${bundle.daemon.aging_cap}) <= aging_increment (${bundle.daemon.aging_increment}) — aging may overshoot the cap in a single step`,
+      remedy: "Set aging_cap higher than aging_increment",
+    });
+  }
+
   if (checks.length === 0) {
     checks.push({
       label: "Configuration",

@@ -162,8 +162,16 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     onTaskMergeComplete: (taskId) => scheduler.checkAndEmitChildrenAllDone(taskId),
   });
 
-  const healthMonitor = createDaemonHealthMonitor(ctx, notifications, () =>
-    scheduler.getActiveTaskIds(),
+  const healthMonitor = createDaemonHealthMonitor(
+    ctx,
+    notifications,
+    () => scheduler.getActiveTaskIds(),
+    {
+      onTaskEscalated: (taskId) => {
+        scheduler.removeBasePriority(taskId);
+        triggerPoller.removeBasePriority(taskId);
+      },
+    },
   );
 
   // ── Cross-Subsystem Coordination ──────────────────────────────────────
@@ -399,11 +407,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       scheduler.trackBasePriority(taskId, priority);
     }
 
-    // Step 3: Evaluate preemption
-    preemption.evaluate(now);
-
-    // Step 4+5: Schedule + priority aging (shared query avoids redundant DB fetch)
+    // Step 3+4+5: Preemption + schedule + aging (single DB query for all three)
     const queuedTasks = taskEngine.getQueuedByPriority();
+    preemption.evaluate(now, queuedTasks);
     scheduler.scheduleNext(queuedTasks);
     scheduler.applyPriorityAging(now, queuedTasks);
 

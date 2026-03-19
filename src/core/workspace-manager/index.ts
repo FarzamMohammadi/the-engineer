@@ -21,6 +21,7 @@ import type {
   WorkspaceRecord,
   WorkspaceVerification,
 } from "../interfaces/workspace-manager.interface.js";
+import type { IObserver } from "../observer/index.js";
 import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -153,10 +154,12 @@ export function validateWorkspacePath(targetPath: string, workspaceRoot: string)
 export class WorkspaceManager implements IWorkspaceManager {
   private readonly eventBus: IEventBus;
   private readonly config: WorkspaceConfig;
+  private readonly observer: IObserver;
   private readonly workspaces = new Map<string, WorkspaceRecord>();
 
-  constructor(eventBus: IEventBus, config: WorkspaceConfig) {
+  constructor(eventBus: IEventBus, config: WorkspaceConfig, observer: IObserver) {
     this.eventBus = eventBus;
+    this.observer = observer;
     // Expand ~ to actual home directory — Node APIs don't handle tilde
     this.config = {
       ...config,
@@ -188,6 +191,14 @@ export class WorkspaceManager implements IWorkspaceManager {
       `${taskId}-${slug}`,
     );
 
+    this.observer.info("Creating workspace", {
+      taskId,
+      repo,
+      branch,
+      base: resolvedBase,
+      isChild: !!parentBranch,
+    });
+
     // Clone repo if not present (D147)
     if (!existsSync(repoCloneDir)) {
       if (!cloneUrl) {
@@ -200,6 +211,7 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Fetch latest from remote
     if (this.config.fetch_before_create) {
+      this.observer.debug("Fetching latest from remote", { taskId, repo });
       this.gitExecWithAuth(["fetch", "origin"], repoCloneDir);
     }
 
@@ -207,12 +219,14 @@ export class WorkspaceManager implements IWorkspaceManager {
     const fromRef = parentBranch ?? `origin/${resolvedBase}`;
 
     // Create the branch
+    this.observer.debug("Creating branch", { taskId, branch, fromRef });
     this.gitExec(["branch", branch, fromRef], repoCloneDir);
 
     // Get the base commit
     const baseCommit = this.gitExec(["rev-parse", branch], repoCloneDir);
 
     // Create the worktree — if this fails, roll back the branch so we don't leave orphaned refs
+    this.observer.debug("Adding worktree", { taskId, worktreePath, branch });
     try {
       this.gitExec(["worktree", "add", worktreePath, branch], repoCloneDir);
     } catch (worktreeError) {
@@ -220,6 +234,10 @@ export class WorkspaceManager implements IWorkspaceManager {
         this.gitExec(["branch", "-D", branch], repoCloneDir);
       } catch {
         // Branch rollback best-effort — the stuck detection loop will surface this
+        this.observer.warn("Branch rollback after worktree failure also failed", {
+          taskId,
+          branch,
+        });
       }
       throw worktreeError;
     }
@@ -234,6 +252,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     };
 
     this.workspaces.set(taskId, workspace);
+    this.observer.info("Workspace created", { taskId, repo, branch, worktreePath, baseCommit });
 
     this.eventBus.publish({
       type: EventTypes["workspace.created"],
@@ -269,6 +288,7 @@ export class WorkspaceManager implements IWorkspaceManager {
         currentCommit: null,
         recoveryAction: null,
       };
+      this.observer.warn("Workspace verification: no record found (lost)", { taskId });
       this.emitVerified(taskId, result);
       return result;
     }
@@ -286,6 +306,7 @@ export class WorkspaceManager implements IWorkspaceManager {
           currentCommit,
           recoveryAction: null,
         };
+        this.observer.debug("Workspace verified: valid", { taskId, currentCommit });
         this.emitVerified(taskId, result);
         return result;
       } catch {
@@ -294,6 +315,10 @@ export class WorkspaceManager implements IWorkspaceManager {
           currentCommit: null,
           recoveryAction: "worktree directory exists but HEAD is unreadable — recreate worktree",
         };
+        this.observer.warn("Workspace verified: recoverable (HEAD unreadable)", {
+          taskId,
+          worktreePath: record.worktreePath,
+        });
         this.emitVerified(taskId, result);
         return result;
       }
@@ -307,6 +332,11 @@ export class WorkspaceManager implements IWorkspaceManager {
         currentCommit,
         recoveryAction: "recreate worktree from existing branch",
       };
+      this.observer.warn("Workspace verified: recoverable (worktree missing, branch exists)", {
+        taskId,
+        branch: record.branch,
+        currentCommit,
+      });
       this.emitVerified(taskId, result);
       return result;
     } catch {
@@ -315,6 +345,10 @@ export class WorkspaceManager implements IWorkspaceManager {
         currentCommit: null,
         recoveryAction: null,
       };
+      this.observer.warn("Workspace verified: lost (worktree and branch both missing)", {
+        taskId,
+        branch: record.branch,
+      });
       this.emitVerified(taskId, result);
       return result;
     }
@@ -332,6 +366,12 @@ export class WorkspaceManager implements IWorkspaceManager {
       return; // Idempotent
     }
 
+    this.observer.info("Cleaning up workspace", {
+      taskId,
+      branch: record.branch,
+      preserveBranch: preserveBranch ?? false,
+    });
+
     const repoCloneDir = path.join(this.config.workspace_root, record.repo);
 
     // Remove worktree (--force handles dirty working trees).
@@ -339,9 +379,14 @@ export class WorkspaceManager implements IWorkspaceManager {
     if (existsSync(record.worktreePath)) {
       try {
         this.gitExec(["worktree", "remove", record.worktreePath, "--force"], repoCloneDir);
-      } catch {
+      } catch (err) {
         // Worktree removal failed — continue with cleanup. Stale worktree dirs are
         // harmless until the next git worktree prune cycle.
+        this.observer.warn("Worktree removal failed — continuing cleanup", {
+          taskId,
+          worktreePath: record.worktreePath,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
@@ -380,8 +425,12 @@ export class WorkspaceManager implements IWorkspaceManager {
     const repoCloneDir = path.join(this.config.workspace_root, repo);
 
     if (existsSync(repoCloneDir)) {
+      this.observer.debug("Repo already cloned — skipping clone", { repo, repoCloneDir });
       return repoCloneDir;
     }
+
+    this.observer.info("Cloning repository", { repo });
+    const cloneStart = Date.now();
 
     // Create parent directory
     mkdirSync(path.dirname(repoCloneDir), { recursive: true });
@@ -401,6 +450,10 @@ export class WorkspaceManager implements IWorkspaceManager {
     try {
       this.gitExec(["remote", "set-url", "origin", cloneUrl], repoCloneDir);
     } catch (setUrlError) {
+      this.observer.warn(
+        "Failed to reset git remote after clone — removing clone to prevent token persistence",
+        { repo },
+      );
       try {
         rmSync(repoCloneDir, { recursive: true, force: true });
       } catch {
@@ -411,6 +464,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       );
     }
 
+    this.observer.info("Repository cloned", { repo, elapsedMs: Date.now() - cloneStart });
     return repoCloneDir;
   }
 
@@ -426,6 +480,9 @@ export class WorkspaceManager implements IWorkspaceManager {
       throw new WorkspaceNotFoundError(taskId);
     }
 
+    this.observer.info("Pushing branch to remote", { taskId, branch: record.branch });
+    const pushStart = Date.now();
+
     const token = this.resolveToken();
     const repoCloneDir = path.join(this.config.workspace_root, record.repo);
 
@@ -435,6 +492,12 @@ export class WorkspaceManager implements IWorkspaceManager {
     // Push with transient auth — explicit URL, not remote name
     const authUrl = injectAuth(remoteUrl, token);
     this.gitExec(["push", "-u", authUrl, record.branch], record.worktreePath);
+
+    this.observer.info("Branch pushed", {
+      taskId,
+      branch: record.branch,
+      elapsedMs: Date.now() - pushStart,
+    });
   }
 
   /**
@@ -445,6 +508,7 @@ export class WorkspaceManager implements IWorkspaceManager {
    */
   registerExistingWorkspace(taskId: string, workspace: TaskWorkspace): void {
     if (!workspace.worktree_path) {
+      this.observer.debug("registerExistingWorkspace: no worktree_path — skipping", { taskId });
       return;
     }
     this.workspaces.set(taskId, {
@@ -454,6 +518,12 @@ export class WorkspaceManager implements IWorkspaceManager {
       worktreePath: workspace.worktree_path,
       baseBranch: this.config.default_base_branch,
       baseCommit: "",
+    });
+    this.observer.debug("Registered existing workspace", {
+      taskId,
+      repo: workspace.repo,
+      branch: workspace.branch,
+      worktreePath: workspace.worktree_path,
     });
   }
 

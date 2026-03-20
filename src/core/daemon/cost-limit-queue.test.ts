@@ -37,7 +37,7 @@ describe("CostLimitQueue", () => {
   it("transitions active task to blocked and sends notification", () => {
     const taskEngine = {
       getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-1", state: "active" })),
-      requestTransition: vi.fn(),
+      requestTransition: vi.fn().mockReturnValue({ success: true }),
     };
     const notifications = makeNotifications();
     const observer = createTestObserverFacade("daemon");
@@ -68,7 +68,7 @@ describe("CostLimitQueue", () => {
   it("drains the queue — subsequent process is a no-op", () => {
     const taskEngine = {
       getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-2", state: "active" })),
-      requestTransition: vi.fn(),
+      requestTransition: vi.fn().mockReturnValue({ success: true }),
     };
     const notifications = makeNotifications();
     const observer = createTestObserverFacade("daemon");

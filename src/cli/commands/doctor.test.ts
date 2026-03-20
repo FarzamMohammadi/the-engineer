@@ -396,6 +396,133 @@ describe("checkRiskyConfig", () => {
     const warn = result.checks.find((c) => c.label === "Review reminders");
     expect(warn).toBeUndefined();
   });
+
+  it("warns when data_lifecycle.interval_ms is under 1 minute", () => {
+    const bundle = makeSafeBundle();
+    bundle.daemon.data_lifecycle.interval_ms = 5_000;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Data lifecycle interval");
+    expect(warn?.status).toBe("warn");
+    expect(warn?.remedy).toContain("1m");
+  });
+
+  it("does not warn about data lifecycle interval with safe defaults", () => {
+    const bundle = makeSafeBundle();
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Data lifecycle interval");
+    expect(warn).toBeUndefined();
+  });
+
+  it("warns when retention max_age_days is under 7", () => {
+    const bundle = makeSafeBundle();
+    bundle.daemon.data_lifecycle.retention.events.max_age_days = 3;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Data retention: events");
+    expect(warn?.status).toBe("warn");
+    expect(warn?.message).toContain("3");
+  });
+
+  it("does not warn about retention with safe defaults", () => {
+    const bundle = makeSafeBundle();
+    const result = checkRiskyConfig(bundle);
+    const retentionWarns = result.checks.filter((c) => c.label.startsWith("Data retention"));
+    expect(retentionWarns).toHaveLength(0);
+  });
+
+  it("warns when blocked escalation stages are not in chronological order", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.response_timeout.blocked.stages = [
+      {
+        name: "escalation",
+        after_ms: 172_800_000,
+        action: "escalation_alert" as const,
+        repeat: null,
+        repeat_interval_ms: null,
+      },
+      {
+        name: "reminder",
+        after_ms: 14_400_000,
+        action: "send_reminder" as const,
+        repeat: true,
+        repeat_interval_ms: 14_400_000,
+      },
+    ];
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Escalation stage order");
+    expect(warn?.status).toBe("warn");
+    expect(warn?.message).toContain("chronological");
+  });
+
+  it("does not warn about stage order when stages are chronological", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.response_timeout.blocked.stages = [
+      {
+        name: "reminder",
+        after_ms: 14_400_000,
+        action: "send_reminder" as const,
+        repeat: true,
+        repeat_interval_ms: 14_400_000,
+      },
+      {
+        name: "escalation",
+        after_ms: 172_800_000,
+        action: "escalation_alert" as const,
+        repeat: null,
+        repeat_interval_ms: null,
+      },
+    ];
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Escalation stage order");
+    expect(warn).toBeUndefined();
+  });
+
+  it("warns when no escalation_alert stage is configured", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.response_timeout.blocked.stages = [
+      {
+        name: "reminder",
+        after_ms: 14_400_000,
+        action: "send_reminder" as const,
+        repeat: true,
+        repeat_interval_ms: 14_400_000,
+      },
+      {
+        name: "self_unblock",
+        after_ms: 28_800_000,
+        action: "evaluate_self_unblock" as const,
+        repeat: null,
+        repeat_interval_ms: null,
+      },
+    ];
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Escalation endpoint");
+    expect(warn?.status).toBe("warn");
+    expect(warn?.message).toContain("never be auto-failed");
+  });
+
+  it("does not warn about escalation endpoint when escalation_alert stage exists", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.response_timeout.blocked.stages = [
+      {
+        name: "escalation",
+        after_ms: 172_800_000,
+        action: "escalation_alert" as const,
+        repeat: null,
+        repeat_interval_ms: null,
+      },
+    ];
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Escalation endpoint");
+    expect(warn).toBeUndefined();
+  });
+
+  it("does not warn about escalation when stages array is empty", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.response_timeout.blocked.stages = [];
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Escalation endpoint");
+    expect(warn).toBeUndefined();
+  });
 });
 
 // ── Aggregation ───────────────────────────────────────────────────────────
@@ -548,7 +675,15 @@ function makeSafeBundle() {
       },
       autonomy: { decisions: {}, repo_overrides: {} },
       response_timeout: {
-        blocked: { stages: [] },
+        blocked: {
+          stages: [] as Array<{
+            name: string;
+            after_ms: number;
+            action: "send_reminder" | "evaluate_self_unblock" | "escalation_alert";
+            repeat: boolean | null;
+            repeat_interval_ms: number | null;
+          }>,
+        },
         review_pending: { reminder_after_ms: 86400000, repeat_interval_ms: 86400000 },
       },
       merge: { auto_merge_after_approval: { default: false, repos: {} } },

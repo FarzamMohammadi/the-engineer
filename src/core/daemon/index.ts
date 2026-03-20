@@ -390,7 +390,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       }
     }
 
-    observer.debug("Crash recovery scan complete", {
+    observer.info("Crash recovery scan complete", {
       activeTasks: activeTasks.length,
       orphansRecovered: recovered,
       recoveryFailures: failed,

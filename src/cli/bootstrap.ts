@@ -162,6 +162,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       config: config.daemon.data_lifecycle,
       blobsDir: tracesDir,
       clock: new RealClock(),
+      observer: observer.child("data-lifecycle"),
     });
 
     // 10. Daemon

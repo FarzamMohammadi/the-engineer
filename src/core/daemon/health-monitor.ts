@@ -301,6 +301,11 @@ export function createDaemonHealthMonitor(
 
     notifications.sendReviewReminder(task.id, elapsedMs);
     reviewReminderTimes.set(task.id, now);
+    observer.info("Review pending reminder sent", {
+      taskId: task.id,
+      elapsedMs,
+      elapsedHours: Math.floor(elapsedMs / 3_600_000),
+    });
   }
 
   return {

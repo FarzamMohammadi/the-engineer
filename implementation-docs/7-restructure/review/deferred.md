@@ -285,3 +285,18 @@ Accumulated across all merge rounds. Nothing gets lost.
 
 ### Lens D (Error Handling & Edge Cases)
 - **Biome cognitive complexity warning (22 > 15)** on `cleanupOrphanedBlobs` — acceptable tradeoff; the try/catch blocks are necessary for resilience. Could extract inner loop to a helper to reduce score, but that's a structure concern not an error handling one.
+
+## Round 2 — phases11-12
+
+### Lens F (Logging & Observability)
+- **Daemon tick heartbeat** — A periodic debug log every N ticks would confirm daemon liveness, but existing health/stuck detection serves as indirect heartbeat. Low priority.
+- **Plugin health check loop start/stop logging** — May already be logged in registry lifecycle.ts. Needs verification.
+
+### Lens G (Performance & Resources)
+- **Sync FS operations in `cleanupOrphanedBlobs()`** (readdirSync, unlinkSync, etc.) block the event loop during blob cleanup — acceptable at 4-hour frequency but could be converted to async if blob counts grow large.
+- **`reviewApiFailures` array uses `shift()`** in a while loop (O(n^2) worst case) — bounded to <50 elements, not worth the diff.
+- **`getActiveTaskIds()` creates a new array spread** on every call (3x per tick) — array is max 5 elements, not worth caching.
+
+### Lens H (Config & DX)
+- **`engineer status` background service visibility** — status command shows only PID + task counts, no visibility into data lifecycle, cost tracking, plugin health, or preemption state. Requires runtime state serialization (daemon -> CLI IPC) — too large for this lens.
+- **Phase 11 doc timing mismatch** — review doc says blocked escalation defaults are ~30min/~90min/~24hours but actual Zod defaults are 4h/8h/2d. Doc issue only, no code change needed.

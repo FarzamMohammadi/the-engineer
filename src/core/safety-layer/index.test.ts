@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import {
   type TestSafetyLayerHandle,
   createTestSafetyLayer,
@@ -509,7 +510,12 @@ describe("SafetyLayer — snapshot", () => {
 
     // Create new SafetyLayer on same DB — should restore from snapshot
     const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config);
+    const restored = new SafetyLayer(
+      handle.db,
+      handle.eventBus,
+      config,
+      createTestObserverFacade("safety-layer"),
+    );
 
     const status1 = restored.getCostStatus("task-1");
     expect(status1.per_task_usd).toBeCloseTo(0.25);
@@ -528,7 +534,12 @@ describe("SafetyLayer — snapshot", () => {
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.05 });
 
     const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config);
+    const restored = new SafetyLayer(
+      handle.db,
+      handle.eventBus,
+      config,
+      createTestObserverFacade("safety-layer"),
+    );
     const status = restored.getCostStatus("task-1");
     expect(status.per_task_usd).toBeCloseTo(0.15);
   });
@@ -560,7 +571,12 @@ describe("SafetyLayer — snapshot", () => {
 
     // New instance should replay from sequence 0 and find the event
     const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config);
+    const restored = new SafetyLayer(
+      handle.db,
+      handle.eventBus,
+      config,
+      createTestObserverFacade("safety-layer"),
+    );
     const status = restored.getCostStatus("task-1");
     // Should include both the original events' amounts and the new 0.30
     expect(status.per_task_usd).toBeGreaterThan(0);
@@ -575,7 +591,12 @@ describe("SafetyLayer — snapshot", () => {
 
     // Should not throw — falls back to full replay
     const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config);
+    const restored = new SafetyLayer(
+      handle.db,
+      handle.eventBus,
+      config,
+      createTestObserverFacade("safety-layer"),
+    );
     const status = restored.getCostStatus("task-1");
     expect(status.per_task_usd).toBeCloseTo(0.1);
   });

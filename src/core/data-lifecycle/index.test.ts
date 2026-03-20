@@ -419,6 +419,7 @@ describe("createDataLifecycleManager", () => {
       config: defaultConfig(),
       blobsDir: null,
       clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
     });
 
     const stats = manager.runCleanup();
@@ -438,6 +439,7 @@ describe("createDataLifecycleManager", () => {
       config: defaultConfig(),
       blobsDir: null,
       clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
     });
 
     manager.runCleanup();
@@ -460,6 +462,7 @@ describe("createDataLifecycleManager", () => {
       config: defaultConfig(),
       blobsDir: null,
       clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
     });
 
     expect(manager.getLastRun()).toBeNull();
@@ -472,6 +475,7 @@ describe("createDataLifecycleManager", () => {
       config: defaultConfig(),
       blobsDir: null,
       clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
     });
 
     const stats = manager.runCleanup();
@@ -487,6 +491,7 @@ describe("createDataLifecycleManager", () => {
         config: defaultConfig({ interval_ms: 1000 }),
         blobsDir: null,
         clock: createFakeClock(),
+        observer: createTestObserverFacade("data-lifecycle"),
       });
 
       manager.start();
@@ -510,6 +515,7 @@ describe("createDataLifecycleManager", () => {
         config: defaultConfig({ enabled: false, interval_ms: 100 }),
         blobsDir: null,
         clock: createFakeClock(),
+        observer: createTestObserverFacade("data-lifecycle"),
       });
 
       manager.start();
@@ -532,6 +538,7 @@ describe("createDataLifecycleManager", () => {
         config,
         blobsDir: null,
         clock: createFakeClock(),
+        observer: createTestObserverFacade("data-lifecycle"),
       });
 
       manager.start();
@@ -555,6 +562,7 @@ describe("createDataLifecycleManager", () => {
       config: defaultConfig(),
       blobsDir: null,
       clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
     });
 
     // Should not throw
@@ -594,6 +602,7 @@ describe("DataLifecycleManager integration", () => {
       config,
       blobsDir: null,
       clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
     });
 
     const stats = manager.runCleanup();

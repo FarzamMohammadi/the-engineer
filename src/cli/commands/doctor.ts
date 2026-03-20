@@ -456,6 +456,66 @@ export function checkExternalDependencies(): DoctorCategory {
   return { category: "External Dependencies", checks };
 }
 
+function checkDataLifecycleCoherence(bundle: ConfigBundle, checks: DoctorCheck[]): void {
+  const { data_lifecycle } = bundle.daemon;
+  if (!data_lifecycle.enabled) {
+    return;
+  }
+
+  if (data_lifecycle.interval_ms < 60_000) {
+    checks.push({
+      label: "Data lifecycle interval",
+      status: "warn",
+      message: `data_lifecycle.interval_ms is ${String(data_lifecycle.interval_ms)}ms — cleanup interval under 1 minute may cause excessive I/O`,
+      remedy: "Set data_lifecycle.interval_ms to at least '1m' in daemon.yaml",
+    });
+  }
+
+  for (const [table, retention] of Object.entries(data_lifecycle.retention)) {
+    if (retention.max_age_days < 7) {
+      checks.push({
+        label: `Data retention: ${table}`,
+        status: "warn",
+        message: `data_lifecycle.retention.${table}.max_age_days is ${String(retention.max_age_days)} — retention under 7 days may delete data for in-progress tasks`,
+        remedy: `Set data_lifecycle.retention.${table}.max_age_days to at least 7 in daemon.yaml`,
+      });
+    }
+  }
+}
+
+function checkEscalationCoherence(
+  stages: Array<{ name: string; after_ms: number; action: string }>,
+  checks: DoctorCheck[],
+): void {
+  if (stages.length > 1) {
+    for (let i = 1; i < stages.length; i++) {
+      const prev = stages[i - 1];
+      const curr = stages[i];
+      if (prev && curr && curr.after_ms < prev.after_ms) {
+        checks.push({
+          label: "Escalation stage order",
+          status: "warn",
+          message: `Blocked escalation stage "${curr.name}" (${String(curr.after_ms)}ms) fires before "${prev.name}" (${String(prev.after_ms)}ms) — stages should be in chronological order`,
+          remedy:
+            "Reorder response_timeout.blocked.stages in safety.yaml so after_ms values are ascending",
+        });
+        break;
+      }
+    }
+  }
+
+  if (stages.length > 0 && !stages.some((s) => s.action === "escalation_alert")) {
+    checks.push({
+      label: "Escalation endpoint",
+      status: "warn",
+      message:
+        "No escalation_alert stage in response_timeout.blocked.stages — blocked tasks will never be auto-failed",
+      remedy:
+        "Add a stage with action: escalation_alert to response_timeout.blocked.stages in safety.yaml",
+    });
+  }
+}
+
 /** Category 11: Risky config warnings. */
 export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
   const checks: DoctorCheck[] = [];
@@ -535,6 +595,9 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
       remedy: "Set review_pending.reminder_after_ms to at least '1h' in safety.yaml",
     });
   }
+
+  checkDataLifecycleCoherence(bundle, checks);
+  checkEscalationCoherence(bundle.safety.response_timeout.blocked.stages, checks);
 
   if (checks.length === 0) {
     checks.push({

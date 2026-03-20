@@ -6,6 +6,7 @@ import type { CostIncurredPayload, Event, TaskStateChangedPayload } from "../../
 import { TaskStates } from "../../schemas/task.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { CostStatus, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
+import type { IObserver } from "../observer/index.js";
 
 // ── Internal Types ───────────────────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ export interface CostTrackerDeps {
   db: Database.Database;
   eventBus: IEventBus;
   costLimits: CostLimits;
+  observer: IObserver;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ export interface CostTrackerDeps {
  * On creation: restores from snapshot, replays missed events, subscribes to EventBus.
  */
 export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
-  const { db, eventBus } = deps;
+  const { db, eventBus, observer } = deps;
   let costLimits = deps.costLimits;
 
   const getSnapshotStmt = db.prepare("SELECT value FROM _meta WHERE key = ?");
@@ -298,11 +300,13 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
   function rolloverWindows(nowDate: Date): void {
     const dailyStart = getDailyWindowStart(nowDate);
     if (dailyStart !== accumulators.api_spend.daily.window_start) {
+      observer.debug("Cost window rolled over", { window: "daily", newStart: dailyStart });
       accumulators.api_spend.daily = { cost_usd: 0, window_start: dailyStart };
     }
 
     const monthlyStart = getMonthlyWindowStart(nowDate);
     if (monthlyStart !== accumulators.api_spend.monthly.window_start) {
+      observer.debug("Cost window rolled over", { window: "monthly", newStart: monthlyStart });
       accumulators.api_spend.monthly = { cost_usd: 0, window_start: monthlyStart };
     }
   }
@@ -333,6 +337,12 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
 
     if (spent >= limitConfig.cost_usd) {
+      observer.warn("Cost limit breached", {
+        limitType,
+        spent,
+        limit: limitConfig.cost_usd,
+        taskId,
+      });
       eventBus.publish({
         type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
@@ -362,6 +372,13 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
 
     if (cliConfig.daily_requests !== null && usage.requests_used >= cliConfig.daily_requests) {
+      observer.warn("CLI usage limit breached", {
+        providerId,
+        limitType: "daily_requests",
+        used: usage.requests_used,
+        limit: cliConfig.daily_requests,
+        taskId,
+      });
       eventBus.publish({
         type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
@@ -379,6 +396,13 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
 
     if (cliConfig.daily_tokens !== null && usage.tokens_used >= cliConfig.daily_tokens) {
+      observer.warn("CLI usage limit breached", {
+        providerId,
+        limitType: "daily_tokens",
+        used: usage.tokens_used,
+        limit: cliConfig.daily_tokens,
+        taskId,
+      });
       eventBus.publish({
         type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
@@ -474,6 +498,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     } catch {
       // Snapshot save failed — keep snapshotDirty=true so next event triggers retry.
       // In-memory accumulators remain authoritative; replay covers the gap on restart.
+      observer.debug("Cost snapshot save failed — will retry on next event");
     }
   }
 
@@ -503,14 +528,20 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
 
       accumulators.cli_usage = new Map(Object.entries(snapshot.cli_usage));
       lastSequence = snapshot.last_sequence;
+      observer.debug("Cost snapshot restored", {
+        lastSequence,
+        perTaskEntries: accumulators.api_spend.per_task.size,
+      });
     } catch {
       // Corrupt snapshot — fall back to zero accumulators + full replay
+      observer.warn("Cost snapshot corrupted — falling back to full replay");
       lastSequence = 0;
     }
   }
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: paginated event replay with window-aware accumulation
   function replayEvents(): void {
+    const startSeq = lastSequence;
     let lastSeq = lastSequence;
     const nowDate = new Date();
     const dailyStart = getDailyWindowStart(nowDate);
@@ -545,6 +576,13 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       if (events.length < REPLAY_PAGE_SIZE) {
         break;
       }
+    }
+
+    if (lastSequence > startSeq) {
+      observer.debug("Cost event replay completed", {
+        fromSequence: startSeq,
+        toSequence: lastSequence,
+      });
     }
   }
 

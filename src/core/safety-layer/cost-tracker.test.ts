@@ -26,7 +26,13 @@ function createTracker(limitOverrides: Parameters<typeof SafetyConfigSchema.pars
   const observer = createTestObserverFacade("event-bus");
   eventBus = new EventBus(testDb.db, { observer });
   const config = SafetyConfigSchema.parse(limitOverrides);
-  const tracker = createCostTracker({ db: testDb.db, eventBus, costLimits: config.cost_limits });
+  const costObserver = createTestObserverFacade("safety-layer");
+  const tracker = createCostTracker({
+    db: testDb.db,
+    eventBus,
+    costLimits: config.cost_limits,
+    observer: costObserver,
+  });
   return { tracker, eventBus, db: testDb.db };
 }
 
@@ -330,7 +336,12 @@ describe("CostTracker — snapshot", () => {
 
     // Create new CostTracker on same DB
     const config = SafetyConfigSchema.parse({});
-    const restored = createCostTracker({ db, eventBus: eb, costLimits: config.cost_limits });
+    const restored = createCostTracker({
+      db,
+      eventBus: eb,
+      costLimits: config.cost_limits,
+      observer: createTestObserverFacade("safety-layer"),
+    });
 
     expect(restored.getCostStatus("task-1").per_task_usd).toBeCloseTo(0.25);
     expect(restored.getCostStatus("task-2").per_task_usd).toBeCloseTo(0.1);
@@ -345,7 +356,12 @@ describe("CostTracker — snapshot", () => {
 
     // Should not throw — falls back to full replay
     const config = SafetyConfigSchema.parse({});
-    const restored = createCostTracker({ db, eventBus: eb, costLimits: config.cost_limits });
+    const restored = createCostTracker({
+      db,
+      eventBus: eb,
+      costLimits: config.cost_limits,
+      observer: createTestObserverFacade("safety-layer"),
+    });
     expect(restored.getCostStatus("task-1").per_task_usd).toBeCloseTo(0.1);
   });
 
@@ -356,7 +372,12 @@ describe("CostTracker — snapshot", () => {
     db.prepare("DELETE FROM _meta WHERE key = 'safety_snapshot'").run();
 
     const config = SafetyConfigSchema.parse({});
-    const restored = createCostTracker({ db, eventBus: eb, costLimits: config.cost_limits });
+    const restored = createCostTracker({
+      db,
+      eventBus: eb,
+      costLimits: config.cost_limits,
+      observer: createTestObserverFacade("safety-layer"),
+    });
     expect(restored.getCostStatus("task-1").per_task_usd).toBeGreaterThan(0);
   });
 });
@@ -378,7 +399,12 @@ describe("CostTracker — paginated replay", () => {
     // Delete snapshot so new CostTracker must replay everything
     testDb.db.prepare("DELETE FROM _meta WHERE key = 'safety_snapshot'").run();
 
-    const tracker = createCostTracker({ db: testDb.db, eventBus, costLimits: config.cost_limits });
+    const tracker = createCostTracker({
+      db: testDb.db,
+      eventBus,
+      costLimits: config.cost_limits,
+      observer: createTestObserverFacade("safety-layer"),
+    });
     expect(tracker.getCostStatus("task-1").per_task_usd).toBeCloseTo(0.5);
   });
 });

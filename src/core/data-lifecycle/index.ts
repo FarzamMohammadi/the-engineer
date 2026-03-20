@@ -8,8 +8,10 @@ import type { DataLifecycleConfig } from "../../schemas/config.js";
 import type { EventType } from "../../schemas/events.js";
 import { SystemCleanupCompletedPayloadSchema } from "../../schemas/events.js";
 import type { Clock } from "../../utils/clock.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IObserver } from "../observer/index.js";
 
 // ── Event Declarations ────────────────────────────────────────────────────────
 
@@ -54,6 +56,7 @@ interface DataLifecycleManagerDeps {
   config: DataLifecycleConfig;
   blobsDir: string | null;
   clock: Clock;
+  observer: IObserver;
 }
 
 // Active task states — never prune data belonging to these tasks
@@ -157,24 +160,24 @@ export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
 export function collectReferencedBlobRefs(db: Database.Database): Set<string> {
   const refs = new Set<string>();
 
-  const rows = db.prepare("SELECT input FROM observations WHERE type = 'llm_call'").all() as {
-    input: string | null;
-  }[];
+  // Use json_extract at the SQL level to avoid loading full input JSON blobs into JS memory.
+  // With thousands of LLM calls, the input column can be multi-KB each — extracting only the
+  // two ref strings keeps memory proportional to ref count, not total JSON size.
+  const rows = db
+    .prepare(
+      `SELECT json_extract(input, '$.prompt_ref') as prompt_ref,
+              json_extract(input, '$.response_ref') as response_ref
+       FROM observations
+       WHERE type = 'llm_call' AND input IS NOT NULL`,
+    )
+    .all() as { prompt_ref: string | null; response_ref: string | null }[];
 
   for (const row of rows) {
-    if (!row.input) {
-      continue;
+    if (row.prompt_ref) {
+      refs.add(row.prompt_ref);
     }
-    try {
-      const parsed = JSON.parse(row.input) as Record<string, unknown>;
-      if (typeof parsed["prompt_ref"] === "string" && parsed["prompt_ref"]) {
-        refs.add(parsed["prompt_ref"]);
-      }
-      if (typeof parsed["response_ref"] === "string" && parsed["response_ref"]) {
-        refs.add(parsed["response_ref"]);
-      }
-    } catch {
-      // malformed JSON — skip
+    if (row.response_ref) {
+      refs.add(row.response_ref);
     }
   }
 
@@ -263,11 +266,12 @@ export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<strin
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): DataLifecycleManager {
-  const { db, eventBus, config, blobsDir, clock } = deps;
+  const { db, eventBus, config, blobsDir, clock, observer } = deps;
   let interval: ReturnType<typeof setInterval> | null = null;
   let lastRun: CleanupStats | null = null;
 
   function runCleanup(): CleanupStats {
+    observer.debug("Data lifecycle cleanup starting");
     const startMs = clock.now();
     const tables: Record<string, TableCleanupResult> = {};
 
@@ -300,8 +304,8 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       try {
         runIncrementalVacuum(db);
         vacuumRan = true;
-      } catch {
-        // Vacuum failure is non-critical — cleanup stats still valid
+      } catch (err) {
+        observer.warn("Incremental vacuum failed", { error: sanitizeErrorMessage(err) });
       }
     }
 
@@ -317,6 +321,15 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
     };
 
     lastRun = stats;
+
+    observer.info("Data lifecycle cleanup completed", {
+      durationMs,
+      tables: Object.fromEntries(
+        Object.entries(tables).map(([n, r]) => [n, { deleted: r.deleted, remaining: r.remaining }]),
+      ),
+      blobsDeleted,
+      vacuumRan,
+    });
 
     // Emit cleanup event (fire-and-forget — cleanup already completed)
     try {
@@ -336,8 +349,8 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
           vacuum_ran: vacuumRan,
         },
       });
-    } catch {
-      // Event publish failure is non-critical — cleanup stats saved in lastRun
+    } catch (err) {
+      observer.warn("Failed to publish cleanup event", { error: sanitizeErrorMessage(err) });
     }
 
     return stats;
@@ -347,11 +360,12 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
     if (!config.enabled || interval) {
       return;
     }
+    observer.info("Data lifecycle manager started", { intervalMs: config.interval_ms });
     interval = setInterval(() => {
       try {
         runCleanup();
-      } catch {
-        // Cleanup failure is non-critical — next interval will retry
+      } catch (err) {
+        observer.error("Data lifecycle cleanup failed", { error: sanitizeErrorMessage(err) });
       }
     }, config.interval_ms);
   }
@@ -360,6 +374,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
     if (interval) {
       clearInterval(interval);
       interval = null;
+      observer.debug("Data lifecycle manager stopped");
     }
   }
 

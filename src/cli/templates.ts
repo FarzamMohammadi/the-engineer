@@ -361,6 +361,37 @@ plugins:
   health_check_interval_ms: "1m"          # Health check frequency (default: 1m)
   health_check_timeout_ms: "5s"           # Timeout per health check (default: 5s)
   consecutive_failures_threshold: 3       # Failures before marking failed (default: 3)
+
+# ── Data Lifecycle (automatic cleanup) ──────────────────────────────────────
+data_lifecycle:
+  enabled: true                           # Enable automatic data cleanup (default: true)
+  interval_ms: "1h"                       # Cleanup check interval (default: 1h)
+  retention:
+    events:
+      max_age_days: 90                    # Event retention in days (default: 90)
+      max_count: null                     # Max event count, null = unlimited (default: null)
+    observations:
+      max_age_days: 90                    # Observation retention in days (default: 90)
+      max_count: null
+    journal_entries:
+      max_age_days: 90                    # Journal retention in days (default: 90)
+      max_count: null
+    checkpoints:
+      max_age_days: 90                    # Checkpoint retention in days (default: 90)
+      max_count: null
+  vacuum_on_cleanup: true                 # Run incremental VACUUM after cleanup (default: true)
+
+# ── Database Tuning ─────────────────────────────────────────────────────────
+database:
+  cache_size_mb: 64                       # SQLite cache size in MB (default: 64)
+
+# ── Event Bus ───────────────────────────────────────────────────────────────
+subscriber_warn_threshold_ms: 50          # Warn if a subscriber callback exceeds this (ms). 0 = disabled. (default: 50)
+
+# ── Review Polling (circuit breaker for git hosting API failures) ───────────
+review_polling:
+  failure_window_ms: "5m"                 # Time window for failure counting (default: 5m)
+  max_failures_before_pause: 3            # Failures in window before pausing polling (default: 3)
 `;
 
 export const EXAMPLE_ORCHESTRATOR = `# ┌─────────────────────────────────────────────────────────────────────────────┐

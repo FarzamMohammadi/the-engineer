@@ -13,6 +13,7 @@ import type {
   SafetyQuery,
   SafetyVerdict,
 } from "../interfaces/safety-layer.interface.js";
+import type { IObserver } from "../observer/index.js";
 import { type ICostTracker, createCostTracker } from "./cost-tracker.js";
 import { PolicyEngine } from "./policy-engine.js";
 
@@ -88,8 +89,18 @@ export class SafetyLayer implements ISafetyLayer {
   private readonly costTracker: ICostTracker;
   private readonly policyEngine: PolicyEngine;
 
-  constructor(db: Database.Database, eventBus: IEventBus, config: SafetyConfig) {
-    this.costTracker = createCostTracker({ db, eventBus, costLimits: config.cost_limits });
+  constructor(
+    db: Database.Database,
+    eventBus: IEventBus,
+    config: SafetyConfig,
+    observer: IObserver,
+  ) {
+    this.costTracker = createCostTracker({
+      db,
+      eventBus,
+      costLimits: config.cost_limits,
+      observer,
+    });
     this.policyEngine = new PolicyEngine(config);
   }
 

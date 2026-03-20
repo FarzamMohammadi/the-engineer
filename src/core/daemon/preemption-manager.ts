@@ -186,11 +186,16 @@ export function createPreemptionManager(
   }
 
   function clearPending(): void {
+    observer.debug("Preemption cleared — cycle complete");
     pendingPreemption = null;
   }
 
   function abandonPending(): void {
     if (pendingPreemption) {
+      observer.warn("Preemption abandoned", {
+        targetTaskId: pendingPreemption.targetTaskId,
+        replacementTaskId: pendingPreemption.replacementTaskId,
+      });
       removeActiveDispatch(pendingPreemption.targetTaskId);
       pendingPreemption = null;
     }

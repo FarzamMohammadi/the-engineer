@@ -25,7 +25,8 @@ export type ComponentTag =
   | "phase-runner"
   | "llm-caller"
   | "agent-loop"
-  | "plugin-loader";
+  | "plugin-loader"
+  | "data-lifecycle";
 
 /** Logging config shape from DaemonConfigSchema. */
 export interface LoggingConfig {

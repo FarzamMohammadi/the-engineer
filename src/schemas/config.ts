@@ -412,15 +412,40 @@ export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 // ensure safe startup, but operators should always configure safety explicitly.
 
 export const ApiLimitSchema = z.object({
-  cost_usd: z.number().positive().nullable().default(null),
-  auto_resume_on_reset: z.boolean().default(false),
+  cost_usd: z
+    .number()
+    .positive()
+    .nullable()
+    .default(null)
+    .describe("USD spending limit. null = unlimited (no limit enforced)."),
+  auto_resume_on_reset: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Automatically resume tasks when the spending window resets (daily/monthly rollover).",
+    ),
 });
 export type ApiLimit = z.infer<typeof ApiLimitSchema>;
 
 export const CliLimitSchema = z.object({
-  daily_requests: z.number().int().positive().nullable().default(null),
-  daily_tokens: z.number().int().positive().nullable().default(null),
-  auto_resume_on_reset: z.boolean().default(false),
+  daily_requests: z
+    .number()
+    .int()
+    .positive()
+    .nullable()
+    .default(null)
+    .describe("Max CLI requests per day. null = unlimited."),
+  daily_tokens: z
+    .number()
+    .int()
+    .positive()
+    .nullable()
+    .default(null)
+    .describe("Max CLI tokens per day. null = unlimited."),
+  auto_resume_on_reset: z
+    .boolean()
+    .default(false)
+    .describe("Automatically resume tasks when the spending window resets."),
 });
 export type CliLimit = z.infer<typeof CliLimitSchema>;
 
@@ -506,11 +531,31 @@ export type TimeoutStageAction = z.infer<typeof TimeoutStageActionSchema>;
 export const TimeoutStageActions = TimeoutStageActionSchema.enum;
 
 export const TimeoutStageSchema = z.object({
-  name: z.string(),
-  after_ms: z.number().int().positive(),
+  name: z
+    .string()
+    .describe("Human-readable stage name (e.g. 'reminder', 'self_unblock_check', 'escalation')."),
+  after_ms: z
+    .number()
+    .int()
+    .positive()
+    .describe(
+      "Milliseconds after the task entered the blocked state before this stage fires. Accepts duration strings in config (e.g. '4h', '2d').",
+    ),
   action: TimeoutStageActionSchema.describe("Action to take when this timeout stage fires."),
-  repeat: z.boolean().nullable().default(null),
-  repeat_interval_ms: z.number().int().positive().nullable().default(null),
+  repeat: z
+    .boolean()
+    .nullable()
+    .default(null)
+    .describe("Whether this stage re-fires on a recurring interval. null = no repeat."),
+  repeat_interval_ms: z
+    .number()
+    .int()
+    .positive()
+    .nullable()
+    .default(null)
+    .describe(
+      "Interval between repeated firings (ms). Only used when repeat is true. Accepts duration strings in config (e.g. '4h').",
+    ),
 });
 export type TimeoutStage = z.infer<typeof TimeoutStageSchema>;
 

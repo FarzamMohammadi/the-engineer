@@ -43,7 +43,12 @@ export function createTestSafetyLayer(configOverrides?: SafetyConfigInput): Test
   const eventBus = new EventBus(testDb.db, { observer });
 
   const config = SafetyConfigSchema.parse(configOverrides ?? {});
-  const safetyLayer = new SafetyLayer(testDb.db, eventBus, config);
+  const safetyLayer = new SafetyLayer(
+    testDb.db,
+    eventBus,
+    config,
+    createTestObserverFacade("safety-layer"),
+  );
 
   const allEventsStmt = testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
   const eventsByTypeStmt = testDb.db.prepare(

@@ -641,12 +641,11 @@ function makeSafeBundle() {
         enabled: true,
         interval_ms: 3_600_000,
         retention: {
-          events: { max_age_days: 90, max_count: null },
-          observations: { max_age_days: 90, max_count: null },
-          journal_entries: { max_age_days: 90, max_count: null },
-          checkpoints: { max_age_days: 90, max_count: null },
+          events: { max_age_days: 90 },
+          observations: { max_age_days: 90 },
+          journal_entries: { max_age_days: 90 },
+          checkpoints: { max_age_days: 90 },
         },
-        vacuum_on_cleanup: true,
       },
       database: { cache_size_mb: 64 },
       subscriber_warn_threshold_ms: 50,
@@ -661,9 +660,9 @@ function makeSafeBundle() {
     safety: {
       cost_limits: {
         api: {
-          per_task: { cost_usd: null, auto_resume_on_reset: false },
-          daily: { cost_usd: null, auto_resume_on_reset: false },
-          monthly: { cost_usd: null, auto_resume_on_reset: false },
+          per_task: { cost_usd: null },
+          daily: { cost_usd: null },
+          monthly: { cost_usd: null },
         },
         cli: {},
       },

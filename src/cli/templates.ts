@@ -54,14 +54,12 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 #   retention:
 #     events:
 #       max_age_days: 90               # Event retention in days (default: 90)
-#       max_count: null                # Max event count, null = unlimited (default: null)
 #     observations:
 #       max_age_days: 90
 #     journal_entries:
 #       max_age_days: 90
 #     checkpoints:
 #       max_age_days: 90
-#   vacuum_on_cleanup: true            # Run VACUUM after cleanup (default: true)
 
 # --- Database tuning ---
 # database:
@@ -369,17 +367,12 @@ data_lifecycle:
   retention:
     events:
       max_age_days: 90                    # Event retention in days (default: 90)
-      max_count: null                     # Max event count, null = unlimited (default: null)
     observations:
       max_age_days: 90                    # Observation retention in days (default: 90)
-      max_count: null
     journal_entries:
       max_age_days: 90                    # Journal retention in days (default: 90)
-      max_count: null
     checkpoints:
       max_age_days: 90                    # Checkpoint retention in days (default: 90)
-      max_count: null
-  vacuum_on_cleanup: true                 # Run incremental VACUUM after cleanup (default: true)
 
 # ── Database Tuning ─────────────────────────────────────────────────────────
 database:
@@ -470,13 +463,10 @@ cost_limits:
   api:
     per_task:
       cost_usd: 5.0                       # Per-task USD limit, null = unlimited (default: null)
-      auto_resume_on_reset: false         # Auto-resume when limit resets (default: false)
     daily:
       cost_usd: 25.0                      # Daily USD limit (default: null)
-      auto_resume_on_reset: false
     monthly:
       cost_usd: 250.0                     # Monthly USD limit (default: null)
-      auto_resume_on_reset: false
   cli: {}                                 # Per-CLI-provider limits, keyed by plugin ID (e.g. "claude-code-llm")
 
 # ── Scope Boundaries ────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import type { CostLimits } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { CostIncurredPayload, Event, TaskStateChangedPayload } from "../../schemas/events.js";
 import { TaskStates } from "../../schemas/task.js";
-import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { CostStatus, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { IObserver } from "../observer/index.js";
 
@@ -356,7 +356,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
           provider_type: "api" as const,
           resets_at: null,
         },
-      });
+      } satisfies PublishInput<"cost.limit_reached">);
     }
   }
 
@@ -392,7 +392,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
           provider_type: "cli" as const,
           resets_at: usage.last_known_reset,
         },
-      });
+      } satisfies PublishInput<"cost.limit_reached">);
     }
 
     if (cliConfig.daily_tokens !== null && usage.tokens_used >= cliConfig.daily_tokens) {
@@ -416,7 +416,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
           provider_type: "cli" as const,
           resets_at: usage.last_known_reset,
         },
-      });
+      } satisfies PublishInput<"cost.limit_reached">);
     }
 
     // CLI self-reporting: remaining === 0 means provider exhausted
@@ -434,7 +434,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
           provider_type: "cli" as const,
           resets_at: usage.last_known_reset,
         },
-      });
+      } satisfies PublishInput<"cost.limit_reached">);
     }
   }
 

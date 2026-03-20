@@ -322,3 +322,16 @@ Accumulated across all merge rounds. Nothing gets lost.
 
 ### Lens J (Minimalism & Dead Code)
 - None. Phases 8-10 are remarkably clean — no dead exports, no stale TODOs, no unused code paths, no redundant abstractions.
+
+## Round 3 — resilience
+
+### Lens I (Consistency & Patterns)
+- **Test helper duplication** — `makeTask()` and `makeNotifications()` duplicated in cost-limit-queue.test.ts and health-monitor.test.ts (~20 lines each). Small, stable, daemon-internal — extraction creates more indirection than it saves.
+- **Clock injection inconsistency** — data-lifecycle uses `Clock` dep, health-monitor takes `now` parameter, cost-tracker uses `Date.now()` directly. Cost-tracker's direct usage is confined to snapshot debounce (non-critical). Tests pass. Low priority.
+- **`health.stuck_detected` has no consumer** — intentional observability signal for audit trail and War Room dashboard. Not a bug.
+
+### Lens J (Minimalism & Dead Code)
+- **Duplicate `PendingPreemption` types** (ephemeral.ts Zod schema vs preemption-manager.ts runtime interface) — different shapes serving different purposes, not actionable as dead code.
+- **`HealthMonitorCallbacks` interface with single callback** — justified for cross-subsystem cleanup decoupling.
+- **`getLastRun()` on DataLifecycleManager only used in tests** — kept as public API for future observability.
+- **CLI cost limits (daily_requests, daily_tokens) potentially redundant with provider native limits** — requires design discussion beyond minimalism scope.

@@ -5,12 +5,11 @@ import type Database from "better-sqlite3";
 
 import { runIncrementalVacuum } from "../../db/database.js";
 import type { DataLifecycleConfig } from "../../schemas/config.js";
-import type { EventType } from "../../schemas/events.js";
 import { SystemCleanupCompletedPayloadSchema } from "../../schemas/events.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
-import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
 
 // ── Event Declarations ────────────────────────────────────────────────────────
@@ -30,7 +29,7 @@ const BLOB_TXT_SUFFIX = /\.txt$/;
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 
-export interface TableCleanupResult {
+interface TableCleanupResult {
   deleted: number;
   remaining: number;
 }
@@ -101,19 +100,16 @@ export interface CleanupTableOptions {
   db: Database.Database;
   tableName: string;
   timestampColumn: string;
-  maxCount: number | null;
   cutoffISO: string;
   excludeActiveTasks: boolean;
 }
 
 /**
  * Delete rows older than cutoffISO from the given table.
- * If maxCount is set, also trims to keep only the newest N rows.
- * Each operation runs in its own transaction.
+ * Runs in a transaction.
  */
 export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
-  const { db, tableName, timestampColumn, maxCount, cutoffISO, excludeActiveTasks } = opts;
-  let totalDeleted = 0;
+  const { db, tableName, timestampColumn, cutoffISO, excludeActiveTasks } = opts;
 
   // Age-based deletion
   const activeTaskClause = excludeActiveTasks
@@ -122,35 +118,21 @@ export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
 
   const ageDeleteSql = `DELETE FROM "${tableName}" WHERE "${timestampColumn}" < ?${activeTaskClause}`;
 
-  const ageDelete = db.transaction(() => {
+  const deleted = db.transaction(() => {
     const params: (string | number)[] = [cutoffISO];
     if (excludeActiveTasks) {
       params.push(...ACTIVE_STATES);
     }
     const result = db.prepare(ageDeleteSql).run(...params);
     return result.changes;
-  });
-
-  totalDeleted += ageDelete();
-
-  // Count-based trimming (keep newest)
-  if (maxCount !== null && maxCount > 0) {
-    const countDeleteSql = `DELETE FROM "${tableName}" WHERE rowid NOT IN (SELECT rowid FROM "${tableName}" ORDER BY "${timestampColumn}" DESC LIMIT ?)`;
-
-    const countDelete = db.transaction(() => {
-      const result = db.prepare(countDeleteSql).run(maxCount);
-      return result.changes;
-    });
-
-    totalDeleted += countDelete();
-  }
+  })();
 
   // Get remaining count
   const remaining = (
     db.prepare(`SELECT COUNT(*) as count FROM "${tableName}"`).get() as { count: number }
   ).count;
 
-  return { deleted: totalDeleted, remaining };
+  return { deleted, remaining };
 }
 
 /**
@@ -198,6 +180,7 @@ function isConfinedPath(filePath: string, resolvedBase: string): boolean {
  * Walk the blobs directory and delete any blob files not in the referenced set.
  * Returns the number of deleted blob files.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: defensive filesystem traversal with error handling at each level
 export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<string>): number {
   if (!fs.existsSync(blobsDir)) {
     return 0;
@@ -284,7 +267,6 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
         db,
         tableName: tableDef.name,
         timestampColumn: tableDef.timestampColumn,
-        maxCount: retention.max_count ?? null,
         cutoffISO,
         excludeActiveTasks: tableDef.excludeActiveTasks,
       });
@@ -300,13 +282,11 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
 
     // Incremental vacuum (non-critical — failure should not halt cleanup)
     let vacuumRan = false;
-    if (config.vacuum_on_cleanup) {
-      try {
-        runIncrementalVacuum(db);
-        vacuumRan = true;
-      } catch (err) {
-        observer.warn("Incremental vacuum failed", { error: sanitizeErrorMessage(err) });
-      }
+    try {
+      runIncrementalVacuum(db);
+      vacuumRan = true;
+    } catch (err) {
+      observer.warn("Incremental vacuum failed", { error: sanitizeErrorMessage(err) });
     }
 
     const durationMs = clock.now() - startMs;
@@ -334,7 +314,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
     // Emit cleanup event (fire-and-forget — cleanup already completed)
     try {
       eventBus.publish({
-        type: "system.cleanup_completed" as EventType,
+        type: "system.cleanup_completed",
         source: "data-lifecycle",
         task_id: null,
         payload: {
@@ -348,7 +328,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
           blobs_deleted: blobsDeleted,
           vacuum_ran: vacuumRan,
         },
-      });
+      } satisfies PublishInput<"system.cleanup_completed">);
     } catch (err) {
       observer.warn("Failed to publish cleanup event", { error: sanitizeErrorMessage(err) });
     }

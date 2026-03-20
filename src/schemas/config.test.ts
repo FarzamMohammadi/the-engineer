@@ -249,7 +249,6 @@ describe("ApiLimitSchema", () => {
   it("produces valid defaults from empty input", () => {
     const config = ApiLimitSchema.parse({});
     expect(config.cost_usd).toBeNull();
-    expect(config.auto_resume_on_reset).toBe(false);
   });
 
   it("accepts positive cost_usd", () => {
@@ -268,7 +267,6 @@ describe("CliLimitSchema", () => {
     const config = CliLimitSchema.parse({});
     expect(config.daily_requests).toBeNull();
     expect(config.daily_tokens).toBeNull();
-    expect(config.auto_resume_on_reset).toBe(false);
   });
 });
 

@@ -16,7 +16,6 @@ export type ConfigVersion = z.infer<typeof ConfigVersionSchema>;
 
 export const TableRetentionSchema = z.object({
   max_age_days: z.number().int().positive().default(90),
-  max_count: z.number().int().positive().nullable().default(null),
 });
 export type TableRetention = z.infer<typeof TableRetentionSchema>;
 
@@ -31,7 +30,6 @@ export const DataLifecycleConfigSchema = z.object({
       checkpoints: TableRetentionSchema.default({}),
     })
     .default({}),
-  vacuum_on_cleanup: z.boolean().default(true),
 });
 export type DataLifecycleConfig = z.infer<typeof DataLifecycleConfigSchema>;
 
@@ -418,12 +416,6 @@ export const ApiLimitSchema = z.object({
     .nullable()
     .default(null)
     .describe("USD spending limit. null = unlimited (no limit enforced)."),
-  auto_resume_on_reset: z
-    .boolean()
-    .default(false)
-    .describe(
-      "Automatically resume tasks when the spending window resets (daily/monthly rollover).",
-    ),
 });
 export type ApiLimit = z.infer<typeof ApiLimitSchema>;
 
@@ -442,10 +434,6 @@ export const CliLimitSchema = z.object({
     .nullable()
     .default(null)
     .describe("Max CLI tokens per day. null = unlimited."),
-  auto_resume_on_reset: z
-    .boolean()
-    .default(false)
-    .describe("Automatically resume tasks when the spending window resets."),
 });
 export type CliLimit = z.infer<typeof CliLimitSchema>;
 

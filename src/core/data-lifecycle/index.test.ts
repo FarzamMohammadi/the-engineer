@@ -29,12 +29,11 @@ function defaultConfig(overrides?: Partial<DataLifecycleConfig>): DataLifecycleC
     enabled: true,
     interval_ms: 3_600_000,
     retention: {
-      events: { max_age_days: 90, max_count: null },
-      observations: { max_age_days: 90, max_count: null },
-      journal_entries: { max_age_days: 90, max_count: null },
-      checkpoints: { max_age_days: 90, max_count: null },
+      events: { max_age_days: 90 },
+      observations: { max_age_days: 90 },
+      journal_entries: { max_age_days: 90 },
+      checkpoints: { max_age_days: 90 },
     },
-    vacuum_on_cleanup: false,
     ...overrides,
   };
 }
@@ -113,7 +112,6 @@ describe("cleanupTable", () => {
       db: dbHandle.db,
       tableName: "events",
       timestampColumn: "timestamp",
-      maxCount: null,
       cutoffISO: cutoff,
       excludeActiveTasks: false,
     });
@@ -131,7 +129,6 @@ describe("cleanupTable", () => {
       db: dbHandle.db,
       tableName: "events",
       timestampColumn: "timestamp",
-      maxCount: null,
       cutoffISO: cutoff,
       excludeActiveTasks: false,
     });
@@ -140,38 +137,12 @@ describe("cleanupTable", () => {
     expect(result.remaining).toBe(2);
   });
 
-  it("trims to max_count keeping newest", () => {
-    insertEvent(dbHandle.db, daysAgo(3), "oldest");
-    insertEvent(dbHandle.db, daysAgo(2), "middle");
-    insertEvent(dbHandle.db, daysAgo(1), "newest");
-
-    const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable({
-      db: dbHandle.db,
-      tableName: "events",
-      timestampColumn: "timestamp",
-      maxCount: 2,
-      cutoffISO: cutoff,
-      excludeActiveTasks: false,
-    });
-
-    expect(result.deleted).toBe(1);
-    expect(result.remaining).toBe(2);
-
-    // Verify the oldest one was deleted
-    const rows = dbHandle.db.prepare("SELECT id FROM events ORDER BY timestamp").all() as {
-      id: string;
-    }[];
-    expect(rows.map((r) => r.id)).toEqual(["middle", "newest"]);
-  });
-
   it("handles empty table", () => {
     const cutoff = new Date().toISOString();
     const result = cleanupTable({
       db: dbHandle.db,
       tableName: "events",
       timestampColumn: "timestamp",
-      maxCount: null,
       cutoffISO: cutoff,
       excludeActiveTasks: false,
     });
@@ -189,7 +160,6 @@ describe("cleanupTable", () => {
       db: dbHandle.db,
       tableName: "events",
       timestampColumn: "timestamp",
-      maxCount: null,
       cutoffISO: cutoff,
       excludeActiveTasks: false,
     });
@@ -197,7 +167,6 @@ describe("cleanupTable", () => {
       db: dbHandle.db,
       tableName: "events",
       timestampColumn: "timestamp",
-      maxCount: null,
       cutoffISO: cutoff,
       excludeActiveTasks: false,
     });
@@ -216,51 +185,12 @@ describe("cleanupTable", () => {
       db: dbHandle.db,
       tableName: "observations",
       timestampColumn: "start_time",
-      maxCount: null,
       cutoffISO: cutoff,
       excludeActiveTasks: false,
     });
 
     expect(result.deleted).toBe(1);
     expect(result.remaining).toBe(1);
-  });
-
-  it("applies both age and count limits", () => {
-    insertEvent(dbHandle.db, daysAgo(100), "very-old"); // deleted by age
-    insertEvent(dbHandle.db, daysAgo(50), "old"); // deleted by count
-    insertEvent(dbHandle.db, daysAgo(10), "recent"); // kept
-
-    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable({
-      db: dbHandle.db,
-      tableName: "events",
-      timestampColumn: "timestamp",
-      maxCount: 1,
-      cutoffISO: cutoff,
-      excludeActiveTasks: false,
-    });
-
-    expect(result.deleted).toBe(2);
-    expect(result.remaining).toBe(1);
-  });
-
-  it("skips count trimming when max_count is null", () => {
-    for (let i = 0; i < 10; i++) {
-      insertEvent(dbHandle.db, daysAgo(1));
-    }
-
-    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable({
-      db: dbHandle.db,
-      tableName: "events",
-      timestampColumn: "timestamp",
-      maxCount: null,
-      cutoffISO: cutoff,
-      excludeActiveTasks: false,
-    });
-
-    expect(result.deleted).toBe(0);
-    expect(result.remaining).toBe(10);
   });
 });
 
@@ -619,7 +549,6 @@ describe("DataLifecycleManager integration", () => {
     ebHandle.assertEventEmitted("system.cleanup_completed");
     const events = ebHandle.getEmittedEvents("system.cleanup_completed");
     const payload = events[0]?.payload as Record<string, unknown>;
-    expect(payload["vacuum_ran"]).toBe(false);
     expect(payload["blobs_deleted"]).toBe(0);
   });
 });
@@ -810,11 +739,9 @@ describe("Config schema", () => {
     expect(config.enabled).toBe(true);
     expect(config.interval_ms).toBe(3_600_000);
     expect(config.retention.events.max_age_days).toBe(90);
-    expect(config.retention.events.max_count).toBeNull();
     expect(config.retention.observations.max_age_days).toBe(90);
     expect(config.retention.journal_entries.max_age_days).toBe(90);
     expect(config.retention.checkpoints.max_age_days).toBe(90);
-    expect(config.vacuum_on_cleanup).toBe(true);
   });
 
   it("DatabaseTuningConfigSchema has correct defaults", () => {
@@ -834,12 +761,11 @@ describe("Config schema", () => {
   it("validates custom retention values", () => {
     const config = DataLifecycleConfigSchema.parse({
       retention: {
-        events: { max_age_days: 30, max_count: 50000 },
+        events: { max_age_days: 30 },
       },
     });
 
     expect(config.retention.events.max_age_days).toBe(30);
-    expect(config.retention.events.max_count).toBe(50000);
   });
 
   it("rejects invalid retention values", () => {

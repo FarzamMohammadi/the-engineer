@@ -24,7 +24,7 @@ export interface PendingPreemption {
 }
 
 /** Minimal shape needed from queued tasks — decoupled from ITaskEngine. */
-export interface QueuedTaskEntry {
+interface QueuedTaskEntry {
   id: string;
   priority: number;
 }

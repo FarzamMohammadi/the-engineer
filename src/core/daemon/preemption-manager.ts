@@ -1,7 +1,6 @@
 import { EventTypes } from "../../schemas/events.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { PreemptionManagerContext } from "./types.js";
 
 // ── Pure Functions ────────────────────────────────────────────────────────────
@@ -24,18 +23,24 @@ export interface PendingPreemption {
   retried: boolean;
 }
 
+/** Minimal shape needed from queued tasks — decoupled from ITaskEngine. */
+export interface QueuedTaskEntry {
+  id: string;
+  priority: number;
+}
+
 // ── PreemptionManager Interface ──────────────────────────────────────────────
 
 /** Evaluates preemption conditions and manages pending preemptions. */
 export interface PreemptionManager {
   /** Evaluate whether preemption should occur. Pre-fetched tasks avoid redundant DB query. */
-  evaluate(now: number, queuedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>): void;
+  evaluate(now: number, queuedTasks?: QueuedTaskEntry[]): void;
   /** Get the current pending preemption (if any). */
   getPending(): PendingPreemption | null;
   /** Clear the pending preemption (called after preemption completes). */
   clearPending(): void;
-  /** Remove an active dispatch from tracking (for force-transition). */
-  forceTransitionTarget(): void;
+  /** Give up on the pending preemption and remove the active dispatch. */
+  abandonPending(): void;
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -49,10 +54,7 @@ export function createPreemptionManager(
 
   let pendingPreemption: PendingPreemption | null = null;
 
-  function evaluate(
-    now: number,
-    prefetchedTasks?: ReturnType<ITaskEngine["getQueuedByPriority"]>,
-  ): void {
+  function evaluate(now: number, prefetchedTasks?: QueuedTaskEntry[]): void {
     if (pendingPreemption) {
       checkPreemptionTimeout(now);
       return;
@@ -72,7 +74,7 @@ export function createPreemptionManager(
   }
 
   function findAndInitiatePreemption(
-    queuedTasks: ReturnType<ITaskEngine["getQueuedByPriority"]>,
+    queuedTasks: QueuedTaskEntry[],
     activeTaskIds: string[],
     now: number,
   ): void {
@@ -142,13 +144,19 @@ export function createPreemptionManager(
       observer.error("Preemption double timeout — force-transitioning task to queued", {
         targetTaskId: pendingPreemption.targetTaskId,
       });
-      taskEngine.requestTransition(
+      const result = taskEngine.requestTransition(
         pendingPreemption.targetTaskId,
         TaskStates.queued,
         null,
         "preemption_timeout",
         "daemon",
       );
+      if (!result.success) {
+        observer.warn("Preemption force-transition failed — task may have already changed state", {
+          targetTaskId: pendingPreemption.targetTaskId,
+          reason: result.reason,
+        });
+      }
       removeActiveDispatch(pendingPreemption.targetTaskId);
       pendingPreemption = null;
     } else {
@@ -181,7 +189,7 @@ export function createPreemptionManager(
     pendingPreemption = null;
   }
 
-  function forceTransitionTarget(): void {
+  function abandonPending(): void {
     if (pendingPreemption) {
       removeActiveDispatch(pendingPreemption.targetTaskId);
       pendingPreemption = null;
@@ -192,6 +200,6 @@ export function createPreemptionManager(
     evaluate,
     getPending,
     clearPending,
-    forceTransitionTarget,
+    abandonPending,
   };
 }

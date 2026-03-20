@@ -277,3 +277,11 @@ Accumulated across all merge rounds. Nothing gets lost.
 
 ### Lens H (Config & DX)
 - **F6: Notification templates hardcoded** in `notification-router.ts`. Making them configurable requires a template engine + config schema — deferred to future consideration.
+
+## Round 1 — phases11-12 (Resilience)
+
+### Lens A (Structure & Organization)
+- **No IOrchestrator / IRegistry interfaces**: `daemon/types.ts` imports concrete `Orchestrator` class and `Registry` class while all other dependencies use interfaces (IEventBus, ITaskEngine, etc.). Creating these interfaces touches bootstrap wiring and is a cross-cutting concern — deferred to a dedicated pass.
+
+### Lens D (Error Handling & Edge Cases)
+- **Biome cognitive complexity warning (22 > 15)** on `cleanupOrphanedBlobs` — acceptable tradeoff; the try/catch blocks are necessary for resilience. Could extract inner loop to a helper to reduce score, but that's a structure concern not an error handling one.

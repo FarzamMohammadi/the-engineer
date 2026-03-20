@@ -61,7 +61,7 @@ const ACTIVE_STATES = ["intake", "queued", "active", "blocked", "review_pending"
 
 // ── Table Definitions ─────────────────────────────────────────────────────────
 
-interface TableDef {
+interface TableDefinition {
   name: string;
   timestampColumn: string;
   configKey: keyof DataLifecycleConfig["retention"];
@@ -69,7 +69,7 @@ interface TableDef {
   excludeActiveTasks: boolean;
 }
 
-const MANAGED_TABLES: TableDef[] = [
+const MANAGED_TABLES: TableDefinition[] = [
   { name: "events", timestampColumn: "timestamp", configKey: "events", excludeActiveTasks: false },
   {
     name: "observations",
@@ -93,19 +93,23 @@ const MANAGED_TABLES: TableDef[] = [
 
 // ── Pure Functions (exported for testing) ────────────────────────────────────
 
+/** Options for table cleanup. */
+export interface CleanupTableOptions {
+  db: Database.Database;
+  tableName: string;
+  timestampColumn: string;
+  maxCount: number | null;
+  cutoffISO: string;
+  excludeActiveTasks: boolean;
+}
+
 /**
  * Delete rows older than cutoffISO from the given table.
  * If maxCount is set, also trims to keep only the newest N rows.
  * Each operation runs in its own transaction.
  */
-export function cleanupTable(
-  db: Database.Database,
-  tableName: string,
-  timestampColumn: string,
-  maxCount: number | null,
-  cutoffISO: string,
-  excludeActiveTasks: boolean,
-): TableCleanupResult {
+export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
+  const { db, tableName, timestampColumn, maxCount, cutoffISO, excludeActiveTasks } = opts;
   let totalDeleted = 0;
 
   // Age-based deletion
@@ -177,6 +181,16 @@ export function collectReferencedBlobRefs(db: Database.Database): Set<string> {
   return refs;
 }
 
+/** Check that a file's real path is confined within the expected base directory. */
+function isConfinedPath(filePath: string, resolvedBase: string): boolean {
+  try {
+    const realPath = fs.realpathSync(filePath);
+    return realPath.startsWith(resolvedBase + path.sep);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Walk the blobs directory and delete any blob files not in the referenced set.
  * Returns the number of deleted blob files.
@@ -186,32 +200,60 @@ export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<strin
     return 0;
   }
 
+  const resolvedBase = fs.realpathSync(blobsDir);
   let deleted = 0;
-  const prefixDirs = fs.readdirSync(blobsDir);
+  let prefixDirs: string[];
+  try {
+    prefixDirs = fs.readdirSync(blobsDir);
+  } catch {
+    return 0; // Can't read blobs dir — nothing to clean
+  }
 
   for (const prefix of prefixDirs) {
     const prefixPath = path.join(blobsDir, prefix);
-    const stat = fs.statSync(prefixPath);
-    if (!stat.isDirectory()) {
-      continue;
+    try {
+      const stat = fs.statSync(prefixPath);
+      if (!stat.isDirectory()) {
+        continue;
+      }
+    } catch {
+      continue; // Entry disappeared or permission denied
     }
 
-    const blobFiles = fs.readdirSync(prefixPath);
+    let blobFiles: string[];
+    try {
+      blobFiles = fs.readdirSync(prefixPath);
+    } catch {
+      continue; // Can't read prefix dir
+    }
+
     for (const blobFile of blobFiles) {
       // Blob ref format: "ab/abc123...def.txt" → reconstruct ref from path
       const hash = blobFile.replace(BLOB_TXT_SUFFIX, "");
       const ref = `${prefix}/${hash}`;
 
       if (!referencedRefs.has(ref)) {
-        fs.unlinkSync(path.join(prefixPath, blobFile));
-        deleted++;
+        const filePath = path.join(prefixPath, blobFile);
+        if (!isConfinedPath(filePath, resolvedBase)) {
+          continue;
+        }
+        try {
+          fs.unlinkSync(filePath);
+          deleted++;
+        } catch {
+          // File already removed or permission denied — skip
+        }
       }
     }
 
     // Remove empty prefix directory
-    const remaining = fs.readdirSync(prefixPath);
-    if (remaining.length === 0) {
-      fs.rmdirSync(prefixPath);
+    try {
+      const remainingFiles = fs.readdirSync(prefixPath);
+      if (remainingFiles.length === 0) {
+        fs.rmdirSync(prefixPath);
+      }
+    } catch {
+      // Directory already removed or not empty — skip
     }
   }
 
@@ -234,14 +276,14 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       const cutoff = new Date(clock.now() - retention.max_age_days * 24 * 60 * 60 * 1_000);
       const cutoffISO = cutoff.toISOString();
 
-      tables[tableDef.name] = cleanupTable(
+      tables[tableDef.name] = cleanupTable({
         db,
-        tableDef.name,
-        tableDef.timestampColumn,
-        retention.max_count ?? null,
+        tableName: tableDef.name,
+        timestampColumn: tableDef.timestampColumn,
+        maxCount: retention.max_count ?? null,
         cutoffISO,
-        tableDef.excludeActiveTasks,
-      );
+        excludeActiveTasks: tableDef.excludeActiveTasks,
+      });
     }
 
     // Blob orphan cleanup after observation pruning
@@ -252,11 +294,15 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       blobsDeleted = cleanupOrphanedBlobs(blobsDirPath, referencedRefs);
     }
 
-    // Incremental vacuum
+    // Incremental vacuum (non-critical — failure should not halt cleanup)
     let vacuumRan = false;
     if (config.vacuum_on_cleanup) {
-      runIncrementalVacuum(db);
-      vacuumRan = true;
+      try {
+        runIncrementalVacuum(db);
+        vacuumRan = true;
+      } catch {
+        // Vacuum failure is non-critical — cleanup stats still valid
+      }
     }
 
     const durationMs = clock.now() - startMs;
@@ -272,23 +318,27 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
 
     lastRun = stats;
 
-    // Emit cleanup event
-    eventBus.publish({
-      type: "system.cleanup_completed" as EventType,
-      source: "data-lifecycle",
-      task_id: null,
-      payload: {
-        duration_ms: durationMs,
-        tables: Object.fromEntries(
-          Object.entries(tables).map(([name, result]) => [
-            name,
-            { deleted: result.deleted, remaining: result.remaining },
-          ]),
-        ),
-        blobs_deleted: blobsDeleted,
-        vacuum_ran: vacuumRan,
-      },
-    });
+    // Emit cleanup event (fire-and-forget — cleanup already completed)
+    try {
+      eventBus.publish({
+        type: "system.cleanup_completed" as EventType,
+        source: "data-lifecycle",
+        task_id: null,
+        payload: {
+          duration_ms: durationMs,
+          tables: Object.fromEntries(
+            Object.entries(tables).map(([name, result]) => [
+              name,
+              { deleted: result.deleted, remaining: result.remaining },
+            ]),
+          ),
+          blobs_deleted: blobsDeleted,
+          vacuum_ran: vacuumRan,
+        },
+      });
+    } catch {
+      // Event publish failure is non-critical — cleanup stats saved in lastRun
+    }
 
     return stats;
   }
@@ -298,7 +348,11 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       return;
     }
     interval = setInterval(() => {
-      runCleanup();
+      try {
+        runCleanup();
+      } catch {
+        // Cleanup failure is non-critical — next interval will retry
+      }
     }, config.interval_ms);
   }
 

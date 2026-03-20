@@ -19,6 +19,7 @@ import { SubStates, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
+import { createCostLimitQueue } from "./cost-limit-queue.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import { createNotificationRouter } from "./notification-router.js";
@@ -174,6 +175,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     },
   );
 
+  const costLimitQueue = createCostLimitQueue(taskEngine, notifications, observer);
+
   // ── Cross-Subsystem Coordination ──────────────────────────────────────
 
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
@@ -307,7 +310,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     eventBus.subscribe("daemon:cost", EventTypes["cost.limit_reached"], (event: Event) => {
       const payload = event.payload as EventPayloads["cost.limit_reached"];
       if (payload.task_id) {
-        healthMonitor.addCostLimitTask(payload.task_id);
+        costLimitQueue.add(payload.task_id);
       }
     });
 
@@ -359,20 +362,38 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   function rebuildStateFromTaskEngine(): void {
     // Crash recovery: transition orphaned active tasks → queued
     const activeTasks = taskEngine.getTasksByState(TaskStates.active);
+    let recovered = 0;
+    let failed = 0;
+
     for (const task of activeTasks) {
       if (isSlotConsuming(task.state, task.sub_state)) {
         observer.warn("Recovering orphaned active task", {
           taskId: task.id,
           subState: task.sub_state,
         });
-        taskEngine.requestTransition(task.id, TaskStates.queued, null, "crash_recovery", "daemon");
+        const result = taskEngine.requestTransition(
+          task.id,
+          TaskStates.queued,
+          null,
+          "crash_recovery",
+          "daemon",
+        );
+        if (result.success) {
+          recovered++;
+        } else {
+          failed++;
+          observer.error("Crash recovery transition failed", {
+            taskId: task.id,
+            reason: result.reason,
+          });
+        }
       }
     }
 
-    const orphanCount = activeTasks.filter((t) => isSlotConsuming(t.state, t.sub_state)).length;
     observer.debug("Crash recovery scan complete", {
       activeTasks: activeTasks.length,
-      orphansRecovered: orphanCount,
+      orphansRecovered: recovered,
+      recoveryFailures: failed,
     });
 
     // Initialize base priorities for queued tasks (aging)
@@ -396,7 +417,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     const now = clock.now();
 
     // Step 1: Process event-driven flags
-    healthMonitor.processCostLimits();
+    costLimitQueue.process();
 
     // Step 2: Poll triggers
     await triggerPoller.poll(now);

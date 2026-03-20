@@ -4,9 +4,9 @@ import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
+import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
 import { createPrManager } from "./pr-manager.js";
 import type { OrchestratorContext } from "./types.js";
-import type { OrchestratorNotifier } from "./workspace-lifecycle.js";
 
 // Mock child_process — must be before imports that use it
 vi.mock("node:child_process", () => ({

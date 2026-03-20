@@ -6,7 +6,7 @@ import type { HealthMonitorContext } from "./types.js";
 
 // ── Pure Functions ────────────────────────────────────────────────────────────
 
-/** Check if an active task is stuck based on journal entry staleness. */
+/** Check if an active task is stuck based on journal entry staleness. Returns null if not stuck. */
 export function evaluateTaskStuckness(
   activeElapsedMs: number,
   latestEntryTimestamp: number | null,
@@ -14,21 +14,20 @@ export function evaluateTaskStuckness(
   stuckThresholdMs: number,
   maxActiveDurationMs: number,
 ): {
-  stuck: boolean;
-  condition: "no_journal_entries" | "no_state_transition";
+  condition: "no_journal_entries" | "stale_journal" | "no_state_transition";
   elapsedMs: number;
 } | null {
   if (activeElapsedMs > maxActiveDurationMs) {
-    return { stuck: true, condition: "no_state_transition", elapsedMs: activeElapsedMs };
+    return { condition: "no_state_transition", elapsedMs: activeElapsedMs };
   }
 
   if (activeElapsedMs > stuckThresholdMs) {
     if (latestEntryTimestamp === null) {
-      return { stuck: true, condition: "no_journal_entries", elapsedMs: activeElapsedMs };
+      return { condition: "no_journal_entries", elapsedMs: activeElapsedMs };
     }
     const staleness = nowMs - latestEntryTimestamp;
     if (staleness > stuckThresholdMs) {
-      return { stuck: true, condition: "no_journal_entries", elapsedMs: staleness };
+      return { condition: "stale_journal", elapsedMs: staleness };
     }
   }
 
@@ -37,7 +36,7 @@ export function evaluateTaskStuckness(
 
 // ── DaemonHealthMonitor Interface ────────────────────────────────────────────
 
-/** Monitors task health: stuck detection, blocked escalation, review reminders, cost limits. */
+/** Monitors task health: stuck detection, blocked escalation, review reminders. */
 export interface DaemonHealthMonitor {
   /** Check stuck tasks for active dispatches. */
   checkStuckTasks(now: number): void;
@@ -45,10 +44,6 @@ export interface DaemonHealthMonitor {
   checkBlockedEscalation(now: number): void;
   /** Check review pending reminders. Pre-fetched tasks avoid redundant DB queries. */
   checkReviewPendingReminders(now: number, reviewPendingTasks?: Task[]): void;
-  /** Process cost limit events (drain pending cost limit tasks). */
-  processCostLimits(): void;
-  /** Register a cost limit task (called from EventBus subscription). */
-  addCostLimitTask(taskId: string): void;
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -73,7 +68,6 @@ export function createDaemonHealthMonitor(
     { lastStageIndex: number; lastActionAt: number }
   >();
   const reviewReminderTimes = new Map<string, number>();
-  const costLimitTasks: string[] = [];
 
   // ── Stuck Detection ─────────────────────────────────────────────────────
 
@@ -111,7 +105,11 @@ export function createDaemonHealthMonitor(
 
   function emitStuckDetected(
     taskId: string,
-    condition: "no_journal_entries" | "no_state_transition" | "orchestrator_crash",
+    condition:
+      | "no_journal_entries"
+      | "stale_journal"
+      | "no_state_transition"
+      | "orchestrator_crash",
     elapsedMs: number,
   ): void {
     eventBus.publish({
@@ -212,15 +210,22 @@ export function createDaemonHealthMonitor(
       orchestrator.attemptSelfUnblock(taskId).then(
         (resolved) => {
           if (resolved) {
-            taskEngine.requestTransition(
+            const result = taskEngine.requestTransition(
               taskId,
               TaskStates.active,
               SubStates.working,
               "self_unblocked",
               "daemon",
             );
-            blockedEscalationState.delete(taskId);
-            observer.info("Task self-unblocked", { taskId });
+            if (result.success) {
+              blockedEscalationState.delete(taskId);
+              observer.info("Task self-unblocked", { taskId });
+            } else {
+              observer.warn("Self-unblock transition failed — keeping escalation state", {
+                taskId,
+                reason: result.reason,
+              });
+            }
           } else {
             observer.info("Self-unblock check failed — continuing escalation", { taskId });
           }
@@ -230,17 +235,24 @@ export function createDaemonHealthMonitor(
         },
       );
     } else if (stage.action === "escalation_alert") {
-      taskEngine.requestTransition(
+      const result = taskEngine.requestTransition(
         taskId,
         TaskStates.failed,
         null,
         "blocked_timeout_escalation",
         "daemon",
       );
-      callbacks?.onTaskEscalated(taskId);
-      notifications.sendEscalationAlert(taskId);
-      blockedEscalationState.delete(taskId);
-      observer.warn("Blocked task escalated to failed", { taskId, stage: stage.name });
+      if (result.success) {
+        callbacks?.onTaskEscalated(taskId);
+        notifications.sendEscalationAlert(taskId);
+        blockedEscalationState.delete(taskId);
+        observer.warn("Blocked task escalated to failed", { taskId, stage: stage.name });
+      } else {
+        observer.warn("Escalation transition failed — skipping notifications", {
+          taskId,
+          reason: result.reason,
+        });
+      }
     }
   }
 
@@ -259,10 +271,10 @@ export function createDaemonHealthMonitor(
     }
   }
 
-  function cleanupStaleReminderTimes(activeTasks: Array<{ id: string }>): void {
-    const activeIds = new Set(activeTasks.map((t) => t.id));
+  function cleanupStaleReminderTimes(currentTasks: Array<{ id: string }>): void {
+    const currentIds = new Set(currentTasks.map((t) => t.id));
     for (const taskId of reviewReminderTimes.keys()) {
-      if (!activeIds.has(taskId)) {
+      if (!currentIds.has(taskId)) {
         reviewReminderTimes.delete(taskId);
       }
     }
@@ -291,41 +303,9 @@ export function createDaemonHealthMonitor(
     reviewReminderTimes.set(task.id, now);
   }
 
-  // ── Cost Limit Processing ───────────────────────────────────────────────
-
-  function processCostLimits(): void {
-    if (costLimitTasks.length === 0) {
-      return;
-    }
-
-    // Drain and clear in one pass (FIFO order)
-    const pending = costLimitTasks.splice(0);
-    for (const taskId of pending) {
-      const task = taskEngine.getTask(taskId);
-      if (task && task.state === TaskStates.active) {
-        observer.warn("Task blocked due to cost limit", { taskId });
-        taskEngine.requestTransition(
-          taskId,
-          TaskStates.blocked,
-          null,
-          "cost_limit_reached",
-          "daemon",
-        );
-        notifications.sendCostLimit(taskId);
-        notifications.commentOnTaskIssue(taskId, "Task blocked \u2014 cost limit reached.");
-      }
-    }
-  }
-
-  function addCostLimitTask(taskId: string): void {
-    costLimitTasks.push(taskId);
-  }
-
   return {
     checkStuckTasks,
     checkBlockedEscalation,
     checkReviewPendingReminders,
-    processCostLimits,
-    addCostLimitTask,
   };
 }

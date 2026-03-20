@@ -16,8 +16,8 @@ import type { HookRegistry } from "../hooks/index.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { IObserver } from "../observer/index.js";
-import { createHealthMonitor } from "./health.js";
 import { createLifecycleManager } from "./lifecycle.js";
+import { createPluginHealthMonitor } from "./plugin-health.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ export class Registry implements IPluginLookup {
     this.hookRegistry = options.hookRegistry;
     this.lifecycle = createLifecycleManager(options.observer);
     this.healthCheckIntervalMs = options.healthCheckIntervalMs ?? 60_000;
-    this.healthMonitor = createHealthMonitor({
+    this.healthMonitor = createPluginHealthMonitor({
       observer: options.observer,
       eventBus: options.eventBus,
       getRecord: (pluginId) => this.lifecycle.getRecord(pluginId),

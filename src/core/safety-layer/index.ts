@@ -13,7 +13,7 @@ import type {
   SafetyQuery,
   SafetyVerdict,
 } from "../interfaces/safety-layer.interface.js";
-import { CostTracker } from "./cost-tracker.js";
+import { type ICostTracker, createCostTracker } from "./cost-tracker.js";
 import { PolicyEngine } from "./policy-engine.js";
 
 // ── Input Validation Schemas ────────────────────────────────────────────────
@@ -47,8 +47,9 @@ export type { ParsedThreshold } from "./policy-engine.js";
 export { matchesPathPattern, parseThreshold, evaluateThreshold } from "./policy-engine.js";
 export { getDailyWindowStart, getMonthlyWindowStart } from "./cost-tracker.js";
 
-// Re-export classes and errors
-export { CostTracker } from "./cost-tracker.js";
+// Re-export factory and types
+export { createCostTracker } from "./cost-tracker.js";
+export type { ICostTracker, CostLimitCheckResult, CostTrackerDeps } from "./cost-tracker.js";
 export { PolicyEngine } from "./policy-engine.js";
 export {
   SafetyError,
@@ -84,11 +85,11 @@ export const EVENTS: EventDeclaration[] = [
  *   autonomy decisions, cost status checks, and ad-hoc scope queries.
  */
 export class SafetyLayer implements ISafetyLayer {
-  private readonly costTracker: CostTracker;
+  private readonly costTracker: ICostTracker;
   private readonly policyEngine: PolicyEngine;
 
   constructor(db: Database.Database, eventBus: IEventBus, config: SafetyConfig) {
-    this.costTracker = new CostTracker(db, eventBus, config.cost_limits);
+    this.costTracker = createCostTracker({ db, eventBus, costLimits: config.cost_limits });
     this.policyEngine = new PolicyEngine(config);
   }
 
@@ -118,10 +119,9 @@ export class SafetyLayer implements ISafetyLayer {
     }
 
     // 2. Cost limit checks
-    const warnings: string[] = [];
-    const costResult = this.costTracker.checkCostLimits(taskId, warnings);
-    if (costResult) {
-      return costResult;
+    const { verdict: costVerdict, warnings } = this.costTracker.checkCostLimits(taskId);
+    if (costVerdict) {
+      return costVerdict;
     }
 
     const result: SafetyVerdict = {

@@ -777,6 +777,58 @@ describe("Orchestrator", () => {
       expect(result).toBe(false);
     });
 
+    it("sanitizes secrets in the prompt sent to LLM", async () => {
+      const secretToken = `ghp_${"a".repeat(40)}`;
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({
+          id: "task-1",
+          state: "blocked",
+          sub_state: null,
+          title: `Fix auth with ${secretToken}`,
+          blocked: {
+            reason: `Failed at https://git:${secretToken}@github.com`,
+            efforts_made: [],
+            contacted: [],
+            needed: "fix",
+            waiting_for: "resolution",
+          },
+        }),
+      );
+      handle.sessionMemory.queryJournal.mockReturnValue([]);
+
+      let capturedPrompt = "";
+      handle.actionPipeline.execute.mockImplementation(
+        async (input: { executeFn: () => Promise<unknown> }) => {
+          const result = await input.executeFn();
+          return { outcome: "executed", result };
+        },
+      );
+      const mockLlm = {
+        complete: (req: { prompt: string }) => {
+          capturedPrompt = req.prompt;
+          return {
+            content: JSON.stringify({ can_resolve: false, action: "n/a" }),
+            tool_calls: null,
+            finish_reason: "stop",
+            usage: {
+              tokens_in: 50,
+              tokens_out: 20,
+              spend_usd: 0.005,
+              remaining: null,
+              resets_at: null,
+            },
+          };
+        },
+      };
+      handle.registry.getPrimaryPlugin.mockReturnValue(mockLlm);
+
+      await handle.orchestrator.attemptSelfUnblock("task-1");
+
+      expect(capturedPrompt).not.toContain(secretToken);
+      expect(capturedPrompt).toContain("[REDACTED:github_token]");
+      expect(capturedPrompt).toContain("https://git:***@");
+    });
+
     it("uses actionClass read for the LLM call", async () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({ id: "task-1", state: "blocked", sub_state: null }),

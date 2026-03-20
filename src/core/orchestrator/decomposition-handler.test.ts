@@ -6,8 +6,8 @@ import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import { createDecompositionHandler } from "./decomposition-handler.js";
+import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
 import type { OrchestratorContext } from "./types.js";
-import type { OrchestratorNotifier } from "./workspace-lifecycle.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

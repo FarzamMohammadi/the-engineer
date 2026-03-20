@@ -10,8 +10,12 @@ import { createTestObserverFacade } from "../../../test/helpers/test-observer-fa
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import type { Event } from "../../schemas/events.js";
 import type { IObserver } from "../observer/index.js";
-import { type HealthMonitor, type HealthMonitorDeps, createHealthMonitor } from "./health.js";
 import type { PluginRecord } from "./lifecycle.js";
+import {
+  type PluginHealthMonitor,
+  type PluginHealthMonitorDeps,
+  createPluginHealthMonitor,
+} from "./plugin-health.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -38,10 +42,10 @@ function createMonitor(
   records: PluginRecord[],
   handle: TestEventBusHandle,
   observer: IObserver,
-  overrides?: Partial<HealthMonitorDeps>,
-): HealthMonitor {
+  overrides?: Partial<PluginHealthMonitorDeps>,
+): PluginHealthMonitor {
   const recordMap = new Map(records.map((r) => [r.manifest.id, r]));
-  return createHealthMonitor({
+  return createPluginHealthMonitor({
     observer,
     eventBus: handle.eventBus,
     getRecord: (id) => recordMap.get(id),
@@ -54,7 +58,7 @@ function createMonitor(
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
-describe("createHealthMonitor", () => {
+describe("createPluginHealthMonitor", () => {
   let handle: TestEventBusHandle;
   let observer: IObserver;
 
@@ -206,6 +210,57 @@ describe("createHealthMonitor", () => {
       expect(record.health.state).toBe(PluginHealthStates.unhealthy);
       expect(record.health.last_error).toBe("health check timeout");
     }, 5_000);
+
+    it("sanitizes secret tokens in health check error messages", async () => {
+      const secretToken = `ghp_${"a".repeat(40)}`;
+      const instance = new FakeTriggerPlugin();
+      vi.spyOn(instance, "healthCheck").mockRejectedValue(
+        new Error(`Auth failed with token ${secretToken}`),
+      );
+      const record = createRecord("t1", instance);
+      const monitor = createMonitor([record], handle, observer);
+
+      await monitor.healthCheckAll();
+
+      expect(record.health.last_error).not.toContain(secretToken);
+      expect(record.health.last_error).toContain("[REDACTED:github_token]");
+    });
+
+    it("sanitizes secrets in unhealthy status messages from plugins", async () => {
+      const secretToken = `ghp_${"a".repeat(40)}`;
+      const instance = new FakeTriggerPlugin();
+      vi.spyOn(instance, "healthCheck").mockResolvedValue({
+        healthy: false,
+        message: `Connection to https://git:${secretToken}@github.com failed`,
+        details: null,
+      });
+      const record = createRecord("t1", instance);
+      const monitor = createMonitor([record], handle, observer);
+
+      await monitor.healthCheckAll();
+
+      expect(record.health.last_error).not.toContain(secretToken);
+      expect(record.health.last_error).toContain("https://git:***@");
+    });
+
+    it("sanitizes secrets in event payloads", async () => {
+      const secretToken = `ghp_${"a".repeat(40)}`;
+      const instance = new FakeTriggerPlugin();
+      vi.spyOn(instance, "healthCheck").mockRejectedValue(
+        new Error(`Token ${secretToken} expired`),
+      );
+      const record = createRecord("t1", instance);
+      const monitor = createMonitor([record], handle, observer);
+      const events: Event[] = [];
+      handle.eventBus.subscribe("sec-test", "health.*", (e) => events.push(e));
+
+      await monitor.healthCheckAll();
+
+      expect(events).toHaveLength(1);
+      const payload = events[0]!.payload as { error: string };
+      expect(payload.error).not.toContain(secretToken);
+      expect(payload.error).toContain("[REDACTED:github_token]");
+    });
   });
 
   describe("getHealthRecord", () => {

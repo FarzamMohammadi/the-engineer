@@ -7,8 +7,8 @@ import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../schemas/session-memory.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
+import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
 import type { OrchestratorContext } from "./types.js";
-import type { OrchestratorNotifier } from "./workspace-lifecycle.js";
 
 // ── PrManager Interface ────────────────────────────────────────────────────
 

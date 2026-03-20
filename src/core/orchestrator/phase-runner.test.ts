@@ -393,7 +393,7 @@ describe("PhaseRunner", () => {
       expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-abc", "crashed");
     });
 
-    it("closes session with 'crashed' when processPhaseCompletion throws (F7)", async () => {
+    it("closes session with 'crashed' when handlePostPhaseActions throws (F7)", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -403,7 +403,7 @@ describe("PhaseRunner", () => {
       const deps = createDeps(ctx, handlers);
       const state = createState({ sessionId: "session-xyz" });
 
-      // Make PR creation throw (happens inside processPhaseCompletion after demo_prep)
+      // Make PR creation throw (happens inside handlePostPhaseActions after demo_prep)
       (deps.prManager.commitPushAndCreatePR as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error("git push failed: remote rejected"),
       );

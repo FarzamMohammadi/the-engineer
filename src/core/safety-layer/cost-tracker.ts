@@ -63,87 +63,99 @@ export function getMonthlyWindowStart(now: Date): string {
   return d.toISOString();
 }
 
-// ── CostTracker ──────────────────────────────────────────────────────────────
+// ── ICostTracker Interface ──────────────────────────────────────────────────
+
+/** Cost limit check result — verdict + any accumulated warnings. */
+export interface CostLimitCheckResult {
+  verdict: SafetyVerdict | null;
+  warnings: string[];
+}
+
+/** Cost tracking interface — accumulates spend, checks limits, snapshots for crash recovery. */
+export interface ICostTracker {
+  getCostStatus(taskId?: string): CostStatus;
+  checkCostLimits(taskId: string): CostLimitCheckResult;
+  isAnyLimitBreached(taskId?: string): boolean;
+  updateLimits(newLimits: CostLimits): void;
+  flush(): void;
+}
+
+// ── Dependencies ────────────────────────────────────────────────────────────
+
+export interface CostTrackerDeps {
+  db: Database.Database;
+  eventBus: IEventBus;
+  costLimits: CostLimits;
+}
+
+// ── Factory ─────────────────────────────────────────────────────────────────
 
 /**
- * Tracks cumulative costs across API spend windows and CLI usage.
+ * Create a cost tracker that subscribes to cost.incurred events and accumulates spend.
  *
- * Responsibilities:
- * - Subscribe to cost.incurred events and accumulate
- * - Maintain daily/monthly spend windows with automatic rollover
- * - Snapshot accumulators to _meta for crash recovery
- * - Restore from snapshot + replay missed events on startup
- * - Emit cost.limit_reached when thresholds are hit
- * - Provide getCostStatus() for passive queries
+ * On creation: restores from snapshot, replays missed events, subscribes to EventBus.
  */
-export class CostTracker {
-  private readonly eventBus: IEventBus;
-  private costLimits: CostLimits;
-  private accumulators: CostAccumulators;
-  private lastSequence: number;
-  private snapshotDirty = false;
-  private lastSnapshotAt = 0;
+export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
+  const { db, eventBus } = deps;
+  let costLimits = deps.costLimits;
 
-  private readonly getSnapshotStmt: Database.Statement;
-  private readonly saveSnapshotStmt: Database.Statement;
+  const getSnapshotStmt = db.prepare("SELECT value FROM _meta WHERE key = ?");
+  const saveSnapshotStmt = db.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)");
 
-  constructor(db: Database.Database, eventBus: IEventBus, costLimits: CostLimits) {
-    this.eventBus = eventBus;
-    this.costLimits = costLimits;
-    this.lastSequence = 0;
+  let lastSequence = 0;
+  let snapshotDirty = false;
+  let lastSnapshotAt = 0;
 
-    this.getSnapshotStmt = db.prepare("SELECT value FROM _meta WHERE key = ?");
-    this.saveSnapshotStmt = db.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)");
+  const now = new Date();
+  const accumulators: CostAccumulators = {
+    api_spend: {
+      per_task: new Map(),
+      daily: { cost_usd: 0, window_start: getDailyWindowStart(now) },
+      monthly: { cost_usd: 0, window_start: getMonthlyWindowStart(now) },
+    },
+    cli_usage: new Map(),
+  };
 
-    const now = new Date();
-    this.accumulators = {
-      api_spend: {
-        per_task: new Map(),
-        daily: { cost_usd: 0, window_start: getDailyWindowStart(now) },
-        monthly: { cost_usd: 0, window_start: getMonthlyWindowStart(now) },
-      },
-      cli_usage: new Map(),
-    };
+  // ── Initialization ──────────────────────────────────────────────────────
 
-    this.restoreFromSnapshot();
-    this.replayEvents();
+  restoreFromSnapshot();
+  replayEvents();
 
-    eventBus.subscribe("safety_layer", EventTypes["cost.incurred"], (event) => {
-      this.onCostEvent(event);
-    });
+  eventBus.subscribe("safety_layer", EventTypes["cost.incurred"], (event) => {
+    onCostEvent(event);
+  });
 
-    // Prune per_task entries when tasks reach terminal state (prevents unbounded growth)
-    eventBus.subscribe("safety_layer:cleanup", EventTypes["task.state_changed"], (event) => {
-      this.onTaskStateChanged(event);
-    });
-  }
+  // Prune per_task entries when tasks reach terminal state (prevents unbounded growth)
+  eventBus.subscribe("safety_layer:cleanup", EventTypes["task.state_changed"], (event) => {
+    onTaskStateChanged(event);
+  });
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  // ── Public API ──────────────────────────────────────────────────────────
 
-  /** Get current cost status for a task or globally. */
-  getCostStatus(taskId?: string): CostStatus {
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-window cost status with per-limit warning thresholds
+  function getCostStatus(taskId?: string): CostStatus {
     const warnings: string[] = [];
 
-    const perTaskUsd = taskId ? (this.accumulators.api_spend.per_task.get(taskId) ?? 0) : 0;
-    const dailyUsd = this.accumulators.api_spend.daily.cost_usd;
-    const monthlyUsd = this.accumulators.api_spend.monthly.cost_usd;
+    const perTaskUsd = taskId ? (accumulators.api_spend.per_task.get(taskId) ?? 0) : 0;
+    const dailyUsd = accumulators.api_spend.daily.cost_usd;
+    const monthlyUsd = accumulators.api_spend.monthly.cost_usd;
 
-    if (taskId && this.costLimits.api.per_task.cost_usd !== null) {
-      const pct = perTaskUsd / this.costLimits.api.per_task.cost_usd;
+    if (taskId && costLimits.api.per_task.cost_usd !== null) {
+      const pct = perTaskUsd / costLimits.api.per_task.cost_usd;
       if (pct >= COST_WARNING_THRESHOLD) {
         warnings.push(`task ${taskId} at ${Math.round(pct * 100)}% of per-task cost limit`);
       }
     }
 
-    if (this.costLimits.api.daily.cost_usd !== null) {
-      const pct = dailyUsd / this.costLimits.api.daily.cost_usd;
+    if (costLimits.api.daily.cost_usd !== null) {
+      const pct = dailyUsd / costLimits.api.daily.cost_usd;
       if (pct >= COST_WARNING_THRESHOLD) {
         warnings.push(`daily spend at ${Math.round(pct * 100)}% of limit`);
       }
     }
 
-    if (this.costLimits.api.monthly.cost_usd !== null) {
-      const pct = monthlyUsd / this.costLimits.api.monthly.cost_usd;
+    if (costLimits.api.monthly.cost_usd !== null) {
+      const pct = monthlyUsd / costLimits.api.monthly.cost_usd;
       if (pct >= COST_WARNING_THRESHOLD) {
         warnings.push(`monthly spend at ${Math.round(pct * 100)}% of limit`);
       }
@@ -152,62 +164,63 @@ export class CostTracker {
     return { per_task_usd: perTaskUsd, daily_usd: dailyUsd, monthly_usd: monthlyUsd, warnings };
   }
 
-  /** Check if any cost limit is breached for the given task. */
-  checkCostLimits(taskId: string, warnings: string[]): SafetyVerdict | null {
-    const perTaskSpent = this.accumulators.api_spend.per_task.get(taskId) ?? 0;
-    const perTaskResult = this.checkSingleCostLimit(
+  function checkCostLimits(taskId: string): CostLimitCheckResult {
+    const warnings: string[] = [];
+
+    const perTaskSpent = accumulators.api_spend.per_task.get(taskId) ?? 0;
+    const perTaskResult = checkSingleCostLimit(
       perTaskSpent,
-      this.costLimits.api.per_task.cost_usd,
+      costLimits.api.per_task.cost_usd,
       "per-task",
       `task ${taskId}`,
-      warnings,
     );
-    if (perTaskResult) {
-      return perTaskResult;
+    if (perTaskResult.verdict) {
+      return { verdict: perTaskResult.verdict, warnings: [...warnings, ...perTaskResult.warnings] };
     }
+    warnings.push(...perTaskResult.warnings);
 
-    const dailyResult = this.checkSingleCostLimit(
-      this.accumulators.api_spend.daily.cost_usd,
-      this.costLimits.api.daily.cost_usd,
+    const dailyResult = checkSingleCostLimit(
+      accumulators.api_spend.daily.cost_usd,
+      costLimits.api.daily.cost_usd,
       "daily",
       "daily spend",
-      warnings,
     );
-    if (dailyResult) {
-      return dailyResult;
+    if (dailyResult.verdict) {
+      return { verdict: dailyResult.verdict, warnings: [...warnings, ...dailyResult.warnings] };
     }
+    warnings.push(...dailyResult.warnings);
 
-    const monthlyResult = this.checkSingleCostLimit(
-      this.accumulators.api_spend.monthly.cost_usd,
-      this.costLimits.api.monthly.cost_usd,
+    const monthlyResult = checkSingleCostLimit(
+      accumulators.api_spend.monthly.cost_usd,
+      costLimits.api.monthly.cost_usd,
       "monthly",
       "monthly spend",
-      warnings,
     );
-    if (monthlyResult) {
-      return monthlyResult;
+    if (monthlyResult.verdict) {
+      return { verdict: monthlyResult.verdict, warnings: [...warnings, ...monthlyResult.warnings] };
     }
+    warnings.push(...monthlyResult.warnings);
 
-    return null;
+    return { verdict: null, warnings };
   }
 
-  /** Check if any cost limit is breached. */
-  isAnyLimitBreached(taskId?: string): boolean {
-    if (taskId && this.costLimits.api.per_task.cost_usd !== null) {
-      const spent = this.accumulators.api_spend.per_task.get(taskId) ?? 0;
-      if (spent >= this.costLimits.api.per_task.cost_usd) {
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-window limit breach check
+  function isAnyLimitBreached(taskId?: string): boolean {
+    if (taskId && costLimits.api.per_task.cost_usd !== null) {
+      const spent = accumulators.api_spend.per_task.get(taskId) ?? 0;
+      if (spent >= costLimits.api.per_task.cost_usd) {
         return true;
       }
     }
 
-    if (this.costLimits.api.daily.cost_usd !== null) {
-      if (this.accumulators.api_spend.daily.cost_usd >= this.costLimits.api.daily.cost_usd) {
+    if (costLimits.api.daily.cost_usd !== null) {
+      if (accumulators.api_spend.daily.cost_usd >= costLimits.api.daily.cost_usd) {
         return true;
       }
     }
 
-    if (this.costLimits.api.monthly.cost_usd !== null) {
-      if (this.accumulators.api_spend.monthly.cost_usd >= this.costLimits.api.monthly.cost_usd) {
+    if (costLimits.api.monthly.cost_usd !== null) {
+      if (accumulators.api_spend.monthly.cost_usd >= costLimits.api.monthly.cost_usd) {
         return true;
       }
     }
@@ -215,59 +228,57 @@ export class CostTracker {
     return false;
   }
 
-  /** Update cost limits (hot-reload). */
-  updateLimits(newLimits: CostLimits): void {
-    this.costLimits = newLimits;
+  function updateLimits(newLimits: CostLimits): void {
+    costLimits = newLimits;
   }
 
-  /** Flush any pending snapshot to DB. Call during graceful shutdown. */
-  flush(): void {
-    if (this.snapshotDirty) {
-      this.saveSnapshot();
+  function flush(): void {
+    if (snapshotDirty) {
+      saveSnapshot();
     }
   }
 
   // ── Private: Cost Event Handling ───────────────────────────────────────────
 
-  private onCostEvent(event: Event): void {
+  function onCostEvent(event: Event): void {
     const payload = event.payload as unknown as CostIncurredPayload;
     const eventTime = new Date(event.timestamp);
 
-    this.rolloverWindows(eventTime);
+    rolloverWindows(eventTime);
 
     if (payload.provider_type === "api") {
-      this.accumulateApiSpend(payload);
+      accumulateApiSpend(payload);
     } else {
-      this.accumulateCliUsage(payload);
+      accumulateCliUsage(payload);
     }
 
-    this.lastSequence = event.sequence;
-    this.maybeSaveSnapshot();
+    lastSequence = event.sequence;
+    maybeSaveSnapshot();
 
-    this.checkAndEmitLimitBreaches(payload);
+    checkAndEmitLimitBreaches(payload);
   }
 
-  private onTaskStateChanged(event: Event): void {
+  function onTaskStateChanged(event: Event): void {
     const payload = event.payload as unknown as TaskStateChangedPayload;
     if (payload.to_state === TaskStates.completed || payload.to_state === TaskStates.failed) {
-      this.accumulators.api_spend.per_task.delete(payload.task_id);
+      accumulators.api_spend.per_task.delete(payload.task_id);
     }
   }
 
-  private accumulateApiSpend(payload: CostIncurredPayload): void {
+  function accumulateApiSpend(payload: CostIncurredPayload): void {
     const spend = payload.spend_usd ?? 0;
     if (spend <= 0) {
       return;
     }
 
-    const taskCurrent = this.accumulators.api_spend.per_task.get(payload.task_id) ?? 0;
-    this.accumulators.api_spend.per_task.set(payload.task_id, taskCurrent + spend);
-    this.accumulators.api_spend.daily.cost_usd += spend;
-    this.accumulators.api_spend.monthly.cost_usd += spend;
+    const taskCurrent = accumulators.api_spend.per_task.get(payload.task_id) ?? 0;
+    accumulators.api_spend.per_task.set(payload.task_id, taskCurrent + spend);
+    accumulators.api_spend.daily.cost_usd += spend;
+    accumulators.api_spend.monthly.cost_usd += spend;
   }
 
-  private accumulateCliUsage(payload: CostIncurredPayload): void {
-    const existing = this.accumulators.cli_usage.get(payload.provider_id) ?? {
+  function accumulateCliUsage(payload: CostIncurredPayload): void {
+    const existing = accumulators.cli_usage.get(payload.provider_id) ?? {
       requests_used: 0,
       tokens_used: 0,
       last_known_remaining: null,
@@ -281,48 +292,48 @@ export class CostTracker {
       existing.last_known_remaining = payload.remaining;
     }
 
-    this.accumulators.cli_usage.set(payload.provider_id, existing);
+    accumulators.cli_usage.set(payload.provider_id, existing);
   }
 
-  private rolloverWindows(now: Date): void {
-    const dailyStart = getDailyWindowStart(now);
-    if (dailyStart !== this.accumulators.api_spend.daily.window_start) {
-      this.accumulators.api_spend.daily = { cost_usd: 0, window_start: dailyStart };
+  function rolloverWindows(nowDate: Date): void {
+    const dailyStart = getDailyWindowStart(nowDate);
+    if (dailyStart !== accumulators.api_spend.daily.window_start) {
+      accumulators.api_spend.daily = { cost_usd: 0, window_start: dailyStart };
     }
 
-    const monthlyStart = getMonthlyWindowStart(now);
-    if (monthlyStart !== this.accumulators.api_spend.monthly.window_start) {
-      this.accumulators.api_spend.monthly = { cost_usd: 0, window_start: monthlyStart };
+    const monthlyStart = getMonthlyWindowStart(nowDate);
+    if (monthlyStart !== accumulators.api_spend.monthly.window_start) {
+      accumulators.api_spend.monthly = { cost_usd: 0, window_start: monthlyStart };
     }
   }
 
-  private checkAndEmitLimitBreaches(payload: CostIncurredPayload): void {
+  function checkAndEmitLimitBreaches(payload: CostIncurredPayload): void {
     if (payload.provider_type === "api") {
-      this.checkApiLimitBreach("per_task", payload.task_id);
-      this.checkApiLimitBreach("daily", payload.task_id);
-      this.checkApiLimitBreach("monthly", payload.task_id);
+      checkApiLimitBreach("per_task", payload.task_id);
+      checkApiLimitBreach("daily", payload.task_id);
+      checkApiLimitBreach("monthly", payload.task_id);
     } else {
-      this.checkCliLimitBreach(payload.provider_id, payload.task_id);
+      checkCliLimitBreach(payload.provider_id, payload.task_id);
     }
   }
 
-  private checkApiLimitBreach(limitType: "per_task" | "daily" | "monthly", taskId: string): void {
-    const limitConfig = this.costLimits.api[limitType];
+  function checkApiLimitBreach(limitType: "per_task" | "daily" | "monthly", taskId: string): void {
+    const limitConfig = costLimits.api[limitType];
     if (limitConfig.cost_usd === null) {
       return;
     }
 
     let spent: number;
     if (limitType === "per_task") {
-      spent = this.accumulators.api_spend.per_task.get(taskId) ?? 0;
+      spent = accumulators.api_spend.per_task.get(taskId) ?? 0;
     } else if (limitType === "daily") {
-      spent = this.accumulators.api_spend.daily.cost_usd;
+      spent = accumulators.api_spend.daily.cost_usd;
     } else {
-      spent = this.accumulators.api_spend.monthly.cost_usd;
+      spent = accumulators.api_spend.monthly.cost_usd;
     }
 
     if (spent >= limitConfig.cost_usd) {
-      this.eventBus.publish({
+      eventBus.publish({
         type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: limitType === "per_task" ? taskId : null,
@@ -339,19 +350,19 @@ export class CostTracker {
     }
   }
 
-  private checkCliLimitBreach(providerId: string, taskId: string): void {
-    const cliConfig = this.costLimits.cli[providerId];
+  function checkCliLimitBreach(providerId: string, taskId: string): void {
+    const cliConfig = costLimits.cli[providerId];
     if (!cliConfig) {
       return;
     }
 
-    const usage = this.accumulators.cli_usage.get(providerId);
+    const usage = accumulators.cli_usage.get(providerId);
     if (!usage) {
       return;
     }
 
     if (cliConfig.daily_requests !== null && usage.requests_used >= cliConfig.daily_requests) {
-      this.eventBus.publish({
+      eventBus.publish({
         type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: taskId,
@@ -368,7 +379,7 @@ export class CostTracker {
     }
 
     if (cliConfig.daily_tokens !== null && usage.tokens_used >= cliConfig.daily_tokens) {
-      this.eventBus.publish({
+      eventBus.publish({
         type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: taskId,
@@ -386,7 +397,7 @@ export class CostTracker {
 
     // CLI self-reporting: remaining === 0 means provider exhausted
     if (usage.last_known_remaining === 0) {
-      this.eventBus.publish({
+      eventBus.publish({
         type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: taskId,
@@ -405,98 +416,109 @@ export class CostTracker {
 
   // ── Private: Single Limit Check ────────────────────────────────────────────
 
-  private checkSingleCostLimit(
+  function checkSingleCostLimit(
     spent: number,
     limit: number | null,
-    label: string,
-    warningPrefix: string,
-    warnings: string[],
-  ): SafetyVerdict | null {
+    limitType: string,
+    warningSubject: string,
+  ): CostLimitCheckResult {
     if (limit === null) {
-      return null;
+      return { verdict: null, warnings: [] };
     }
 
     if (spent >= limit) {
       return {
-        allowed: false,
-        action: "deny",
-        reason: `${label} cost limit reached ($${spent.toFixed(2)} / $${limit.toFixed(2)})`,
+        verdict: {
+          allowed: false,
+          action: "deny",
+          reason: `${limitType} cost limit reached ($${spent.toFixed(2)} / $${limit.toFixed(2)})`,
+        },
+        warnings: [],
       };
     }
     const pct = spent / limit;
     if (pct >= COST_WARNING_THRESHOLD) {
-      warnings.push(`${warningPrefix} at ${Math.round(pct * 100)}% of ${label} cost limit`);
+      return {
+        verdict: null,
+        warnings: [`${warningSubject} at ${Math.round(pct * 100)}% of ${limitType} cost limit`],
+      };
     }
-    return null;
+    return { verdict: null, warnings: [] };
   }
 
   // ── Private: Snapshot ──────────────────────────────────────────────────────
 
-  private maybeSaveSnapshot(): void {
-    this.snapshotDirty = true;
-    const now = Date.now();
-    if (now - this.lastSnapshotAt >= SNAPSHOT_DEBOUNCE_MS) {
-      this.saveSnapshot();
+  function maybeSaveSnapshot(): void {
+    snapshotDirty = true;
+    const nowMs = Date.now();
+    if (nowMs - lastSnapshotAt >= SNAPSHOT_DEBOUNCE_MS) {
+      saveSnapshot();
     }
   }
 
-  private saveSnapshot(): void {
+  function saveSnapshot(): void {
     const snapshot: AccumulatorSnapshot = {
       api_spend: {
-        per_task: Object.fromEntries(this.accumulators.api_spend.per_task),
-        daily: this.accumulators.api_spend.daily,
-        monthly: this.accumulators.api_spend.monthly,
+        per_task: Object.fromEntries(accumulators.api_spend.per_task),
+        daily: accumulators.api_spend.daily,
+        monthly: accumulators.api_spend.monthly,
       },
-      cli_usage: Object.fromEntries(this.accumulators.cli_usage),
-      last_sequence: this.lastSequence,
+      cli_usage: Object.fromEntries(accumulators.cli_usage),
+      last_sequence: lastSequence,
       snapshot_at: new Date().toISOString(),
     };
-    this.saveSnapshotStmt.run(META_KEY, JSON.stringify(snapshot));
-    this.snapshotDirty = false;
-    this.lastSnapshotAt = Date.now();
+    try {
+      saveSnapshotStmt.run(META_KEY, JSON.stringify(snapshot));
+      snapshotDirty = false;
+      lastSnapshotAt = Date.now();
+    } catch {
+      // Snapshot save failed — keep snapshotDirty=true so next event triggers retry.
+      // In-memory accumulators remain authoritative; replay covers the gap on restart.
+    }
   }
 
-  private restoreFromSnapshot(): void {
-    const row = this.getSnapshotStmt.get(META_KEY) as { value: string } | undefined;
+  function restoreFromSnapshot(): void {
+    const row = getSnapshotStmt.get(META_KEY) as { value: string } | undefined;
     if (!row) {
       return;
     }
 
     try {
       const snapshot = JSON.parse(row.value) as AccumulatorSnapshot;
-      const now = new Date();
+      const nowDate = new Date();
 
       // Only restore if windows are still current
-      const currentDailyStart = getDailyWindowStart(now);
-      const currentMonthlyStart = getMonthlyWindowStart(now);
+      const currentDailyStart = getDailyWindowStart(nowDate);
+      const currentMonthlyStart = getMonthlyWindowStart(nowDate);
 
-      this.accumulators.api_spend.per_task = new Map(Object.entries(snapshot.api_spend.per_task));
+      accumulators.api_spend.per_task = new Map(Object.entries(snapshot.api_spend.per_task));
 
       if (snapshot.api_spend.daily.window_start === currentDailyStart) {
-        this.accumulators.api_spend.daily = snapshot.api_spend.daily;
+        accumulators.api_spend.daily = snapshot.api_spend.daily;
       }
 
       if (snapshot.api_spend.monthly.window_start === currentMonthlyStart) {
-        this.accumulators.api_spend.monthly = snapshot.api_spend.monthly;
+        accumulators.api_spend.monthly = snapshot.api_spend.monthly;
       }
 
-      this.accumulators.cli_usage = new Map(Object.entries(snapshot.cli_usage));
-      this.lastSequence = snapshot.last_sequence;
+      accumulators.cli_usage = new Map(Object.entries(snapshot.cli_usage));
+      lastSequence = snapshot.last_sequence;
     } catch {
       // Corrupt snapshot — fall back to zero accumulators + full replay
-      this.lastSequence = 0;
+      lastSequence = 0;
     }
   }
 
-  private replayEvents(): void {
-    let lastSeq = this.lastSequence;
-    const now = new Date();
-    const dailyStart = getDailyWindowStart(now);
-    const monthlyStart = getMonthlyWindowStart(now);
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: paginated event replay with window-aware accumulation
+  function replayEvents(): void {
+    let lastSeq = lastSequence;
+    const nowDate = new Date();
+    const dailyStart = getDailyWindowStart(nowDate);
+    const monthlyStart = getMonthlyWindowStart(nowDate);
 
     // Paginated replay to avoid loading all events into memory at once
     while (true) {
-      const events = this.eventBus.getEventsSince(lastSeq, REPLAY_PAGE_SIZE);
+      const events = eventBus.getEventsSince(lastSeq, REPLAY_PAGE_SIZE);
       if (events.length === 0) {
         break;
       }
@@ -510,15 +532,15 @@ export class CostTracker {
         const payload = event.payload as unknown as CostIncurredPayload;
 
         if (payload.provider_type === "api") {
-          this.replayApiEvent(payload, new Date(event.timestamp), dailyStart, monthlyStart);
+          replayApiEvent(payload, new Date(event.timestamp), dailyStart, monthlyStart);
         } else {
-          this.accumulateCliUsage(payload);
+          accumulateCliUsage(payload);
         }
 
         lastSeq = event.sequence;
       }
 
-      this.lastSequence = lastSeq;
+      lastSequence = lastSeq;
 
       if (events.length < REPLAY_PAGE_SIZE) {
         break;
@@ -526,7 +548,7 @@ export class CostTracker {
     }
   }
 
-  private replayApiEvent(
+  function replayApiEvent(
     payload: CostIncurredPayload,
     eventTime: Date,
     dailyStart: string,
@@ -537,14 +559,16 @@ export class CostTracker {
       return;
     }
 
-    const taskCurrent = this.accumulators.api_spend.per_task.get(payload.task_id) ?? 0;
-    this.accumulators.api_spend.per_task.set(payload.task_id, taskCurrent + spend);
+    const taskCurrent = accumulators.api_spend.per_task.get(payload.task_id) ?? 0;
+    accumulators.api_spend.per_task.set(payload.task_id, taskCurrent + spend);
 
     if (getDailyWindowStart(eventTime) === dailyStart) {
-      this.accumulators.api_spend.daily.cost_usd += spend;
+      accumulators.api_spend.daily.cost_usd += spend;
     }
     if (getMonthlyWindowStart(eventTime) === monthlyStart) {
-      this.accumulators.api_spend.monthly.cost_usd += spend;
+      accumulators.api_spend.monthly.cost_usd += spend;
     }
   }
+
+  return { getCostStatus, checkCostLimits, isAnyLimitBreached, updateLimits, flush };
 }

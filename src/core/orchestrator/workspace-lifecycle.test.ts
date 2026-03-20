@@ -4,6 +4,7 @@ import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Task } from "../../schemas/task.js";
 import { createAndonCord } from "./andon-cord.js";
+import { createOrchestratorNotifier } from "./orchestrator-notifier.js";
 import type { OrchestratorContext } from "./types.js";
 import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
@@ -237,12 +238,12 @@ describe("WorkspaceLifecycle", () => {
         contacts: [{ channel: "telegram-comm", handle: "@user" }],
       });
 
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch();
       const poisonedMessage =
         "Cloned: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
 
-      wl.notifyMilestone(dispatch, poisonedMessage);
+      notifier.notifyMilestone(dispatch, poisonedMessage);
       await new Promise((r) => setTimeout(r, 0));
 
       const formattedArg = formatMessage.mock.calls[0]?.[0] as string;
@@ -256,18 +257,18 @@ describe("WorkspaceLifecycle", () => {
       (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockImplementation(() => {
         throw new Error("directory error");
       });
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch();
 
-      expect(() => wl.notifyMilestone(dispatch, "test")).not.toThrow();
+      expect(() => notifier.notifyMilestone(dispatch, "test")).not.toThrow();
     });
 
     it("skips when no owner configured", () => {
       const ctx = createMockContext();
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch();
 
-      wl.notifyMilestone(dispatch, "test");
+      notifier.notifyMilestone(dispatch, "test");
 
       expect(ctx.registry.getPluginsByType).not.toHaveBeenCalled();
     });
@@ -290,11 +291,11 @@ describe("WorkspaceLifecycle", () => {
         },
       ]);
 
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch();
 
       // Should not throw
-      expect(() => wl.notifyMilestone(dispatch, "Task started")).not.toThrow();
+      expect(() => notifier.notifyMilestone(dispatch, "Task started")).not.toThrow();
 
       // Allow the rejected promise to settle
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -315,14 +316,14 @@ describe("WorkspaceLifecycle", () => {
       };
       (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockPlugin]);
 
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
         external_ref: { type: "github_issue", repo: "org/repo", number: 7 },
       } as Partial<Task>);
       const poisonedMessage =
         "Push failed: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
 
-      wl.commentOnSourceIssue(dispatch, poisonedMessage);
+      notifier.commentOnSourceIssue(dispatch, poisonedMessage);
       await new Promise((r) => setTimeout(r, 0));
 
       const commentArg = commentOnIssue.mock.calls[0]?.[2] as string;
@@ -333,10 +334,10 @@ describe("WorkspaceLifecycle", () => {
   describe("commentOnSourceIssue", () => {
     it("skips when no external_ref", () => {
       const ctx = createMockContext();
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch();
 
-      wl.commentOnSourceIssue(dispatch, "test comment");
+      notifier.commentOnSourceIssue(dispatch, "test comment");
 
       expect(ctx.registry.getPluginsByType).not.toHaveBeenCalled();
     });
@@ -346,12 +347,12 @@ describe("WorkspaceLifecycle", () => {
       (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockImplementation(() => {
         throw new Error("plugin error");
       });
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
         external_ref: { type: "github_issue", repo: "owner/repo", number: 1 },
       } as Partial<Task>);
 
-      expect(() => wl.commentOnSourceIssue(dispatch, "test")).not.toThrow();
+      expect(() => notifier.commentOnSourceIssue(dispatch, "test")).not.toThrow();
     });
 
     // F11: commentOnIssue failure is logged via observer.debug (not swallowed silently)
@@ -366,13 +367,13 @@ describe("WorkspaceLifecycle", () => {
         },
       ]);
 
-      const wl = createWorkspaceLifecycle(ctx);
+      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
         external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
       } as Partial<Task>);
 
       // Should not throw
-      expect(() => wl.commentOnSourceIssue(dispatch, "Starting work")).not.toThrow();
+      expect(() => notifier.commentOnSourceIssue(dispatch, "Starting work")).not.toThrow();
 
       // Allow the rejected promise to settle
       await new Promise((resolve) => setTimeout(resolve, 0));

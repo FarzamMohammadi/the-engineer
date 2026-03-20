@@ -334,7 +334,12 @@ export type GitMergeCompletedPayload = z.infer<typeof GitMergeCompletedPayloadSc
 
 export const HealthStuckDetectedPayloadSchema = z.object({
   task_id: z.string(),
-  condition: z.enum(["no_journal_entries", "no_state_transition", "orchestrator_crash"]),
+  condition: z.enum([
+    "no_journal_entries",
+    "stale_journal",
+    "no_state_transition",
+    "orchestrator_crash",
+  ]),
   threshold_ms: z.number().int(),
   elapsed_ms: z.number().int(),
   last_activity: z.string().datetime().nullable(),

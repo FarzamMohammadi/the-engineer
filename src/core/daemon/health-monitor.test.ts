@@ -122,7 +122,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
   const taskEngine = {
     getTask: vi.fn().mockReturnValue(null),
     getTasksByState: vi.fn().mockReturnValue([]),
-    requestTransition: vi.fn(),
+    requestTransition: vi.fn().mockReturnValue({ success: true }),
   };
   const safetyLayer = {
     getTimeoutPolicy: vi.fn().mockReturnValue(makeTimeoutPolicy()),
@@ -402,74 +402,6 @@ describe("DaemonHealthMonitor", () => {
       const now3 = now1 + 86_400_000;
       hm.checkReviewPendingReminders(now3);
       expect(notifications.sendReviewReminder).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  // ── Cost Limits ──────────────────────────────────────────────────────────
-
-  describe("processCostLimits", () => {
-    it("transitions active task to blocked and sends notification", () => {
-      const { ctx, taskEngine } = makeContext();
-      const notifications = makeNotifications();
-
-      const task = makeTask({ id: "cost-1", title: "Expensive task", state: "active" });
-      taskEngine.getTask.mockReturnValue(task);
-
-      const getActiveTaskIds = vi.fn(() => ["cost-1"]);
-      const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
-
-      hm.addCostLimitTask("cost-1");
-      hm.processCostLimits();
-
-      expect(taskEngine.requestTransition).toHaveBeenCalledWith(
-        "cost-1",
-        "blocked",
-        null,
-        "cost_limit_reached",
-        "daemon",
-      );
-      expect(notifications.sendCostLimit).toHaveBeenCalledWith("cost-1");
-      expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
-        "cost-1",
-        "Task blocked \u2014 cost limit reached.",
-      );
-    });
-
-    it("drains the queue — subsequent processCostLimits is a no-op", () => {
-      const { ctx, taskEngine } = makeContext();
-      const notifications = makeNotifications();
-
-      const task = makeTask({ id: "cost-2", title: "Another task", state: "active" });
-      taskEngine.getTask.mockReturnValue(task);
-
-      const getActiveTaskIds = vi.fn(() => ["cost-2"]);
-      const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
-
-      hm.addCostLimitTask("cost-2");
-      hm.processCostLimits();
-      expect(taskEngine.requestTransition).toHaveBeenCalledOnce();
-
-      // Second call should be a no-op
-      hm.processCostLimits();
-      expect(taskEngine.requestTransition).toHaveBeenCalledOnce(); // still 1
-    });
-
-    it("skips non-active tasks in the cost limit queue", () => {
-      const { ctx, taskEngine } = makeContext();
-      const notifications = makeNotifications();
-
-      // Task is already blocked (not active)
-      const task = makeTask({ id: "cost-3", title: "Already blocked", state: "blocked" });
-      taskEngine.getTask.mockReturnValue(task);
-
-      const getActiveTaskIds = vi.fn(() => []);
-      const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
-
-      hm.addCostLimitTask("cost-3");
-      hm.processCostLimits();
-
-      expect(taskEngine.requestTransition).not.toHaveBeenCalled();
-      expect(notifications.sendCostLimit).not.toHaveBeenCalled();
     });
   });
 });

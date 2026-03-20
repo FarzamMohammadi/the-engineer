@@ -7,8 +7,8 @@ import {
 } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
+import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
 import type { ExecuteTaskResult, OrchestratorContext } from "./types.js";
-import type { OrchestratorNotifier } from "./workspace-lifecycle.js";
 
 // ── DecompositionHandler Interface ──────────────────────────────────────────
 

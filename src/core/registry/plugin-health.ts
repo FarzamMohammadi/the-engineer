@@ -1,14 +1,14 @@
 import type { PluginHealthRecord, PluginHealthState } from "../../schemas/adapters.js";
 import { PluginHealthStates } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
-import { extractErrorMessage } from "../../utils/errors.js";
+import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
 import type { PluginRecord } from "./lifecycle.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export interface HealthMonitorDeps {
+export interface PluginHealthMonitorDeps {
   observer: IObserver;
   eventBus: IEventBus;
   getRecord: (pluginId: string) => PluginRecord | undefined;
@@ -17,7 +17,7 @@ export interface HealthMonitorDeps {
   consecutiveFailuresThreshold: number;
 }
 
-export interface HealthMonitor {
+export interface PluginHealthMonitor {
   healthCheckAll(): Promise<PluginHealthRecord[]>;
   getHealthRecord(pluginId: string): PluginHealthRecord | null;
   getAllHealthRecords(): PluginHealthRecord[];
@@ -25,7 +25,7 @@ export interface HealthMonitor {
 
 // ── Factory ────────────────────────────────────────────────────────────────
 
-export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
+export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): PluginHealthMonitor {
   const {
     observer,
     eventBus,
@@ -146,7 +146,7 @@ export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
     try {
       status = await withTimeout(record.instance.healthCheck());
     } catch (error) {
-      const message = extractErrorMessage(error);
+      const message = sanitizeErrorMessage(error);
       status = { healthy: false, message };
     }
 
@@ -155,7 +155,11 @@ export function createHealthMonitor(deps: HealthMonitorDeps): HealthMonitor {
     if (status.healthy) {
       handleHealthy(record, previousState, now);
     } else {
-      handleUnhealthy(record, previousState, status.message ?? "unknown error");
+      handleUnhealthy(
+        record,
+        previousState,
+        status.message ? sanitizeSecrets(status.message) : "unknown error",
+      );
     }
   }
 

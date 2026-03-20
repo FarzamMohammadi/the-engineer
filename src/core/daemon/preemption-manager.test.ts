@@ -66,7 +66,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>): {
   const taskEngine = {
     getQueuedByPriority: vi.fn().mockReturnValue([]),
     getTask: vi.fn().mockReturnValue(null),
-    requestTransition: vi.fn(),
+    requestTransition: vi.fn().mockReturnValue({ success: true }),
   };
 
   const ctx: PreemptionManagerContext = {
@@ -261,7 +261,7 @@ describe("PreemptionManager", () => {
     expect(pm.getPending()).toBeNull();
   });
 
-  it("forceTransitionTarget removes active dispatch and clears pending", () => {
+  it("abandonPending removes active dispatch and clears pending", () => {
     const { ctx, taskEngine } = makeContext({ preemption_threshold: 20 });
 
     taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
@@ -275,12 +275,12 @@ describe("PreemptionManager", () => {
     pm.evaluate(1000);
     expect(pm.getPending()).not.toBeNull();
 
-    pm.forceTransitionTarget();
+    pm.abandonPending();
     expect(removeActiveDispatch).toHaveBeenCalledWith("active-1");
     expect(pm.getPending()).toBeNull();
   });
 
-  it("forceTransitionTarget is a no-op when no pending preemption", () => {
+  it("abandonPending is a no-op when no pending preemption", () => {
     const { ctx } = makeContext();
 
     const getActiveTaskIds = vi.fn(() => []);
@@ -288,7 +288,7 @@ describe("PreemptionManager", () => {
 
     const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
 
-    pm.forceTransitionTarget();
+    pm.abandonPending();
     expect(removeActiveDispatch).not.toHaveBeenCalled();
     expect(pm.getPending()).toBeNull();
   });

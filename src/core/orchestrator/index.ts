@@ -11,10 +11,12 @@ import {
 } from "../../schemas/events.js";
 import { SessionEndReasons } from "../../schemas/session-memory.js";
 import { ActionClasses, TaskStates } from "../../schemas/task.js";
+import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type AndonCord, createAndonCord } from "./andon-cord.js";
 import { type DecompositionHandler, createDecompositionHandler } from "./decomposition-handler.js";
 import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
+import { type OrchestratorNotifier, createOrchestratorNotifier } from "./orchestrator-notifier.js";
 import { createPhaseHandlers } from "./phase-handlers.js";
 import {
   type PhaseHandlerRegistry,
@@ -27,13 +29,9 @@ import type {
   ExecuteTaskResult,
   OrchestratorContext,
   PipelineState,
-  PreemptionGate,
+  WritablePreemptionGate,
 } from "./types.js";
-import {
-  type OrchestratorNotifier,
-  type WorkspaceLifecycle,
-  createWorkspaceLifecycle,
-} from "./workspace-lifecycle.js";
+import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
 // Only the types actually consumed by external modules (daemon, bootstrap).
@@ -70,9 +68,7 @@ export const EVENTS: EventDeclaration[] = [
 // ── PreemptionGate Factory ────────────────────────────────────────────────
 
 /** Create a PreemptionGate — cooperative preemption state container (Protocol P8). */
-function createPreemptionGate(): PreemptionGate & {
-  request(payload: { target_task_id: string; preempting_task_id: string }): void;
-} {
+function createPreemptionGate(): WritablePreemptionGate {
   let requested = false;
   let payload: { target_task_id: string; preempting_task_id: string } | null = null;
   return {
@@ -117,7 +113,7 @@ export class Orchestrator {
   private readonly prManager: PrManager;
   private readonly decompositionHandler: DecompositionHandler;
   private readonly andonCord: AndonCord;
-  private readonly preemption: ReturnType<typeof createPreemptionGate>;
+  private readonly preemption: WritablePreemptionGate;
 
   /** Phase handler dispatch map — one method per phase. */
   private readonly phaseHandlers: PhaseHandlerRegistry;
@@ -127,9 +123,8 @@ export class Orchestrator {
 
     // Create subsystems
     this.llmCaller = createLlmCaller(this.ctx);
-    const wsl = createWorkspaceLifecycle(this.ctx);
-    this.workspaceLifecycle = wsl;
-    this.notifier = wsl;
+    this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
+    this.notifier = createOrchestratorNotifier(this.ctx);
     this.prManager = createPrManager(this.ctx, this.notifier);
     this.decompositionHandler = createDecompositionHandler(this.ctx, this.notifier);
     this.andonCord = createAndonCord();
@@ -245,15 +240,17 @@ export class Orchestrator {
     const recentEntries = journalEntries.slice(-5);
     const blockedReason = task.blocked?.reason ?? "unknown";
 
-    const prompt = [
-      "A task is blocked and needs diagnosis.",
-      `Task: "${task.title}"`,
-      `Blocked reason: ${blockedReason}`,
-      `Recent activity: ${JSON.stringify(recentEntries.map((e) => ({ type: e.type, summary: e.summary })))}`,
-      "",
-      "Can this be automatically resolved? Respond with JSON:",
-      '{ "can_resolve": boolean, "action": "description of resolution or why not" }',
-    ].join("\n");
+    const prompt = sanitizeSecrets(
+      [
+        "A task is blocked and needs diagnosis.",
+        `Task: "${task.title}"`,
+        `Blocked reason: ${blockedReason}`,
+        `Recent activity: ${JSON.stringify(recentEntries.map((e) => ({ type: e.type, summary: e.summary })))}`,
+        "",
+        "Can this be automatically resolved? Respond with JSON:",
+        '{ "can_resolve": boolean, "action": "description of resolution or why not" }',
+      ].join("\n"),
+    );
 
     try {
       const pipelineResult = await this.ctx.actionPipeline.execute<CompletionResult>({
@@ -282,7 +279,7 @@ export class Orchestrator {
     } catch (err) {
       this.ctx.observer.warn("Self-unblock failed", {
         taskId,
-        error: err instanceof Error ? err.message : String(err),
+        error: sanitizeErrorMessage(err),
       });
       return false;
     }

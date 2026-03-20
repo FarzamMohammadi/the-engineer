@@ -92,14 +92,11 @@ export interface PhaseRunnerDeps {
   preemption: PreemptionGate;
 }
 
-/** Return type of processPhaseCompletion (internal to the pipeline runner). */
-interface PhaseCompletionOutcome {
-  phases: Phase[];
-  loopbackIndex: number | null;
-  preemptionResult: ExecuteTaskResult | null;
-  decompositionResult: ExecuteTaskResult | null;
-  reviewPendingResult: ExecuteTaskResult | null;
-}
+/** Discriminated union of post-phase processing outcomes (internal to the pipeline runner). */
+type PhaseCompletionResult =
+  | { kind: "continue"; phases: Phase[] }
+  | { kind: "loopback"; phases: Phase[]; targetIndex: number }
+  | { kind: "exit"; result: ExecuteTaskResult };
 
 // ── Pure Helpers ────────────────────────────────────────────────────────────
 
@@ -404,11 +401,10 @@ async function tryCreatePRAndExitForReview(
   phase: Phase,
   output: PhaseOutput,
   dispatch: Dispatch,
-  phases: Phase[],
   priorOutputs: Map<Phase, PhaseOutput>,
   ctx: OrchestratorContext,
   prManager: PrManager,
-): Promise<PhaseCompletionOutcome | null> {
+): Promise<PhaseCompletionResult | null> {
   const prCreated = await prManager.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
   if (!prCreated) {
     return null;
@@ -431,17 +427,14 @@ async function tryCreatePRAndExitForReview(
   }
 
   return {
-    phases,
-    loopbackIndex: null,
-    preemptionResult: null,
-    decompositionResult: null,
-    reviewPendingResult: { outcome: "review_pending", phase, phaseOutputs: priorOutputs },
+    kind: "exit",
+    result: { outcome: "review_pending", phase, phaseOutputs: priorOutputs },
   };
 }
 
 /** Handle post-phase logic: fast-path, decomposition, loopback, transitions, preemption, PR creation. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-branch pipeline orchestration
-async function processPhaseCompletion(
+async function handlePostPhaseActions(
   sessionId: string,
   taskId: string,
   phase: Phase,
@@ -452,7 +445,7 @@ async function processPhaseCompletion(
   dispatch: Dispatch,
   state: PipelineState,
   deps: PhaseRunnerDeps,
-): Promise<{ result: PhaseCompletionOutcome; updatedLoopbackCount: number }> {
+): Promise<{ completion: PhaseCompletionResult; loopbackCount: number }> {
   const { ctx, prManager, decompositionHandler } = deps;
   let phases = currentPhases;
   let loopbackCount = state.loopbackCount;
@@ -473,14 +466,8 @@ async function processPhaseCompletion(
     );
     if (decompositionResult) {
       return {
-        result: {
-          phases,
-          loopbackIndex: null,
-          preemptionResult: null,
-          decompositionResult,
-          reviewPendingResult: null,
-        },
-        updatedLoopbackCount: loopbackCount,
+        completion: { kind: "exit", result: decompositionResult },
+        loopbackCount,
       };
     }
   }
@@ -492,33 +479,26 @@ async function processPhaseCompletion(
       loopbackCount = loopbackResult.loopbackCount;
       ctx.taskEngine.updateTaskField(taskId, "phase", Phases.execution);
       return {
-        result: {
-          phases,
-          loopbackIndex: loopbackResult.targetIndex - 1,
-          preemptionResult: null,
-          decompositionResult: null,
-          reviewPendingResult: null,
-        },
-        updatedLoopbackCount: loopbackCount,
+        completion: { kind: "loopback", phases, targetIndex: loopbackResult.targetIndex - 1 },
+        loopbackCount,
       };
     }
   }
 
   // After demo_prep: commit, push, create draft PR — then exit pipeline for review
   if (phase === Phases.demo_prep) {
-    const result = await tryCreatePRAndExitForReview(
+    const prResult = await tryCreatePRAndExitForReview(
       sessionId,
       taskId,
       phase,
       output,
       dispatch,
-      phases,
       priorOutputs,
       ctx,
       prManager,
     );
-    if (result) {
-      return { result, updatedLoopbackCount: loopbackCount };
+    if (prResult) {
+      return { completion: prResult, loopbackCount };
     }
   }
 
@@ -536,24 +516,19 @@ async function processPhaseCompletion(
   // Fast-path PR: when self_review is the final phase
   if (phase === Phases.self_review && isLastPhase) {
     ctx.observer.info("Fast-path PR exit: self_review is last phase, creating PR", { taskId });
-    const result = await tryCreatePRAndExitForReview(
+    const prResult = await tryCreatePRAndExitForReview(
       sessionId,
       taskId,
       phase,
       output,
       dispatch,
-      phases,
       priorOutputs,
       ctx,
       prManager,
     );
-    ctx.observer.debug("Fast-path PR result", {
-      taskId,
-      hasResult: !!result,
-      hasReviewPendingResult: !!result?.reviewPendingResult,
-    });
-    if (result) {
-      return { result, updatedLoopbackCount: loopbackCount };
+    ctx.observer.debug("Fast-path PR result", { taskId, hasResult: !!prResult });
+    if (prResult) {
+      return { completion: prResult, loopbackCount };
     }
   }
 
@@ -566,26 +541,17 @@ async function processPhaseCompletion(
     const preemptingId = deps.preemption.getPayload()?.preempting_task_id ?? "unknown";
     deps.preemption.reset();
     return {
-      result: {
-        phases,
-        loopbackIndex: null,
-        preemptionResult: handlePreemption(sessionId, taskId, nextPhase, ctx, preemptingId),
-        decompositionResult: null,
-        reviewPendingResult: null,
+      completion: {
+        kind: "exit",
+        result: handlePreemption(sessionId, taskId, nextPhase, ctx, preemptingId),
       },
-      updatedLoopbackCount: loopbackCount,
+      loopbackCount,
     };
   }
 
   return {
-    result: {
-      phases,
-      loopbackIndex: null,
-      preemptionResult: null,
-      decompositionResult: null,
-      reviewPendingResult: null,
-    },
-    updatedLoopbackCount: loopbackCount,
+    completion: { kind: "continue", phases },
+    loopbackCount,
   };
 }
 
@@ -680,9 +646,9 @@ export async function runPhasePipeline(
     // Post-phase processing: decomposition, PR creation, transitions, loopback, preemption.
     // Wrapped separately so errors here (e.g. DB failure, PR creation exception) are caught
     // and routed through handlePhaseError, which also closes the session.
-    let postPhaseOutcome: PhaseCompletionOutcome;
+    let completion: PhaseCompletionResult;
     try {
-      const { result, updatedLoopbackCount } = await processPhaseCompletion(
+      const result = await handlePostPhaseActions(
         sessionId,
         taskId,
         phase,
@@ -694,26 +660,27 @@ export async function runPhasePipeline(
         currentState,
         deps,
       );
-      postPhaseOutcome = result;
-      currentState = { ...currentState, loopbackCount: updatedLoopbackCount };
+      completion = result.completion;
+      currentState = { ...currentState, loopbackCount: result.loopbackCount };
     } catch (completionError) {
       return handlePhaseError(sessionId, taskId, phase, completionError, ctx);
     }
 
-    if (postPhaseOutcome.decompositionResult) {
-      return postPhaseOutcome.decompositionResult;
-    }
-    if (postPhaseOutcome.reviewPendingResult) {
-      ctx.observer.info("Pipeline exiting with review pending result", { taskId });
-      return postPhaseOutcome.reviewPendingResult;
-    }
-    if (postPhaseOutcome.loopbackIndex !== null) {
-      i = postPhaseOutcome.loopbackIndex;
-      continue;
-    }
-    phases = postPhaseOutcome.phases;
-    if (postPhaseOutcome.preemptionResult) {
-      return postPhaseOutcome.preemptionResult;
+    switch (completion.kind) {
+      case "exit":
+        return completion.result;
+      case "loopback": {
+        phases = completion.phases;
+        i = completion.targetIndex;
+        continue;
+      }
+      case "continue":
+        phases = completion.phases;
+        break;
+      default: {
+        const _exhaustive: never = completion;
+        throw new Error(`Unexpected completion kind: ${JSON.stringify(_exhaustive)}`);
+      }
     }
   }
 

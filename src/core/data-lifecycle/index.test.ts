@@ -109,7 +109,14 @@ describe("cleanupTable", () => {
     insertEvent(dbHandle.db, new Date().toISOString()); // now
 
     const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "events", "timestamp", null, cutoff, false);
+    const result = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: null,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(result.deleted).toBe(1);
     expect(result.remaining).toBe(2);
@@ -120,7 +127,14 @@ describe("cleanupTable", () => {
     insertEvent(dbHandle.db, daysAgo(5));
 
     const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "events", "timestamp", null, cutoff, false);
+    const result = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: null,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(result.deleted).toBe(0);
     expect(result.remaining).toBe(2);
@@ -132,7 +146,14 @@ describe("cleanupTable", () => {
     insertEvent(dbHandle.db, daysAgo(1), "newest");
 
     const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "events", "timestamp", 2, cutoff, false);
+    const result = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: 2,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(result.deleted).toBe(1);
     expect(result.remaining).toBe(2);
@@ -146,7 +167,14 @@ describe("cleanupTable", () => {
 
   it("handles empty table", () => {
     const cutoff = new Date().toISOString();
-    const result = cleanupTable(dbHandle.db, "events", "timestamp", null, cutoff, false);
+    const result = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: null,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(result.deleted).toBe(0);
     expect(result.remaining).toBe(0);
@@ -157,8 +185,22 @@ describe("cleanupTable", () => {
     insertEvent(dbHandle.db, new Date().toISOString());
 
     const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
-    const first = cleanupTable(dbHandle.db, "events", "timestamp", null, cutoff, false);
-    const second = cleanupTable(dbHandle.db, "events", "timestamp", null, cutoff, false);
+    const first = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: null,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
+    const second = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: null,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(first.deleted).toBe(1);
     expect(second.deleted).toBe(0);
@@ -170,7 +212,14 @@ describe("cleanupTable", () => {
     insertObservation(dbHandle.db, daysAgo(10), "tool_execution", "write_file");
 
     const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "observations", "start_time", null, cutoff, false);
+    const result = cleanupTable({
+      db: dbHandle.db,
+      tableName: "observations",
+      timestampColumn: "start_time",
+      maxCount: null,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(result.deleted).toBe(1);
     expect(result.remaining).toBe(1);
@@ -182,7 +231,14 @@ describe("cleanupTable", () => {
     insertEvent(dbHandle.db, daysAgo(10), "recent"); // kept
 
     const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "events", "timestamp", 1, cutoff, false);
+    const result = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: 1,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(result.deleted).toBe(2);
     expect(result.remaining).toBe(1);
@@ -194,7 +250,14 @@ describe("cleanupTable", () => {
     }
 
     const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
-    const result = cleanupTable(dbHandle.db, "events", "timestamp", null, cutoff, false);
+    const result = cleanupTable({
+      db: dbHandle.db,
+      tableName: "events",
+      timestampColumn: "timestamp",
+      maxCount: null,
+      cutoffISO: cutoff,
+      excludeActiveTasks: false,
+    });
 
     expect(result.deleted).toBe(0);
     expect(result.remaining).toBe(10);
@@ -297,6 +360,24 @@ describe("cleanupOrphanedBlobs", () => {
     cleanupOrphanedBlobs(tmpDir, referenced);
 
     expect(fs.existsSync(prefix)).toBe(false);
+  });
+
+  it("skips deletion when prefix directory is a symlink to external path", () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "engineer-outside-"));
+    try {
+      fs.writeFileSync(path.join(outsideDir, "precious.txt"), "do not delete");
+
+      // Create a symlinked prefix directory inside blobsDir pointing outside
+      fs.symlinkSync(outsideDir, path.join(tmpDir, "zz"));
+
+      const deleted = cleanupOrphanedBlobs(tmpDir, new Set());
+
+      // The file in the external directory should NOT have been deleted
+      expect(deleted).toBe(0);
+      expect(fs.existsSync(path.join(outsideDir, "precious.txt"))).toBe(true);
+    } finally {
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("returns count of deleted blobs", () => {

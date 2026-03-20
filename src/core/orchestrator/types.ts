@@ -32,7 +32,7 @@ export interface OrchestratorContext {
 
 // ── Preemption Gate ──────────────────────────────────────────────────────
 
-/** Cooperative preemption state container (Protocol P8). */
+/** Cooperative preemption state container (Protocol P8). Read-only view for the phase runner. */
 export interface PreemptionGate {
   /** Check if preemption has been requested. */
   isRequested(): boolean;
@@ -40,6 +40,12 @@ export interface PreemptionGate {
   getPayload(): { target_task_id: string; preempting_task_id: string } | null;
   /** Reset preemption state after handling. */
   reset(): void;
+}
+
+/** Writable preemption gate — extends PreemptionGate with the ability to request preemption. */
+export interface WritablePreemptionGate extends PreemptionGate {
+  /** Signal that a preemption has been requested (called from EventBus subscription). */
+  request(payload: { target_task_id: string; preempting_task_id: string }): void;
 }
 
 // ── Per-Execution State ────────────────────────────────────────────────────

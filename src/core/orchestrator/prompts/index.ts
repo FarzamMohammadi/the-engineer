@@ -22,8 +22,10 @@ export {
 // Formatting utilities
 export {
   section,
+  buildTaskBrief,
   formatOutputSchema,
   formatActionReference,
   formatKnowledge,
   formatPriorPhaseOutput,
+  type TaskBriefInput,
 } from "./format.js";

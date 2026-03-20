@@ -50,3 +50,29 @@ export class PhaseHandlerMissingError extends OrchestratorError {
     this.phase = phase;
   }
 }
+
+/** Agent loop entered without a workspace (workspace setup incomplete or skipped). */
+export class WorkspaceNotReadyError extends OrchestratorError {
+  readonly tag = "WorkspaceNotReady" as const;
+  readonly taskId: string;
+
+  constructor(taskId: string) {
+    super(
+      `Cannot run agent loop without a workspace for task ${taskId}. Ensure workspace setup completed before entering the phase pipeline.`,
+    );
+    this.name = "WorkspaceNotReadyError";
+    this.taskId = taskId;
+  }
+}
+
+/** Workspace verification failed during checkpoint resume. */
+export class WorkspaceVerificationError extends OrchestratorError {
+  readonly tag = "WorkspaceVerification" as const;
+  readonly detail: string;
+
+  constructor(detail: string) {
+    super(`Cannot resume: workspace verification failed: ${detail}`);
+    this.name = "WorkspaceVerificationError";
+    this.detail = detail;
+  }
+}

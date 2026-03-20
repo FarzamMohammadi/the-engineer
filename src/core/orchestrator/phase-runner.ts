@@ -9,7 +9,7 @@ import {
 import type { PublishInput } from "../event-bus/index.js";
 import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
-import { PhaseHandlerMissingError } from "./errors.js";
+import { PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
 import type { PrManager } from "./pr-manager.js";
 import { gatherRepoContextSafe } from "./prompts/index.js";
 import {
@@ -144,7 +144,7 @@ function resolveStartState(
     ctx.workspaceManager.verifyWorkspace(taskId);
   } catch (verifyErr) {
     const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
-    throw new Error(`Cannot resume: workspace verification failed: ${msg}`);
+    throw new WorkspaceVerificationError(msg);
   }
 
   ctx.sessionMemory.addJournalEntry({

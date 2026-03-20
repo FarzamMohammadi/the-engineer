@@ -2,12 +2,12 @@ import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
+  buildTaskBrief,
   formatActionReference,
   formatKnowledge,
   formatOutputSchema,
   formatPriorPhaseOutput,
   section,
-  wrapUntrustedContent,
 } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ export function buildPlanningPrompt(ctx: PlanningPromptContext): string {
   const parts: string[] = [];
 
   // 1. Task Brief
-  parts.push(buildTaskBrief(ctx));
+  parts.push(buildTaskBrief(ctx.task));
 
   // 2. Intake Analysis
   parts.push(buildIntakeSection(ctx.intakeOutput));
@@ -82,14 +82,6 @@ export function buildPlanningPrompt(ctx: PlanningPromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildTaskBrief(ctx: PlanningPromptContext): string {
-  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
-  if (ctx.task.description) {
-    lines.push("", wrapUntrustedContent(ctx.task.description));
-  }
-  return section("Task", lines.join("\n"));
-}
 
 function buildIntakeSection(intakeOutput: Record<string, unknown> | null): string {
   if (!intakeOutput) {

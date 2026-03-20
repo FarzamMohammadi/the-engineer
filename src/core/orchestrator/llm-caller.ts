@@ -18,7 +18,7 @@ import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
-import { LlmCallRejectedError, NoLlmPluginError } from "./errors.js";
+import { LlmCallRejectedError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
 import { type OrchestratorContext, PHASE_SEQUENCE, type PipelineState } from "./types.js";
 
@@ -360,9 +360,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const toolConfig = getPhaseToolConfig(phase);
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
-      throw new Error(
-        `Cannot run agent loop without a workspace for task ${taskId}. Ensure workspace setup completed before entering the phase pipeline.`,
-      );
+      throw new WorkspaceNotReadyError(taskId);
     }
     const toolAdapter = ctx.registry.getPrimaryPlugin<ToolAdapter>(AdapterTypes.tool) ?? null;
     const { traceId, sessionId } = state;

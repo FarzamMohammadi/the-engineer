@@ -300,3 +300,17 @@ Accumulated across all merge rounds. Nothing gets lost.
 ### Lens H (Config & DX)
 - **`engineer status` background service visibility** — status command shows only PID + task counts, no visibility into data lifecycle, cost tracking, plugin health, or preemption state. Requires runtime state serialization (daemon -> CLI IPC) — too large for this lens.
 - **Phase 11 doc timing mismatch** — review doc says blocked escalation defaults are ~30min/~90min/~24hours but actual Zod defaults are 4h/8h/2d. Doc issue only, no code change needed.
+
+## Round 3 — lifecycle
+
+### Lens I (Consistency & Patterns)
+- `extractErrorMessage` still used in `src/core/registry/lifecycle.ts` and `src/core/observer/logging.ts` — acceptable as infrastructure-level code where secrets are not in play
+- `phase-runner.ts:682` bare `throw new Error("Unexpected completion kind")` left as-is — correct exhaustive `never` check
+- Integration seams (Trigger→Scheduler, Scheduler→Workspace, Workspace→Pipeline) verified healthy — no changes needed
+- Overall consistency score: 9.5/10
+
+### Lens J (Minimalism & Dead Code)
+- `classifyGitHubError()` + `isRetryable()` duplicated across GitHub plugins — user confirmed plugins must be completely isolated; duplication is intentional
+- Checkpoint fields always empty (`lastEventId: ""`, `workspaceRef: null`, `journalOffset: 0` in phase-runner.ts) — schema is correct, fields designed for richer checkpoints not yet implemented
+- Unused config fields (`auto_threshold_ms`, `suggest_threshold_ms`, `min_child_size_ms`, `always_create`, `tui_base_project`, `aggregate_file_reads`) — in config schema layer, not Phase 4-7 production code; should be addressed in a config-focused lens
+- `parseGitHubUrl()` duplicated in trigger-poller.ts vs github-utils.ts — by design (Core can't import from plugins)

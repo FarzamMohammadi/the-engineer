@@ -242,6 +242,9 @@ export class WorkspaceManager implements IWorkspaceManager {
       throw worktreeError;
     }
 
+    // Defense-in-depth: validate the created worktree resolves within workspace root
+    validateWorkspacePath(worktreePath, this.config.workspace_root);
+
     const workspace: WorkspaceRecord = {
       taskId,
       repo,

@@ -3,6 +3,7 @@ import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
 import {
+  buildTaskBrief,
   formatActionReference,
   formatKnowledge,
   formatOutputSchema,
@@ -40,7 +41,7 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
   const parts: string[] = [];
 
   // 1. Task Brief
-  parts.push(buildTaskBrief(ctx));
+  parts.push(buildTaskBrief(ctx.task));
 
   // 2. Plan (primary guide)
   parts.push(buildPlanSection(ctx.planningOutput));
@@ -103,14 +104,6 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildTaskBrief(ctx: ExecutionPromptContext): string {
-  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
-  if (ctx.task.description) {
-    lines.push("", wrapUntrustedContent(ctx.task.description));
-  }
-  return section("Task", lines.join("\n"));
-}
 
 function buildPlanSection(planningOutput: Record<string, unknown> | null): string {
   if (!planningOutput) {

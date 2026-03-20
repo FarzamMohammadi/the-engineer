@@ -2,12 +2,12 @@ import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
+  buildTaskBrief,
   formatActionReference,
   formatKnowledge,
   formatOutputSchema,
   formatPriorPhaseOutput,
   section,
-  wrapUntrustedContent,
 } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ export function buildResearchPrompt(ctx: ResearchPromptContext): string {
   const parts: string[] = [];
 
   // 1. Task Brief
-  parts.push(buildTaskBrief(ctx));
+  parts.push(buildTaskBrief(ctx.task));
 
   // 2. Intake Results
   parts.push(buildIntakeResultsSection(ctx.intakeOutput));
@@ -78,14 +78,6 @@ export function buildResearchPrompt(ctx: ResearchPromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildTaskBrief(ctx: ResearchPromptContext): string {
-  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
-  if (ctx.task.description) {
-    lines.push("", wrapUntrustedContent(ctx.task.description));
-  }
-  return section("Task", lines.join("\n"));
-}
 
 function buildIntakeResultsSection(intakeOutput: Record<string, unknown> | null): string {
   if (!intakeOutput) {

@@ -3,6 +3,7 @@ import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
 import {
+  buildTaskBrief,
   formatActionReference,
   formatKnowledge,
   formatOutputSchema,
@@ -43,7 +44,7 @@ export function buildIntakePrompt(ctx: IntakePromptContext): string {
   if (isFeedbackRework) {
     parts.push(buildFeedbackReworkBrief(ctx));
   } else {
-    parts.push(buildTaskBrief(ctx));
+    parts.push(buildTaskBrief(ctx.task));
   }
 
   // 2. Repository Overview
@@ -85,21 +86,6 @@ export function buildIntakePrompt(ctx: IntakePromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildTaskBrief(ctx: IntakePromptContext): string {
-  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
-
-  if (ctx.task.description) {
-    lines.push("", wrapUntrustedContent(ctx.task.description));
-  }
-
-  if (ctx.task.external_ref) {
-    const ref = ctx.task.external_ref;
-    lines.push("", `Source: ${ref.type} ${ref.repo}#${String(ref.number)}`);
-  }
-
-  return section("Task", lines.join("\n"));
-}
 
 function buildRepoOverview(repoContext: RepoContext | null): string {
   if (!repoContext) {

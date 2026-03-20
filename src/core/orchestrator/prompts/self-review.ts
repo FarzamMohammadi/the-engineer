@@ -2,12 +2,12 @@ import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import {
+  buildTaskBrief,
   formatActionReference,
   formatKnowledge,
   formatOutputSchema,
   formatPriorPhaseOutput,
   section,
-  wrapUntrustedContent,
 } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ export function buildSelfReviewPrompt(ctx: SelfReviewPromptContext): string {
   const parts: string[] = [];
 
   // 1. Task Brief
-  parts.push(buildTaskBrief(ctx));
+  parts.push(buildTaskBrief(ctx.task));
 
   // 2. Original Plan (compare planned vs done)
   parts.push(buildPlanSection(ctx.planningOutput));
@@ -94,14 +94,6 @@ export function buildSelfReviewPrompt(ctx: SelfReviewPromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildTaskBrief(ctx: SelfReviewPromptContext): string {
-  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
-  if (ctx.task.description) {
-    lines.push("", wrapUntrustedContent(ctx.task.description));
-  }
-  return section("Task", lines.join("\n"));
-}
 
 function buildPlanSection(planningOutput: Record<string, unknown> | null): string {
   if (!planningOutput) {

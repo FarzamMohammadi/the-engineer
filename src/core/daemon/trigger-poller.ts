@@ -3,7 +3,7 @@ import { AdapterTypes, type TriggerEvent } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { ExternalRef } from "../../schemas/task.js";
 import { TaskStates } from "../../schemas/task.js";
-import { extractErrorMessage } from "../../utils/errors.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { TriggerPollerContext } from "./types.js";
 
@@ -154,7 +154,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
         trigger_id: pluginId,
         consecutive_failures: failures,
         threshold: config.plugins.consecutive_failures_threshold,
-        last_error: extractErrorMessage(error),
+        last_error: sanitizeErrorMessage(error),
         last_success: null,
       },
     } satisfies PublishInput<"health.trigger_failure">);

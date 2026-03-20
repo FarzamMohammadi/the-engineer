@@ -160,17 +160,7 @@ export function createReviewHandler(
       // PR is merged — still clean up workspace and notify, even if transition failed
     }
 
-    try {
-      workspaceManager.cleanupWorkspace(task.id, true);
-    } catch (err) {
-      observer.warn("Workspace cleanup failed after PR merge", {
-        taskId: task.id,
-        error: sanitizeErrorMessage(err),
-      });
-    }
-    notifications.sendCompletion(task.id);
-    notifications.commentOnTaskIssue(task.id, "PR merged — task completed.");
-    callbacks.onTaskCompletionFinalized(task.id);
+    finalizeTaskCompletion(task.id, "PR merged — task completed.");
     observer.info("PR merged — task completed", {
       taskId: task.id,
       prNumber: task.review?.pr_number,
@@ -583,14 +573,20 @@ export function createReviewHandler(
       });
   }
 
-  /** Finalize task completion: workspace cleanup, notification, child-done check. */
-  function finalizeTaskCompletion(taskId: string): void {
+  /** Finalize task completion: workspace cleanup, notification, issue comment, child-done check. */
+  function finalizeTaskCompletion(taskId: string, commentMessage?: string): void {
     try {
       workspaceManager.cleanupWorkspace(taskId, true);
-    } catch {
-      observer.warn("Workspace cleanup failed after code approval", { taskId });
+    } catch (err) {
+      observer.warn("Workspace cleanup failed during completion", {
+        taskId,
+        error: sanitizeErrorMessage(err),
+      });
     }
     notifications.sendCompletion(taskId);
+    if (commentMessage) {
+      notifications.commentOnTaskIssue(taskId, commentMessage);
+    }
     callbacks.onTaskCompletionFinalized(taskId);
   }
 
@@ -610,6 +606,9 @@ export function createReviewHandler(
           .mergePR(repo, prNumber, "squash")
           .then((result) => {
             try {
+              const mergeComment = result.success
+                ? `Code approved — PR #${String(prNumber)} auto-merged.`
+                : undefined;
               if (result.success) {
                 taskEngine.updateTaskField(payload.task_id, "review", {
                   ...(task.review ?? {
@@ -620,10 +619,6 @@ export function createReviewHandler(
                   }),
                   pr_state: "merged",
                 });
-                notifications.commentOnTaskIssue(
-                  payload.task_id,
-                  `Code approved — PR #${String(prNumber)} auto-merged.`,
-                );
               }
               taskEngine.requestTransition(
                 payload.task_id,
@@ -632,7 +627,7 @@ export function createReviewHandler(
                 "code_approved_merged",
                 "daemon",
               );
-              finalizeTaskCompletion(payload.task_id);
+              finalizeTaskCompletion(payload.task_id, mergeComment);
             } catch (postMergeErr) {
               // Merge succeeded but post-processing failed — still complete the task
               observer.error("Auto-merge succeeded but post-processing failed", {
@@ -661,11 +656,10 @@ export function createReviewHandler(
               "code_approved",
               "daemon",
             );
-            notifications.commentOnTaskIssue(
+            finalizeTaskCompletion(
               payload.task_id,
               "Code approved — auto-merge failed, please merge manually.",
             );
-            finalizeTaskCompletion(payload.task_id);
           });
       } else {
         taskEngine.requestTransition(
@@ -675,8 +669,7 @@ export function createReviewHandler(
           "code_approved",
           "daemon",
         );
-        notifications.commentOnTaskIssue(payload.task_id, "Code review approved — ready to merge.");
-        finalizeTaskCompletion(payload.task_id);
+        finalizeTaskCompletion(payload.task_id, "Code review approved — ready to merge.");
       }
       observer.info("Code approved — task completing", {
         taskId: payload.task_id,
@@ -713,6 +706,8 @@ export function createReviewHandler(
         );
         return;
       }
+      // Clear stale dedup key so re-polling after rework doesn't suppress events
+      emittedFeedbackKeys.delete(payload.task_id);
       notifications.commentOnTaskIssue(
         payload.task_id,
         `Reviewer feedback received (${payload.feedback_type}) — reworking.`,

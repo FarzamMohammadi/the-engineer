@@ -273,14 +273,17 @@ export function createTaskScheduler(
       });
       return;
     }
-    checkAndEmitChildrenAllDone(taskId);
     try {
       workspaceManager.cleanupWorkspace(taskId, true);
-    } catch {
-      observer.warn("Workspace cleanup failed after completion", { taskId });
+    } catch (err) {
+      observer.warn("Workspace cleanup failed after completion", {
+        taskId,
+        error: sanitizeErrorMessage(err),
+      });
     }
     notifications.sendCompletion(taskId);
     notifications.commentOnTaskIssue(taskId, "Task completed successfully.");
+    checkAndEmitChildrenAllDone(taskId);
     const completedTask = taskEngine.getTask(taskId);
     observer.info("Task completed", {
       taskId,

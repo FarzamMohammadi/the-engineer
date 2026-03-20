@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
 import { createNotificationRouter } from "./notification-router.js";
 import type { NotificationRouterContext } from "./types.js";
@@ -19,56 +18,9 @@ function createMockCommPlugin(overrides?: { id?: string; capabilities?: string[]
   };
 }
 
-function makeDaemonConfig(): DaemonConfig {
-  return {
-    max_concurrent: 1,
-    tick_interval_ms: 5_000,
-    preemption_threshold: 20,
-    preemption_timeout_ms: 60_000,
-    stuck_threshold_ms: 1_800_000,
-    max_active_duration_ms: 28_800_000,
-    aging_threshold_ms: 86_400_000,
-    aging_increment: 5,
-    aging_interval_ms: 86_400_000,
-    aging_cap: 75,
-    shutdown_timeout_ms: 30_000,
-    trigger_poll_interval_ms: 30_000,
-    seen_keys_ttl_ms: 86_400_000,
-    logging: {
-      level: "error" as const,
-      dir: "logs",
-      max_size_bytes: 524_288_000,
-      max_files: 7,
-      console: false,
-    },
-    plugins: {
-      dirs: [],
-      health_check_interval_ms: 60_000,
-      health_check_timeout_ms: 5_000,
-      consecutive_failures_threshold: 3,
-    },
-    subscriber_warn_threshold_ms: 50,
-    data_lifecycle: {
-      enabled: false,
-      interval_ms: 3_600_000,
-      retention: {
-        events: { max_age_days: 90, max_count: null },
-        observations: { max_age_days: 90, max_count: null },
-        journal_entries: { max_age_days: 90, max_count: null },
-        checkpoints: { max_age_days: 90, max_count: null },
-      },
-      vacuum_on_cleanup: true,
-    },
-    database: { cache_size_mb: 64 },
-    review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
-  };
-}
-
 function createMockContext(pluginOverrides?: ReturnType<typeof createMockCommPlugin>[]) {
   const commPlugins = pluginOverrides ?? [];
   return {
-    config: makeDaemonConfig(),
-    eventBus: {} as NotificationRouterContext["eventBus"],
     registry: {
       getPluginsByType: vi.fn().mockReturnValue(commPlugins),
     } as unknown as NotificationRouterContext["registry"],
@@ -79,7 +31,6 @@ function createMockContext(pluginOverrides?: ReturnType<typeof createMockCommPlu
       getOwner: vi.fn().mockReturnValue(null),
       getReviewers: vi.fn().mockReturnValue([]),
     } as unknown as NotificationRouterContext["peopleDirectory"],
-    clock: { now: () => Date.now() },
     observer: createTestObserverFacade("daemon"),
   } as unknown as NotificationRouterContext;
 }

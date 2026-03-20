@@ -314,3 +314,11 @@ Accumulated across all merge rounds. Nothing gets lost.
 - Checkpoint fields always empty (`lastEventId: ""`, `workspaceRef: null`, `journalOffset: 0` in phase-runner.ts) — schema is correct, fields designed for richer checkpoints not yet implemented
 - Unused config fields (`auto_threshold_ms`, `suggest_threshold_ms`, `min_child_size_ms`, `always_create`, `tui_base_project`, `aggregate_file_reads`) — in config schema layer, not Phase 4-7 production code; should be addressed in a config-focused lens
 - `parseGitHubUrl()` duplicated in trigger-poller.ts vs github-utils.ts — by design (Core can't import from plugins)
+
+## Round 3 — review
+
+### Lens I (Consistency & Patterns)
+- **C3:** Test helper duplication — `makeDaemonConfig()` duplicated in 3 test files with different defaults and different override support; mock notification routers duplicated with inconsistent naming (`create*` vs `make*`). Tolerable for test code; defer to test infrastructure cleanup pass.
+
+### Lens J (Minimalism & Dead Code)
+- None. Phases 8-10 are remarkably clean — no dead exports, no stale TODOs, no unused code paths, no redundant abstractions.

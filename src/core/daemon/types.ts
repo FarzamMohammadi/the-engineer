@@ -45,7 +45,6 @@ export type TaskSchedulerContext = Pick<
   | "orchestrator"
   | "sessionMemory"
   | "workspaceManager"
-  | "clock"
   | "observer"
 >;
 
@@ -80,5 +79,5 @@ export type ReviewHandlerContext = Pick<
 
 export type NotificationRouterContext = Pick<
   DaemonContext,
-  "config" | "eventBus" | "registry" | "taskEngine" | "peopleDirectory" | "clock" | "observer"
+  "registry" | "taskEngine" | "peopleDirectory" | "observer"
 >;

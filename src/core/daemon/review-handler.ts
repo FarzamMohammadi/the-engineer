@@ -66,12 +66,6 @@ const SELF_COMMENT_PREFIXES = [
   "Task picked up",
 ];
 
-/** Time window for failure counting (5 minutes). */
-const FAILURE_WINDOW_MS = 300_000;
-
-/** Max recent failures in window before skipping review polling. */
-const MAX_RECENT_FAILURES = 3;
-
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createReviewHandler(
@@ -80,6 +74,10 @@ export function createReviewHandler(
   callbacks: ReviewHandlerCallbacks,
 ): ReviewHandler {
   const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, observer } = ctx;
+
+  // Circuit breaker thresholds — configurable for operators with slow/self-hosted git hosting
+  const failureWindowMs = ctx.config.review_polling.failure_window_ms;
+  const maxFailuresBeforePause = ctx.config.review_polling.max_failures_before_pause;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const emittedFeedbackKeys = new Map<string, string>();
@@ -92,11 +90,11 @@ export function createReviewHandler(
 
   function shouldSkipReviewPolling(now: number): boolean {
     // Clean up old failures outside the window
-    const windowStart = now - FAILURE_WINDOW_MS;
+    const windowStart = now - failureWindowMs;
     while (reviewApiFailures.length > 0 && (reviewApiFailures[0]?.timestamp ?? 0) < windowStart) {
       reviewApiFailures.shift();
     }
-    return reviewApiFailures.length >= MAX_RECENT_FAILURES;
+    return reviewApiFailures.length >= maxFailuresBeforePause;
   }
 
   function recordReviewApiFailure(now: number): void {
@@ -164,8 +162,11 @@ export function createReviewHandler(
 
     try {
       workspaceManager.cleanupWorkspace(task.id, true);
-    } catch {
-      observer.warn("Workspace cleanup failed after PR merge", { taskId: task.id });
+    } catch (err) {
+      observer.warn("Workspace cleanup failed after PR merge", {
+        taskId: task.id,
+        error: sanitizeErrorMessage(err),
+      });
     }
     notifications.sendCompletion(task.id);
     notifications.commentOnTaskIssue(task.id, "PR merged — task completed.");
@@ -258,8 +259,13 @@ export function createReviewHandler(
           return !SELF_COMMENT_PREFIXES.some((marker) => body.startsWith(marker));
         })
         .map((c) => `@${c.author}: ${c.body.trim()}`);
-    } catch {
-      return []; // Non-critical — proceed with review data only
+    } catch (err) {
+      observer.debug("Failed to fetch PR comments — proceeding with review data only", {
+        repo,
+        prNumber,
+        error: sanitizeErrorMessage(err),
+      });
+      return [];
     }
   }
 
@@ -404,7 +410,10 @@ export function createReviewHandler(
 
     // Time-windowed failure check
     if (shouldSkipReviewPolling(now)) {
-      observer.debug("Skipping review feedback polling — too many recent API failures");
+      observer.warn("Skipping review feedback polling — too many recent API failures", {
+        recentFailures: reviewApiFailures.length,
+        windowMs: failureWindowMs,
+      });
       return;
     }
 
@@ -481,6 +490,12 @@ export function createReviewHandler(
     taskEngine.updateTaskField(payload.task_id, "review", {
       ...currentReview,
       feedback_rounds: [...currentReview.feedback_rounds, newRound],
+    });
+    observer.debug("Feedback round stored", {
+      taskId: payload.task_id,
+      stage: payload.stage,
+      feedbackType: payload.feedback_type,
+      commentCount: comments.length,
     });
   }
 
@@ -590,6 +605,7 @@ export function createReviewHandler(
 
       const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
       if (autoMergeAllowed && prNumber && repo && hosting) {
+        observer.info("Attempting auto-merge", { taskId: payload.task_id, prNumber, repo });
         hosting
           .mergePR(repo, prNumber, "squash")
           .then((result) => {
@@ -620,7 +636,7 @@ export function createReviewHandler(
             } catch (postMergeErr) {
               // Merge succeeded but post-processing failed — still complete the task
               observer.error("Auto-merge succeeded but post-processing failed", {
-                err: postMergeErr,
+                error: sanitizeErrorMessage(postMergeErr),
                 taskId: payload.task_id,
               });
               taskEngine.requestTransition(
@@ -635,7 +651,7 @@ export function createReviewHandler(
           })
           .catch((mergeErr) => {
             observer.warn("Auto-merge API call failed", {
-              err: mergeErr,
+              error: sanitizeErrorMessage(mergeErr),
               taskId: payload.task_id,
             });
             taskEngine.requestTransition(

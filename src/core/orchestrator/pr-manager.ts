@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
+import { ObservationType } from "../../schemas/observer.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../schemas/session-memory.js";
@@ -59,6 +60,7 @@ export function createPrManager(
     demoPrepOutput: PhaseOutput,
     dispatch: Dispatch,
   ): Promise<boolean> {
+    const prStart = Date.now();
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
       observer.warn("No workspace path — skipping PR workflow", { taskId });
@@ -72,6 +74,12 @@ export function createPrManager(
     }
 
     const isRework = dispatch.task.review?.pr_number != null;
+    const span = observer.startSpan(
+      ObservationType.PLUGIN_CALL,
+      "pr_workflow",
+      { taskId, repo: record.repo, branch: record.branch, isRework },
+      { task_id: taskId },
+    );
     observer.info("Starting PR workflow", {
       taskId,
       repo: record.repo,
@@ -116,6 +124,8 @@ export function createPrManager(
         taskId,
         error: sanitizeErrorMessage(error),
       });
+      span.setError(error);
+      span.end({ step: "commit", success: false, elapsedMs: Date.now() - prStart });
       return false;
     }
 
@@ -129,6 +139,7 @@ export function createPrManager(
         ).trim();
         if (aheadCount === "0") {
           observer.warn("No commits ahead of base — skipping PR workflow", { taskId });
+          span.end({ step: "ahead_check", success: false, elapsedMs: Date.now() - prStart });
           return false;
         }
         observer.debug("Commits ahead of base", { taskId, aheadCount });
@@ -137,6 +148,7 @@ export function createPrManager(
           taskId,
           error: sanitizeErrorMessage(error),
         });
+        span.end({ step: "ahead_check", success: false, elapsedMs: Date.now() - prStart });
         return false;
       }
     }
@@ -152,6 +164,8 @@ export function createPrManager(
         taskId,
         error: sanitizeErrorMessage(error),
       });
+      span.setError(error);
+      span.end({ step: "push", success: false, elapsedMs: Date.now() - prStart });
       return false;
     }
 
@@ -166,6 +180,12 @@ export function createPrManager(
         });
       }
       notifier.commentOnSourceIssue(dispatch, "Pushed rework addressing review feedback.");
+      observer.info("Rework pushed to existing PR", {
+        taskId,
+        prNumber: dispatch.task.review?.pr_number,
+        elapsedMs: Date.now() - prStart,
+      });
+      span.end({ step: "rework_push", success: true, elapsedMs: Date.now() - prStart });
       return true;
     }
 
@@ -173,6 +193,7 @@ export function createPrManager(
     const gitHosting = ctx.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!gitHosting) {
       observer.warn("No git hosting plugin — skipping PR creation", { taskId });
+      span.end({ step: "pr_create", success: false, elapsedMs: Date.now() - prStart });
       return false;
     }
 
@@ -203,14 +224,17 @@ export function createPrManager(
         feedback_rounds: [],
       });
 
+      const elapsedMs = Date.now() - prStart;
       observer.info("Draft PR created", {
         taskId,
         prNumber: prResult.pr_number,
         url: prResult.url,
+        elapsedMs,
       });
 
       notifier.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
       notifier.commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
+      span.end({ step: "pr_create", success: true, prNumber: prResult.pr_number, elapsedMs });
       return true;
     } catch (error) {
       recordPrWorkflowError(sessionId, taskId, "pr_creation", error);
@@ -218,6 +242,8 @@ export function createPrManager(
         taskId,
         error: sanitizeErrorMessage(error),
       });
+      span.setError(error);
+      span.end({ step: "pr_create", success: false, elapsedMs: Date.now() - prStart });
       return false;
     }
   }

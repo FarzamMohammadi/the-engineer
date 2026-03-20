@@ -48,6 +48,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
       vacuum_on_cleanup: true,
     },
     database: { cache_size_mb: 64 },
+    review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
     ...overrides,
   };
 }

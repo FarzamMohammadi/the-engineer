@@ -466,6 +466,8 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
       label: "Auto-merge",
       status: "warn",
       message: "Auto-merge is enabled by default — PRs will merge without human review",
+      remedy:
+        "Set merge.auto_merge_after_approval.default: false in safety.yaml, use per-repo overrides for trusted repos",
     });
   }
 
@@ -489,6 +491,8 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
       label: "Cost limits",
       status: "warn",
       message: "No daily or monthly cost limits set — spending is unbounded",
+      remedy:
+        "Set daily cost_usd: 25.0 and monthly cost_usd: 250.0 in safety.yaml for safe starting defaults",
     });
   }
 
@@ -518,6 +522,17 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
       status: "warn",
       message: `aging_cap (${bundle.daemon.aging_cap}) <= aging_increment (${bundle.daemon.aging_increment}) — aging may overshoot the cap in a single step`,
       remedy: "Set aging_cap higher than aging_increment",
+    });
+  }
+
+  // Review reminder too aggressive
+  const reminderAfterMs = bundle.safety.response_timeout.review_pending.reminder_after_ms;
+  if (reminderAfterMs < 3_600_000) {
+    checks.push({
+      label: "Review reminders",
+      status: "warn",
+      message: `review_pending.reminder_after_ms is ${String(reminderAfterMs)}ms (${String(Math.round(reminderAfterMs / 60_000))}min) — reminders under 1 hour may overwhelm reviewers`,
+      remedy: "Set review_pending.reminder_after_ms to at least '1h' in safety.yaml",
     });
   }
 

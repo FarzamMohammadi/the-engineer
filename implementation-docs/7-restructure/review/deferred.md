@@ -263,3 +263,17 @@ Accumulated across all merge rounds. Nothing gets lost.
 ### Lens E (Security & Trust Boundaries)
 - **Prompt injection via reviewer comments:** `wrapUntrustedContent()` provides delimiter-based defense-in-depth. Not cryptographic protection, but appropriate for this desktop agent threat model. The developer reviews all PRs before merging. No code change needed.
 - **Raw error objects in daemon/index.ts and query-handler.ts:** Same pattern as F5, but outside Phase 8-10 scope — should be caught by their respective phase lens reviews.
+
+## Round 2 — phases8-10
+
+### Lens F (Logging & Observability)
+- None — all 13 findings applied.
+
+### Lens G (Performance & Resources)
+- **`isTaskEligible` N+1 queries for pause_siblings** (task-scheduler.ts:112-155): Each queued child with a pause_siblings parent triggers getTask() + getChildren() calls. Bounded by max_concurrent and sequential-only decomposition in v1. Worth revisiting if decomposition goes parallel.
+- **`reviewApiFailures.shift()` O(n)** (review-handler.ts:96): Array bounded to 3 elements — shift() is effectively constant time. Not worth adding complexity.
+- **Re-prepared SQL in data-lifecycle cleanup** (data-lifecycle/index.ts:116): Runs once per hours. Microsecond cost. Not worth caching.
+- **Full observations scan for blob refs** (data-lifecycle/index.ts:156): Indexed by type, runs infrequently. Acceptable.
+
+### Lens H (Config & DX)
+- **F6: Notification templates hardcoded** in `notification-router.ts`. Making them configurable requires a template engine + config schema — deferred to future consideration.

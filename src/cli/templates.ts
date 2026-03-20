@@ -69,6 +69,11 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 
 # --- Event bus ---
 # subscriber_warn_threshold_ms: 50    # Warn if a subscriber callback takes longer than this (default: 50)
+
+# --- Review polling (circuit breaker for git hosting API failures) ---
+# review_polling:
+#   failure_window_ms: "5m"              # Time window for failure counting (default: 5m)
+#   max_failures_before_pause: 3         # Failures in window before pausing polling (default: 3)
 `;
 
 export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engineer
@@ -209,7 +214,7 @@ export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
 # pr:
 #   default_merge_strategy: squash           # squash | merge | rebase
 #   delete_branch_after_merge: true
-#   branch_retention_days: null              # null = no retention limit
+#   branch_retention_days: null              # Days to retain branches after merge. null = preserve indefinitely.
 
 # --- Cleanup ---
 # cleanup:
@@ -492,7 +497,9 @@ response_timeout:
 merge:
   auto_merge_after_approval:
     default: false                        # Auto-merge PRs after approval (default: false)
-    repos: {}                             # Per-repo overrides: { "owner/repo": true }
+    repos: {}                             # Per-repo overrides, e.g.:
+    # repos:
+    #   owner/internal-docs: true         # Auto-merge for low-risk repos
 `;
 
 export const EXAMPLE_WORKSPACE = `# ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -514,7 +521,7 @@ git_token_env: GIT_TOKEN                  # Env var name for git auth token (def
 pr:
   default_merge_strategy: squash          # squash | merge | rebase (default: squash)
   delete_branch_after_merge: true         # Delete branch after PR merge (default: true)
-  branch_retention_days: null             # Days to keep branches, null = forever (default: null)
+  branch_retention_days: null             # Days to retain branches after merge. null = preserve indefinitely (default: null).
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 cleanup:

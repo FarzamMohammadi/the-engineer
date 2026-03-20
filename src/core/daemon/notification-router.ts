@@ -109,6 +109,11 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
   ): void {
     const people = resolveRecipients(recipients);
     if (people.length === 0) {
+      observer.debug("No recipients resolved — skipping notification", {
+        taskId,
+        recipients,
+        logLabel,
+      });
       return;
     }
 
@@ -128,6 +133,14 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
             { user_id: person.id, channel: null },
             { content: formatted, metadata: { task_id: taskId, type: messageType } },
           )
+          .then(() => {
+            observer.debug("Notification sent", {
+              taskId,
+              logLabel,
+              recipientId: person.id,
+              pluginId: comm.manifest.id,
+            });
+          })
           .catch((err) => {
             observer.error(`Failed to send ${logLabel} notification`, {
               error: sanitizeErrorMessage(err),
@@ -237,6 +250,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
       return;
     }
 
+    observer.debug("Commenting on task issue", { taskId, repo, issueNumber: number });
     plugin.commentOnIssue(repo, number, sanitizeSecrets(message)).catch((err) => {
       observer.error("Failed to comment on task issue", {
         error: sanitizeErrorMessage(err),

@@ -196,6 +196,28 @@ export const DaemonConfigSchema = z.object({
     .min(0)
     .default(50)
     .describe("Warn if an EventBus subscriber callback exceeds this duration (ms). 0 = disabled."),
+
+  // Review polling circuit breaker (Lens H)
+  review_polling: z
+    .object({
+      failure_window_ms: z
+        .number()
+        .int()
+        .positive()
+        .default(300_000)
+        .describe(
+          "Time window for counting review API failures before pausing polling. Default: 5 minutes.",
+        ),
+      max_failures_before_pause: z
+        .number()
+        .int()
+        .positive()
+        .default(3)
+        .describe(
+          "Number of review API failures within the failure window before pausing polling. Default: 3.",
+        ),
+    })
+    .default({}),
 });
 export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 
@@ -522,8 +544,22 @@ export const ResponseTimeoutSchema = z.object({
     .default({}),
   review_pending: z
     .object({
-      reminder_after_ms: z.number().int().positive().default(86_400_000),
-      repeat_interval_ms: z.number().int().positive().default(86_400_000),
+      reminder_after_ms: z
+        .number()
+        .int()
+        .positive()
+        .default(86_400_000)
+        .describe(
+          "Time before first review reminder. Accepts duration strings in config (e.g. '1d'). Default: 1 day.",
+        ),
+      repeat_interval_ms: z
+        .number()
+        .int()
+        .positive()
+        .default(86_400_000)
+        .describe(
+          "Interval between repeated review reminders. Accepts duration strings in config (e.g. '1d'). Default: 1 day.",
+        ),
     })
     .default({}),
 });

@@ -362,6 +362,40 @@ describe("checkRiskyConfig", () => {
     const schedulingWarns = result.checks.filter((c) => schedulingLabels.includes(c.label));
     expect(schedulingWarns).toHaveLength(0);
   });
+
+  it("includes remedy on auto-merge warning", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.merge.auto_merge_after_approval.default = true;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Auto-merge");
+    expect(warn?.remedy).toBeDefined();
+    expect(warn?.remedy).toContain("per-repo");
+  });
+
+  it("includes remedy on cost limits warning", () => {
+    const bundle = makeSafeBundle();
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Cost limits");
+    expect(warn?.remedy).toBeDefined();
+    expect(warn?.remedy).toContain("25.0");
+  });
+
+  it("warns when review_pending.reminder_after_ms is under 1 hour", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.response_timeout.review_pending.reminder_after_ms = 600_000; // 10 minutes
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Review reminders");
+    expect(warn?.status).toBe("warn");
+    expect(warn?.remedy).toContain("1h");
+  });
+
+  it("does not warn when review_pending.reminder_after_ms is 1 hour or more", () => {
+    const bundle = makeSafeBundle();
+    bundle.safety.response_timeout.review_pending.reminder_after_ms = 3_600_000;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Review reminders");
+    expect(warn).toBeUndefined();
+  });
 });
 
 // ── Aggregation ───────────────────────────────────────────────────────────
@@ -489,6 +523,7 @@ function makeSafeBundle() {
       },
       database: { cache_size_mb: 64 },
       subscriber_warn_threshold_ms: 50,
+      review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
     },
     orchestrator: {} as ReturnType<
       typeof import("../../schemas/config.js").OrchestratorConfigSchema.parse

@@ -135,17 +135,12 @@ export function createTaskScheduler(
 
     if (parent.cascade_policy === "pause_siblings") {
       const siblings = taskEngine.getChildren(task.parent_id);
-      const hasActiveSibling = siblings.some(
-        (s) => s.id !== task.id && s.state === TaskStates.active,
-      );
-      if (hasActiveSibling) {
-        const activeSiblingId = siblings.find(
-          (s) => s.id !== task.id && s.state === TaskStates.active,
-        )?.id;
+      const activeSibling = siblings.find((s) => s.id !== task.id && s.state === TaskStates.active);
+      if (activeSibling) {
         observer.debug("Task not eligible: pause_siblings — sibling still active", {
           taskId: task.id,
           parentId: task.parent_id,
-          activeSiblingId,
+          activeSiblingId: activeSibling.id,
         });
         return false;
       }
@@ -232,7 +227,7 @@ export function createTaskScheduler(
         } catch (callbackError) {
           observer.error("onTaskCompleted callback threw unexpectedly", {
             taskId: task.id,
-            error: callbackError,
+            error: sanitizeErrorMessage(callbackError),
           });
         }
       },
@@ -242,7 +237,7 @@ export function createTaskScheduler(
         } catch (callbackError) {
           observer.error("onTaskError callback threw unexpectedly", {
             taskId: task.id,
-            error: callbackError,
+            error: sanitizeErrorMessage(callbackError),
           });
         }
       },
@@ -286,7 +281,12 @@ export function createTaskScheduler(
     }
     notifications.sendCompletion(taskId);
     notifications.commentOnTaskIssue(taskId, "Task completed successfully.");
-    observer.info("Task completed", { taskId });
+    const completedTask = taskEngine.getTask(taskId);
+    observer.info("Task completed", {
+      taskId,
+      title: completedTask?.title,
+      prNumber: completedTask?.review?.pr_number,
+    });
   }
 
   function handleErrorOutcome(taskId: string, result: ExecuteTaskResult): void {
@@ -426,7 +426,7 @@ export function createTaskScheduler(
       // Last-resort: if crash recovery itself fails, log and leave stuck detection to find it
       observer.error("Critical: handleTaskError recovery failed — task may be stuck", {
         taskId,
-        recoveryError: innerError,
+        recoveryError: sanitizeErrorMessage(innerError),
       });
     }
   }

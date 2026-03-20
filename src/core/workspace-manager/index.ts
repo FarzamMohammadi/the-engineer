@@ -366,6 +366,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       return; // Idempotent
     }
 
+    const cleanupStart = Date.now();
     this.observer.info("Cleaning up workspace", {
       taskId,
       branch: record.branch,
@@ -400,6 +401,10 @@ export class WorkspaceManager implements IWorkspaceManager {
     }
 
     this.workspaces.delete(taskId);
+    this.observer.debug("Workspace cleaned up", {
+      taskId,
+      elapsedMs: Date.now() - cleanupStart,
+    });
 
     this.eventBus.publish({
       type: EventTypes["workspace.cleaned"],

@@ -53,6 +53,7 @@ function makeDaemonConfig(): DaemonConfig {
       vacuum_on_cleanup: true,
     },
     database: { cache_size_mb: 64 },
+    review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
   };
 }
 
@@ -463,6 +464,30 @@ describe("ReviewHandler", () => {
 
       // Should have called the API again
       expect(hostingPlugin.getReviewStatus).toHaveBeenCalled();
+    });
+
+    it("respects configurable max_failures_before_pause threshold", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+
+      // Override config to pause after just 1 failure
+      (ctx.config as { review_polling: { max_failures_before_pause: number } }).review_polling = {
+        ...ctx.config.review_polling,
+        max_failures_before_pause: 1,
+      };
+      // Re-create handler with the updated config
+      handler = createReviewHandler(ctx, notifications, callbacks);
+
+      hostingPlugin.getReviewStatus.mockRejectedValue(new Error("API down"));
+
+      // 1 failure should be enough to trigger the circuit breaker
+      await handler.checkFeedback();
+
+      hostingPlugin.getReviewStatus.mockClear();
+      hostingPlugin.getPRStatus.mockClear();
+
+      await handler.checkFeedback();
+      expect(hostingPlugin.getReviewStatus).not.toHaveBeenCalled();
     });
   });
 

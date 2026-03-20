@@ -18,6 +18,7 @@ import type { Person } from "../../src/schemas/adapters.js";
 import type { DaemonConfig, SafetyConfig, WorkspaceConfig } from "../../src/schemas/config.js";
 import {
   DaemonConfigSchema,
+  OrchestratorConfigSchema,
   PeopleConfigSchema,
   SafetyConfigSchema,
   WorkspaceConfigSchema,
@@ -151,6 +152,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
 
   // 10. Orchestrator
   const orchestrator = new Orchestrator({
+    config: OrchestratorConfigSchema.parse({}),
     eventBus,
     registry,
     taskEngine,

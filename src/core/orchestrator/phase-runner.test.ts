@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
@@ -19,9 +20,12 @@ import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function createMockContext(): OrchestratorContext {
+function createMockContext(
+  configOverrides?: Partial<Parameters<typeof OrchestratorConfigSchema.parse>[0]>,
+): OrchestratorContext {
   let checkpointCounter = 0;
   return {
+    config: OrchestratorConfigSchema.parse(configOverrides ?? {}),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),
@@ -466,6 +470,78 @@ describe("PhaseRunner", () => {
         expect(result.reason).toContain("AndonCord pulled");
         expect(result.reason).toContain("secret detected");
       }
+    });
+  });
+
+  describe("config-driven behavior", () => {
+    it("respects custom max_loopbacks_before_alert from config", async () => {
+      const ctx = createMockContext({ phases: { max_loopbacks_before_alert: 5 } });
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          vi.fn(() => {
+            if (phase === Phases.self_review) {
+              return Promise.resolve(
+                makeOutput(Phases.self_review, {
+                  findings: ["issue"],
+                  refactoring_applied: [],
+                  quality_assessment: "needs_work",
+                }),
+              );
+            }
+            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
+          }),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+
+      // At loopbackCount 4 (below custom threshold of 5), should still loop back
+      const result = await runPhasePipeline(
+        createDispatch(),
+        createState({ loopbackCount: 4 }),
+        deps,
+      );
+
+      // It loops back once (4→5), then hits threshold (5→alert, no loop)
+      expect(result.outcome).toBe("completed");
+      // Loopback happened (execution handler called more than once)
+      const executionCalls = (handlerFns[Phases.execution] as ReturnType<typeof vi.fn>).mock.calls;
+      expect(executionCalls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("disables fast-path when config.fast_path.enabled is false", async () => {
+      const ctx = createMockContext({ fast_path: { enabled: false } });
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(
+          phase,
+          phase === Phases.intake_analysis
+            ? makeOutput(Phases.intake_analysis, {
+                complexity: "trivial",
+                estimated_phases: [],
+                ambiguities: [],
+                fast_path: true,
+                decomposition_likely: false,
+              })
+            : makeOutput(phase),
+        );
+      }
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      // All 7 phases should have checkpoints (fast-path disabled)
+      const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
+        .calls;
+      expect(checkpointCalls.length).toBe(7);
     });
   });
 

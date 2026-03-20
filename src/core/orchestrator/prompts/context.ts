@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { sanitizeSecrets } from "../../../utils/sanitize.js";
+import type { IObserver } from "../../observer/index.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,26 +46,49 @@ export interface RepoContext {
  * Uses sync I/O (matching WorkspaceManager pattern). Every operation is
  * wrapped in try/catch — partial context is better than no context.
  */
-export function gatherRepoContext(worktreePath: string): RepoContext {
+export function gatherRepoContext(worktreePath: string, observer?: IObserver): RepoContext {
   const readme = readReadme(worktreePath);
+  const directoryTree = readDirectoryTree(worktreePath);
+  const recentCommits = readRecentCommits(worktreePath);
+  const gitBranch = readGitBranch(worktreePath);
   const packageInfo = readPackageInfo(worktreePath);
-  return {
+
+  const context: RepoContext = {
     readme: readme ? sanitizeSecrets(readme) : null,
-    directoryTree: sanitizeSecrets(readDirectoryTree(worktreePath)),
-    recentCommits: sanitizeSecrets(readRecentCommits(worktreePath)),
-    gitBranch: readGitBranch(worktreePath),
+    directoryTree: sanitizeSecrets(directoryTree),
+    recentCommits: sanitizeSecrets(recentCommits),
+    gitBranch,
     packageInfo: packageInfo ? sanitizeSecrets(packageInfo) : null,
   };
+
+  if (observer) {
+    const hasBranch = gitBranch !== "(branch unavailable)";
+    const hasTree = directoryTree !== "(directory tree unavailable)";
+    const hasCommits = recentCommits !== "(git log unavailable)";
+    observer.debug("Repo context gathered", {
+      worktreePath,
+      hasReadme: readme !== null,
+      hasTree,
+      hasCommits,
+      hasBranch,
+      hasPackageInfo: packageInfo !== null,
+    });
+  }
+
+  return context;
 }
 
 /**
  * Safe wrapper: returns null if worktreePath is null (no workspace).
  */
-export function gatherRepoContextSafe(worktreePath: string | null): RepoContext | null {
+export function gatherRepoContextSafe(
+  worktreePath: string | null,
+  observer?: IObserver,
+): RepoContext | null {
   if (!worktreePath) {
     return null;
   }
-  return gatherRepoContext(worktreePath);
+  return gatherRepoContext(worktreePath, observer);
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────

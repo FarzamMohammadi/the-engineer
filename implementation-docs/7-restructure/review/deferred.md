@@ -224,3 +224,19 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **Prompt injection detection heuristic** — Out of scope. The delimiter approach is the standard mitigation; heuristic detection is a separate feature with its own false-positive tradeoffs.
 - **Command-aware policy engine** — Currently the Safety Layer's scope checks pass through for `run_command`. BashTool's `blocked_patterns` is the existing defense. Adding policy engine awareness of dangerous commands could be a future enhancement but risks duplicating BashTool logic.
 - **Prompt blob stored unsanitized** — Confirmed false positive. The `prompt` variable passed to `prompt_content` is already the sanitized version.
+
+## Round 2 — phase7 (Pipeline)
+
+### Lens F (Logging & Observability)
+- **F8 (workspace escape logging):** Deemed acceptable as-is. `WorkspaceEscapeError` is thrown from pure `action-executor.ts`, caught by agent-loop which already logs "Action failed" with the error message. Adding a dedicated security log would require threading observer through a pure module.
+
+### Lens G (Performance & Resources)
+- None. All findings were either clean or negligible. No code changes warranted.
+
+### Lens H (Config & DX)
+- **Notification config** (suppress_window_ms, batch_window_ms, quiet_hours, digest, fast_path_collapse) — loaded but not consumed; the notification batching/suppression features aren't built yet
+- **Decomposition config** (auto_threshold_ms, suggest_threshold_ms, min_child_size_ms) — loaded but not consumed; decomposition is currently LLM-judgment-driven, no threshold comparison logic exists
+- **Demo config** (always_create, tui_base_project) — no code path consumes these values
+- **Journal config** (aggregate_file_reads) — no aggregation logic built yet
+- **Question batching config** (batch_window_ms, max_batch_size) — no batching logic built yet
+- **LLM retry constants** (MAX_LLM_RETRIES=3, LLM_RETRY_BASE_MS=1000) — intentionally not in config schema; these are implementation details, not operator knobs

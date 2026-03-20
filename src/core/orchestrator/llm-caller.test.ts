@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { CompletionResult } from "../../schemas/adapters.js";
+import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
 import type { OrchestratorContext } from "./types.js";
 
@@ -8,6 +9,7 @@ import type { OrchestratorContext } from "./types.js";
 
 function createMockContext(overrides?: Partial<OrchestratorContext>): OrchestratorContext {
   return {
+    config: OrchestratorConfigSchema.parse({}),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),

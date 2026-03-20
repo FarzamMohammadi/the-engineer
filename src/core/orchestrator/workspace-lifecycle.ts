@@ -128,7 +128,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
 
         plugin.sendMessage(target, formatted).catch((err: unknown) => {
           // Non-blocking — notification failures must never interrupt the pipeline.
-          ctx.observer.debug("Milestone notification send failed", {
+          ctx.observer.warn("Milestone notification send failed", {
             taskId,
             channel: contact.channel,
             error: err instanceof Error ? err.message : String(err),
@@ -138,7 +138,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
     } catch (err) {
       // Unexpected error in the notification helper itself (not a send failure).
       // Send failures are caught above; this catch guards against bugs in the routing logic.
-      ctx.observer.debug("Unexpected error in notifyMilestone", {
+      ctx.observer.warn("Unexpected error in notifyMilestone", {
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -166,7 +166,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
         .commentOnIssue(externalRef.repo, externalRef.number, sanitizeSecrets(message))
         .catch((err: unknown) => {
           // Non-blocking — issue comment failures must never interrupt the pipeline.
-          ctx.observer.debug("Issue comment failed", {
+          ctx.observer.warn("Issue comment failed", {
             repo: externalRef.repo,
             number: externalRef.number,
             error: err instanceof Error ? err.message : String(err),
@@ -174,7 +174,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
         });
     } catch (err) {
       // Unexpected error in the comment helper itself (not a send failure).
-      ctx.observer.debug("Unexpected error in commentOnSourceIssue", {
+      ctx.observer.warn("Unexpected error in commentOnSourceIssue", {
         error: err instanceof Error ? err.message : String(err),
       });
     }

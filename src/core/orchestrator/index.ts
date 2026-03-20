@@ -189,7 +189,7 @@ export class Orchestrator {
     // Gather repo context once — avoids 5 sync I/O ops × 7 phases per task.
     // Re-gathered after execution phase (the only phase that modifies files).
     const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath);
+    const repoContext = gatherRepoContextSafe(worktreePath, this.ctx.observer);
 
     const state: PipelineState = {
       traceId,
@@ -223,6 +223,11 @@ export class Orchestrator {
     if (!task || task.state !== TaskStates.blocked) {
       return false;
     }
+
+    this.ctx.observer.info("Attempting self-unblock", {
+      taskId,
+      blockedReason: task.blocked?.reason ?? "unknown",
+    });
 
     const llm = this.ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
     if (!llm) {
@@ -264,8 +269,14 @@ export class Orchestrator {
       this.llmCaller.emitCostIncurred(taskId, pipelineResult.result);
 
       const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean };
-      return parsed.can_resolve === true;
-    } catch {
+      const canResolve = parsed.can_resolve === true;
+      this.ctx.observer.info("Self-unblock diagnosis result", { taskId, canResolve });
+      return canResolve;
+    } catch (err) {
+      this.ctx.observer.warn("Self-unblock failed", {
+        taskId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return false;
     }
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
@@ -13,6 +14,7 @@ import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 function createMockContext(): OrchestratorContext {
   let taskCounter = 0;
   return {
+    config: OrchestratorConfigSchema.parse({}),
     eventBus: { publish: vi.fn() } as unknown as OrchestratorContext["eventBus"],
     registry: {
       getPrimaryPlugin: vi.fn().mockReturnValue(null),

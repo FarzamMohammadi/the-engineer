@@ -150,6 +150,11 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         }
       }
     }
+    ctx.observer.error("LLM retries exhausted", {
+      taskId,
+      attempts: MAX_LLM_RETRIES,
+      error: lastError instanceof Error ? lastError.message : String(lastError),
+    });
     throw lastError;
   }
 

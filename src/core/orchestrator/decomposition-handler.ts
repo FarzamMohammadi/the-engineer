@@ -66,6 +66,7 @@ export function createDecompositionHandler(
 
     const plan = parseResult.data;
     const childIds: string[] = [];
+    const decompStart = Date.now();
 
     // Guard against partial child creation: if any child fails to create or
     // transition, log the orphaned IDs and skip decomposition (graceful degradation).
@@ -137,6 +138,7 @@ export function createDecompositionHandler(
       taskId,
       childCount: childIds.length,
       childIds,
+      durationMs: Date.now() - decompStart,
     });
 
     ctx.sessionMemory.addJournalEntry({

@@ -7,7 +7,6 @@ import {
   SessionEndReasons,
 } from "../../schemas/session-memory.js";
 import type { PublishInput } from "../event-bus/index.js";
-import type { IObserver } from "../observer/index.js";
 import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import { PhaseHandlerMissingError } from "./errors.js";
@@ -29,9 +28,6 @@ export { PHASE_SEQUENCE } from "./types.js";
 
 /** Fast-path phases: skip research, planning, demo_prep, integration. */
 const FAST_PATH_PHASES: Phase[] = [Phases.execution, Phases.self_review];
-
-/** Max loopbacks before alerting human (orchestrator.md default: 3). */
-const MAX_LOOPBACKS_BEFORE_ALERT = 3;
 
 // ── Phase Handler Registry ─────────────────────────────────────────────────
 
@@ -113,15 +109,19 @@ interface PhaseCompletionOutcome {
 function applyFastPathIfNeeded(
   intakeOutput: PhaseOutput,
   currentPhases: Phase[],
-  observer: IObserver,
+  ctx: OrchestratorContext,
 ): Phase[] {
+  if (!ctx.config.fast_path.enabled) {
+    ctx.observer.debug("Fast-path disabled by config");
+    return currentPhases;
+  }
   const intakeData = intakeOutput.data as { fast_path?: boolean };
   if (intakeData.fast_path === true) {
     const newPhases = [Phases.intake_analysis, ...FAST_PATH_PHASES];
-    observer.info("Fast-path enabled", { phases: newPhases });
+    ctx.observer.info("Fast-path enabled", { phases: newPhases });
     return newPhases;
   }
-  observer.debug("Fast-path not applied", { phaseCount: currentPhases.length });
+  ctx.observer.debug("Fast-path not applied", { phaseCount: currentPhases.length });
   return currentPhases;
 }
 
@@ -347,7 +347,7 @@ function checkSelfReviewLoopback(
 
   const newLoopbackCount = state.loopbackCount + 1;
 
-  if (newLoopbackCount > MAX_LOOPBACKS_BEFORE_ALERT) {
+  if (newLoopbackCount > ctx.config.phases.max_loopbacks_before_alert) {
     emitLoopbackAlert(sessionId, taskId, newLoopbackCount, assessment, ctx);
     return null;
   }
@@ -426,6 +426,7 @@ async function tryCreatePRAndExitForReview(
     const errMsg = err instanceof Error ? err.message : String(err);
     const errStack = err instanceof Error ? err.stack : "";
     ctx.observer.error("BUG: Post-PR bookkeeping threw (PR already created)", {
+      taskId,
       error: errMsg,
       stack: errStack,
     });
@@ -460,7 +461,7 @@ async function processPhaseCompletion(
 
   // Fast-path: after intake_analysis, check if we should skip phases
   if (phase === Phases.intake_analysis) {
-    phases = applyFastPathIfNeeded(output, phases, ctx.observer);
+    phases = applyFastPathIfNeeded(output, phases, ctx);
   }
 
   // Decomposition: after planning, check if task should be split into children
@@ -527,6 +528,7 @@ async function processPhaseCompletion(
   const isLastPhase = currentIndex === phases.length - 1;
 
   ctx.observer.debug("Phase completion processing", {
+    taskId,
     phase,
     currentIndex,
     phaseCount: phases.length,
@@ -535,7 +537,7 @@ async function processPhaseCompletion(
 
   // Fast-path PR: when self_review is the final phase
   if (phase === Phases.self_review && isLastPhase) {
-    ctx.observer.info("Fast-path PR exit: self_review is last phase, creating PR");
+    ctx.observer.info("Fast-path PR exit: self_review is last phase, creating PR", { taskId });
     const result = await tryCreatePRAndExitForReview(
       sessionId,
       taskId,
@@ -548,6 +550,7 @@ async function processPhaseCompletion(
       prManager,
     );
     ctx.observer.debug("Fast-path PR result", {
+      taskId,
       hasResult: !!result,
       hasReviewPendingResult: !!result?.reviewPendingResult,
     });
@@ -654,12 +657,15 @@ export async function runPhasePipeline(
 
     // Execute the phase handler
     let output: PhaseOutput;
+    ctx.observer.info("Phase starting", { taskId, phase });
+    const phaseStart = Date.now();
     try {
       const handler = handlers.get(phase);
       output = await handler(taskId, dispatch, priorOutputs, currentState);
     } catch (error: unknown) {
       return handlePhaseError(sessionId, taskId, phase, error, ctx);
     }
+    ctx.observer.info("Phase completed", { taskId, phase, durationMs: Date.now() - phaseStart });
 
     priorOutputs.set(phase, output);
 
@@ -667,7 +673,10 @@ export async function runPhasePipeline(
     // This ensures self_review, demo_prep, and integration see the updated state.
     if (phase === Phases.execution) {
       const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
-      currentState = { ...currentState, repoContext: gatherRepoContextSafe(worktreePath) };
+      currentState = {
+        ...currentState,
+        repoContext: gatherRepoContextSafe(worktreePath, ctx.observer),
+      };
     }
 
     // Post-phase processing: decomposition, PR creation, transitions, loopback, preemption.
@@ -726,6 +735,7 @@ export async function runPhasePipeline(
     taskId,
     sessionId,
     phasesRun: phases.length - startIndex,
+    outcome: "completed",
   });
   return { outcome: "completed", phaseOutputs: priorOutputs };
 }

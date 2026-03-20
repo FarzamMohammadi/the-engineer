@@ -1,3 +1,4 @@
+import type { OrchestratorConfig } from "../../schemas/config.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
@@ -16,6 +17,7 @@ import type { RepoContext } from "./prompts/index.js";
 
 /** Shared dependencies available to all Orchestrator subsystems. */
 export interface OrchestratorContext {
+  config: OrchestratorConfig;
   eventBus: IEventBus;
   registry: IPluginLookup;
   taskEngine: ITaskEngine;

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Task } from "../../schemas/task.js";
 import { createAndonCord } from "./andon-cord.js";
@@ -10,6 +11,7 @@ import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 function createMockContext(): OrchestratorContext {
   return {
+    config: OrchestratorConfigSchema.parse({}),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),

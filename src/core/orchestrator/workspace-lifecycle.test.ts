@@ -381,28 +381,6 @@ describe("WorkspaceLifecycle", () => {
       expect(commentOnIssue).toHaveBeenCalled();
     });
   });
-
-  describe("getTaskRepo", () => {
-    it("returns repo from workspace", () => {
-      const ctx = createMockContext();
-      const wl = createWorkspaceLifecycle(ctx);
-      const dispatch = createDispatch({
-        workspace: { repo: "owner/repo", branch: "main", worktree_path: "/tmp" },
-      } as Partial<Task>);
-
-      expect(wl.getTaskRepo(dispatch)).toBe("owner/repo");
-    });
-
-    it("falls back to external_ref", () => {
-      const ctx = createMockContext();
-      const wl = createWorkspaceLifecycle(ctx);
-      const dispatch = createDispatch({
-        external_ref: { type: "github_issue", repo: "other/repo", number: 1 },
-      } as Partial<Task>);
-
-      expect(wl.getTaskRepo(dispatch)).toBe("other/repo");
-    });
-  });
 });
 
 describe("AndonCord", () => {

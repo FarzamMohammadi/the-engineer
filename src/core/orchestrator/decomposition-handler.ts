@@ -8,7 +8,7 @@ import {
 import { JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
 import type { ExecuteTaskResult, OrchestratorContext } from "./types.js";
-import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
+import type { OrchestratorNotifier } from "./workspace-lifecycle.js";
 
 // ── DecompositionHandler Interface ──────────────────────────────────────────
 
@@ -33,7 +33,7 @@ export interface DecompositionHandler {
 /** Create a DecompositionHandler bound to the given OrchestratorContext. */
 export function createDecompositionHandler(
   ctx: OrchestratorContext,
-  workspaceLifecycle: WorkspaceLifecycle,
+  notifier: OrchestratorNotifier,
 ): DecompositionHandler {
   function handleDecomposition(
     sessionId: string,
@@ -151,7 +151,7 @@ export function createDecompositionHandler(
     });
 
     const subtaskList = plan.children.map((c, i) => `${String(i + 1)}. ${c.title}`).join("\n");
-    workspaceLifecycle.commentOnSourceIssue(
+    notifier.commentOnSourceIssue(
       dispatch,
       `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
     );

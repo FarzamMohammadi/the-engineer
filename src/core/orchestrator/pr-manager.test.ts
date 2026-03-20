@@ -6,7 +6,7 @@ import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import { createPrManager } from "./pr-manager.js";
 import type { OrchestratorContext } from "./types.js";
-import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
+import type { OrchestratorNotifier } from "./workspace-lifecycle.js";
 
 // Mock child_process — must be before imports that use it
 vi.mock("node:child_process", () => ({
@@ -75,13 +75,10 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
   } as Dispatch;
 }
 
-function createMockWorkspaceLifecycle(): WorkspaceLifecycle {
+function createMockNotifier(): OrchestratorNotifier {
   return {
-    setupWorkspace: vi.fn(),
-    createSession: vi.fn(),
     notifyMilestone: vi.fn(),
     commentOnSourceIssue: vi.fn(),
-    getTaskRepo: vi.fn().mockReturnValue(""),
   };
 }
 
@@ -95,7 +92,7 @@ describe("PrManager", () => {
   it("returns false when no workspace path", async () => {
     const ctx = createMockContext();
     (ctx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(null);
-    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
+    const pm = createPrManager(ctx, createMockNotifier());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -118,7 +115,7 @@ describe("PrManager", () => {
   it("returns false when no workspace record", async () => {
     const ctx = createMockContext();
     (ctx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue(null);
-    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
+    const pm = createPrManager(ctx, createMockNotifier());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -143,7 +140,7 @@ describe("PrManager", () => {
     mockedExecFileSync.mockImplementation(() => {
       throw new Error("git error");
     });
-    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
+    const pm = createPrManager(ctx, createMockNotifier());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -174,7 +171,7 @@ describe("PrManager", () => {
       }
       return "";
     });
-    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
+    const pm = createPrManager(ctx, createMockNotifier());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -213,7 +210,7 @@ describe("PrManager", () => {
       return "";
     });
 
-    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
+    const pm = createPrManager(ctx, createMockNotifier());
     const dispatch = createDispatch({
       review: {
         pr_number: 42,
@@ -248,6 +245,61 @@ describe("PrManager", () => {
     );
   });
 
+  // SECURITY: PR title is sanitized before sending to GitHub API
+  it("sanitizes task title in PR title and commit message", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 99, url: "https://github.com/pr/99" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    // Simulate staged changes
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { pr_description: "Clean description" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+
+    // Use a title containing a recognizable GitHub token pattern
+    const poisonedTitle = "Fix ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA leak";
+    const dispatch = createDispatch({ title: poisonedTitle } as unknown as Partial<Task>);
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    // Verify commit message has sanitized title
+    const commitCall = mockedExecFileSync.mock.calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes("-m"),
+    );
+    expect(commitCall).toBeDefined();
+    const commitMsg = (commitCall![1] as string[])[2]!;
+    expect(commitMsg).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    expect(commitMsg).toContain("[REDACTED:github_token]");
+
+    // Verify PR title has sanitized title
+    expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.not.stringContaining("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+      }),
+    );
+  });
+
   it("sanitizes PR description before creating PR", async () => {
     const ctx = createMockContext();
     const fakeGitHosting = {
@@ -270,7 +322,7 @@ describe("PrManager", () => {
       return "";
     });
 
-    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
+    const pm = createPrManager(ctx, createMockNotifier());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",

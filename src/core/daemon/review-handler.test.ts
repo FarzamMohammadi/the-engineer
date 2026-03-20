@@ -89,7 +89,7 @@ function createMockNotifications(): NotificationRouter {
 
 function createMockCallbacks(): ReviewHandlerCallbacks {
   return {
-    onTaskMergeComplete: vi.fn(),
+    onTaskCompletionFinalized: vi.fn(),
   };
 }
 
@@ -163,7 +163,7 @@ function buildContext(
         return [];
       }),
       getTask: vi.fn().mockImplementation((id: string) => taskMap.get(id) ?? null),
-      requestTransition: vi.fn(),
+      requestTransition: vi.fn().mockReturnValue({ success: true }),
       updateTaskField: vi.fn(),
     } as unknown as ReviewHandlerContext["taskEngine"],
     safetyLayer: {
@@ -237,14 +237,14 @@ describe("ReviewHandler", () => {
       expect(hostingPlugin.getPRStatus).not.toHaveBeenCalled();
     });
 
-    it("calls onTaskMergeComplete callback after merge", async () => {
+    it("calls onTaskCompletionFinalized callback after merge", async () => {
       const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "merged", draft: false });
 
       await handler.checkMerges();
 
-      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
+      expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("sends completion notification and issue comment on merge", async () => {
@@ -254,7 +254,7 @@ describe("ReviewHandler", () => {
 
       await handler.checkMerges();
 
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1", "Fix the bug");
+      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
       expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
         "task-1",
         "PR merged — task completed.",
@@ -413,6 +413,31 @@ describe("ReviewHandler", () => {
       expect(hostingPlugin.getReviewStatus).not.toHaveBeenCalled();
     });
 
+    // SECURITY: reviewer comments are sanitized before EventBus emission
+    it("sanitizes reviewer comment content in feedback event payload", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
+      hostingPlugin.getReviewStatus.mockResolvedValue({
+        changes_requested: true,
+        approved: false,
+        reviewers: [{ state: "changes_requested", username: "alice" }],
+        comments: ["Found a leak: ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"],
+      });
+      hostingPlugin.getPRComments.mockResolvedValue([]);
+
+      await handler.checkFeedback();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCall = eb.publish.mock.calls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      expect(feedbackCall).toBeDefined();
+      const payload = (feedbackCall?.[0] as { payload: TaskFeedbackReceivedPayload }).payload;
+      expect(payload.content).not.toContain("ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+      expect(payload.content).toContain("[REDACTED:github_token]");
+    });
+
     it("resumes polling after failure window expires", async () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
@@ -552,8 +577,8 @@ describe("ReviewHandler", () => {
         cleanupWorkspace: ReturnType<typeof vi.fn>;
       };
       expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1", "Fix the bug");
-      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
+      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
+      expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("on approved/code with auto-merge: merges PR and completes with cleanup", async () => {
@@ -598,8 +623,8 @@ describe("ReviewHandler", () => {
         cleanupWorkspace: ReturnType<typeof vi.fn>;
       };
       expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1", "Fix the bug");
-      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
+      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
+      expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("on approved/code with auto-merge failure: completes with cleanup", async () => {
@@ -640,8 +665,8 @@ describe("ReviewHandler", () => {
         cleanupWorkspace: ReturnType<typeof vi.fn>;
       };
       expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1", "Fix the bug");
-      expect(callbacks.onTaskMergeComplete).toHaveBeenCalledWith("task-1");
+      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
+      expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("ignores feedback for non-review_pending tasks", () => {
@@ -710,6 +735,33 @@ describe("ReviewHandler", () => {
         "Line 20 also",
       ]);
       expect(reviewArg.feedback_rounds[0]!.applied).toBe(false);
+    });
+
+    // SECURITY: feedback content is sanitized before storage
+    it("sanitizes secrets in feedback content before storing in task review rounds", () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+
+      const tokenContent =
+        "Fix the auth: https://git:ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@github.com/org/repo";
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "changes_requested",
+        reviewer: "alice",
+        content: tokenContent,
+        pr_number: 42,
+      });
+
+      const te = ctx.taskEngine as unknown as {
+        updateTaskField: ReturnType<typeof vi.fn>;
+      };
+      const reviewCalls = te.updateTaskField.mock.calls.filter((c: unknown[]) => c[1] === "review");
+      const reviewArg = reviewCalls[0]![2] as {
+        feedback_rounds: Array<{ comments: string[] }>;
+      };
+      const allComments = reviewArg.feedback_rounds[0]!.comments.join(" ");
+      expect(allComments).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     });
   });
 });

@@ -64,8 +64,6 @@ export interface TaskScheduler {
   getActiveTaskIds(): string[];
   /** Get count of completed tasks. */
   getTasksCompleted(): number;
-  /** Get available concurrency slots. */
-  getAvailableSlots(): number;
   /** Track a base priority for aging. */
   trackBasePriority(taskId: string, priority: number): void;
   /** Initialize base priorities from existing tasks (for crash recovery). */
@@ -265,7 +263,7 @@ export function createTaskScheduler(
     );
   }
 
-  function handleCompletedOutcome(taskId: string, taskTitle: string): void {
+  function handleCompletedOutcome(taskId: string): void {
     const transition = taskEngine.requestTransition(
       taskId,
       TaskStates.completed,
@@ -286,12 +284,12 @@ export function createTaskScheduler(
     } catch {
       observer.warn("Workspace cleanup failed after completion", { taskId });
     }
-    notifications.sendCompletion(taskId, taskTitle);
+    notifications.sendCompletion(taskId);
     notifications.commentOnTaskIssue(taskId, "Task completed successfully.");
     observer.info("Task completed", { taskId });
   }
 
-  function handleErrorOutcome(taskId: string, taskTitle: string, result: ExecuteTaskResult): void {
+  function handleErrorOutcome(taskId: string, result: ExecuteTaskResult): void {
     const reason = "reason" in result ? (result.reason as string) : "unknown";
     const phase = "phase" in result ? result.phase : undefined;
     observer.error("Task error", { taskId, phase, reason });
@@ -310,11 +308,11 @@ export function createTaskScheduler(
       return;
     }
     checkAndEmitChildrenAllDone(taskId);
-    notifications.sendTaskError(taskId, taskTitle, reason);
+    notifications.sendTaskError(taskId, reason);
     notifications.commentOnTaskIssue(taskId, `Task encountered an error: ${reason}`);
   }
 
-  function handleReviewPendingOutcome(taskId: string, taskTitle: string): void {
+  function handleReviewPendingOutcome(taskId: string): void {
     const reviewTransition = taskEngine.requestTransition(
       taskId,
       TaskStates.review_pending,
@@ -323,7 +321,7 @@ export function createTaskScheduler(
       "daemon",
     );
     if (reviewTransition.success) {
-      notifications.sendReviewPending(taskId, taskTitle);
+      notifications.sendReviewPending(taskId);
       notifications.commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
       observer.info("Task awaiting PR review", { taskId });
     } else {
@@ -372,13 +370,10 @@ export function createTaskScheduler(
       basePriorities.delete(taskId);
     }
 
-    const task = taskEngine.getTask(taskId);
-    const taskTitle = task?.title ?? taskId;
-
     if (result.outcome === Outcomes.completed) {
-      handleCompletedOutcome(taskId, taskTitle);
+      handleCompletedOutcome(taskId);
     } else if (result.outcome === Outcomes.review_pending) {
-      handleReviewPendingOutcome(taskId, taskTitle);
+      handleReviewPendingOutcome(taskId);
     } else if (result.outcome === Outcomes.decomposed) {
       observer.info("Task decomposed — children queued for scheduling", {
         taskId,
@@ -387,7 +382,7 @@ export function createTaskScheduler(
     } else if (result.outcome === Outcomes.preempted) {
       handlePreemptedOutcome(taskId, result.lastPhase);
     } else if (result.outcome === Outcomes.error) {
-      handleErrorOutcome(taskId, taskTitle, result);
+      handleErrorOutcome(taskId, result);
     } else {
       handleUnknownOutcome(taskId, (result as { outcome: string }).outcome);
     }
@@ -578,14 +573,21 @@ export function createTaskScheduler(
       // Transition active tasks back to queued so they resume on next start
       const task = taskEngine.getTask(taskId);
       if (task && task.state === TaskStates.active) {
-        taskEngine.requestTransition(
+        const transition = taskEngine.requestTransition(
           taskId,
           TaskStates.queued,
           null,
           "graceful_shutdown",
           "daemon",
         );
-        transitioned++;
+        if (transition.success) {
+          transitioned++;
+        } else {
+          observer.warn("Shutdown: failed to transition task back to queued", {
+            taskId,
+            reason: transition.reason,
+          });
+        }
       }
     }
     activeDispatches.clear();
@@ -599,7 +601,6 @@ export function createTaskScheduler(
     applyPriorityAging,
     getActiveTaskIds,
     getTasksCompleted,
-    getAvailableSlots,
     trackBasePriority,
     initializeBasePriorities,
     removeBasePriority,

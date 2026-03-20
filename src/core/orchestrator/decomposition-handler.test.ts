@@ -7,7 +7,7 @@ import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import { createDecompositionHandler } from "./decomposition-handler.js";
 import type { OrchestratorContext } from "./types.js";
-import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
+import type { OrchestratorNotifier } from "./workspace-lifecycle.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -73,13 +73,10 @@ function createPlanningOutput(decompositionPlan: unknown): PhaseOutput {
   };
 }
 
-function createMockWorkspaceLifecycle(): WorkspaceLifecycle {
+function createMockNotifier(): OrchestratorNotifier {
   return {
-    setupWorkspace: vi.fn(),
-    createSession: vi.fn(),
     notifyMilestone: vi.fn(),
     commentOnSourceIssue: vi.fn(),
-    getTaskRepo: vi.fn().mockReturnValue(""),
   };
 }
 
@@ -88,7 +85,7 @@ function createMockWorkspaceLifecycle(): WorkspaceLifecycle {
 describe("DecompositionHandler", () => {
   it("returns null when no decomposition_plan in output", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
     const output = createPlanningOutput(null);
     const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
 
@@ -105,7 +102,7 @@ describe("DecompositionHandler", () => {
 
   it("returns null when decomposition_plan fails validation", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
     const output = createPlanningOutput({ invalid: "data" });
     const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
 
@@ -127,7 +124,7 @@ describe("DecompositionHandler", () => {
 
   it("creates child tasks from valid plan", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
     const plan = {
       rationale: "Too complex for one task",
       children: [
@@ -171,7 +168,7 @@ describe("DecompositionHandler", () => {
 
   it("maps dependency indices to task IDs", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
     const plan = {
       rationale: "Split into two",
       children: [
@@ -209,7 +206,7 @@ describe("DecompositionHandler", () => {
 
   it("transitions parent to supervising", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
     const plan = {
       rationale: "Split",
       children: [
@@ -241,7 +238,7 @@ describe("DecompositionHandler", () => {
 
   it("comments on source issue with subtask list", () => {
     const ctx = createMockContext();
-    const wsl = createMockWorkspaceLifecycle();
+    const wsl = createMockNotifier();
     const handler = createDecompositionHandler(ctx, wsl);
     const plan = {
       rationale: "Too large",

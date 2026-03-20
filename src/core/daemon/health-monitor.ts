@@ -152,13 +152,12 @@ export function createDaemonHealthMonitor(
         continue;
       }
       const elapsedMs = now - Date.parse(task.last_transition_at);
-      processBlockedStages(task.id, task.title, elapsedMs, stages, now);
+      processBlockedStages(task.id, elapsedMs, stages, now);
     }
   }
 
   function processBlockedStages(
     taskId: string,
-    taskTitle: string,
     elapsedMs: number,
     stages: Array<{
       name: string;
@@ -181,7 +180,7 @@ export function createDaemonHealthMonitor(
         continue;
       }
 
-      executeBlockedStageAction(taskId, taskTitle, stage);
+      executeBlockedStageAction(taskId, stage);
       blockedEscalationState.set(taskId, { lastStageIndex: i, lastActionAt: now });
     }
   }
@@ -204,11 +203,10 @@ export function createDaemonHealthMonitor(
 
   function executeBlockedStageAction(
     taskId: string,
-    taskTitle: string,
     stage: { name: string; action: string },
   ): void {
     if (stage.action === "send_reminder") {
-      notifications.sendBlockedReminder(taskId, taskTitle);
+      notifications.sendBlockedReminder(taskId);
       observer.info("Blocked task reminder sent", { taskId, stage: stage.name });
     } else if (stage.action === "evaluate_self_unblock") {
       orchestrator.attemptSelfUnblock(taskId).then(
@@ -240,7 +238,7 @@ export function createDaemonHealthMonitor(
         "daemon",
       );
       callbacks?.onTaskEscalated(taskId);
-      notifications.sendEscalationAlert(taskId, taskTitle);
+      notifications.sendEscalationAlert(taskId);
       blockedEscalationState.delete(taskId);
       observer.warn("Blocked task escalated to failed", { taskId, stage: stage.name });
     }
@@ -271,7 +269,7 @@ export function createDaemonHealthMonitor(
   }
 
   function evaluateReviewReminder(
-    task: { id: string; title: string; last_transition_at: string },
+    task: { id: string; last_transition_at: string },
     reviewConfig: { reminder_after_ms: number; repeat_interval_ms: number },
     now: number,
   ): void {
@@ -289,7 +287,7 @@ export function createDaemonHealthMonitor(
       return;
     }
 
-    notifications.sendReviewReminder(task.id, task.title, elapsedMs);
+    notifications.sendReviewReminder(task.id, elapsedMs);
     reviewReminderTimes.set(task.id, now);
   }
 
@@ -313,7 +311,7 @@ export function createDaemonHealthMonitor(
           "cost_limit_reached",
           "daemon",
         );
-        notifications.sendCostLimit(taskId, task.title);
+        notifications.sendCostLimit(taskId);
         notifications.commentOnTaskIssue(taskId, "Task blocked \u2014 cost limit reached.");
       }
     }

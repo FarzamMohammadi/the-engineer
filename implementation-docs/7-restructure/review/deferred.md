@@ -240,3 +240,26 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **Journal config** (aggregate_file_reads) — no aggregation logic built yet
 - **Question batching config** (batch_window_ms, max_batch_size) — no batching logic built yet
 - **LLM retry constants** (MAX_LLM_RETRIES=3, LLM_RETRY_BASE_MS=1000) — intentionally not in config schema; these are implementation details, not operator knobs
+
+## Round 1 — phases8-10 (PR & Review Lifecycle)
+
+### Lens A (Structure & Organization)
+- **Dual notification implementation** (workspace-lifecycle vs notification-router) — Intentional architectural split across Orchestrator/Daemon boundary. Different routing strategies serve different operational contexts. No action needed.
+- **Three completion paths with similar cleanup** — Each path (pipeline completed, PR merged, code approved) has legitimate structural differences. The ~5-line duplication per path is lower cost than a cross-subsystem abstraction.
+- **review-handler.ts at 624 lines** — Three responsibilities share internal state (PR cache, dedup map). Splitting would require passing mutable shared maps across files. Clear section headers provide adequate navigation.
+
+### Lens B (Naming & Readability)
+- `emitFeedbackIfNew` has 6 parameters (high cognitive load) — noted but not changed; would require introducing an options object which is a structural change, not a naming change
+- `shouldCleanupBasePriority` could be `hasLeftSchedulingQueue` — acceptable as-is, noted for discussion
+
+### Lens C (Abstractions & API Design)
+- **DaemonContext uses concrete `Registry` and `Orchestrator` types** instead of interfaces in sub-context types — defer until `IOrchestrator` interface is introduced
+- **PrManager.commitPushAndCreatePR returns `boolean`** — adequate for single caller; defer until a second consumer needs to distinguish failure modes
+- **Duplicated completion cleanup** across ReviewHandler and TaskScheduler — only 3 shared lines with different side effects; abstraction would be worse than duplication
+
+### Lens D (Error Handling & Edge Cases)
+- **Race between checkMerges and checkFeedback in same tick** (Finding 8): checkMerges can complete a task, then checkFeedback runs with stale pre-fetched list and makes wasted API calls + emits spurious events. The existing guard in `handleFeedbackEvent` prevents any actual harm. Low priority — could filter completed tasks between the two calls but the guard is sufficient.
+
+### Lens E (Security & Trust Boundaries)
+- **Prompt injection via reviewer comments:** `wrapUntrustedContent()` provides delimiter-based defense-in-depth. Not cryptographic protection, but appropriate for this desktop agent threat model. The developer reviews all PRs before merging. No code change needed.
+- **Raw error objects in daemon/index.ts and query-handler.ts:** Same pattern as F5, but outside Phase 8-10 scope — should be caught by their respective phase lens reviews.

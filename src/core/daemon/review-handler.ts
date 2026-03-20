@@ -2,6 +2,7 @@ import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
 import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { ReviewHandlerContext } from "./types.js";
@@ -46,14 +47,14 @@ export interface ReviewHandler {
 
 /** Callbacks for cross-subsystem coordination. */
 export interface ReviewHandlerCallbacks {
-  /** Called when a task should be completed (PR merged). */
-  onTaskMergeComplete(taskId: string): void;
+  /** Called when a task reaches a terminal state (merged, approved, or completed). */
+  onTaskCompletionFinalized(taskId: string): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** Prefix on all daemon-posted issue/PR comments. Used to filter self-comments. */
-const ENGINEER_COMMENT_MARKERS = [
+/** Prefixes on daemon-posted comments, used to filter out self-authored comments during review polling. */
+const SELF_COMMENT_PREFIXES = [
   "Task completed",
   "Pull request created",
   "Task encountered an error",
@@ -81,7 +82,7 @@ export function createReviewHandler(
   const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, observer } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
-  const processedReviewStates = new Map<string, string>();
+  const emittedFeedbackKeys = new Map<string, string>();
 
   // Per-tick cache for PR status to avoid duplicate API calls across checkMerges + checkFeedback
   const prStatusCache = new Map<string, Awaited<ReturnType<GitHostingAdapter["getPRStatus"]>>>();
@@ -125,28 +126,50 @@ export function createReviewHandler(
 
   function completeTaskOnMerge(task: {
     id: string;
-    title: string;
     sub_state: string | null;
     review: { pr_number: number | null } | null;
   }): void {
+    // If task is in demo sub-state, transition demo→code first
     if (task.sub_state === SubStates.demo) {
-      taskEngine.requestTransition(
+      const demoTransition = taskEngine.requestTransition(
         task.id,
         TaskStates.review_pending,
         SubStates.code,
         "pr_merged",
         "daemon",
       );
+      if (!demoTransition.success) {
+        observer.warn("Failed to transition task from demo to code before merge completion", {
+          taskId: task.id,
+          reason: demoTransition.reason,
+        });
+        return;
+      }
     }
-    taskEngine.requestTransition(task.id, TaskStates.completed, null, "pr_merged", "daemon");
+
+    const completionTransition = taskEngine.requestTransition(
+      task.id,
+      TaskStates.completed,
+      null,
+      "pr_merged",
+      "daemon",
+    );
+    if (!completionTransition.success) {
+      observer.warn("Failed to transition task to completed after PR merge", {
+        taskId: task.id,
+        reason: completionTransition.reason,
+      });
+      // PR is merged — still clean up workspace and notify, even if transition failed
+    }
+
     try {
       workspaceManager.cleanupWorkspace(task.id, true);
     } catch {
       observer.warn("Workspace cleanup failed after PR merge", { taskId: task.id });
     }
-    notifications.sendCompletion(task.id, task.title);
+    notifications.sendCompletion(task.id);
     notifications.commentOnTaskIssue(task.id, "PR merged — task completed.");
-    callbacks.onTaskMergeComplete(task.id);
+    callbacks.onTaskCompletionFinalized(task.id);
     observer.info("PR merged — task completed", {
       taskId: task.id,
       prNumber: task.review?.pr_number,
@@ -160,13 +183,27 @@ export function createReviewHandler(
     if (!(task.review?.pr_number && task.repo)) {
       return;
     }
+
+    let status: Awaited<ReturnType<GitHostingAdapter["getPRStatus"]>>;
     try {
-      const status = await getCachedPRStatus(hosting, task.repo, task.review.pr_number);
-      if (status.state === "merged") {
-        completeTaskOnMerge(task);
-      }
+      status = await getCachedPRStatus(hosting, task.repo, task.review.pr_number);
     } catch (err) {
-      observer.warn("Failed to check PR status", { taskId: task.id, err });
+      observer.warn("Failed to check PR status", {
+        taskId: task.id,
+        error: sanitizeErrorMessage(err),
+      });
+      return;
+    }
+
+    if (status.state === "merged") {
+      try {
+        completeTaskOnMerge(task);
+      } catch (err) {
+        observer.error("Failed to complete task after PR merge detected", {
+          taskId: task.id,
+          error: sanitizeErrorMessage(err),
+        });
+      }
     }
   }
 
@@ -187,15 +224,15 @@ export function createReviewHandler(
   // ── Feedback Detection ──────────────────────────────────────────────────
 
   type AggregateState = "changes_requested" | "approved" | "comment";
-  type ReviewStatusLike = {
+  type ReviewPollResult = {
     changes_requested: boolean;
     approved: boolean;
     reviewers: Array<{ state: string; username?: string }>;
     comments?: string[];
   };
 
-  function resolveAggregateState(
-    reviewStatus: ReviewStatusLike,
+  function resolveAggregateStateWithComments(
+    reviewStatus: ReviewPollResult,
     prComments: string[],
   ): AggregateState | null {
     const state = deriveAggregateReviewState(reviewStatus);
@@ -218,7 +255,7 @@ export function createReviewHandler(
           if (body.length === 0) {
             return false;
           }
-          return !ENGINEER_COMMENT_MARKERS.some((marker) => body.startsWith(marker));
+          return !SELF_COMMENT_PREFIXES.some((marker) => body.startsWith(marker));
         })
         .map((c) => `@${c.author}: ${c.body.trim()}`);
     } catch {
@@ -231,14 +268,14 @@ export function createReviewHandler(
     prNumber: number,
     aggregateState: AggregateState,
     allComments: string[],
-    reviewStatus: ReviewStatusLike,
+    reviewStatus: ReviewPollResult,
     isDraft: boolean,
   ): boolean {
     const dedupKey = `${aggregateState}:${String(allComments.length)}`;
-    if (processedReviewStates.get(taskId) === dedupKey) {
+    if (emittedFeedbackKeys.get(taskId) === dedupKey) {
       return false;
     }
-    processedReviewStates.set(taskId, dedupKey);
+    emittedFeedbackKeys.set(taskId, dedupKey);
 
     const stage = isDraft ? "demo" : "code";
     const primaryReviewer =
@@ -256,7 +293,7 @@ export function createReviewHandler(
           | "changes_requested"
           | "comment",
         reviewer: primaryReviewer?.username ?? "unknown",
-        content: allComments.length > 0 ? allComments.join("\n") : null,
+        content: allComments.length > 0 ? sanitizeSecrets(allComments.join("\n")) : null,
         pr_number: prNumber,
       },
     } satisfies PublishInput<"task.feedback_received">);
@@ -283,7 +320,7 @@ export function createReviewHandler(
       ]);
       const allComments = [...(reviewStatus.comments ?? []), ...prComments];
 
-      const aggregateState = resolveAggregateState(reviewStatus, prComments);
+      const aggregateState = resolveAggregateStateWithComments(reviewStatus, prComments);
 
       // Count review states for observability
       const approvalCount = reviewStatus.reviewers.filter((r) => r.state === "approved").length;
@@ -295,9 +332,9 @@ export function createReviewHandler(
       const dedupKey = aggregateState
         ? `${aggregateState}:${String(allComments.length)}`
         : "none:0";
-      const dedupSkipped = processedReviewStates.get(task.id) === dedupKey;
+      const isAlreadyProcessed = emittedFeedbackKeys.get(task.id) === dedupKey;
 
-      if (!dedupSkipped) {
+      if (!isAlreadyProcessed) {
         eventBus.publish({
           type: EventTypes["review.poll_completed"],
           source: "daemon",
@@ -350,7 +387,10 @@ export function createReviewHandler(
       }
     } catch (err) {
       recordReviewApiFailure(now);
-      observer.warn("Failed to check PR review feedback", { taskId: task.id, err });
+      observer.warn("Failed to check PR review feedback", {
+        taskId: task.id,
+        error: sanitizeErrorMessage(err),
+      });
     }
   }
 
@@ -375,9 +415,9 @@ export function createReviewHandler(
     });
 
     const reviewTaskIds = new Set(reviewTasks.map((t) => t.id));
-    for (const key of processedReviewStates.keys()) {
+    for (const key of emittedFeedbackKeys.keys()) {
       if (!reviewTaskIds.has(key)) {
-        processedReviewStates.delete(key);
+        emittedFeedbackKeys.delete(key);
       }
     }
 
@@ -429,8 +469,9 @@ export function createReviewHandler(
       demo_artifacts: [],
       feedback_rounds: [],
     };
-    const comments = payload.content
-      ? payload.content.split("\n").filter((line) => line.trim().length > 0)
+    const sanitizedContent = payload.content ? sanitizeSecrets(payload.content) : null;
+    const comments = sanitizedContent
+      ? sanitizedContent.split("\n").filter((line) => line.trim().length > 0)
       : [];
     const newRound = {
       stage: payload.stage,
@@ -459,16 +500,26 @@ export function createReviewHandler(
     payload: TaskFeedbackReceivedPayload,
   ): void {
     const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
-    if (hosting && task.repo && task.review?.pr_number) {
-      hosting
-        .updatePR(task.repo, task.review.pr_number, {
-          title: null,
-          body: null,
-          draft: false,
-          labels_add: null,
-          labels_remove: null,
-        })
-        .then(() => {
+    if (!(hosting && task.repo && task.review?.pr_number)) {
+      observer.warn("Cannot process demo approval — missing hosting plugin, repo, or PR number", {
+        taskId: payload.task_id,
+        hasHosting: !!hosting,
+        hasRepo: !!task.repo,
+        hasPrNumber: !!task.review?.pr_number,
+      });
+      return;
+    }
+
+    hosting
+      .updatePR(task.repo, task.review.pr_number, {
+        title: null,
+        body: null,
+        draft: false,
+        labels_add: null,
+        labels_remove: null,
+      })
+      .then(() => {
+        try {
           const currentReview = task.review ?? {
             pr_number: payload.pr_number,
             pr_state: "draft" as const,
@@ -479,13 +530,22 @@ export function createReviewHandler(
             ...currentReview,
             pr_state: "ready",
           });
-          taskEngine.requestTransition(
+
+          const transition = taskEngine.requestTransition(
             payload.task_id,
             TaskStates.review_pending,
             SubStates.code,
             "demo_approved",
             "daemon",
           );
+          if (!transition.success) {
+            observer.warn("Demo approval: PR marked ready on GitHub but state transition failed", {
+              taskId: payload.task_id,
+              reason: transition.reason,
+            });
+            return;
+          }
+
           notifications.commentOnTaskIssue(
             payload.task_id,
             "Demo approved — PR marked ready for code review.",
@@ -493,25 +553,30 @@ export function createReviewHandler(
           observer.info("Demo approved — PR marked ready for code review", {
             taskId: payload.task_id,
           });
-        })
-        .catch((err) => {
-          observer.error("Failed to mark PR ready after demo approval", {
-            err,
+        } catch (err) {
+          observer.error("Demo approval: PR marked ready on GitHub but post-processing failed", {
+            error: sanitizeErrorMessage(err),
             taskId: payload.task_id,
           });
+        }
+      })
+      .catch((err) => {
+        observer.error("Failed to update PR draft status after demo approval", {
+          error: sanitizeErrorMessage(err),
+          taskId: payload.task_id,
         });
-    }
+      });
   }
 
-  /** Run post-completion cleanup: workspace, notification, child-done check. */
-  function completeTaskCleanup(taskId: string, taskTitle: string): void {
+  /** Finalize task completion: workspace cleanup, notification, child-done check. */
+  function finalizeTaskCompletion(taskId: string): void {
     try {
       workspaceManager.cleanupWorkspace(taskId, true);
     } catch {
       observer.warn("Workspace cleanup failed after code approval", { taskId });
     }
-    notifications.sendCompletion(taskId, taskTitle);
-    callbacks.onTaskMergeComplete(taskId);
+    notifications.sendCompletion(taskId);
+    callbacks.onTaskCompletionFinalized(taskId);
   }
 
   function handleCodeApproval(
@@ -528,31 +593,51 @@ export function createReviewHandler(
         hosting
           .mergePR(repo, prNumber, "squash")
           .then((result) => {
-            if (result.success) {
-              taskEngine.updateTaskField(payload.task_id, "review", {
-                ...(task.review ?? {
-                  pr_number: prNumber,
-                  pr_state: "ready" as const,
-                  demo_artifacts: [],
-                  feedback_rounds: [],
-                }),
-                pr_state: "merged",
-              });
-              notifications.commentOnTaskIssue(
+            try {
+              if (result.success) {
+                taskEngine.updateTaskField(payload.task_id, "review", {
+                  ...(task.review ?? {
+                    pr_number: prNumber,
+                    pr_state: "ready" as const,
+                    demo_artifacts: [],
+                    feedback_rounds: [],
+                  }),
+                  pr_state: "merged",
+                });
+                notifications.commentOnTaskIssue(
+                  payload.task_id,
+                  `Code approved — PR #${String(prNumber)} auto-merged.`,
+                );
+              }
+              taskEngine.requestTransition(
                 payload.task_id,
-                `Code approved — PR #${String(prNumber)} auto-merged.`,
+                TaskStates.completed,
+                null,
+                "code_approved_merged",
+                "daemon",
               );
+              finalizeTaskCompletion(payload.task_id);
+            } catch (postMergeErr) {
+              // Merge succeeded but post-processing failed — still complete the task
+              observer.error("Auto-merge succeeded but post-processing failed", {
+                err: postMergeErr,
+                taskId: payload.task_id,
+              });
+              taskEngine.requestTransition(
+                payload.task_id,
+                TaskStates.completed,
+                null,
+                "code_approved_merged",
+                "daemon",
+              );
+              finalizeTaskCompletion(payload.task_id);
             }
-            taskEngine.requestTransition(
-              payload.task_id,
-              TaskStates.completed,
-              null,
-              "code_approved_merged",
-              "daemon",
-            );
-            completeTaskCleanup(payload.task_id, task.title);
           })
-          .catch(() => {
+          .catch((mergeErr) => {
+            observer.warn("Auto-merge API call failed", {
+              err: mergeErr,
+              taskId: payload.task_id,
+            });
             taskEngine.requestTransition(
               payload.task_id,
               TaskStates.completed,
@@ -564,7 +649,7 @@ export function createReviewHandler(
               payload.task_id,
               "Code approved — auto-merge failed, please merge manually.",
             );
-            completeTaskCleanup(payload.task_id, task.title);
+            finalizeTaskCompletion(payload.task_id);
           });
       } else {
         taskEngine.requestTransition(
@@ -575,14 +660,17 @@ export function createReviewHandler(
           "daemon",
         );
         notifications.commentOnTaskIssue(payload.task_id, "Code review approved — ready to merge.");
-        completeTaskCleanup(payload.task_id, task.title);
+        finalizeTaskCompletion(payload.task_id);
       }
       observer.info("Code approved — task completing", {
         taskId: payload.task_id,
         autoMergeAllowed,
       });
     } catch (err) {
-      observer.error("Failed to handle code approval", { err, taskId: payload.task_id });
+      observer.error("Failed to handle code approval", {
+        error: sanitizeErrorMessage(err),
+        taskId: payload.task_id,
+      });
     }
   }
 
@@ -591,13 +679,24 @@ export function createReviewHandler(
     payload: TaskFeedbackReceivedPayload,
   ): void {
     try {
-      taskEngine.requestTransition(
+      const transition = taskEngine.requestTransition(
         payload.task_id,
         TaskStates.queued,
         null,
         `feedback_rework:${payload.feedback_type}`,
         "daemon",
       );
+      if (!transition.success) {
+        observer.warn(
+          "Failed to re-queue task for rework — task may have been completed concurrently",
+          {
+            taskId: payload.task_id,
+            reason: transition.reason,
+            feedbackType: payload.feedback_type,
+          },
+        );
+        return;
+      }
       notifications.commentOnTaskIssue(
         payload.task_id,
         `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
@@ -608,7 +707,7 @@ export function createReviewHandler(
       });
     } catch (err) {
       observer.error("Failed to re-queue task after feedback", {
-        err,
+        error: sanitizeErrorMessage(err),
         taskId: payload.task_id,
       });
     }

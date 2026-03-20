@@ -16,7 +16,6 @@ import {
 } from "./phase-runner.js";
 import type { PrManager } from "./pr-manager.js";
 import type { OrchestratorContext, PipelineState } from "./types.js";
-import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -147,10 +146,6 @@ function createDeps(
   return {
     ctx,
     handlers,
-    workspaceLifecycle: {
-      notifyMilestone: vi.fn(),
-      commentOnSourceIssue: vi.fn(),
-    } as unknown as WorkspaceLifecycle,
     andonCord: createAndonCord(),
     prManager: {
       commitPushAndCreatePR: vi.fn().mockResolvedValue(false),

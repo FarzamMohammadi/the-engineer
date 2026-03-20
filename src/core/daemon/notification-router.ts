@@ -1,7 +1,7 @@
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
-import { sanitizeSecrets } from "../../utils/sanitize.js";
+import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { NotificationRouterContext } from "./types.js";
 
 // ── Notification Templates ───────────────────────────────────────────────────
@@ -56,19 +56,19 @@ const NOTIFICATION_TEMPLATES = {
 /** Handles all outbound notifications and communication. */
 export interface NotificationRouter {
   /** Send completion notification to owner. */
-  sendCompletion(taskId: string, taskTitle: string): void;
+  sendCompletion(taskId: string): void;
   /** Send review-pending notification to owner. */
-  sendReviewPending(taskId: string, taskTitle: string): void;
+  sendReviewPending(taskId: string): void;
   /** Send task error notification to owner. */
-  sendTaskError(taskId: string, taskTitle: string, reason: string): void;
+  sendTaskError(taskId: string, reason: string): void;
   /** Send cost limit notification to owner. */
-  sendCostLimit(taskId: string, taskTitle: string): void;
+  sendCostLimit(taskId: string): void;
   /** Send blocked reminder to owner. */
-  sendBlockedReminder(taskId: string, taskTitle: string): void;
+  sendBlockedReminder(taskId: string): void;
   /** Send escalation alert to owner + reviewers. */
-  sendEscalationAlert(taskId: string, taskTitle: string): void;
+  sendEscalationAlert(taskId: string): void;
   /** Send review reminder to reviewers. */
-  sendReviewReminder(taskId: string, taskTitle: string, elapsedMs: number): void;
+  sendReviewReminder(taskId: string, elapsedMs: number): void;
   /** Comment on a task's source GitHub issue. */
   commentOnTaskIssue(taskId: string, message: string): void;
   /** Sync task state change to communication plugins. */
@@ -129,84 +129,92 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
             { content: formatted, metadata: { task_id: taskId, type: messageType } },
           )
           .catch((err) => {
-            observer.error(`Failed to send ${logLabel} notification`, { err, taskId });
+            observer.error(`Failed to send ${logLabel} notification`, {
+              error: sanitizeErrorMessage(err),
+              taskId,
+            });
           });
       }
     }
   }
 
-  function sendCompletion(taskId: string, taskTitle: string): void {
+  /** Resolve task title from taskEngine, falling back to taskId. */
+  function resolveTitle(taskId: string): string {
+    return taskEngine.getTask(taskId)?.title ?? taskId;
+  }
+
+  function sendCompletion(taskId: string): void {
     const t = NOTIFICATION_TEMPLATES.completion;
     sendToRecipients(
       taskId,
-      t.format({ title: taskTitle }),
+      t.format({ title: resolveTitle(taskId) }),
       t.messageType,
       t.recipients,
       "completion",
     );
   }
 
-  function sendReviewPending(taskId: string, taskTitle: string): void {
+  function sendReviewPending(taskId: string): void {
     const t = NOTIFICATION_TEMPLATES.review_pending;
     sendToRecipients(
       taskId,
-      t.format({ title: taskTitle }),
+      t.format({ title: resolveTitle(taskId) }),
       t.messageType,
       t.recipients,
       "review_pending",
     );
   }
 
-  function sendTaskError(taskId: string, taskTitle: string, reason: string): void {
+  function sendTaskError(taskId: string, reason: string): void {
     const t = NOTIFICATION_TEMPLATES.task_error;
     sendToRecipients(
       taskId,
-      t.format({ title: taskTitle, reason }),
+      t.format({ title: resolveTitle(taskId), reason }),
       t.messageType,
       t.recipients,
       "task_error",
     );
   }
 
-  function sendCostLimit(taskId: string, taskTitle: string): void {
+  function sendCostLimit(taskId: string): void {
     const t = NOTIFICATION_TEMPLATES.cost_limit;
     sendToRecipients(
       taskId,
-      t.format({ title: taskTitle }),
+      t.format({ title: resolveTitle(taskId) }),
       t.messageType,
       t.recipients,
       "cost_limit",
     );
   }
 
-  function sendBlockedReminder(taskId: string, taskTitle: string): void {
+  function sendBlockedReminder(taskId: string): void {
     const t = NOTIFICATION_TEMPLATES.blocked_reminder;
     sendToRecipients(
       taskId,
-      t.format({ title: taskTitle }),
+      t.format({ title: resolveTitle(taskId) }),
       t.messageType,
       t.recipients,
       "blocked_reminder",
     );
   }
 
-  function sendEscalationAlert(taskId: string, taskTitle: string): void {
+  function sendEscalationAlert(taskId: string): void {
     const t = NOTIFICATION_TEMPLATES.escalation_alert;
     sendToRecipients(
       taskId,
-      t.format({ title: taskTitle }),
+      t.format({ title: resolveTitle(taskId) }),
       t.messageType,
       t.recipients,
       "escalation_alert",
     );
   }
 
-  function sendReviewReminder(taskId: string, taskTitle: string, elapsedMs: number): void {
+  function sendReviewReminder(taskId: string, elapsedMs: number): void {
     const hours = String(Math.floor(elapsedMs / 3_600_000));
     const t = NOTIFICATION_TEMPLATES.review_reminder;
     sendToRecipients(
       taskId,
-      t.format({ title: taskTitle, hours }),
+      t.format({ title: resolveTitle(taskId), hours }),
       t.messageType,
       t.recipients,
       "review_reminder",
@@ -230,7 +238,10 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
     }
 
     plugin.commentOnIssue(repo, number, sanitizeSecrets(message)).catch((err) => {
-      observer.error("Failed to comment on task issue", { err, taskId });
+      observer.error("Failed to comment on task issue", {
+        error: sanitizeErrorMessage(err),
+        taskId,
+      });
     });
   }
 
@@ -247,14 +258,14 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
 
       comm
         .syncTaskState(payload.task_id, payload.from_state, payload.to_state, {
-          task_title: task?.title ?? "",
+          task_title: sanitizeSecrets(task?.title ?? ""),
           external_ref: externalRef,
           sub_state: payload.to_sub,
           reason: payload.reason,
         })
         .catch((err) => {
           observer.error("Failed to sync task state to comm plugin", {
-            err,
+            error: sanitizeErrorMessage(err),
             pluginId: comm.manifest.id,
             taskId: payload.task_id,
           });

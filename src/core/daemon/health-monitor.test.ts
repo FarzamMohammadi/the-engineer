@@ -259,7 +259,7 @@ describe("DaemonHealthMonitor", () => {
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
       hm.checkBlockedEscalation(now);
 
-      expect(notifications.sendBlockedReminder).toHaveBeenCalledWith("blocked-1", "Blocked task");
+      expect(notifications.sendBlockedReminder).toHaveBeenCalledWith("blocked-1");
     });
 
     it("fires evaluate_self_unblock at second stage", async () => {
@@ -304,7 +304,7 @@ describe("DaemonHealthMonitor", () => {
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
       hm.checkBlockedEscalation(now);
 
-      expect(notifications.sendEscalationAlert).toHaveBeenCalledWith("blocked-3", "Blocked task 3");
+      expect(notifications.sendEscalationAlert).toHaveBeenCalledWith("blocked-3");
       expect(taskEngine.requestTransition).toHaveBeenCalledWith(
         "blocked-3",
         "failed",
@@ -368,11 +368,7 @@ describe("DaemonHealthMonitor", () => {
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
       hm.checkReviewPendingReminders(now);
 
-      expect(notifications.sendReviewReminder).toHaveBeenCalledWith(
-        "review-1",
-        "Review task",
-        87_000_000,
-      );
+      expect(notifications.sendReviewReminder).toHaveBeenCalledWith("review-1", 87_000_000);
     });
 
     it("respects repeat interval — does not fire again too soon", () => {
@@ -431,7 +427,7 @@ describe("DaemonHealthMonitor", () => {
         "cost_limit_reached",
         "daemon",
       );
-      expect(notifications.sendCostLimit).toHaveBeenCalledWith("cost-1", "Expensive task");
+      expect(notifications.sendCostLimit).toHaveBeenCalledWith("cost-1");
       expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
         "cost-1",
         "Task blocked \u2014 cost limit reached.",

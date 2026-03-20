@@ -936,6 +936,7 @@ describe("Daemon", () => {
         }
         return [];
       });
+      handle.taskEngine.getTask.mockReturnValue(blockedTask);
 
       const owner = { id: "owner-1", name: "Alice", role: "owner", contacts: [] };
       handle.peopleDirectory.getOwner.mockReturnValue(owner);
@@ -1037,6 +1038,7 @@ describe("Daemon", () => {
         }
         return [];
       });
+      handle.taskEngine.getTask.mockReturnValue(reviewTask);
 
       const reviewer = { id: "rev-1", name: "Bob", role: "reviewer", contacts: [] };
       handle.peopleDirectory.getReviewers.mockReturnValue([reviewer]);

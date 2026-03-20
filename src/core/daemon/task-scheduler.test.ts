@@ -159,7 +159,7 @@ describe("TaskScheduler", () => {
 
     // Should dispatch exactly 2 (max_concurrent)
     expect(ctx.orchestrator.executeTask).toHaveBeenCalledTimes(2);
-    expect(scheduler.getAvailableSlots()).toBe(0);
+    expect(scheduler.getActiveTaskIds()).toHaveLength(2);
     expect(scheduler.getActiveTaskIds()).toEqual(["t1", "t2"]);
   });
 
@@ -264,7 +264,7 @@ describe("TaskScheduler", () => {
       "daemon",
     );
     expect(workspaceManager.cleanupWorkspace).toHaveBeenCalledWith("t1", true);
-    expect(notifications.sendCompletion).toHaveBeenCalledWith("t1", "Done task");
+    expect(notifications.sendCompletion).toHaveBeenCalledWith("t1");
     expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
       "t1",
       "Task completed successfully.",
@@ -298,7 +298,7 @@ describe("TaskScheduler", () => {
       "pr_created",
       "daemon",
     );
-    expect(notifications.sendReviewPending).toHaveBeenCalledWith("t1", "PR task");
+    expect(notifications.sendReviewPending).toHaveBeenCalledWith("t1");
     expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
       "t1",
       "Pull request created — awaiting review.",
@@ -331,7 +331,7 @@ describe("TaskScheduler", () => {
       "build_failed",
       "daemon",
     );
-    expect(notifications.sendTaskError).toHaveBeenCalledWith("t1", "Broken task", "build_failed");
+    expect(notifications.sendTaskError).toHaveBeenCalledWith("t1", "build_failed");
     expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
       "t1",
       "Task encountered an error: build_failed",

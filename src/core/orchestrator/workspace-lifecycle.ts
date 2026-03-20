@@ -7,24 +7,30 @@ import type { OrchestratorContext } from "./types.js";
 
 // ── WorkspaceLifecycle Interface ────────────────────────────────────────────
 
-/** Workspace setup, session management, and milestone notifications. */
+/** Workspace setup and session management for task dispatches. */
 export interface WorkspaceLifecycle {
   /** Set up workspace for a task dispatch (create or re-register). */
   setupWorkspace(dispatch: Dispatch): void;
   /** Create or resume a session for a dispatch. */
   createSession(dispatch: Dispatch): Session;
+}
+
+// ── OrchestratorNotifier Interface ─────────────────────────────────────────
+
+/** Orchestrator-tier notifications — milestone alerts and issue comments. */
+export interface OrchestratorNotifier {
   /** Send a milestone notification via PeopleDirectory + comm plugins (D152). */
   notifyMilestone(dispatch: Dispatch, message: string): void;
   /** Post a comment on the source GitHub issue/PR. */
   commentOnSourceIssue(dispatch: Dispatch, message: string): void;
-  /** Extract repository identifier from task. */
-  getTaskRepo(dispatch: Dispatch): string;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
-/** Create a WorkspaceLifecycle bound to the given OrchestratorContext. */
-export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLifecycle {
+/** Create WorkspaceLifecycle and OrchestratorNotifier bound to the given context. */
+export function createWorkspaceLifecycle(
+  ctx: OrchestratorContext,
+): WorkspaceLifecycle & OrchestratorNotifier {
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: workspace setup has inherent branching (new/rework/resume/child)
   function setupWorkspace(dispatch: Dispatch): void {
     const taskId = dispatch.task.id;
@@ -180,15 +186,10 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
     }
   }
 
-  function getTaskRepo(dispatch: Dispatch): string {
-    return dispatch.task.workspace?.repo ?? dispatch.task.external_ref?.repo ?? "";
-  }
-
   return {
     setupWorkspace,
     createSession,
     notifyMilestone,
     commentOnSourceIssue,
-    getTaskRepo,
   };
 }

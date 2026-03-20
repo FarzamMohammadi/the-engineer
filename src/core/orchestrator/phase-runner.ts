@@ -19,7 +19,6 @@ import {
   type PipelineState,
   type PreemptionGate,
 } from "./types.js";
-import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -85,7 +84,6 @@ export function formatPhaseHandoff(
 export interface PhaseRunnerDeps {
   ctx: OrchestratorContext;
   handlers: PhaseHandlerRegistry;
-  workspaceLifecycle: WorkspaceLifecycle;
   prManager: PrManager;
   decompositionHandler: DecompositionHandler;
   /** Emergency halt mechanism (Toyota Production System). */

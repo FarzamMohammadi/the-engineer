@@ -97,8 +97,10 @@ describe("NotificationRouter", () => {
     const ctx = createMockContext([commPlugin]);
     (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({ id: "farzam" });
 
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Fix the bug" });
+
     const router = createNotificationRouter(ctx);
-    router.sendCompletion("task-001", "Fix the bug");
+    router.sendCompletion("task-001");
     await flush();
 
     expect(commPlugin.formatMessage).toHaveBeenCalledWith(
@@ -120,8 +122,12 @@ describe("NotificationRouter", () => {
     const ctx = createMockContext([commPlugin]);
     (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({ id: "owner-1" });
 
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+      title: "Deploy service",
+    });
+
     const router = createNotificationRouter(ctx);
-    router.sendTaskError("task-002", "Deploy service", "build_failed");
+    router.sendTaskError("task-002", "build_failed");
     await flush();
 
     expect(commPlugin.formatMessage).toHaveBeenCalledWith(
@@ -147,7 +153,9 @@ describe("NotificationRouter", () => {
     ]);
 
     const router = createNotificationRouter(ctx);
-    router.sendEscalationAlert("task-003", "Critical fix");
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Critical fix" });
+
+    router.sendEscalationAlert("task-003");
     await flush();
 
     // Should send to owner + 2 reviewers = 3 sends
@@ -171,7 +179,9 @@ describe("NotificationRouter", () => {
     ]);
 
     const router = createNotificationRouter(ctx);
-    router.sendReviewReminder("task-004", "Add tests", 7_200_000); // 2 hours
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Add tests" });
+
+    router.sendReviewReminder("task-004", 7_200_000); // 2 hours
     await flush();
 
     expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
@@ -195,7 +205,7 @@ describe("NotificationRouter", () => {
     // getOwner returns null by default
 
     const router = createNotificationRouter(ctx);
-    router.sendCompletion("task-005", "Some task");
+    router.sendCompletion("task-005");
     await flush();
 
     expect(commPlugin.sendMessage).not.toHaveBeenCalled();
@@ -207,7 +217,7 @@ describe("NotificationRouter", () => {
     // getReviewers returns [] by default
 
     const router = createNotificationRouter(ctx);
-    router.sendReviewReminder("task-006", "Some task", 3_600_000);
+    router.sendReviewReminder("task-006", 3_600_000);
     await flush();
 
     expect(commPlugin.sendMessage).not.toHaveBeenCalled();
@@ -221,7 +231,9 @@ describe("NotificationRouter", () => {
     (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({ id: "owner-1" });
 
     const router = createNotificationRouter(ctx);
-    router.sendCompletion("task-007", "A task");
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "A task" });
+
+    router.sendCompletion("task-007");
     await flush();
 
     expect(noSendPlugin.sendMessage).not.toHaveBeenCalled();
@@ -311,7 +323,7 @@ describe("NotificationRouter", () => {
     const router = createNotificationRouter(ctx);
 
     // Should not throw
-    expect(() => router.sendCompletion("task-011", "Failing task")).not.toThrow();
+    expect(() => router.sendCompletion("task-011")).not.toThrow();
     await flush();
   });
 
@@ -361,7 +373,11 @@ describe("NotificationRouter", () => {
     (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({ id: "owner-1" });
 
     const router = createNotificationRouter(ctx);
-    router.sendCostLimit("task-014", "Expensive task");
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+      title: "Expensive task",
+    });
+
+    router.sendCostLimit("task-014");
     await flush();
 
     expect(commPlugin.formatMessage).toHaveBeenCalledWith(
@@ -392,13 +408,47 @@ describe("NotificationRouter", () => {
     const router = createNotificationRouter(ctx);
     const poisonedReason =
       "push failed: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
-    router.sendTaskError("task-sec", "Deploy service", poisonedReason);
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+      title: "Deploy service",
+    });
+
+    router.sendTaskError("task-sec", poisonedReason);
     await flush();
 
     const formattedArg = (commPlugin.formatMessage as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[0] as string;
     expect(formattedArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
     expect(formattedArg).not.toContain("https://git:ghp_");
+  });
+
+  // SECURITY: syncStateToCommPlugin sanitizes task title before sending to comm plugins
+  it("syncStateToCommPlugin sanitizes task title containing secrets", async () => {
+    const syncPlugin = createMockCommPlugin({ id: "sync-comm", capabilities: ["sync"] });
+    const ctx = createMockContext([syncPlugin]);
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+      title: "Fix ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA leak in auth",
+      external_ref: null,
+    });
+
+    const payload: TaskStateChangedPayload = {
+      task_id: "task-sec",
+      from_state: "active",
+      from_sub: "working",
+      to_state: "completed",
+      to_sub: null,
+      reason: "done",
+      triggered_by: "daemon",
+    };
+
+    const router = createNotificationRouter(ctx);
+    router.syncStateToCommPlugin(payload);
+    await flush();
+
+    const syncArgs = (syncPlugin.syncTaskState as ReturnType<typeof vi.fn>).mock.calls[0]?.[3] as {
+      task_title: string;
+    };
+    expect(syncArgs.task_title).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    expect(syncArgs.task_title).toContain("[REDACTED:github_token]");
   });
 
   // SECURITY: commentOnTaskIssue strips auth tokens from message before posting to GitHub

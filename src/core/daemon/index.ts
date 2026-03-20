@@ -159,7 +159,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   const triggerPoller = createTriggerPoller(ctx);
 
   const reviewHandler = createReviewHandler(ctx, notifications, {
-    onTaskMergeComplete: (taskId) => scheduler.checkAndEmitChildrenAllDone(taskId),
+    onTaskCompletionFinalized: (taskId) => scheduler.checkAndEmitChildrenAllDone(taskId),
   });
 
   const healthMonitor = createDaemonHealthMonitor(

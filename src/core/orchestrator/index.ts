@@ -29,7 +29,11 @@ import type {
   PipelineState,
   PreemptionGate,
 } from "./types.js";
-import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
+import {
+  type OrchestratorNotifier,
+  type WorkspaceLifecycle,
+  createWorkspaceLifecycle,
+} from "./workspace-lifecycle.js";
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
 // Only the types actually consumed by external modules (daemon, bootstrap).
@@ -94,7 +98,8 @@ function createPreemptionGate(): PreemptionGate & {
  * Derives from compiler front-end (multi-pass pipeline) + flight director
  * (coordination and communication). Delegates to focused subsystems:
  * - LlmCaller: LLM invocation, retry, cost, validation
- * - WorkspaceLifecycle: workspace setup, session, notifications
+ * - WorkspaceLifecycle: workspace setup, session management
+ * - OrchestratorNotifier: milestone notifications, issue comments
  * - PrManager: commit, push, PR creation
  * - DecompositionHandler: task decomposition
  * - PhaseRunner: phase pipeline orchestration
@@ -108,6 +113,7 @@ export class Orchestrator {
   private readonly ctx: OrchestratorContext;
   private readonly llmCaller: LlmCaller;
   private readonly workspaceLifecycle: WorkspaceLifecycle;
+  private readonly notifier: OrchestratorNotifier;
   private readonly prManager: PrManager;
   private readonly decompositionHandler: DecompositionHandler;
   private readonly andonCord: AndonCord;
@@ -121,9 +127,11 @@ export class Orchestrator {
 
     // Create subsystems
     this.llmCaller = createLlmCaller(this.ctx);
-    this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
-    this.prManager = createPrManager(this.ctx, this.workspaceLifecycle);
-    this.decompositionHandler = createDecompositionHandler(this.ctx, this.workspaceLifecycle);
+    const wsl = createWorkspaceLifecycle(this.ctx);
+    this.workspaceLifecycle = wsl;
+    this.notifier = wsl;
+    this.prManager = createPrManager(this.ctx, this.notifier);
+    this.decompositionHandler = createDecompositionHandler(this.ctx, this.notifier);
     this.andonCord = createAndonCord();
 
     // Cooperative preemption state (Protocol P8)
@@ -182,8 +190,8 @@ export class Orchestrator {
     }
 
     // Notify task pickup (D152) — personal channels + GitHub issue comment
-    this.workspaceLifecycle.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
-    this.workspaceLifecycle.commentOnSourceIssue(dispatch, "Starting work on this issue.");
+    this.notifier.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
+    this.notifier.commentOnSourceIssue(dispatch, "Starting work on this issue.");
 
     // ── Build pipeline state ───────────────────────────────────────────────
     // Gather repo context once — avoids 5 sync I/O ops × 7 phases per task.
@@ -202,7 +210,6 @@ export class Orchestrator {
     return runPhasePipeline(dispatch, state, {
       ctx: this.ctx,
       handlers: this.phaseHandlers,
-      workspaceLifecycle: this.workspaceLifecycle,
       prManager: this.prManager,
       decompositionHandler: this.decompositionHandler,
       andonCord: this.andonCord,

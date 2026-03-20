@@ -5,6 +5,7 @@ import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import { createPrManager } from "./pr-manager.js";
 import type { OrchestratorContext } from "./types.js";
+import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // Mock child_process — must be before imports that use it
 vi.mock("node:child_process", () => ({
@@ -72,22 +73,27 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
   } as Dispatch;
 }
 
-const noopComment = vi.fn();
-const noopNotify = vi.fn();
+function createMockWorkspaceLifecycle(): WorkspaceLifecycle {
+  return {
+    setupWorkspace: vi.fn(),
+    createSession: vi.fn(),
+    notifyMilestone: vi.fn(),
+    commentOnSourceIssue: vi.fn(),
+    getTaskRepo: vi.fn().mockReturnValue(""),
+  };
+}
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("PrManager", () => {
   beforeEach(() => {
     mockedExecFileSync.mockReset();
-    noopComment.mockReset();
-    noopNotify.mockReset();
   });
 
   it("returns false when no workspace path", async () => {
     const ctx = createMockContext();
     (ctx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(null);
-    const pm = createPrManager(ctx);
+    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -102,8 +108,6 @@ describe("PrManager", () => {
       "task-001",
       demoPrepOutput,
       createDispatch(),
-      noopComment,
-      noopNotify,
     );
 
     expect(result).toBe(false);
@@ -112,7 +116,7 @@ describe("PrManager", () => {
   it("returns false when no workspace record", async () => {
     const ctx = createMockContext();
     (ctx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue(null);
-    const pm = createPrManager(ctx);
+    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -127,8 +131,6 @@ describe("PrManager", () => {
       "task-001",
       demoPrepOutput,
       createDispatch(),
-      noopComment,
-      noopNotify,
     );
 
     expect(result).toBe(false);
@@ -139,7 +141,7 @@ describe("PrManager", () => {
     mockedExecFileSync.mockImplementation(() => {
       throw new Error("git error");
     });
-    const pm = createPrManager(ctx);
+    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -149,14 +151,7 @@ describe("PrManager", () => {
       open_questions: [],
     };
 
-    await pm.commitPushAndCreatePR(
-      "session-001",
-      "task-001",
-      demoPrepOutput,
-      createDispatch(),
-      noopComment,
-      noopNotify,
-    );
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, createDispatch());
 
     expect(ctx.sessionMemory.addJournalEntry).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -177,7 +172,7 @@ describe("PrManager", () => {
       }
       return "";
     });
-    const pm = createPrManager(ctx);
+    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -192,8 +187,6 @@ describe("PrManager", () => {
       "task-001",
       demoPrepOutput,
       createDispatch(),
-      noopComment,
-      noopNotify,
     );
 
     expect(result).toBe(false);
@@ -218,7 +211,7 @@ describe("PrManager", () => {
       return "";
     });
 
-    const pm = createPrManager(ctx);
+    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
     const dispatch = createDispatch({
       review: {
         pr_number: 42,
@@ -241,8 +234,6 @@ describe("PrManager", () => {
       "task-001",
       demoPrepOutput,
       dispatch,
-      noopComment,
-      noopNotify,
     );
 
     expect(result).toBe(true);
@@ -277,7 +268,7 @@ describe("PrManager", () => {
       return "";
     });
 
-    const pm = createPrManager(ctx);
+    const pm = createPrManager(ctx, createMockWorkspaceLifecycle());
     const demoPrepOutput = {
       phase: Phases.demo_prep,
       task_id: "task-001",
@@ -287,14 +278,7 @@ describe("PrManager", () => {
       open_questions: [],
     };
 
-    await pm.commitPushAndCreatePR(
-      "session-001",
-      "task-001",
-      demoPrepOutput,
-      createDispatch(),
-      noopComment,
-      noopNotify,
-    );
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, createDispatch());
 
     // The createPR call should have sanitized the description
     if (fakeGitHosting.createPR.mock.calls.length > 0) {

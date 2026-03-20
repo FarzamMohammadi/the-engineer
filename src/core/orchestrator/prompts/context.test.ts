@@ -162,4 +162,34 @@ describe("gatherRepoContext", () => {
     // File tree should still work
     expect(ctx.directoryTree).toContain("file.txt");
   });
+
+  it("sanitizes secrets from README content", () => {
+    gitInit(tempDir);
+    writeFileSync(
+      join(tempDir, "README.md"),
+      "# Project\n\nToken: ghp_abcdefghij1234567890abcdefghij123456",
+    );
+    gitCommit(tempDir, "init");
+
+    const ctx = gatherRepoContext(tempDir);
+    expect(ctx.readme).not.toContain("ghp_");
+    expect(ctx.readme).toContain("[REDACTED:github_token]");
+  });
+
+  it("sanitizes secrets from package.json description", () => {
+    gitInit(tempDir);
+    // Simulates a package.json with an accidentally leaked key pattern
+    writeFileSync(
+      join(tempDir, "package.json"),
+      JSON.stringify({
+        name: "my-project",
+        description: "Uses key=AKIA1234567890ABCDEF for deploys",
+      }),
+    );
+    gitCommit(tempDir, "init");
+
+    const ctx = gatherRepoContext(tempDir);
+    expect(ctx.packageInfo).not.toContain("AKIA1234567890ABCDEF");
+    expect(ctx.packageInfo).toContain("[REDACTED:aws_key]");
+  });
 });

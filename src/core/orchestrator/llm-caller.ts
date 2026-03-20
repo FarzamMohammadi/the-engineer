@@ -19,14 +19,13 @@ import type { PublishInput } from "../event-bus/index.js";
 import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { LlmCallRejectedError, NoLlmPluginError } from "./errors.js";
-import { PHASE_SEQUENCE } from "./phase-runner.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
-import type { OrchestratorContext, PipelineState } from "./types.js";
+import { type OrchestratorContext, PHASE_SEQUENCE, type PipelineState } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /** Phase-specific Zod schemas for output validation. */
-const PHASE_SCHEMAS: Record<Phase, ZodType> = {
+const PHASE_OUTPUT_SCHEMAS: Record<Phase, ZodType> = {
   [Phases.intake_analysis]: IntakeAnalysisOutputSchema,
   [Phases.research]: ResearchOutputSchema,
   [Phases.planning]: PlanningOutputSchema,
@@ -82,8 +81,8 @@ export interface LlmCaller {
 
 /** Create an LlmCaller bound to the given OrchestratorContext. */
 export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
-  /** Internal callLlm without retry (used as the inner call). */
-  async function callLlmInner(
+  /** Single LLM call attempt without retry. */
+  async function callLlmOnce(
     prompt: string,
     taskId: string,
     systemPrompt?: string | null,
@@ -132,7 +131,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_LLM_RETRIES; attempt++) {
       try {
-        return await callLlmInner(prompt, taskId, systemPrompt);
+        return await callLlmOnce(prompt, taskId, systemPrompt);
       } catch (error) {
         lastError = error;
         if (!isRetryableError(error)) {
@@ -255,7 +254,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     taskId: string,
     loopResult: AgentLoopResult,
   ): PhaseOutput {
-    const schema = PHASE_SCHEMAS[phase];
+    const schema = PHASE_OUTPUT_SCHEMAS[phase];
     const result = schema.safeParse(loopResult.phaseData);
 
     if (!result.success) {
@@ -294,7 +293,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     };
   }
 
-  function getDefaultData(phase: Phase): Record<string, unknown> {
+  function getPhaseDefaults(phase: Phase): Record<string, unknown> {
     const defaults: Record<Phase, Record<string, unknown>> = {
       [Phases.intake_analysis]: {
         complexity: "moderate",
@@ -343,7 +342,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
   }
 
   function buildFallbackOutput(phase: Phase, taskId: string, errorMessage: string): PhaseOutput {
-    return buildPhaseOutput(phase, taskId, getDefaultData(phase), "low", [errorMessage]);
+    return buildPhaseOutput(phase, taskId, getPhaseDefaults(phase), "low", [errorMessage]);
   }
 
   async function runPhaseWithAgentLoop(
@@ -355,6 +354,11 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
   ): Promise<PhaseOutput> {
     const toolConfig = getPhaseToolConfig(phase);
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
+    if (!worktreePath) {
+      throw new Error(
+        `Cannot run agent loop without a workspace for task ${taskId}. Ensure workspace setup completed before entering the phase pipeline.`,
+      );
+    }
     const toolAdapter = ctx.registry.getPrimaryPlugin<ToolAdapter>(AdapterTypes.tool) ?? null;
     const { traceId, sessionId } = state;
 
@@ -373,7 +377,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         : null;
 
     // ── Observability callbacks ──────────────────────────────────────────
-    const obsCallbacks =
+    const observabilityCallbacks =
       ctx.observationStore && traceId && sessionId
         ? { callbacks: buildObservabilityCallbacks(taskId, sessionId, traceId, phase) }
         : {};
@@ -387,7 +391,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         toolConfig,
         worktreePath,
         observer: ctx.observer,
-        ...obsCallbacks,
+        ...observabilityCallbacks,
       },
       (prompt, sysPrompt) => callLlm(prompt, taskId, sysPrompt),
       (action, wPath) =>

@@ -2,7 +2,13 @@ import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
-import { formatActionReference, formatKnowledge, formatOutputSchema, section } from "./format.js";
+import {
+  formatActionReference,
+  formatKnowledge,
+  formatOutputSchema,
+  section,
+  wrapUntrustedContent,
+} from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,10 +87,10 @@ export function buildIntakePrompt(ctx: IntakePromptContext): string {
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
 function buildTaskBrief(ctx: IntakePromptContext): string {
-  const lines = [`Task: ${ctx.task.title}`];
+  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
 
   if (ctx.task.description) {
-    lines.push("", ctx.task.description);
+    lines.push("", wrapUntrustedContent(ctx.task.description));
   }
 
   if (ctx.task.external_ref) {
@@ -185,7 +191,7 @@ function hasUnappliedFeedback(ctx: IntakePromptContext): boolean {
 function buildFeedbackReworkBrief(ctx: IntakePromptContext): string {
   const unapplied = (ctx.feedbackRounds ?? []).filter((r) => !r.applied);
   const lines = [
-    `Original Task: ${ctx.task.title}`,
+    `Original Task: ${wrapUntrustedContent(ctx.task.title)}`,
     `PR: #${String(ctx.prNumber ?? "unknown")}`,
     "",
     "## Reviewer Feedback to Address",
@@ -196,7 +202,7 @@ function buildFeedbackReworkBrief(ctx: IntakePromptContext): string {
     lines.push(`### Feedback Round ${String(i + 1)} (${round.stage} review)`);
     if (round.comments.length > 0) {
       for (const comment of round.comments) {
-        lines.push(`- ${comment}`);
+        lines.push(`- ${wrapUntrustedContent(comment)}`);
       }
     } else {
       lines.push("- (Changes requested — no specific comments provided)");
@@ -205,7 +211,7 @@ function buildFeedbackReworkBrief(ctx: IntakePromptContext): string {
   }
 
   if (ctx.task.description) {
-    lines.push("## Original Task Description", "", ctx.task.description);
+    lines.push("## Original Task Description", "", wrapUntrustedContent(ctx.task.description));
   }
 
   return section("Feedback Rework", lines.join("\n"));

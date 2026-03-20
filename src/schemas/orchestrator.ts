@@ -150,11 +150,11 @@ export type QuestionBatch = z.infer<typeof QuestionBatchSchema>;
 // ── Decomposition ───────────────────────────────────────────────────────────────
 
 export const DecompositionChildSchema = z.object({
-  title: z.string(),
-  description: z.string(),
+  title: z.string().max(200),
+  description: z.string().max(5000),
   estimated_time_ms: z.number().int(),
   depends_on: z.array(z.number().int()),
-  acceptance_criteria: z.array(z.string()),
+  acceptance_criteria: z.array(z.string().max(500)).max(20),
 });
 export type DecompositionChild = z.infer<typeof DecompositionChildSchema>;
 
@@ -170,8 +170,8 @@ export type DecompositionPlan = z.infer<typeof DecompositionPlanSchema>;
 
 /** LLM-facing decomposition plan (parent_task_id excluded — set by Orchestrator). */
 export const LLMDecompositionPlanSchema = z.object({
-  rationale: z.string(),
-  children: z.array(DecompositionChildSchema),
+  rationale: z.string().max(2000),
+  children: z.array(DecompositionChildSchema).max(10),
   dependency_graph: z.string(),
   total_estimated_ms: z.number().int(),
   parallelizable: z.boolean(),

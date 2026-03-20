@@ -203,3 +203,24 @@ Accumulated across all merge rounds. Nothing gets lost.
 - **`engineer status` is bare-bones**: Shows running/stopped and task state counts only — no concurrency slot usage, queue depth, or aging state. The Daemon's `getState()` already exposes this data; wiring it to `status` is a feature addition, not a quick fix.
 - **No upper-bound validation on duration fields in schema**: `stuck_threshold_ms: 1` (1ms) would flag every task as stuck. Doctor warnings (F5) are the right layer — adding schema constraints would break configs that deliberately use extreme values in tests.
 - **Test config defaults differ from schema defaults**: `makeDaemonConfig()` in tests uses `stuck_threshold_ms: 600_000` (10m) vs schema default of 1.8M (30m). Intentional and acceptable — not a user-facing DX issue.
+
+## Round 1 — phase7 (Pipeline)
+
+### Lens A (Structure & Organization)
+- **`phase-runner.ts` at 720 lines** — Internal structure is sound; natural extraction point identified (completion processing cluster) if it grows further. Monitor point.
+
+### Lens C (Abstractions & API Design)
+- **`PhaseOutput.data` type erasure** (`Record<string, unknown>`) — 15+ casts are internal to Orchestrator, guarded by upstream Zod validation. Typed accessor helpers would be over-engineering for internal-only code.
+- **`PhaseCompletionOutcome` bag of nullable results** — A discriminated union would be cosmetically cleaner but not materially better. Current sequential null-check pattern is clear.
+- **Redundant `taskId` in PhaseHandler signature** — `taskId === dispatch.task.id` always, but removing touches all 7 handlers for minimal benefit.
+- **`runAgentLoop` positional function deps** — Config vs injected capabilities are conceptually different; the current separation is a valid design choice.
+
+### Lens D (Error Handling & Edge Cases)
+- **Retry cost tracking loss** — Agent loop cost event lost if retry LLM call throws. Acceptable since per-call cost is still emitted.
+- **`observationStore` non-null assertion** — Guarded by caller check. Acceptable.
+- **TOCTOU in `realpath`** — Extremely unlikely race condition in worktree path resolution. No fix needed.
+
+### Lens E (Security & Trust Boundaries)
+- **Prompt injection detection heuristic** — Out of scope. The delimiter approach is the standard mitigation; heuristic detection is a separate feature with its own false-positive tradeoffs.
+- **Command-aware policy engine** — Currently the Safety Layer's scope checks pass through for `run_command`. BashTool's `blocked_patterns` is the existing defense. Adding policy engine awareness of dangerous commands could be a future enhancement but risks duplicating BashTool logic.
+- **Prompt blob stored unsanitized** — Confirmed false positive. The `prompt` variable passed to `prompt_content` is already the sanitized version.

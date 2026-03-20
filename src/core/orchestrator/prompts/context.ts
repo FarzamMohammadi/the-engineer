@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { sanitizeSecrets } from "../../../utils/sanitize.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,12 +46,14 @@ export interface RepoContext {
  * wrapped in try/catch — partial context is better than no context.
  */
 export function gatherRepoContext(worktreePath: string): RepoContext {
+  const readme = readReadme(worktreePath);
+  const packageInfo = readPackageInfo(worktreePath);
   return {
-    readme: readReadme(worktreePath),
-    directoryTree: readDirectoryTree(worktreePath),
-    recentCommits: readRecentCommits(worktreePath),
+    readme: readme ? sanitizeSecrets(readme) : null,
+    directoryTree: sanitizeSecrets(readDirectoryTree(worktreePath)),
+    recentCommits: sanitizeSecrets(readRecentCommits(worktreePath)),
     gitBranch: readGitBranch(worktreePath),
-    packageInfo: readPackageInfo(worktreePath),
+    packageInfo: packageInfo ? sanitizeSecrets(packageInfo) : null,
   };
 }
 

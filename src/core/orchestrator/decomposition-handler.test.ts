@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
@@ -6,6 +6,7 @@ import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import { createDecompositionHandler } from "./decomposition-handler.js";
 import type { OrchestratorContext } from "./types.js";
+import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -70,18 +71,22 @@ function createPlanningOutput(decompositionPlan: unknown): PhaseOutput {
   };
 }
 
-const commentFn = vi.fn();
+function createMockWorkspaceLifecycle(): WorkspaceLifecycle {
+  return {
+    setupWorkspace: vi.fn(),
+    createSession: vi.fn(),
+    notifyMilestone: vi.fn(),
+    commentOnSourceIssue: vi.fn(),
+    getTaskRepo: vi.fn().mockReturnValue(""),
+  };
+}
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("DecompositionHandler", () => {
-  beforeEach(() => {
-    commentFn.mockReset();
-  });
-
   it("returns null when no decomposition_plan in output", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx);
+    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
     const output = createPlanningOutput(null);
     const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
 
@@ -91,7 +96,6 @@ describe("DecompositionHandler", () => {
       output,
       createDispatch(),
       priorOutputs,
-      commentFn,
     );
 
     expect(result).toBeNull();
@@ -99,7 +103,7 @@ describe("DecompositionHandler", () => {
 
   it("returns null when decomposition_plan fails validation", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx);
+    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
     const output = createPlanningOutput({ invalid: "data" });
     const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
 
@@ -109,7 +113,6 @@ describe("DecompositionHandler", () => {
       output,
       createDispatch(),
       priorOutputs,
-      commentFn,
     );
 
     expect(result).toBeNull();
@@ -122,7 +125,7 @@ describe("DecompositionHandler", () => {
 
   it("creates child tasks from valid plan", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx);
+    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
     const plan = {
       rationale: "Too complex for one task",
       children: [
@@ -154,7 +157,6 @@ describe("DecompositionHandler", () => {
       output,
       createDispatch(),
       priorOutputs,
-      commentFn,
     );
 
     expect(result).not.toBeNull();
@@ -167,7 +169,7 @@ describe("DecompositionHandler", () => {
 
   it("maps dependency indices to task IDs", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx);
+    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
     const plan = {
       rationale: "Split into two",
       children: [
@@ -193,14 +195,7 @@ describe("DecompositionHandler", () => {
     const output = createPlanningOutput(plan);
     const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
 
-    handler.handleDecomposition(
-      "session-001",
-      "task-001",
-      output,
-      createDispatch(),
-      priorOutputs,
-      commentFn,
-    );
+    handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
 
     // Verify children array written to parent task includes dependency mapping
     const updateCalls = (ctx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock.calls;
@@ -212,7 +207,7 @@ describe("DecompositionHandler", () => {
 
   it("transitions parent to supervising", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx);
+    const handler = createDecompositionHandler(ctx, createMockWorkspaceLifecycle());
     const plan = {
       rationale: "Split",
       children: [
@@ -231,14 +226,7 @@ describe("DecompositionHandler", () => {
     const output = createPlanningOutput(plan);
     const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
 
-    handler.handleDecomposition(
-      "session-001",
-      "task-001",
-      output,
-      createDispatch(),
-      priorOutputs,
-      commentFn,
-    );
+    handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
 
     expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
       "task-001",
@@ -251,7 +239,8 @@ describe("DecompositionHandler", () => {
 
   it("comments on source issue with subtask list", () => {
     const ctx = createMockContext();
-    const handler = createDecompositionHandler(ctx);
+    const wsl = createMockWorkspaceLifecycle();
+    const handler = createDecompositionHandler(ctx, wsl);
     const plan = {
       rationale: "Too large",
       children: [
@@ -277,16 +266,15 @@ describe("DecompositionHandler", () => {
     const output = createPlanningOutput(plan);
     const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
 
-    handler.handleDecomposition(
-      "session-001",
-      "task-001",
-      output,
-      createDispatch(),
-      priorOutputs,
-      commentFn,
-    );
+    handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
 
-    expect(commentFn).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Build UI"));
-    expect(commentFn).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Build API"));
+    expect(wsl.commentOnSourceIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("Build UI"),
+    );
+    expect(wsl.commentOnSourceIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("Build API"),
+    );
   });
 });

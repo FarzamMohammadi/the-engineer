@@ -8,6 +8,7 @@ import {
 import { JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
 import type { ExecuteTaskResult, OrchestratorContext } from "./types.js";
+import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── DecompositionHandler Interface ──────────────────────────────────────────
 
@@ -24,21 +25,22 @@ export interface DecompositionHandler {
     planningOutput: PhaseOutput,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
-    commentOnSourceIssue: (d: Dispatch, m: string) => void,
   ): ExecuteTaskResult | null;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 /** Create a DecompositionHandler bound to the given OrchestratorContext. */
-export function createDecompositionHandler(ctx: OrchestratorContext): DecompositionHandler {
+export function createDecompositionHandler(
+  ctx: OrchestratorContext,
+  workspaceLifecycle: WorkspaceLifecycle,
+): DecompositionHandler {
   function handleDecomposition(
     sessionId: string,
     taskId: string,
     planningOutput: PhaseOutput,
     dispatch: Dispatch,
     priorOutputs: Map<Phase, PhaseOutput>,
-    commentOnSourceIssue: (d: Dispatch, m: string) => void,
   ): ExecuteTaskResult | null {
     const planData = planningOutput.data as { decomposition_plan?: unknown };
     if (!planData.decomposition_plan) {
@@ -65,27 +67,49 @@ export function createDecompositionHandler(ctx: OrchestratorContext): Decomposit
     const plan = parseResult.data;
     const childIds: string[] = [];
 
-    for (const childSpec of plan.children) {
-      const childTask = ctx.taskEngine.createTask({
-        title: childSpec.title,
-        repo: dispatch.task.repo ?? "",
-        source: "decomposition",
-        description: childSpec.description,
-        parent_id: taskId,
-        acceptance_criteria: childSpec.acceptance_criteria,
-        clone_url: dispatch.task.clone_url,
-        cascade_policy: "pause_siblings",
+    // Guard against partial child creation: if any child fails to create or
+    // transition, log the orphaned IDs and skip decomposition (graceful degradation).
+    try {
+      for (const childSpec of plan.children) {
+        const childTask = ctx.taskEngine.createTask({
+          title: childSpec.title,
+          repo: dispatch.task.repo ?? "",
+          source: "decomposition",
+          description: childSpec.description,
+          parent_id: taskId,
+          acceptance_criteria: childSpec.acceptance_criteria,
+          clone_url: dispatch.task.clone_url,
+          cascade_policy: "pause_siblings",
+        });
+
+        ctx.taskEngine.requestTransition(
+          childTask.id,
+          TaskStates.queued,
+          null,
+          "decomposition",
+          "orchestrator",
+        );
+
+        childIds.push(childTask.id);
+      }
+    } catch (childErr) {
+      const errMsg = childErr instanceof Error ? childErr.message : String(childErr);
+      ctx.observer.error("Decomposition partially failed — orphaned children may exist", {
+        taskId,
+        createdChildIds: childIds,
+        totalPlanned: plan.children.length,
+        error: errMsg,
       });
-
-      ctx.taskEngine.requestTransition(
-        childTask.id,
-        TaskStates.queued,
-        null,
-        "decomposition",
-        "orchestrator",
-      );
-
-      childIds.push(childTask.id);
+      ctx.sessionMemory.addJournalEntry({
+        sessionId,
+        taskId,
+        phase: Phases.planning,
+        type: JournalEntryTypes.error,
+        summary: `Decomposition failed after creating ${String(childIds.length)}/${String(plan.children.length)} children: ${errMsg}`,
+        detail: `Orphaned child IDs: ${childIds.join(", ") || "none"}`,
+        tags: ["decomposition", "partial_failure"],
+      });
+      return null;
     }
 
     // Build children array with dependency mapping (index-based → task ID)
@@ -125,7 +149,7 @@ export function createDecompositionHandler(ctx: OrchestratorContext): Decomposit
     });
 
     const subtaskList = plan.children.map((c, i) => `${String(i + 1)}. ${c.title}`).join("\n");
-    commentOnSourceIssue(
+    workspaceLifecycle.commentOnSourceIssue(
       dispatch,
       `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
     );

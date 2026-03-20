@@ -1,4 +1,5 @@
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
+import { Phases } from "../../schemas/orchestrator.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
@@ -9,7 +10,7 @@ import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
 import type { IObservationStore } from "../observer/types.js";
-import type { RepoContext } from "./prompts/context.js";
+import type { RepoContext } from "./prompts/index.js";
 
 // ── Shared Dependencies ────────────────────────────────────────────────────
 
@@ -27,6 +28,18 @@ export interface OrchestratorContext {
   observer: IObserver;
 }
 
+// ── Preemption Gate ──────────────────────────────────────────────────────
+
+/** Cooperative preemption state container (Protocol P8). */
+export interface PreemptionGate {
+  /** Check if preemption has been requested. */
+  isRequested(): boolean;
+  /** Get the preemption payload (target + preempting task IDs), or null. */
+  getPayload(): { target_task_id: string; preempting_task_id: string } | null;
+  /** Reset preemption state after handling. */
+  reset(): void;
+}
+
 // ── Per-Execution State ────────────────────────────────────────────────────
 
 /** Per-execution state — scoped to a single executeTask() call, not the class. */
@@ -38,7 +51,7 @@ export interface PipelineState {
   repoContext: RepoContext | null;
 }
 
-// ── Process Phase Result ───────────────────────────────────────────────────
+// ── Phase Completion Outcome ──────────────────────────────────────────────
 
 /** Constant enum for executeTask outcome values. */
 export const Outcomes = {
@@ -63,11 +76,15 @@ export type ExecuteTaskResult =
   | { outcome: typeof Outcomes.preempted; lastPhase: Phase; checkpointId: string }
   | { outcome: typeof Outcomes.error; phase: Phase; reason: string };
 
-/** Return type of processPhaseCompletion. */
-export interface ProcessPhaseResult {
-  phases: Phase[];
-  loopbackIndex: number | null;
-  preemptionResult: ExecuteTaskResult | null;
-  decompositionResult: ExecuteTaskResult | null;
-  reviewPendingResult: ExecuteTaskResult | null;
-}
+// ── Pipeline Constants ───────────────────────────────────────────────────
+
+/** The standard 7-phase pipeline sequence. */
+export const PHASE_SEQUENCE: Phase[] = [
+  Phases.intake_analysis,
+  Phases.research,
+  Phases.planning,
+  Phases.execution,
+  Phases.self_review,
+  Phases.demo_prep,
+  Phases.integration,
+];

@@ -4,17 +4,18 @@ import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
+import { createAndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import {
   PHASE_SEQUENCE,
   type PhaseRunnerDeps,
-  buildPhaseHandoff,
   createPhaseHandlerRegistry,
+  formatPhaseHandoff,
   runPhasePipeline,
 } from "./phase-runner.js";
 import type { PrManager } from "./pr-manager.js";
 import type { OrchestratorContext, PipelineState } from "./types.js";
-import { type WorkspaceLifecycle, createAndonCord } from "./workspace-lifecycle.js";
+import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -145,17 +146,19 @@ function createDeps(
     workspaceLifecycle: {
       notifyMilestone: vi.fn(),
       commentOnSourceIssue: vi.fn(),
-      andonCord: createAndonCord(),
     } as unknown as WorkspaceLifecycle,
+    andonCord: createAndonCord(),
     prManager: {
       commitPushAndCreatePR: vi.fn().mockResolvedValue(false),
     } as unknown as PrManager,
     decompositionHandler: {
       handleDecomposition: vi.fn().mockReturnValue(null),
     } as unknown as DecompositionHandler,
-    isPreempted: vi.fn().mockReturnValue(false),
-    getPreemptionPayload: vi.fn().mockReturnValue(null),
-    resetPreemption: vi.fn(),
+    preemption: {
+      isRequested: vi.fn().mockReturnValue(false),
+      getPayload: vi.fn().mockReturnValue(null),
+      reset: vi.fn(),
+    },
   };
 }
 
@@ -326,12 +329,12 @@ describe("PhaseRunner", () => {
       const handlers = createHandlersThatReturn(outputs);
       const deps = createDeps(ctx, handlers);
       let callCount = 0;
-      (deps.isPreempted as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      (deps.preemption.isRequested as ReturnType<typeof vi.fn>).mockImplementation(() => {
         callCount++;
         // Preempt after first phase completes (on second check)
         return callCount > 1;
       });
-      (deps.getPreemptionPayload as ReturnType<typeof vi.fn>).mockReturnValue({
+      (deps.preemption.getPayload as ReturnType<typeof vi.fn>).mockReturnValue({
         target_task_id: "task-001",
         preempting_task_id: "task-urgent",
       });
@@ -454,7 +457,7 @@ describe("PhaseRunner", () => {
       }
       const handlers = createHandlersThatReturn(outputs);
       const deps = createDeps(ctx, handlers);
-      deps.workspaceLifecycle.andonCord.pull("secret detected in output");
+      deps.andonCord.pull("secret detected in output");
 
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
@@ -485,11 +488,11 @@ describe("PhaseRunner", () => {
     });
   });
 
-  describe("buildPhaseHandoff", () => {
+  describe("formatPhaseHandoff", () => {
     it("builds SBAR formatted string", () => {
       const output = makeOutput(Phases.research, { relevant_files: ["a.ts"] });
       const dispatch = createDispatch();
-      const handoff = buildPhaseHandoff(Phases.research, Phases.planning, output, dispatch);
+      const handoff = formatPhaseHandoff(Phases.research, Phases.planning, output, dispatch);
 
       expect(handoff).toContain("SITUATION:");
       expect(handoff).toContain("BACKGROUND:");
@@ -503,7 +506,7 @@ describe("PhaseRunner", () => {
       const output = makeOutput(Phases.research);
       output.open_questions = ["What about edge cases?"];
       const dispatch = createDispatch();
-      const handoff = buildPhaseHandoff(Phases.research, Phases.planning, output, dispatch);
+      const handoff = formatPhaseHandoff(Phases.research, Phases.planning, output, dispatch);
 
       expect(handoff).toContain("Open questions need attention");
     });

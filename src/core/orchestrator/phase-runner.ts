@@ -8,30 +8,24 @@ import {
 } from "../../schemas/session-memory.js";
 import type { PublishInput } from "../event-bus/index.js";
 import type { IObserver } from "../observer/index.js";
+import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import { PhaseHandlerMissingError } from "./errors.js";
 import type { PrManager } from "./pr-manager.js";
-import { gatherRepoContextSafe } from "./prompts/context.js";
-import type {
-  ExecuteTaskResult,
-  OrchestratorContext,
-  PipelineState,
-  ProcessPhaseResult,
+import { gatherRepoContextSafe } from "./prompts/index.js";
+import {
+  type ExecuteTaskResult,
+  type OrchestratorContext,
+  PHASE_SEQUENCE,
+  type PipelineState,
+  type PreemptionGate,
 } from "./types.js";
 import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-/** The standard 7-phase pipeline sequence. */
-export const PHASE_SEQUENCE: Phase[] = [
-  Phases.intake_analysis,
-  Phases.research,
-  Phases.planning,
-  Phases.execution,
-  Phases.self_review,
-  Phases.demo_prep,
-  Phases.integration,
-];
+// Re-export for backward compatibility (tests import from here).
+export { PHASE_SEQUENCE } from "./types.js";
 
 /** Fast-path phases: skip research, planning, demo_prep, integration. */
 const FAST_PATH_PHASES: Phase[] = [Phases.execution, Phases.self_review];
@@ -72,10 +66,10 @@ export function createPhaseHandlerRegistry(
 // ── SBAR Handoffs (Medicine) ────────────────────────────────────────────────
 
 /**
- * Build a structured SBAR handoff string for phase transitions.
+ * Format a structured SBAR handoff string for phase transitions.
  * Logged at each transition for operational visibility.
  */
-export function buildPhaseHandoff(
+export function formatPhaseHandoff(
   completedPhase: Phase,
   nextPhase: Phase,
   output: PhaseOutput,
@@ -98,12 +92,19 @@ export interface PhaseRunnerDeps {
   workspaceLifecycle: WorkspaceLifecycle;
   prManager: PrManager;
   decompositionHandler: DecompositionHandler;
-  /** Check if preemption has been requested (set by EventBus subscription). */
-  isPreempted: () => boolean;
-  /** Get the preemption payload (target + preempting task IDs). */
-  getPreemptionPayload: () => { target_task_id: string; preempting_task_id: string } | null;
-  /** Reset preemption state after handling. */
-  resetPreemption: () => void;
+  /** Emergency halt mechanism (Toyota Production System). */
+  andonCord: AndonCord;
+  /** Cooperative preemption state (Protocol P8). */
+  preemption: PreemptionGate;
+}
+
+/** Return type of processPhaseCompletion (internal to the pipeline runner). */
+interface PhaseCompletionOutcome {
+  phases: Phase[];
+  loopbackIndex: number | null;
+  preemptionResult: ExecuteTaskResult | null;
+  decompositionResult: ExecuteTaskResult | null;
+  reviewPendingResult: ExecuteTaskResult | null;
 }
 
 // ── Pure Helpers ────────────────────────────────────────────────────────────
@@ -141,8 +142,15 @@ function resolveStartState(
   const checkpointPhaseIndex = phases.indexOf(checkpoint.phase as Phase);
   const startIndex = checkpointPhaseIndex >= 0 ? checkpointPhaseIndex + 1 : 0;
 
-  // Verify workspace integrity before resuming
-  ctx.workspaceManager.verifyWorkspace(taskId);
+  // Verify workspace integrity before resuming.
+  // If workspace was deleted between runs (disk cleanup, manual intervention),
+  // throw a descriptive error that handlePhaseError will catch in the main loop.
+  try {
+    ctx.workspaceManager.verifyWorkspace(taskId);
+  } catch (verifyErr) {
+    const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+    throw new Error(`Cannot resume: workspace verification failed: ${msg}`);
+  }
 
   ctx.sessionMemory.addJournalEntry({
     sessionId,
@@ -200,7 +208,7 @@ function recordPhaseTransition(
   if (nextPhase) {
     const output = priorOutputs.get(completedPhase);
     if (output) {
-      const handoff = buildPhaseHandoff(completedPhase, nextPhase, output, dispatch);
+      const handoff = formatPhaseHandoff(completedPhase, nextPhase, output, dispatch);
       ctx.sessionMemory.addJournalEntry({
         sessionId,
         taskId,
@@ -246,6 +254,10 @@ function handlePhaseError(
 ): ExecuteTaskResult {
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? (error.stack ?? null) : null;
+
+  // Ensure the task record reflects the phase where failure occurred,
+  // even if it happened during post-phase processing.
+  ctx.taskEngine.updateTaskField(taskId, "phase", phase);
 
   ctx.sessionMemory.addJournalEntry({
     sessionId,
@@ -398,16 +410,8 @@ async function tryCreatePRAndExitForReview(
   priorOutputs: Map<Phase, PhaseOutput>,
   ctx: OrchestratorContext,
   prManager: PrManager,
-  workspaceLifecycle: WorkspaceLifecycle,
-): Promise<ProcessPhaseResult | null> {
-  const prCreated = await prManager.commitPushAndCreatePR(
-    sessionId,
-    taskId,
-    output,
-    dispatch,
-    (d, m) => workspaceLifecycle.commentOnSourceIssue(d, m),
-    (d, m) => workspaceLifecycle.notifyMilestone(d, m),
-  );
+): Promise<PhaseCompletionOutcome | null> {
+  const prCreated = await prManager.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
   if (!prCreated) {
     return null;
   }
@@ -449,8 +453,8 @@ async function processPhaseCompletion(
   dispatch: Dispatch,
   state: PipelineState,
   deps: PhaseRunnerDeps,
-): Promise<{ result: ProcessPhaseResult; updatedLoopbackCount: number }> {
-  const { ctx, prManager, decompositionHandler, workspaceLifecycle } = deps;
+): Promise<{ result: PhaseCompletionOutcome; updatedLoopbackCount: number }> {
+  const { ctx, prManager, decompositionHandler } = deps;
   let phases = currentPhases;
   let loopbackCount = state.loopbackCount;
 
@@ -467,7 +471,6 @@ async function processPhaseCompletion(
       output,
       dispatch,
       priorOutputs,
-      (d, m) => workspaceLifecycle.commentOnSourceIssue(d, m),
     );
     if (decompositionResult) {
       return {
@@ -514,7 +517,6 @@ async function processPhaseCompletion(
       priorOutputs,
       ctx,
       prManager,
-      workspaceLifecycle,
     );
     if (result) {
       return { result, updatedLoopbackCount: loopbackCount };
@@ -544,7 +546,6 @@ async function processPhaseCompletion(
       priorOutputs,
       ctx,
       prManager,
-      workspaceLifecycle,
     );
     ctx.observer.debug("Fast-path PR result", {
       hasResult: !!result,
@@ -560,9 +561,9 @@ async function processPhaseCompletion(
   recordPhaseTransition(sessionId, taskId, phase, nextPhase, priorOutputs, dispatch, ctx);
 
   // Check preemption after phase completion
-  if (deps.isPreempted() && nextPhase) {
-    const preemptingId = deps.getPreemptionPayload()?.preempting_task_id ?? "unknown";
-    deps.resetPreemption();
+  if (deps.preemption.isRequested() && nextPhase) {
+    const preemptingId = deps.preemption.getPayload()?.preempting_task_id ?? "unknown";
+    deps.preemption.reset();
     return {
       result: {
         phases,
@@ -627,9 +628,9 @@ export async function runPhasePipeline(
 
   for (let i = startIndex; i < phases.length; i++) {
     // Check preemption before phase start
-    if (deps.isPreempted()) {
-      const preemptingId = deps.getPreemptionPayload()?.preempting_task_id ?? "unknown";
-      deps.resetPreemption();
+    if (deps.preemption.isRequested()) {
+      const preemptingId = deps.preemption.getPayload()?.preempting_task_id ?? "unknown";
+      deps.preemption.reset();
       // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
       return handlePreemption(sessionId, taskId, phases[i]!, ctx, preemptingId);
     }
@@ -640,8 +641,8 @@ export async function runPhasePipeline(
     ctx.observer.debug("Phase loop iteration", { index: i, phase, phaseCount: phases.length });
 
     // Check AndonCord
-    if (deps.workspaceLifecycle.andonCord.isPulled()) {
-      const reason = deps.workspaceLifecycle.andonCord.getReason() ?? "unknown";
+    if (deps.andonCord.isPulled()) {
+      const reason = deps.andonCord.getReason() ?? "unknown";
       return handlePhaseError(
         sessionId,
         taskId,
@@ -672,7 +673,7 @@ export async function runPhasePipeline(
     // Post-phase processing: decomposition, PR creation, transitions, loopback, preemption.
     // Wrapped separately so errors here (e.g. DB failure, PR creation exception) are caught
     // and routed through handlePhaseError, which also closes the session.
-    let completionResult: ProcessPhaseResult;
+    let postPhaseOutcome: PhaseCompletionOutcome;
     try {
       const { result, updatedLoopbackCount } = await processPhaseCompletion(
         sessionId,
@@ -686,31 +687,41 @@ export async function runPhasePipeline(
         currentState,
         deps,
       );
-      completionResult = result;
+      postPhaseOutcome = result;
       currentState = { ...currentState, loopbackCount: updatedLoopbackCount };
-    } catch (postError) {
-      return handlePhaseError(sessionId, taskId, phase, postError, ctx);
+    } catch (completionError) {
+      return handlePhaseError(sessionId, taskId, phase, completionError, ctx);
     }
 
-    if (completionResult.decompositionResult) {
-      return completionResult.decompositionResult;
+    if (postPhaseOutcome.decompositionResult) {
+      return postPhaseOutcome.decompositionResult;
     }
-    if (completionResult.reviewPendingResult) {
+    if (postPhaseOutcome.reviewPendingResult) {
       ctx.observer.info("Pipeline exiting with review pending result", { taskId });
-      return completionResult.reviewPendingResult;
+      return postPhaseOutcome.reviewPendingResult;
     }
-    if (completionResult.loopbackIndex !== null) {
-      i = completionResult.loopbackIndex;
+    if (postPhaseOutcome.loopbackIndex !== null) {
+      i = postPhaseOutcome.loopbackIndex;
       continue;
     }
-    phases = completionResult.phases;
-    if (completionResult.preemptionResult) {
-      return completionResult.preemptionResult;
+    phases = postPhaseOutcome.phases;
+    if (postPhaseOutcome.preemptionResult) {
+      return postPhaseOutcome.preemptionResult;
     }
   }
 
   // ── Pipeline complete ──────────────────────────────────────────────────
-  ctx.sessionMemory.endSession(sessionId, SessionEndReasons.completed);
+  // Session close is important but not worth losing the completed outcome over.
+  // If endSession throws (DB corruption, connection closed), log and continue.
+  try {
+    ctx.sessionMemory.endSession(sessionId, SessionEndReasons.completed);
+  } catch (endErr) {
+    ctx.observer.error("Failed to close session after pipeline completion", {
+      taskId,
+      sessionId,
+      error: endErr instanceof Error ? endErr.message : String(endErr),
+    });
+  }
   ctx.observer.info("Phase pipeline completed", {
     taskId,
     sessionId,

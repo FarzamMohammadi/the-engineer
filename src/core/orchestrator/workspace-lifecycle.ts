@@ -5,42 +5,6 @@ import type { Session } from "../../schemas/session-memory.js";
 import { sanitizeSecrets } from "../../utils/sanitize.js";
 import type { OrchestratorContext } from "./types.js";
 
-// ── AndonCord (Toyota Production System) ────────────────────────────────────
-
-/** Emergency halt mechanism — any subsystem can "pull the cord" to stop the pipeline. */
-export interface AndonCord {
-  /** Pull the cord with a reason. Pipeline halts between phases. */
-  pull(reason: string): void;
-  /** Check if the cord has been pulled. */
-  isPulled(): boolean;
-  /** Get the reason the cord was pulled, or null if not pulled. */
-  getReason(): string | null;
-  /** Reset the cord (after the issue is addressed). */
-  reset(): void;
-}
-
-/** Create an AndonCord instance. */
-export function createAndonCord(): AndonCord {
-  let pulled = false;
-  let pulledReason: string | null = null;
-  return {
-    pull(reason) {
-      pulled = true;
-      pulledReason = reason;
-    },
-    isPulled() {
-      return pulled;
-    },
-    getReason() {
-      return pulledReason;
-    },
-    reset() {
-      pulled = false;
-      pulledReason = null;
-    },
-  };
-}
-
 // ── WorkspaceLifecycle Interface ────────────────────────────────────────────
 
 /** Workspace setup, session management, and milestone notifications. */
@@ -55,16 +19,12 @@ export interface WorkspaceLifecycle {
   commentOnSourceIssue(dispatch: Dispatch, message: string): void;
   /** Extract repository identifier from task. */
   getTaskRepo(dispatch: Dispatch): string;
-  /** Emergency halt mechanism. */
-  andonCord: AndonCord;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 /** Create a WorkspaceLifecycle bound to the given OrchestratorContext. */
 export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLifecycle {
-  const andonCord = createAndonCord();
-
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: workspace setup has inherent branching (new/rework/resume/child)
   function setupWorkspace(dispatch: Dispatch): void {
     const taskId = dispatch.task.id;
@@ -230,6 +190,5 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
     notifyMilestone,
     commentOnSourceIssue,
     getTaskRepo,
-    andonCord,
   };
 }

@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Task } from "../../schemas/task.js";
+import { createAndonCord } from "./andon-cord.js";
 import type { OrchestratorContext } from "./types.js";
-import { createAndonCord, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
+import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

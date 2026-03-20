@@ -7,6 +7,7 @@ import {
   formatOutputSchema,
   formatPriorPhaseOutput,
   section,
+  wrapUntrustedContent,
 } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -83,9 +84,9 @@ export function buildPlanningPrompt(ctx: PlanningPromptContext): string {
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
 function buildTaskBrief(ctx: PlanningPromptContext): string {
-  const lines = [`Task: ${ctx.task.title}`];
+  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
   if (ctx.task.description) {
-    lines.push("", ctx.task.description);
+    lines.push("", wrapUntrustedContent(ctx.task.description));
   }
   return section("Task", lines.join("\n"));
 }

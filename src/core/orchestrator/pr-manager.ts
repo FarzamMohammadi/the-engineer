@@ -7,6 +7,7 @@ import { Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../schemas/session-memory.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { OrchestratorContext } from "./types.js";
+import type { WorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── PrManager Interface ────────────────────────────────────────────────────
 
@@ -23,17 +24,23 @@ export interface PrManager {
     taskId: string,
     demoPrepOutput: PhaseOutput,
     dispatch: Dispatch,
-    commentOnSourceIssue: (d: Dispatch, m: string) => void,
-    notifyMilestone: (d: Dispatch, m: string) => void,
   ): Promise<boolean>;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 /** Create a PrManager bound to the given OrchestratorContext. */
-export function createPrManager(ctx: OrchestratorContext): PrManager {
+export function createPrManager(
+  ctx: OrchestratorContext,
+  workspaceLifecycle: WorkspaceLifecycle,
+): PrManager {
   const observer = ctx.observer;
-  function logPrStepFailure(sessionId: string, taskId: string, step: string, error: unknown): void {
+  function journalPrStepFailure(
+    sessionId: string,
+    taskId: string,
+    step: string,
+    error: unknown,
+  ): void {
     const message = error instanceof Error ? error.message : String(error);
     ctx.sessionMemory.addJournalEntry({
       sessionId,
@@ -51,8 +58,6 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
     taskId: string,
     demoPrepOutput: PhaseOutput,
     dispatch: Dispatch,
-    commentOnSourceIssue: (d: Dispatch, m: string) => void,
-    notifyMilestone: (d: Dispatch, m: string) => void,
   ): Promise<boolean> {
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
@@ -106,7 +111,7 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
         hasNewCommit = true;
       }
     } catch (error) {
-      logPrStepFailure(sessionId, taskId, "commit", error);
+      journalPrStepFailure(sessionId, taskId, "commit", error);
       observer.error("PR workflow commit failed", {
         taskId,
         error: sanitizeErrorMessage(error),
@@ -142,7 +147,7 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
       ctx.workspaceManager.pushBranch(taskId);
       observer.info("Push succeeded", { taskId, branch: record.branch });
     } catch (error) {
-      logPrStepFailure(sessionId, taskId, "push", error);
+      journalPrStepFailure(sessionId, taskId, "push", error);
       observer.error("PR workflow push failed", {
         taskId,
         error: sanitizeErrorMessage(error),
@@ -160,7 +165,10 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
           feedback_rounds: updatedRounds,
         });
       }
-      commentOnSourceIssue(dispatch, "Pushed rework addressing review feedback.");
+      workspaceLifecycle.commentOnSourceIssue(
+        dispatch,
+        "Pushed rework addressing review feedback.",
+      );
       return true;
     }
 
@@ -204,11 +212,11 @@ export function createPrManager(ctx: OrchestratorContext): PrManager {
         url: prResult.url,
       });
 
-      notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
-      commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
+      workspaceLifecycle.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
+      workspaceLifecycle.commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
       return true;
     } catch (error) {
-      logPrStepFailure(sessionId, taskId, "pr_creation", error);
+      journalPrStepFailure(sessionId, taskId, "pr_creation", error);
       observer.error("PR creation failed", {
         taskId,
         error: sanitizeErrorMessage(error),

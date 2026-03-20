@@ -46,7 +46,7 @@ export function resolveWorktreePath(worktreePath: string, filePath: string): str
  * Resolve a path with symlink resolution for read operations on existing files.
  * Catches symlink-based worktree escapes that `resolveWorktreePath` misses.
  */
-export function resolveWorktreePathReal(worktreePath: string, filePath: string): string {
+export function resolveWorktreePathCanonical(worktreePath: string, filePath: string): string {
   const resolved = resolve(worktreePath, filePath);
   if (!resolved.startsWith(worktreePath)) {
     throw new WorkspaceEscapeError(filePath);
@@ -105,8 +105,16 @@ export function executeAction(
       return executeRunCommand(action.params.command, worktreePath, deps);
     case "done":
       return Promise.resolve({ success: true, output: "done" });
-    default:
-      return Promise.resolve({ success: false, output: "", error: "Unknown action" });
+    default: {
+      // Exhaustiveness check — TypeScript will error here if a new action type
+      // is added to AgentAction without updating this switch.
+      const _exhaustive: never = action;
+      return Promise.resolve({
+        success: false,
+        output: "",
+        error: `Unknown action: ${(_exhaustive as AgentAction).action}`,
+      });
+    }
   }
 }
 
@@ -114,7 +122,7 @@ export function executeAction(
 
 async function executeReadFile(path: string, worktreePath: string): Promise<ActionResult> {
   try {
-    const resolved = resolveWorktreePathReal(worktreePath, path);
+    const resolved = resolveWorktreePathCanonical(worktreePath, path);
     const content = await readFile(resolved, "utf-8");
     return { success: true, output: content };
   } catch (err) {
@@ -161,7 +169,7 @@ async function executeEditFile(
   deps: ActionExecutorDeps,
 ): Promise<ActionResult> {
   try {
-    const resolved = resolveWorktreePathReal(worktreePath, path);
+    const resolved = resolveWorktreePathCanonical(worktreePath, path);
     const content = await readFile(resolved, "utf-8");
 
     if (!content.includes(oldString)) {
@@ -253,7 +261,7 @@ async function runToolCommand(
   try {
     const pipelineResult = await deps.actionPipeline.execute({
       taskId: deps.taskId,
-      actionClass: ActionClasses.read,
+      actionClass: ActionClasses.write,
       details: { operation: "run_command", command },
       requestedBy: "orchestrator",
       executeFn: () =>

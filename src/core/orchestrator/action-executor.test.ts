@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentAction } from "../../schemas/orchestrator.js";
+import { ActionClasses } from "../../schemas/task.js";
 import {
   type ActionExecutorDeps,
   executeAction,
   resolveWorktreePath,
-  resolveWorktreePathReal,
+  resolveWorktreePathCanonical,
   shellEscape,
 } from "./action-executor.js";
 
@@ -161,6 +162,28 @@ describe("executeAction: search and commands", () => {
     expect(result.error).toContain("No tool adapter");
   });
 
+  it("run_command passes ActionClasses.write to pipeline (Gate 2 enforcement)", async () => {
+    const executeSpy = vi.fn(async () => ({
+      outcome: "executed" as const,
+      result: { success: true, output: "ok", error: null },
+    }));
+    const fakeToolAdapter = {
+      execute: vi.fn(async () => ({ success: true, output: "ok", error: null })),
+    };
+    const deps = makeDeps({
+      actionPipeline: { execute: executeSpy } as unknown as ActionExecutorDeps["actionPipeline"],
+      toolAdapter: fakeToolAdapter as unknown as ActionExecutorDeps["toolAdapter"],
+    });
+    const action: AgentAction = {
+      action: "run_command",
+      params: { command: "echo hello" },
+    };
+    await executeAction(action, worktree, deps);
+    expect(executeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ actionClass: ActionClasses.write }),
+    );
+  });
+
   it("done action returns success immediately", async () => {
     const action: AgentAction = {
       action: "done",
@@ -223,22 +246,24 @@ describe("shellEscape", () => {
   });
 });
 
-// ── resolveWorktreePathReal ──────────────────────────────────────────────────
+// ── resolveWorktreePathCanonical ──────────────────────────────────────────────────
 
-describe("resolveWorktreePathReal", () => {
+describe("resolveWorktreePathCanonical", () => {
   it("resolves normal files within worktree", () => {
     writeFileSync(join(worktree, "normal.txt"), "ok");
-    const result = resolveWorktreePathReal(worktree, "normal.txt");
+    const result = resolveWorktreePathCanonical(worktree, "normal.txt");
     expect(result).toContain("normal.txt");
   });
 
   it("gracefully handles non-existent files (returns logical path)", () => {
-    const result = resolveWorktreePathReal(worktree, "does-not-exist.txt");
+    const result = resolveWorktreePathCanonical(worktree, "does-not-exist.txt");
     expect(result).toBe(join(worktree, "does-not-exist.txt"));
   });
 
   it("rejects path traversal", () => {
-    expect(() => resolveWorktreePathReal(worktree, "../../etc/passwd")).toThrow("escapes worktree");
+    expect(() => resolveWorktreePathCanonical(worktree, "../../etc/passwd")).toThrow(
+      "escapes worktree",
+    );
   });
 
   it("rejects symlinks pointing outside the worktree", () => {
@@ -246,7 +271,7 @@ describe("resolveWorktreePathReal", () => {
     writeFileSync(outsideFile, "secret data");
     symlinkSync(outsideFile, join(worktree, "sneaky-link"));
 
-    expect(() => resolveWorktreePathReal(worktree, "sneaky-link")).toThrow("escapes worktree");
+    expect(() => resolveWorktreePathCanonical(worktree, "sneaky-link")).toThrow("escapes worktree");
   });
 
   it("read_file rejects symlink escape via executeAction", async () => {

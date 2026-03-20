@@ -9,49 +9,33 @@ import {
   EventTypes,
   PreemptionReadyPayloadSchema,
 } from "../../schemas/events.js";
-import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { SessionEndReasons } from "../../schemas/session-memory.js";
 import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
-import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
-import type { IEventBus } from "../interfaces/event-bus.interface.js";
-import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
-import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
-import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
-import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
-import type { IObserver } from "../observer/index.js";
-import type { IObservationStore } from "../observer/types.js";
-import { createDecompositionHandler } from "./decomposition-handler.js";
+import { type AndonCord, createAndonCord } from "./andon-cord.js";
+import { type DecompositionHandler, createDecompositionHandler } from "./decomposition-handler.js";
 import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
-import { createPhaseHandlerRegistry, runPhasePipeline } from "./phase-runner.js";
-import { createPrManager } from "./pr-manager.js";
-import { gatherRepoContextSafe } from "./prompts/context.js";
-import { buildDemoPrepPrompt } from "./prompts/demo-prep.js";
-import { buildExecutionPrompt } from "./prompts/execution.js";
-import { formatPriorPhaseOutput, section } from "./prompts/format.js";
-import { buildIntakePrompt } from "./prompts/intake.js";
-import { buildIntegrationPrompt } from "./prompts/integration.js";
-import { buildPlanningPrompt } from "./prompts/planning.js";
-import { buildResearchPrompt } from "./prompts/research.js";
-import { buildSelfReviewPrompt } from "./prompts/self-review.js";
-import { buildSystemPrompt } from "./prompts/system.js";
-import type { ExecuteTaskResult, OrchestratorContext, PipelineState } from "./types.js";
-import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
+import { createPhaseHandlers } from "./phase-handlers.js";
+import {
+  type PhaseHandlerRegistry,
+  createPhaseHandlerRegistry,
+  runPhasePipeline,
+} from "./phase-runner.js";
+import { type PrManager, createPrManager } from "./pr-manager.js";
+import { gatherRepoContextSafe } from "./prompts/index.js";
+import type {
+  ExecuteTaskResult,
+  OrchestratorContext,
+  PipelineState,
+  PreemptionGate,
+} from "./types.js";
+import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
+// Only the types actually consumed by external modules (daemon, bootstrap).
 
 export type { ExecuteTaskResult, Outcome } from "./types.js";
 export { Outcomes } from "./types.js";
-export type { OrchestratorContext, PipelineState } from "./types.js";
-export type { WorkspaceLifecycle, AndonCord } from "./workspace-lifecycle.js";
-export { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
-export type { PrManager } from "./pr-manager.js";
-export { createPrManager } from "./pr-manager.js";
-export type { DecompositionHandler } from "./decomposition-handler.js";
-export { createDecompositionHandler } from "./decomposition-handler.js";
-export type { LlmCaller } from "./llm-caller.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -79,20 +63,26 @@ export const EVENTS: EventDeclaration[] = [
   },
 ];
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── PreemptionGate Factory ────────────────────────────────────────────────
 
-/** Constructor dependencies for the Orchestrator. */
-export interface OrchestratorDependencies {
-  eventBus: IEventBus;
-  registry: IPluginLookup;
-  taskEngine: ITaskEngine;
-  safetyLayer: ISafetyLayer;
-  actionPipeline: IActionPipeline;
-  sessionMemory: ISessionMemory;
-  workspaceManager: IWorkspaceManager;
-  peopleDirectory: IPeopleDirectory;
-  observationStore: IObservationStore | null;
-  observer: IObserver;
+/** Create a PreemptionGate — cooperative preemption state container (Protocol P8). */
+function createPreemptionGate(): PreemptionGate & {
+  request(payload: { target_task_id: string; preempting_task_id: string }): void;
+} {
+  let requested = false;
+  let payload: { target_task_id: string; preempting_task_id: string } | null = null;
+  return {
+    isRequested: () => requested,
+    getPayload: () => payload,
+    reset() {
+      requested = false;
+      payload = null;
+    },
+    request(p) {
+      requested = true;
+      payload = p;
+    },
+  };
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -117,66 +107,41 @@ export interface OrchestratorDependencies {
 export class Orchestrator {
   private readonly ctx: OrchestratorContext;
   private readonly llmCaller: LlmCaller;
-  private readonly workspaceLifecycle: ReturnType<typeof createWorkspaceLifecycle>;
-  private readonly prManager: ReturnType<typeof createPrManager>;
-  private readonly decompositionHandler: ReturnType<typeof createDecompositionHandler>;
-
-  private preemptionRequested = false;
-  private preemptionPayload: {
-    target_task_id: string;
-    preempting_task_id: string;
-  } | null = null;
+  private readonly workspaceLifecycle: WorkspaceLifecycle;
+  private readonly prManager: PrManager;
+  private readonly decompositionHandler: DecompositionHandler;
+  private readonly andonCord: AndonCord;
+  private readonly preemption: ReturnType<typeof createPreemptionGate>;
 
   /** Phase handler dispatch map — one method per phase. */
-  private readonly phaseHandlers: ReturnType<typeof createPhaseHandlerRegistry>;
+  private readonly phaseHandlers: PhaseHandlerRegistry;
 
-  constructor(deps: OrchestratorDependencies) {
-    this.ctx = {
-      eventBus: deps.eventBus,
-      registry: deps.registry,
-      taskEngine: deps.taskEngine,
-      safetyLayer: deps.safetyLayer,
-      actionPipeline: deps.actionPipeline,
-      sessionMemory: deps.sessionMemory,
-      workspaceManager: deps.workspaceManager,
-      peopleDirectory: deps.peopleDirectory,
-      observationStore: deps.observationStore,
-      observer: deps.observer,
-    };
+  constructor(ctx: OrchestratorContext) {
+    this.ctx = ctx;
 
     // Create subsystems
     this.llmCaller = createLlmCaller(this.ctx);
     this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
-    this.prManager = createPrManager(this.ctx);
-    this.decompositionHandler = createDecompositionHandler(this.ctx);
+    this.prManager = createPrManager(this.ctx, this.workspaceLifecycle);
+    this.decompositionHandler = createDecompositionHandler(this.ctx, this.workspaceLifecycle);
+    this.andonCord = createAndonCord();
 
-    // Subscribe to preemption requests (Protocol P8)
+    // Cooperative preemption state (Protocol P8)
+    this.preemption = createPreemptionGate();
     this.ctx.eventBus.subscribe(
       "orchestrator",
       EventTypes["preemption.requested"],
       (event: Event) => {
-        this.preemptionRequested = true;
-        const payload = event.payload as {
+        const p = event.payload as {
           target_task_id: string;
           preempting_task_id: string;
         };
-        this.preemptionPayload = {
-          target_task_id: payload.target_task_id,
-          preempting_task_id: payload.preempting_task_id,
-        };
+        this.preemption.request(p);
       },
     );
 
-    // Build phase handler registry
-    this.phaseHandlers = createPhaseHandlerRegistry({
-      [Phases.intake_analysis]: this.handleIntakeAnalysis.bind(this),
-      [Phases.research]: this.handleResearch.bind(this),
-      [Phases.planning]: this.handlePlanning.bind(this),
-      [Phases.execution]: this.handleExecution.bind(this),
-      [Phases.self_review]: this.handleSelfReview.bind(this),
-      [Phases.demo_prep]: this.handleDemoPrep.bind(this),
-      [Phases.integration]: this.handleIntegration.bind(this),
-    });
+    // Build phase handler registry from extracted phase-handlers module
+    this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.llmCaller));
   }
 
   /**
@@ -240,269 +205,9 @@ export class Orchestrator {
       workspaceLifecycle: this.workspaceLifecycle,
       prManager: this.prManager,
       decompositionHandler: this.decompositionHandler,
-      isPreempted: () => this.preemptionRequested,
-      getPreemptionPayload: () => this.preemptionPayload,
-      resetPreemption: () => {
-        this.preemptionRequested = false;
-        this.preemptionPayload = null;
-      },
+      andonCord: this.andonCord,
+      preemption: this.preemption,
     });
-  }
-
-  // ── Phase Handlers ──────────────────────────────────────────────────────────
-
-  private handleIntakeAnalysis(
-    taskId: string,
-    dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const repoContext = state.repoContext;
-    const systemPrompt = buildSystemPrompt(Phases.intake_analysis);
-    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
-      (r) => !r.applied,
-    );
-    const prompt = buildIntakePrompt({
-      task: dispatch.task,
-      repoContext,
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-      feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
-      prNumber: dispatch.task.review?.pr_number ?? undefined,
-    });
-
-    return this.llmCaller.runPhaseWithAgentLoop(
-      Phases.intake_analysis,
-      taskId,
-      systemPrompt,
-      prompt,
-      state,
-    );
-  }
-
-  private handleResearch(
-    taskId: string,
-    dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const repoContext = state.repoContext;
-    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const systemPrompt = buildSystemPrompt(Phases.research);
-    const prompt = buildResearchPrompt({
-      task: dispatch.task,
-      repoContext,
-      intakeOutput: intakeData ?? null,
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-    });
-
-    return this.llmCaller.runPhaseWithAgentLoop(
-      Phases.research,
-      taskId,
-      systemPrompt,
-      prompt,
-      state,
-    );
-  }
-
-  private handlePlanning(
-    taskId: string,
-    dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const repoContext = state.repoContext;
-    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const researchData = priorOutputs.get(Phases.research)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const systemPrompt = buildSystemPrompt(Phases.planning);
-    const prompt = buildPlanningPrompt({
-      task: dispatch.task,
-      repoContext,
-      intakeOutput: intakeData ?? null,
-      researchOutput: researchData ?? null,
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-    });
-
-    return this.llmCaller.runPhaseWithAgentLoop(
-      Phases.planning,
-      taskId,
-      systemPrompt,
-      prompt,
-      state,
-    );
-  }
-
-  private handleExecution(
-    taskId: string,
-    dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const repoContext = state.repoContext;
-    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const researchData = priorOutputs.get(Phases.research)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const planData = priorOutputs.get(Phases.planning)?.data as Record<string, unknown> | undefined;
-    const systemPrompt = buildSystemPrompt(Phases.execution);
-    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
-      (r) => !r.applied,
-    );
-    let prompt = buildExecutionPrompt({
-      task: dispatch.task,
-      repoContext,
-      intakeOutput: intakeData ?? null,
-      researchOutput: researchData ?? null,
-      planningOutput: planData ?? null,
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-      feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
-    });
-
-    // On loopback: inject self_review findings so execution knows what to fix
-    const reviewData = priorOutputs.get(Phases.self_review)?.data as
-      | Record<string, unknown>
-      | undefined;
-    if (reviewData) {
-      prompt = `${prompt}\n\n${section("Review Findings to Address", formatPriorPhaseOutput(Phases.self_review, reviewData))}`;
-    }
-
-    return this.llmCaller.runPhaseWithAgentLoop(
-      Phases.execution,
-      taskId,
-      systemPrompt,
-      prompt,
-      state,
-    );
-  }
-
-  private handleSelfReview(
-    taskId: string,
-    dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const repoContext = state.repoContext;
-    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const planData = priorOutputs.get(Phases.planning)?.data as Record<string, unknown> | undefined;
-    const execData = priorOutputs.get(Phases.execution)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const selfReviewData = priorOutputs.get(Phases.self_review)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const systemPrompt = buildSystemPrompt(Phases.self_review);
-    const prompt = buildSelfReviewPrompt({
-      task: dispatch.task,
-      repoContext,
-      intakeOutput: intakeData ?? null,
-      planningOutput: planData ?? null,
-      executionOutput: execData ?? null,
-      selfReviewFindings: selfReviewData ?? null,
-      loopbackCount: state.loopbackCount,
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-    });
-
-    return this.llmCaller.runPhaseWithAgentLoop(
-      Phases.self_review,
-      taskId,
-      systemPrompt,
-      prompt,
-      state,
-    );
-  }
-
-  private handleDemoPrep(
-    taskId: string,
-    dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const repoContext = state.repoContext;
-    const intakeData = priorOutputs.get(Phases.intake_analysis)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const planData = priorOutputs.get(Phases.planning)?.data as Record<string, unknown> | undefined;
-    const execData = priorOutputs.get(Phases.execution)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const selfReviewData = priorOutputs.get(Phases.self_review)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const systemPrompt = buildSystemPrompt(Phases.demo_prep);
-    const prompt = buildDemoPrepPrompt({
-      task: dispatch.task,
-      repoContext,
-      intakeOutput: intakeData ?? null,
-      planningOutput: planData ?? null,
-      executionOutput: execData ?? null,
-      selfReviewOutput: selfReviewData ?? null,
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-    });
-
-    return this.llmCaller.runPhaseWithAgentLoop(
-      Phases.demo_prep,
-      taskId,
-      systemPrompt,
-      prompt,
-      state,
-    );
-  }
-
-  private handleIntegration(
-    taskId: string,
-    dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const repoContext = state.repoContext;
-    const execData = priorOutputs.get(Phases.execution)?.data as
-      | Record<string, unknown>
-      | undefined;
-    const selfReviewData = priorOutputs.get(Phases.self_review)?.data as
-      | Record<string, unknown>
-      | undefined;
-
-    const childSummaries = (dispatch.task.child_summaries ?? []).map((cs) => ({
-      child_id: cs.child_id,
-      child_title: cs.child_title,
-      branch: cs.branch,
-      test_status: cs.test_status,
-      files_changed: cs.key_outputs.map((o) => o.path),
-    }));
-
-    const systemPrompt = buildSystemPrompt(Phases.integration);
-    const prompt = buildIntegrationPrompt({
-      task: dispatch.task,
-      repoContext,
-      executionOutput: execData ?? null,
-      selfReviewOutput: selfReviewData ?? null,
-      childSummaries,
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-    });
-
-    return this.llmCaller.runPhaseWithAgentLoop(
-      Phases.integration,
-      taskId,
-      systemPrompt,
-      prompt,
-      state,
-    );
   }
 
   // ── Self-Unblock ──────────────────────────────────────────────────────────

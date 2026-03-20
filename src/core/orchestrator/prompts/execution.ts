@@ -8,6 +8,7 @@ import {
   formatOutputSchema,
   formatPriorPhaseOutput,
   section,
+  wrapUntrustedContent,
 } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -104,9 +105,9 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
 function buildTaskBrief(ctx: ExecutionPromptContext): string {
-  const lines = [`Task: ${ctx.task.title}`];
+  const lines = [`Task: ${wrapUntrustedContent(ctx.task.title)}`];
   if (ctx.task.description) {
-    lines.push("", ctx.task.description);
+    lines.push("", wrapUntrustedContent(ctx.task.description));
   }
   return section("Task", lines.join("\n"));
 }
@@ -263,7 +264,7 @@ function buildFeedbackSection(feedbackRounds?: FeedbackRound[]): string | null {
     lines.push(`### Feedback Round ${String(i + 1)} (${round.stage} review)`);
     if (round.comments.length > 0) {
       for (const comment of round.comments) {
-        lines.push(`- ${comment}`);
+        lines.push(`- ${wrapUntrustedContent(comment)}`);
       }
     } else {
       lines.push("- (Changes requested — review the PR discussion for details)");

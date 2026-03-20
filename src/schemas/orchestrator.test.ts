@@ -480,6 +480,95 @@ describe("LLMDecompositionPlanSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects plan with more than 10 children", () => {
+    const child = {
+      title: "t",
+      description: "d",
+      estimated_time_ms: 1000,
+      depends_on: [],
+      acceptance_criteria: [],
+    };
+    expect(() =>
+      LLMDecompositionPlanSchema.parse({
+        rationale: "too many",
+        children: Array.from({ length: 11 }, () => child),
+        dependency_graph: "",
+        total_estimated_ms: 0,
+        parallelizable: false,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects plan with rationale exceeding 2000 chars", () => {
+    expect(() =>
+      LLMDecompositionPlanSchema.parse({
+        rationale: "x".repeat(2001),
+        children: [
+          {
+            title: "t",
+            description: "d",
+            estimated_time_ms: 1000,
+            depends_on: [],
+            acceptance_criteria: [],
+          },
+        ],
+        dependency_graph: "",
+        total_estimated_ms: 0,
+        parallelizable: false,
+      }),
+    ).toThrow();
+  });
+});
+
+describe("DecompositionChildSchema — security limits", () => {
+  it("rejects title exceeding 200 chars", () => {
+    expect(() =>
+      DecompositionChildSchema.parse({
+        title: "x".repeat(201),
+        description: "d",
+        estimated_time_ms: 1000,
+        depends_on: [],
+        acceptance_criteria: [],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects description exceeding 5000 chars", () => {
+    expect(() =>
+      DecompositionChildSchema.parse({
+        title: "t",
+        description: "x".repeat(5001),
+        estimated_time_ms: 1000,
+        depends_on: [],
+        acceptance_criteria: [],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects more than 20 acceptance criteria", () => {
+    expect(() =>
+      DecompositionChildSchema.parse({
+        title: "t",
+        description: "d",
+        estimated_time_ms: 1000,
+        depends_on: [],
+        acceptance_criteria: Array.from({ length: 21 }, (_, i) => `criterion ${i}`),
+      }),
+    ).toThrow();
+  });
+
+  it("rejects acceptance criterion exceeding 500 chars", () => {
+    expect(() =>
+      DecompositionChildSchema.parse({
+        title: "t",
+        description: "d",
+        estimated_time_ms: 1000,
+        depends_on: [],
+        acceptance_criteria: ["x".repeat(501)],
+      }),
+    ).toThrow();
+  });
 });
 
 // ── Trivial Criteria ────────────────────────────────────────────────────────────

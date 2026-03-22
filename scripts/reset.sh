@@ -33,5 +33,12 @@ echo "Initializing..."
 engineer init
 
 echo ""
-echo "Done. Ready to run:"
-echo "  engineer start"
+echo "Done."
+read -p "Shall we start up the engineer? [Y/n] " answer
+answer="${answer:-Y}"
+if [[ "$answer" =~ ^[Yy]$ ]]; then
+  engineer start
+else
+  echo "Ready to run:"
+  echo "  engineer start"
+fi

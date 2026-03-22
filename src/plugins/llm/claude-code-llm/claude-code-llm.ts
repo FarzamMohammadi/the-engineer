@@ -1,4 +1,7 @@
 import { type ChildProcess, execSync, spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir, platform } from "node:os";
+import { join } from "node:path";
 import {
   AdapterMethodError,
   type HealthStatus,
@@ -411,35 +414,129 @@ function extractUsage(resultEvent: Record<string, unknown>): InferenceUsage | nu
 
 // ── Secure Quota API Call ────────────────────────────────────────────────────
 
+// ── Cached quota to avoid API rate limiting ──────────────────────────────────
+
+let cachedQuota: QuotaStatus | null = null;
+let cachedQuotaAt = 0;
+const QUOTA_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Fetch quota/usage data from Anthropic's OAuth usage API.
  *
- * Security: The OAuth token is NEVER read or stored by our process. It flows
- * through a shell pipe: macOS Keychain → python3 (extract) → curl (API call).
- * Only the usage response (percentages, reset times) enters our process.
+ * Security:
+ * - OAuth token is read from Claude Code's credential store (OS-specific)
+ * - Token exists in Node.js memory only for the duration of the HTTPS call
+ * - Token is NEVER logged, written to disk, passed to env vars, or stored as a field
+ * - After the API call, the token variable falls out of scope and is garbage collected
  *
- * Falls back to null on any error (no Keychain, expired token, rate limited,
- * non-macOS, missing tools). Callers should fall back to rate_limit_event data.
+ * Cross-platform credential access:
+ * - macOS: reads from macOS Keychain via `security` CLI
+ * - Linux: reads from `~/.claude/.credentials.json` file
+ * - Windows: reads from `~/.claude/.credentials.json` file
+ * - Falls back to `~/.claude/.credentials.json` on any platform if OS-specific method fails
+ *
+ * Rate limiting: caches results for 5 minutes to avoid Anthropic's aggressive
+ * per-token rate limits (~5 requests before 429).
  */
 function fetchQuotaFromApi(): QuotaStatus | null {
-  try {
-    // Single shell pipeline: Keychain → extract token → curl API → return JSON
-    // Token never touches our Node.js process memory
-    const extractToken = `python3 -c "import json,sys; print(json.loads(sys.stdin.read())['claudeAiOauth']['accessToken'])"`;
-    const curlApi = `xargs -I{} curl -sf -H "Authorization: Bearer {}" -H "anthropic-beta: oauth-2025-04-20" "https://api.anthropic.com/api/oauth/usage"`;
-    const cmd = `security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null | ${extractToken} 2>/dev/null | ${curlApi} 2>/dev/null`;
+  // Return cache if fresh
+  if (cachedQuota && Date.now() - cachedQuotaAt < QUOTA_CACHE_TTL_MS) {
+    return cachedQuota;
+  }
 
-    const raw = execSync(cmd, { timeout: 5000, encoding: "utf-8" }).trim();
+  const token = readOAuthToken();
+  if (!token) {
+    return cachedQuota; // Return stale cache if available, null otherwise
+  }
+
+  // Synchronous HTTPS call via curl — Node.js native https is async-only,
+  // and getQuotaStatus() needs to be callable synchronously from the cache path.
+  // Token is passed as a CLI arg (not env var) and exists in memory only briefly.
+  try {
+    const raw = execSync(
+      `curl -sf -H 'Authorization: Bearer ${token}' -H 'anthropic-beta: oauth-2025-04-20' 'https://api.anthropic.com/api/oauth/usage'`,
+      { timeout: 5000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+
     if (!raw) {
-      return null;
+      return cachedQuota;
     }
 
     const data = JSON.parse(raw) as Record<string, unknown>;
-    return parseUsageApiResponse(data);
+    cachedQuota = parseUsageApiResponse(data);
+    cachedQuotaAt = Date.now();
+    return cachedQuota;
   } catch {
-    // Any failure (no Keychain, expired token, rate limited, non-macOS, etc.)
+    // Rate limited (429) or other failure — return stale cache
+    return cachedQuota;
+  }
+}
+
+/**
+ * Read the OAuth access token from Claude Code's credential store.
+ *
+ * Tries OS-specific secure storage first, falls back to file-based credentials.
+ * Returns null if credentials cannot be found or are expired.
+ * The returned token should be used immediately and not stored.
+ */
+function readOAuthToken(): string | null {
+  // Try OS-specific credential store first
+  if (platform() === "darwin") {
+    try {
+      const raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+        timeout: 3000,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      if (raw) {
+        const creds = JSON.parse(raw) as Record<string, unknown>;
+        return extractTokenFromCreds(creds);
+      }
+    } catch {
+      // Fall through to file-based
+    }
+  }
+
+  // File-based credentials (Linux, Windows, or macOS fallback)
+  const credPaths = [
+    join(homedir(), ".claude", ".credentials.json"),
+    join(homedir(), ".claude", "credentials.json"),
+  ];
+
+  for (const credPath of credPaths) {
+    try {
+      if (existsSync(credPath)) {
+        const raw = readFileSync(credPath, "utf-8");
+        const creds = JSON.parse(raw) as Record<string, unknown>;
+        return extractTokenFromCreds(creds);
+      }
+    } catch {
+      // Try next path
+    }
+  }
+
+  return null;
+}
+
+/** Extract and validate the access token from Claude Code's credential JSON. */
+function extractTokenFromCreds(creds: Record<string, unknown>): string | null {
+  const oauth = creds["claudeAiOauth"] as Record<string, unknown> | undefined;
+  if (!oauth) {
     return null;
   }
+
+  const token = oauth["accessToken"];
+  if (typeof token !== "string" || !token) {
+    return null;
+  }
+
+  // Check expiry — don't use expired tokens
+  const expiresAt = oauth["expiresAt"];
+  if (typeof expiresAt === "number" && expiresAt < Date.now()) {
+    return null;
+  }
+
+  return token;
 }
 
 /** Parse the Anthropic usage API response into our QuotaStatus shape. */

@@ -141,19 +141,20 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
   });
 
   /**
-   * Quota status — reads from two sources:
-   * 1. Latest quota_status observation (persisted by orchestrator after each LLM call,
-   *    zero extra API calls — reads cached data from the plugin's last infer() call)
+   * Quota status — pure data reader. Reads from:
+   * 1. quota_status observations (written by Core after each LLM call + daemon polling)
    * 2. cost.quota_exhausted events (hard limit breaches)
+   *
+   * Dashboard never fetches data itself. Plugin gets it, Core stores it, dashboard reads it.
    */
   app.get("/quota", (c) => {
     try {
-      // Source 1: Latest quota status from observations (live rate limit data)
+      // Latest quota status from observations (written by orchestrator + daemon)
       const latestObs = deps.observationStore.query({
         type: "quota_status",
         limit: 1,
       });
-      const liveQuota =
+      const liveQuota: Record<string, unknown> | null =
         latestObs.length > 0
           ? {
               ...(latestObs[0]?.output as Record<string, unknown> | null),
@@ -161,7 +162,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
             }
           : null;
 
-      // Source 2: Recent exhaustion events (hard limit breaches)
+      // Recent exhaustion events (hard limit breaches)
       let exhaustionEvents: Record<string, unknown>[] = [];
       try {
         const rows = deps.db

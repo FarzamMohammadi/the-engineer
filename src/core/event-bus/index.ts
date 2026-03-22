@@ -11,6 +11,7 @@ import type {
 } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
 import { EventReplayError } from "./errors.js";
+import { matchesPattern } from "./pattern.js";
 import type { EventTopology } from "./topology.js";
 
 // Re-export interface types so existing consumers don't break
@@ -48,6 +49,7 @@ export function rowToEvent(row: EventRow): Event {
     // Corrupted payload — return diagnostic fallback instead of crashing callers.
     // Callers (replay, getEventsForTask, getEventsSince) process many rows;
     // one bad row should not abort the entire operation.
+    // biome-ignore lint/style/useNamingConvention: underscore-prefixed diagnostic fields are intentional
     payload = { _parse_error: true, _raw: row.payload.substring(0, 200) };
   }
   return {
@@ -61,27 +63,8 @@ export function rowToEvent(row: EventRow): Event {
   };
 }
 
-// ── Pattern Matching ──────────────────────────────────────────────────────────
-
-/**
- * Tests whether an event type matches a subscription pattern.
- *
- * - `"*"` matches any event type
- * - `"task.*"` matches `"task.created"`, `"task.state_changed"` (one segment after dot)
- * - `"task.*"` does NOT match `"task.state.deep"` (segment count must match)
- * - `"*.created"` matches `"task.created"` but not `"task.state_changed"`
- */
-export function matchesPattern(pattern: string, eventType: string): boolean {
-  if (pattern === "*") {
-    return true;
-  }
-  const patternParts = pattern.split(".");
-  const typeParts = eventType.split(".");
-  if (patternParts.length !== typeParts.length) {
-    return false;
-  }
-  return patternParts.every((p, i) => p === "*" || p === typeParts[i]);
-}
+// Re-export matchesPattern from its own module to avoid circular deps
+export { matchesPattern } from "./pattern.js";
 
 // ── EventBus ──────────────────────────────────────────────────────────────────
 
@@ -106,7 +89,6 @@ export interface EventBusOptions {
 }
 
 export class EventBus implements IEventBus {
-  private readonly db: Database.Database;
   private subscriptions: SubscriptionRecord[] = [];
   private readonly topology: EventTopology | undefined;
   private readonly validateOnPublish: boolean;
@@ -119,7 +101,6 @@ export class EventBus implements IEventBus {
   private readonly sinceLimitStmt: Database.Statement;
 
   constructor(db: Database.Database, options: EventBusOptions) {
-    this.db = db;
     this.observer = options.observer;
     this.topology = options.topology;
     this.validateOnPublish = options.validateOnPublish ?? false;

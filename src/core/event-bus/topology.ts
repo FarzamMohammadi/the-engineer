@@ -1,6 +1,6 @@
 import type { ZodType } from "zod";
 
-import { matchesPattern } from "./index.js";
+import { matchesPattern } from "./pattern.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

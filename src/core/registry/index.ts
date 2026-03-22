@@ -69,14 +69,12 @@ export interface RegistryOptions {
 export class Registry implements IPluginLookup {
   private readonly lifecycle;
   private readonly healthMonitor;
-  private readonly eventBus: IEventBus;
   private readonly observer: IObserver;
   private readonly hookRegistry?: HookRegistry | undefined;
   private readonly healthCheckIntervalMs: number;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: RegistryOptions) {
-    this.eventBus = options.eventBus;
     this.observer = options.observer;
     this.hookRegistry = options.hookRegistry;
     this.lifecycle = createLifecycleManager(options.observer);

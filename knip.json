@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["src/adapters/index.ts"],
+  "project": ["src/**/*.ts"],
+  "ignoreDependencies": ["pino-pretty", "pino-roll", "@types/node-fetch"],
+  "ignoreExportsUsedInFile": true,
+  "exclude": ["unresolved"],
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "optionalPeerDependencies": "off",
+    "unlisted": "error",
+    "binaries": "error",
+    "exports": "warn",
+    "types": "warn",
+    "nsExports": "off",
+    "nsTypes": "off",
+    "duplicates": "error",
+    "enumMembers": "off"
+  }
+}

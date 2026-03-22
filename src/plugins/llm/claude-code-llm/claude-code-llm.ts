@@ -244,7 +244,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         this.activeProcess = null;
         const raw = Buffer.concat(chunks).toString("utf-8");
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
-        const duration_ms = Date.now() - startMs;
+        const durationMs = Date.now() - startMs;
 
         if (code !== 0) {
           reject(
@@ -265,7 +265,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
           resolve({
             content: parsed.content,
             cost_usd: parsed.cost_usd,
-            duration_ms,
+            duration_ms: durationMs,
             usage: parsed.usage,
           });
         } catch (err) {
@@ -405,7 +405,7 @@ export function parseCliOutput(raw: string): ParsedCliOutput {
   }
 
   const content = extractContent(resultEvent);
-  const cost_usd =
+  const costUsd =
     typeof resultEvent["total_cost_usd"] === "number"
       ? resultEvent["total_cost_usd"]
       : typeof resultEvent["cost_usd"] === "number"
@@ -413,7 +413,7 @@ export function parseCliOutput(raw: string): ParsedCliOutput {
         : null;
   const usage = extractUsage(resultEvent);
 
-  return { content, cost_usd, usage, rateLimits };
+  return { content, cost_usd: costUsd, usage, rateLimits };
 }
 
 /** Extract text content from a result event's `result` field. */

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { _resetOutput, createOutput } from "./output.js";
+import { createOutput, resetOutput } from "./output.js";
 import { Spinner } from "./progress.js";
 
 let stderrWrites: string[];
@@ -18,7 +18,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
-  _resetOutput();
+  resetOutput();
 });
 
 // ── Spinner ──────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ describe("Spinner", () => {
   });
 
   it("is silent in json mode", () => {
-    _resetOutput();
+    resetOutput();
     createOutput({ mode: "json" });
     const spinner = new Spinner("Loading...");
     spinner.start();

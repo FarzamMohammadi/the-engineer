@@ -678,8 +678,8 @@ export async function runPhasePipeline(
         phases = completion.phases;
         break;
       default: {
-        const _exhaustive: never = completion;
-        throw new Error(`Unexpected completion kind: ${JSON.stringify(_exhaustive)}`);
+        const Exhaustive: never = completion;
+        throw new Error(`Unexpected completion kind: ${JSON.stringify(Exhaustive)}`);
       }
     }
   }

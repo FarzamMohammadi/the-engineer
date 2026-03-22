@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { _resetOutput, createOutput } from "../output.js";
+import { createOutput, resetOutput } from "../output.js";
 import {
   type DoctorCategory,
   checkConfigFiles,
@@ -31,7 +31,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
-  _resetOutput();
+  resetOutput();
 });
 
 // ── Category 1: Node.js Runtime ───────────────────────────────────────────

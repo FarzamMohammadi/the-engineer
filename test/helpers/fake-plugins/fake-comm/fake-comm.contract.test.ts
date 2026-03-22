@@ -13,6 +13,7 @@ const manifest = PluginManifestSchema.parse({
 
 runCommunicationContractSuite(() => new FakeCommunicationPlugin(), {
   validConfig: {},
+  // biome-ignore lint/style/useNamingConvention: sentinel config key
   invalidConfig: { _force_fail: true },
   manifest,
   target: { user_id: "test-user", channel: null },

@@ -20,6 +20,7 @@ runTriggerContractSuite(
   },
   {
     validConfig: {},
+    // biome-ignore lint/style/useNamingConvention: sentinel config key
     invalidConfig: { _force_fail: true },
     manifest,
   },

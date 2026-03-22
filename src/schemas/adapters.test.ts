@@ -99,7 +99,8 @@ describe("PluginManifestSchema", () => {
   });
 
   it("rejects missing required fields", () => {
-    const { id: _, ...noId } = minimal;
+    // biome-ignore lint/style/useNamingConvention: destructured discard
+    const { id: _id, ...noId } = minimal;
     expect(() => PluginManifestSchema.parse(noId)).toThrow();
   });
 });

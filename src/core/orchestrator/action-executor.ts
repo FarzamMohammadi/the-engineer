@@ -108,11 +108,11 @@ export function executeAction(
     default: {
       // Exhaustiveness check — TypeScript will error here if a new action type
       // is added to AgentAction without updating this switch.
-      const _exhaustive: never = action;
+      const Exhaustive: never = action;
       return Promise.resolve({
         success: false,
         output: "",
-        error: `Unknown action: ${(_exhaustive as AgentAction).action}`,
+        error: `Unknown action: ${(Exhaustive as AgentAction).action}`,
       });
     }
   }

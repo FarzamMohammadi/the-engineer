@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createDatabase } from "../../db/database.js";
-import { _resetOutput, createOutput } from "../output.js";
+import { createOutput, resetOutput } from "../output.js";
 import { runWhy } from "./why.js";
 
 let tempDir: string;
@@ -33,7 +33,7 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
   vi.restoreAllMocks();
-  _resetOutput();
+  resetOutput();
 });
 
 // Helper to insert a task with all required NOT NULL columns
@@ -194,7 +194,7 @@ describe("runWhy", () => {
   });
 
   it("outputs JSON in json mode", () => {
-    _resetOutput();
+    resetOutput();
     createOutput({ mode: "json" });
 
     const dbPath = join(tempDir, "data", "engineer.db");

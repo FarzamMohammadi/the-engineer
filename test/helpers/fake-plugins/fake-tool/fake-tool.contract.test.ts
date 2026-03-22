@@ -13,6 +13,7 @@ const manifest = PluginManifestSchema.parse({
 
 runToolContractSuite(() => new FakeToolPlugin(), {
   validConfig: {},
+  // biome-ignore lint/style/useNamingConvention: sentinel config key
   invalidConfig: { _force_fail: true },
   manifest,
   action: "read",

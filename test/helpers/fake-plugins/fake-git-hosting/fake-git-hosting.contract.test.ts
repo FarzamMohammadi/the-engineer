@@ -13,6 +13,7 @@ const manifest = PluginManifestSchema.parse({
 
 runGitHostingContractSuite(() => new FakeGitHostingPlugin(), {
   validConfig: {},
+  // biome-ignore lint/style/useNamingConvention: sentinel config key
   invalidConfig: { _force_fail: true },
   manifest,
   prOptions: {

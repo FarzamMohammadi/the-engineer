@@ -191,7 +191,6 @@ export async function runSetup(engineerHome: string): Promise<number> {
 // ── Config Generation ────────────────────────────────────────────────────────
 
 async function generateConfigs(answers: SetupAnswers): Promise<string[]> {
-  const _out = getOutput();
   const dirs = resolveDirectories(answers.home);
   const created: string[] = [];
 

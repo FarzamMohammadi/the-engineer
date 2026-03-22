@@ -181,6 +181,6 @@ export function getOutput(): Output {
 }
 
 /** Reset the singleton. For testing only. */
-export function _resetOutput(): void {
+export function resetOutput(): void {
   instance = undefined;
 }

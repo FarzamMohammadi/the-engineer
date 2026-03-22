@@ -313,7 +313,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
         this.activeProcess = null;
         const raw = Buffer.concat(chunks).toString("utf-8");
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
-        const duration_ms = Date.now() - startMs;
+        const durationMs = Date.now() - startMs;
 
         if (code !== 0) {
           reject(
@@ -350,7 +350,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
           resolve({
             content: parsed.content,
             cost_usd: null, // Gemini CLI does not report cost
-            duration_ms,
+            duration_ms: durationMs,
             usage: parsed.usage,
           });
         } catch (err) {

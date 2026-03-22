@@ -8,6 +8,11 @@ pre-commit:
       run: pnpm tsc --noEmit
 
 pre-push:
+  parallel: true
   commands:
     test:
       run: pnpm vitest run --no-cache
+    check-exports:
+      run: pnpm check:exports
+    check-circular:
+      run: pnpm check:circular

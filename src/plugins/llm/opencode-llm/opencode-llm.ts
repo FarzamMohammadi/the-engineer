@@ -79,7 +79,7 @@ export interface ParsedOpenCodeOutput {
 export function parseOpenCodeOutput(raw: string): ParsedOpenCodeOutput {
   const lines = raw.split("\n").filter((line) => line.trim().length > 0);
   const textParts: string[] = [];
-  let cost_usd: number | null = null;
+  let costUsd: number | null = null;
   let usage: InferenceUsage | null = null;
 
   for (const line of lines) {
@@ -97,7 +97,7 @@ export function parseOpenCodeOutput(raw: string): ParsedOpenCodeOutput {
         }
       } else if (parsed["type"] === "step_finish") {
         if (typeof part["cost"] === "number") {
-          cost_usd = part["cost"];
+          costUsd = part["cost"];
         }
 
         const tokens = part["tokens"] as Record<string, unknown> | undefined;
@@ -129,13 +129,13 @@ export function parseOpenCodeOutput(raw: string): ParsedOpenCodeOutput {
 
   const content = textParts.join("");
 
-  if (content.length === 0 && cost_usd === null) {
+  if (content.length === 0 && costUsd === null) {
     throw new AdapterMethodError(
       createAdapterError("internal_error", "No text or step_finish event found in OpenCode output"),
     );
   }
 
-  return { content, cost_usd, usage };
+  return { content, cost_usd: costUsd, usage };
 }
 
 // ── Plugin ───────────────────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
         this.activeProcess = null;
         const raw = Buffer.concat(chunks).toString("utf-8");
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
-        const duration_ms = Date.now() - startMs;
+        const durationMs = Date.now() - startMs;
 
         if (code !== 0) {
           reject(
@@ -288,7 +288,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
           resolve({
             content: parsed.content,
             cost_usd: parsed.cost_usd,
-            duration_ms,
+            duration_ms: durationMs,
             usage: parsed.usage,
           });
         } catch (err) {

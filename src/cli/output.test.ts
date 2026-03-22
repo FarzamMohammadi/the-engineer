@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Output, _resetOutput, createOutput, getOutput } from "./output.js";
+import { Output, createOutput, getOutput, resetOutput } from "./output.js";
 
 // Capture stdout/stderr writes
 let stdoutWrites: string[];
@@ -17,12 +17,12 @@ beforeEach(() => {
     stderrWrites.push(String(chunk));
     return true;
   });
-  _resetOutput();
+  resetOutput();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  _resetOutput();
+  resetOutput();
   // Clean env vars
   for (const key of ["NO_COLOR", "FORCE_COLOR"]) {
     delete process.env[key];
@@ -287,9 +287,9 @@ describe("singleton", () => {
     expect(out.mode).toBe("human");
   });
 
-  it("_resetOutput clears the singleton", () => {
+  it("resetOutput clears the singleton", () => {
     const first = createOutput({ mode: "json" });
-    _resetOutput();
+    resetOutput();
     const second = getOutput();
     expect(second).not.toBe(first);
     expect(second.mode).toBe("human");

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { _resetOutput, createOutput } from "../output.js";
+import { createOutput, resetOutput } from "../output.js";
 import { ALL_TEMPLATES } from "../templates.js";
 import { runInit } from "./init.js";
 
@@ -18,7 +18,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
-  _resetOutput();
+  resetOutput();
   vi.restoreAllMocks();
 });
 

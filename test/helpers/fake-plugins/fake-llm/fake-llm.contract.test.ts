@@ -14,6 +14,7 @@ const manifest = PluginManifestSchema.parse({
 
 runLLMContractSuite(() => new FakeLLMPlugin(), {
   validConfig: {},
+  // biome-ignore lint/style/useNamingConvention: sentinel config key
   invalidConfig: { _force_fail: true },
   manifest,
   request: createMockInferenceRequest(),

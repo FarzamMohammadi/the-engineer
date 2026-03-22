@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as yamlParse } from "yaml";
 
-import { _resetOutput, createOutput } from "../output.js";
+import { createOutput, resetOutput } from "../output.js";
 import { runSetup } from "./setup.js";
 
 const GHP_TOKEN_PATTERN = /ghp_[a-zA-Z0-9]+/;
@@ -36,7 +36,7 @@ beforeEach(async () => {
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
   vi.restoreAllMocks();
-  _resetOutput();
+  resetOutput();
 });
 
 describe("runSetup", () => {

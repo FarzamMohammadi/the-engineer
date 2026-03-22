@@ -58,9 +58,10 @@ Run `/commit` to stage and commit all changes from this session.
 Generate a starter prompt for the next session. This is a self-contained message the user can paste into a fresh chat to pick up exactly where this session ended.
 
 The prompt should:
-- Tell the agent which files to read first and in what order (active.md, goals.md, philosophy.md, latest session log)
+- Tell the agent which files to read first (always start with `implementation-docs/active.md`, then the latest session log)
+- Include any phase-specific files relevant to the current work (read active.md to determine these)
 - State the project context in one sentence
-- State the working mode (architecture only, no code, collaborate deeply, use Q&A tool, never rush)
+- State the working mode based on what we're actually doing (read active.md — it may be code, testing, design, review, etc.). Always include: collaborate deeply, use Q&A tool, never assume, never rush.
 - Say to pick up where the last session left off
 
 Present it in a code block, ready to copy-paste.

@@ -2,21 +2,21 @@
 
 ## Current Focus
 
-**Next: Layer 6.10 — War Room v2 Dashboard Rebuild.** Architecture decisions D160-D165 documented. React + Vite + shadcn/ui + Tailwind + Lucide + Recharts + SSE. Plan in `.claude/plans/replicated-sniffing-fountain.md`.
+**Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Layer 7: COMPLETE (Session 063).** Structural restructuring of the entire codebase — 18 phases across 6 waves. Every core component decomposed into focused sub-modules. Interfaces extracted, typed errors introduced, declarative event topology, plugin auto-discovery, CLI polish, security hardening, OSS foundation, data lifecycle management. 10 decisions (D166-D175). Final test count: 2,414 (2,355 unit + 42 integration + 17 E2E). See [`7-restructure/`](7-restructure/) for Layer 7 documentation.
+**Current phase:** Evaluation & Baseline — code audit then live run to establish ground truth after Layer 7 restructuring.
 
 Previous layers:
 - [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)
-- [`7-restructure/`](7-restructure/) — Layer 7 documentation (D166-D175)
+- [`7-restructure/`](7-restructure/) — Layer 7 documentation (D166-D175), COMPLETE (Session 063)
 
 All architecture docs remain source of truth. Every implementation choice must trace back to the decisions log.
 
 ## What We're Doing
 
-Implementing The Engineer from the bottom up — schemas and infrastructure first, then components in dependency order, then the daemon that wires everything together. Each phase produces something independently testable.
+Refining The Engineer phase by phase — walking through each runtime phase, evaluating behavior, and fine-tuning until it's production-grade. Farzam manually tests and guides taste. The agent provides depth and execution. Both take ownership.
 
-Working method: collaborative, always. Read the architecture deeply before every phase. Research, investigate, and discuss until confident. Farzam and the agent complete each other.
+Working method: co-founder partnership. Never assume. Always collaborate. Use Q&A liberally. Farzam is the compass for product direction; the agent brings pattern recognition and tireless execution. See [`8-refinement-v2/overview.md`](8-refinement-v2/overview.md) for full working principles.
 
 ## Deliverables
 
@@ -82,9 +82,9 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Architecture: ALL COMPLETE.** Layers 0-5, 136 decisions.
+**Layer 8 — Refinement v2: IN PROGRESS.** Starting with Evaluation & Baseline (code audit + live run). See `8-refinement-v2/status.md` for live status.
 
-**Implementation: IN PROGRESS.**
+**Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,414 tests.
 
 - Phase 0: Project Bootstrap — **DONE** (Session 31). 12 files: package.json, tsconfig.json, biome.json, lefthook.yml, 4 vitest configs, test/setup.ts, src/index.ts, .gitignore, .node-version. All verification passes.
 - Phase 1a: Core Data Schemas — **DONE** (Session 32). 7 files in `src/schemas/`: task.ts (4 enums, 12 sub-schemas, TaskSchema, StateTransitionSchema, ValidTransitions 25 rules, PermissionTable 10 entries), events.ts (EventSchema envelope, 30 payload schemas, EventPayloads mapped type, TypedEvent generic, eventPayloadSchemas runtime registry), session-memory.ts (Session, JournalEntry, Checkpoint, KnowledgeEntry, knowledgeId()), 3 test files (126 tests), index.ts barrel. 3 Biome exceptions added (useNamingConvention, noBarrelFile, noReExportAll). All verification passes.

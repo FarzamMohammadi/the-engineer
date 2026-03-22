@@ -22,6 +22,7 @@ export const ObservationTypeSchema = z.enum([
   "cost_snapshot",
   "lifecycle",
   "config_change",
+  "quota_status",
 ]);
 export type ObservationTypeValue = z.infer<typeof ObservationTypeSchema>;
 
@@ -40,6 +41,7 @@ export const ObservationType = {
   COST_SNAPSHOT: "cost_snapshot",
   LIFECYCLE: "lifecycle",
   CONFIG_CHANGE: "config_change",
+  QUOTA_STATUS: "quota_status",
 } as const satisfies Record<string, ObservationTypeValue>;
 
 // ── Level & Status ────────────────────────────────────────────────────────────

@@ -28,8 +28,8 @@ describe("Observer", () => {
   // ── ObservationType ────────────────────────────────────────────────────────
 
   describe("ObservationType", () => {
-    it("has all 13 types", () => {
-      expect(Object.keys(ObservationType)).toHaveLength(13);
+    it("has all 14 types", () => {
+      expect(Object.keys(ObservationType)).toHaveLength(14);
     });
 
     it("values are lowercase_snake_case strings", () => {

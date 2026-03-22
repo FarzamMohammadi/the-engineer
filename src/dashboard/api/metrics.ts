@@ -141,54 +141,52 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
   });
 
   /**
-   * Quota status — reads recent cost.quota_exhausted events from the event bus.
-   *
-   * NOTE: The dashboard runs as a separate read-only process without registry
-   * access, so it cannot call `llm.getQuotaStatus()` directly. To surface live
-   * quota windows (used_percentage, resets_at for non-exhausted windows), the
-   * DashboardConfig and MetricsRoutesDeps would need a registry reference or a
-   * dedicated daemon→dashboard IPC channel. For now, we surface quota exhaustion
-   * events which capture the most critical state: when a window IS exhausted.
+   * Quota status — reads from two sources:
+   * 1. Latest quota_status observation (persisted by orchestrator after each LLM call,
+   *    zero extra API calls — reads cached data from the plugin's last infer() call)
+   * 2. cost.quota_exhausted events (hard limit breaches)
    */
   app.get("/quota", (c) => {
     try {
-      const rows = deps.db
-        .prepare(
-          `SELECT payload, timestamp FROM events
-           WHERE type = 'cost.quota_exhausted'
-           ORDER BY sequence DESC LIMIT 20`,
-        )
-        .all() as { payload: string; timestamp: string }[];
+      // Source 1: Latest quota status from observations (live rate limit data)
+      const latestObs = deps.observationStore.query({
+        type: "quota_status",
+        limit: 1,
+      });
+      const liveQuota =
+        latestObs.length > 0
+          ? {
+              ...(latestObs[0]?.output as Record<string, unknown> | null),
+              observed_at: latestObs[0]?.start_time,
+            }
+          : null;
 
-      const windows: Array<{
-        window_type: string;
-        is_exhausted: boolean;
-        resets_at: number | null;
-        provider_id: string;
-        task_id: string | null;
-        observed_at: string;
-      }> = [];
+      // Source 2: Recent exhaustion events (hard limit breaches)
+      let exhaustionEvents: Record<string, unknown>[] = [];
+      try {
+        const rows = deps.db
+          .prepare(
+            `SELECT payload, timestamp FROM events
+             WHERE type = 'cost.quota_exhausted'
+             ORDER BY sequence DESC LIMIT 10`,
+          )
+          .all() as { payload: string; timestamp: string }[];
 
-      for (const row of rows) {
-        try {
+        exhaustionEvents = rows.map((row) => {
           const p = JSON.parse(row.payload) as Record<string, unknown>;
-          windows.push({
-            window_type: String(p["window_type"] ?? "unknown"),
-            is_exhausted: true,
-            resets_at: typeof p["resets_at"] === "number" ? p["resets_at"] : null,
-            provider_id: String(p["provider_id"] ?? "unknown"),
-            task_id: typeof p["task_id"] === "string" ? p["task_id"] : null,
-            observed_at: row.timestamp,
-          });
-        } catch {
-          // skip malformed payloads
-        }
+          return { ...p, observed_at: row.timestamp };
+        });
+      } catch {
+        // events table may not exist yet
       }
 
-      return c.json({ available: true, windows });
+      return c.json({
+        available: liveQuota !== null || exhaustionEvents.length > 0,
+        live: liveQuota,
+        exhaustion_events: exhaustionEvents,
+      });
     } catch {
-      // events table may not exist yet or schema mismatch
-      return c.json({ available: false, windows: [] });
+      return c.json({ available: false, live: null, exhaustion_events: [] });
     }
   });
 

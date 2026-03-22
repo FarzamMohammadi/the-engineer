@@ -347,6 +347,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     return buildPhaseOutput(phase, taskId, getPhaseDefaults(phase), "low", [errorMessage]);
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: phase lifecycle with metrics, observability, cost, tracking, and quota persistence
   async function runPhaseWithAgentLoop(
     phase: Phase,
     taskId: string,
@@ -426,6 +427,24 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       loopResult.totalCost.spend_usd ?? 0,
       loopResult.totalCost.duration_ms,
     );
+
+    // ── Persist quota status for dashboard ────────────────────────────────
+    // Zero extra API calls — reads cached data from the last infer() call.
+    if (ctx.observationStore && traceId && sessionId) {
+      const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
+      if (llm) {
+        const quota = await llm.getQuotaStatus();
+        if (quota) {
+          ctx.observationStore.observe("quota_status", "llm", quota, {
+            task_id: taskId,
+            session_id: sessionId,
+            trace_id: traceId,
+            phase,
+          });
+        }
+      }
+    }
+
     return validateLoopResult(phase, taskId, loopResult);
   }
 

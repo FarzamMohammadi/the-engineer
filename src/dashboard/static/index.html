@@ -1859,21 +1859,48 @@ async function loadCost() {
     updateIfChanged('cost-token-totals', '<span style="color:var(--text-ghost);font-size:0.78rem">No token data yet</span>');
   }
 
-  // Quota status
+  // Quota status — two sources: live (from last LLM call) + exhaustion events (hard limits)
   const quotaData = await api('/api/metrics/quota');
-  if (quotaData && quotaData.available && quotaData.windows && quotaData.windows.length > 0) {
-    const quotaHtml = quotaData.windows.map(w => {
-      const exhaustedColor = w.is_exhausted ? 'var(--red)' : 'var(--green)';
-      const exhaustedLabel = w.is_exhausted ? 'EXHAUSTED' : 'OK';
-      const resetsAt = w.resets_at ? new Date(w.resets_at * 1000).toLocaleString() : '-';
-      return `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem">
-        <span style="color:var(--text-bright);width:100px;font-weight:500">${esc(w.window_type)}</span>
-        <span style="color:${exhaustedColor};font-weight:600;width:80px">${exhaustedLabel}</span>
-        <span style="color:var(--text-ghost)">Provider: ${esc(w.provider_id)}</span>
-        <span style="color:var(--text-ghost);margin-left:auto">Resets: ${resetsAt}</span>
-      </div>`;
-    }).join('');
-    updateIfChanged('cost-quota', quotaHtml);
+  if (quotaData && quotaData.available) {
+    let quotaHtml = '';
+
+    // Live quota windows from the LLM plugin's last inference call
+    if (quotaData.live && quotaData.live.windows && quotaData.live.windows.length > 0) {
+      const observedAt = quotaData.live.observed_at ? fmtTime(quotaData.live.observed_at) : '-';
+      quotaHtml += quotaData.live.windows.map(w => {
+        const exhausted = w.is_exhausted === true;
+        const statusColor = exhausted ? 'var(--red)' : 'var(--green)';
+        const statusLabel = exhausted ? 'EXHAUSTED' : 'OK';
+        const pct = w.used_percentage != null ? `${Math.round(w.used_percentage)}%` : '';
+        const resetsAt = w.resets_at ? new Date(w.resets_at * 1000).toLocaleString() : '-';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem">
+          <span style="color:var(--text-bright);width:100px;font-weight:500">${esc(w.window_type)}</span>
+          <span style="color:${statusColor};font-weight:600;width:80px">${statusLabel}</span>
+          ${pct ? `<span style="color:var(--text-muted)">${pct} used</span>` : ''}
+          <span style="color:var(--text-ghost);margin-left:auto">Resets: ${resetsAt}</span>
+        </div>`;
+      }).join('');
+      if (quotaData.live.is_rate_limited) {
+        const resetTime = quotaData.live.earliest_reset_at ? new Date(quotaData.live.earliest_reset_at * 1000).toLocaleString() : 'unknown';
+        quotaHtml += `<div style="padding:8px 0;color:var(--red);font-weight:600;font-size:0.8rem">Rate limited — resets at ${resetTime}</div>`;
+      }
+      quotaHtml += `<div style="color:var(--text-ghost);font-size:0.65rem;margin-top:4px">Updated: ${esc(observedAt)}</div>`;
+    }
+
+    // Exhaustion events (hard limit breaches from event bus)
+    if (quotaData.exhaustion_events && quotaData.exhaustion_events.length > 0) {
+      quotaHtml += '<div style="margin-top:8px;font-size:0.72rem;color:var(--text-ghost)">Recent exhaustion events:</div>';
+      quotaHtml += quotaData.exhaustion_events.slice(0, 5).map(e => {
+        const resetsAt = e.resets_at ? new Date(e.resets_at * 1000).toLocaleString() : '-';
+        return `<div style="display:flex;gap:8px;padding:3px 0;font-size:0.7rem;color:var(--text-ghost)">
+          <span style="color:var(--red)">${esc(String(e.window_type || 'unknown'))}</span>
+          <span>resets ${resetsAt}</span>
+          <span style="margin-left:auto">${esc(fmtTime(String(e.observed_at || '')))}</span>
+        </div>`;
+      }).join('');
+    }
+
+    updateIfChanged('cost-quota', quotaHtml || '<span style="color:var(--text-ghost);font-size:0.78rem">No quota data yet</span>');
   } else {
     updateIfChanged('cost-quota', '<span style="color:var(--text-ghost);font-size:0.78rem">Quota data not available</span>');
   }

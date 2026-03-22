@@ -82,7 +82,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** Starting with Evaluation & Baseline (code audit + live run). See `8-refinement-v2/status.md` for live status.
+**Layer 8 — Refinement v2: IN PROGRESS.** Dashboard Simple Rebuild complete. Next: manual test the dashboard against a live run, then begin CLI-Only LLM Pivot. See `8-refinement-v2/status.md` for live status.
 
 **Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,414 tests.
 

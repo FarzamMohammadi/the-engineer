@@ -4,8 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Engineer — War Room</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════════════════════════
    CSS RESET & VARIABLES
@@ -13,7 +11,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Depths */
   --bg-abyss: #050810;
   --bg-deep: #0a0e17;
   --bg-base: #0f1420;
@@ -23,14 +20,12 @@
   --border-dim: #1e2a42;
   --border-base: #253352;
   --border-bright: #2d3f6a;
-  /* Text */
   --text-ghost: #334466;
   --text-muted: #4a6080;
   --text-secondary: #7a90b0;
   --text-primary: #c8d6e5;
   --text-bright: #e8f0fa;
   --text-white: #f4f7fb;
-  /* Accents */
   --cyan: #22d3ee;
   --cyan-dim: #0e7490;
   --cyan-glow: rgba(34,211,238,0.15);
@@ -48,9 +43,8 @@
   --blue-glow: rgba(59,130,246,0.12);
   --purple: #a78bfa;
   --purple-dim: #4c1d95;
-  /* Functional */
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --font-display: 'Outfit', system-ui, sans-serif;
+  --purple-glow: rgba(167,139,250,0.12);
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
@@ -66,23 +60,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scan-line overlay */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,0.03) 2px,
-    rgba(0,0,0,0.03) 4px
-  );
-}
-
-/* Scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-deep); }
 ::-webkit-scrollbar-thumb { background: var(--border-base); border-radius: 3px; }
@@ -92,7 +69,7 @@ a { color: var(--cyan); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* ═══════════════════════════════════════════════════════════════
-   SYSTEM BAR (always visible)
+   SYSTEM BAR
    ═══════════════════════════════════════════════════════════════ */
 #system-bar {
   position: sticky;
@@ -100,51 +77,35 @@ a:hover { text-decoration: underline; }
   z-index: 100;
   background: var(--bg-deep);
   border-bottom: 1px solid var(--border-dim);
-  padding: 0 20px;
-  height: 48px;
+  padding: 0 16px;
+  height: 44px;
   display: flex;
   align-items: center;
   gap: 6px;
-  backdrop-filter: blur(12px);
-}
-
-#system-bar::before {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
-  opacity: 0.5;
 }
 
 .sb-brand {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1.1rem;
+  font-weight: 700;
+  font-size: 1rem;
   color: var(--text-white);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   margin-right: 8px;
   white-space: nowrap;
 }
+.sb-brand span { color: var(--cyan); }
 
-.sb-brand span {
-  color: var(--cyan);
-}
-
-.sb-separator {
+.sb-sep {
   width: 1px;
-  height: 24px;
+  height: 22px;
   background: var(--border-dim);
-  margin: 0 8px;
+  margin: 0 6px;
 }
 
 .sb-status {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   white-space: nowrap;
 }
 
@@ -154,212 +115,51 @@ a:hover { text-decoration: underline; }
   border-radius: 50%;
   flex-shrink: 0;
 }
-
-.sb-dot.online {
-  background: var(--green);
-  box-shadow: 0 0 8px var(--green), 0 0 20px rgba(16,185,129,0.3);
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-.sb-dot.offline {
-  background: var(--red);
-  box-shadow: 0 0 8px var(--red);
-}
-
-.sb-dot.idle {
-  background: var(--cyan);
-  box-shadow: 0 0 6px var(--cyan), 0 0 14px rgba(34,211,238,0.2);
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green), 0 0 20px rgba(16,185,129,0.3); }
-  50% { opacity: 0.7; box-shadow: 0 0 4px var(--green), 0 0 10px rgba(16,185,129,0.15); }
-}
-
-/* Watching indicator — recording style */
-.sb-watching {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  border-radius: var(--radius-sm);
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--red);
-  white-space: nowrap;
-  user-select: none;
-}
-
-.sb-watching .rec-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--red);
-  box-shadow: 0 0 6px var(--red), 0 0 16px rgba(239, 68, 68, 0.35);
-  animation: rec-pulse 1.5s ease-in-out infinite;
-}
-
-.sb-watching .rec-ring {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  animation: rec-ring-expand 1.5s ease-out infinite;
-}
-
-.sb-watching .rec-dot-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-@keyframes rec-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--red), 0 0 16px rgba(239, 68, 68, 0.35); }
-  50% { opacity: 0.4; box-shadow: 0 0 2px var(--red), 0 0 6px rgba(239, 68, 68, 0.1); }
-}
-
-@keyframes rec-ring-expand {
-  0% { transform: scale(0.6); opacity: 0.6; }
-  100% { transform: scale(1.8); opacity: 0; }
-}
-
-.sb-llm-provider {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  border: 1px solid var(--border-dim);
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-
-.sb-llm-provider .llm-label {
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.6rem;
-}
-
-.sb-llm-provider .llm-value {
-  font-weight: 600;
-  color: var(--purple);
-}
-
-.sb-llm-provider .llm-value.api { color: var(--green); }
-.sb-llm-provider .llm-value.cli { color: var(--purple); }
-
-.cli-cost-notice {
-  background: rgba(167, 139, 250, 0.06);
-  border: 1px solid rgba(167, 139, 250, 0.15);
-  border-radius: var(--radius-md);
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-}
-
-.cli-cost-notice .notice-icon {
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-
-.cli-cost-notice .notice-label {
-  color: var(--purple);
-  font-weight: 600;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
+.sb-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.sb-dot.offline { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.sb-dot.idle { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
 
 .sb-metric {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  border: 1px solid var(--border-dim);
-  min-width: 70px;
+  gap: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
-
-.sb-metric-label {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-
-.sb-metric-value {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-bright);
-}
-
+.sb-metric-label { color: var(--text-muted); }
+.sb-metric-value { color: var(--text-bright); font-weight: 600; }
 .sb-metric-value.cost { color: var(--amber); }
 .sb-metric-value.count { color: var(--cyan); }
 
 .sb-spacer { flex: 1; }
 
-/* Heartbeat SVG */
-.sb-heartbeat {
-  width: 80px;
-  height: 28px;
-  margin: 0 4px;
+.sb-sse {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
 }
-
-.sb-heartbeat polyline {
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* Idle: calm cyan heartbeat */
-.sb-heartbeat .hb-signal {
-  stroke: var(--cyan);
-  filter: drop-shadow(0 0 3px var(--cyan));
-}
-.sb-heartbeat .hb-signal animate { }
-.sb-heartbeat .hb-flat { stroke: transparent; }
-
-/* Working: fast green heartbeat */
-.sb-heartbeat.working .hb-signal {
-  stroke: var(--green);
-  filter: drop-shadow(0 0 4px var(--green));
-}
-.sb-heartbeat.working .hb-flat { stroke: transparent; }
-
-/* Stopped: flatline */
-.sb-heartbeat.stopped .hb-signal { stroke: transparent; filter: none; }
-.sb-heartbeat.stopped .hb-flat {
-  stroke: var(--red-dim);
-  filter: none;
+.sb-sse.connected { color: var(--green); border-color: var(--green-dim); }
+.sb-sse.reconnecting { color: var(--amber); border-color: var(--amber-dim); }
+.sb-sse.disconnected { color: var(--red); border-color: var(--red-dim); }
+.sb-sse-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   TAB NAVIGATION
+   TAB BAR
    ═══════════════════════════════════════════════════════════════ */
 #tab-bar {
   display: flex;
   gap: 0;
   background: var(--bg-deep);
   border-bottom: 1px solid var(--border-dim);
-  padding: 0 20px;
+  padding: 0 16px;
+  overflow-x: auto;
 }
 
 .tab-btn {
@@ -367,42 +167,25 @@ a:hover { text-decoration: underline; }
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: 0.9rem;
-  padding: 10px 18px;
-  cursor: pointer;
-  transition: all 0.2s;
-  letter-spacing: 0.01em;
-  position: relative;
-}
-
-.tab-btn:hover {
-  color: var(--text-secondary);
-  background: var(--bg-base);
-}
-
-.tab-btn.active {
-  color: var(--cyan);
-  border-bottom-color: var(--cyan);
-  background: rgba(34,211,238,0.04);
-}
-
-.tab-btn .tab-badge {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 8px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+.tab-badge {
+  display: inline-block;
   background: var(--bg-surface);
   color: var(--text-secondary);
-  padding: 1px 6px;
+  font-size: 0.65rem;
+  padding: 1px 5px;
   border-radius: 8px;
-  margin-left: 6px;
+  margin-left: 5px;
   vertical-align: middle;
-}
-
-.tab-btn.active .tab-badge {
-  background: var(--cyan-dim);
-  color: var(--cyan);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -410,961 +193,586 @@ a:hover { text-decoration: underline; }
    ═══════════════════════════════════════════════════════════════ */
 .tab-panel {
   display: none;
-  padding: 20px;
-  min-height: calc(100vh - 100px);
-  animation: panel-in 0.25s ease-out;
+  padding: 16px;
+  min-height: calc(100vh - 92px);
 }
-
 .tab-panel.active { display: block; }
 
-@keyframes panel-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 /* ═══════════════════════════════════════════════════════════════
-   SHARED COMPONENTS
+   COMMON COMPONENTS
    ═══════════════════════════════════════════════════════════════ */
 .card {
   background: var(--bg-raised);
   border: 1px solid var(--border-dim);
   border-radius: var(--radius-md);
-  padding: 16px;
-}
-
-.card-header {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text-bright);
+  padding: 12px;
   margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
-
-.card-header .icon {
-  font-size: 1.1rem;
-}
-
-.section-title {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.15rem;
-  color: var(--text-white);
-  margin-bottom: 16px;
-  letter-spacing: -0.02em;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 48px 20px;
+.card-title {
+  font-size: 0.72rem;
   color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.empty-state .empty-icon {
-  font-size: 2.5rem;
-  margin-bottom: 12px;
-  opacity: 0.4;
-}
-
-.empty-state p { margin-top: 6px; font-size: 0.8rem; }
-
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 0.75rem;
-  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  margin-bottom: 8px;
 }
 
-.badge-cyan { background: var(--cyan-glow); color: var(--cyan); border: 1px solid var(--cyan-dim); }
-.badge-green { background: var(--green-glow); color: var(--green); border: 1px solid var(--green-dim); }
-.badge-amber { background: var(--amber-glow); color: var(--amber); border: 1px solid var(--amber-dim); }
-.badge-red { background: var(--red-glow); color: var(--red); border: 1px solid var(--red-dim); }
-.badge-blue { background: var(--blue-glow); color: var(--blue); border: 1px solid var(--blue-dim); }
-.badge-purple { background: rgba(167,139,250,0.12); color: var(--purple); border: 1px solid var(--purple-dim); }
-.badge-dim { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border-dim); }
-
-.stat-big {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 2rem;
-  letter-spacing: -0.03em;
-}
-
-.stat-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-top: 2px;
-}
-
-/* Data table */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-
-.data-table th {
-  text-align: left;
-  font-weight: 500;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-dim);
-  position: sticky;
-  top: 0;
-  background: var(--bg-raised);
-}
-
-.data-table td {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-dim);
-  vertical-align: top;
-}
-
-.data-table tr:hover td {
-  background: var(--bg-hover);
-}
-
-.data-table .mono {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-}
-
-/* Filter bar */
 .filter-bar {
   display: flex;
   gap: 8px;
-  margin-bottom: 16px;
-  align-items: center;
+  margin-bottom: 12px;
   flex-wrap: wrap;
+  align-items: center;
 }
-
-.filter-bar select,
-.filter-bar input {
+.filter-bar select, .filter-bar input {
   background: var(--bg-base);
   border: 1px solid var(--border-dim);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.82rem;
-  padding: 6px 10px;
+  font-size: 0.78rem;
+  padding: 5px 8px;
   border-radius: var(--radius-sm);
+}
+.filter-bar select:focus, .filter-bar input:focus {
   outline: none;
-}
-
-.filter-bar select:focus,
-.filter-bar input:focus {
   border-color: var(--cyan-dim);
-  box-shadow: 0 0 0 2px var(--cyan-glow);
 }
 
-.filter-bar select option {
-  background: var(--bg-base);
-}
-
-/* Buttons */
-.btn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-dim);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  padding: 5px 12px;
+.badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--border-bright);
-}
-
-.btn-primary {
-  background: var(--cyan-dim);
-  border-color: var(--cyan);
-  color: var(--cyan);
-}
-
-.btn-primary:hover {
-  background: rgba(34,211,238,0.25);
-}
-
-/* Back link */
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  margin-bottom: 16px;
-  cursor: pointer;
-  transition: color 0.15s;
-}
-
-.back-link:hover { color: var(--cyan); text-decoration: none; }
-
-/* ═══════════════════════════════════════════════════════════════
-   TASKS TAB — KANBAN
-   ═══════════════════════════════════════════════════════════════ */
-#tasks-kanban {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
-  align-items: start;
-}
-
-.kanban-col {
-  background: var(--bg-base);
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.kanban-col-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-dim);
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.kanban-col-header .col-count {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  padding: 1px 6px;
-  border-radius: 8px;
-  margin-left: auto;
-}
-
-.kanban-col-body {
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-.task-card {
-  background: var(--bg-raised);
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-sm);
-  padding: 10px;
-  cursor: pointer;
-  transition: all 0.15s;
-  border-left: 3px solid transparent;
-}
-
-.task-card:hover {
-  background: var(--bg-surface);
-  border-color: var(--border-bright);
-  transform: translateY(-1px);
-}
-
-.task-card[data-state="active"] { border-left-color: var(--cyan); }
-.task-card[data-state="blocked"] { border-left-color: var(--red); }
-.task-card[data-state="review_pending"] { border-left-color: var(--amber); }
-.task-card[data-state="completed"] { border-left-color: var(--green); }
-.task-card[data-state="failed"] { border-left-color: var(--red); }
-.task-card[data-state="queued"] { border-left-color: var(--blue); }
-
-.task-card-title {
-  font-size: 0.82rem;
   font-weight: 500;
-  color: var(--text-bright);
-  margin-bottom: 6px;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+}
+.badge-cyan { background: var(--cyan-glow); color: var(--cyan); }
+.badge-green { background: var(--green-glow); color: var(--green); }
+.badge-amber { background: var(--amber-glow); color: var(--amber); }
+.badge-red { background: var(--red-glow); color: var(--red); }
+.badge-blue { background: var(--blue-glow); color: var(--blue); }
+.badge-purple { background: var(--purple-glow); color: var(--purple); }
+.badge-dim { background: var(--bg-surface); color: var(--text-muted); }
+
+.empty-state {
+  text-align: center;
+  color: var(--text-ghost);
+  padding: 40px 20px;
+  font-size: 0.85rem;
 }
 
-.task-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.task-card-meta .badge { font-size: 0.65rem; padding: 1px 5px; }
-
-.task-card-cost {
+.json-pre {
+  background: var(--bg-deep);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  padding: 8px;
   font-size: 0.72rem;
-  color: var(--amber);
-  margin-left: auto;
-}
-
-/* Phase progress mini-bar */
-.phase-mini-bar {
-  display: flex;
-  gap: 2px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow: auto;
   margin-top: 6px;
 }
 
-.phase-mini-bar .phase-seg {
-  flex: 1;
-  height: 3px;
-  border-radius: 1px;
-  background: var(--border-dim);
-}
-
-.phase-mini-bar .phase-seg.done { background: var(--green); }
-.phase-mini-bar .phase-seg.current { background: var(--cyan); animation: phase-pulse 1.5s ease-in-out infinite; }
-.phase-mini-bar .phase-seg.failed { background: var(--red); }
-
-@keyframes phase-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   TASK DETAIL VIEW
-   ═══════════════════════════════════════════════════════════════ */
-#task-detail { display: none; }
-#task-detail.visible { display: block; }
-#tasks-kanban-wrap.hidden { display: none; }
-
-.task-detail-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.task-detail-header h2 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.4rem;
-  color: var(--text-white);
-  flex: 1;
-  letter-spacing: -0.02em;
-}
-
-.task-detail-header .task-id {
+.expand-btn {
+  background: none;
+  border: 1px solid var(--border-dim);
+  color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--text-ghost);
-}
-
-/* Phase progression bar */
-.phase-bar {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 24px;
-  background: var(--bg-base);
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-md);
-  padding: 12px;
-}
-
-.phase-bar-item {
-  flex: 1;
-  text-align: center;
-  padding: 8px 4px;
+  font-size: 0.68rem;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: var(--text-ghost);
-  background: var(--bg-deep);
-  border: 1px solid var(--border-dim);
-  transition: all 0.3s;
-  position: relative;
+  cursor: pointer;
 }
+.expand-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); }
 
-.phase-bar-item.completed {
-  background: var(--green-glow);
-  border-color: var(--green-dim);
-  color: var(--green);
-}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
-.phase-bar-item.current {
-  background: var(--cyan-glow);
-  border-color: var(--cyan-dim);
-  color: var(--cyan);
-  box-shadow: 0 0 12px var(--cyan-glow);
-}
-
-.phase-bar-item.failed {
-  background: var(--red-glow);
-  border-color: var(--red-dim);
-  color: var(--red);
-}
-
-.phase-bar-connector {
-  width: 12px;
-  display: flex;
-  align-items: center;
-  color: var(--border-dim);
-  font-size: 0.7rem;
-}
-
-.phase-bar-connector.done { color: var(--green-dim); }
-
-.phase-bar-item.skipped {
-  background: transparent;
-  border-color: var(--border-dim);
-  color: var(--text-ghost);
-  position: relative;
-  overflow: hidden;
-  cursor: default;
-}
-
-.phase-bar-item.skipped::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cline x1='0' y1='100%25' x2='100%25' y2='0' stroke='%23ef4444' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-}
-
-.phase-bar-item.skipped:hover::after {
-  opacity: 0.2;
-}
-
-.phase-bar-item.skipped:hover {
-  color: var(--red);
-}
-
-.phase-mini-bar .phase-seg.skipped {
-  background: transparent;
-  position: relative;
-  overflow: hidden;
-}
-
-.phase-mini-bar .phase-seg.skipped::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top right, var(--red) 0%, var(--red) 48%, transparent 48%, transparent 52%, transparent 52%, transparent 100%);
-  opacity: 0.5;
-}
-
-/* Detail grid */
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 16px;
-}
-
-@media (max-width: 900px) {
-  .detail-grid { grid-template-columns: 1fr; }
-}
-
-/* Timeline */
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.timeline-item {
-  display: flex;
-  gap: 12px;
-  padding: 10px 0;
-  border-left: 2px solid var(--border-dim);
-  padding-left: 16px;
-  position: relative;
-  font-size: 0.82rem;
-}
-
-.timeline-item::before {
-  content: '';
-  position: absolute;
-  left: -5px;
-  top: 14px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border-base);
-  border: 2px solid var(--bg-raised);
-}
-
-.timeline-item[data-kind="event"]::before { background: var(--blue); }
-.timeline-item[data-kind="journal"]::before { background: var(--purple); }
-.timeline-item[data-kind="action"]::before { background: var(--cyan); }
-
-.timeline-time {
-  flex-shrink: 0;
-  width: 65px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.timeline-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.timeline-content .tl-type {
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.timeline-content .tl-detail {
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  word-break: break-word;
-}
-
-/* Cost breakdown sidebar */
-.cost-breakdown .cost-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-dim);
-  font-size: 0.82rem;
-}
-
-.cost-row .phase-name {
-  width: 100px;
-  color: var(--text-secondary);
-  text-transform: capitalize;
-  font-size: 0.78rem;
-}
-
-.cost-row .cost-bar-wrap {
-  flex: 1;
-  height: 6px;
-  background: var(--bg-deep);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.cost-row .cost-bar-fill {
-  height: 100%;
-  background: var(--amber);
-  border-radius: 3px;
-  transition: width 0.5s ease;
-}
-
-.cost-row .cost-val {
-  width: 75px;
-  text-align: right;
-  color: var(--amber);
-  font-size: 0.78rem;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   EVENTS TAB
-   ═══════════════════════════════════════════════════════════════ */
-.event-feed {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.event-row {
-  display: grid;
-  grid-template-columns: 70px 160px 1fr 120px;
-  gap: 12px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  align-items: center;
-  transition: background 0.1s;
-  animation: event-in 0.3s ease-out;
-}
-
-@keyframes event-in {
-  from { opacity: 0; transform: translateX(-8px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-.event-row:hover { background: var(--bg-raised); }
-
-.event-row .ev-time {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.event-row .ev-type {
-  font-weight: 500;
-}
-
-.event-row .ev-detail {
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.event-row .ev-task {
-  font-size: 0.72rem;
-  color: var(--text-ghost);
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Event type colors */
-.ev-type[data-cat="task"] { color: var(--blue); }
-.ev-type[data-cat="cost"] { color: var(--amber); }
-.ev-type[data-cat="health"] { color: var(--red); }
-.ev-type[data-cat="git"] { color: var(--green); }
-.ev-type[data-cat="workspace"] { color: var(--cyan); }
-.ev-type[data-cat="trigger"] { color: var(--purple); }
-.ev-type[data-cat="action"] { color: var(--amber); }
-.ev-type[data-cat="comm"] { color: var(--blue); }
-.ev-type[data-cat="preemption"] { color: var(--red); }
-.ev-type[data-cat="timeout"] { color: var(--amber); }
-
-/* ═══════════════════════════════════════════════════════════════
-   COST TAB
-   ═══════════════════════════════════════════════════════════════ */
-.cost-stats-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.cost-stat-card {
+/* Stat cards */
+.stat-card {
   background: var(--bg-raised);
   border: 1px solid var(--border-dim);
   border-radius: var(--radius-md);
-  padding: 20px;
+  padding: 12px;
   text-align: center;
 }
-
-.cost-stat-card .stat-big { margin-bottom: 4px; }
-
-/* CSS bar chart */
-.bar-chart {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.stat-big {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
-
-.bar-chart-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-}
-
-.bar-chart-label {
-  width: 110px;
-  color: var(--text-secondary);
-  text-align: right;
-  flex-shrink: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-transform: capitalize;
-}
-
-.bar-chart-bar-wrap {
-  flex: 1;
-  height: 18px;
-  background: var(--bg-deep);
-  border-radius: 3px;
-  overflow: hidden;
-  position: relative;
-}
-
-.bar-chart-bar {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.5s ease;
-  position: relative;
-}
-
-.bar-chart-bar.amber { background: linear-gradient(90deg, var(--amber-dim), var(--amber)); }
-.bar-chart-bar.cyan { background: linear-gradient(90deg, var(--cyan-dim), var(--cyan)); }
-.bar-chart-bar.green { background: linear-gradient(90deg, var(--green-dim), var(--green)); }
-.bar-chart-bar.blue { background: linear-gradient(90deg, var(--blue-dim), var(--blue)); }
-
-.bar-chart-value {
-  width: 85px;
-  text-align: right;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  flex-shrink: 0;
-}
-
-/* Day chart (horizontal, last 30 days) */
-.day-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 120px;
-  padding: 0 4px;
-}
-
-.day-bar-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100%;
-  justify-content: flex-end;
-}
-
-.day-bar {
-  width: 100%;
-  background: linear-gradient(0deg, var(--amber-dim), var(--amber));
-  border-radius: 2px 2px 0 0;
-  transition: height 0.4s ease;
-  min-height: 2px;
-}
-
-.day-bar-label {
-  font-size: 0.55rem;
-  color: var(--text-ghost);
+.stat-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
   margin-top: 4px;
-  writing-mode: vertical-lr;
-  transform: rotate(180deg);
-  max-height: 30px;
-  overflow: hidden;
 }
+
+/* Live feed */
+.live-feed {
+  max-height: 500px;
+  overflow-y: auto;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+}
+.feed-item {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-dim);
+  font-size: 0.75rem;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  transition: background 0.3s;
+}
+.feed-item:last-child { border-bottom: none; }
+.feed-item.flash { background: var(--cyan-glow); }
+.feed-item.flash-error { background: var(--red-glow); }
+.feed-time { color: var(--text-ghost); white-space: nowrap; flex-shrink: 0; }
+.feed-type { white-space: nowrap; flex-shrink: 0; }
+.feed-name { color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-task { color: var(--text-ghost); font-size: 0.68rem; flex-shrink: 0; }
 
 /* ═══════════════════════════════════════════════════════════════
-   TRACES TAB
+   KANBAN
    ═══════════════════════════════════════════════════════════════ */
-.trace-iteration {
+.kanban { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+.kanban-col { min-width: 160px; flex: 1; }
+.kanban-col-header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.col-count {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+.kanban-col-body {
   background: var(--bg-base);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  min-height: 60px;
+  padding: 4px;
+}
+.kanban-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  font-size: 0.75rem;
+}
+.kanban-card:hover { border-color: var(--cyan-dim); }
+.kanban-card-title { color: var(--text-bright); margin-bottom: 4px; }
+.kanban-card-meta { color: var(--text-ghost); font-size: 0.68rem; display: flex; gap: 8px; }
+
+.phase-bar { display: flex; gap: 2px; margin-top: 4px; }
+.phase-seg {
+  height: 3px;
+  flex: 1;
+  border-radius: 1px;
+  background: var(--bg-surface);
+}
+.phase-seg.done { background: var(--green); }
+.phase-seg.current { background: var(--cyan); }
+.phase-seg.failed { background: var(--red); }
+
+/* Task detail */
+#task-detail { display: none; }
+#task-detail.visible { display: block; }
+.back-link {
+  display: inline-block;
+  font-size: 0.78rem;
+  margin-bottom: 12px;
+  cursor: pointer;
+  color: var(--cyan);
+}
+.detail-header { margin-bottom: 12px; }
+.detail-title { font-size: 1.1rem; color: var(--text-white); font-weight: 600; }
+.detail-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.detail-field-label { font-size: 0.68rem; color: var(--text-ghost); text-transform: uppercase; }
+.detail-field-value { font-size: 0.78rem; color: var(--text-primary); margin-top: 2px; }
+
+/* Timeline */
+.timeline-item {
+  padding: 8px 10px;
+  border-left: 2px solid var(--border-dim);
+  margin-left: 8px;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+}
+.timeline-item.event { border-left-color: var(--blue); }
+.timeline-item.journal { border-left-color: var(--purple); }
+.timeline-item.action { border-left-color: var(--cyan); }
+.timeline-time { color: var(--text-ghost); font-size: 0.68rem; }
+.timeline-content { color: var(--text-secondary); margin-top: 2px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   AGENT LOOP
+   ═══════════════════════════════════════════════════════════════ */
+.iteration-card {
+  background: var(--bg-raised);
   border: 1px solid var(--border-dim);
   border-radius: var(--radius-md);
   margin-bottom: 8px;
   overflow: hidden;
 }
-
-.trace-iter-header {
+.iteration-header {
+  padding: 8px 12px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-raised);
+  gap: 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
   border-bottom: 1px solid var(--border-dim);
 }
-
-.trace-iter-header .iter-num {
+.iteration-header:hover { background: var(--bg-hover); }
+.iteration-num {
   color: var(--cyan);
-  font-size: 0.9rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  min-width: 24px;
 }
-
-.trace-llm-row, .trace-action-row {
-  padding: 10px 12px;
-  font-size: 0.8rem;
-  border-bottom: 1px solid var(--border-dim);
-  display: grid;
-  grid-template-columns: 70px 1fr;
-  gap: 8px;
+.iteration-body { padding: 8px 12px; display: none; }
+.iteration-body.visible { display: block; }
+.iteration-section {
+  margin-bottom: 8px;
+  padding: 8px;
+  background: var(--bg-base);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
 }
-
-.trace-llm-row:last-child, .trace-action-row:last-child {
-  border-bottom: none;
-}
-
-.trace-label {
+.iteration-section-title {
+  font-size: 0.68rem;
   color: var(--text-muted);
   text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-  padding-top: 2px;
-}
-
-.trace-label.llm { color: var(--purple); }
-.trace-label.action { color: var(--cyan); }
-
-.trace-data {
-  color: var(--text-primary);
-}
-
-.trace-data .trace-metric {
-  display: inline-block;
-  margin-right: 12px;
-  white-space: nowrap;
-}
-
-.trace-data .trace-metric .tm-label {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-}
-
-.trace-expand-btn {
-  background: none;
-  border: 1px solid var(--border-dim);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  margin-top: 6px;
-  transition: all 0.15s;
-}
-
-.trace-expand-btn:hover {
-  border-color: var(--cyan-dim);
-  color: var(--cyan);
-}
-
-.trace-blob-content {
-  display: none;
-  margin-top: 8px;
-  padding: 10px;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-sm);
-  max-height: 300px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
-.trace-blob-content.visible { display: block; }
-
-.trace-action-result {
-  margin-top: 4px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-}
-
-.trace-action-result.success {
-  background: var(--green-glow);
-  color: var(--green);
-}
-
-.trace-action-result.failure {
-  background: var(--red-glow);
-  color: var(--red);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   HEX GRID BACKGROUND (subtle)
+   OBSERVATIONS TABLE
    ═══════════════════════════════════════════════════════════════ */
-#bg-pattern {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  opacity: 0.03;
-  background-image:
-    radial-gradient(circle at 25% 25%, var(--cyan) 1px, transparent 1px),
-    radial-gradient(circle at 75% 75%, var(--cyan) 1px, transparent 1px);
-  background-size: 50px 50px;
+.obs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
 }
+.obs-table th {
+  text-align: left;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-base);
+  position: sticky;
+  top: 0;
+  background: var(--bg-raised);
+}
+.obs-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border-dim);
+  vertical-align: top;
+}
+.obs-table tr:hover td { background: var(--bg-hover); }
+.obs-table-wrap {
+  max-height: 600px;
+  overflow: auto;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EVENTS FEED
+   ═══════════════════════════════════════════════════════════════ */
+.event-row {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-dim);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.event-row:hover { background: var(--bg-hover); }
+.event-row-header { display: flex; gap: 8px; align-items: center; }
+.event-row-payload { display: none; margin-top: 6px; }
+.event-row-payload.visible { display: block; }
+
+/* ═══════════════════════════════════════════════════════════════
+   COST
+   ═══════════════════════════════════════════════════════════════ */
+.cost-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 120px;
+  padding: 8px 4px;
+}
+.cost-bar-item {
+  flex: 1;
+  background: var(--cyan-dim);
+  border-radius: 2px 2px 0 0;
+  position: relative;
+  min-height: 2px;
+  transition: height 0.3s;
+}
+.cost-bar-label {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.58rem;
+  color: var(--text-ghost);
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DECISIONS
+   ═══════════════════════════════════════════════════════════════ */
+.decision-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.decision-name { color: var(--text-bright); font-weight: 600; font-size: 0.85rem; }
+.decision-context { color: var(--text-secondary); font-size: 0.75rem; margin-top: 4px; }
+.decision-options { margin-top: 8px; }
+.decision-option {
+  padding: 4px 8px;
+  margin-bottom: 3px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-dim);
+}
+.decision-option.chosen {
+  border-color: var(--green-dim);
+  background: var(--green-glow);
+  color: var(--green);
+}
+.decision-reasoning {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.confidence-bar {
+  margin-top: 6px;
+  height: 4px;
+  background: var(--bg-surface);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.confidence-fill {
+  height: 100%;
+  background: var(--cyan);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ERRORS
+   ═══════════════════════════════════════════════════════════════ */
+.error-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--red-dim);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.error-card.flash { border-color: var(--red); box-shadow: 0 0 12px var(--red-glow); }
+.error-component { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; }
+.error-message { color: var(--red); font-size: 0.85rem; margin-top: 4px; }
+.error-stack {
+  display: none;
+  margin-top: 8px;
+  font-size: 0.7rem;
+  color: var(--text-ghost);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+}
+.error-stack.visible { display: block; }
+.error-recovery {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+.error-recovery.success { background: var(--green-glow); color: var(--green); }
+.error-recovery.failure { background: var(--red-glow); color: var(--red); }
 </style>
 </head>
 <body>
 
-<div id="bg-pattern"></div>
-
 <!-- ════════════ SYSTEM BAR ════════════ -->
 <header id="system-bar">
   <div class="sb-brand">THE <span>ENGINEER</span></div>
-  <div class="sb-separator"></div>
-
-  <div class="sb-status" id="sb-daemon-status">
+  <div class="sb-sep"></div>
+  <div class="sb-status">
     <div class="sb-dot offline" id="sb-dot"></div>
     <span id="sb-daemon-label">Connecting...</span>
   </div>
-
-  <svg class="sb-heartbeat" id="sb-heartbeat" viewBox="0 0 80 28">
-    <polyline class="hb-signal" points="0,14 15,14 20,14 24,4 28,24 32,14 37,14 42,14 46,6 50,22 54,14 59,14 80,14"
-              stroke-dasharray="200" stroke-dashoffset="0">
-      <animate id="hb-anim" attributeName="stroke-dashoffset" from="200" to="0" dur="2s" repeatCount="indefinite"/>
-    </polyline>
-    <line class="hb-flat" x1="0" y1="14" x2="80" y2="14" stroke-dasharray="4 4">
-      <animate attributeName="stroke-dashoffset" from="8" to="0" dur="1s" repeatCount="indefinite"/>
-    </line>
-  </svg>
-
-  <div class="sb-separator"></div>
-
+  <div class="sb-sep"></div>
   <div class="sb-metric">
-    <div class="sb-metric-label">Active</div>
-    <div class="sb-metric-value count" id="sb-active">—</div>
+    <span class="sb-metric-label">Active</span>
+    <span class="sb-metric-value count" id="sb-active">-</span>
   </div>
   <div class="sb-metric">
-    <div class="sb-metric-label">Queued</div>
-    <div class="sb-metric-value count" id="sb-queued">—</div>
+    <span class="sb-metric-label">Queued</span>
+    <span class="sb-metric-value count" id="sb-queued">-</span>
   </div>
   <div class="sb-metric">
-    <div class="sb-metric-label">Actions</div>
-    <div class="sb-metric-value count" id="sb-actions">—</div>
+    <span class="sb-metric-label">Blocked</span>
+    <span class="sb-metric-value count" id="sb-blocked">-</span>
   </div>
-
-  <div class="sb-separator"></div>
-
+  <div class="sb-sep"></div>
   <div class="sb-metric">
-    <div class="sb-metric-label">Today</div>
-    <div class="sb-metric-value cost" id="sb-today-cost">—</div>
+    <span class="sb-metric-label">Today</span>
+    <span class="sb-metric-value cost" id="sb-today-cost">-</span>
   </div>
   <div class="sb-metric">
-    <div class="sb-metric-label">Month</div>
-    <div class="sb-metric-value cost" id="sb-month-cost">—</div>
+    <span class="sb-metric-label">Month</span>
+    <span class="sb-metric-value cost" id="sb-month-cost">-</span>
   </div>
-
+  <div class="sb-sep"></div>
+  <div class="sb-metric">
+    <span class="sb-metric-label">Obs</span>
+    <span class="sb-metric-value" id="sb-obs-count">-</span>
+  </div>
+  <div class="sb-metric">
+    <span class="sb-metric-label">Events</span>
+    <span class="sb-metric-value" id="sb-event-count">-</span>
+  </div>
   <div class="sb-spacer"></div>
-
-  <div class="sb-watching" id="sb-watching">
-    <div class="rec-dot-wrap">
-      <div class="rec-dot"></div>
-      <div class="rec-ring"></div>
-    </div>
-    <span>Watching for changes</span>
-  </div>
-
-  <div class="sb-separator"></div>
-
-  <div class="sb-metric">
-    <div class="sb-metric-label">LLM Traces</div>
-    <div class="sb-metric-value" id="sb-llm-traces">—</div>
-  </div>
-
-  <div class="sb-llm-provider" id="sb-llm-provider" style="display:none">
-    <span class="llm-label">LLM</span>
-    <span class="llm-value" id="sb-llm-value">—</span>
+  <div class="sb-sse disconnected" id="sb-sse">
+    <div class="sb-sse-dot"></div>
+    <span id="sb-sse-label">SSE</span>
   </div>
 </header>
 
 <!-- ════════════ TAB BAR ════════════ -->
 <nav id="tab-bar">
-  <button class="tab-btn active" data-tab="tasks">Tasks<span class="tab-badge" id="tab-tasks-count">0</span></button>
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="tasks">Tasks<span class="tab-badge" id="tab-tasks-count">0</span></button>
+  <button class="tab-btn" data-tab="agent-loop">Agent Loop</button>
+  <button class="tab-btn" data-tab="observations">Observations</button>
   <button class="tab-btn" data-tab="events">Events</button>
   <button class="tab-btn" data-tab="cost">Cost</button>
-  <button class="tab-btn" data-tab="traces">Traces</button>
+  <button class="tab-btn" data-tab="decisions">Decisions</button>
+  <button class="tab-btn" data-tab="errors">Errors<span class="tab-badge badge-red" id="tab-errors-count" style="display:none">0</span></button>
 </nav>
 
+<!-- ════════════ OVERVIEW PANEL ════════════ -->
+<div class="tab-panel active" id="panel-overview">
+  <div class="grid-2">
+    <div>
+      <div class="card">
+        <div class="card-title">System Status</div>
+        <div id="overview-status">Loading...</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Active Tasks</div>
+        <div id="overview-active-tasks">No active tasks</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Health Events</div>
+        <div id="overview-health">No health events</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Observation Types</div>
+        <div id="overview-obs-types" style="font-size:0.75rem">Loading...</div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">Live Activity Feed</div>
+        <div class="live-feed" id="live-feed"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════ TASKS PANEL ════════════ -->
-<div class="tab-panel active" id="panel-tasks">
+<div class="tab-panel" id="panel-tasks">
   <div id="tasks-kanban-wrap">
-    <div id="tasks-kanban"></div>
+    <div class="kanban" id="tasks-kanban"></div>
   </div>
   <div id="task-detail">
-    <a class="back-link" id="task-detail-back">&#8592; Back to tasks</a>
+    <a class="back-link" id="task-detail-back">&larr; Back to tasks</a>
     <div id="task-detail-content"></div>
+  </div>
+</div>
+
+<!-- ════════════ AGENT LOOP PANEL ════════════ -->
+<div class="tab-panel" id="panel-agent-loop">
+  <div class="filter-bar">
+    <select id="al-task-select"><option value="">Select task...</option></select>
+    <select id="al-phase-select"><option value="">All phases</option></select>
+  </div>
+  <div id="agent-loop-content">
+    <div class="empty-state">Select a task to view agent loop iterations</div>
+  </div>
+</div>
+
+<!-- ════════════ OBSERVATIONS PANEL ════════════ -->
+<div class="tab-panel" id="panel-observations">
+  <div class="filter-bar">
+    <select id="obs-type-filter">
+      <option value="">All types</option>
+      <option value="agent_iteration">agent_iteration</option>
+      <option value="llm_call">llm_call</option>
+      <option value="tool_execution">tool_execution</option>
+      <option value="phase_transition">phase_transition</option>
+      <option value="decision_point">decision_point</option>
+      <option value="safety_verdict">safety_verdict</option>
+      <option value="state_transition">state_transition</option>
+      <option value="workspace_op">workspace_op</option>
+      <option value="plugin_call">plugin_call</option>
+      <option value="error">error</option>
+      <option value="cost_snapshot">cost_snapshot</option>
+      <option value="lifecycle">lifecycle</option>
+      <option value="config_change">config_change</option>
+    </select>
+    <input type="text" id="obs-task-filter" placeholder="Task ID...">
+    <select id="obs-level-filter">
+      <option value="">All levels</option>
+      <option value="debug">debug</option>
+      <option value="info">info</option>
+      <option value="warn">warn</option>
+      <option value="error">error</option>
+    </select>
+    <input type="text" id="obs-phase-filter" placeholder="Phase...">
+  </div>
+  <div class="obs-table-wrap">
+    <table class="obs-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Name</th>
+          <th>Task</th>
+          <th>Phase</th>
+          <th>Duration</th>
+          <th>Status</th>
+          <th>Level</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="obs-tbody"></tbody>
+    </table>
   </div>
 </div>
 
@@ -1373,172 +781,230 @@ a:hover { text-decoration: underline; }
   <div class="filter-bar">
     <select id="event-type-filter">
       <option value="">All event types</option>
-      <option value="task.created">task.created</option>
-      <option value="task.state_changed">task.state_changed</option>
-      <option value="cost.incurred">cost.incurred</option>
-      <option value="cost.limit_reached">cost.limit_reached</option>
-      <option value="git.committed">git.committed</option>
-      <option value="git.pr_opened">git.pr_opened</option>
-      <option value="workspace.created">workspace.created</option>
-      <option value="health.stuck_detected">health.stuck_detected</option>
+      <optgroup label="Task">
+        <option value="task.created">task.created</option>
+        <option value="task.state_changed">task.state_changed</option>
+        <option value="task.children_all_done">task.children_all_done</option>
+        <option value="task.feedback_received">task.feedback_received</option>
+      </optgroup>
+      <optgroup label="Action">
+        <option value="action.rejected">action.rejected</option>
+      </optgroup>
+      <optgroup label="Cost">
+        <option value="cost.incurred">cost.incurred</option>
+        <option value="cost.limit_reached">cost.limit_reached</option>
+      </optgroup>
+      <optgroup label="Preemption">
+        <option value="preemption.requested">preemption.requested</option>
+        <option value="preemption.ready">preemption.ready</option>
+      </optgroup>
+      <optgroup label="Timeout">
+        <option value="timeout.reminder">timeout.reminder</option>
+        <option value="timeout.self_unblock_check">timeout.self_unblock_check</option>
+        <option value="timeout.alert">timeout.alert</option>
+      </optgroup>
+      <optgroup label="Trigger">
+        <option value="trigger.new_event">trigger.new_event</option>
+        <option value="trigger.pr_review">trigger.pr_review</option>
+      </optgroup>
+      <optgroup label="Workspace">
+        <option value="workspace.created">workspace.created</option>
+        <option value="workspace.verified">workspace.verified</option>
+        <option value="workspace.cleaned">workspace.cleaned</option>
+        <option value="workspace.merge_conflict">workspace.merge_conflict</option>
+      </optgroup>
+      <optgroup label="Git">
+        <option value="git.branch_created">git.branch_created</option>
+        <option value="git.committed">git.committed</option>
+        <option value="git.pushed">git.pushed</option>
+        <option value="git.pr_opened">git.pr_opened</option>
+        <option value="git.pr_updated">git.pr_updated</option>
+        <option value="git.pr_merged">git.pr_merged</option>
+        <option value="git.merge_completed">git.merge_completed</option>
+      </optgroup>
+      <optgroup label="Health">
+        <option value="health.stuck_detected">health.stuck_detected</option>
+        <option value="health.trigger_failure">health.trigger_failure</option>
+        <option value="health.config_reload_failed">health.config_reload_failed</option>
+        <option value="health.plugin_unhealthy">health.plugin_unhealthy</option>
+        <option value="health.plugin_failed">health.plugin_failed</option>
+        <option value="health.plugin_recovered">health.plugin_recovered</option>
+      </optgroup>
+      <optgroup label="Communication">
+        <option value="comm.message_received">comm.message_received</option>
+        <option value="comm.message_sent">comm.message_sent</option>
+      </optgroup>
+      <optgroup label="Review">
+        <option value="review.poll_completed">review.poll_completed</option>
+      </optgroup>
+      <optgroup label="System">
+        <option value="system.cleanup_completed">system.cleanup_completed</option>
+      </optgroup>
     </select>
-    <input type="text" id="event-task-filter" placeholder="Filter by task ID..." style="width:180px">
+    <input type="text" id="event-task-filter" placeholder="Task ID...">
   </div>
-  <div id="events-feed" class="event-feed"></div>
-  <div id="events-empty" class="empty-state" style="display:none">
-    <div class="empty-icon">&#9881;</div>
-    No events yet
-    <p>Events will appear here as the daemon operates.</p>
-  </div>
+  <div id="events-feed" class="live-feed" style="max-height:600px"></div>
 </div>
 
 <!-- ════════════ COST PANEL ════════════ -->
 <div class="tab-panel" id="panel-cost">
-  <div class="cost-stats-row" id="cost-stats-row">
-    <div class="cost-stat-card">
-      <div class="stat-big" style="color:var(--amber)" id="cost-today">$0.0000</div>
-      <div class="stat-label">Today's Spend</div>
+  <div class="grid-3" id="cost-summary">
+    <div class="stat-card">
+      <div class="stat-big" style="color:var(--amber)" id="cost-today">$0.00</div>
+      <div class="stat-label">Today</div>
     </div>
-    <div class="cost-stat-card">
-      <div class="stat-big" style="color:var(--amber)" id="cost-month">$0.0000</div>
+    <div class="stat-card">
+      <div class="stat-big" style="color:var(--amber)" id="cost-month">$0.00</div>
       <div class="stat-label">This Month</div>
     </div>
-    <div class="cost-stat-card">
-      <div class="stat-big" style="color:var(--text-bright)" id="cost-total-spend">$0.0000</div>
+    <div class="stat-card">
+      <div class="stat-big" style="color:var(--text-bright)" id="cost-total">$0.00</div>
       <div class="stat-label">All Time</div>
     </div>
   </div>
-
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;">
+  <div class="grid-2" style="margin-top:12px">
     <div class="card">
-      <div class="card-header">Cost by Phase</div>
-      <div id="cost-by-phase" class="bar-chart"></div>
+      <div class="card-title">Cost by Phase</div>
+      <div id="cost-by-phase"></div>
     </div>
     <div class="card">
-      <div class="card-header">Daily Spend (Last 30 Days)</div>
-      <div id="cost-by-day" class="day-chart"></div>
+      <div class="card-title">Cost by Day (Last 30d)</div>
+      <div id="cost-by-day" class="cost-bar"></div>
     </div>
   </div>
-
   <div class="card">
-    <div class="card-header">Cost by Task</div>
-    <div style="max-height:350px; overflow-y:auto;">
-      <table class="data-table" id="cost-by-task-table">
-        <thead>
-          <tr><th>Task</th><th>Title</th><th style="text-align:right">Cost</th><th style="text-align:right">Tokens</th></tr>
-        </thead>
-        <tbody id="cost-by-task-body"></tbody>
-      </table>
-    </div>
+    <div class="card-title">Top Tasks by Cost</div>
+    <div id="cost-by-task"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Individual LLM Calls</div>
+    <div id="cost-llm-calls" style="max-height:300px;overflow:auto"></div>
   </div>
 </div>
 
-<!-- ════════════ TRACES PANEL ════════════ -->
-<div class="tab-panel" id="panel-traces">
+<!-- ════════════ DECISIONS PANEL ════════════ -->
+<div class="tab-panel" id="panel-decisions">
+  <div id="decisions-content">
+    <div class="empty-state">No decision points recorded yet</div>
+  </div>
+</div>
+
+<!-- ════════════ ERRORS PANEL ════════════ -->
+<div class="tab-panel" id="panel-errors">
   <div class="filter-bar">
-    <select id="trace-task-select">
-      <option value="">Select a task...</option>
+    <select id="error-level-filter">
+      <option value="">All levels</option>
+      <option value="warn">warn</option>
+      <option value="error">error</option>
     </select>
-    <select id="trace-phase-select" disabled>
-      <option value="">Select a phase...</option>
-    </select>
-    <button class="btn btn-primary" id="trace-load-btn" disabled>Load Traces</button>
   </div>
-  <div id="traces-content"></div>
-  <div id="traces-empty" class="empty-state">
-    <div class="empty-icon">&#128270;</div>
-    Select a task and phase to replay the agent loop
-    <p>Each iteration shows the LLM call followed by the action taken.</p>
+  <div id="errors-content">
+    <div class="empty-state">No errors recorded</div>
   </div>
 </div>
 
-<!-- ════════════════════════════════════════════════════════════════
+<!-- ════════════════════════════════════════════════════════════════════════════
      JAVASCRIPT
-     ════════════════════════════════════════════════════════════════ -->
+     ════════════════════════════════════════════════════════════════════════════ -->
 <script>
+'use strict';
+
 // ── Utilities ──────────────────────────────────────────────────
-function fmt$(v) {
-  if (v == null) return '$0.0000';
-  return '$' + Number(v).toFixed(4);
-}
-
-function fmtTokens(v) {
-  if (v == null) return '0';
-  return Number(v).toLocaleString();
-}
-
-function fmtDuration(ms) {
-  if (ms == null) return '—';
-  if (ms < 1000) return ms + 'ms';
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return s + 's';
-  const m = Math.floor(s / 60);
-  const rs = s % 60;
-  if (m < 60) return m + 'm ' + rs + 's';
-  const h = Math.floor(m / 60);
-  return h + 'h ' + (m % 60) + 'm';
-}
-
-function timeAgo(iso) {
-  if (!iso) return '—';
-  const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 0) return 'just now';
-  const s = Math.floor(diff / 1000);
-  if (s < 5) return 'just now';
-  if (s < 60) return s + 's ago';
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + 'm ago';
-  const h = Math.floor(m / 60);
-  if (h < 24) return h + 'h ago';
-  const d = Math.floor(h / 24);
-  return d + 'd ago';
-}
-
 function esc(str) {
-  if (!str) return '';
   const d = document.createElement('div');
-  d.textContent = str;
+  d.textContent = str || '';
   return d.innerHTML;
 }
 
-function truncate(str, max) {
-  if (!str) return '';
-  return str.length > max ? str.slice(0, max) + '...' : str;
+function fmt$(n) {
+  if (n === null || n === undefined) return '$0.00';
+  return '$' + Number(n).toFixed(4);
 }
 
-function eventCategory(type) {
-  if (!type) return '';
-  return type.split('.')[0];
+function fmtMs(ms) {
+  if (ms === null || ms === undefined) return '-';
+  if (ms < 1000) return ms + 'ms';
+  return (ms / 1000).toFixed(1) + 's';
 }
 
-function stateBadgeClass(state) {
-  const map = {
-    intake: 'badge-dim', queued: 'badge-blue', active: 'badge-cyan',
-    blocked: 'badge-red', review_pending: 'badge-amber',
-    completed: 'badge-green', failed: 'badge-red'
-  };
-  return map[state] || 'badge-dim';
+function fmtTime(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return iso; }
 }
+
+function fmtDateTime(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+           d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return iso; }
+}
+
+function truncate(s, max) { return s && s.length > max ? s.slice(0, max) + '...' : (s || ''); }
+function shortId(id) { return id ? id.slice(0, 8) : '-'; }
+function shortIdWithTitle(id) { return id ? `<span title="${esc(id)}" style="cursor:help">${esc(id.slice(0, 8))}</span>` : '-'; }
+
+function jsonPre(obj) {
+  if (!obj) return '';
+  try { return '<div class="json-pre">' + esc(JSON.stringify(obj, null, 2)) + '</div>'; }
+  catch { return ''; }
+}
+
+const OBS_TYPE_COLORS = {
+  agent_iteration: 'badge-cyan',
+  llm_call: 'badge-purple',
+  tool_execution: 'badge-blue',
+  phase_transition: 'badge-green',
+  decision_point: 'badge-amber',
+  safety_verdict: 'badge-amber',
+  state_transition: 'badge-cyan',
+  workspace_op: 'badge-blue',
+  plugin_call: 'badge-dim',
+  error: 'badge-red',
+  cost_snapshot: 'badge-amber',
+  lifecycle: 'badge-dim',
+  config_change: 'badge-dim',
+};
+
+const EVENT_CAT_COLORS = {
+  task: 'badge-cyan',
+  action: 'badge-amber',
+  cost: 'badge-amber',
+  preemption: 'badge-red',
+  timeout: 'badge-red',
+  trigger: 'badge-green',
+  workspace: 'badge-blue',
+  git: 'badge-blue',
+  health: 'badge-red',
+  comm: 'badge-purple',
+  review: 'badge-purple',
+  system: 'badge-dim',
+};
 
 const PHASES = ['intake_analysis', 'research', 'planning', 'execution', 'self_review', 'demo_prep', 'integration'];
-const PHASE_LABELS = {
-  intake_analysis: 'Intake', research: 'Research', planning: 'Planning',
-  execution: 'Execution', self_review: 'Review', demo_prep: 'Demo', integration: 'Integration'
-};
+const PHASE_LABELS = { intake_analysis: 'Intake', research: 'Research', planning: 'Planning', execution: 'Exec', self_review: 'Review', demo_prep: 'Demo', integration: 'Integ' };
 const KANBAN_STATES = ['intake', 'queued', 'active', 'blocked', 'review_pending', 'completed', 'failed'];
-const STATE_LABELS = {
-  intake: 'Intake', queued: 'Queued', active: 'Active', blocked: 'Blocked',
-  review_pending: 'Review', completed: 'Done', failed: 'Failed'
-};
+const STATE_LABELS = { intake: 'Intake', queued: 'Queued', active: 'Active', blocked: 'Blocked', review_pending: 'Review', completed: 'Done', failed: 'Failed' };
+const STATE_COLORS = { intake: 'var(--text-muted)', queued: 'var(--blue)', active: 'var(--cyan)', blocked: 'var(--red)', review_pending: 'var(--amber)', completed: 'var(--green)', failed: 'var(--red)' };
+function stateBadge(state) {
+  const m = { intake: 'badge-dim', queued: 'badge-blue', active: 'badge-cyan', blocked: 'badge-red', review_pending: 'badge-amber', completed: 'badge-green', failed: 'badge-red' };
+  return m[state] || 'badge-dim';
+}
 
 // ── State ──────────────────────────────────────────────────────
 let allTasks = [];
-let lastEventSequence = 0;
-let allEvents = [];
-let currentDetailTaskId = null;
 let costData = null;
+let currentDetailTaskId = null;
+let liveFeedItems = [];
+const MAX_FEED_ITEMS = 200;
+let obsCount = 0;
+let eventCount = 0;
 
-// ── API helpers ────────────────────────────────────────────────
+// ── API ────────────────────────────────────────────────────────
 async function api(path) {
   try {
     const r = await fetch(path);
@@ -1549,85 +1015,176 @@ async function api(path) {
   } catch { return null; }
 }
 
-// ── System Bar ─────────────────────────────────────────────────
+// ── SSE ────────────────────────────────────────────────────────
+let sse = null;
+let sseReconnectDelay = 1000;
+
+function connectSSE() {
+  const sseEl = document.getElementById('sb-sse');
+  const sseLabel = document.getElementById('sb-sse-label');
+
+  sseEl.className = 'sb-sse reconnecting';
+  sseLabel.textContent = 'Connecting...';
+
+  sse = new EventSource('/api/stream');
+
+  sse.onopen = () => {
+    sseEl.className = 'sb-sse connected';
+    sseLabel.textContent = 'SSE Live';
+    sseReconnectDelay = 1000;
+  };
+
+  sse.addEventListener('observation', (e) => {
+    try {
+      const obs = JSON.parse(e.data);
+      obsCount++;
+      document.getElementById('sb-obs-count').textContent = obsCount;
+      handleLiveObservation(obs);
+    } catch { /* ignore parse errors */ }
+  });
+
+  sse.addEventListener('event', (e) => {
+    try {
+      const evt = JSON.parse(e.data);
+      eventCount++;
+      document.getElementById('sb-event-count').textContent = eventCount;
+      handleLiveEvent(evt);
+    } catch { /* ignore parse errors */ }
+  });
+
+  sse.onerror = () => {
+    sseEl.className = 'sb-sse disconnected';
+    sseLabel.textContent = 'Disconnected';
+    sse.close();
+    setTimeout(connectSSE, sseReconnectDelay);
+    sseReconnectDelay = Math.min(sseReconnectDelay * 2, 30000);
+  };
+}
+
+function handleLiveObservation(obs) {
+  // Live feed
+  addToLiveFeed('obs', obs.type, obs.name, obs.task_id, obs.start_time, obs.level === 'error');
+
+  // Route to active panels
+  if (document.getElementById('panel-observations').classList.contains('active')) {
+    prependObservationRow(obs);
+  }
+  if (obs.type === 'error' || obs.level === 'error') {
+    const badge = document.getElementById('tab-errors-count');
+    const current = parseInt(badge.textContent || '0');
+    badge.textContent = current + 1;
+    badge.style.display = 'inline-block';
+    if (document.getElementById('panel-errors').classList.contains('active')) {
+      prependErrorCard(obs, true);
+    }
+  }
+  if (obs.type === 'decision_point') {
+    if (document.getElementById('panel-decisions').classList.contains('active')) {
+      prependDecisionCard(obs);
+    }
+  }
+}
+
+function handleLiveEvent(evt) {
+  addToLiveFeed('evt', evt.type, evt.type, evt.task_id, evt.timestamp, false);
+
+  if (document.getElementById('panel-events').classList.contains('active')) {
+    prependEventRow(evt);
+  }
+
+  // Re-fetch tasks on state changes
+  if (evt.type === 'task.state_changed' || evt.type === 'task.created') {
+    pollTasks();
+  }
+}
+
+function addToLiveFeed(kind, type, name, taskId, time, isError) {
+  const feed = document.getElementById('live-feed');
+  const colorClass = kind === 'obs' ? (OBS_TYPE_COLORS[type] || 'badge-dim') : (EVENT_CAT_COLORS[type.split('.')[0]] || 'badge-dim');
+  const item = document.createElement('div');
+  item.className = 'feed-item' + (isError ? ' flash-error' : ' flash');
+  item.innerHTML = `<span class="feed-time">${esc(fmtTime(time))}</span>
+    <span class="badge ${colorClass} feed-type">${esc(type)}</span>
+    <span class="feed-name">${esc(truncate(name, 60))}</span>
+    ${taskId ? '<span class="feed-task">' + esc(shortId(taskId)) + '</span>' : ''}`;
+  feed.insertBefore(item, feed.firstChild);
+  setTimeout(() => item.classList.remove('flash', 'flash-error'), 500);
+
+  liveFeedItems.unshift(item);
+  while (liveFeedItems.length > MAX_FEED_ITEMS) {
+    const old = liveFeedItems.pop();
+    old.remove();
+  }
+}
+
+// ── Tab Switching ──────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const tabId = btn.dataset.tab;
+    document.getElementById('panel-' + tabId).classList.add('active');
+
+    // Load data when switching to a tab
+    if (tabId === 'observations') loadObservations();
+    if (tabId === 'events') loadEvents();
+    if (tabId === 'cost') loadCost();
+    if (tabId === 'decisions') loadDecisions();
+    if (tabId === 'errors') loadErrors();
+    if (tabId === 'agent-loop') loadAgentLoopTasks();
+  });
+});
+
+// ── System Bar Polling ─────────────────────────────────────────
 async function pollSystemStatus() {
   const data = await api('/api/system/status');
   if (!data) {
     document.getElementById('sb-dot').className = 'sb-dot offline';
     document.getElementById('sb-daemon-label').textContent = 'Offline';
-    document.getElementById('sb-heartbeat').classList.add('dead');
     return;
   }
 
-  const dot = document.getElementById('sb-dot');
-  const label = document.getElementById('sb-daemon-label');
-  const hb = document.getElementById('sb-heartbeat');
-
   const bs = data.tasks_by_state || {};
+  const active = bs.active || 0;
 
   if (data.daemon_running) {
-    const active = bs.active || 0;
-
-    if (active > 0) {
-      dot.className = 'sb-dot online';
-      label.textContent = 'Working';
-      hb.className = 'sb-heartbeat working';
-      document.getElementById('hb-anim').setAttribute('dur', '0.8s');
-    } else {
-      dot.className = 'sb-dot idle';
-      label.textContent = 'Idle';
-      hb.className = 'sb-heartbeat';
-      document.getElementById('hb-anim').setAttribute('dur', '2s');
-    }
+    document.getElementById('sb-dot').className = active > 0 ? 'sb-dot online' : 'sb-dot idle';
+    document.getElementById('sb-daemon-label').textContent = active > 0 ? 'Working' : 'Idle';
   } else {
-    dot.className = 'sb-dot offline';
-    label.textContent = 'Stopped';
-    hb.className = 'sb-heartbeat stopped';
+    document.getElementById('sb-dot').className = 'sb-dot offline';
+    document.getElementById('sb-daemon-label').textContent = 'Stopped';
   }
-  document.getElementById('sb-active').textContent = bs.active || 0;
+
+  document.getElementById('sb-active').textContent = active;
   document.getElementById('sb-queued').textContent = bs.queued || 0;
-  document.getElementById('sb-actions').textContent = fmtTokens(data.total_action_traces);
-  document.getElementById('sb-llm-traces').textContent = fmtTokens(data.total_llm_traces);
-
-  // LLM provider badge
-  const providerEl = document.getElementById('sb-llm-provider');
-  const providerVal = document.getElementById('sb-llm-value');
-  if (data.llm_provider) {
-    const isCli = data.llm_provider.includes('cli') || data.llm_provider.includes('claude-code');
-    providerEl.style.display = 'flex';
-    providerVal.textContent = isCli ? 'CLI' : 'API';
-    providerVal.className = 'llm-value ' + (isCli ? 'cli' : 'api');
-    updateCliCostNotice(isCli);
-  } else {
-    providerEl.style.display = 'none';
-  }
-
+  document.getElementById('sb-blocked').textContent = bs.blocked || 0;
   document.getElementById('tab-tasks-count').textContent = data.total_tasks || 0;
-}
 
-let cliNoticeInjected = false;
-function updateCliCostNotice(isCli) {
-  const costPanel = document.getElementById('panel-cost');
-  const existing = document.getElementById('cli-cost-notice');
-  if (isCli && !cliNoticeInjected) {
-    const notice = document.createElement('div');
-    notice.className = 'cli-cost-notice';
-    notice.id = 'cli-cost-notice';
-    notice.innerHTML = `
-      <span class="notice-icon">&#9432;</span>
-      <div>
-        <div class="notice-label">CLI Mode — Usage Tracking Limited</div>
-        Claude Code CLI does not expose token-level usage data. Cost figures shown are estimates based on prompt/response sizes. Switch to API mode for precise usage tracking.
-      </div>`;
-    costPanel.insertBefore(notice, costPanel.firstChild);
-    cliNoticeInjected = true;
-  } else if (!isCli && existing) {
-    existing.remove();
-    cliNoticeInjected = false;
+  // Overview status
+  document.getElementById('overview-status').innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.78rem">
+      <div><span style="color:var(--text-muted)">Daemon:</span> <span style="color:${data.daemon_running ? 'var(--green)' : 'var(--red)'}">${data.daemon_running ? 'Running (PID ' + data.daemon_pid + ')' : 'Stopped'}</span></div>
+      <div><span style="color:var(--text-muted)">LLM:</span> <span style="color:var(--text-bright)">${esc(data.llm_provider || 'None detected')}</span></div>
+      <div><span style="color:var(--text-muted)">Total Tasks:</span> <span style="color:var(--text-bright)">${data.total_tasks}</span></div>
+      <div><span style="color:var(--text-muted)">Actions:</span> <span style="color:var(--text-bright)">${data.total_action_traces}</span></div>
+      <div><span style="color:var(--text-muted)">LLM Calls:</span> <span style="color:var(--text-bright)">${data.total_llm_traces}</span></div>
+    </div>`;
+
+  // Active tasks in overview
+  const activeTasks = allTasks.filter(t => t.state === 'active');
+  if (activeTasks.length > 0) {
+    document.getElementById('overview-active-tasks').innerHTML = activeTasks.map(t => `
+      <div style="padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem">
+        <div style="color:var(--text-bright)">${esc(t.title)}</div>
+        <div style="color:var(--text-muted);font-size:0.72rem">Phase: ${esc(t.phase || 'none')} | Cost: ${fmt$(t.llm_cost_usd)}</div>
+      </div>`).join('');
+  } else {
+    document.getElementById('overview-active-tasks').innerHTML = '<div class="empty-state" style="padding:12px">No active tasks</div>';
   }
 }
 
-async function pollCostForBar() {
+async function pollCost() {
   const data = await api('/api/metrics/cost');
   if (!data) return;
   costData = data;
@@ -1635,20 +1192,45 @@ async function pollCostForBar() {
   document.getElementById('sb-month-cost').textContent = fmt$(data.month_spend_usd);
 }
 
-// ── Tab switching ──────────────────────────────────────────────
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+async function pollObsTypeDist() {
+  const data = await api('/api/observations?limit=5000');
+  if (!data || !data.observations) return;
+  const counts = {};
+  data.observations.forEach(o => { counts[o.type] = (counts[o.type] || 0) + 1; });
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (sorted.length === 0) {
+    document.getElementById('overview-obs-types').innerHTML = '<span style="color:var(--text-ghost)">No observations yet</span>';
+    return;
+  }
+  const maxCount = sorted[0][1];
+  document.getElementById('overview-obs-types').innerHTML = sorted.map(([type, count]) => {
+    const pct = maxCount > 0 ? (count / maxCount * 100) : 0;
+    const colorClass = OBS_TYPE_COLORS[type] || 'badge-dim';
+    return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0">
+      <span class="badge ${colorClass}" style="min-width:100px;text-align:center">${esc(type)}</span>
+      <div style="flex:1;height:4px;background:var(--bg-surface);border-radius:2px;overflow:hidden">
+        <div style="height:100%;background:var(--cyan-dim);width:${pct}%"></div>
+      </div>
+      <span style="color:var(--text-secondary);min-width:30px;text-align:right">${count}</span>
+    </div>`;
+  }).join('');
+}
 
-    if (btn.dataset.tab === 'cost') renderCostTab();
-    if (btn.dataset.tab === 'traces') loadTraceTaskList();
-  });
-});
+async function pollHealth() {
+  const data = await api('/api/system/health');
+  if (!data || !data.events || data.events.length === 0) {
+    document.getElementById('overview-health').innerHTML = '<div style="font-size:0.78rem;color:var(--text-ghost)">No health events</div>';
+    return;
+  }
+  document.getElementById('overview-health').innerHTML = data.events.slice(0, 10).map(e => `
+    <div style="padding:4px 0;font-size:0.75rem;border-bottom:1px solid var(--border-dim)">
+      <span style="color:var(--text-ghost)">${esc(fmtTime(e.timestamp))}</span>
+      <span class="badge badge-red">${esc(e.type)}</span>
+      <span style="color:var(--text-secondary)">${esc(truncate(JSON.stringify(e.payload), 80))}</span>
+    </div>`).join('');
+}
 
-// ── Tasks Tab ──────────────────────────────────────────────────
+// ── Tasks ──────────────────────────────────────────────────────
 async function pollTasks() {
   const data = await api('/api/tasks?limit=200');
   if (!data) return;
@@ -1660,611 +1242,691 @@ function renderKanban() {
   const container = document.getElementById('tasks-kanban');
   const cols = {};
   KANBAN_STATES.forEach(s => { cols[s] = []; });
-  allTasks.forEach(t => {
-    if (cols[t.state]) cols[t.state].push(t);
-  });
+  allTasks.forEach(t => { if (cols[t.state]) cols[t.state].push(t); });
 
   let html = '';
   KANBAN_STATES.forEach(state => {
     const tasks = cols[state];
-    const stateColor = {
-      intake: 'var(--text-muted)', queued: 'var(--blue)', active: 'var(--cyan)',
-      blocked: 'var(--red)', review_pending: 'var(--amber)',
-      completed: 'var(--green)', failed: 'var(--red)'
-    }[state] || 'var(--text-muted)';
-
     html += `<div class="kanban-col">
-      <div class="kanban-col-header" style="color:${stateColor}">
-        ${esc(STATE_LABELS[state])}
-        <span class="col-count">${tasks.length}</span>
+      <div class="kanban-col-header" style="color:${STATE_COLORS[state] || 'var(--text-muted)'}">
+        ${esc(STATE_LABELS[state])} <span class="col-count">${tasks.length}</span>
       </div>
       <div class="kanban-col-body">`;
 
     if (tasks.length === 0) {
-      html += `<div style="padding:16px;text-align:center;color:var(--text-ghost);font-size:0.75rem;">Empty</div>`;
+      html += '<div style="padding:12px;text-align:center;color:var(--text-ghost);font-size:0.72rem">Empty</div>';
     }
 
     tasks.forEach(t => {
-      const phaseIdx = t.phase ? PHASES.indexOf(t.phase) : -1;
       const ranSet = new Set(t.phases_ran || []);
-      const taskFinished = t.state === 'completed' || t.state === 'failed';
-      let miniBar = '<div class="phase-mini-bar">';
+      let phaseBar = '<div class="phase-bar">';
       PHASES.forEach((p, i) => {
         let cls = '';
         if (ranSet.has(p)) cls = 'done';
-        else if (t.state === 'failed' && i === phaseIdx) cls = 'failed';
-        else if (i === phaseIdx) cls = 'current';
-        else if (!ranSet.has(p) && (taskFinished || i < phaseIdx)) cls = 'skipped';
-        miniBar += `<div class="phase-seg ${cls}"></div>`;
+        else if (t.phase === p) cls = 'current';
+        else if (t.state === 'failed' && t.phase === p) cls = 'failed';
+        phaseBar += `<div class="phase-seg ${cls}"></div>`;
       });
-      miniBar += '</div>';
+      phaseBar += '</div>';
 
-      html += `<div class="task-card" data-state="${esc(t.state)}" data-id="${esc(t.id)}" onclick="showTaskDetail('${esc(t.id)}')">
-        <div class="task-card-title">${esc(truncate(t.title, 60))}</div>
-        <div class="task-card-meta">
-          ${t.phase ? `<span class="badge badge-dim">${esc(PHASE_LABELS[t.phase] || t.phase)}</span>` : ''}
-          ${t.priority > 5 ? `<span class="badge badge-amber">P${t.priority}</span>` : ''}
-          ${t.llm_cost_usd > 0 ? `<span class="task-card-cost">${fmt$(t.llm_cost_usd)}</span>` : ''}
+      html += `<div class="kanban-card" onclick="showTaskDetail('${esc(t.id)}')">
+        <div class="kanban-card-title">${esc(truncate(t.title, 50))}</div>
+        <div class="kanban-card-meta">
+          <span>${esc(t.phase || '-')}</span>
+          <span>${fmt$(t.llm_cost_usd)}</span>
+          ${t.children_count > 0 ? '<span>' + t.children_count + ' children</span>' : ''}
         </div>
-        ${miniBar}
+        ${phaseBar}
       </div>`;
     });
-
-    html += `</div></div>`;
+    html += '</div></div>';
   });
 
   container.innerHTML = html;
 }
 
-// ── Task Detail ────────────────────────────────────────────────
 async function showTaskDetail(taskId) {
   currentDetailTaskId = taskId;
-  document.getElementById('tasks-kanban-wrap').classList.add('hidden');
-  document.getElementById('task-detail').classList.add('visible');
-  await renderTaskDetail(taskId);
-}
+  document.getElementById('tasks-kanban-wrap').style.display = 'none';
+  const detailEl = document.getElementById('task-detail');
+  detailEl.className = 'visible';
+  detailEl.style.display = 'block';
 
-document.getElementById('task-detail-back').addEventListener('click', () => {
-  currentDetailTaskId = null;
-  document.getElementById('tasks-kanban-wrap').classList.remove('hidden');
-  document.getElementById('task-detail').classList.remove('visible');
-});
-
-function buildReviewPanel(t) {
-  const r = t.review;
-  if (!r && t.state !== 'review_pending') return '';
-
-  const prState = r?.pr_state || 'unknown';
-  const prNumber = r?.pr_number;
-  const prBadgeColor = prState === 'merged' ? 'badge-green' : prState === 'ready' ? 'badge-cyan' : 'badge-dim';
-  const subState = t.sub_state || '';
-  const feedbackRounds = r?.feedback_rounds || [];
-
-  let prLink = prNumber ? `PR #${prNumber}` : 'No PR';
-  // Try to build a link from repo
-  if (prNumber && t.repo) {
-    prLink = `<a href="https://github.com/${esc(t.repo)}/pull/${prNumber}" target="_blank" style="color:var(--cyan)">PR #${prNumber}</a>`;
-  }
-
-  let roundsHtml = '';
-  if (feedbackRounds.length > 0) {
-    roundsHtml = feedbackRounds.map((round, i) => {
-      const icon = round.applied ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--amber)">&#9679;</span>';
-      const comments = (round.comments || []).slice(0, 3).map(c => `<div style="color:var(--text-muted);padding-left:12px;font-size:0.7rem;">${esc(truncate(c, 100))}</div>`).join('');
-      const moreCount = (round.comments || []).length > 3 ? `<div style="color:var(--text-ghost);padding-left:12px;font-size:0.65rem;">+${(round.comments || []).length - 3} more</div>` : '';
-      return `<div style="margin-bottom:6px;">
-        ${icon} <span style="color:var(--text-secondary)">Round ${i + 1}</span> <span class="badge badge-dim" style="font-size:0.55rem">${esc(round.stage || '')}</span>
-        ${round.applied ? '<span style="color:var(--green);font-size:0.65rem;margin-left:4px;">applied</span>' : '<span style="color:var(--amber);font-size:0.65rem;margin-left:4px;">pending</span>'}
-        ${comments}${moreCount}
-      </div>`;
-    }).join('');
-  }
-
-  return `<div class="card" style="margin-bottom:16px">
-    <div class="card-header">PR Review</div>
-    <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:6px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>${prLink} <span class="badge ${prBadgeColor}" style="font-size:0.6rem">${esc(prState)}</span></div>
-        ${subState ? `<span class="badge badge-purple" style="font-size:0.6rem">${esc(subState)} review</span>` : ''}
-      </div>
-      ${feedbackRounds.length > 0 ? `<div style="margin-top:4px;border-top:1px solid var(--border-dim);padding-top:6px;">
-        <div style="color:var(--text-muted);font-size:0.7rem;margin-bottom:4px;">Feedback Rounds (${feedbackRounds.length})</div>
-        ${roundsHtml}
-      </div>` : '<div style="color:var(--text-ghost);font-size:0.7rem;">Awaiting review...</div>'}
-    </div>
-  </div>`;
-}
-
-async function renderTaskDetail(taskId) {
   const [taskData, phasesData, timelineData] = await Promise.all([
     api('/api/tasks/' + taskId),
     api('/api/tasks/' + taskId + '/phases'),
     api('/api/tasks/' + taskId + '/timeline'),
   ]);
 
-  if (!taskData) {
+  if (!taskData || !taskData.task) {
     document.getElementById('task-detail-content').innerHTML = '<div class="empty-state">Task not found</div>';
     return;
   }
 
   const t = taskData.task;
-  const phases = (phasesData && phasesData.phases) || [];
-  const timeline = (timelineData && timelineData.timeline) || [];
-  const currentPhaseIdx = t.phase ? PHASES.indexOf(t.phase) : -1;
-  const completedPhases = new Set(phases.filter(p => p.outcome === 'completed').map(p => p.phase));
-  const ranPhases = new Set(phases.map(p => p.phase));
-  const isFinished = t.state === 'completed' || t.state === 'failed';
+  const phases = phasesData?.phases || [];
+  const timeline = timelineData?.timeline || [];
 
-  // Phase bar
-  let phaseBar = '<div class="phase-bar">';
-  PHASES.forEach((p, i) => {
-    if (i > 0) {
-      const connDone = completedPhases.has(PHASES[i-1]) ? ' done' : '';
-      phaseBar += `<div class="phase-bar-connector${connDone}">&#8594;</div>`;
-    }
-    let cls = '';
-    if (completedPhases.has(p)) cls = 'completed';
-    else if (t.state === 'failed' && i === currentPhaseIdx) cls = 'failed';
-    else if (i === currentPhaseIdx) cls = 'current';
-    else if (!ranPhases.has(p) && (isFinished || i < currentPhaseIdx)) cls = 'skipped';
-    const tooltip = cls === 'skipped' ? ' title="Skipped"' : '';
-    phaseBar += `<div class="phase-bar-item ${cls}"${tooltip}>${esc(PHASE_LABELS[p] || p)}</div>`;
-  });
-  phaseBar += '</div>';
-
-  // Cost breakdown sidebar
-  const maxCost = Math.max(...phases.map(p => p.spend_usd || 0), 0.0001);
-  let costHtml = '';
-  phases.forEach(p => {
-    const pct = ((p.spend_usd || 0) / maxCost * 100).toFixed(1);
-    costHtml += `<div class="cost-row">
-      <span class="phase-name">${esc(PHASE_LABELS[p.phase] || p.phase)}</span>
-      <div class="cost-bar-wrap"><div class="cost-bar-fill" style="width:${pct}%"></div></div>
-      <span class="cost-val">${fmt$(p.spend_usd)}</span>
+  // Phase progress
+  let phaseHtml = '<div style="display:flex;gap:4px;margin:12px 0">';
+  PHASES.forEach(p => {
+    const phaseObs = phases.find(o => o.name === p);
+    const done = phaseObs && phaseObs.status === 'ok';
+    const active = t.phase === p && t.state === 'active';
+    const failed = phaseObs && phaseObs.status === 'error';
+    const color = done ? 'var(--green)' : active ? 'var(--cyan)' : failed ? 'var(--red)' : 'var(--bg-surface)';
+    const dur = phaseObs ? fmtMs(phaseObs.duration_ms) : '';
+    phaseHtml += `<div style="flex:1;text-align:center">
+      <div style="height:6px;background:${color};border-radius:3px"></div>
+      <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px">${esc(PHASE_LABELS[p] || p)}</div>
+      ${dur ? '<div style="font-size:0.6rem;color:var(--text-ghost)">' + dur + '</div>' : ''}
     </div>`;
   });
+  phaseHtml += '</div>';
 
-  // Phase stats
-  let phaseStats = '';
-  [...phases].reverse().forEach(p => {
-    phaseStats += `<div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem;">
-      <span style="width:80px;color:var(--text-secondary);text-transform:capitalize">${esc(PHASE_LABELS[p.phase] || p.phase)}</span>
-      <span style="color:var(--text-muted)">${fmtDuration(p.duration_ms)}</span>
-      <span style="color:var(--cyan)">${p.llm_iterations || 0} iter</span>
-      <span style="color:var(--amber)">${fmtTokens(p.tokens_in)}/${fmtTokens(p.tokens_out)} tok</span>
-      <span style="color:var(--text-muted)">${p.actions_executed || 0} actions${p.actions_failed ? ' (' + p.actions_failed + ' failed)' : ''}</span>
-      <span class="badge ${p.outcome === 'completed' ? 'badge-green' : p.outcome === 'error' ? 'badge-red' : 'badge-dim'}" style="margin-left:auto">${esc(p.outcome || 'pending')}</span>
-    </div>`;
-  });
+  // Detail fields
+  const fields = [
+    ['State', `<span class="badge ${stateBadge(t.state)}">${esc(t.state)}</span>${t.sub_state ? ' / ' + esc(t.sub_state) : ''}`],
+    ['Priority', t.priority],
+    ['Phase', t.phase || '-'],
+    ['Repo', t.repo || '-'],
+    ['Cost', fmt$(t.llm_cost_usd)],
+    ['Tokens', t.llm_tokens?.toLocaleString() || '0'],
+    ['Created', fmtDateTime(t.created_at)],
+    ['Started', fmtDateTime(t.started_at)],
+    ['Completed', fmtDateTime(t.completed_at)],
+    ['Parent', t.parent_id ? shortId(t.parent_id) : '-'],
+  ];
 
   // Timeline
   let timelineHtml = '';
-  [...timeline].reverse().slice(0, 80).forEach(item => {
-    const d = item.data || {};
-    let detail = '';
-    if (item.kind === 'event') {
-      const pl = d.payload || {};
-      if (d.type === 'task.state_changed') {
-        detail = `${esc(pl.from_state || '')} → ${esc(pl.to_state || '')}`;
-        if (pl.reason) detail += ` (${esc(truncate(pl.reason, 80))})`;
-      } else if (d.type === 'task.feedback_received') {
-        const fbIcon = pl.feedback_type === 'approved' ? '<span style="color:var(--green)">&#10003;</span>'
-          : pl.feedback_type === 'changes_requested' ? '<span style="color:var(--red)">&#10007;</span>'
-          : '<span style="color:var(--amber)">&#9998;</span>';
-        detail = `${fbIcon} <span style="color:var(--cyan)">@${esc(pl.reviewer || '')}</span> ${esc(pl.feedback_type || '')} (${esc(pl.stage || '')} review)`;
-        if (pl.content) detail += `<div style="color:var(--text-muted);font-size:0.7rem;margin-top:2px;">${esc(truncate(pl.content, 120))}</div>`;
-      } else if (d.type === 'review.poll_completed') {
-        const stateColor = pl.aggregate_state === 'approved' ? 'var(--green)'
-          : pl.aggregate_state === 'changes_requested' ? 'var(--red)'
-          : pl.aggregate_state === 'comment' ? 'var(--amber)' : 'var(--text-ghost)';
-        detail = `PR #${pl.pr_number || '?'}: <span style="color:${stateColor}">${esc(pl.aggregate_state || 'none')}</span>`;
-        detail += ` (${pl.approvals || 0} approvals, ${pl.comment_count || 0} comments, ${pl.reviewer_count || 0} reviewers)`;
-        if (pl.dedup_skipped) detail += ' <span style="color:var(--text-ghost)">[dedup]</span>';
-      } else if (d.type === 'git.pr_opened') {
-        detail = `<a href="${esc(pl.url || '')}" target="_blank" style="color:var(--cyan)">PR #${pl.pr_number || '?'}</a> ${pl.draft ? '(draft)' : '(ready)'} → ${esc(pl.base_branch || '')}`;
-      } else {
-        detail = esc(truncate(JSON.stringify(pl), 120));
-      }
-    } else if (item.kind === 'journal') {
-      detail = `<span class="badge badge-purple" style="font-size:0.6rem">${esc(d.entry_type || '')}</span> ${esc(truncate(String(d.content || ''), 150))}`;
-    } else if (item.kind === 'action') {
-      const success = d.result_success ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--red)">&#10007;</span>';
-      detail = `${success} <span style="color:var(--cyan)">${esc(d.action_type)}</span> ${fmtDuration(d.duration_ms)}`;
-    }
-
-    timelineHtml += `<div class="timeline-item" data-kind="${item.kind}">
-      <div class="timeline-time" title="${esc(item.timestamp)}">${timeAgo(item.timestamp)}</div>
-      <div class="timeline-content">
-        <div class="tl-type">${item.kind === 'event' ? esc(d.type) : item.kind}</div>
-        <div class="tl-detail">${detail}</div>
-      </div>
+  timeline.forEach(item => {
+    const kindClass = item.kind;
+    const kindLabel = { event: 'EVT', journal: 'LOG', action: 'ACT' }[item.kind] || item.kind;
+    timelineHtml += `<div class="timeline-item ${kindClass}">
+      <div class="timeline-time">${esc(fmtTime(item.timestamp))} <span class="badge badge-dim">${kindLabel}</span></div>
+      <div class="timeline-content">${esc(truncate(JSON.stringify(item.data), 120))}</div>
     </div>`;
   });
 
   document.getElementById('task-detail-content').innerHTML = `
-    <div class="task-detail-header">
-      <div>
-        <h2>${esc(t.title)}</h2>
-        <div class="task-id">${esc(t.id)} &middot; ${esc(t.repo || '')} &middot; <span class="badge ${stateBadgeClass(t.state)}">${esc(t.state)}</span></div>
-      </div>
+    <div class="detail-header">
+      <div class="detail-title">${esc(t.title)}</div>
+      <div class="detail-meta">ID: ${esc(t.id)}</div>
     </div>
-    ${phaseBar}
-    <div class="detail-grid">
-      <div>
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-header">Phase Metrics</div>
-          ${phaseStats || '<div style="color:var(--text-ghost);font-size:0.8rem;">No phase data yet</div>'}
-        </div>
-        <div class="card">
-          <div class="card-header">Timeline</div>
-          <div class="timeline" style="max-height:500px;overflow-y:auto;">
-            ${timelineHtml || '<div style="color:var(--text-ghost);font-size:0.8rem;padding:12px 0;">No timeline events yet</div>'}
-          </div>
-        </div>
-      </div>
-      <div>
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-header">Cost Breakdown</div>
-          <div class="cost-breakdown">
-            ${costHtml || '<div style="color:var(--text-ghost);font-size:0.8rem;">No cost data yet</div>'}
-          </div>
-          <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-dim);display:flex;justify-content:space-between;font-size:0.82rem;">
-            <span style="color:var(--text-muted)">Total</span>
-            <span style="color:var(--amber);font-weight:600">${fmt$(t.llm_cost_usd)}</span>
-          </div>
-        </div>
-        ${buildReviewPanel(t)}
-        <div class="card">
-          <div class="card-header">Details</div>
-          <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:6px;">
-            <div><span style="color:var(--text-muted)">Priority:</span> ${t.priority}</div>
-            <div><span style="color:var(--text-muted)">Tokens:</span> ${fmtTokens(t.llm_tokens)}</div>
-            <div><span style="color:var(--text-muted)">Created:</span> <span title="${esc(t.created_at)}">${timeAgo(t.created_at)}</span></div>
-            ${t.started_at ? `<div><span style="color:var(--text-muted)">Started:</span> <span title="${esc(t.started_at)}">${timeAgo(t.started_at)}</span></div>` : ''}
-            ${t.completed_at ? `<div><span style="color:var(--text-muted)">Completed:</span> <span title="${esc(t.completed_at)}">${timeAgo(t.completed_at)}</span></div>` : ''}
-            ${t.children_count > 0 ? `<div><span style="color:var(--text-muted)">Children:</span> ${t.children_count || (t.children || []).length}</div>` : ''}
-            ${t.description ? `<div style="margin-top:6px;color:var(--text-secondary);border-top:1px solid var(--border-dim);padding-top:6px;">${esc(truncate(t.description, 300))}</div>` : ''}
-          </div>
-        </div>
-      </div>
+    ${phaseHtml}
+    <div class="detail-grid">${fields.map(([l, v]) => `<div><div class="detail-field-label">${l}</div><div class="detail-field-value">${typeof v === 'number' ? v : v}</div></div>`).join('')}</div>
+    <div style="margin-bottom:12px">
+      <button class="expand-btn" style="font-size:0.78rem;padding:4px 12px" onclick="switchToAgentLoop('${esc(t.id)}')">View in Agent Loop &rarr;</button>
+    </div>
+    ${t.workspace ? '<div class="card"><div class="card-title">Workspace</div>' + jsonPre(t.workspace) + '</div>' : ''}
+    ${t.external_ref ? '<div class="card"><div class="card-title">External Ref</div>' + jsonPre(t.external_ref) + '</div>' : ''}
+    ${t.acceptance_criteria ? '<div class="card"><div class="card-title">Acceptance Criteria</div>' + jsonPre(t.acceptance_criteria) + '</div>' : ''}
+    <div class="card">
+      <div class="card-title">Timeline (${timeline.length} items)</div>
+      <div style="max-height:400px;overflow:auto">${timelineHtml || '<div class="empty-state" style="padding:12px">No timeline data</div>'}</div>
     </div>`;
 }
 
-// ── Events Tab ─────────────────────────────────────────────────
-async function pollEvents() {
-  const typeFilter = document.getElementById('event-type-filter').value;
-  const taskFilter = document.getElementById('event-task-filter').value;
-
-  let url = '/api/events?since=' + lastEventSequence + '&limit=100';
-  if (typeFilter) url += '&type=' + encodeURIComponent(typeFilter);
-  if (taskFilter) url += '&task_id=' + encodeURIComponent(taskFilter);
-
-  const data = await api(url);
-  if (!data || !data.events || data.events.length === 0) return;
-
-  // New events come DESC, reverse for chronological insert
-  const newEvents = data.events.reverse();
-  newEvents.forEach(e => {
-    if (e.sequence > lastEventSequence) lastEventSequence = e.sequence;
-  });
-
-  allEvents = [...newEvents, ...allEvents].slice(0, 500);
-  renderEvents();
-}
-
-function renderEvents() {
-  const feed = document.getElementById('events-feed');
-  const empty = document.getElementById('events-empty');
-
-  if (allEvents.length === 0) {
-    feed.innerHTML = '';
-    empty.style.display = 'block';
-    return;
-  }
-
-  empty.style.display = 'none';
-
-  // Show newest first
-  const display = [...allEvents].reverse().slice(0, 200);
-  let html = '';
-  display.forEach(e => {
-    const cat = eventCategory(e.type);
-    const payload = e.payload || {};
-    let detail = '';
-    if (e.type === 'task.state_changed') {
-      detail = `${payload.from_state || '?'} → ${payload.to_state || '?'}`;
-    } else if (e.type === 'cost.incurred') {
-      detail = `${fmt$(payload.spend_usd)} (${payload.operation || ''})`;
-    } else {
-      detail = truncate(JSON.stringify(payload), 100);
-    }
-
-    html += `<div class="event-row">
-      <span class="ev-time" title="${esc(e.timestamp)}">${timeAgo(e.timestamp)}</span>
-      <span class="ev-type" data-cat="${cat}">${esc(e.type)}</span>
-      <span class="ev-detail">${esc(detail)}</span>
-      <span class="ev-task">${esc(e.task_id ? truncate(e.task_id, 16) : '')}</span>
-    </div>`;
-  });
-
-  feed.innerHTML = html;
-}
-
-// Reset events when filters change
-document.getElementById('event-type-filter').addEventListener('change', () => {
-  allEvents = [];
-  lastEventSequence = 0;
-  pollEvents();
+document.getElementById('task-detail-back').addEventListener('click', () => {
+  document.getElementById('tasks-kanban-wrap').style.display = '';
+  document.getElementById('task-detail').style.display = 'none';
+  currentDetailTaskId = null;
 });
 
-document.getElementById('event-task-filter').addEventListener('input', (() => {
-  let timer;
-  return () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      allEvents = [];
-      lastEventSequence = 0;
-      pollEvents();
-    }, 400);
-  };
-})());
-
-// ── Cost Tab ───────────────────────────────────────────────────
-async function renderCostTab() {
-  if (!costData) {
-    const data = await api('/api/metrics/cost');
-    if (!data) return;
-    costData = data;
-  }
-
-  document.getElementById('cost-today').textContent = fmt$(costData.today_spend_usd);
-  document.getElementById('cost-month').textContent = fmt$(costData.month_spend_usd);
-  document.getElementById('cost-total-spend').textContent = fmt$(costData.today_spend_usd + costData.month_spend_usd);
-
-  // Per-phase bar chart
-  const phaseContainer = document.getElementById('cost-by-phase');
-  const phases = costData.per_phase || [];
-  if (phases.length > 0) {
-    const maxSpend = Math.max(...phases.map(p => p.spend_usd || 0), 0.0001);
-    let phaseHtml = '';
-    phases.forEach(p => {
-      const pct = ((p.spend_usd || 0) / maxSpend * 100).toFixed(1);
-      phaseHtml += `<div class="bar-chart-row">
-        <div class="bar-chart-label">${esc(p.phase)}</div>
-        <div class="bar-chart-bar-wrap"><div class="bar-chart-bar amber" style="width:${pct}%"></div></div>
-        <div class="bar-chart-value">${fmt$(p.spend_usd)} &middot; ${fmtTokens((p.tokens_in || 0) + (p.tokens_out || 0))} tok</div>
-      </div>`;
-    });
-    phaseContainer.innerHTML = phaseHtml;
-  } else {
-    phaseContainer.innerHTML = '<div style="color:var(--text-ghost);font-size:0.8rem;padding:16px 0;text-align:center;">No phase cost data</div>';
-  }
-
-  // Per-day chart
-  const dayContainer = document.getElementById('cost-by-day');
-  const days = costData.per_day || [];
-  if (days.length > 0) {
-    const maxDay = Math.max(...days.map(d => d.spend_usd || 0), 0.0001);
-    let dayHtml = '';
-    // Reverse so oldest is left
-    [...days].reverse().forEach(d => {
-      const pct = ((d.spend_usd || 0) / maxDay * 100).toFixed(1);
-      const label = (d.day || '').slice(5); // MM-DD
-      dayHtml += `<div class="day-bar-wrap" title="${esc(d.day)}: ${fmt$(d.spend_usd)}">
-        <div class="day-bar" style="height:${pct}%"></div>
-        <div class="day-bar-label">${esc(label)}</div>
-      </div>`;
-    });
-    dayContainer.innerHTML = dayHtml;
-  } else {
-    dayContainer.innerHTML = '<div style="color:var(--text-ghost);font-size:0.8rem;display:flex;align-items:center;justify-content:center;height:100%;">No daily data</div>';
-  }
-
-  // Per-task table
-  const tbody = document.getElementById('cost-by-task-body');
-  const tasks = costData.per_task || [];
-  if (tasks.length > 0) {
-    let taskHtml = '';
-    tasks.forEach(t => {
-      taskHtml += `<tr>
-        <td class="mono">${esc(truncate(String(t.id), 14))}</td>
-        <td>${esc(truncate(String(t.title), 50))}</td>
-        <td style="text-align:right;color:var(--amber)">${fmt$(t.llm_cost_usd)}</td>
-        <td class="mono" style="text-align:right">${fmtTokens(t.llm_tokens)}</td>
-      </tr>`;
-    });
-    tbody.innerHTML = taskHtml;
-  } else {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-ghost);padding:16px;">No cost data</td></tr>';
-  }
+function switchToAgentLoop(taskId) {
+  // Switch to Agent Loop tab
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-tab="agent-loop"]').classList.add('active');
+  document.getElementById('panel-agent-loop').classList.add('active');
+  // Load and select the task
+  loadAgentLoopTasks().then(() => {
+    document.getElementById('al-task-select').value = taskId;
+    loadAgentLoop(taskId);
+  });
 }
 
-// ── Traces Tab ─────────────────────────────────────────────────
-async function loadTraceTaskList() {
-  const sel = document.getElementById('trace-task-select');
-  const data = await api('/api/tasks?limit=100');
+// ── Agent Loop ─────────────────────────────────────────────────
+async function loadAgentLoopTasks() {
+  const data = await api('/api/tasks?limit=50');
   if (!data) return;
-
-  sel.innerHTML = '<option value="">Select a task...</option>';
+  const sel = document.getElementById('al-task-select');
+  sel.innerHTML = '<option value="">Select task...</option>';
   (data.tasks || []).forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = truncate(t.title, 50) + ' (' + t.state + ')';
-    sel.appendChild(opt);
+    sel.innerHTML += `<option value="${esc(t.id)}">${esc(truncate(t.title, 40))} [${esc(t.state)}]</option>`;
   });
 }
 
-document.getElementById('trace-task-select').addEventListener('change', async function() {
-  const taskId = this.value;
-  const phaseSel = document.getElementById('trace-phase-select');
-  const loadBtn = document.getElementById('trace-load-btn');
-
+document.getElementById('al-task-select').addEventListener('change', async (e) => {
+  const taskId = e.target.value;
   if (!taskId) {
-    phaseSel.disabled = true;
-    loadBtn.disabled = true;
+    document.getElementById('agent-loop-content').innerHTML = '<div class="empty-state">Select a task to view agent loop iterations</div>';
     return;
   }
-
-  // Load available phases for this task
-  const data = await api('/api/tasks/' + taskId + '/phases');
-  phaseSel.innerHTML = '<option value="">All phases</option>';
-  if (data && data.phases) {
-    data.phases.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.phase;
-      opt.textContent = (PHASE_LABELS[p.phase] || p.phase) + ' (' + (p.outcome || 'pending') + ')';
-      phaseSel.appendChild(opt);
-    });
-  }
-  phaseSel.disabled = false;
-  loadBtn.disabled = false;
+  await loadAgentLoop(taskId);
 });
 
-document.getElementById('trace-load-btn').addEventListener('click', loadTraces);
+document.getElementById('al-phase-select').addEventListener('change', async () => {
+  const taskId = document.getElementById('al-task-select').value;
+  if (taskId) await loadAgentLoop(taskId);
+});
 
-async function loadTraces() {
-  const taskId = document.getElementById('trace-task-select').value;
-  const phase = document.getElementById('trace-phase-select').value;
-  if (!taskId) return;
+async function loadAgentLoop(taskId) {
+  const phase = document.getElementById('al-phase-select').value;
+  const phaseParam = phase ? '?phase=' + encodeURIComponent(phase) : '';
 
-  document.getElementById('traces-empty').style.display = 'none';
-  const content = document.getElementById('traces-content');
-  content.innerHTML = '<div style="color:var(--text-muted);padding:20px;">Loading traces...</div>';
-
-  let url = '/api/tasks/' + taskId + '/traces';
-  if (phase) url += '?phase=' + encodeURIComponent(phase);
-
-  const [actionData, llmData] = await Promise.all([
-    api(url),
-    api('/api/tasks/' + taskId + '/llm-traces' + (phase ? '?phase=' + encodeURIComponent(phase) : '')),
+  const [llmData, traceData, phasesData, decisionData, safetyData] = await Promise.all([
+    api('/api/tasks/' + taskId + '/llm-traces' + phaseParam),
+    api('/api/tasks/' + taskId + '/traces' + phaseParam),
+    api('/api/tasks/' + taskId + '/phases'),
+    api('/api/observations?type=decision_point&task_id=' + taskId + '&limit=500'),
+    api('/api/observations?type=safety_verdict&task_id=' + taskId + '&limit=500'),
   ]);
 
-  const actions = (actionData && actionData.traces) || [];
-  const llms = (llmData && llmData.traces) || [];
+  // Update phase selector
+  const phaseSel = document.getElementById('al-phase-select');
+  const currentPhase = phaseSel.value;
+  phaseSel.innerHTML = '<option value="">All phases</option>';
+  (phasesData?.phases || []).forEach(p => {
+    phaseSel.innerHTML += `<option value="${esc(p.name)}" ${p.name === currentPhase ? 'selected' : ''}>${esc(PHASE_LABELS[p.name] || p.name)} (${fmtMs(p.duration_ms)})</option>`;
+  });
 
-  if (actions.length === 0 && llms.length === 0) {
-    content.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128270;</div>No traces found for this selection</div>';
+  const llmTraces = llmData?.traces || [];
+  const actionTraces = traceData?.traces || [];
+  const decisions = decisionData?.observations || [];
+  const safetyVerdicts = safetyData?.observations || [];
+
+  if (llmTraces.length === 0 && actionTraces.length === 0) {
+    document.getElementById('agent-loop-content').innerHTML = '<div class="empty-state">No agent loop data for this task' + (phase ? ' / phase' : '') + '</div>';
     return;
   }
 
-  // Group by iteration
+  // Group by iteration (from metadata or sequence)
   const iterations = new Map();
-  llms.forEach(l => {
-    const key = l.iteration || 0;
-    if (!iterations.has(key)) iterations.set(key, { llm: null, actions: [] });
-    iterations.get(key).llm = l;
+  llmTraces.forEach(t => {
+    const iter = t.input?.iteration || t.metadata?.iteration || 0;
+    if (!iterations.has(iter)) iterations.set(iter, { llm: [], actions: [], decisions: [], safety: [] });
+    iterations.get(iter).llm.push(t);
   });
-  actions.forEach(a => {
-    const key = a.iteration || 0;
-    if (!iterations.has(key)) iterations.set(key, { llm: null, actions: [] });
-    iterations.get(key).actions.push(a);
+  actionTraces.forEach(t => {
+    const iter = t.input?.iteration || t.metadata?.iteration || 0;
+    if (!iterations.has(iter)) iterations.set(iter, { llm: [], actions: [], decisions: [], safety: [] });
+    iterations.get(iter).actions.push(t);
+  });
+  decisions.forEach(d => {
+    const iter = d.input?.iteration || 0;
+    if (iterations.has(iter)) iterations.get(iter).decisions.push(d);
+  });
+  safetyVerdicts.forEach(s => {
+    const iter = s.input?.iteration || 0;
+    if (iterations.has(iter)) iterations.get(iter).safety.push(s);
   });
 
   const sortedIters = [...iterations.entries()].sort((a, b) => a[0] - b[0]);
-
   let html = '';
+
   sortedIters.forEach(([iterNum, data]) => {
-    html += `<div class="trace-iteration">
-      <div class="trace-iter-header">
-        <span class="iter-num">#${iterNum}</span>
-        ${data.llm ? `<span style="color:var(--text-muted);font-size:0.75rem;">${esc(data.llm.phase || '')}</span>` : ''}
-      </div>`;
+    const llmCount = data.llm.length;
+    const actionCount = data.actions.length;
+    const totalCost = data.llm.reduce((s, l) => s + (l.input?.spend_usd || l.output?.spend_usd || 0), 0);
+    const iterId = 'iter-' + iterNum;
 
-    // LLM row
-    if (data.llm) {
-      const l = data.llm;
+    html += `<div class="iteration-card">
+      <div class="iteration-header" onclick="document.getElementById('${iterId}').classList.toggle('visible')">
+        <span class="iteration-num">#${iterNum || '?'}</span>
+        <span style="color:var(--text-secondary)">${llmCount} LLM call${llmCount !== 1 ? 's' : ''}, ${actionCount} action${actionCount !== 1 ? 's' : ''}</span>
+        ${totalCost > 0 ? '<span style="color:var(--amber)">' + fmt$(totalCost) + '</span>' : ''}
+        <span style="color:var(--text-ghost);font-size:0.68rem;margin-left:auto">${data.llm[0] ? esc(data.llm[0].phase || '') : ''}</span>
+      </div>
+      <div class="iteration-body" id="${iterId}">`;
+
+    // LLM calls
+    data.llm.forEach(l => {
+      const promptRef = l.input?.prompt_ref || l.metadata?.prompt_ref;
+      const responseRef = l.output?.response_ref || l.metadata?.response_ref;
+      const tokens = (l.input?.tokens_in || l.output?.tokens_in || 0) + (l.input?.tokens_out || l.output?.tokens_out || 0);
       const blobId = 'blob-' + l.id;
-      html += `<div class="trace-llm-row">
-        <div class="trace-label llm">LLM</div>
-        <div class="trace-data">
-          <span class="trace-metric"><span class="tm-label">latency </span>${fmtDuration(l.latency_ms)}</span>
-          <span class="trace-metric"><span class="tm-label">tokens </span>${fmtTokens(l.tokens_in)}/${fmtTokens(l.tokens_out)}</span>
-          <span class="trace-metric"><span class="tm-label">cost </span><span style="color:var(--amber)">${fmt$(l.spend_usd)}</span></span>
-          ${l.model_id ? `<span class="trace-metric"><span class="tm-label">model </span>${esc(l.model_id)}</span>` : ''}
-          ${l.prompt_ref ? `<button class="trace-expand-btn" onclick="toggleBlob('${blobId}', '${esc(l.prompt_ref)}', 'prompt')">View Prompt</button>` : ''}
-          ${l.response_ref ? `<button class="trace-expand-btn" onclick="toggleBlob('${blobId}-resp', '${esc(l.response_ref)}', 'response')">View Response</button>` : ''}
-          <div class="trace-blob-content" id="${blobId}"></div>
-          <div class="trace-blob-content" id="${blobId}-resp"></div>
-        </div>
-      </div>`;
-    }
 
-    // Action rows
-    data.actions.forEach(a => {
-      const resultCls = a.result_success ? 'success' : 'failure';
-      const resultIcon = a.result_success ? '&#10003;' : '&#10007;';
-      html += `<div class="trace-action-row">
-        <div class="trace-label action">ACTION</div>
-        <div class="trace-data">
-          <span style="color:var(--cyan);font-weight:600;">${esc(a.action_type)}</span>
-          <span class="trace-metric" style="margin-left:12px;"><span class="tm-label">duration </span>${fmtDuration(a.duration_ms)}</span>
-          ${a.action_params ? `<div style="color:var(--text-muted);font-size:0.72rem;margin-top:4px;">${esc(truncate(a.action_params, 200))}</div>` : ''}
-          <div class="trace-action-result ${resultCls}">${resultIcon} ${a.result_success ? 'Success' : 'Failed'}${a.result_error ? ': ' + esc(truncate(a.result_error, 100)) : ''}${a.result_output ? ' — ' + esc(truncate(a.result_output, 80)) : ''}</div>
+      html += `<div class="iteration-section">
+        <div class="iteration-section-title">LLM Call</div>
+        <div style="display:flex;gap:12px;font-size:0.75rem;flex-wrap:wrap">
+          <span><span style="color:var(--text-muted)">Latency:</span> ${fmtMs(l.duration_ms)}</span>
+          <span><span style="color:var(--text-muted)">Tokens:</span> ${tokens.toLocaleString()}</span>
+          <span><span style="color:var(--text-muted)">Cost:</span> <span style="color:var(--amber)">${fmt$(l.input?.spend_usd || l.output?.spend_usd || 0)}</span></span>
         </div>
+        ${promptRef ? `<button class="expand-btn" style="margin-top:6px" onclick="toggleBlob('${blobId}-prompt', '${esc(promptRef)}')">Show Prompt</button>
+          <div class="json-pre" id="${blobId}-prompt" style="display:none">Loading...</div>` : ''}
+        ${responseRef ? `<button class="expand-btn" style="margin-top:4px" onclick="toggleBlob('${blobId}-response', '${esc(responseRef)}')">Show Response</button>
+          <div class="json-pre" id="${blobId}-response" style="display:none">Loading...</div>` : ''}
+        ${!promptRef && !responseRef && l.input ? jsonPre(l.input) : ''}
       </div>`;
     });
 
-    html += '</div>';
+    // Actions
+    data.actions.forEach(a => {
+      const success = a.status === 'ok';
+      html += `<div class="iteration-section">
+        <div class="iteration-section-title" style="display:flex;justify-content:space-between">
+          <span>Tool: ${esc(a.name)}</span>
+          <span class="badge ${success ? 'badge-green' : 'badge-red'}">${success ? 'OK' : 'ERR'}</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text-ghost)">Duration: ${fmtMs(a.duration_ms)}</div>
+        ${a.input ? '<div style="margin-top:4px"><button class="expand-btn" onclick="this.nextElementSibling.classList.toggle(\'visible\')">Input</button><div class="json-pre" style="display:none">' + esc(JSON.stringify(a.input, null, 2)) + '</div></div>' : ''}
+        ${a.output ? '<div style="margin-top:4px"><button class="expand-btn" onclick="this.nextElementSibling.classList.toggle(\'visible\')">Output</button><div class="json-pre" style="display:none">' + esc(JSON.stringify(a.output, null, 2)) + '</div></div>' : ''}
+      </div>`;
+    });
+
+    // Decisions
+    data.decisions.forEach(d => {
+      html += renderDecisionInline(d);
+    });
+
+    // Safety
+    data.safety.forEach(s => {
+      html += `<div class="iteration-section">
+        <div class="iteration-section-title">Safety Verdict</div>
+        <div style="font-size:0.75rem">${jsonPre(s.input)}</div>
+      </div>`;
+    });
+
+    html += '</div></div>';
   });
 
-  content.innerHTML = html;
+  document.getElementById('agent-loop-content').innerHTML = html;
 }
 
-async function toggleBlob(elementId, ref, label) {
-  const el = document.getElementById(elementId);
-  if (!el) return;
+async function toggleBlob(elId, ref) {
+  const el = document.getElementById(elId);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    if (el.textContent === 'Loading...') {
+      const content = await api('/api/blob/' + ref);
+      el.textContent = content || '(empty)';
+    }
+  } else {
+    el.style.display = 'none';
+  }
+}
 
-  if (el.classList.contains('visible')) {
-    el.classList.remove('visible');
+function renderDecisionInline(d) {
+  const input = d.input || {};
+  const opts = input.options || [];
+  const chosen = input.chosen || '';
+  const confidence = input.confidence || 0;
+  return `<div class="iteration-section">
+    <div class="iteration-section-title">Decision: ${esc(d.name)}</div>
+    <div style="font-size:0.75rem;color:var(--text-secondary)">${esc(input.context || '')}</div>
+    <div style="margin-top:4px">${opts.map(o => `<div class="decision-option ${o.id === chosen ? 'chosen' : ''}">${esc(o.id)}: ${esc(o.description)}</div>`).join('')}</div>
+    ${input.reasoning ? '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;font-style:italic">' + esc(input.reasoning) + '</div>' : ''}
+    <div class="confidence-bar"><div class="confidence-fill" style="width:${confidence * 100}%"></div></div>
+  </div>`;
+}
+
+// ── Observations ───────────────────────────────────────────────
+async function loadObservations() {
+  const type = document.getElementById('obs-type-filter').value;
+  const taskId = document.getElementById('obs-task-filter').value;
+  const level = document.getElementById('obs-level-filter').value;
+  const phase = document.getElementById('obs-phase-filter').value;
+
+  let url = '/api/observations?limit=300';
+  if (type) url += '&type=' + encodeURIComponent(type);
+  if (taskId) url += '&task_id=' + encodeURIComponent(taskId);
+  if (level) url += '&level=' + encodeURIComponent(level);
+  if (phase) url += '&phase=' + encodeURIComponent(phase);
+
+  const data = await api(url);
+  if (!data) return;
+
+  const tbody = document.getElementById('obs-tbody');
+  tbody.innerHTML = '';
+  // Reverse to show newest first
+  const obs = (data.observations || []).reverse();
+  obs.forEach(o => appendObservationRow(o, tbody));
+}
+
+function appendObservationRow(o, tbody) {
+  const tr = document.createElement('tr');
+  const colorClass = OBS_TYPE_COLORS[o.type] || 'badge-dim';
+  const detailId = 'obs-detail-' + o.id;
+
+  tr.innerHTML = `
+    <td>${esc(fmtTime(o.start_time))}</td>
+    <td><span class="badge ${colorClass}">${esc(o.type)}</span></td>
+    <td style="color:var(--text-secondary)">${esc(truncate(o.name, 40))}</td>
+    <td style="color:var(--text-ghost)">${shortIdWithTitle(o.task_id)}</td>
+    <td>${esc(o.phase || '-')}</td>
+    <td>${fmtMs(o.duration_ms)}</td>
+    <td><span class="badge ${o.status === 'ok' ? 'badge-green' : 'badge-red'}">${esc(o.status)}</span></td>
+    <td style="color:${o.level === 'error' ? 'var(--red)' : o.level === 'warn' ? 'var(--amber)' : 'var(--text-ghost)'}">${esc(o.level)}</td>
+    <td><button class="expand-btn">+</button></td>`;
+  tbody.appendChild(tr);
+
+  const detailTr = document.createElement('tr');
+  detailTr.style.display = 'none';
+
+  // Type-specific detail rendering
+  let detail = '';
+  if (o.type === 'llm_call') {
+    const promptRef = o.input?.prompt_ref || o.metadata?.prompt_ref;
+    const responseRef = o.output?.response_ref || o.metadata?.response_ref;
+    const tokIn = o.input?.tokens_in || o.output?.tokens_in || 0;
+    const tokOut = o.input?.tokens_out || o.output?.tokens_out || 0;
+    const spend = o.input?.spend_usd || o.output?.spend_usd || 0;
+    detail += `<div style="display:flex;gap:12px;margin-bottom:6px;font-size:0.75rem">
+      <span>Tokens: ${tokIn.toLocaleString()} in / ${tokOut.toLocaleString()} out</span>
+      <span style="color:var(--amber)">Cost: ${fmt$(spend)}</span>
+      <span>Latency: ${fmtMs(o.duration_ms)}</span>
+    </div>`;
+    if (promptRef) detail += `<div><a href="/api/blob/${esc(promptRef)}" target="_blank" style="font-size:0.72rem">View Full Prompt</a></div>`;
+    if (responseRef) detail += `<div><a href="/api/blob/${esc(responseRef)}" target="_blank" style="font-size:0.72rem">View Full Response</a></div>`;
+  } else if (o.type === 'phase_transition') {
+    const out = o.output || {};
+    detail += `<div style="display:flex;gap:12px;font-size:0.75rem;margin-bottom:6px">
+      <span>Duration: ${fmtMs(o.duration_ms)}</span>
+      <span style="color:var(--amber)">Cost: ${fmt$(out.spend_usd || 0)}</span>
+      <span>LLM iterations: ${out.llm_iterations || 0}</span>
+      <span>Actions: ${out.actions_executed || 0}</span>
+    </div>`;
+    if (out.outcome) detail += `<div style="font-size:0.75rem;color:var(--text-secondary)">Outcome: <strong>${esc(String(out.outcome))}</strong></div>`;
+  } else if (o.type === 'state_transition') {
+    const inp = o.input || {};
+    detail += `<div style="font-size:0.78rem"><span class="badge ${stateBadge(inp.from_state)}">${esc(inp.from_state || '?')}</span> &rarr; <span class="badge ${stateBadge(inp.to_state)}">${esc(inp.to_state || '?')}</span></div>`;
+    if (inp.gates_passed) detail += `<div style="font-size:0.72rem;color:var(--text-ghost);margin-top:4px">Gates: ${esc(JSON.stringify(inp.gates_passed))}</div>`;
+  } else if (o.type === 'error') {
+    const inp = o.input || {};
+    detail += `<div style="color:var(--red);font-size:0.78rem">${esc(inp.error_message || o.error_message || '')}</div>`;
+    if (inp.component) detail += `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">Component: ${esc(inp.component)}</div>`;
+    if (inp.stack) detail += `<div class="json-pre" style="max-height:200px;margin-top:4px;color:var(--text-ghost)">${esc(inp.stack)}</div>`;
+    if (inp.recovery) detail += `<div style="margin-top:4px;font-size:0.75rem" class="error-recovery ${inp.recovery.success ? 'success' : 'failure'}">Recovery: ${esc(inp.recovery.action)} (${inp.recovery.success ? 'OK' : 'FAILED'})</div>`;
+  }
+
+  // Always show raw input/output/metadata as expandable fallback
+  detail += '<div style="margin-top:8px">';
+  if (o.input) detail += '<div style="margin-bottom:4px"><strong style="color:var(--text-muted);font-size:0.68rem">INPUT</strong>' + jsonPre(o.input) + '</div>';
+  if (o.output) detail += '<div style="margin-bottom:4px"><strong style="color:var(--text-muted);font-size:0.68rem">OUTPUT</strong>' + jsonPre(o.output) + '</div>';
+  if (o.metadata) detail += '<div><strong style="color:var(--text-muted);font-size:0.68rem">METADATA</strong>' + jsonPre(o.metadata) + '</div>';
+  if (o.error_message && o.type !== 'error') detail += '<div style="color:var(--red);margin-top:4px">' + esc(o.error_message) + '</div>';
+  detail += '</div>';
+
+  // Context: trace_id, session_id
+  detail += `<div style="margin-top:6px;font-size:0.65rem;color:var(--text-ghost)">
+    ID: ${esc(o.id)} | Trace: ${esc(o.trace_id || '-')} | Session: ${esc(o.session_id || '-')}
+  </div>`;
+
+  detailTr.innerHTML = `<td colspan="9" style="padding:8px">${detail}</td>`;
+  tbody.appendChild(detailTr);
+
+  // Wire expand button
+  const expandBtn = tr.querySelector('.expand-btn');
+  expandBtn.addEventListener('click', () => {
+    const visible = detailTr.style.display !== 'none';
+    detailTr.style.display = visible ? 'none' : '';
+    expandBtn.textContent = visible ? '+' : '-';
+  });
+}
+
+function prependObservationRow(o) {
+  const tbody = document.getElementById('obs-tbody');
+  // Check filters
+  const typeFilter = document.getElementById('obs-type-filter').value;
+  const taskFilter = document.getElementById('obs-task-filter').value;
+  const levelFilter = document.getElementById('obs-level-filter').value;
+  const phaseFilter = document.getElementById('obs-phase-filter').value;
+  if (typeFilter && o.type !== typeFilter) return;
+  if (taskFilter && o.task_id !== taskFilter) return;
+  if (levelFilter && o.level !== levelFilter) return;
+  if (phaseFilter && o.phase !== phaseFilter) return;
+
+  const firstRow = tbody.firstChild;
+  const tempTbody = document.createElement('tbody');
+  appendObservationRow(o, tempTbody);
+  while (tempTbody.firstChild) {
+    tbody.insertBefore(tempTbody.firstChild, firstRow);
+  }
+}
+
+// Filter change handlers
+['obs-type-filter', 'obs-level-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('change', loadObservations);
+});
+['obs-task-filter', 'obs-phase-filter'].forEach(id => {
+  let timeout;
+  document.getElementById(id).addEventListener('input', () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(loadObservations, 500);
+  });
+});
+
+// ── Events ─────────────────────────────────────────────────────
+async function loadEvents() {
+  const type = document.getElementById('event-type-filter').value;
+  const taskId = document.getElementById('event-task-filter').value;
+
+  let url = '/api/events?limit=200';
+  if (type) url += '&type=' + encodeURIComponent(type);
+  if (taskId) url += '&task_id=' + encodeURIComponent(taskId);
+
+  const data = await api(url);
+  if (!data) return;
+
+  const feed = document.getElementById('events-feed');
+  feed.innerHTML = '';
+  (data.events || []).forEach(e => appendEventRow(e, feed));
+}
+
+function appendEventRow(e, feed) {
+  const cat = (e.type || '').split('.')[0];
+  const colorClass = EVENT_CAT_COLORS[cat] || 'badge-dim';
+  const payloadId = 'evt-payload-' + (e.id || Math.random().toString(36).slice(2));
+
+  const row = document.createElement('div');
+  row.className = 'event-row';
+  row.innerHTML = `
+    <div class="event-row-header">
+      <span style="color:var(--text-ghost);font-size:0.72rem">${esc(fmtTime(e.timestamp))}</span>
+      <span class="badge ${colorClass}">${esc(e.type)}</span>
+      <span style="color:var(--text-secondary);font-size:0.75rem">${esc(e.source || '')}</span>
+      ${e.task_id ? '<span style="color:var(--text-ghost);font-size:0.68rem">' + esc(shortId(e.task_id)) + '</span>' : ''}
+      <button class="expand-btn" style="margin-left:auto" onclick="document.getElementById('${payloadId}').classList.toggle('visible')">payload</button>
+    </div>
+    <div class="event-row-payload" id="${payloadId}">${jsonPre(e.payload)}</div>`;
+  feed.appendChild(row);
+}
+
+function prependEventRow(e) {
+  const typeFilter = document.getElementById('event-type-filter').value;
+  const taskFilter = document.getElementById('event-task-filter').value;
+  if (typeFilter && e.type !== typeFilter) return;
+  if (taskFilter && e.task_id !== taskFilter) return;
+
+  const feed = document.getElementById('events-feed');
+  const tempDiv = document.createElement('div');
+  appendEventRow(e, tempDiv);
+  if (tempDiv.firstChild) feed.insertBefore(tempDiv.firstChild, feed.firstChild);
+}
+
+document.getElementById('event-type-filter').addEventListener('change', loadEvents);
+let evtTaskTimeout;
+document.getElementById('event-task-filter').addEventListener('input', () => {
+  clearTimeout(evtTaskTimeout);
+  evtTaskTimeout = setTimeout(loadEvents, 500);
+});
+
+// ── Cost ───────────────────────────────────────────────────────
+async function loadCost() {
+  const data = await api('/api/metrics/cost');
+  if (!data) return;
+  costData = data;
+
+  document.getElementById('cost-today').textContent = fmt$(data.today_spend_usd);
+  document.getElementById('cost-month').textContent = fmt$(data.month_spend_usd);
+
+  // Total
+  let total = 0;
+  (data.per_task || []).forEach(t => { total += t.llm_cost_usd || 0; });
+  document.getElementById('cost-total').textContent = fmt$(total);
+
+  // By phase
+  const phaseHtml = (data.per_phase || []).map(p => `
+    <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem">
+      <span style="width:100px;color:var(--text-bright)">${esc(PHASE_LABELS[p.phase] || p.phase)}</span>
+      <div style="flex:1;height:6px;background:var(--bg-surface);border-radius:3px;overflow:hidden">
+        <div style="height:100%;background:var(--cyan);width:${data.per_phase.length > 0 ? (p.spend_usd / data.per_phase[0].spend_usd * 100) : 0}%"></div>
+      </div>
+      <span style="width:70px;text-align:right;color:var(--amber)">${fmt$(p.spend_usd)}</span>
+      <span style="width:50px;text-align:right;color:var(--text-ghost)">${p.executions}x</span>
+    </div>`).join('');
+  document.getElementById('cost-by-phase').innerHTML = phaseHtml || '<div class="empty-state" style="padding:12px">No phase cost data</div>';
+
+  // By day
+  const days = data.per_day || [];
+  if (days.length > 0) {
+    const maxDay = Math.max(...days.map(d => d.spend_usd));
+    document.getElementById('cost-by-day').innerHTML = days.map(d => {
+      const pct = maxDay > 0 ? (d.spend_usd / maxDay * 100) : 0;
+      return `<div class="cost-bar-item" style="height:${Math.max(2, pct)}%">
+        <div class="cost-bar-label">${d.day.slice(5)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // By task
+  const taskHtml = (data.per_task || []).map(t => `
+    <div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-dim);font-size:0.75rem">
+      <span style="color:var(--text-ghost);width:60px">${esc(shortId(t.id))}</span>
+      <span style="flex:1;color:var(--text-secondary)">${esc(truncate(t.title, 50))}</span>
+      <span style="color:var(--amber)">${fmt$(t.llm_cost_usd)}</span>
+      <span style="color:var(--text-ghost)">${(t.llm_tokens || 0).toLocaleString()} tok</span>
+    </div>`).join('');
+  document.getElementById('cost-by-task').innerHTML = taskHtml || '<div class="empty-state" style="padding:12px">No task cost data</div>';
+
+  // LLM calls
+  const llmData = await api('/api/observations?type=llm_call&limit=100');
+  if (llmData?.observations) {
+    const reversed = [...llmData.observations].reverse();
+    document.getElementById('cost-llm-calls').innerHTML = reversed.map(o => {
+      const spend = o.input?.spend_usd || o.output?.spend_usd || 0;
+      const tokIn = o.input?.tokens_in || o.output?.tokens_in || 0;
+      const tokOut = o.input?.tokens_out || o.output?.tokens_out || 0;
+      return `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-dim);font-size:0.72rem">
+        <span style="color:var(--text-ghost)">${esc(fmtTime(o.start_time))}</span>
+        <span style="color:var(--text-muted)">${esc(o.phase || '-')}</span>
+        <span style="color:var(--text-ghost)">${esc(shortId(o.task_id))}</span>
+        <span style="color:var(--amber)">${fmt$(spend)}</span>
+        <span style="color:var(--text-ghost)">${tokIn.toLocaleString()}in/${tokOut.toLocaleString()}out</span>
+        <span style="color:var(--text-ghost)">${fmtMs(o.duration_ms)}</span>
+      </div>`;
+    }).join('') || '<div style="font-size:0.75rem;color:var(--text-ghost)">No LLM calls yet</div>';
+  }
+}
+
+// ── Decisions ──────────────────────────────────────────────────
+async function loadDecisions() {
+  const data = await api('/api/observations?type=decision_point&limit=100');
+  if (!data || !data.observations || data.observations.length === 0) {
+    document.getElementById('decisions-content').innerHTML = '<div class="empty-state">No decision points recorded yet</div>';
     return;
   }
 
-  if (!el.dataset.loaded) {
-    el.textContent = 'Loading ' + label + '...';
-    el.classList.add('visible');
-    const content = await api('/api/blob/' + ref);
-    el.textContent = content || '(empty or not found)';
-    el.dataset.loaded = '1';
-  } else {
-    el.classList.add('visible');
+  const reversed = [...data.observations].reverse();
+  document.getElementById('decisions-content').innerHTML = reversed.map(d => renderDecisionCard(d)).join('');
+}
+
+function renderDecisionCard(d) {
+  const input = d.input || {};
+  const opts = input.options || [];
+  const chosen = input.chosen || '';
+  const confidence = input.confidence || 0;
+
+  return `<div class="decision-card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div class="decision-name">${esc(d.name)}</div>
+      <div style="font-size:0.68rem;color:var(--text-ghost)">${esc(fmtTime(d.start_time))} | ${esc(d.phase || '-')} | ${esc(shortId(d.task_id))}</div>
+    </div>
+    <div class="decision-context">${esc(input.context || '')}</div>
+    <div class="decision-options">${opts.map(o =>
+      `<div class="decision-option ${o.id === chosen ? 'chosen' : ''}">${esc(o.id)}: ${esc(o.description)}</div>`
+    ).join('')}</div>
+    ${input.reasoning ? '<div class="decision-reasoning">"' + esc(input.reasoning) + '"</div>' : ''}
+    <div class="confidence-bar"><div class="confidence-fill" style="width:${confidence * 100}%"></div></div>
+    <div style="font-size:0.68rem;color:var(--text-ghost);margin-top:4px">Confidence: ${(confidence * 100).toFixed(0)}%</div>
+  </div>`;
+}
+
+function prependDecisionCard(obs) {
+  const container = document.getElementById('decisions-content');
+  if (container.querySelector('.empty-state')) container.innerHTML = '';
+  container.insertAdjacentHTML('afterbegin', renderDecisionCard(obs));
+}
+
+// ── Errors ─────────────────────────────────────────────────────
+async function loadErrors() {
+  const level = document.getElementById('error-level-filter').value;
+  let url = '/api/observations?type=error&limit=100';
+  if (level) url += '&level=' + encodeURIComponent(level);
+
+  const data = await api(url);
+  if (!data || !data.observations || data.observations.length === 0) {
+    document.getElementById('errors-content').innerHTML = '<div class="empty-state">No errors recorded</div>';
+    return;
+  }
+
+  const reversed = [...data.observations].reverse();
+  document.getElementById('errors-content').innerHTML = reversed.map(o => renderErrorCard(o, false)).join('');
+}
+
+function renderErrorCard(o, flash) {
+  const input = o.input || {};
+  const stackId = 'stack-' + o.id;
+  const hasStack = input.stack;
+  const recovery = input.recovery;
+
+  return `<div class="error-card ${flash ? 'flash' : ''}">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div class="error-component">${esc(input.component || 'unknown')} / ${esc(o.name)}</div>
+      <div style="font-size:0.68rem;color:var(--text-ghost)">${esc(fmtTime(o.start_time))} | ${esc(o.phase || '-')} | ${esc(shortId(o.task_id))}</div>
+    </div>
+    <div class="error-message">${esc(input.error_message || o.error_message || 'Unknown error')}</div>
+    ${hasStack ? `<button class="expand-btn" style="margin-top:6px" onclick="document.getElementById('${stackId}').classList.toggle('visible')">Stack Trace</button>
+      <div class="error-stack" id="${stackId}">${esc(input.stack)}</div>` : ''}
+    ${recovery ? `<div class="error-recovery ${recovery.success ? 'success' : 'failure'}">
+      Recovery: ${esc(recovery.action)} (${recovery.success ? 'succeeded' : 'failed'})
+    </div>` : ''}
+  </div>`;
+}
+
+function prependErrorCard(obs, flash) {
+  const container = document.getElementById('errors-content');
+  if (container.querySelector('.empty-state')) container.innerHTML = '';
+  container.insertAdjacentHTML('afterbegin', renderErrorCard(obs, flash));
+  if (flash) {
+    setTimeout(() => {
+      const card = container.firstElementChild;
+      if (card) card.classList.remove('flash');
+    }, 2000);
   }
 }
 
-// Make toggleBlob accessible from inline handlers
-window.toggleBlob = toggleBlob;
+document.getElementById('error-level-filter').addEventListener('change', loadErrors);
 
-// ── Polling loops ──────────────────────────────────────────────
+// ── Initialization ─────────────────────────────────────────────
 async function init() {
-  await Promise.all([pollSystemStatus(), pollTasks(), pollEvents(), pollCostForBar()]);
+  // Initial data load
+  await Promise.all([pollSystemStatus(), pollTasks(), pollCost(), pollHealth(), pollObsTypeDist()]);
+
+  // Start SSE
+  connectSSE();
+
+  // Polling for aggregates
+  setInterval(pollSystemStatus, 5000);
+  setInterval(pollCost, 15000);
+  setInterval(pollHealth, 30000);
+  setInterval(pollObsTypeDist, 30000);
 }
 
 init();
-
-// System status: 2s
-setInterval(pollSystemStatus, 2000);
-
-// Events: 2s
-setInterval(pollEvents, 2000);
-
-// Tasks: 3s
-setInterval(pollTasks, 3000);
-
-// Cost bar: 10s
-setInterval(pollCostForBar, 10000);
-
-// Task detail auto-refresh: 3s
-setInterval(() => {
-  if (currentDetailTaskId) renderTaskDetail(currentDetailTaskId);
-}, 3000);
-
-// Refresh cost tab data when viewing
-setInterval(() => {
-  const costPanel = document.getElementById('panel-cost');
-  if (costPanel.classList.contains('active')) {
-    costData = null;
-    renderCostTab();
-  }
-}, 10000);
 </script>
 </body>
 </html>

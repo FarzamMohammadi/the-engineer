@@ -16,6 +16,8 @@ import { BlobStore } from "../core/observer/index.js";
 import { createObservationStore } from "../core/observer/index.js";
 import { eventRoutes } from "./api/events.js";
 import { metricsRoutes } from "./api/metrics.js";
+import { observationRoutes } from "./api/observations.js";
+import { streamRoutes } from "./api/stream.js";
 import { systemRoutes } from "./api/system.js";
 import { taskRoutes } from "./api/tasks.js";
 import { blobRoutes, traceRoutes } from "./api/traces.js";
@@ -50,6 +52,8 @@ export function createDashboardApp(config: DashboardConfig): {
   app.route("/api/metrics", metricsRoutes({ db, observationStore }));
   app.route("/api/traces", traceRoutes({ observationStore }));
   app.route("/api/blob", blobRoutes({ observationStore }));
+  app.route("/api/observations", observationRoutes({ observationStore }));
+  app.route("/api/stream", streamRoutes({ db }));
 
   // Serve static dashboard HTML
   app.get("/", (c) => {

@@ -88,13 +88,9 @@ export function createTestSafetyLayer(configOverrides?: SafetyConfigInput): Test
         task_id: "task-1",
         repo: "owner/repo",
         provider_id: "claude-api",
-        provider_type: "api",
         operation: "llm_call",
-        tokens_in: 100,
-        tokens_out: 200,
         spend_usd: 0.01,
-        usage_units: null,
-        remaining: null,
+        duration_ms: null,
       };
       const payload = { ...defaults, ...overrides };
 

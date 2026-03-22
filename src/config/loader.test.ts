@@ -330,8 +330,8 @@ describe("loadConfig", () => {
 
   it("loads SafetyConfig with overrides", () => {
     const result = loadConfig(fixture("valid-safety.yaml"), SafetyConfigSchema);
-    expect(result.config.cost_limits.api.per_task.cost_usd).toBe(5.0);
-    expect(result.config.cost_limits.api.daily.cost_usd).toBe(50.0);
+    expect(result.config.cost_limits.per_task.cost_usd).toBe(5.0);
+    expect(result.config.cost_limits.daily.cost_usd).toBe(50.0);
     expect(result.config.scope.repos.allowed).toEqual(["owner/my-app", "owner/another-repo"]);
     expect(result.config.merge.auto_merge_after_approval.repos["owner/my-app"]).toBe(true);
     expect(result.config.merge.auto_merge_after_approval.default).toBe(false);
@@ -531,7 +531,7 @@ describe("loadConfigDir", () => {
     // orchestrator from defaults (missing file)
     expect(result.bundle.orchestrator.fast_path.enabled).toBe(true);
     // safety from file
-    expect(result.bundle.safety.cost_limits.api.per_task.cost_usd).toBe(5.0);
+    expect(result.bundle.safety.cost_limits.per_task.cost_usd).toBe(5.0);
     // No safety warning
     expect(result.warnings.find((w) => w.file === "safety.yaml")).toBeUndefined();
     // People warning (missing)

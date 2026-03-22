@@ -70,23 +70,19 @@ const ADAPTER_TEMPLATES: Record<AdapterType, AdapterTemplate> = {
   llm: {
     baseClass: "LLMAdapter",
     importPath: "../../../adapters/llm.js",
-    abstractMethods: `  protected async doComplete(
-    _request: CompletionRequest,
-  ): Promise<CompletionResult> {
-    // TODO: Implement LLM completion
+    abstractMethods: `  protected async doInfer(
+    _request: InferenceRequest,
+  ): Promise<InferenceResult> {
+    // TODO: Implement LLM inference
     return {
       content: "",
-      tool_calls: null,
-      finish_reason: "stop",
-      usage: { tokens_in: 0, tokens_out: 0, spend_usd: null, remaining: null, resets_at: null },
+      cost_usd: null,
+      duration_ms: 0,
     };
   }
 
   getCapabilities(): LLMCapabilities {
     return {
-      max_context: 100_000,
-      supports_tools: false,
-      supports_vision: false,
       model_id: "custom",
     };
   }
@@ -219,7 +215,7 @@ const ADAPTER_TEMPLATES: Record<AdapterType, AdapterTemplate> = {
 const TYPE_IMPORTS: Record<AdapterType, string> = {
   trigger: `import type { TriggerEvent } from "../../../schemas/adapters.js";`,
   communication: `import type { FormattedMessage, MessageType, SendResult, Target } from "../../../schemas/adapters.js";`,
-  llm: `import type { CompletionRequest, CompletionResult, LLMCapabilities } from "../../../schemas/adapters.js";`,
+  llm: `import type { InferenceRequest, InferenceResult, LLMCapabilities } from "../../../schemas/adapters.js";`,
   tool: `import type { ToolDescription, ToolExecutionContext, ToolResult } from "../../../schemas/adapters.js";`,
   git_hosting: `import type { BranchProtection, CommentResult, MergeResult, MergeStrategy, PRComment, PROptions, PRResult, PRStatus, PRUpdates, ReviewStatus } from "../../../schemas/adapters.js";`,
 };

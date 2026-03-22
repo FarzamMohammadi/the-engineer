@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import type { CompletionResult } from "../../schemas/adapters.js";
+import type { InferenceResult } from "../../schemas/adapters.js";
 import type { ActionTraceRecord, LlmTraceRecord } from "./agent-loop.js";
 import { runAgentLoop } from "./agent-loop.js";
 
 function mockCompletion(
   content: string,
-  usage: { tokens_in: number; tokens_out: number; spend_usd: number | null },
-): CompletionResult {
+  cost: { cost_usd: number | null; duration_ms?: number },
+): InferenceResult {
   return {
     content,
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: { ...usage, remaining: null, resets_at: null },
+    cost_usd: cost.cost_usd,
+    duration_ms: cost.duration_ms ?? 100,
   };
 }
 
@@ -46,9 +45,7 @@ describe("Agent Loop Observability Callbacks", () => {
       () =>
         Promise.resolve(
           mockCompletion(JSON.stringify({ action: "done", result: { summary: "done" } }), {
-            tokens_in: 100,
-            tokens_out: 50,
-            spend_usd: 0.01,
+            cost_usd: 0.01,
           }),
         ),
       () => Promise.resolve({ success: true, output: "ok" }),
@@ -56,10 +53,8 @@ describe("Agent Loop Observability Callbacks", () => {
 
     expect(result.iterations).toBe(1);
     expect(llmTraces).toHaveLength(1);
-    expect(llmTraces[0]?.tokens_in).toBe(100);
-    expect(llmTraces[0]?.tokens_out).toBe(50);
-    expect(llmTraces[0]?.spend_usd).toBe(0.01);
-    expect(llmTraces[0]?.latency_ms).toBeGreaterThanOrEqual(0);
+    expect(llmTraces[0]?.cost_usd).toBe(0.01);
+    expect(llmTraces[0]?.duration_ms).toBeGreaterThanOrEqual(0);
     expect(llmTraces[0]?.iteration).toBe(1);
     expect(llmTraces[0]?.prompt_content).toContain(baseConfig.initialPrompt);
   });
@@ -81,15 +76,13 @@ describe("Agent Loop Observability Callbacks", () => {
           return Promise.resolve(
             mockCompletion(
               JSON.stringify({ action: "read_file", params: { path: "src/index.ts" } }),
-              { tokens_in: 50, tokens_out: 30, spend_usd: null },
+              { cost_usd: null },
             ),
           );
         }
         return Promise.resolve(
           mockCompletion(JSON.stringify({ action: "done", result: { summary: "done" } }), {
-            tokens_in: 50,
-            tokens_out: 30,
-            spend_usd: null,
+            cost_usd: null,
           }),
         );
       },
@@ -121,15 +114,13 @@ describe("Agent Loop Observability Callbacks", () => {
           return Promise.resolve(
             mockCompletion(
               JSON.stringify({ action: "read_file", params: { path: "missing.ts" } }),
-              { tokens_in: 50, tokens_out: 30, spend_usd: null },
+              { cost_usd: null },
             ),
           );
         }
         return Promise.resolve(
           mockCompletion(JSON.stringify({ action: "done", result: {} }), {
-            tokens_in: 50,
-            tokens_out: 30,
-            spend_usd: null,
+            cost_usd: null,
           }),
         );
       },
@@ -147,9 +138,7 @@ describe("Agent Loop Observability Callbacks", () => {
       () =>
         Promise.resolve(
           mockCompletion(JSON.stringify({ action: "done", result: { summary: "test" } }), {
-            tokens_in: 10,
-            tokens_out: 5,
-            spend_usd: null,
+            cost_usd: null,
           }),
         ),
       () => Promise.resolve({ success: true, output: "ok" }),
@@ -169,10 +158,7 @@ describe("Agent Loop Observability Callbacks", () => {
           onLlmComplete: (trace) => llmTraces.push(trace),
         },
       },
-      () =>
-        Promise.resolve(
-          mockCompletion(responseContent, { tokens_in: 10, tokens_out: 5, spend_usd: null }),
-        ),
+      () => Promise.resolve(mockCompletion(responseContent, { cost_usd: null })),
       () => Promise.resolve({ success: true, output: "ok" }),
     );
 
@@ -202,15 +188,13 @@ describe("Agent Loop Observability Callbacks", () => {
                 action: "read_file",
                 params: { path: `file${String(callCount)}.ts` },
               }),
-              { tokens_in: 50, tokens_out: 30, spend_usd: 0.005 },
+              { cost_usd: 0.005 },
             ),
           );
         }
         return Promise.resolve(
           mockCompletion(JSON.stringify({ action: "done", result: { summary: "all done" } }), {
-            tokens_in: 50,
-            tokens_out: 30,
-            spend_usd: 0.005,
+            cost_usd: 0.005,
           }),
         );
       },

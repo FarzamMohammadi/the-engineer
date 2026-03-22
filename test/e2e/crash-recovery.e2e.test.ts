@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { Daemon } from "../../src/core/daemon/index.js";
 import { createDaemon } from "../../src/core/daemon/index.js";
-import type { CompletionResult } from "../../src/schemas/adapters.js";
+import type { InferenceResult } from "../../src/schemas/adapters.js";
 import { type DaemonConfig, DaemonConfigSchema } from "../../src/schemas/config.js";
 import {
   type IntegrationContext,
@@ -25,24 +25,17 @@ async function waitForIdle(daemon: Daemon, maxMs = 5_000): Promise<void> {
   }
 }
 
-/** Build a CompletionResult with the given JSON content (wrapped in agent loop format). */
-function makeResponse(json: Record<string, unknown>): CompletionResult {
+/** Build an InferenceResult with the given JSON content (wrapped in agent loop format). */
+function makeResponse(json: Record<string, unknown>): InferenceResult {
   return {
     content: JSON.stringify({ action: "done", result: json }),
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: {
-      tokens_in: 100,
-      tokens_out: 50,
-      spend_usd: 0.003,
-      remaining: null,
-      resets_at: null,
-    },
+    cost_usd: 0.003,
+    duration_ms: 100,
   };
 }
 
 /** Build canned responses for the 4 remaining phases (execution → integration). */
-function makeRemainingPhasesResponses(): CompletionResult[] {
+function makeRemainingPhasesResponses(): InferenceResult[] {
   return [
     makeResponse({
       files_changed: ["src/index.ts"],

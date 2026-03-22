@@ -131,13 +131,9 @@ export const CostIncurredPayloadSchema = z.object({
   task_id: z.string(),
   repo: z.string(),
   provider_id: z.string(),
-  provider_type: z.enum(["cli", "api"]),
   operation: z.string(),
-  tokens_in: z.number().int().nullable(),
-  tokens_out: z.number().int().nullable(),
   spend_usd: z.number().nullable(),
-  usage_units: z.number().int().nullable(),
-  remaining: z.number().int().nullable(),
+  duration_ms: z.number().int().nullable(),
 });
 export type CostIncurredPayload = z.infer<typeof CostIncurredPayloadSchema>;
 
@@ -147,7 +143,6 @@ export const CostLimitReachedPayloadSchema = z.object({
   limit_scope: z.string().nullable(),
   current_spend: z.number(),
   limit_value: z.number(),
-  provider_type: z.enum(["cli", "api"]),
   resets_at: z.string().datetime().nullable(),
 });
 export type CostLimitReachedPayload = z.infer<typeof CostLimitReachedPayloadSchema>;

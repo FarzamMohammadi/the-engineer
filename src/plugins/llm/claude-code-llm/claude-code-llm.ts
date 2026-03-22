@@ -1,9 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import {
   AdapterMethodError,
-  type CompletionRequest,
-  type CompletionResult,
   type HealthStatus,
+  type InferenceRequest,
+  type InferenceResult,
   type InitResult,
   LLMAdapter,
   type LLMCapabilities,
@@ -77,11 +77,10 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
   private config!: ClaudeCodeLLMConfig;
   private activeProcess: ChildProcess | null = null;
 
-  protected doComplete(request: CompletionRequest): Promise<CompletionResult> {
+  protected doInfer(request: InferenceRequest): Promise<InferenceResult> {
     // --setting-sources user: prevent loading project-level CLAUDE.md and settings
     // from the CWD — the Engineer provides all context via the prompt.
     // --dangerously-skip-permissions: required for non-interactive tool use (read/write/bash)
-    // --setting-sources user: prevent loading project-level CLAUDE.md and settings
     const args = [
       "--print",
       "--output-format",
@@ -99,14 +98,11 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
     // Prompt is piped via stdin (not as a CLI arg) to avoid OS argument length limits.
     // The claude CLI reads from stdin when no positional prompt argument is given.
-    return this.spawnAndParse(args, request.prompt, request.options?.cwd ?? undefined);
+    return this.spawnAndParse(args, request.prompt, request.cwd ?? undefined);
   }
 
   getCapabilities(): LLMCapabilities {
     return {
-      max_context: 200_000,
-      supports_tools: true,
-      supports_vision: true,
       model_id: this.config?.model ?? "claude-sonnet-4-20250514",
     };
   }
@@ -166,8 +162,9 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
     args: string[],
     stdinContent?: string,
     cwd?: string,
-  ): Promise<CompletionResult> {
-    return new Promise<CompletionResult>((resolve, reject) => {
+  ): Promise<InferenceResult> {
+    const startMs = Date.now();
+    return new Promise<InferenceResult>((resolve, reject) => {
       const chunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
 
@@ -191,6 +188,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         this.activeProcess = null;
         const raw = Buffer.concat(chunks).toString("utf-8");
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
+        const duration_ms = Date.now() - startMs;
 
         if (code !== 0) {
           reject(
@@ -207,7 +205,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
         try {
           const parsed = parseCliOutput(raw);
-          resolve(parsed);
+          resolve({ ...parsed, duration_ms });
         } catch (err) {
           reject(
             new AdapterMethodError(
@@ -244,16 +242,15 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
  * Parse NDJSON output from `claude --print --output-format json`.
  *
  * Output is newline-delimited JSON events. We find the final `type: "result"`
- * event and extract content + usage data.
+ * event and extract content + cost.
  *
  * Known result shapes:
  * - `--print` mode: `{ "type": "result", "subtype": "success", "cost_usd": 0.01, "result": "the text response" }`
  * - Object mode: `{ "type": "result", "subtype": "success", "result": { "type": "text", "text": "..." } }`
  *
- * Token counts are not yet available from the CLI (upstream GitHub #11917).
- * We set tokens_in/tokens_out to 0 and rely on cost_usd for cost tracking.
+ * Returns `{ content, cost_usd }` — duration_ms is measured by the caller.
  */
-export function parseCliOutput(raw: string): CompletionResult {
+export function parseCliOutput(raw: string): { content: string; cost_usd: number | null } {
   const lines = raw.split("\n").filter((line) => line.trim().length > 0);
   let resultEvent: Record<string, unknown> | null = null;
 
@@ -297,20 +294,7 @@ export function parseCliOutput(raw: string): CompletionResult {
   } else {
     content = "";
   }
-  const costUsd = typeof resultEvent["cost_usd"] === "number" ? resultEvent["cost_usd"] : null;
+  const cost_usd = typeof resultEvent["cost_usd"] === "number" ? resultEvent["cost_usd"] : null;
 
-  return {
-    content,
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: {
-      // TODO: Token counts not yet available from Claude Code CLI (upstream GitHub #11917).
-      // Once the CLI exposes usage_metrics, parse tokens_in/tokens_out here.
-      tokens_in: 0,
-      tokens_out: 0,
-      spend_usd: costUsd,
-      remaining: null,
-      resets_at: null,
-    },
-  };
+  return { content, cost_usd };
 }

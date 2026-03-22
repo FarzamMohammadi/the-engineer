@@ -62,11 +62,11 @@ export {
   type Target,
   type TaskReconciliationInput,
   // LLM
-  CompletionRequestSchema,
-  CompletionResultSchema,
+  InferenceRequestSchema,
+  InferenceResultSchema,
   LLMCapabilitiesSchema,
-  type CompletionRequest,
-  type CompletionResult,
+  type InferenceRequest,
+  type InferenceResult,
   type LLMCapabilities,
   // Tool
   SideEffectSchema,

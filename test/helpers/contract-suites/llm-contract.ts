@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { LLMAdapter } from "../../../src/adapters/llm.js";
 import {
-  type CompletionRequest,
-  CompletionResultSchema,
+  type InferenceRequest,
+  InferenceResultSchema,
   LLMCapabilitiesSchema,
   type PluginManifest,
 } from "../../../src/schemas/adapters.js";
@@ -11,7 +11,7 @@ export interface LLMContractFixtures {
   validConfig: Record<string, unknown>;
   invalidConfig: Record<string, unknown>;
   manifest: PluginManifest;
-  request: CompletionRequest;
+  request: InferenceRequest;
 }
 
 /**
@@ -69,36 +69,28 @@ export function runLLMContractSuite(
       });
     });
 
-    // ── complete() ───────────────────────────────────────────────────────
+    // ── infer() ────────────────────────────────────────────────────────
 
-    describe("complete()", () => {
-      it("returns a valid CompletionResult", async () => {
+    describe("infer()", () => {
+      it("returns a valid InferenceResult", async () => {
         await adapter.initialize(fixtures.validConfig);
-        const result = await adapter.complete(fixtures.request);
-        const parsed = CompletionResultSchema.safeParse(result);
+        const result = await adapter.infer(fixtures.request);
+        const parsed = InferenceResultSchema.safeParse(result);
         expect(parsed.success).toBe(true);
       });
 
-      it("result always includes usage data", async () => {
+      it("result always includes cost and duration", async () => {
         await adapter.initialize(fixtures.validConfig);
-        const result = await adapter.complete(fixtures.request);
-        expect(result.usage).toBeDefined();
-        expect(result.usage).toHaveProperty("tokens_in");
-        expect(result.usage).toHaveProperty("tokens_out");
+        const result = await adapter.infer(fixtures.request);
+        expect(result).toHaveProperty("cost_usd");
+        expect(result).toHaveProperty("duration_ms");
       });
 
-      it("usage.tokens_in is a non-negative integer", async () => {
+      it("duration_ms is a non-negative integer", async () => {
         await adapter.initialize(fixtures.validConfig);
-        const result = await adapter.complete(fixtures.request);
-        expect(Number.isInteger(result.usage.tokens_in)).toBe(true);
-        expect(result.usage.tokens_in).toBeGreaterThanOrEqual(0);
-      });
-
-      it("usage.tokens_out is a non-negative integer", async () => {
-        await adapter.initialize(fixtures.validConfig);
-        const result = await adapter.complete(fixtures.request);
-        expect(Number.isInteger(result.usage.tokens_out)).toBe(true);
-        expect(result.usage.tokens_out).toBeGreaterThanOrEqual(0);
+        const result = await adapter.infer(fixtures.request);
+        expect(Number.isInteger(result.duration_ms)).toBe(true);
+        expect(result.duration_ms).toBeGreaterThanOrEqual(0);
       });
     });
 
@@ -113,11 +105,7 @@ export function runLLMContractSuite(
 
       it("has required capability fields", () => {
         const caps = adapter.getCapabilities();
-        expect(caps).toHaveProperty("max_context");
-        expect(caps).toHaveProperty("supports_tools");
-        expect(caps).toHaveProperty("supports_vision");
         expect(caps).toHaveProperty("model_id");
-        expect(typeof caps.max_context).toBe("number");
         expect(typeof caps.model_id).toBe("string");
       });
     });

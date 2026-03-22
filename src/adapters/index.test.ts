@@ -75,8 +75,8 @@ describe("SDK boundary (src/adapters/index.ts)", () => {
       "TaskReconciliationInputSchema",
       "ReconciliationResultSchema",
       // LLM
-      "CompletionRequestSchema",
-      "CompletionResultSchema",
+      "InferenceRequestSchema",
+      "InferenceResultSchema",
       "LLMCapabilitiesSchema",
       // Tool
       "ToolDescriptionSchema",

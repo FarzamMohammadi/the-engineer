@@ -19,7 +19,7 @@ import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
-import type { CompletionResult } from "../../src/schemas/adapters.js";
+import type { InferenceResult } from "../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema } from "../../src/schemas/config.js";
 import type { Dispatch } from "../../src/schemas/ephemeral.js";
 import type { Event } from "../../src/schemas/events.js";
@@ -174,22 +174,15 @@ export function createMockCheckpoint(overrides?: Partial<Checkpoint>): Checkpoin
 // ── LLM Response Helper ──────────────────────────────────────────────────────
 
 /**
- * Create a CompletionResult with JSON content matching the agent loop format.
+ * Create an InferenceResult with JSON content matching the agent loop format.
  * Wraps phase data in {"action": "done", "result": {...}} so the agent loop
  * parses it correctly and terminates on the first iteration.
  */
-function createLlmResponse(data: Record<string, unknown>): CompletionResult {
+function createLlmResponse(data: Record<string, unknown>): InferenceResult {
   return {
     content: JSON.stringify({ action: "done", result: data }),
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: {
-      tokens_in: 100,
-      tokens_out: 50,
-      spend_usd: 0.01,
-      remaining: null,
-      resets_at: null,
-    },
+    cost_usd: 0.01,
+    duration_ms: 100,
   };
 }
 
@@ -264,7 +257,7 @@ export interface TestOrchestratorHandle {
 export function createTestOrchestrator(): TestOrchestratorHandle {
   let preemptionCallback: EventCallback | null = null;
   let llmCallIndex = 0;
-  let llmResponses: CompletionResult[] = [];
+  let llmResponses: InferenceResult[] = [];
 
   // ── EventBus mock ──────────────────────────────────────────────────────
   const eventBus = {
@@ -283,15 +276,12 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
   // ── Registry mock ──────────────────────────────────────────────────────
   // Returns a fake LLM that uses llmResponses array
   const fakeLlm = {
-    complete: vi.fn(() => {
+    infer: vi.fn(() => {
       const response = llmResponses[llmCallIndex] ?? createLlmResponse({});
       llmCallIndex++;
       return Promise.resolve(response);
     }),
     getCapabilities: vi.fn().mockReturnValue({
-      max_context: 128_000,
-      supports_tools: true,
-      supports_vision: false,
       model_id: "fake-model",
     }),
   };

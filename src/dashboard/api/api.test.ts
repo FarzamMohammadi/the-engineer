@@ -250,9 +250,8 @@ describe("Dashboard API", () => {
         "llm_call",
         "completion",
         {
-          tokens_in: 10,
-          tokens_out: 5,
-          spend_usd: 0.01,
+          cost_usd: 0.01,
+          duration_ms: 150,
         },
         { task_id: TASK_ID, trace_id: TRACE_ID, phase: "research" },
       );
@@ -370,8 +369,8 @@ describe("Dashboard API", () => {
         "llm_call",
         "completion",
         {
-          tokens_in: 5,
-          tokens_out: 3,
+          cost_usd: 0.005,
+          duration_ms: 80,
         },
         { task_id: TASK_ID, trace_id: TRACE_ID, phase: "research" },
       );

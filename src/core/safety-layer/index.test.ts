@@ -346,26 +346,18 @@ describe("SafetyLayer — cost accumulation", () => {
     expect(handle.safetyLayer.getCostStatus("task-2").per_task_usd).toBeCloseTo(0.2);
   });
 
-  it("tracks CLI usage separately", () => {
+  it("tracks provider usage without affecting spend when spend_usd is null", () => {
     handle = createTestSafetyLayer();
     handle.simulateCostEvent({
-      provider_type: "cli",
       provider_id: "claude-code",
       spend_usd: null,
-      usage_units: 1,
-      tokens_in: 500,
-      tokens_out: 300,
     });
     handle.simulateCostEvent({
-      provider_type: "cli",
       provider_id: "claude-code",
       spend_usd: null,
-      usage_units: 1,
-      tokens_in: 200,
-      tokens_out: 100,
     });
 
-    // CLI usage doesn't affect API spend
+    // Null spend doesn't affect cost accumulators
     const status = handle.safetyLayer.getCostStatus("task-1");
     expect(status.daily_usd).toBe(0);
   });
@@ -386,7 +378,7 @@ describe("SafetyLayer — cost accumulation", () => {
 describe("SafetyLayer — cost limit detection", () => {
   it("emits cost.limit_reached when per-task limit hit", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { per_task: { cost_usd: 0.1 } } },
+      cost_limits: { per_task: { cost_usd: 0.1 } },
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.12 });
 
@@ -398,7 +390,7 @@ describe("SafetyLayer — cost limit detection", () => {
 
   it("emits cost.limit_reached when daily limit hit", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { daily: { cost_usd: 0.2 } } },
+      cost_limits: { daily: { cost_usd: 0.2 } },
     });
     handle.simulateCostEvent({ spend_usd: 0.12 });
     handle.simulateCostEvent({ spend_usd: 0.12 });
@@ -408,7 +400,7 @@ describe("SafetyLayer — cost limit detection", () => {
 
   it("emits cost.limit_reached when monthly limit hit", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { monthly: { cost_usd: 0.15 } } },
+      cost_limits: { monthly: { cost_usd: 0.15 } },
     });
     handle.simulateCostEvent({ spend_usd: 0.2 });
 
@@ -418,11 +410,9 @@ describe("SafetyLayer — cost limit detection", () => {
   it("does not emit when limits are null (unlimited)", () => {
     handle = createTestSafetyLayer({
       cost_limits: {
-        api: {
-          per_task: { cost_usd: null },
-          daily: { cost_usd: null },
-          monthly: { cost_usd: null },
-        },
+        per_task: { cost_usd: null },
+        daily: { cost_usd: null },
+        monthly: { cost_usd: null },
       },
     });
     handle.simulateCostEvent({ spend_usd: 100.0 });
@@ -433,7 +423,7 @@ describe("SafetyLayer — cost limit detection", () => {
 
   it("cost.limit_reached has correct payload shape", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { per_task: { cost_usd: 0.05 } } },
+      cost_limits: { per_task: { cost_usd: 0.05 } },
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
 
@@ -445,38 +435,30 @@ describe("SafetyLayer — cost limit detection", () => {
     expect(payload).toMatchObject({
       task_id: "task-1",
       limit_type: "per_task",
-      provider_type: "api",
     });
     expect(typeof payload?.["current_spend"]).toBe("number");
     expect(typeof payload?.["limit_value"]).toBe("number");
   });
 
-  it("detects CLI daily_requests limit", () => {
+  it("detects provider daily_requests limit", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { cli: { "claude-code": { daily_requests: 2 } } },
+      cost_limits: { providers: { "claude-code": { daily_requests: 2 } } },
     });
     handle.simulateCostEvent({
-      provider_type: "cli",
       provider_id: "claude-code",
       spend_usd: null,
-      usage_units: 1,
     });
     handle.simulateCostEvent({
-      provider_type: "cli",
       provider_id: "claude-code",
       spend_usd: null,
-      usage_units: 1,
     });
 
-    handle.assertEventEmitted(
-      "cost.limit_reached",
-      (p) => p["provider_type"] === "cli" && p["limit_scope"] === "claude-code",
-    );
+    handle.assertEventEmitted("cost.limit_reached", (p) => p["limit_scope"] === "claude-code");
   });
 
   it("evaluateAction denies when cost limit is breached", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { per_task: { cost_usd: 0.05 } } },
+      cost_limits: { per_task: { cost_usd: 0.05 } },
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
 
@@ -488,7 +470,7 @@ describe("SafetyLayer — cost limit detection", () => {
 
   it("evaluateAction includes cost warnings when approaching limit", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.85 });
 
@@ -559,13 +541,9 @@ describe("SafetyLayer — snapshot", () => {
         task_id: "task-1",
         repo: "owner/repo",
         provider_id: "claude-api",
-        provider_type: "api" as const,
         operation: "llm_call",
-        tokens_in: 100,
-        tokens_out: 200,
         spend_usd: 0.3,
-        usage_units: null,
-        remaining: null,
+        duration_ms: null,
       },
     });
 
@@ -781,7 +759,7 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
 
   it("cost_check returns status with warnings", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.85 });
 
@@ -797,7 +775,7 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
 
   it("cost_check denies when limit is breached", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { per_task: { cost_usd: 0.05 } } },
+      cost_limits: { per_task: { cost_usd: 0.05 } },
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
 
@@ -856,7 +834,7 @@ describe("SafetyLayer — hot-reload", () => {
 
   it("new cost limits take effect immediately", () => {
     handle = createTestSafetyLayer({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.5 });
 
@@ -867,7 +845,7 @@ describe("SafetyLayer — hot-reload", () => {
     // Lower the limit to $0.40 — now breached
     handle.safetyLayer.updateConfig(
       SafetyConfigSchema.parse({
-        cost_limits: { api: { per_task: { cost_usd: 0.4 } } },
+        cost_limits: { per_task: { cost_usd: 0.4 } },
       }),
     );
 

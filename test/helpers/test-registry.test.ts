@@ -87,13 +87,13 @@ describe("createTestRegistry", () => {
     expect(fakes.communication.getMessages()).toHaveLength(1);
 
     // LLM: returns canned responses
-    const result = await fakes.llm.complete({
+    const result = await fakes.llm.infer({
       prompt: "test",
       system_prompt: null,
-      options: { max_tokens: null, temperature: null, stop: null, tools: null },
+      cwd: null,
     });
     expect(result.content).toBe("Fake LLM response");
-    expect(result.usage.tokens_in).toBeGreaterThan(0);
+    expect(result.cost_usd).toBe(0.01);
 
     // Tool: records actions
     await fakes.tool.execute("test-action", {}, { workspace_path: "/tmp", task_id: "t1" });

@@ -1,4 +1,4 @@
-import type { CompletionResult } from "../../schemas/adapters.js";
+import type { InferenceResult } from "../../schemas/adapters.js";
 import type { ActionResult, AgentAction, PhaseToolConfig } from "../../schemas/orchestrator.js";
 import { sanitizeSecrets } from "../../utils/sanitize.js";
 import type { IObserver } from "../observer/index.js";
@@ -26,10 +26,8 @@ export interface ActionTraceRecord {
 export interface LlmTraceRecord {
   prompt_length: number;
   response_length: number;
-  tokens_in: number;
-  tokens_out: number;
-  spend_usd: number | null;
-  latency_ms: number;
+  cost_usd: number | null;
+  duration_ms: number;
   iteration: number;
   prompt_ref: string | null;
   response_ref: string | null;
@@ -78,7 +76,7 @@ export interface AgentLoopResult {
   /** Full action history (for audit trail). */
   actions: Array<{ action: AgentAction; result: ActionResult | null }>;
   /** Accumulated cost across all iterations. */
-  totalCost: { tokens_in: number; tokens_out: number; spend_usd: number | null };
+  totalCost: { spend_usd: number | null; duration_ms: number };
 }
 
 /** A single action-result pair in conversation history. */
@@ -102,11 +100,11 @@ interface HistoryEntry {
  */
 export async function runAgentLoop(
   config: AgentLoopConfig,
-  callLlm: (prompt: string, systemPrompt: string) => Promise<CompletionResult>,
+  callLlm: (prompt: string, systemPrompt: string) => Promise<InferenceResult>,
   execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
 ): Promise<AgentLoopResult> {
   const history: HistoryEntry[] = [];
-  const totalCost = { tokens_in: 0, tokens_out: 0, spend_usd: null as number | null };
+  const totalCost = { spend_usd: null as number | null, duration_ms: 0 };
   let iterations = 0;
   const { observer } = config;
 
@@ -121,25 +119,25 @@ export async function runAgentLoop(
 
     const prompt = sanitizeSecrets(buildPrompt(config, history));
     const llmStart = Date.now();
-    const completion = await callLlm(prompt, sanitizeSecrets(config.systemPrompt));
-    const llmLatency = Date.now() - llmStart;
-    accumulateCost(totalCost, completion);
-    emitLlmCallback(config.callbacks, completion, prompt, llmLatency, iterations);
+    const inference = await callLlm(prompt, sanitizeSecrets(config.systemPrompt));
+    const llmDuration = Date.now() - llmStart;
+    accumulateCost(totalCost, inference);
+    emitLlmCallback(config.callbacks, inference, prompt, llmDuration, iterations);
 
-    const action = parseAction(completion.content);
+    const action = parseAction(inference.content);
 
     if (!action) {
       observer.warn("Unparseable LLM response", {
         phase: config.phase,
         iteration: iterations,
-        contentLength: completion.content.length,
-        preview: completion.content.slice(0, 200),
+        contentLength: inference.content.length,
+        preview: inference.content.slice(0, 200),
       });
       // Unparseable response — retry once with guidance
       const retryResult = await handleRetry(
         config,
         history,
-        completion.content,
+        inference.content,
         totalCost,
         iterations,
         callLlm,
@@ -244,9 +242,9 @@ async function handleRetry(
   config: AgentLoopConfig,
   history: HistoryEntry[],
   failedContent: string,
-  totalCost: { tokens_in: number; tokens_out: number; spend_usd: number | null },
+  totalCost: { spend_usd: number | null; duration_ms: number },
   currentIterations: number,
-  callLlm: (prompt: string, systemPrompt: string) => Promise<CompletionResult>,
+  callLlm: (prompt: string, systemPrompt: string) => Promise<InferenceResult>,
   execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
   observer: IObserver,
 ): Promise<AgentLoopResult | null> {
@@ -258,18 +256,18 @@ async function handleRetry(
   observer.debug("Retrying after parse failure", { phase: config.phase });
   const retryPrompt = sanitizeSecrets(buildRetryPrompt(config, history, failedContent));
   const retryLlmStart = Date.now();
-  const retryCompletion = await callLlm(retryPrompt, sanitizeSecrets(config.systemPrompt));
-  const retryLlmLatency = Date.now() - retryLlmStart;
-  accumulateCost(totalCost, retryCompletion);
+  const retryInference = await callLlm(retryPrompt, sanitizeSecrets(config.systemPrompt));
+  const retryDuration = Date.now() - retryLlmStart;
+  accumulateCost(totalCost, retryInference);
   emitLlmCallback(
     config.callbacks,
-    retryCompletion,
+    retryInference,
     retryPrompt,
-    retryLlmLatency,
+    retryDuration,
     currentIterations + 1,
   );
 
-  const retryAction = parseAction(retryCompletion.content);
+  const retryAction = parseAction(retryInference.content);
   if (!retryAction) {
     observer.warn("Retry also failed to parse — force done", { phase: config.phase });
     return buildForcedResult(history, currentIterations + 1, totalCost);
@@ -364,16 +362,15 @@ function buildRetryPrompt(
 
 // ── Cost & Result Helpers ───────────────────────────────────────────────────────
 
-/** Accumulate cost from a completion into the running total. */
+/** Accumulate cost from an inference result into the running total. */
 function accumulateCost(
-  total: { tokens_in: number; tokens_out: number; spend_usd: number | null },
-  completion: CompletionResult,
+  total: { spend_usd: number | null; duration_ms: number },
+  result: InferenceResult,
 ): void {
-  total.tokens_in += completion.usage.tokens_in;
-  total.tokens_out += completion.usage.tokens_out;
-  if (completion.usage.spend_usd !== null) {
-    total.spend_usd = (total.spend_usd ?? 0) + completion.usage.spend_usd;
+  if (result.cost_usd !== null) {
+    total.spend_usd = (total.spend_usd ?? 0) + result.cost_usd;
   }
+  total.duration_ms += result.duration_ms;
 }
 
 /** Build a successful result from a "done" action. */
@@ -381,7 +378,7 @@ function buildResult(
   phaseData: Record<string, unknown>,
   iterations: number,
   history: HistoryEntry[],
-  totalCost: { tokens_in: number; tokens_out: number; spend_usd: number | null },
+  totalCost: { spend_usd: number | null; duration_ms: number },
 ): AgentLoopResult {
   return {
     phaseData,
@@ -395,7 +392,7 @@ function buildResult(
 function buildForcedResult(
   history: HistoryEntry[],
   iterations: number,
-  totalCost: { tokens_in: number; tokens_out: number; spend_usd: number | null },
+  totalCost: { spend_usd: number | null; duration_ms: number },
 ): AgentLoopResult {
   return {
     phaseData: {},
@@ -433,9 +430,9 @@ function emitActionCallback(
 /** Emit LLM trace callback if configured. Passes raw content for blob storage. */
 function emitLlmCallback(
   callbacks: AgentLoopCallbacks | undefined,
-  completion: CompletionResult,
+  result: InferenceResult,
   prompt: string,
-  latencyMs: number,
+  durationMs: number,
   iteration: number,
 ): void {
   if (!callbacks?.onLlmComplete) {
@@ -443,15 +440,13 @@ function emitLlmCallback(
   }
   callbacks.onLlmComplete({
     prompt_length: prompt.length,
-    response_length: completion.content.length,
-    tokens_in: completion.usage.tokens_in,
-    tokens_out: completion.usage.tokens_out,
-    spend_usd: completion.usage.spend_usd,
-    latency_ms: latencyMs,
+    response_length: result.content.length,
+    cost_usd: result.cost_usd,
+    duration_ms: durationMs,
     iteration,
     prompt_ref: null,
     response_ref: null,
     prompt_content: prompt,
-    response_content: sanitizeSecrets(completion.content),
+    response_content: sanitizeSecrets(result.content),
   });
 }

@@ -30,14 +30,13 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
     const phaseObs = deps.observationStore.query({ type: "phase_transition", limit: 10000 });
 
     // Per-day cost
-    const dayMap = new Map<string, { spend_usd: number; tokens_in: number; tokens_out: number }>();
+    const dayMap = new Map<string, { spend_usd: number; duration_ms: number }>();
     // Per-phase cost
     const phaseMap = new Map<
       string,
       {
         spend_usd: number;
-        tokens_in: number;
-        tokens_out: number;
+        duration_ms: number;
         llm_iterations: number;
         executions: number;
       }
@@ -54,8 +53,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
         continue;
       }
       const spend = typeof output["spend_usd"] === "number" ? output["spend_usd"] : 0;
-      const tokensIn = typeof output["tokens_in"] === "number" ? output["tokens_in"] : 0;
-      const tokensOut = typeof output["tokens_out"] === "number" ? output["tokens_out"] : 0;
+      const durationMs = typeof output["duration_ms"] === "number" ? output["duration_ms"] : 0;
       const llmIter = typeof output["llm_iterations"] === "number" ? output["llm_iterations"] : 0;
 
       if (spend === 0) {
@@ -64,24 +62,21 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
 
       // Per-day
       const day = obs.start_time.slice(0, 10);
-      const dayEntry = dayMap.get(day) ?? { spend_usd: 0, tokens_in: 0, tokens_out: 0 };
+      const dayEntry = dayMap.get(day) ?? { spend_usd: 0, duration_ms: 0 };
       dayEntry.spend_usd += spend;
-      dayEntry.tokens_in += tokensIn;
-      dayEntry.tokens_out += tokensOut;
+      dayEntry.duration_ms += durationMs;
       dayMap.set(day, dayEntry);
 
       // Per-phase
       const phaseName = obs.name;
       const phaseEntry = phaseMap.get(phaseName) ?? {
         spend_usd: 0,
-        tokens_in: 0,
-        tokens_out: 0,
+        duration_ms: 0,
         llm_iterations: 0,
         executions: 0,
       };
       phaseEntry.spend_usd += spend;
-      phaseEntry.tokens_in += tokensIn;
-      phaseEntry.tokens_out += tokensOut;
+      phaseEntry.duration_ms += durationMs;
       phaseEntry.llm_iterations += llmIter;
       phaseEntry.executions += 1;
       phaseMap.set(phaseName, phaseEntry);

@@ -76,8 +76,8 @@ function insertLlmObservation(
   insertObservation(db, timestamp, "llm_call", "completion", {
     prompt_ref: promptRef ?? null,
     response_ref: responseRef ?? null,
-    tokens_in: 50,
-    tokens_out: 100,
+    cost_usd: 0.01,
+    duration_ms: 150,
   });
 }
 

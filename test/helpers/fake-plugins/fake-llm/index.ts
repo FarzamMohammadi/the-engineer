@@ -1,8 +1,8 @@
 import { LLMAdapter } from "../../../../src/adapters/llm.js";
 import type {
-  CompletionRequest,
-  CompletionResult,
   HealthStatus,
+  InferenceRequest,
+  InferenceResult,
   InitResult,
   LLMCapabilities,
 } from "../../../../src/schemas/adapters.js";
@@ -11,37 +11,30 @@ import type {
  * Fake LLM plugin for testing.
  *
  * Test control surface:
- * - `setCannedResponses(responses)` — configure responses returned by `complete()`
+ * - `setCannedResponses(responses)` — configure responses returned by `infer()`
  * - `setUnhealthy(fail)` — make healthCheck return unhealthy
- * - `getCallCount()` — how many times `complete()` was called
- * - `getLastRequest()` — the most recent completion request
+ * - `getCallCount()` — how many times `infer()` was called
+ * - `getLastRequest()` — the most recent inference request
  * - `getInitConfig()` — what config was passed to initialize
  * - `wasShutdownCalled()` — whether shutdown was called
  */
 export class FakeLLMPlugin extends LLMAdapter {
-  private cannedResponses: CompletionResult[] = [];
+  private cannedResponses: InferenceResult[] = [];
   private callIndex = 0;
-  private lastRequest: CompletionRequest | null = null;
+  private lastRequest: InferenceRequest | null = null;
   private shouldFailHealthCheck = false;
   private initConfig: Record<string, unknown> | null = null;
   private shutdownCalled = false;
 
-  private static readonly DEFAULT_RESPONSE: CompletionResult = {
+  private static readonly DEFAULT_RESPONSE: InferenceResult = {
     content: "Fake LLM response",
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: {
-      tokens_in: 100,
-      tokens_out: 50,
-      spend_usd: null,
-      remaining: null,
-      resets_at: null,
-    },
+    cost_usd: 0.01,
+    duration_ms: 100,
   };
 
   // ── Test Control Surface ────────────────────────────────────────────────
 
-  setCannedResponses(responses: CompletionResult[]): void {
+  setCannedResponses(responses: InferenceResult[]): void {
     this.cannedResponses = responses;
     this.callIndex = 0;
   }
@@ -54,7 +47,7 @@ export class FakeLLMPlugin extends LLMAdapter {
     return this.callIndex;
   }
 
-  getLastRequest(): CompletionRequest | null {
+  getLastRequest(): InferenceRequest | null {
     return this.lastRequest;
   }
 
@@ -68,7 +61,7 @@ export class FakeLLMPlugin extends LLMAdapter {
 
   // ── Adapter Implementation ──────────────────────────────────────────────
 
-  protected doComplete(request: CompletionRequest): Promise<CompletionResult> {
+  protected doInfer(request: InferenceRequest): Promise<InferenceResult> {
     this.lastRequest = request;
     const response = this.cannedResponses[this.callIndex] ?? FakeLLMPlugin.DEFAULT_RESPONSE;
     this.callIndex++;
@@ -77,9 +70,6 @@ export class FakeLLMPlugin extends LLMAdapter {
 
   getCapabilities(): LLMCapabilities {
     return {
-      max_context: 128_000,
-      supports_tools: true,
-      supports_vision: false,
       model_id: "fake-model-v1",
     };
   }

@@ -10,34 +10,27 @@ import type { IObserver } from "../observer/index.js";
 
 // ── Internal Types ───────────────────────────────────────────────────────────
 
-interface ApiSpendWindow {
+interface SpendWindow {
   cost_usd: number;
   window_start: string;
 }
 
-interface CliUsageRecord {
+interface ProviderUsageRecord {
   requests_used: number;
-  tokens_used: number;
-  last_known_remaining: number | null;
-  last_known_reset: string | null;
 }
 
-interface CostAccumulators {
-  api_spend: {
-    per_task: Map<string, number>;
-    daily: ApiSpendWindow;
-    monthly: ApiSpendWindow;
-  };
-  cli_usage: Map<string, CliUsageRecord>;
+interface SpendAccumulators {
+  per_task: Map<string, number>;
+  daily: SpendWindow;
+  monthly: SpendWindow;
+  providers: Map<string, ProviderUsageRecord>;
 }
 
 interface AccumulatorSnapshot {
-  api_spend: {
-    per_task: Record<string, number>;
-    daily: ApiSpendWindow;
-    monthly: ApiSpendWindow;
-  };
-  cli_usage: Record<string, CliUsageRecord>;
+  per_task: Record<string, number>;
+  daily: SpendWindow;
+  monthly: SpendWindow;
+  providers: Record<string, ProviderUsageRecord>;
   last_sequence: number;
   snapshot_at: string;
 }
@@ -109,13 +102,11 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
   let lastSnapshotAt = 0;
 
   const now = new Date();
-  const accumulators: CostAccumulators = {
-    api_spend: {
-      per_task: new Map(),
-      daily: { cost_usd: 0, window_start: getDailyWindowStart(now) },
-      monthly: { cost_usd: 0, window_start: getMonthlyWindowStart(now) },
-    },
-    cli_usage: new Map(),
+  const accumulators: SpendAccumulators = {
+    per_task: new Map(),
+    daily: { cost_usd: 0, window_start: getDailyWindowStart(now) },
+    monthly: { cost_usd: 0, window_start: getMonthlyWindowStart(now) },
+    providers: new Map(),
   };
 
   // ── Initialization ──────────────────────────────────────────────────────
@@ -138,26 +129,26 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
   function getCostStatus(taskId?: string): CostStatus {
     const warnings: string[] = [];
 
-    const perTaskUsd = taskId ? (accumulators.api_spend.per_task.get(taskId) ?? 0) : 0;
-    const dailyUsd = accumulators.api_spend.daily.cost_usd;
-    const monthlyUsd = accumulators.api_spend.monthly.cost_usd;
+    const perTaskUsd = taskId ? (accumulators.per_task.get(taskId) ?? 0) : 0;
+    const dailyUsd = accumulators.daily.cost_usd;
+    const monthlyUsd = accumulators.monthly.cost_usd;
 
-    if (taskId && costLimits.api.per_task.cost_usd !== null) {
-      const pct = perTaskUsd / costLimits.api.per_task.cost_usd;
+    if (taskId && costLimits.per_task.cost_usd !== null) {
+      const pct = perTaskUsd / costLimits.per_task.cost_usd;
       if (pct >= COST_WARNING_THRESHOLD) {
         warnings.push(`task ${taskId} at ${Math.round(pct * 100)}% of per-task cost limit`);
       }
     }
 
-    if (costLimits.api.daily.cost_usd !== null) {
-      const pct = dailyUsd / costLimits.api.daily.cost_usd;
+    if (costLimits.daily.cost_usd !== null) {
+      const pct = dailyUsd / costLimits.daily.cost_usd;
       if (pct >= COST_WARNING_THRESHOLD) {
         warnings.push(`daily spend at ${Math.round(pct * 100)}% of limit`);
       }
     }
 
-    if (costLimits.api.monthly.cost_usd !== null) {
-      const pct = monthlyUsd / costLimits.api.monthly.cost_usd;
+    if (costLimits.monthly.cost_usd !== null) {
+      const pct = monthlyUsd / costLimits.monthly.cost_usd;
       if (pct >= COST_WARNING_THRESHOLD) {
         warnings.push(`monthly spend at ${Math.round(pct * 100)}% of limit`);
       }
@@ -169,10 +160,10 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
   function checkCostLimits(taskId: string): CostLimitCheckResult {
     const warnings: string[] = [];
 
-    const perTaskSpent = accumulators.api_spend.per_task.get(taskId) ?? 0;
+    const perTaskSpent = accumulators.per_task.get(taskId) ?? 0;
     const perTaskResult = checkSingleCostLimit(
       perTaskSpent,
-      costLimits.api.per_task.cost_usd,
+      costLimits.per_task.cost_usd,
       "per-task",
       `task ${taskId}`,
     );
@@ -182,8 +173,8 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     warnings.push(...perTaskResult.warnings);
 
     const dailyResult = checkSingleCostLimit(
-      accumulators.api_spend.daily.cost_usd,
-      costLimits.api.daily.cost_usd,
+      accumulators.daily.cost_usd,
+      costLimits.daily.cost_usd,
       "daily",
       "daily spend",
     );
@@ -193,8 +184,8 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     warnings.push(...dailyResult.warnings);
 
     const monthlyResult = checkSingleCostLimit(
-      accumulators.api_spend.monthly.cost_usd,
-      costLimits.api.monthly.cost_usd,
+      accumulators.monthly.cost_usd,
+      costLimits.monthly.cost_usd,
       "monthly",
       "monthly spend",
     );
@@ -208,21 +199,21 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-window limit breach check
   function isAnyLimitBreached(taskId?: string): boolean {
-    if (taskId && costLimits.api.per_task.cost_usd !== null) {
-      const spent = accumulators.api_spend.per_task.get(taskId) ?? 0;
-      if (spent >= costLimits.api.per_task.cost_usd) {
+    if (taskId && costLimits.per_task.cost_usd !== null) {
+      const spent = accumulators.per_task.get(taskId) ?? 0;
+      if (spent >= costLimits.per_task.cost_usd) {
         return true;
       }
     }
 
-    if (costLimits.api.daily.cost_usd !== null) {
-      if (accumulators.api_spend.daily.cost_usd >= costLimits.api.daily.cost_usd) {
+    if (costLimits.daily.cost_usd !== null) {
+      if (accumulators.daily.cost_usd >= costLimits.daily.cost_usd) {
         return true;
       }
     }
 
-    if (costLimits.api.monthly.cost_usd !== null) {
-      if (accumulators.api_spend.monthly.cost_usd >= costLimits.api.monthly.cost_usd) {
+    if (costLimits.monthly.cost_usd !== null) {
+      if (accumulators.monthly.cost_usd >= costLimits.monthly.cost_usd) {
         return true;
       }
     }
@@ -247,12 +238,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     const eventTime = new Date(event.timestamp);
 
     rolloverWindows(eventTime);
-
-    if (payload.provider_type === "api") {
-      accumulateApiSpend(payload);
-    } else {
-      accumulateCliUsage(payload);
-    }
+    accumulateSpend(payload);
 
     lastSequence = event.sequence;
     maybeSaveSnapshot();
@@ -263,77 +249,65 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
   function onTaskStateChanged(event: Event): void {
     const payload = event.payload as unknown as TaskStateChangedPayload;
     if (payload.to_state === TaskStates.completed || payload.to_state === TaskStates.failed) {
-      accumulators.api_spend.per_task.delete(payload.task_id);
+      accumulators.per_task.delete(payload.task_id);
     }
   }
 
-  function accumulateApiSpend(payload: CostIncurredPayload): void {
+  function accumulateSpend(payload: CostIncurredPayload): void {
     const spend = payload.spend_usd ?? 0;
+
+    // Track provider request count regardless of spend
+    const existing = accumulators.providers.get(payload.provider_id) ?? { requests_used: 0 };
+    existing.requests_used += 1;
+    accumulators.providers.set(payload.provider_id, existing);
+
     if (spend <= 0) {
       return;
     }
 
-    const taskCurrent = accumulators.api_spend.per_task.get(payload.task_id) ?? 0;
-    accumulators.api_spend.per_task.set(payload.task_id, taskCurrent + spend);
-    accumulators.api_spend.daily.cost_usd += spend;
-    accumulators.api_spend.monthly.cost_usd += spend;
-  }
-
-  function accumulateCliUsage(payload: CostIncurredPayload): void {
-    const existing = accumulators.cli_usage.get(payload.provider_id) ?? {
-      requests_used: 0,
-      tokens_used: 0,
-      last_known_remaining: null,
-      last_known_reset: null,
-    };
-
-    existing.requests_used += payload.usage_units ?? 1;
-    existing.tokens_used += (payload.tokens_in ?? 0) + (payload.tokens_out ?? 0);
-
-    if (payload.remaining !== null) {
-      existing.last_known_remaining = payload.remaining;
-    }
-
-    accumulators.cli_usage.set(payload.provider_id, existing);
+    const taskCurrent = accumulators.per_task.get(payload.task_id) ?? 0;
+    accumulators.per_task.set(payload.task_id, taskCurrent + spend);
+    accumulators.daily.cost_usd += spend;
+    accumulators.monthly.cost_usd += spend;
   }
 
   function rolloverWindows(nowDate: Date): void {
     const dailyStart = getDailyWindowStart(nowDate);
-    if (dailyStart !== accumulators.api_spend.daily.window_start) {
+    if (dailyStart !== accumulators.daily.window_start) {
       observer.debug("Cost window rolled over", { window: "daily", newStart: dailyStart });
-      accumulators.api_spend.daily = { cost_usd: 0, window_start: dailyStart };
+      accumulators.daily = { cost_usd: 0, window_start: dailyStart };
     }
 
     const monthlyStart = getMonthlyWindowStart(nowDate);
-    if (monthlyStart !== accumulators.api_spend.monthly.window_start) {
+    if (monthlyStart !== accumulators.monthly.window_start) {
       observer.debug("Cost window rolled over", { window: "monthly", newStart: monthlyStart });
-      accumulators.api_spend.monthly = { cost_usd: 0, window_start: monthlyStart };
+      accumulators.monthly = { cost_usd: 0, window_start: monthlyStart };
     }
   }
 
   function checkAndEmitLimitBreaches(payload: CostIncurredPayload): void {
-    if (payload.provider_type === "api") {
-      checkApiLimitBreach("per_task", payload.task_id);
-      checkApiLimitBreach("daily", payload.task_id);
-      checkApiLimitBreach("monthly", payload.task_id);
-    } else {
-      checkCliLimitBreach(payload.provider_id, payload.task_id);
-    }
+    checkSpendLimitBreach("per_task", payload.task_id);
+    checkSpendLimitBreach("daily", payload.task_id);
+    checkSpendLimitBreach("monthly", payload.task_id);
+    checkProviderLimitBreach(payload.provider_id, payload.task_id);
   }
 
-  function checkApiLimitBreach(limitType: "per_task" | "daily" | "monthly", taskId: string): void {
-    const limitConfig = costLimits.api[limitType];
+  function checkSpendLimitBreach(
+    limitType: "per_task" | "daily" | "monthly",
+    taskId: string,
+  ): void {
+    const limitConfig = costLimits[limitType];
     if (limitConfig.cost_usd === null) {
       return;
     }
 
     let spent: number;
     if (limitType === "per_task") {
-      spent = accumulators.api_spend.per_task.get(taskId) ?? 0;
+      spent = accumulators.per_task.get(taskId) ?? 0;
     } else if (limitType === "daily") {
-      spent = accumulators.api_spend.daily.cost_usd;
+      spent = accumulators.daily.cost_usd;
     } else {
-      spent = accumulators.api_spend.monthly.cost_usd;
+      spent = accumulators.monthly.cost_usd;
     }
 
     if (spent >= limitConfig.cost_usd) {
@@ -353,30 +327,32 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
           limit_scope: null,
           current_spend: spent,
           limit_value: limitConfig.cost_usd,
-          provider_type: "api" as const,
           resets_at: null,
         },
       } satisfies PublishInput<"cost.limit_reached">);
     }
   }
 
-  function checkCliLimitBreach(providerId: string, taskId: string): void {
-    const cliConfig = costLimits.cli[providerId];
-    if (!cliConfig) {
+  function checkProviderLimitBreach(providerId: string, taskId: string): void {
+    const providerConfig = costLimits.providers[providerId];
+    if (!providerConfig) {
       return;
     }
 
-    const usage = accumulators.cli_usage.get(providerId);
+    const usage = accumulators.providers.get(providerId);
     if (!usage) {
       return;
     }
 
-    if (cliConfig.daily_requests !== null && usage.requests_used >= cliConfig.daily_requests) {
-      observer.warn("CLI usage limit breached", {
+    if (
+      providerConfig.daily_requests !== null &&
+      usage.requests_used >= providerConfig.daily_requests
+    ) {
+      observer.warn("Provider usage limit breached", {
         providerId,
         limitType: "daily_requests",
         used: usage.requests_used,
-        limit: cliConfig.daily_requests,
+        limit: providerConfig.daily_requests,
         taskId,
       });
       eventBus.publish({
@@ -388,51 +364,8 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
           limit_type: "daily" as const,
           limit_scope: providerId,
           current_spend: usage.requests_used,
-          limit_value: cliConfig.daily_requests,
-          provider_type: "cli" as const,
-          resets_at: usage.last_known_reset,
-        },
-      } satisfies PublishInput<"cost.limit_reached">);
-    }
-
-    if (cliConfig.daily_tokens !== null && usage.tokens_used >= cliConfig.daily_tokens) {
-      observer.warn("CLI usage limit breached", {
-        providerId,
-        limitType: "daily_tokens",
-        used: usage.tokens_used,
-        limit: cliConfig.daily_tokens,
-        taskId,
-      });
-      eventBus.publish({
-        type: EventTypes["cost.limit_reached"],
-        source: "safety_layer",
-        task_id: taskId,
-        payload: {
-          task_id: taskId,
-          limit_type: "daily" as const,
-          limit_scope: providerId,
-          current_spend: usage.tokens_used,
-          limit_value: cliConfig.daily_tokens,
-          provider_type: "cli" as const,
-          resets_at: usage.last_known_reset,
-        },
-      } satisfies PublishInput<"cost.limit_reached">);
-    }
-
-    // CLI self-reporting: remaining === 0 means provider exhausted
-    if (usage.last_known_remaining === 0) {
-      eventBus.publish({
-        type: EventTypes["cost.limit_reached"],
-        source: "safety_layer",
-        task_id: taskId,
-        payload: {
-          task_id: taskId,
-          limit_type: "daily" as const,
-          limit_scope: providerId,
-          current_spend: usage.requests_used,
-          limit_value: usage.requests_used,
-          provider_type: "cli" as const,
-          resets_at: usage.last_known_reset,
+          limit_value: providerConfig.daily_requests,
+          resets_at: null,
         },
       } satisfies PublishInput<"cost.limit_reached">);
     }
@@ -482,12 +415,10 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
 
   function saveSnapshot(): void {
     const snapshot: AccumulatorSnapshot = {
-      api_spend: {
-        per_task: Object.fromEntries(accumulators.api_spend.per_task),
-        daily: accumulators.api_spend.daily,
-        monthly: accumulators.api_spend.monthly,
-      },
-      cli_usage: Object.fromEntries(accumulators.cli_usage),
+      per_task: Object.fromEntries(accumulators.per_task),
+      daily: accumulators.daily,
+      monthly: accumulators.monthly,
+      providers: Object.fromEntries(accumulators.providers),
       last_sequence: lastSequence,
       snapshot_at: new Date().toISOString(),
     };
@@ -516,24 +447,26 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       const currentDailyStart = getDailyWindowStart(nowDate);
       const currentMonthlyStart = getMonthlyWindowStart(nowDate);
 
-      accumulators.api_spend.per_task = new Map(Object.entries(snapshot.api_spend.per_task));
+      accumulators.per_task = new Map(Object.entries(snapshot.per_task));
 
-      if (snapshot.api_spend.daily.window_start === currentDailyStart) {
-        accumulators.api_spend.daily = snapshot.api_spend.daily;
+      if (snapshot.daily.window_start === currentDailyStart) {
+        accumulators.daily = snapshot.daily;
       }
 
-      if (snapshot.api_spend.monthly.window_start === currentMonthlyStart) {
-        accumulators.api_spend.monthly = snapshot.api_spend.monthly;
+      if (snapshot.monthly.window_start === currentMonthlyStart) {
+        accumulators.monthly = snapshot.monthly;
       }
 
-      accumulators.cli_usage = new Map(Object.entries(snapshot.cli_usage));
+      if (snapshot.providers) {
+        accumulators.providers = new Map(Object.entries(snapshot.providers));
+      }
       lastSequence = snapshot.last_sequence;
       observer.debug("Cost snapshot restored", {
         lastSequence,
-        perTaskEntries: accumulators.api_spend.per_task.size,
+        perTaskEntries: accumulators.per_task.size,
       });
     } catch {
-      // Corrupt snapshot — fall back to zero accumulators + full replay
+      // Corrupt or old-format snapshot — fall back to zero accumulators + full replay
       observer.warn("Cost snapshot corrupted — falling back to full replay");
       lastSequence = 0;
     }
@@ -561,12 +494,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
         }
 
         const payload = event.payload as unknown as CostIncurredPayload;
-
-        if (payload.provider_type === "api") {
-          replayApiEvent(payload, new Date(event.timestamp), dailyStart, monthlyStart);
-        } else {
-          accumulateCliUsage(payload);
-        }
+        replaySpendEvent(payload, new Date(event.timestamp), dailyStart, monthlyStart);
 
         lastSeq = event.sequence;
       }
@@ -586,25 +514,30 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
   }
 
-  function replayApiEvent(
+  function replaySpendEvent(
     payload: CostIncurredPayload,
     eventTime: Date,
     dailyStart: string,
     monthlyStart: string,
   ): void {
+    // Track provider request count
+    const existing = accumulators.providers.get(payload.provider_id) ?? { requests_used: 0 };
+    existing.requests_used += 1;
+    accumulators.providers.set(payload.provider_id, existing);
+
     const spend = payload.spend_usd ?? 0;
     if (spend <= 0) {
       return;
     }
 
-    const taskCurrent = accumulators.api_spend.per_task.get(payload.task_id) ?? 0;
-    accumulators.api_spend.per_task.set(payload.task_id, taskCurrent + spend);
+    const taskCurrent = accumulators.per_task.get(payload.task_id) ?? 0;
+    accumulators.per_task.set(payload.task_id, taskCurrent + spend);
 
     if (getDailyWindowStart(eventTime) === dailyStart) {
-      accumulators.api_spend.daily.cost_usd += spend;
+      accumulators.daily.cost_usd += spend;
     }
     if (getMonthlyWindowStart(eventTime) === monthlyStart) {
-      accumulators.api_spend.monthly.cost_usd += spend;
+      accumulators.monthly.cost_usd += spend;
     }
   }
 

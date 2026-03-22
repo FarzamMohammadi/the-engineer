@@ -1,6 +1,6 @@
 import { ulid } from "ulid";
 import type { LLMAdapter } from "../../adapters/llm.js";
-import { AdapterTypes, type CompletionResult } from "../../schemas/adapters.js";
+import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import {
   CommMessageSentPayloadSchema,
@@ -253,16 +253,16 @@ export class Orchestrator {
     );
 
     try {
-      const pipelineResult = await this.ctx.actionPipeline.execute<CompletionResult>({
+      const pipelineResult = await this.ctx.actionPipeline.execute<InferenceResult>({
         taskId,
         actionClass: ActionClasses.read,
         details: { operation: "self_unblock_diagnosis" },
         requestedBy: "orchestrator",
         executeFn: () =>
-          llm.complete({
+          llm.infer({
             prompt,
             system_prompt: null,
-            options: { max_tokens: 200, temperature: null, stop: null, tools: null },
+            cwd: null,
           }),
       });
 

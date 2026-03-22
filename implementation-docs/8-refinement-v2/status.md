@@ -2,19 +2,20 @@
 
 ## Current Phase
 
-**Dashboard — Simple Rebuild — DONE.** Full 8-tab instrument panel with SSE real-time streaming. Audited Observer (13 types), EventBus (35 types), agent loop callbacks. Backend: new `/api/observations` and `/api/stream` (SSE) endpoints. Frontend: complete rewrite with Overview, Tasks, Agent Loop, Observations, Events, Cost, Decisions, Errors tabs.
+**CLI-Only LLM Pivot — IN PROGRESS.** Removing all API-oriented LLM abstractions. Redesigning adapter contract for CLI-only integration (`InferenceRequest`/`InferenceResult`). Renaming `complete`/`doComplete` to `infer`/`doInfer`.
+
+Dashboard testing decision: **skipped entirely** — deferred to Dashboard Full Rebuild at end of Layer 8. No session should bother with simple dashboard testing.
 
 ## Last Session
 
-Session 065 (2026-03-22): Built the Dashboard Simple Rebuild. Audited all data export surfaces (Observer, EventBus, agent loop callbacks, blob store). Created 2 new API endpoints (observations query + SSE stream). Rewrote index.html from scratch — 8 tabs, SSE-driven real-time, type-specific observation rendering, blob store links for LLM prompts/responses, cross-tab navigation. Clean dark theme without decorative elements. Added flicker-free 3-second auto-refresh with updateIfChanged() and ID-based fingerprinting.
+Session 066 (2026-03-22): CLI-Only LLM Pivot. Removed API-oriented `CompletionRequest`/`CompletionResult` schemas, replaced with minimal `InferenceRequest`/`InferenceResult`. Stripped `provider_type`, token counts, and dual api/cli accumulator from cost tracking. Renamed `complete()`/`doComplete()` to `infer()`/`doInfer()` across adapter, plugin, and orchestrator.
 
 ## Next
 
-Manual test the dashboard against a live run to verify data flows correctly through all 8 tabs. Then begin **CLI-Only LLM Pivot** — remove API-based LLM adapter, redesign for CLI tool integration.
+**Multi-CLI Plugin Integration** — build OpenCode and Gemini CLI plugins, test all three against real repos.
 
 ## Open Questions
 
-- Which CLI tools besides Claude CLI should we support first? (Codex, Gemini CLI, OpenCode — order TBD)
 - RPI file location: `thoughts/` directory (like Goose) or different convention?
 
 ## Findings Log

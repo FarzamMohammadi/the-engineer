@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runLLMContractSuite } from "../../../../test/helpers/contract-suites/llm-contract.js";
-import { createMockCompletionRequest } from "../../../../test/helpers/mock-factories.js";
+import { createMockInferenceRequest } from "../../../../test/helpers/mock-factories.js";
 import { AdapterMethodError } from "../../../adapters/index.js";
 import { PluginManifestSchema } from "../../../schemas/adapters.js";
 import { ClaudeCodeLLMPlugin, buildLlmEnv, parseCliOutput } from "./claude-code-llm.js";
@@ -71,29 +71,26 @@ runLLMContractSuite(() => new ClaudeCodeLLMPlugin(), {
   validConfig: { cli_path: mockCliPath },
   invalidConfig: { max_tokens: -1 },
   manifest,
-  request: createMockCompletionRequest(),
+  request: createMockInferenceRequest(),
 });
 
 // ── Plugin-Specific Tests ───────────────────────────────────────────────────
 
 describe("ClaudeCodeLLMPlugin", () => {
-  it("parses NDJSON output with usage data correctly", async () => {
+  it("parses NDJSON output with cost data correctly", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: mockCliPath });
-    const result = await plugin.complete(createMockCompletionRequest());
+    const result = await plugin.infer(createMockInferenceRequest());
     expect(result.content).toBe("Mock LLM response");
-    expect(result.usage.spend_usd).toBe(0.005);
-    expect(result.finish_reason).toBe("stop");
+    expect(result.cost_usd).toBe(0.005);
   });
 
-  it("handles missing usage data gracefully (zeros, not crash)", () => {
+  it("handles missing cost data gracefully (null, not crash)", () => {
     const raw = '{"type":"result","subtype":"success","result":{"type":"text","text":"hello"}}\n';
     const result = parseCliOutput(raw);
     expect(result.content).toBe("hello");
-    expect(result.usage.tokens_in).toBe(0);
-    expect(result.usage.tokens_out).toBe(0);
-    expect(result.usage.spend_usd).toBeNull();
+    expect(result.cost_usd).toBeNull();
   });
 
   it("CLI exit code non-zero throws AdapterMethodError with cli_error", async () => {
@@ -101,7 +98,7 @@ describe("ClaudeCodeLLMPlugin", () => {
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: mockCliErrorPath });
     try {
-      await plugin.complete(createMockCompletionRequest());
+      await plugin.infer(createMockInferenceRequest());
       expect.fail("Expected AdapterMethodError");
     } catch (err) {
       expect(err).toBeInstanceOf(AdapterMethodError);
@@ -114,7 +111,7 @@ describe("ClaudeCodeLLMPlugin", () => {
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: "/nonexistent/claude" });
     try {
-      await plugin.complete(createMockCompletionRequest());
+      await plugin.infer(createMockInferenceRequest());
       expect.fail("Expected AdapterMethodError");
     } catch (err) {
       expect(err).toBeInstanceOf(AdapterMethodError);
@@ -128,8 +125,6 @@ describe("ClaudeCodeLLMPlugin", () => {
     await plugin.initialize({ cli_path: mockCliPath, model: "claude-opus-4-20250514" });
     const caps = plugin.getCapabilities();
     expect(caps.model_id).toBe("claude-opus-4-20250514");
-    expect(caps.max_context).toBe(200_000);
-    expect(caps.supports_tools).toBe(true);
   });
 
   it("healthCheck with mock --version succeeds", async () => {
@@ -161,10 +156,10 @@ describe("ClaudeCodeLLMPlugin", () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: mockCliArgsPath });
-    const result = await plugin.complete({
+    const result = await plugin.infer({
       prompt: "test prompt",
       system_prompt: "You are a helpful assistant.",
-      options: { max_tokens: 1024, temperature: null, stop: null, tools: null },
+      cwd: null,
     });
     // The mock CLI echoes all args as the result text
     expect(result.content).toContain("--system-prompt");
@@ -175,10 +170,10 @@ describe("ClaudeCodeLLMPlugin", () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: mockCliArgsPath });
-    const result = await plugin.complete({
+    const result = await plugin.infer({
       prompt: "test prompt",
       system_prompt: null,
-      options: { max_tokens: 1024, temperature: null, stop: null, tools: null },
+      cwd: null,
     });
     expect(result.content).not.toContain("--system-prompt");
   });
@@ -193,7 +188,7 @@ describe("parseCliOutput", () => {
     ].join("\n");
     const result = parseCliOutput(raw);
     expect(result.content).toBe("Answer");
-    expect(result.usage.spend_usd).toBe(0.01);
+    expect(result.cost_usd).toBe(0.01);
   });
 
   it("throws when no result event found", () => {
@@ -226,7 +221,7 @@ describe("parseCliOutput", () => {
       '{"type":"result","subtype":"success","cost_usd":0.05,"result":"{\\"action\\":\\"done\\"}"}\n';
     const result = parseCliOutput(raw);
     expect(result.content).toBe('{"action":"done"}');
-    expect(result.usage.spend_usd).toBe(0.05);
+    expect(result.cost_usd).toBe(0.05);
   });
 
   it("extracts content when result is a plain string without JSON", () => {

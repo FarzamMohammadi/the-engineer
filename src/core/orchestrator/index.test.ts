@@ -83,7 +83,7 @@ describe("Orchestrator", () => {
       // execution phase has 2 calls: tool + LLM. So total actionPipeline calls = 8
       const llmCalls = handle.actionPipeline.execute.mock.calls.filter(
         // biome-ignore lint/suspicious/noExplicitAny: test mock inspection
-        (call: any[]) => call[0]?.details?.operation === "llm_complete",
+        (call: any[]) => call[0]?.details?.operation === "llm_infer",
       );
       expect(llmCalls).toHaveLength(7);
     });
@@ -345,20 +345,13 @@ describe("Orchestrator", () => {
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           callCount++;
-          if (callCount === 1 && input.details?.operation === "llm_complete") {
+          if (callCount === 1 && input.details?.operation === "llm_infer") {
             return {
               outcome: "executed",
               result: {
                 content: "This is not JSON at all",
-                tool_calls: null,
-                finish_reason: "stop",
-                usage: {
-                  tokens_in: 10,
-                  tokens_out: 5,
-                  spend_usd: null,
-                  remaining: null,
-                  resets_at: null,
-                },
+                cost_usd: null,
+                duration_ms: 100,
               },
             };
           }
@@ -387,20 +380,13 @@ describe("Orchestrator", () => {
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           callCount++;
-          if (callCount === 1 && input.details?.operation === "llm_complete") {
+          if (callCount === 1 && input.details?.operation === "llm_infer") {
             return {
               outcome: "executed",
               result: {
                 content: JSON.stringify({ wrong_field: "wrong_value" }),
-                tool_calls: null,
-                finish_reason: "stop",
-                usage: {
-                  tokens_in: 10,
-                  tokens_out: 5,
-                  spend_usd: null,
-                  remaining: null,
-                  resets_at: null,
-                },
+                cost_usd: null,
+                duration_ms: 100,
               },
             };
           }
@@ -425,20 +411,13 @@ describe("Orchestrator", () => {
       // and returns empty phaseData, which fails schema validation → fallback output
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
-          if (input.details?.operation === "llm_complete") {
+          if (input.details?.operation === "llm_infer") {
             return {
               outcome: "executed",
               result: {
                 content: "not json at all",
-                tool_calls: null,
-                finish_reason: "stop",
-                usage: {
-                  tokens_in: 10,
-                  tokens_out: 5,
-                  spend_usd: null,
-                  remaining: null,
-                  resets_at: null,
-                },
+                cost_usd: null,
+                duration_ms: 100,
               },
             };
           }
@@ -577,7 +556,7 @@ describe("Orchestrator", () => {
     it("returns error result when LLM adapter throws", async () => {
       handle.actionPipeline.execute.mockImplementation(
         (input: { details?: { operation?: string } }) => {
-          if (input.details?.operation === "llm_complete") {
+          if (input.details?.operation === "llm_infer") {
             return Promise.resolve({
               outcome: "error",
               reason: "LLM provider unavailable",
@@ -641,8 +620,6 @@ describe("Orchestrator", () => {
       );
       // Agent loop emits aggregate cost per phase
       const firstPayload = (costEvents[0]?.[0] as { payload: Record<string, unknown> }).payload;
-      expect(firstPayload).toHaveProperty("tokens_in", 100);
-      expect(firstPayload).toHaveProperty("tokens_out", 50);
       expect(firstPayload).toHaveProperty("spend_usd", 0.01);
       expect(firstPayload).toHaveProperty("task_id", "task-001");
     });
@@ -697,15 +674,8 @@ describe("Orchestrator", () => {
         outcome: "executed",
         result: {
           content: JSON.stringify({ can_resolve: true, action: "retry with alternative" }),
-          tool_calls: null,
-          finish_reason: "stop",
-          usage: {
-            tokens_in: 50,
-            tokens_out: 20,
-            spend_usd: 0.005,
-            remaining: null,
-            resets_at: null,
-          },
+          cost_usd: 0.005,
+          duration_ms: 100,
         },
       });
 
@@ -722,15 +692,8 @@ describe("Orchestrator", () => {
         outcome: "executed",
         result: {
           content: JSON.stringify({ can_resolve: false, action: "needs human input" }),
-          tool_calls: null,
-          finish_reason: "stop",
-          usage: {
-            tokens_in: 50,
-            tokens_out: 20,
-            spend_usd: 0.005,
-            remaining: null,
-            resets_at: null,
-          },
+          cost_usd: 0.005,
+          duration_ms: 100,
         },
       });
 
@@ -761,15 +724,8 @@ describe("Orchestrator", () => {
         outcome: "executed",
         result: {
           content: "not valid json",
-          tool_calls: null,
-          finish_reason: "stop",
-          usage: {
-            tokens_in: 50,
-            tokens_out: 20,
-            spend_usd: 0.005,
-            remaining: null,
-            resets_at: null,
-          },
+          cost_usd: 0.005,
+          duration_ms: 100,
         },
       });
 
@@ -804,19 +760,12 @@ describe("Orchestrator", () => {
         },
       );
       const mockLlm = {
-        complete: (req: { prompt: string }) => {
+        infer: (req: { prompt: string }) => {
           capturedPrompt = req.prompt;
           return {
             content: JSON.stringify({ can_resolve: false, action: "n/a" }),
-            tool_calls: null,
-            finish_reason: "stop",
-            usage: {
-              tokens_in: 50,
-              tokens_out: 20,
-              spend_usd: 0.005,
-              remaining: null,
-              resets_at: null,
-            },
+            cost_usd: 0.005,
+            duration_ms: 100,
           };
         },
       };
@@ -838,15 +787,8 @@ describe("Orchestrator", () => {
         outcome: "executed",
         result: {
           content: JSON.stringify({ can_resolve: false, action: "n/a" }),
-          tool_calls: null,
-          finish_reason: "stop",
-          usage: {
-            tokens_in: 50,
-            tokens_out: 20,
-            spend_usd: 0.005,
-            remaining: null,
-            resets_at: null,
-          },
+          cost_usd: 0.005,
+          duration_ms: 100,
         },
       });
 

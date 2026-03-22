@@ -218,34 +218,26 @@ describe("ActionRejectedPayloadSchema", () => {
 });
 
 describe("CostIncurredPayloadSchema", () => {
-  it("parses API provider cost", () => {
+  it("parses cost event with spend", () => {
     const valid = {
       task_id: "01TASK",
       repo: "owner/repo",
       provider_id: "claude-sonnet",
-      provider_type: "api",
       operation: "code_generation",
-      tokens_in: 1000,
-      tokens_out: 500,
       spend_usd: 0.015,
-      usage_units: null,
-      remaining: null,
+      duration_ms: 1200,
     };
     expect(CostIncurredPayloadSchema.parse(valid)).toEqual(valid);
   });
 
-  it("parses CLI provider cost", () => {
+  it("parses cost event with null spend and duration", () => {
     const valid = {
       task_id: "01TASK",
       repo: "owner/repo",
       provider_id: "claude-code",
-      provider_type: "cli",
       operation: "reasoning",
-      tokens_in: null,
-      tokens_out: null,
       spend_usd: null,
-      usage_units: 100,
-      remaining: 900,
+      duration_ms: null,
     };
     expect(CostIncurredPayloadSchema.parse(valid)).toEqual(valid);
   });
@@ -259,7 +251,6 @@ describe("CostLimitReachedPayloadSchema", () => {
       limit_scope: null,
       current_spend: 5.0,
       limit_value: 5.0,
-      provider_type: "api",
       resets_at: null,
     };
     expect(CostLimitReachedPayloadSchema.parse(valid)).toEqual(valid);

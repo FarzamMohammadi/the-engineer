@@ -56,8 +56,8 @@ describe("Config hot-reload (integration)", () => {
     const dir = setupDir();
     const filePath = join(dir, "safety.yaml");
 
-    // Write initial config (matches SafetyConfigSchema: cost_limits.api.daily.cost_usd)
-    writeFileSync(filePath, "cost_limits:\n  api:\n    daily:\n      cost_usd: 10\n");
+    // Write initial config (matches SafetyConfigSchema: cost_limits.daily.cost_usd)
+    writeFileSync(filePath, "cost_limits:\n  daily:\n    cost_usd: 10\n");
 
     const results: ConfigReloadResult<SafetyConfig>[] = [];
 
@@ -69,7 +69,7 @@ describe("Config hot-reload (integration)", () => {
     await sleep(200);
 
     // Modify the file
-    writeFileSync(filePath, "cost_limits:\n  api:\n    daily:\n      cost_usd: 20\n");
+    writeFileSync(filePath, "cost_limits:\n  daily:\n    cost_usd: 20\n");
 
     // Wait for debounce (500ms) + OS file watch latency (can be slow on macOS)
     await waitFor(() => results.length > 0, 3_000);
@@ -79,7 +79,7 @@ describe("Config hot-reload (integration)", () => {
     const lastResult = results[results.length - 1];
     expect(lastResult?.ok).toBe(true);
     if (lastResult?.ok) {
-      expect(lastResult.config.cost_limits.api.daily.cost_usd).toBe(20);
+      expect(lastResult.config.cost_limits.daily.cost_usd).toBe(20);
     }
   });
 

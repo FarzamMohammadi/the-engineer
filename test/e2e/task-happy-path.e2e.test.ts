@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { CompletionResult, TriggerEvent } from "../../src/schemas/adapters.js";
+import type { InferenceResult, TriggerEvent } from "../../src/schemas/adapters.js";
 import type { Event } from "../../src/schemas/events.js";
 import {
   type IntegrationContext,
@@ -37,24 +37,17 @@ function makeTriggerEvent(overrides?: Partial<TriggerEvent>): TriggerEvent {
   };
 }
 
-/** Build a CompletionResult with the given JSON content (wrapped in agent loop format). */
-function makeResponse(json: Record<string, unknown>): CompletionResult {
+/** Build an InferenceResult with the given JSON content (wrapped in agent loop format). */
+function makeResponse(json: Record<string, unknown>): InferenceResult {
   return {
     content: JSON.stringify({ action: "done", result: json }),
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: {
-      tokens_in: 100,
-      tokens_out: 50,
-      spend_usd: 0.003,
-      remaining: null,
-      resets_at: null,
-    },
+    cost_usd: 0.003,
+    duration_ms: 100,
   };
 }
 
 /** Build 7 canned LLM responses for the full phase pipeline. */
-function makeFullPipelineResponses(): CompletionResult[] {
+function makeFullPipelineResponses(): InferenceResult[] {
   return [
     makeResponse({
       complexity: "moderate",
@@ -176,9 +169,8 @@ describe("E2E: Task happy path", () => {
     // One cost event per phase
     expect(costEvents.length).toBe(7);
     for (const event of costEvents) {
-      const payload = event.payload as { tokens_in: number; tokens_out: number };
-      expect(payload.tokens_in).toBe(100);
-      expect(payload.tokens_out).toBe(50);
+      const payload = event.payload as { spend_usd: number | null; duration_ms: number | null };
+      expect(payload.spend_usd).toBe(0.003);
     }
   });
 

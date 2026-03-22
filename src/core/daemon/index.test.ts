@@ -759,9 +759,10 @@ describe("Daemon", () => {
         payload: {
           task_id: "task-costly",
           limit_type: "daily",
+          limit_scope: null,
           current_spend: 100,
           limit_value: 100,
-          provider_type: "api",
+          resets_at: null,
         },
       });
 

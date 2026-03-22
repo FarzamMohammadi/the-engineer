@@ -1,7 +1,8 @@
 import {
-  type CompletionRequest,
-  CompletionRequestSchema,
-  type CompletionResult,
+  type InferenceRequest,
+  InferenceRequestSchema,
+  type InferenceResult,
+  InferenceResultSchema,
   type PluginManifest,
   PluginManifestSchema,
   type ToolResult,
@@ -115,48 +116,33 @@ export function createMockTask(overrides?: Partial<Task>): Task {
   });
 }
 
-// ── Completion Request ──────────────────────────────────────────────────────
+// ── Inference Request ──────────────────────────────────────────────────────
 
 /**
- * Create a Zod-valid CompletionRequest with sensible defaults.
+ * Create a Zod-valid InferenceRequest with sensible defaults.
  */
-export function createMockCompletionRequest(
-  overrides?: Partial<CompletionRequest>,
-): CompletionRequest {
-  return CompletionRequestSchema.parse({
+export function createMockInferenceRequest(
+  overrides?: Partial<InferenceRequest>,
+): InferenceRequest {
+  return InferenceRequestSchema.parse({
     prompt: "Mock prompt",
-    options: {
-      max_tokens: null,
-      temperature: null,
-      stop: null,
-      tools: null,
-    },
     ...overrides,
   });
 }
 
-// ── Completion Result ───────────────────────────────────────────────────────
+// ── Inference Result ───────────────────────────────────────────────────────
 
 /**
- * Create a valid CompletionResult with sensible defaults.
+ * Create a valid InferenceResult with sensible defaults.
  * Not Zod-parsed since it's a return value, but matches the schema shape.
  */
-export function createMockCompletionResult(
-  overrides?: Partial<CompletionResult>,
-): CompletionResult {
-  return {
-    content: "Mock completion response",
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: {
-      tokens_in: 100,
-      tokens_out: 50,
-      spend_usd: null,
-      remaining: null,
-      resets_at: null,
-    },
+export function createMockInferenceResult(overrides?: Partial<InferenceResult>): InferenceResult {
+  return InferenceResultSchema.parse({
+    content: "Mock inference response",
+    cost_usd: 0.01,
+    duration_ms: 100,
     ...overrides,
-  };
+  });
 }
 
 // ── Tool Result ─────────────────────────────────────────────────────────────

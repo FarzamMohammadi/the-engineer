@@ -1,7 +1,7 @@
 import type { ZodType } from "zod";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import type { ToolAdapter } from "../../adapters/tool.js";
-import { AdapterTypes, type CompletionResult } from "../../schemas/adapters.js";
+import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import {
   DemoPrepOutputSchema,
   ExecutionOutputSchema,
@@ -64,7 +64,7 @@ export function isRetryableError(error: unknown): boolean {
 /** LLM invocation, cost tracking, and response validation. */
 export interface LlmCaller {
   /** Call LLM through ActionPipeline. Throws on rejection or no plugin. */
-  callLlm(prompt: string, taskId: string, systemPrompt?: string | null): Promise<CompletionResult>;
+  callLlm(prompt: string, taskId: string, systemPrompt?: string | null): Promise<InferenceResult>;
   /** Run a phase through the agent loop (multi-turn LLM + tool execution). */
   runPhaseWithAgentLoop(
     phase: Phase,
@@ -73,8 +73,8 @@ export interface LlmCaller {
     initialPrompt: string,
     state: PipelineState,
   ): Promise<PhaseOutput>;
-  /** Emit cost.incurred event from completion usage data. */
-  emitCostIncurred(taskId: string, completion: CompletionResult): void;
+  /** Emit cost.incurred event from inference result. */
+  emitCostIncurred(taskId: string, result: InferenceResult): void;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     prompt: string,
     taskId: string,
     systemPrompt?: string | null,
-  ): Promise<CompletionResult> {
+  ): Promise<InferenceResult> {
     const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
     if (!llm) {
       throw new NoLlmPluginError();
@@ -94,22 +94,16 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
 
-    const pipelineResult = await ctx.actionPipeline.execute<CompletionResult>({
+    const pipelineResult = await ctx.actionPipeline.execute<InferenceResult>({
       taskId,
       actionClass: ActionClasses.read,
-      details: { operation: "llm_complete" },
+      details: { operation: "llm_infer" },
       requestedBy: "orchestrator",
       executeFn: () =>
-        llm.complete({
+        llm.infer({
           prompt,
           system_prompt: systemPrompt ?? null,
-          options: {
-            max_tokens: null,
-            temperature: null,
-            stop: null,
-            tools: null,
-            cwd: worktreePath,
-          },
+          cwd: worktreePath ?? null,
         }),
     });
 
@@ -127,7 +121,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     prompt: string,
     taskId: string,
     systemPrompt?: string | null,
-  ): Promise<CompletionResult> {
+  ): Promise<InferenceResult> {
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_LLM_RETRIES; attempt++) {
       try {
@@ -158,7 +152,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     throw lastError;
   }
 
-  function emitCostIncurred(taskId: string, completion: CompletionResult): void {
+  function emitCostIncurred(taskId: string, result: InferenceResult): void {
     ctx.eventBus.publish({
       type: "cost.incurred",
       source: "orchestrator",
@@ -167,13 +161,9 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         task_id: taskId,
         repo: "",
         provider_id: "llm",
-        provider_type: "api",
         operation: "phase_completion",
-        tokens_in: completion.usage.tokens_in,
-        tokens_out: completion.usage.tokens_out,
-        spend_usd: completion.usage.spend_usd,
-        usage_units: null,
-        remaining: completion.usage.remaining,
+        spend_usd: result.cost_usd,
+        duration_ms: result.duration_ms,
       },
     } satisfies PublishInput<"cost.incurred">);
   }
@@ -187,13 +177,9 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         task_id: taskId,
         repo: "",
         provider_id: "llm",
-        provider_type: "api",
         operation: `agent_loop:${phase}`,
-        tokens_in: loopResult.totalCost.tokens_in,
-        tokens_out: loopResult.totalCost.tokens_out,
         spend_usd: loopResult.totalCost.spend_usd,
-        usage_units: null,
-        remaining: null,
+        duration_ms: loopResult.totalCost.duration_ms,
       },
     } satisfies PublishInput<"cost.incurred">);
   }
@@ -233,17 +219,14 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
         store.observe(
           "llm_call",
-          "completion",
+          "inference",
           {
             prompt_length: trace.prompt_length,
             response_length: trace.response_length,
-            tokens_in: trace.tokens_in,
-            tokens_out: trace.tokens_out,
-            spend_usd: trace.spend_usd,
-            latency_ms: trace.latency_ms,
+            cost_usd: trace.cost_usd,
+            duration_ms: trace.duration_ms,
             provider_id: "llm",
             model_id: null,
-            finish_reason: null,
             prompt_ref: promptRef,
             response_ref: responseRef,
             iteration: trace.iteration,
@@ -411,9 +394,8 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       const actionsFailed = loopResult.actions.filter((a) => a.result && !a.result.success).length;
       phaseSpan.end({
         llm_iterations: loopResult.iterations,
-        tokens_in: loopResult.totalCost.tokens_in,
-        tokens_out: loopResult.totalCost.tokens_out,
         spend_usd: loopResult.totalCost.spend_usd,
+        duration_ms: loopResult.totalCost.duration_ms,
         actions_executed: actionsExecuted,
         actions_failed: actionsFailed,
         outcome: "completed",

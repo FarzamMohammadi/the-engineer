@@ -1,9 +1,8 @@
 cost_limits:
-  api:
-    per_task:
-      cost_usd: 5.0
-    daily:
-      cost_usd: 50.0
+  per_task:
+    cost_usd: 5.0
+  daily:
+    cost_usd: 50.0
 scope:
   repos:
     allowed:

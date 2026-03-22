@@ -659,12 +659,10 @@ function makeSafeBundle() {
     >,
     safety: {
       cost_limits: {
-        api: {
-          per_task: { cost_usd: null },
-          daily: { cost_usd: null },
-          monthly: { cost_usd: null },
-        },
-        cli: {},
+        per_task: { cost_usd: null },
+        daily: { cost_usd: null },
+        monthly: { cost_usd: null },
+        providers: {},
       },
       scope: {
         repos: { allowed: null },

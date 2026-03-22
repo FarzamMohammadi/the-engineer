@@ -182,40 +182,26 @@ export const ReconciliationResultSchema = z.object({
 export type ReconciliationResult = z.infer<typeof ReconciliationResultSchema>;
 
 // ── LLM Adapter ─────────────────────────────────────────────────────────────────
+// CLI-only contract. LLMs are inference-only (D143) — prompt in, text out.
+// Plugin-specific details (flags, output parsing) belong in each plugin, not here.
 
-export const CompletionRequestSchema = z.object({
+export const InferenceRequestSchema = z.object({
   prompt: z.string(),
   system_prompt: z.string().nullable().default(null),
-  options: z.object({
-    max_tokens: z.number().int().positive().nullable(),
-    temperature: z.number().min(0).max(1).nullable(),
-    stop: z.array(z.string()).nullable(),
-    tools: z.array(z.record(z.unknown())).nullable(),
-    /** Working directory for the LLM process. CLI-based plugins use this as CWD
-     *  so the CLI loads the target repo's project context, not the daemon's. */
-    cwd: z.string().nullable().optional(),
-  }),
+  /** Working directory for the CLI process. Plugins use this as CWD
+   *  so the CLI loads the target repo's project context, not the daemon's. */
+  cwd: z.string().nullable().default(null),
 });
-export type CompletionRequest = z.infer<typeof CompletionRequestSchema>;
+export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
 
-export const CompletionResultSchema = z.object({
+export const InferenceResultSchema = z.object({
   content: z.string(),
-  tool_calls: z.array(z.record(z.unknown())).nullable(),
-  finish_reason: z.enum(["stop", "max_tokens", "tool_use"]),
-  usage: z.object({
-    tokens_in: z.number().int(),
-    tokens_out: z.number().int(),
-    spend_usd: z.number().nullable(),
-    remaining: z.number().int().nullable(),
-    resets_at: z.string().datetime().nullable(),
-  }),
+  cost_usd: z.number().nullable(),
+  duration_ms: z.number().int(),
 });
-export type CompletionResult = z.infer<typeof CompletionResultSchema>;
+export type InferenceResult = z.infer<typeof InferenceResultSchema>;
 
 export const LLMCapabilitiesSchema = z.object({
-  max_context: z.number().int().positive(),
-  supports_tools: z.boolean(),
-  supports_vision: z.boolean(),
   model_id: z.string(),
 });
 export type LLMCapabilities = z.infer<typeof LLMCapabilitiesSchema>;

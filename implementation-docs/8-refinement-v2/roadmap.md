@@ -12,19 +12,11 @@ Confirmed happy path works end-to-end after Layer 7 restructuring: trigger → i
 
 ---
 
-## Dashboard — Simple Rebuild
+## Dashboard — Simple Rebuild (DONE)
 
-Before refining anything else, we need eyes on everything. Rebuild the existing simple dashboard to expose *maximum data* — every LLM prompt sent, every response back, every tool call, every phase transition, every cost event, every decision the agent loop makes. Raw, ugly, functional. No build step — simple HTML files.
+8-tab instrument panel with SSE real-time streaming. Audited Observer (13 types), EventBus (35 types), agent loop callbacks. Backend: `/api/observations` and `/api/stream` (SSE) endpoints. Frontend: complete rewrite with Overview, Tasks, Agent Loop, Observations, Events, Cost, Decisions, Errors tabs. Flicker-free 3-second auto-refresh.
 
-This becomes our instrument panel for all refinement that follows.
-
-### Verify Data Export Coverage
-
-Audit what the Observer, EventBus, and agent loop callbacks actually export vs. what we designed them to export. Identify gaps — data we generate but don't surface.
-
-### Rebuild Simple Dashboard
-
-Rebuild the current dashboard to show everything we can. SSE for real-time. Prioritize completeness over aesthetics. This is our dev tool, not a product yet.
+Dashboard testing deferred entirely to the Dashboard Full Rebuild at the end of Layer 8 — no incremental testing on the simple dashboard.
 
 ---
 
@@ -43,6 +35,24 @@ New adapter contract designed around CLI tool patterns: process spawning, stdin/
 ### Multi-CLI Plugin Support
 
 Ensure the plugin architecture supports multiple CLI tools cleanly. Each CLI tool is a separate plugin implementing the new adapter. Users configure which one(s) to use. OpenCode serves as the "bring your own API key" option for OSS users.
+
+---
+
+## Multi-CLI Plugin Integration
+
+With the CLI-only adapter contract in place, build and test plugins for the additional CLI tools. All three CLIs (Claude Code, OpenCode, Gemini CLI) are installed locally. Each CLI tool gets its own plugin implementing the same adapter contract — different flags and output parsing, same core pattern.
+
+### OpenCode Plugin
+
+Build plugin for OpenCode CLI. Test against a real repo.
+
+### Gemini CLI Plugin
+
+Build plugin for Gemini CLI. Test against a real repo.
+
+### Cross-Plugin Validation
+
+Verify all three plugins pass the contract compliance suite and produce equivalent results for the same prompts. Validate config switching between providers.
 
 ---
 

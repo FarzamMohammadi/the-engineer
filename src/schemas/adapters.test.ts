@@ -6,13 +6,13 @@ import {
   AdapterTypeSchema,
   BranchProtectionSchema,
   CommentResultSchema,
-  CompletionRequestSchema,
-  CompletionResultSchema,
   ContactInfoSchema,
   ContactSchema,
   FormattedMessageSchema,
   HealthStatusSchema,
   InboundMessageSchema,
+  InferenceRequestSchema,
+  InferenceResultSchema,
   InitResultSchema,
   IssueOptionsSchema,
   IssueResultSchema,
@@ -425,122 +425,76 @@ describe("ReconciliationResultSchema", () => {
 
 // ── LLM Adapter ─────────────────────────────────────────────────────────────────
 
-describe("CompletionRequestSchema", () => {
+describe("InferenceRequestSchema", () => {
   it("parses valid request", () => {
-    const req = CompletionRequestSchema.parse({
+    const req = InferenceRequestSchema.parse({
       prompt: "Explain this code",
-      options: {
-        max_tokens: 4096,
-        temperature: 0.7,
-        stop: null,
-        tools: null,
-      },
     });
-    expect(req.options.max_tokens).toBe(4096);
-  });
-
-  it("accepts null option fields", () => {
-    const req = CompletionRequestSchema.parse({
-      prompt: "test",
-      options: { max_tokens: null, temperature: null, stop: null, tools: null },
-    });
-    expect(req.options.max_tokens).toBeNull();
-  });
-
-  it("rejects temperature outside 0-1", () => {
-    expect(() =>
-      CompletionRequestSchema.parse({
-        prompt: "test",
-        options: { max_tokens: null, temperature: 1.5, stop: null, tools: null },
-      }),
-    ).toThrow();
+    expect(req.prompt).toBe("Explain this code");
   });
 
   it("system_prompt defaults to null when omitted", () => {
-    const req = CompletionRequestSchema.parse({
+    const req = InferenceRequestSchema.parse({
       prompt: "test",
-      options: { max_tokens: null, temperature: null, stop: null, tools: null },
     });
     expect(req.system_prompt).toBeNull();
   });
 
   it("accepts explicit system_prompt string", () => {
-    const req = CompletionRequestSchema.parse({
+    const req = InferenceRequestSchema.parse({
       prompt: "test",
       system_prompt: "You are a code reviewer.",
-      options: { max_tokens: null, temperature: null, stop: null, tools: null },
     });
     expect(req.system_prompt).toBe("You are a code reviewer.");
   });
+
+  it("cwd defaults to null when omitted", () => {
+    const req = InferenceRequestSchema.parse({
+      prompt: "test",
+    });
+    expect(req.cwd).toBeNull();
+  });
+
+  it("accepts explicit cwd string", () => {
+    const req = InferenceRequestSchema.parse({
+      prompt: "test",
+      cwd: "/tmp/worktree/42",
+    });
+    expect(req.cwd).toBe("/tmp/worktree/42");
+  });
 });
 
-describe("CompletionResultSchema", () => {
-  it("parses valid API result", () => {
-    const result = CompletionResultSchema.parse({
+describe("InferenceResultSchema", () => {
+  it("parses valid result with cost", () => {
+    const result = InferenceResultSchema.parse({
       content: "Here is the explanation...",
-      tool_calls: null,
-      finish_reason: "stop",
-      usage: {
-        tokens_in: 1000,
-        tokens_out: 500,
-        spend_usd: 0.015,
-        remaining: null,
-        resets_at: null,
-      },
+      cost_usd: 0.015,
+      duration_ms: 1200,
     });
-    expect(result.usage.spend_usd).toBe(0.015);
+    expect(result.cost_usd).toBe(0.015);
+    expect(result.duration_ms).toBe(1200);
   });
 
-  it("parses valid CLI result", () => {
-    const result = CompletionResultSchema.parse({
+  it("accepts null cost_usd", () => {
+    const result = InferenceResultSchema.parse({
       content: "output",
-      tool_calls: null,
-      finish_reason: "stop",
-      usage: {
-        tokens_in: 1000,
-        tokens_out: 500,
-        spend_usd: null,
-        remaining: 45000,
-        resets_at: "2026-03-11T00:00:00.000Z",
-      },
+      cost_usd: null,
+      duration_ms: 500,
     });
-    expect(result.usage.remaining).toBe(45000);
-  });
-
-  it("accepts valid finish reasons", () => {
-    for (const reason of ["stop", "max_tokens", "tool_use"]) {
-      expect(
-        CompletionResultSchema.parse({
-          content: "x",
-          tool_calls: null,
-          finish_reason: reason,
-          usage: { tokens_in: 0, tokens_out: 0, spend_usd: null, remaining: null, resets_at: null },
-        }).finish_reason,
-      ).toBe(reason);
-    }
+    expect(result.cost_usd).toBeNull();
   });
 });
 
 describe("LLMCapabilitiesSchema", () => {
   it("parses valid capabilities", () => {
     const caps = LLMCapabilitiesSchema.parse({
-      max_context: 200000,
-      supports_tools: true,
-      supports_vision: true,
       model_id: "claude-sonnet-4-5-20250514",
     });
-    expect(caps.max_context).toBe(200000);
+    expect(caps.model_id).toBe("claude-sonnet-4-5-20250514");
   });
 
-  it("rejects non-positive max_context", () => {
-    expect(() =>
-      LLMCapabilitiesSchema.parse({
-        max_context: 0,
-        supports_tools: true,
-        supports_vision: false,
-        model_id: "test",
-      }),
-    ).toThrow();
+  it("rejects missing model_id", () => {
+    expect(() => LLMCapabilitiesSchema.parse({})).toThrow();
   });
 });
 

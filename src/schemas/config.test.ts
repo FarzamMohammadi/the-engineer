@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ApiLimitSchema,
   AutonomyBoundariesSchema,
   AutonomyDecisionSchema,
   AutonomyLevelSchema,
   CleanupConfigSchema,
-  CliLimitSchema,
+  CostLimitValueSchema,
   CostLimitsSchema,
   DaemonConfigSchema,
   DecompositionConfigSchema,
@@ -20,6 +19,7 @@ import {
   OrchestratorConfigSchema,
   PhasesConfigSchema,
   PrConfigSchema,
+  ProviderLimitSchema,
   QuestionBatchingConfigSchema,
   QuietHoursConfigSchema,
   ResponseTimeoutSchema,
@@ -245,38 +245,37 @@ describe("WorkspaceConfigSchema", () => {
 
 // ── Safety Config ───────────────────────────────────────────────────────────────
 
-describe("ApiLimitSchema", () => {
+describe("CostLimitValueSchema", () => {
   it("produces valid defaults from empty input", () => {
-    const config = ApiLimitSchema.parse({});
+    const config = CostLimitValueSchema.parse({});
     expect(config.cost_usd).toBeNull();
   });
 
   it("accepts positive cost_usd", () => {
-    const config = ApiLimitSchema.parse({ cost_usd: 10.5 });
+    const config = CostLimitValueSchema.parse({ cost_usd: 10.5 });
     expect(config.cost_usd).toBe(10.5);
   });
 
   it("rejects non-positive cost_usd", () => {
-    expect(() => ApiLimitSchema.parse({ cost_usd: 0 })).toThrow();
-    expect(() => ApiLimitSchema.parse({ cost_usd: -1 })).toThrow();
+    expect(() => CostLimitValueSchema.parse({ cost_usd: 0 })).toThrow();
+    expect(() => CostLimitValueSchema.parse({ cost_usd: -1 })).toThrow();
   });
 });
 
-describe("CliLimitSchema", () => {
+describe("ProviderLimitSchema", () => {
   it("produces valid defaults from empty input", () => {
-    const config = CliLimitSchema.parse({});
+    const config = ProviderLimitSchema.parse({});
     expect(config.daily_requests).toBeNull();
-    expect(config.daily_tokens).toBeNull();
   });
 });
 
 describe("CostLimitsSchema", () => {
   it("produces valid defaults from empty input", () => {
     const config = CostLimitsSchema.parse({});
-    expect(config.api.per_task.cost_usd).toBeNull();
-    expect(config.api.daily.cost_usd).toBeNull();
-    expect(config.api.monthly.cost_usd).toBeNull();
-    expect(config.cli).toEqual({});
+    expect(config.per_task.cost_usd).toBeNull();
+    expect(config.daily.cost_usd).toBeNull();
+    expect(config.monthly.cost_usd).toBeNull();
+    expect(config.providers).toEqual({});
   });
 });
 
@@ -398,9 +397,9 @@ describe("SafetyConfigSchema", () => {
   it("produces valid config from empty input (conservative defaults)", () => {
     const config = SafetyConfigSchema.parse({});
     // Cost limits default to null (unlimited but tracked)
-    expect(config.cost_limits.api.per_task.cost_usd).toBeNull();
-    expect(config.cost_limits.api.daily.cost_usd).toBeNull();
-    expect(config.cost_limits.cli).toEqual({});
+    expect(config.cost_limits.per_task.cost_usd).toBeNull();
+    expect(config.cost_limits.daily.cost_usd).toBeNull();
+    expect(config.cost_limits.providers).toEqual({});
     // Scope defaults to safe patterns
     expect(config.scope.branches.create_pattern).toBe("engineer/.*");
     expect(config.scope.files.exclude_patterns).toContain(".env*");
@@ -416,15 +415,13 @@ describe("SafetyConfigSchema", () => {
   it("allows full override of all sections", () => {
     const config = SafetyConfigSchema.parse({
       cost_limits: {
-        api: {
-          per_task: { cost_usd: 5 },
-          daily: { cost_usd: 50 },
-          monthly: { cost_usd: 200 },
-        },
+        per_task: { cost_usd: 5 },
+        daily: { cost_usd: 50 },
+        monthly: { cost_usd: 200 },
       },
       merge: { auto_merge_after_approval: { default: true } },
     });
-    expect(config.cost_limits.api.per_task.cost_usd).toBe(5);
+    expect(config.cost_limits.per_task.cost_usd).toBe(5);
     expect(config.merge.auto_merge_after_approval.default).toBe(true);
   });
 });

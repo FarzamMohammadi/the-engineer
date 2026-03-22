@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CompletionRequestSchema,
-  CompletionResultSchema,
+  InferenceRequestSchema,
+  InferenceResultSchema,
   PluginManifestSchema,
   ToolResultSchema,
   TriggerEventSchema,
@@ -10,9 +10,9 @@ import {
 import { EventSchema } from "../../src/schemas/events.js";
 import { TaskSchema } from "../../src/schemas/task.js";
 import {
-  createMockCompletionRequest,
-  createMockCompletionResult,
   createMockEvent,
+  createMockInferenceRequest,
+  createMockInferenceResult,
   createMockManifest,
   createMockTask,
   createMockToolResult,
@@ -93,28 +93,28 @@ describe("mock-factories", () => {
     });
   });
 
-  describe("createMockCompletionRequest", () => {
-    it("produces a Zod-valid CompletionRequest", () => {
-      const request = createMockCompletionRequest();
-      expect(() => CompletionRequestSchema.parse(request)).not.toThrow();
+  describe("createMockInferenceRequest", () => {
+    it("produces a Zod-valid InferenceRequest", () => {
+      const request = createMockInferenceRequest();
+      expect(() => InferenceRequestSchema.parse(request)).not.toThrow();
     });
 
     it("applies overrides", () => {
-      const request = createMockCompletionRequest({ prompt: "Custom prompt" });
+      const request = createMockInferenceRequest({ prompt: "Custom prompt" });
       expect(request.prompt).toBe("Custom prompt");
     });
   });
 
-  describe("createMockCompletionResult", () => {
-    it("matches CompletionResult schema shape", () => {
-      const result = createMockCompletionResult();
-      expect(() => CompletionResultSchema.parse(result)).not.toThrow();
+  describe("createMockInferenceResult", () => {
+    it("matches InferenceResult schema shape", () => {
+      const result = createMockInferenceResult();
+      expect(() => InferenceResultSchema.parse(result)).not.toThrow();
     });
 
-    it("always includes usage data", () => {
-      const result = createMockCompletionResult();
-      expect(result.usage.tokens_in).toBeGreaterThanOrEqual(0);
-      expect(result.usage.tokens_out).toBeGreaterThanOrEqual(0);
+    it("always includes cost and duration data", () => {
+      const result = createMockInferenceResult();
+      expect(result).toHaveProperty("cost_usd");
+      expect(result.duration_ms).toBeGreaterThanOrEqual(0);
     });
   });
 

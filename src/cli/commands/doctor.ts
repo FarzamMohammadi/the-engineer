@@ -546,7 +546,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
 
   // No cost limits set
   const { cost_limits } = bundle.safety;
-  if (cost_limits.api.daily.cost_usd === null && cost_limits.api.monthly.cost_usd === null) {
+  if (cost_limits.daily.cost_usd === null && cost_limits.monthly.cost_usd === null) {
     checks.push({
       label: "Cost limits",
       status: "warn",

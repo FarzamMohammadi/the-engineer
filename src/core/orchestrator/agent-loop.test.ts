@@ -1,17 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import type { CompletionResult } from "../../schemas/adapters.js";
+import type { InferenceResult } from "../../schemas/adapters.js";
 import type { ActionResult, PhaseToolConfig } from "../../schemas/orchestrator.js";
 import { type AgentLoopConfig, extractJson, parseAction, runAgentLoop } from "./agent-loop.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeCompletion(content: string): CompletionResult {
+function makeCompletion(content: string): InferenceResult {
   return {
     content,
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: { tokens_in: 10, tokens_out: 5, spend_usd: 0.001, remaining: null, resets_at: null },
+    cost_usd: 0.001,
+    duration_ms: 100,
   };
 }
 
@@ -240,19 +239,17 @@ describe("runAgentLoop", () => {
 
     const result = await runAgentLoop(makeConfig(), callLlm, execAction);
 
-    expect(result.totalCost.tokens_in).toBe(20); // 10 + 10
-    expect(result.totalCost.tokens_out).toBe(10); // 5 + 5
     expect(result.totalCost.spend_usd).toBe(0.002); // 0.001 + 0.001
+    expect(result.totalCost.duration_ms).toBe(200); // 100 + 100
   });
 
-  it("handles null spend_usd without accumulation error", async () => {
-    const nullSpendCompletion: CompletionResult = {
+  it("handles null cost_usd without accumulation error", async () => {
+    const nullCostCompletion: InferenceResult = {
       content: '{"action": "done", "result": {}}',
-      tool_calls: null,
-      finish_reason: "stop",
-      usage: { tokens_in: 10, tokens_out: 5, spend_usd: null, remaining: null, resets_at: null },
+      cost_usd: null,
+      duration_ms: 50,
     };
-    const callLlm = vi.fn().mockResolvedValue(nullSpendCompletion);
+    const callLlm = vi.fn().mockResolvedValue(nullCostCompletion);
     const execAction = vi.fn();
 
     const result = await runAgentLoop(makeConfig(), callLlm, execAction);

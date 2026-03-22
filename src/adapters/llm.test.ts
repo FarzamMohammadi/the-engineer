@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  CompletionRequest,
-  CompletionResult,
   HealthStatus,
+  InferenceRequest,
+  InferenceResult,
   InitResult,
   LLMCapabilities,
   PluginManifest,
@@ -13,31 +13,21 @@ import { AdapterMethodError, createAdapterError } from "./errors.js";
 import { LLMAdapter } from "./llm.js";
 
 class TestLLMAdapter extends LLMAdapter {
-  completionResult: CompletionResult = {
+  inferResult: InferenceResult = {
     content: "Hello from LLM",
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: {
-      tokens_in: 100,
-      tokens_out: 50,
-      spend_usd: 0.01,
-      remaining: null,
-      resets_at: null,
-    },
+    cost_usd: 0.01,
+    duration_ms: 150,
   };
-  completeError: Error | null = null;
+  inferError: Error | null = null;
   capabilities: LLMCapabilities = {
-    max_context: 200_000,
-    supports_tools: true,
-    supports_vision: true,
     model_id: "test-model",
   };
 
-  protected doComplete(_request: CompletionRequest): Promise<CompletionResult> {
-    if (this.completeError) {
-      return Promise.reject(this.completeError);
+  protected doInfer(_request: InferenceRequest): Promise<InferenceResult> {
+    if (this.inferError) {
+      return Promise.reject(this.inferError);
     }
-    return Promise.resolve(this.completionResult);
+    return Promise.resolve(this.inferResult);
   }
 
   getCapabilities(): LLMCapabilities {
@@ -74,15 +64,10 @@ function createManifest(): PluginManifest {
   };
 }
 
-const testRequest: CompletionRequest = {
+const testRequest: InferenceRequest = {
   prompt: "Hello, world",
   system_prompt: null,
-  options: {
-    max_tokens: null,
-    temperature: null,
-    stop: null,
-    tools: null,
-  },
+  cwd: null,
 };
 
 describe("LLMAdapter", () => {
@@ -92,24 +77,24 @@ describe("LLMAdapter", () => {
     expect(adapter).toBeInstanceOf(LLMAdapter);
   });
 
-  describe("complete (template-wrapped)", () => {
-    it("returns CompletionResult from doComplete on success", async () => {
+  describe("infer (template-wrapped)", () => {
+    it("returns InferenceResult from doInfer on success", async () => {
       const adapter = new TestLLMAdapter();
       adapter.manifest = createManifest();
-      const result = await adapter.complete(testRequest);
+      const result = await adapter.infer(testRequest);
       expect(result.content).toBe("Hello from LLM");
-      expect(result.usage.tokens_in).toBe(100);
+      expect(result.cost_usd).toBe(0.01);
     });
 
     it("rethrows AdapterMethodError as-is", async () => {
       const adapter = new TestLLMAdapter();
       adapter.manifest = createManifest();
-      adapter.completeError = new AdapterMethodError(
+      adapter.inferError = new AdapterMethodError(
         createAdapterError("context_exceeded", "Prompt too long"),
       );
 
       try {
-        await adapter.complete(testRequest);
+        await adapter.infer(testRequest);
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterMethodError);
@@ -122,10 +107,10 @@ describe("LLMAdapter", () => {
     it("wraps unknown errors as internal_error", async () => {
       const adapter = new TestLLMAdapter();
       adapter.manifest = createManifest();
-      adapter.completeError = new Error("API timeout");
+      adapter.inferError = new Error("API timeout");
 
       try {
-        await adapter.complete(testRequest);
+        await adapter.infer(testRequest);
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterMethodError);
@@ -142,8 +127,6 @@ describe("LLMAdapter", () => {
       const adapter = new TestLLMAdapter();
       adapter.manifest = createManifest();
       const caps = adapter.getCapabilities();
-      expect(caps.max_context).toBe(200_000);
-      expect(caps.supports_tools).toBe(true);
       expect(caps.model_id).toBe("test-model");
     });
   });

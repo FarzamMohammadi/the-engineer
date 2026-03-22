@@ -409,7 +409,7 @@ export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 // safety.yaml is missing or when default values are used. Conservative defaults
 // ensure safe startup, but operators should always configure safety explicitly.
 
-export const ApiLimitSchema = z.object({
+export const CostLimitValueSchema = z.object({
   cost_usd: z
     .number()
     .positive()
@@ -417,9 +417,9 @@ export const ApiLimitSchema = z.object({
     .default(null)
     .describe("USD spending limit. null = unlimited (no limit enforced)."),
 });
-export type ApiLimit = z.infer<typeof ApiLimitSchema>;
+export type CostLimitValue = z.infer<typeof CostLimitValueSchema>;
 
-export const CliLimitSchema = z.object({
+export const ProviderLimitSchema = z.object({
   daily_requests: z
     .number()
     .int()
@@ -427,28 +427,17 @@ export const CliLimitSchema = z.object({
     .nullable()
     .default(null)
     .describe("Max CLI requests per day. null = unlimited."),
-  daily_tokens: z
-    .number()
-    .int()
-    .positive()
-    .nullable()
-    .default(null)
-    .describe("Max CLI tokens per day. null = unlimited."),
 });
-export type CliLimit = z.infer<typeof CliLimitSchema>;
+export type ProviderLimit = z.infer<typeof ProviderLimitSchema>;
 
 export const CostLimitsSchema = z.object({
-  api: z
-    .object({
-      per_task: ApiLimitSchema.default({}),
-      daily: ApiLimitSchema.default({}),
-      monthly: ApiLimitSchema.default({}),
-    })
-    .default({}),
-  cli: z
-    .record(CliLimitSchema)
+  per_task: CostLimitValueSchema.default({}),
+  daily: CostLimitValueSchema.default({}),
+  monthly: CostLimitValueSchema.default({}),
+  providers: z
+    .record(ProviderLimitSchema)
     .default({})
-    .describe("Per-CLI-provider cost limits. Keys are plugin IDs (e.g. 'claude-code-llm')."),
+    .describe("Per-provider limits. Keys are plugin IDs (e.g. 'claude-code-llm')."),
 });
 export type CostLimits = z.infer<typeof CostLimitsSchema>;
 

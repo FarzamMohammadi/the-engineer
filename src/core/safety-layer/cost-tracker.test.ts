@@ -41,13 +41,9 @@ function simulateCostEvent(eb: EventBus, overrides: Partial<CostIncurredPayload>
     task_id: "task-1",
     repo: "owner/repo",
     provider_id: "claude-api",
-    provider_type: "api",
     operation: "llm_call",
-    tokens_in: 100,
-    tokens_out: 200,
     spend_usd: 0.01,
-    usage_units: null,
-    remaining: null,
+    duration_ms: null,
   };
   return eb.publish({
     type: "cost.incurred" as const,
@@ -119,15 +115,11 @@ describe("CostTracker — accumulation", () => {
     expect(tracker.getCostStatus("task-1").per_task_usd).toBeCloseTo(0.05);
   });
 
-  it("tracks CLI usage without affecting API spend", () => {
+  it("tracks provider usage without affecting spend when spend_usd is null", () => {
     const { tracker, eventBus: eb } = createTracker();
     simulateCostEvent(eb, {
-      provider_type: "cli",
       provider_id: "claude-code",
       spend_usd: null,
-      usage_units: 1,
-      tokens_in: 500,
-      tokens_out: 300,
     });
 
     expect(tracker.getCostStatus("task-1").daily_usd).toBe(0);
@@ -211,7 +203,7 @@ describe("CostTracker — per_task cleanup on terminal state", () => {
 describe("CostTracker — limit detection", () => {
   it("emits cost.limit_reached when per-task limit hit", () => {
     const { eventBus: eb, db } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 0.1 } } },
+      cost_limits: { per_task: { cost_usd: 0.1 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.12 });
 
@@ -222,7 +214,7 @@ describe("CostTracker — limit detection", () => {
 
   it("emits cost.limit_reached when daily limit hit", () => {
     const { eventBus: eb, db } = createTracker({
-      cost_limits: { api: { daily: { cost_usd: 0.2 } } },
+      cost_limits: { daily: { cost_usd: 0.2 } },
     });
     simulateCostEvent(eb, { spend_usd: 0.12 });
     simulateCostEvent(eb, { spend_usd: 0.12 });
@@ -234,11 +226,9 @@ describe("CostTracker — limit detection", () => {
   it("does not emit when limits are null", () => {
     const { eventBus: eb, db } = createTracker({
       cost_limits: {
-        api: {
-          per_task: { cost_usd: null },
-          daily: { cost_usd: null },
-          monthly: { cost_usd: null },
-        },
+        per_task: { cost_usd: null },
+        daily: { cost_usd: null },
+        monthly: { cost_usd: null },
       },
     });
     simulateCostEvent(eb, { spend_usd: 100.0 });
@@ -246,25 +236,21 @@ describe("CostTracker — limit detection", () => {
     expect(getEmittedEvents(db, "cost.limit_reached")).toHaveLength(0);
   });
 
-  it("detects CLI daily_requests limit", () => {
+  it("detects provider daily_requests limit", () => {
     const { eventBus: eb, db } = createTracker({
-      cost_limits: { cli: { "claude-code": { daily_requests: 2 } } },
+      cost_limits: { providers: { "claude-code": { daily_requests: 2 } } },
     });
     simulateCostEvent(eb, {
-      provider_type: "cli",
       provider_id: "claude-code",
       spend_usd: null,
-      usage_units: 1,
     });
     simulateCostEvent(eb, {
-      provider_type: "cli",
       provider_id: "claude-code",
       spend_usd: null,
-      usage_units: 1,
     });
 
     const events = getEmittedEvents(db, "cost.limit_reached");
-    expect(events.some((e) => e.payload["provider_type"] === "cli")).toBe(true);
+    expect(events.some((e) => e.payload["limit_scope"] === "claude-code")).toBe(true);
   });
 });
 
@@ -273,7 +259,7 @@ describe("CostTracker — limit detection", () => {
 describe("CostTracker — checkCostLimits", () => {
   it("returns deny verdict when per-task limit breached", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 0.05 } } },
+      cost_limits: { per_task: { cost_usd: 0.05 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
 
@@ -284,7 +270,7 @@ describe("CostTracker — checkCostLimits", () => {
 
   it("returns null verdict and populates warnings when approaching limit", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.85 });
 
@@ -296,7 +282,7 @@ describe("CostTracker — checkCostLimits", () => {
 
   it("returns null verdict when within limits", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
 
@@ -309,7 +295,7 @@ describe("CostTracker — checkCostLimits", () => {
 describe("CostTracker — isAnyLimitBreached", () => {
   it("returns true when per-task limit breached", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 0.05 } } },
+      cost_limits: { per_task: { cost_usd: 0.05 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
 
@@ -318,7 +304,7 @@ describe("CostTracker — isAnyLimitBreached", () => {
 
   it("returns false when within limits", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
 
@@ -414,7 +400,7 @@ describe("CostTracker — paginated replay", () => {
 describe("CostTracker — updateLimits", () => {
   it("new limits take effect immediately", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.5 });
 
@@ -423,7 +409,7 @@ describe("CostTracker — updateLimits", () => {
 
     // Lower limit to $0.40
     const newConfig = SafetyConfigSchema.parse({
-      cost_limits: { api: { per_task: { cost_usd: 0.4 } } },
+      cost_limits: { per_task: { cost_usd: 0.4 } },
     });
     tracker.updateLimits(newConfig.cost_limits);
 
@@ -437,7 +423,7 @@ describe("CostTracker — updateLimits", () => {
 describe("CostTracker — getCostStatus warnings", () => {
   it("includes warning when approaching per-task limit", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 1.0 } } },
+      cost_limits: { per_task: { cost_usd: 1.0 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.85 });
 
@@ -448,7 +434,7 @@ describe("CostTracker — getCostStatus warnings", () => {
 
   it("no warnings when well within limits", () => {
     const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { api: { per_task: { cost_usd: 10.0 } } },
+      cost_limits: { per_task: { cost_usd: 10.0 } },
     });
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
 

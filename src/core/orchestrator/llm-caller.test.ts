@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import type { CompletionResult } from "../../schemas/adapters.js";
+import type { InferenceResult } from "../../schemas/adapters.js";
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
 import type { OrchestratorContext } from "./types.js";
@@ -68,12 +68,11 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
   };
 }
 
-function makeCompletion(content: string): CompletionResult {
+function makeCompletion(content: string): InferenceResult {
   return {
     content,
-    tool_calls: null,
-    finish_reason: "stop",
-    usage: { tokens_in: 100, tokens_out: 50, spend_usd: 0.01, remaining: null, resets_at: null },
+    cost_usd: 0.01,
+    duration_ms: 150,
   };
 }
 
@@ -84,8 +83,8 @@ describe("LlmCaller", () => {
     it("calls LLM through ActionPipeline successfully", async () => {
       const completion = makeCompletion("hello");
       const fakeLlm = {
-        complete: vi.fn().mockResolvedValue(completion),
-        getCapabilities: vi.fn().mockReturnValue({ max_context: 128_000 }),
+        infer: vi.fn().mockResolvedValue(completion),
+        getCapabilities: vi.fn().mockReturnValue({ model_id: "test-model" }),
       };
       const ctx = createMockContext();
       (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeLlm);
@@ -94,7 +93,7 @@ describe("LlmCaller", () => {
       const result = await caller.callLlm("test prompt", "task-001");
 
       expect(result.content).toBe("hello");
-      expect(fakeLlm.complete).toHaveBeenCalledOnce();
+      expect(fakeLlm.infer).toHaveBeenCalledOnce();
     });
 
     it("throws when no LLM plugin is registered", async () => {
@@ -106,7 +105,7 @@ describe("LlmCaller", () => {
 
     it("throws when pipeline rejects the call", async () => {
       const fakeLlm = {
-        complete: vi.fn().mockResolvedValue(makeCompletion("ok")),
+        infer: vi.fn().mockResolvedValue(makeCompletion("ok")),
         getCapabilities: vi.fn(),
       };
       const ctx = createMockContext();
@@ -122,7 +121,7 @@ describe("LlmCaller", () => {
 
     it("retries on transient errors", async () => {
       const fakeLlm = {
-        complete: vi
+        infer: vi
           .fn()
           .mockRejectedValueOnce(new Error("503 service unavailable"))
           .mockResolvedValueOnce(makeCompletion("recovered")),
@@ -135,12 +134,12 @@ describe("LlmCaller", () => {
       const result = await caller.callLlm("test", "task-001");
 
       expect(result.content).toBe("recovered");
-      expect(fakeLlm.complete).toHaveBeenCalledTimes(2);
+      expect(fakeLlm.infer).toHaveBeenCalledTimes(2);
     });
 
     it("does not retry non-retryable errors", async () => {
       const fakeLlm = {
-        complete: vi.fn().mockRejectedValueOnce(new Error("authentication failed")),
+        infer: vi.fn().mockRejectedValueOnce(new Error("authentication failed")),
         getCapabilities: vi.fn(),
       };
       const ctx = createMockContext();
@@ -148,12 +147,12 @@ describe("LlmCaller", () => {
 
       const caller = createLlmCaller(ctx);
       await expect(caller.callLlm("test", "task-001")).rejects.toThrow("authentication failed");
-      expect(fakeLlm.complete).toHaveBeenCalledOnce();
+      expect(fakeLlm.infer).toHaveBeenCalledOnce();
     });
 
     it("throws after exhausting retries", async () => {
       const fakeLlm = {
-        complete: vi.fn().mockRejectedValue(new Error("timeout")),
+        infer: vi.fn().mockRejectedValue(new Error("timeout")),
         getCapabilities: vi.fn(),
       };
       const ctx = createMockContext();
@@ -161,7 +160,7 @@ describe("LlmCaller", () => {
 
       const caller = createLlmCaller(ctx);
       await expect(caller.callLlm("test", "task-001")).rejects.toThrow("timeout");
-      expect(fakeLlm.complete).toHaveBeenCalledTimes(3);
+      expect(fakeLlm.infer).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -204,9 +203,8 @@ describe("LlmCaller", () => {
           type: "cost.incurred",
           task_id: "task-001",
           payload: expect.objectContaining({
-            tokens_in: 100,
-            tokens_out: 50,
             spend_usd: 0.01,
+            duration_ms: 150,
           }),
         }),
       );

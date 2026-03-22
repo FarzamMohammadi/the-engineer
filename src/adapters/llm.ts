@@ -1,25 +1,25 @@
-import type { CompletionRequest, CompletionResult, LLMCapabilities } from "../schemas/adapters.js";
+import type { InferenceRequest, InferenceResult, LLMCapabilities } from "../schemas/adapters.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 
 /**
  * Abstract base for LLM adapters.
  *
- * LLM adapters are the Engineer's thinking engine. They execute reasoning,
- * code generation, analysis, and all LLM-powered operations. The Orchestrator
- * interacts with LLM adapters exclusively through this contract.
+ * LLM adapters are inference-only (D143). The Engineer IS the agent —
+ * LLMs receive a prompt and return text. Plugin-specific details (CLI flags,
+ * output parsing, process management) belong in each plugin implementation.
  */
 export abstract class LLMAdapter extends BaseAdapter {
   /**
-   * Send a completion request to the LLM provider.
+   * Send an inference request to the LLM CLI tool.
    *
-   * Wraps `doComplete()` with error handling.
-   * Every `CompletionResult` MUST include usage data — this is the bridge
+   * Wraps `doInfer()` with error handling.
+   * Every `InferenceResult` MUST include cost data — this is the bridge
    * to the Safety Layer's cost tracking system.
    */
-  async complete(request: CompletionRequest): Promise<CompletionResult> {
+  async infer(request: InferenceRequest): Promise<InferenceResult> {
     try {
-      return await this.doComplete(request);
+      return await this.doInfer(request);
     } catch (error) {
       if (error instanceof AdapterMethodError) {
         throw error;
@@ -36,8 +36,8 @@ export abstract class LLMAdapter extends BaseAdapter {
     }
   }
 
-  /** Plugin authors implement the actual LLM call. */
-  protected abstract doComplete(request: CompletionRequest): Promise<CompletionResult>;
+  /** Plugin authors implement the actual CLI invocation. */
+  protected abstract doInfer(request: InferenceRequest): Promise<InferenceResult>;
 
   /**
    * Return this provider's capabilities.

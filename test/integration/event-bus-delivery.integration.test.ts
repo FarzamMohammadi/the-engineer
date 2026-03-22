@@ -113,13 +113,9 @@ describe("EventBus delivery (integration)", () => {
           task_id: "t1",
           repo: "",
           provider_id: "llm",
-          provider_type: "api",
           operation: "test",
-          tokens_in: 10,
-          tokens_out: 5,
           spend_usd: 0.01,
-          usage_units: null,
-          remaining: null,
+          duration_ms: 150,
         },
       });
 

@@ -2,24 +2,42 @@
 
 ## Current Phase
 
-**Multi-CLI Plugin Integration — DONE.** Three LLM plugins (Claude Code, OpenCode, Gemini CLI) all working with live testing. Rate limit detection, dashboard visibility, `engineer init` single-select for LLM provider.
+**RRPIR Design — DONE.** Full methodology designed: Requirements Gathering → Research → Planning → Implementation → Review. CLI-native agent architecture. Universal requirements fallback. Multi-phase configurable review pipeline. See [rrpir-design.md](rrpir-design.md).
 
 ## Last Session
 
-Session 067 (2026-03-22): S066 code quality review + Multi-CLI Plugin Integration + dashboard polish + contribution guide refinement. See `sessions/067.md`.
+Session 068 (2026-03-22): CLI-native philosophy pivot + RRPIR methodology design. Researched RPI ecosystem (HumanLayer, Goose, Burleigh RPIR, patrob). Designed The Engineer's own RRPIR methodology. Four new architecture decisions. Six design concerns flagged with resolution plans. See `sessions/068.md`.
 
 ## Next
 
-1. **RPI Integration** — Research/planning produce real files in workspace. Execution reads plan file. Files appear in PRs. Key decisions: file location (`thoughts/`?), template structure, cleanup config, crash-safe checkpoints via file-based progress. See roadmap.md "RPI Integration" section.
-2. **Runtime Phase Refinement** — after RPI, refine each phase with dashboard visibility. Priority-driven order.
+1. **Session 069 — Requirements Gathering + Research** — Rename intake_analysis, signal protocol, People Directory wiring, thoughts/ setup, CLI-native prompts, requirements ↔ research loop. First live test of RRPIR.
+2. **Session 070 — Planning + Implementation + Universal Fallback** — Plan file with checkboxes, implementation reads plan, any-phase-to-requirements routing, crash recovery.
+3. **Session 071 — Review Pipeline + Demo/PR** — Configurable multi-phase review, refinement pass, PR with thoughts/ files.
+
+See [roadmap.md](roadmap.md) for full session plan through 073+.
 
 ## Open Questions
 
-- RPI file location: `thoughts/` directory (like Goose) or different convention?
+None currently. All RPI design questions resolved in Session 068 design process.
 
 ## Architecture Knowledge
 
 Permanent discoveries that affect how we build. Resolved bugs removed — they're in the code now.
+
+### RRPIR Methodology
+- RRPIR = Requirements Gathering → Research → Planning → Implementation → Review
+- Each phase = one CLI session. Fresh context window. File-based handoffs via `thoughts/` directory.
+- Requirements Gathering is a universal fallback — any phase can invoke it when stuck
+- Review is a configurable pipeline of focused sub-phases (requirements check, security, code quality)
+- Plan file checkboxes are crash-safe progress trackers
+- Signal protocol: `ENGINEER_SIGNAL: {"status": "ready"}` at end of CLI output for reliable parsing
+- `thoughts/` files appear in PRs by default (configurable via `rrpir.include_thoughts_in_pr`)
+
+### CLI-Native Architecture (Revises D143)
+- CLI tools are full agents, not inference providers — they run natively in the worktree
+- The Orchestrator provides prompts + reads deliverable files, doesn't parse JSON actions
+- Agent loop (`agent-loop.ts`, `action-executor.ts`, `phase-tools.ts`) to be removed in Session 072
+- The Engineer's value is orchestration, not reimplementing CLI capabilities
 
 ### LLM Plugin Contract
 - Always pipe prompts via stdin — orchestrator prompts are 50KB+ and hit OS `ARG_MAX`

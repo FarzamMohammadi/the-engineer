@@ -53,13 +53,17 @@ For each phase in the roadmap:
 
 ## Strategic Decisions
 
-Three load-bearing decisions shape everything in this phase:
+Five load-bearing decisions shape everything in this phase:
 
 1. **CLI-only LLM integration.** Remove API-based LLM adapter entirely. The Engineer integrates exclusively with CLI tools (Claude CLI, Codex, Gemini CLI, OpenCode). Permanent simplification — CLI tools are the right abstraction for agentic work.
 
-2. **RPI methodology (Research → Plan → Implement).** Research and planning phases produce real files in the workspace, not in-memory objects. These files serve as context for execution, appear in PRs for reviewer visibility, and act as crash-safe checkpoints. Configurable cleanup before merge. Inspired by [HumanLayer's RPI pattern](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/ace-fca.md).
+2. **RRPIR methodology (Requirements Gathering → Research → Planning → Implementation → Review).** The Engineer's own methodology for completing tasks. Each phase produces real files in the workspace (`thoughts/` directory), not in-memory objects. Files serve as context for subsequent phases, appear in PRs for reviewer visibility, and act as crash-safe checkpoints. Builds on HumanLayer's RPI, Burleigh's RPIR, and Goose's `thoughts/` convention — with two original contributions: Requirements Gathering as a universal fallback and a multi-phase configurable Review pipeline. See [rrpir-design.md](rrpir-design.md) for the full architecture.
 
 3. **Dashboard-first.** Rebuild the simple dashboard before refining anything else. Maximum data visibility gives us (and future users) the instrument panel needed to guide every refinement that follows. Full React rebuild comes at the end, once we know exactly what we want.
+
+4. **CLI-native leverage.** (Revises D143 from Layer 6.) CLI tools are full agents with native capabilities — tool use, code search, plan mode, context management. The Engineer orchestrates them instead of stripping them to inference-only and reimplementing their capabilities. Our competitive advantage is how we USE the tools, not building our own. See [rrpir-design.md](rrpir-design.md) "CLI-Native Leverage" section.
+
+5. **Requirements Gathering as universal fallback.** (Revises intake_analysis from Layer 2/6.) Any phase can invoke Requirements Gathering when stuck. The task blocks, the right people are contacted via People Directory + Communication plugins, answers arrive, context files are updated, and the calling phase resumes. Just like a real engineer. Agile, not waterfall.
 
 **Resilience is a lens, not a phase.** Every phase we touch, we ask: what happens when this breaks? Can the engineer explain what happened? Can it recover? Can the user unstick it? Woven into every refinement.
 
@@ -67,13 +71,14 @@ Three load-bearing decisions shape everything in this phase:
 
 Layer 8 is done when:
 
-- Every runtime phase has been manually tested and refined
-- The happy path works flawlessly end-to-end
-- Error paths are graceful and recoverable — the engineer explains what went wrong and can be unstuck
-- LLM integration is CLI-only, supporting multiple CLI tools as plugins
-- RPI methodology produces real research/plan files that appear in PRs
-- The engineer is something we use daily with confidence
-- Communication (notifications, feedback) is polished
+- The full RRPIR pipeline works end-to-end (requirements → research → planning → implementation → review → PR)
+- Every phase has been live-tested and refined with real tasks
+- Requirements Gathering contacts real people and handles the response loop
+- The thoughts/ directory appears in PRs with full reasoning chain
+- Error paths are graceful and recoverable — the engineer explains what happened and can be unstuck
+- LLM integration is CLI-native, supporting multiple CLI tools as plugins
+- The multi-phase Review pipeline catches real issues before PRs go out
+- Communication (notifications, feedback, requirements Q&A) is polished
 - The War Room dashboard provides full real-time visibility into everything the engineer does
 - The project is ready for the open source community
 - We love using it

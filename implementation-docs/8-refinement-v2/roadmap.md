@@ -46,39 +46,82 @@ Key learnings: always pipe via stdin (not CLI args), detect rate limits from bot
 
 ---
 
-## RPI Integration (Research → Plan → Implement)
+## RRPIR Design (DONE)
 
-Adopt the RPI methodology: research and planning phases produce *real files* in the workspace, not just in-memory phase outputs. Inspired by [HumanLayer's RPI pattern](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/ace-fca.md).
+The Engineer's own methodology: **R**equirements Gathering → **R**esearch → **P**lanning → **I**mplementation → **R**eview. Designed in Session 068. Full architecture in [rrpir-design.md](rrpir-design.md).
 
-### Research Phase → File Output
+Key decisions made:
+- CLI-native agent architecture (revises D143) — CLI tools are full agents, not inference providers
+- Requirements Gathering as universal fallback — any phase can invoke it when stuck
+- Intake analysis → Requirements Gathering (revises fast-path from D141) — every task gets full RRPIR
+- Multi-phase configurable Review pipeline (revises self-review from Layer 2/6)
+- `thoughts/` directory for file-based handoffs between phases
+- Signal protocol (`ENGINEER_SIGNAL`) for phase transition parsing
+- Plan checkboxes for crash-safe progress tracking
 
-Research phase produces a structured markdown file in the worktree (e.g., `thoughts/research/YYYY-MM-DD-topic.md`). Documents what exists — files, patterns, flows, open questions. No opinions, no planning. This file becomes primary context for planning.
+---
 
-### Planning Phase → File Output
+## RRPIR Implementation
 
-Planning phase reads the research file and produces a structured plan file (e.g., `thoughts/plans/YYYY-MM-DD-description.md`). Includes phases, file paths, success criteria, checkboxes for tracking. The plan file is the source of truth for execution.
+Broken into focused sessions. Each session implements one or two RRPIR phases and tests them live.
 
-### Execution Phase Reads Files
+### Session 069 — Requirements Gathering + Research
 
-Execution phase reads the plan file as its primary guide. Updates checkboxes as phases complete. This makes the plan file a crash-safe progress tracker — if context fills or the process crashes, progress is tracked in the file itself.
+- Rename `intake_analysis` → `requirements_gathering` in schemas, phase enum, state machine
+- Design and implement the signal protocol (`ENGINEER_SIGNAL` JSON lines)
+- Wire People Directory into requirements gathering prompt
+- Implement `thoughts/` directory creation in workspace setup
+- Build requirements gathering + research prompts (CLI-native framing)
+- Implement the requirements ↔ research loop in phase-runner
+- Test with live CLI run
 
-### PR Integration & Cleanup Config
+### Session 070 — Planning + Implementation + Universal Fallback
 
-Research and plan files go into the PR by default — reviewers can see the reasoning. Configurable option to remove these files before merge for repos that want clean history. Small config: `rpi.include_in_pr: true/false` or similar.
+- Build planning prompt (reads research.md, writes plan.md with checkboxes)
+- Build implementation prompt (reads plan.md, updates checkboxes, follows research.md conventions)
+- Implement universal fallback routing (`return_to_phase` mechanism for any phase → requirements gathering → return)
+- Implement decomposition detection from plan.md
+- Crash recovery via plan.md checkboxes
+- Test with live CLI run
+
+### Session 071 — Review Pipeline + Demo/PR
+
+- Implement configurable multi-phase review pipeline (`rrpir.review_phases` config)
+- Build review phase prompts (requirements check, security, code quality)
+- Build refinement phase (reads `thoughts/review/*.md`, consolidates, fixes)
+- Wire into demo_prep (PR creation with thoughts/ files, cleanup config)
+- Cost management: default to minimal review phases, per-phase tracking
+- Test full RRPIR pipeline end-to-end
+
+### Session 072 — Agent Loop Removal
+
+- Remove `agent-loop.ts`, `action-executor.ts`, `phase-tools.ts`, `json-parser.ts`
+- Simplify `llm-caller.ts` — direct CLI call, read deliverable files
+- Simplify phase output schemas (files are the output, not JSON)
+- Update/remove ~200+ agent loop tests
+- Clean up dead code and unused schemas
+
+### Session 073+ — RRPIR Refinement
+
+- Live testing each phase with all 3 CLI tools (Claude Code, OpenCode, Gemini CLI)
+- Prompt tuning based on real results
+- Cross-plugin validation (equivalent quality across CLIs)
+- Dashboard updates for RRPIR visibility (thoughts/ file viewer, review findings)
+- Crash recovery testing with file-based checkpoints
 
 ---
 
 ## Runtime Phase Refinement
 
-With the dashboard giving us visibility, CLI integration simplified, and RPI giving us better output structure — now we refine each runtime phase. Order is priority-driven based on what the dashboard reveals, not strictly sequential.
+With RRPIR implemented and the dashboard giving visibility, refine the supporting infrastructure. Order is priority-driven.
 
 ### Startup & Configuration
 
 CLI entry, bootstrap, plugin loading, daemon startup. First impressions. Fast, informative, fail gracefully.
 
-### Trigger & Intake
+### Trigger & Requirements Flow
 
-Trigger polling, dedup, task creation, prioritization. The bridge between external events and internal tasks.
+Trigger polling, dedup, task creation, prioritization. Requirements Gathering contacts via People Directory + Communication plugins. The bridge between external events and internal tasks.
 
 ### Scheduling & Dispatch
 
@@ -86,31 +129,15 @@ Priority, eligibility, slot management, concurrency. How tasks move from waiting
 
 ### Workspace & Session
 
-Worktree lifecycle, session setup, resume, rework detection. Task isolation and context.
-
-### Intake & Research (RPI-aware)
-
-Intake analysis, complexity detection, research file generation. Now produces real files per RPI methodology.
-
-### Planning & Decomposition (RPI-aware)
-
-Plan file generation, decomposition decisions, child task creation. Now produces real files per RPI methodology.
-
-### Agent Loop & Execution
-
-The iterative loop: CLI LLM call, action parse, tool execute, feed back. Plan file as primary guide. Test-fix iteration.
-
-### Self-Review & Quality
-
-Self-review assessment, loopback decisions (max 3), quality gates. What's "good enough to show."
+Worktree lifecycle, session setup, resume, rework detection. Task isolation. `thoughts/` directory lifecycle.
 
 ### Demo & PR
 
-Commit, push, draft PR creation. Demo artifacts, PR narrative. Research/plan files included per config.
+Commit, push, draft PR creation. PR narrative from thoughts/ files. Cleanup config for thoughts/ removal.
 
-### Review & Feedback
+### Review & Feedback (External)
 
-Review polling, feedback detection, rework loop. The cycle of human feedback → engineer improvement.
+External review polling (after PR creation), feedback detection, rework loop. The cycle of human reviewer feedback → engineer rework. Distinct from the internal RRPIR Review pipeline.
 
 ### Completion & Cleanup
 
@@ -118,7 +145,7 @@ Terminal states, notifications, workspace cleanup, parent integration for decomp
 
 ### Communication
 
-Notification wiring (Telegram + GitHub), message formatting, what notifications say and when.
+Notification wiring (Telegram + GitHub), message formatting, requirements Q&A formatting, what notifications say and when.
 
 ### Background Services
 

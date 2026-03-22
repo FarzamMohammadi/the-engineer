@@ -82,7 +82,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** CLI-Only LLM Pivot complete. Three-layer usage & quota tracking integrated. Next: Multi-CLI Plugin Integration (OpenCode + Gemini CLI). See `8-refinement-v2/status.md` for live status.
+**Layer 8 — Refinement v2: IN PROGRESS.** CLI-Only LLM Pivot complete. Three-layer usage & quota tracking with dashboard display. Quota API integration with cross-platform credential access and rate-limit-aware caching. Plugin docs restructured with LLM-guided setup prompts. Next: code quality review of session 066 changes, then Multi-CLI Plugin Integration (OpenCode + Gemini CLI). See `8-refinement-v2/status.md` for live status.
 
 **Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,414 tests.
 

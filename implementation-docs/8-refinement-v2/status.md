@@ -6,11 +6,13 @@
 
 ## Last Session
 
-Session 066 (2026-03-22): Two major deliverables. (1) CLI-Only LLM Pivot — removed all API-oriented abstractions (`CompletionRequest`/`CompletionResult` → `InferenceRequest`/`InferenceResult`), renamed `complete()`→`infer()`, unified cost tracking, flattened config. (2) Three-layer usage & quota tracking — enriched InferenceResult with per-call token/cache breakdown, added `getQuotaStatus()` to LLMAdapter, switched Claude Code plugin to `stream-json --verbose` for rate_limit_event parsing, wired `updateTracking()` (fixes dashboard showing 0), added `cost.quota_exhausted` event, token accumulation in cost tracker, dashboard quota/token display, and LLM plugin integration guide.
+Session 066 (2026-03-22): Massive session — CLI-Only LLM Pivot + three-layer usage/quota tracking + quota API integration + dashboard quota display + plugin docs restructure with LLM-guided setup. 11 commits, 55+ files. Discovered Anthropic's `/api/oauth/usage` endpoint for real quota percentages, integrated it with cross-platform credential access (macOS Keychain + file fallback), 30-min caching to handle aggressive rate limits (~5 requests per token). Dashboard split into Session Quota + Long-Term Quota cards. Fixed observation field bug (input vs output). Plugin docs restructured into `llm-adapter/` directory with `prompt.md` for LLM-guided interactive setup. OS-specific plugin selection documented as future consideration.
 
 ## Next
 
-**Multi-CLI Plugin Integration** — build OpenCode and Gemini CLI plugins, test all three against real repos.
+1. **Code quality review** — holistic review of all session 066 changes for maintainability, complexity, and clean separation of concerns
+2. **Verify quota API on fresh token** — current token is rate-limited from debugging. Once it rotates (~5h), verify dashboard shows real percentages
+3. **Multi-CLI Plugin Integration** — build OpenCode and Gemini CLI plugins
 
 ## Open Questions
 
@@ -31,3 +33,7 @@ Accumulated discoveries across sessions. Each entry tagged with session number.
 - **S066**: Claude CLI `--output-format stream-json --verbose` emits `rate_limit_event` with status (allowed/denied), resetsAt, rateLimitType — this is the quota detection signal
 - **S066**: Claude Code status line receives `rate_limits.five_hour` and `rate_limits.seven_day` with `used_percentage` + `resets_at` — but only in interactive mode, not `--print`
 - **S066**: `updateTracking()` on TaskEngine was never called — dashboard always showed 0 tokens/cost. Now wired in orchestrator after each phase.
+- **S066**: Anthropic's `/api/oauth/usage` returns real quota percentages (five_hour, seven_day, seven_day_sonnet) but has aggressive per-token rate limit (~5 requests then 429). Token rotates every ~5h, resetting the limit.
+- **S066**: `observe()` stores data in `input` field, NOT `output` — `output` is for span end-data only. Dashboard was reading wrong field for quota.
+- **S066**: `claude.ai/api/organizations/.../usage` is Cloudflare-protected (browser-only), cannot be used programmatically.
+- **S066**: Claude Code stores OAuth credentials in macOS Keychain (`Claude Code-credentials`) and potentially `~/.claude/.credentials.json` as fallback on other platforms.

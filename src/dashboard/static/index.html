@@ -869,9 +869,15 @@ a:hover { text-decoration: underline; }
     </div>
   </div>
   <div class="card" style="margin-top:12px">
-    <div class="card-title">Quota Status</div>
-    <div id="cost-quota" style="padding:4px 0">
-      <span style="color:var(--text-ghost);font-size:0.78rem">Quota data not available</span>
+    <div class="card-title">Session Quota</div>
+    <div id="cost-quota-session" style="padding:4px 0">
+      <span style="color:var(--text-ghost);font-size:0.78rem">Session quota not available</span>
+    </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="card-title">Long-Term Quota</div>
+    <div id="cost-quota-longterm" style="padding:4px 0">
+      <span style="color:var(--text-ghost);font-size:0.78rem">Long-term quota not available</span>
     </div>
   </div>
   <div class="grid-2" style="margin-top:12px">
@@ -1859,89 +1865,72 @@ async function loadCost() {
     updateIfChanged('cost-token-totals', '<span style="color:var(--text-ghost);font-size:0.78rem">No token data yet</span>');
   }
 
-  // Quota status — shows rate limit windows with progress bars and time remaining
+  // Quota status — split into session (shortest window) and long-term (rest)
+  // Generic: plugins report windows, dashboard auto-categorizes by duration
   const quotaData = await api('/api/metrics/quota');
-  if (quotaData && quotaData.available) {
-    let quotaHtml = '';
+  const noQuotaMsg = '<span style="color:var(--text-ghost);font-size:0.78rem">Will populate after first LLM call</span>';
+
+  if (quotaData && quotaData.available && quotaData.live && quotaData.live.windows && quotaData.live.windows.length > 0) {
     const nowSec = Math.floor(Date.now() / 1000);
+    const windows = quotaData.live.windows;
 
-    // Known window durations in seconds (for computing progress)
-    const windowDurations = { five_hour: 5 * 3600, seven_day: 7 * 24 * 3600 };
+    // Sort by reset time — shortest reset = current session, rest = long-term
+    const sorted = [...windows].filter(w => w.resets_at).sort((a, b) => a.resets_at - b.resets_at);
+    const sessionWindows = sorted.length > 0 ? [sorted[0]] : [];
+    const longtermWindows = sorted.slice(1);
 
-    if (quotaData.live && quotaData.live.windows && quotaData.live.windows.length > 0) {
-      quotaHtml += quotaData.live.windows.map(w => {
-        const exhausted = w.is_exhausted === true;
-        const resetsAtSec = w.resets_at;
+    // Render a single quota window as a progress bar
+    function renderWindow(w) {
+      const exhausted = w.is_exhausted === true;
+      const pct = w.used_percentage != null ? Math.round(w.used_percentage) : null;
+      const remainSec = w.resets_at ? Math.max(0, w.resets_at - nowSec) : 0;
+      const hrs = Math.floor(remainSec / 3600);
+      const mins = Math.floor((remainSec % 3600) / 60);
+      const timeStr = hrs > 24
+        ? `${Math.floor(hrs / 24)}d ${hrs % 24}h`
+        : hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
 
-        // Compute time remaining and window progress
-        let timeRemaining = '';
-        let progressPct = 0;
-        if (resetsAtSec) {
-          const remainSec = Math.max(0, resetsAtSec - nowSec);
-          const hrs = Math.floor(remainSec / 3600);
-          const mins = Math.floor((remainSec % 3600) / 60);
-          timeRemaining = hrs > 0 ? `${hrs} hr ${mins} min` : `${mins} min`;
+      const barPct = pct != null ? pct : 0;
+      const barColor = exhausted ? 'var(--red)' : barPct > 80 ? 'var(--amber)' : 'var(--cyan)';
+      const label = w.window_type.replace(/_/g, ' ');
 
-          // Progress through window based on known durations
-          const windowSec = windowDurations[w.window_type] || 5 * 3600;
-          const elapsed = windowSec - remainSec;
-          progressPct = Math.min(100, Math.max(0, Math.round((elapsed / windowSec) * 100)));
-        }
-
-        // Window display name
-        const displayName = w.window_type === 'five_hour' ? 'Current Session'
-          : w.window_type === 'seven_day' ? 'Weekly Limit'
-          : w.window_type;
-
-        // Status color and bar color
-        const barColor = exhausted ? 'var(--red)' : progressPct > 80 ? 'var(--amber)' : 'var(--cyan)';
-        const statusText = exhausted ? 'EXHAUSTED' : 'Active';
-        const statusColor = exhausted ? 'var(--red)' : 'var(--green)';
-
-        return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="color:var(--text-bright);font-weight:600;font-size:0.82rem">${esc(displayName)}</span>
-            <span style="color:${statusColor};font-size:0.72rem;font-weight:500">${statusText}</span>
+      return `<div style="padding:6px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+          <span style="color:var(--text-muted);font-size:0.72rem">${esc(label)}</span>
+          <span style="color:var(--text-ghost);font-size:0.68rem">resets in ${timeStr}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:5px;background:var(--border-dim);border-radius:3px;overflow:hidden">
+            <div style="width:${barPct}%;height:100%;background:${barColor};border-radius:3px"></div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="flex:1;height:6px;background:var(--border-dim);border-radius:3px;overflow:hidden">
-              <div style="width:${progressPct}%;height:100%;background:${barColor};border-radius:3px;transition:width 0.3s"></div>
-            </div>
-            <span style="color:var(--text-muted);font-size:0.72rem;min-width:50px;text-align:right">${progressPct}%</span>
-          </div>
-          <div style="color:var(--text-ghost);font-size:0.68rem;margin-top:3px">Resets in ${timeRemaining || '-'}</div>
-        </div>`;
-      }).join('');
+          <span style="color:${exhausted ? 'var(--red)' : 'var(--text-muted)'};font-size:0.72rem;min-width:45px;text-align:right;font-weight:500">${pct != null ? pct + '%' : (exhausted ? 'LIMIT' : '-')}</span>
+        </div>
+      </div>`;
+    }
 
+    // Session quota (shortest window)
+    if (sessionWindows.length > 0) {
+      let sessionHtml = sessionWindows.map(renderWindow).join('');
       if (quotaData.live.is_rate_limited) {
-        const resetTime = quotaData.live.earliest_reset_at
-          ? new Date(quotaData.live.earliest_reset_at * 1000).toLocaleTimeString()
-          : 'unknown';
-        quotaHtml += `<div style="padding:10px 8px;margin-top:8px;background:rgba(255,80,80,0.1);border:1px solid var(--red);border-radius:4px;color:var(--red);font-weight:600;font-size:0.8rem">
-          Rate limited — resets at ${resetTime}
-        </div>`;
+        const resetTime = quotaData.live.earliest_reset_at ? new Date(quotaData.live.earliest_reset_at * 1000).toLocaleTimeString() : 'unknown';
+        sessionHtml += `<div style="padding:6px 8px;margin-top:4px;background:rgba(255,80,80,0.1);border:1px solid var(--red);border-radius:4px;color:var(--red);font-weight:600;font-size:0.75rem">Rate limited — resets at ${resetTime}</div>`;
       }
-
       const observedAt = quotaData.live.observed_at ? fmtTime(quotaData.live.observed_at) : '-';
-      quotaHtml += `<div style="color:var(--text-ghost);font-size:0.62rem;margin-top:6px">Last checked: ${esc(observedAt)}</div>`;
+      sessionHtml += `<div style="color:var(--text-ghost);font-size:0.6rem;margin-top:4px">Updated: ${esc(observedAt)}</div>`;
+      updateIfChanged('cost-quota-session', sessionHtml);
+    } else {
+      updateIfChanged('cost-quota-session', noQuotaMsg);
     }
 
-    // Exhaustion events (hard limit breaches)
-    if (quotaData.exhaustion_events && quotaData.exhaustion_events.length > 0) {
-      quotaHtml += '<div style="margin-top:10px;font-size:0.72rem;color:var(--text-ghost);font-weight:500">Recent limit breaches:</div>';
-      quotaHtml += quotaData.exhaustion_events.slice(0, 5).map(e => {
-        const resetsAt = e.resets_at ? new Date(e.resets_at * 1000).toLocaleString() : '-';
-        return `<div style="display:flex;gap:8px;padding:3px 0;font-size:0.7rem;color:var(--text-ghost)">
-          <span style="color:var(--red)">${esc(String(e.window_type || 'unknown'))}</span>
-          <span>resets ${resetsAt}</span>
-          <span style="margin-left:auto">${esc(fmtTime(String(e.observed_at || '')))}</span>
-        </div>`;
-      }).join('');
+    // Long-term quota (remaining windows)
+    if (longtermWindows.length > 0) {
+      updateIfChanged('cost-quota-longterm', longtermWindows.map(renderWindow).join(''));
+    } else {
+      updateIfChanged('cost-quota-longterm', noQuotaMsg);
     }
-
-    updateIfChanged('cost-quota', quotaHtml || '<span style="color:var(--text-ghost);font-size:0.78rem">No quota data yet — will populate after first LLM call</span>');
   } else {
-    updateIfChanged('cost-quota', '<span style="color:var(--text-ghost);font-size:0.78rem">Quota data not available — will populate after first LLM call</span>');
+    updateIfChanged('cost-quota-session', noQuotaMsg);
+    updateIfChanged('cost-quota-longterm', noQuotaMsg);
   }
 
   // LLM calls

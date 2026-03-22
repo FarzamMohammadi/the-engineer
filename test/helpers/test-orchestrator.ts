@@ -183,6 +183,7 @@ function createLlmResponse(data: Record<string, unknown>): InferenceResult {
     content: JSON.stringify({ action: "done", result: data }),
     cost_usd: 0.01,
     duration_ms: 100,
+    usage: null,
   };
 }
 
@@ -283,6 +284,9 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     }),
     getCapabilities: vi.fn().mockReturnValue({
       model_id: "fake-model",
+      supports_usage_reporting: false,
+      supports_quota_reporting: false,
+      context_window: null,
     }),
   };
 

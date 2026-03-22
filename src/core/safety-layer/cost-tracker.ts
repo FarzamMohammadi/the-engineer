@@ -24,6 +24,7 @@ interface SpendAccumulators {
   daily: SpendWindow;
   monthly: SpendWindow;
   providers: Map<string, ProviderUsageRecord>;
+  token_totals: { input: number; output: number; total: number };
 }
 
 interface AccumulatorSnapshot {
@@ -31,6 +32,7 @@ interface AccumulatorSnapshot {
   daily: SpendWindow;
   monthly: SpendWindow;
   providers: Record<string, ProviderUsageRecord>;
+  token_totals: { input: number; output: number; total: number };
   last_sequence: number;
   snapshot_at: string;
 }
@@ -107,6 +109,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     daily: { cost_usd: 0, window_start: getDailyWindowStart(now) },
     monthly: { cost_usd: 0, window_start: getMonthlyWindowStart(now) },
     providers: new Map(),
+    token_totals: { input: 0, output: 0, total: 0 },
   };
 
   // ── Initialization ──────────────────────────────────────────────────────
@@ -154,7 +157,13 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       }
     }
 
-    return { per_task_usd: perTaskUsd, daily_usd: dailyUsd, monthly_usd: monthlyUsd, warnings };
+    return {
+      per_task_usd: perTaskUsd,
+      daily_usd: dailyUsd,
+      monthly_usd: monthlyUsd,
+      warnings,
+      daily_tokens: accumulators.token_totals,
+    };
   }
 
   function checkCostLimits(taskId: string): CostLimitCheckResult {
@@ -260,6 +269,17 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     const existing = accumulators.providers.get(payload.provider_id) ?? { requests_used: 0 };
     existing.requests_used += 1;
     accumulators.providers.set(payload.provider_id, existing);
+
+    // Accumulate token counts regardless of spend
+    if (payload.input_tokens !== null) {
+      accumulators.token_totals.input += payload.input_tokens;
+    }
+    if (payload.output_tokens !== null) {
+      accumulators.token_totals.output += payload.output_tokens;
+    }
+    if (payload.total_tokens !== null) {
+      accumulators.token_totals.total += payload.total_tokens;
+    }
 
     if (spend <= 0) {
       return;
@@ -419,6 +439,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       daily: accumulators.daily,
       monthly: accumulators.monthly,
       providers: Object.fromEntries(accumulators.providers),
+      token_totals: accumulators.token_totals,
       last_sequence: lastSequence,
       snapshot_at: new Date().toISOString(),
     };
@@ -459,6 +480,9 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
 
       if (snapshot.providers) {
         accumulators.providers = new Map(Object.entries(snapshot.providers));
+      }
+      if (snapshot.token_totals) {
+        accumulators.token_totals = snapshot.token_totals;
       }
       lastSequence = snapshot.last_sequence;
       observer.debug("Cost snapshot restored", {

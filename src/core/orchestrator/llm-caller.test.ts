@@ -73,6 +73,7 @@ function makeCompletion(content: string): InferenceResult {
     content,
     cost_usd: 0.01,
     duration_ms: 150,
+    usage: null,
   };
 }
 
@@ -84,7 +85,12 @@ describe("LlmCaller", () => {
       const completion = makeCompletion("hello");
       const fakeLlm = {
         infer: vi.fn().mockResolvedValue(completion),
-        getCapabilities: vi.fn().mockReturnValue({ model_id: "test-model" }),
+        getCapabilities: vi.fn().mockReturnValue({
+          model_id: "test-model",
+          supports_usage_reporting: false,
+          supports_quota_reporting: false,
+          context_window: null,
+        }),
       };
       const ctx = createMockContext();
       (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeLlm);

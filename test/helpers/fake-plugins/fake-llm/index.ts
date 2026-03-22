@@ -5,6 +5,7 @@ import type {
   InferenceResult,
   InitResult,
   LLMCapabilities,
+  QuotaStatus,
 } from "../../../../src/schemas/adapters.js";
 
 /**
@@ -30,6 +31,7 @@ export class FakeLLMPlugin extends LLMAdapter {
     content: "Fake LLM response",
     cost_usd: 0.01,
     duration_ms: 100,
+    usage: null,
   };
 
   // ── Test Control Surface ────────────────────────────────────────────────
@@ -68,10 +70,23 @@ export class FakeLLMPlugin extends LLMAdapter {
     return Promise.resolve(response);
   }
 
+  private cannedQuotaStatus: QuotaStatus | null = null;
+
+  setCannedQuotaStatus(status: QuotaStatus | null): void {
+    this.cannedQuotaStatus = status;
+  }
+
   getCapabilities(): LLMCapabilities {
     return {
       model_id: "fake-model-v1",
+      supports_usage_reporting: false,
+      supports_quota_reporting: false,
+      context_window: null,
     };
+  }
+
+  override getQuotaStatus(): Promise<QuotaStatus | null> {
+    return Promise.resolve(this.cannedQuotaStatus);
   }
 
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {

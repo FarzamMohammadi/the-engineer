@@ -13,6 +13,7 @@ function mockCompletion(
     content,
     cost_usd: cost.cost_usd,
     duration_ms: cost.duration_ms ?? 100,
+    usage: null,
   };
 }
 

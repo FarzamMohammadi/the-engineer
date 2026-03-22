@@ -43,6 +43,7 @@ function makeResponse(json: Record<string, unknown>): InferenceResult {
     content: JSON.stringify({ action: "done", result: json }),
     cost_usd: 0.003,
     duration_ms: 100,
+    usage: null,
   };
 }
 

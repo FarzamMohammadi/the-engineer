@@ -64,10 +64,18 @@ export {
   // LLM
   InferenceRequestSchema,
   InferenceResultSchema,
+  InferenceUsageSchema,
   LLMCapabilitiesSchema,
+  QuotaStatusSchema,
+  QuotaWindowSchema,
+  TokenUsageSchema,
   type InferenceRequest,
   type InferenceResult,
+  type InferenceUsage,
   type LLMCapabilities,
+  type QuotaStatus,
+  type QuotaWindow,
+  type TokenUsage,
   // Tool
   SideEffectSchema,
   SideEffectTypeSchema,

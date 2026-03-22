@@ -35,6 +35,7 @@ export const EventTypeSchema = z.enum([
   "action.rejected",
   "cost.incurred",
   "cost.limit_reached",
+  "cost.quota_exhausted",
   "preemption.requested",
   "preemption.ready",
   "timeout.reminder",
@@ -134,6 +135,12 @@ export const CostIncurredPayloadSchema = z.object({
   operation: z.string(),
   spend_usd: z.number().nullable(),
   duration_ms: z.number().int().nullable(),
+  // Optional token breakdown — null when CLI doesn't report it
+  input_tokens: z.number().int().nullable().default(null),
+  output_tokens: z.number().int().nullable().default(null),
+  total_tokens: z.number().int().nullable().default(null),
+  cache_read_tokens: z.number().int().nullable().default(null),
+  model_id: z.string().nullable().default(null),
 });
 export type CostIncurredPayload = z.infer<typeof CostIncurredPayloadSchema>;
 
@@ -146,6 +153,14 @@ export const CostLimitReachedPayloadSchema = z.object({
   resets_at: z.string().datetime().nullable(),
 });
 export type CostLimitReachedPayload = z.infer<typeof CostLimitReachedPayloadSchema>;
+
+export const CostQuotaExhaustedPayloadSchema = z.object({
+  provider_id: z.string(),
+  window_type: z.string(),
+  resets_at: z.number().int().nullable(),
+  task_id: z.string().nullable(),
+});
+export type CostQuotaExhaustedPayload = z.infer<typeof CostQuotaExhaustedPayloadSchema>;
 
 // preemption.*
 
@@ -444,6 +459,7 @@ export type EventPayloads = {
   "action.rejected": ActionRejectedPayload;
   "cost.incurred": CostIncurredPayload;
   "cost.limit_reached": CostLimitReachedPayload;
+  "cost.quota_exhausted": CostQuotaExhaustedPayload;
   "preemption.requested": PreemptionRequestedPayload;
   "preemption.ready": PreemptionReadyPayload;
   "timeout.reminder": TimeoutReminderPayload;
@@ -491,6 +507,7 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "action.rejected": ActionRejectedPayloadSchema,
   "cost.incurred": CostIncurredPayloadSchema,
   "cost.limit_reached": CostLimitReachedPayloadSchema,
+  "cost.quota_exhausted": CostQuotaExhaustedPayloadSchema,
   "preemption.requested": PreemptionRequestedPayloadSchema,
   "preemption.ready": PreemptionReadyPayloadSchema,
   "timeout.reminder": TimeoutReminderPayloadSchema,

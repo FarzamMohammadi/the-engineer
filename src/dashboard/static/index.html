@@ -862,6 +862,18 @@ a:hover { text-decoration: underline; }
       <div class="stat-label">All Time</div>
     </div>
   </div>
+  <div class="card" style="margin-top:12px">
+    <div class="card-title">Token Usage</div>
+    <div id="cost-token-totals" style="display:flex;gap:24px;flex-wrap:wrap;padding:4px 0">
+      <span style="color:var(--text-ghost);font-size:0.78rem">No token data yet</span>
+    </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="card-title">Quota Status</div>
+    <div id="cost-quota" style="padding:4px 0">
+      <span style="color:var(--text-ghost);font-size:0.78rem">Quota data not available</span>
+    </div>
+  </div>
   <div class="grid-2" style="margin-top:12px">
     <div class="card">
       <div class="card-title">Cost by Phase</div>
@@ -1820,6 +1832,51 @@ async function loadCost() {
       <span style="color:var(--text-ghost)">${(t.llm_tokens || 0).toLocaleString()} tok</span>
     </div>`).join('');
   updateIfChanged('cost-by-task', taskHtml || '<div class="empty-state" style="padding:12px">No task cost data</div>');
+
+  // Token totals
+  const tt = data.token_totals;
+  if (tt && (tt.input > 0 || tt.output > 0 || tt.cache_read > 0)) {
+    updateIfChanged('cost-token-totals', `
+      <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.82rem">
+        <div>
+          <span style="color:var(--text-ghost)">Input</span>
+          <div style="color:var(--cyan);font-size:1.1rem;font-weight:600">${tt.input.toLocaleString()}</div>
+        </div>
+        <div>
+          <span style="color:var(--text-ghost)">Output</span>
+          <div style="color:var(--green);font-size:1.1rem;font-weight:600">${tt.output.toLocaleString()}</div>
+        </div>
+        <div>
+          <span style="color:var(--text-ghost)">Cache Read</span>
+          <div style="color:var(--purple);font-size:1.1rem;font-weight:600">${tt.cache_read.toLocaleString()}</div>
+        </div>
+        <div>
+          <span style="color:var(--text-ghost)">Total (in+out)</span>
+          <div style="color:var(--text-bright);font-size:1.1rem;font-weight:600">${tt.total.toLocaleString()}</div>
+        </div>
+      </div>`);
+  } else {
+    updateIfChanged('cost-token-totals', '<span style="color:var(--text-ghost);font-size:0.78rem">No token data yet</span>');
+  }
+
+  // Quota status
+  const quotaData = await api('/api/metrics/quota');
+  if (quotaData && quotaData.available && quotaData.windows && quotaData.windows.length > 0) {
+    const quotaHtml = quotaData.windows.map(w => {
+      const exhaustedColor = w.is_exhausted ? 'var(--red)' : 'var(--green)';
+      const exhaustedLabel = w.is_exhausted ? 'EXHAUSTED' : 'OK';
+      const resetsAt = w.resets_at ? new Date(w.resets_at * 1000).toLocaleString() : '-';
+      return `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem">
+        <span style="color:var(--text-bright);width:100px;font-weight:500">${esc(w.window_type)}</span>
+        <span style="color:${exhaustedColor};font-weight:600;width:80px">${exhaustedLabel}</span>
+        <span style="color:var(--text-ghost)">Provider: ${esc(w.provider_id)}</span>
+        <span style="color:var(--text-ghost);margin-left:auto">Resets: ${resetsAt}</span>
+      </div>`;
+    }).join('');
+    updateIfChanged('cost-quota', quotaHtml);
+  } else {
+    updateIfChanged('cost-quota', '<span style="color:var(--text-ghost);font-size:0.78rem">Quota data not available</span>');
+  }
 
   // LLM calls
   const llmData = await api('/api/observations?type=llm_call&limit=100');

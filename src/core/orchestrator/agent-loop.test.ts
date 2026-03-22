@@ -11,6 +11,7 @@ function makeCompletion(content: string): InferenceResult {
     content,
     cost_usd: 0.001,
     duration_ms: 100,
+    usage: null,
   };
 }
 
@@ -241,6 +242,9 @@ describe("runAgentLoop", () => {
 
     expect(result.totalCost.spend_usd).toBe(0.002); // 0.001 + 0.001
     expect(result.totalCost.duration_ms).toBe(200); // 100 + 100
+    expect(result.totalCost.input_tokens).toBe(0);
+    expect(result.totalCost.output_tokens).toBe(0);
+    expect(result.totalCost.total_tokens).toBe(0);
   });
 
   it("handles null cost_usd without accumulation error", async () => {
@@ -248,6 +252,7 @@ describe("runAgentLoop", () => {
       content: '{"action": "done", "result": {}}',
       cost_usd: null,
       duration_ms: 50,
+      usage: null,
     };
     const callLlm = vi.fn().mockResolvedValue(nullCostCompletion);
     const execAction = vi.fn();

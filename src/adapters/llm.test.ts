@@ -17,10 +17,14 @@ class TestLLMAdapter extends LLMAdapter {
     content: "Hello from LLM",
     cost_usd: 0.01,
     duration_ms: 150,
+    usage: null,
   };
   inferError: Error | null = null;
   capabilities: LLMCapabilities = {
     model_id: "test-model",
+    supports_usage_reporting: false,
+    supports_quota_reporting: false,
+    context_window: null,
   };
 
   protected doInfer(_request: InferenceRequest): Promise<InferenceResult> {

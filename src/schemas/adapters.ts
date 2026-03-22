@@ -194,15 +194,55 @@ export const InferenceRequestSchema = z.object({
 });
 export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
 
+// Per-call token breakdown. Plugins fill what their CLI reports.
+export const TokenUsageSchema = z.object({
+  input_tokens: z.number().int().nonnegative(),
+  output_tokens: z.number().int().nonnegative(),
+  cache_read_tokens: z.number().int().nonnegative().default(0),
+  cache_creation_tokens: z.number().int().nonnegative().default(0),
+  total_tokens: z.number().int().nonnegative(),
+});
+export type TokenUsage = z.infer<typeof TokenUsageSchema>;
+
+// Full per-call usage (tokens + model context).
+export const InferenceUsageSchema = z.object({
+  tokens: TokenUsageSchema,
+  model_id: z.string().nullable().default(null),
+  service_tier: z.string().nullable().default(null),
+});
+export type InferenceUsage = z.infer<typeof InferenceUsageSchema>;
+
+// A single quota/rate-limit window (e.g. Claude's 5-hour session, 7-day weekly).
+export const QuotaWindowSchema = z.object({
+  window_type: z.string(),
+  resets_at: z.number().int().nullable().default(null),
+  is_exhausted: z.boolean().default(false),
+  used_percentage: z.number().nonnegative().nullable().default(null),
+});
+export type QuotaWindow = z.infer<typeof QuotaWindowSchema>;
+
+// Overall quota status across all windows.
+export const QuotaStatusSchema = z.object({
+  windows: z.array(QuotaWindowSchema).default([]),
+  is_rate_limited: z.boolean().default(false),
+  earliest_reset_at: z.number().int().nullable().default(null),
+});
+export type QuotaStatus = z.infer<typeof QuotaStatusSchema>;
+
 export const InferenceResultSchema = z.object({
   content: z.string(),
   cost_usd: z.number().nullable(),
   duration_ms: z.number().int(),
+  /** Per-call usage details. null if the CLI doesn't report them. */
+  usage: InferenceUsageSchema.nullable().default(null),
 });
 export type InferenceResult = z.infer<typeof InferenceResultSchema>;
 
 export const LLMCapabilitiesSchema = z.object({
   model_id: z.string(),
+  supports_usage_reporting: z.boolean().default(false),
+  supports_quota_reporting: z.boolean().default(false),
+  context_window: z.number().int().positive().nullable().default(null),
 });
 export type LLMCapabilities = z.infer<typeof LLMCapabilitiesSchema>;
 

@@ -92,6 +92,20 @@ export function runLLMContractSuite(
         expect(Number.isInteger(result.duration_ms)).toBe(true);
         expect(result.duration_ms).toBeGreaterThanOrEqual(0);
       });
+
+      it("usage is null or a valid InferenceUsage", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const result = await adapter.infer(fixtures.request);
+        if (result.usage !== null) {
+          expect(result.usage).toHaveProperty("tokens");
+          expect(result.usage).toHaveProperty("model_id");
+          expect(result.usage.tokens).toHaveProperty("input_tokens");
+          expect(result.usage.tokens).toHaveProperty("output_tokens");
+          expect(result.usage.tokens).toHaveProperty("total_tokens");
+        } else {
+          expect(result.usage).toBeNull();
+        }
+      });
     });
 
     // ── getCapabilities() ────────────────────────────────────────────────
@@ -107,6 +121,28 @@ export function runLLMContractSuite(
         const caps = adapter.getCapabilities();
         expect(caps).toHaveProperty("model_id");
         expect(typeof caps.model_id).toBe("string");
+        expect(caps).toHaveProperty("supports_usage_reporting");
+        expect(typeof caps.supports_usage_reporting).toBe("boolean");
+        expect(caps).toHaveProperty("supports_quota_reporting");
+        expect(typeof caps.supports_quota_reporting).toBe("boolean");
+        expect(caps).toHaveProperty("context_window");
+      });
+    });
+
+    // ── getQuotaStatus() ────────────────────────────────────────────────
+
+    describe("getQuotaStatus()", () => {
+      it("returns null or a valid QuotaStatus", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const status = await adapter.getQuotaStatus();
+        if (status !== null) {
+          expect(status).toHaveProperty("windows");
+          expect(status).toHaveProperty("is_rate_limited");
+          expect(Array.isArray(status.windows)).toBe(true);
+          expect(typeof status.is_rate_limited).toBe("boolean");
+        } else {
+          expect(status).toBeNull();
+        }
       });
     });
   });

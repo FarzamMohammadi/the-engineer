@@ -4,9 +4,12 @@ import {
   type HealthStatus,
   type InferenceRequest,
   type InferenceResult,
+  type InferenceUsage,
   type InitResult,
   LLMAdapter,
   type LLMCapabilities,
+  type QuotaStatus,
+  type QuotaWindow,
   createAdapterError,
 } from "../../../adapters/index.js";
 import { type ClaudeCodeLLMConfig, ClaudeCodeLLMConfigSchema } from "./config.js";
@@ -66,25 +69,36 @@ export function buildLlmEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return result;
 }
 
+// ── Rate limit info from stream-json events ──────────────────────────────────
+
+interface RateLimitInfo {
+  rateLimitType: string;
+  status: string;
+  resetsAt: number | null;
+}
+
 /**
  * ClaudeCodeLLMPlugin — the Engineer's thinking engine.
  *
- * Invokes the Claude Code CLI (`claude --print --output-format json`)
- * as a child process, parses NDJSON output, and extracts the result
- * with usage data for cost tracking.
+ * Invokes the Claude Code CLI (`claude --print --output-format stream-json --verbose`)
+ * as a child process, parses NDJSON output for result + rate limit events,
+ * and extracts content, usage data, and quota status.
  */
 export class ClaudeCodeLLMPlugin extends LLMAdapter {
   private config!: ClaudeCodeLLMConfig;
   private activeProcess: ChildProcess | null = null;
+  private lastRateLimits: RateLimitInfo[] = [];
 
   protected doInfer(request: InferenceRequest): Promise<InferenceResult> {
     // --setting-sources user: prevent loading project-level CLAUDE.md and settings
     // from the CWD — the Engineer provides all context via the prompt.
     // --dangerously-skip-permissions: required for non-interactive tool use (read/write/bash)
+    // --output-format stream-json + --verbose: gives us rate_limit_event + full usage in result
     const args = [
       "--print",
       "--output-format",
-      "json",
+      "stream-json",
+      "--verbose",
       "--model",
       this.config.model,
       "--setting-sources",
@@ -104,6 +118,31 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
   getCapabilities(): LLMCapabilities {
     return {
       model_id: this.config?.model ?? "claude-sonnet-4-20250514",
+      supports_usage_reporting: true,
+      supports_quota_reporting: true,
+      context_window: 200_000,
+    };
+  }
+
+  async getQuotaStatus(): Promise<QuotaStatus | null> {
+    if (this.lastRateLimits.length === 0) {
+      return null;
+    }
+
+    const windows: QuotaWindow[] = this.lastRateLimits.map((rl) => ({
+      window_type: rl.rateLimitType,
+      resets_at: rl.resetsAt,
+      is_exhausted: rl.status !== "allowed",
+      used_percentage: null,
+    }));
+
+    const isRateLimited = windows.some((w) => w.is_exhausted);
+    const resetTimes = windows.map((w) => w.resets_at).filter((t): t is number => t !== null);
+
+    return {
+      windows,
+      is_rate_limited: isRateLimited,
+      earliest_reset_at: resetTimes.length > 0 ? Math.min(...resetTimes) : null,
     };
   }
 
@@ -205,7 +244,13 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
         try {
           const parsed = parseCliOutput(raw);
-          resolve({ ...parsed, duration_ms });
+          this.lastRateLimits = parsed.rateLimits;
+          resolve({
+            content: parsed.content,
+            cost_usd: parsed.cost_usd,
+            duration_ms,
+            usage: parsed.usage,
+          });
         } catch (err) {
           reject(
             new AdapterMethodError(
@@ -238,27 +283,45 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
 // ── Module-level helpers ─────────────────────────────────────────────────
 
+/** Parsed output from the Claude CLI stream-json format. */
+export interface ParsedCliOutput {
+  content: string;
+  cost_usd: number | null;
+  usage: InferenceUsage | null;
+  rateLimits: RateLimitInfo[];
+}
+
 /**
- * Parse NDJSON output from `claude --print --output-format json`.
+ * Parse NDJSON output from `claude --print --output-format stream-json --verbose`.
  *
- * Output is newline-delimited JSON events. We find the final `type: "result"`
- * event and extract content + cost.
+ * Output is newline-delimited JSON events. We extract:
+ * - `type: "result"` — content, cost, full token/model usage breakdown
+ * - `type: "rate_limit_event"` — quota window status and reset times
  *
- * Known result shapes:
- * - `--print` mode: `{ "type": "result", "subtype": "success", "cost_usd": 0.01, "result": "the text response" }`
- * - Object mode: `{ "type": "result", "subtype": "success", "result": { "type": "text", "text": "..." } }`
- *
- * Returns `{ content, cost_usd }` — duration_ms is measured by the caller.
+ * Returns content, cost, usage details, and rate limit info.
+ * duration_ms is measured by the caller (spawnAndParse).
  */
-export function parseCliOutput(raw: string): { content: string; cost_usd: number | null } {
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON parser handling multiple event types and result formats
+export function parseCliOutput(raw: string): ParsedCliOutput {
   const lines = raw.split("\n").filter((line) => line.trim().length > 0);
   let resultEvent: Record<string, unknown> | null = null;
+  const rateLimits: RateLimitInfo[] = [];
 
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line) as Record<string, unknown>;
       if (parsed["type"] === "result") {
         resultEvent = parsed;
+      } else if (parsed["type"] === "rate_limit_event") {
+        const info = parsed["rate_limit_info"] as Record<string, unknown> | undefined;
+        if (info) {
+          rateLimits.push({
+            rateLimitType:
+              typeof info["rateLimitType"] === "string" ? info["rateLimitType"] : "unknown",
+            status: typeof info["status"] === "string" ? info["status"] : "unknown",
+            resetsAt: typeof info["resetsAt"] === "number" ? info["resetsAt"] : null,
+          });
+        }
       }
     } catch {
       // Skip non-JSON lines
@@ -280,21 +343,61 @@ export function parseCliOutput(raw: string): { content: string; cost_usd: number
     );
   }
 
-  // The `result` field may be a string (--print mode) or an object with a `text` field.
-  // Handle both formats to support different CLI versions and modes.
-  const rawResult = resultEvent["result"];
-  let content: string;
-  if (typeof rawResult === "string") {
-    content = rawResult;
-  } else if (typeof rawResult === "object" && rawResult !== null && "text" in rawResult) {
-    content =
-      typeof (rawResult as Record<string, unknown>)["text"] === "string"
-        ? ((rawResult as Record<string, unknown>)["text"] as string)
-        : "";
-  } else {
-    content = "";
-  }
-  const cost_usd = typeof resultEvent["cost_usd"] === "number" ? resultEvent["cost_usd"] : null;
+  const content = extractContent(resultEvent);
+  const cost_usd =
+    typeof resultEvent["total_cost_usd"] === "number"
+      ? resultEvent["total_cost_usd"]
+      : typeof resultEvent["cost_usd"] === "number"
+        ? resultEvent["cost_usd"]
+        : null;
+  const usage = extractUsage(resultEvent);
 
-  return { content, cost_usd };
+  return { content, cost_usd, usage, rateLimits };
+}
+
+/** Extract text content from a result event's `result` field. */
+function extractContent(resultEvent: Record<string, unknown>): string {
+  const rawResult = resultEvent["result"];
+  if (typeof rawResult === "string") {
+    return rawResult;
+  }
+  if (typeof rawResult === "object" && rawResult !== null && "text" in rawResult) {
+    const text = (rawResult as Record<string, unknown>)["text"];
+    return typeof text === "string" ? text : "";
+  }
+  return "";
+}
+
+/** Extract token usage from a result event's `usage` and `modelUsage` fields. */
+function extractUsage(resultEvent: Record<string, unknown>): InferenceUsage | null {
+  const usage = resultEvent["usage"] as Record<string, unknown> | undefined;
+  if (!usage) {
+    return null;
+  }
+
+  const inputTokens = typeof usage["input_tokens"] === "number" ? usage["input_tokens"] : 0;
+  const outputTokens = typeof usage["output_tokens"] === "number" ? usage["output_tokens"] : 0;
+  const cacheRead =
+    typeof usage["cache_read_input_tokens"] === "number" ? usage["cache_read_input_tokens"] : 0;
+  const cacheCreation =
+    typeof usage["cache_creation_input_tokens"] === "number"
+      ? usage["cache_creation_input_tokens"]
+      : 0;
+  const serviceTier = typeof usage["service_tier"] === "string" ? usage["service_tier"] : null;
+
+  // Derive model_id from modelUsage keys if available
+  const modelUsage = resultEvent["modelUsage"] as Record<string, unknown> | undefined;
+  const modelId = modelUsage ? (Object.keys(modelUsage)[0] ?? null) : null;
+
+  return {
+    tokens: {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      cache_read_tokens: cacheRead,
+      cache_creation_tokens: cacheCreation,
+      total_tokens: inputTokens + outputTokens,
+    },
+    model_id: modelId,
+    service_tier: serviceTier,
+  };
 }

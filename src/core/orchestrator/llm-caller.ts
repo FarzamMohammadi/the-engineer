@@ -164,6 +164,11 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         operation: "phase_completion",
         spend_usd: result.cost_usd,
         duration_ms: result.duration_ms,
+        input_tokens: result.usage?.tokens.input_tokens ?? null,
+        output_tokens: result.usage?.tokens.output_tokens ?? null,
+        total_tokens: result.usage?.tokens.total_tokens ?? null,
+        cache_read_tokens: result.usage?.tokens.cache_read_tokens ?? null,
+        model_id: result.usage?.model_id ?? null,
       },
     } satisfies PublishInput<"cost.incurred">);
   }
@@ -180,6 +185,11 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         operation: `agent_loop:${phase}`,
         spend_usd: loopResult.totalCost.spend_usd,
         duration_ms: loopResult.totalCost.duration_ms,
+        input_tokens: loopResult.totalCost.input_tokens,
+        output_tokens: loopResult.totalCost.output_tokens,
+        total_tokens: loopResult.totalCost.total_tokens,
+        cache_read_tokens: null,
+        model_id: null,
       },
     } satisfies PublishInput<"cost.incurred">);
   }
@@ -226,10 +236,14 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
             cost_usd: trace.cost_usd,
             duration_ms: trace.duration_ms,
             provider_id: "llm",
-            model_id: null,
+            model_id: trace.model_id,
             prompt_ref: promptRef,
             response_ref: responseRef,
             iteration: trace.iteration,
+            input_tokens: trace.input_tokens,
+            output_tokens: trace.output_tokens,
+            total_tokens: trace.total_tokens,
+            cache_read_tokens: trace.cache_read_tokens,
           },
           spanOpts,
         );
@@ -399,10 +413,19 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         actions_executed: actionsExecuted,
         actions_failed: actionsFailed,
         outcome: "completed",
+        input_tokens: loopResult.totalCost.input_tokens,
+        output_tokens: loopResult.totalCost.output_tokens,
+        total_tokens: loopResult.totalCost.total_tokens,
       });
     }
 
     emitAgentLoopCost(taskId, phase, loopResult);
+    ctx.taskEngine.updateTracking(
+      taskId,
+      loopResult.totalCost.total_tokens,
+      loopResult.totalCost.spend_usd ?? 0,
+      loopResult.totalCost.duration_ms,
+    );
     return validateLoopResult(phase, taskId, loopResult);
   }
 

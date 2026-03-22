@@ -141,6 +141,7 @@ export function createMockInferenceResult(overrides?: Partial<InferenceResult>):
     content: "Mock inference response",
     cost_usd: 0.01,
     duration_ms: 100,
+    usage: null,
     ...overrides,
   });
 }

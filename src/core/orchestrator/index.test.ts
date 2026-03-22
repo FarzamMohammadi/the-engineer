@@ -352,6 +352,7 @@ describe("Orchestrator", () => {
                 content: "This is not JSON at all",
                 cost_usd: null,
                 duration_ms: 100,
+                usage: null,
               },
             };
           }
@@ -387,6 +388,7 @@ describe("Orchestrator", () => {
                 content: JSON.stringify({ wrong_field: "wrong_value" }),
                 cost_usd: null,
                 duration_ms: 100,
+                usage: null,
               },
             };
           }
@@ -418,6 +420,7 @@ describe("Orchestrator", () => {
                 content: "not json at all",
                 cost_usd: null,
                 duration_ms: 100,
+                usage: null,
               },
             };
           }
@@ -676,6 +679,7 @@ describe("Orchestrator", () => {
           content: JSON.stringify({ can_resolve: true, action: "retry with alternative" }),
           cost_usd: 0.005,
           duration_ms: 100,
+          usage: null,
         },
       });
 
@@ -694,6 +698,7 @@ describe("Orchestrator", () => {
           content: JSON.stringify({ can_resolve: false, action: "needs human input" }),
           cost_usd: 0.005,
           duration_ms: 100,
+          usage: null,
         },
       });
 
@@ -726,6 +731,7 @@ describe("Orchestrator", () => {
           content: "not valid json",
           cost_usd: 0.005,
           duration_ms: 100,
+          usage: null,
         },
       });
 
@@ -766,6 +772,7 @@ describe("Orchestrator", () => {
             content: JSON.stringify({ can_resolve: false, action: "n/a" }),
             cost_usd: 0.005,
             duration_ms: 100,
+            usage: null,
           };
         },
       };
@@ -789,6 +796,7 @@ describe("Orchestrator", () => {
           content: JSON.stringify({ can_resolve: false, action: "n/a" }),
           cost_usd: 0.005,
           duration_ms: 100,
+          usage: null,
         },
       });
 

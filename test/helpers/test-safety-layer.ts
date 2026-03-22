@@ -91,6 +91,11 @@ export function createTestSafetyLayer(configOverrides?: SafetyConfigInput): Test
         operation: "llm_call",
         spend_usd: 0.01,
         duration_ms: null,
+        input_tokens: null,
+        output_tokens: null,
+        total_tokens: null,
+        cache_read_tokens: null,
+        model_id: null,
       };
       const payload = { ...defaults, ...overrides };
 

@@ -31,6 +31,11 @@ export interface LlmTraceRecord {
   iteration: number;
   prompt_ref: string | null;
   response_ref: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  cache_read_tokens: number | null;
+  model_id: string | null;
   /** Raw prompt content for blob storage (not persisted in DB). */
   prompt_content?: string;
   /** Raw response content for blob storage (not persisted in DB). */
@@ -76,7 +81,13 @@ export interface AgentLoopResult {
   /** Full action history (for audit trail). */
   actions: Array<{ action: AgentAction; result: ActionResult | null }>;
   /** Accumulated cost across all iterations. */
-  totalCost: { spend_usd: number | null; duration_ms: number };
+  totalCost: {
+    spend_usd: number | null;
+    duration_ms: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
 }
 
 /** A single action-result pair in conversation history. */
@@ -104,7 +115,13 @@ export async function runAgentLoop(
   execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
 ): Promise<AgentLoopResult> {
   const history: HistoryEntry[] = [];
-  const totalCost = { spend_usd: null as number | null, duration_ms: 0 };
+  const totalCost = {
+    spend_usd: null as number | null,
+    duration_ms: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+  };
   let iterations = 0;
   const { observer } = config;
 
@@ -242,7 +259,13 @@ async function handleRetry(
   config: AgentLoopConfig,
   history: HistoryEntry[],
   failedContent: string,
-  totalCost: { spend_usd: number | null; duration_ms: number },
+  totalCost: {
+    spend_usd: number | null;
+    duration_ms: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  },
   currentIterations: number,
   callLlm: (prompt: string, systemPrompt: string) => Promise<InferenceResult>,
   execAction: (action: AgentAction, worktreePath: string) => Promise<ActionResult>,
@@ -364,13 +387,24 @@ function buildRetryPrompt(
 
 /** Accumulate cost from an inference result into the running total. */
 function accumulateCost(
-  total: { spend_usd: number | null; duration_ms: number },
+  total: {
+    spend_usd: number | null;
+    duration_ms: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  },
   result: InferenceResult,
 ): void {
   if (result.cost_usd !== null) {
     total.spend_usd = (total.spend_usd ?? 0) + result.cost_usd;
   }
   total.duration_ms += result.duration_ms;
+  if (result.usage) {
+    total.input_tokens += result.usage.tokens.input_tokens;
+    total.output_tokens += result.usage.tokens.output_tokens;
+    total.total_tokens += result.usage.tokens.total_tokens;
+  }
 }
 
 /** Build a successful result from a "done" action. */
@@ -378,7 +412,13 @@ function buildResult(
   phaseData: Record<string, unknown>,
   iterations: number,
   history: HistoryEntry[],
-  totalCost: { spend_usd: number | null; duration_ms: number },
+  totalCost: {
+    spend_usd: number | null;
+    duration_ms: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  },
 ): AgentLoopResult {
   return {
     phaseData,
@@ -392,7 +432,13 @@ function buildResult(
 function buildForcedResult(
   history: HistoryEntry[],
   iterations: number,
-  totalCost: { spend_usd: number | null; duration_ms: number },
+  totalCost: {
+    spend_usd: number | null;
+    duration_ms: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  },
 ): AgentLoopResult {
   return {
     phaseData: {},
@@ -446,6 +492,11 @@ function emitLlmCallback(
     iteration,
     prompt_ref: null,
     response_ref: null,
+    input_tokens: result.usage?.tokens.input_tokens ?? null,
+    output_tokens: result.usage?.tokens.output_tokens ?? null,
+    total_tokens: result.usage?.tokens.total_tokens ?? null,
+    cache_read_tokens: result.usage?.tokens.cache_read_tokens ?? null,
+    model_id: result.usage?.model_id ?? null,
     prompt_content: prompt,
     response_content: sanitizeSecrets(result.content),
   });

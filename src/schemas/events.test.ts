@@ -95,8 +95,8 @@ describe("SubscriptionSchema", () => {
 // ── EventTypeSchema ────────────────────────────────────────────────────────────
 
 describe("EventTypeSchema", () => {
-  it("has exactly 35 event types", () => {
-    expect(EventTypeSchema.options).toHaveLength(35);
+  it("has exactly 36 event types", () => {
+    expect(EventTypeSchema.options).toHaveLength(36);
   });
 
   it("accepts all 33 valid event types", () => {
@@ -219,7 +219,7 @@ describe("ActionRejectedPayloadSchema", () => {
 
 describe("CostIncurredPayloadSchema", () => {
   it("parses cost event with spend", () => {
-    const valid = {
+    const input = {
       task_id: "01TASK",
       repo: "owner/repo",
       provider_id: "claude-sonnet",
@@ -227,11 +227,18 @@ describe("CostIncurredPayloadSchema", () => {
       spend_usd: 0.015,
       duration_ms: 1200,
     };
-    expect(CostIncurredPayloadSchema.parse(valid)).toEqual(valid);
+    expect(CostIncurredPayloadSchema.parse(input)).toEqual({
+      ...input,
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: null,
+      cache_read_tokens: null,
+      model_id: null,
+    });
   });
 
   it("parses cost event with null spend and duration", () => {
-    const valid = {
+    const input = {
       task_id: "01TASK",
       repo: "owner/repo",
       provider_id: "claude-code",
@@ -239,7 +246,14 @@ describe("CostIncurredPayloadSchema", () => {
       spend_usd: null,
       duration_ms: null,
     };
-    expect(CostIncurredPayloadSchema.parse(valid)).toEqual(valid);
+    expect(CostIncurredPayloadSchema.parse(input)).toEqual({
+      ...input,
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: null,
+      cache_read_tokens: null,
+      model_id: null,
+    });
   });
 });
 
@@ -602,8 +616,8 @@ describe("eventPayloadSchemas", () => {
     }
   });
 
-  it("has exactly 35 entries", () => {
-    expect(Object.keys(eventPayloadSchemas)).toHaveLength(35);
+  it("has exactly 36 entries", () => {
+    expect(Object.keys(eventPayloadSchemas)).toHaveLength(36);
   });
 
   it("every schema can validate an object", () => {

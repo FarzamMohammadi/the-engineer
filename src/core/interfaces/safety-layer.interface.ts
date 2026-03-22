@@ -27,6 +27,7 @@ export interface CostStatus {
   daily_usd: number;
   monthly_usd: number;
   warnings: string[];
+  daily_tokens?: { input: number; output: number; total: number };
 }
 
 export interface ISafetyLayer {

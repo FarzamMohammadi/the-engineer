@@ -2,13 +2,11 @@
 
 ## Current Phase
 
-**CLI-Only LLM Pivot — IN PROGRESS.** Removing all API-oriented LLM abstractions. Redesigning adapter contract for CLI-only integration (`InferenceRequest`/`InferenceResult`). Renaming `complete`/`doComplete` to `infer`/`doInfer`.
-
-Dashboard testing decision: **skipped entirely** — deferred to Dashboard Full Rebuild at end of Layer 8. No session should bother with simple dashboard testing.
+**CLI-Only LLM Pivot — DONE.** Full CLI-only adapter contract with three-layer usage and quota tracking. Dashboard testing skipped (deferred to Full Rebuild).
 
 ## Last Session
 
-Session 066 (2026-03-22): CLI-Only LLM Pivot. Removed API-oriented `CompletionRequest`/`CompletionResult` schemas, replaced with minimal `InferenceRequest`/`InferenceResult`. Stripped `provider_type`, token counts, and dual api/cli accumulator from cost tracking. Renamed `complete()`/`doComplete()` to `infer()`/`doInfer()` across adapter, plugin, and orchestrator.
+Session 066 (2026-03-22): Two major deliverables. (1) CLI-Only LLM Pivot — removed all API-oriented abstractions (`CompletionRequest`/`CompletionResult` → `InferenceRequest`/`InferenceResult`), renamed `complete()`→`infer()`, unified cost tracking, flattened config. (2) Three-layer usage & quota tracking — enriched InferenceResult with per-call token/cache breakdown, added `getQuotaStatus()` to LLMAdapter, switched Claude Code plugin to `stream-json --verbose` for rate_limit_event parsing, wired `updateTracking()` (fixes dashboard showing 0), added `cost.quota_exhausted` event, token accumulation in cost tracker, dashboard quota/token display, and LLM plugin integration guide.
 
 ## Next
 
@@ -29,3 +27,7 @@ Accumulated discoveries across sessions. Each entry tagged with session number.
 - **S065**: ObserverStream pub/sub was designed for SSE but never exposed as HTTP endpoint — now bridged via SQLite polling
 - **S065**: Existing dashboard had 4 tabs and polling only. New dashboard: 8 tabs, SSE, all 13 observation types + 35 event types
 - **S065**: Blob store deduplication works well for LLM prompts — linked via `/api/blob/:prefix/:hash` instead of inlining
+- **S066**: Claude CLI `--print --output-format json` returns full token breakdown (input, output, cache_creation, cache_read) + modelUsage per-model + total_cost_usd
+- **S066**: Claude CLI `--output-format stream-json --verbose` emits `rate_limit_event` with status (allowed/denied), resetsAt, rateLimitType — this is the quota detection signal
+- **S066**: Claude Code status line receives `rate_limits.five_hour` and `rate_limits.seven_day` with `used_percentage` + `resets_at` — but only in interactive mode, not `--print`
+- **S066**: `updateTracking()` on TaskEngine was never called — dashboard always showed 0 tokens/cost. Now wired in orchestrator after each phase.

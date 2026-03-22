@@ -200,3 +200,26 @@ packages/
 5. Design interrupt routing in the Orchestrator (shared with GitHub — see "Mid-Phase Communication Interrupt Handling")
 
 ---
+
+## OS-Specific Plugin Selection
+
+**Current state (v1):** All plugins are built and tested on macOS. Platform-specific functionality (macOS Keychain for credential access, `security` CLI for OAuth token reading) works on macOS only. Linux and Windows users may need to adapt credential access methods.
+
+**When it becomes relevant:** When users on Linux or Windows want to run The Engineer with full plugin functionality, including quota tracking that requires provider credential access.
+
+**What it enables:** OS-aware plugin installation flow:
+1. Detect user's operating system during `engineer init` or plugin setup
+2. Filter available plugins to those compatible with the detected OS
+3. Present only compatible options, with clear warnings for partial support
+4. Platform-specific credential access abstracted per OS (macOS Keychain, Linux libsecret/file, Windows Credential Manager/file)
+
+**Current workaround:** The `contribution-docs/how-tos/plugins/` directory includes LLM-guided setup prompts. Users point their LLM CLI at the setup prompt, and the LLM detects their OS and guides them through platform-appropriate setup — including adapting credential access for their platform.
+
+**Migration path:**
+1. Abstract credential access into a `CredentialProvider` interface with OS-specific implementations
+2. Add OS detection to plugin manifests (`supported_platforms: ["darwin", "linux", "win32"]`)
+3. `engineer init` filters plugins by `process.platform` before presenting options
+4. Each plugin's `doInitialize()` validates platform compatibility and warns on unsupported OS
+5. Document per-platform setup in each adapter's README (or rely on LLM-guided setup)
+
+---

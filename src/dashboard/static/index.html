@@ -1938,9 +1938,9 @@ async function loadCost() {
   if (llmData?.observations) {
     const reversed = [...llmData.observations].reverse();
     updateIfChanged('cost-llm-calls', reversed.map(o => {
-      const spend = o.input?.spend_usd || o.output?.spend_usd || 0;
-      const tokIn = o.input?.tokens_in || o.output?.tokens_in || 0;
-      const tokOut = o.input?.tokens_out || o.output?.tokens_out || 0;
+      const spend = o.input?.cost_usd || o.output?.cost_usd || 0;
+      const tokIn = o.input?.input_tokens || o.output?.input_tokens || 0;
+      const tokOut = o.input?.output_tokens || o.output?.output_tokens || 0;
       return `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-dim);font-size:0.72rem">
         <span style="color:var(--text-ghost)">${esc(fmtTime(o.start_time))}</span>
         <span style="color:var(--text-muted)">${esc(o.phase || '-')}</span>

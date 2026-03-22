@@ -190,11 +190,8 @@ describe("TaskEngine", () => {
   let engine: TaskEngine;
 
   beforeEach(() => {
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console output in tests
     vi.spyOn(console, "log").mockImplementation(() => {});
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console output in tests
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console output in tests
     vi.spyOn(console, "error").mockImplementation(() => {});
     handle = createTestTaskEngine();
     engine = handle.engine;

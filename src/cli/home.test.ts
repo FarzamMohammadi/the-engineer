@@ -9,7 +9,6 @@ describe("resolveEngineerHome", () => {
 
   afterEach(() => {
     if (originalEnv === undefined) {
-      // biome-ignore lint/performance/noDelete: delete is required to truly unset env vars
       delete process.env["ENGINEER_HOME"];
     } else {
       process.env["ENGINEER_HOME"] = originalEnv;
@@ -27,7 +26,6 @@ describe("resolveEngineerHome", () => {
   });
 
   it("returns ~/.engineer when no flag and no env var", () => {
-    // biome-ignore lint/performance/noDelete: delete is required to truly unset env vars
     delete process.env["ENGINEER_HOME"];
     expect(resolveEngineerHome()).toBe(join(homedir(), ".engineer"));
   });

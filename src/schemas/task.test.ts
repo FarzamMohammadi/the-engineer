@@ -343,7 +343,6 @@ describe("TaskSchema", () => {
   });
 
   it("rejects missing required fields", () => {
-    // biome-ignore lint/style/useNamingConvention: destructured discard
     const { title: _title, ...noTitle } = minimalTask;
     expect(() => TaskSchema.parse(noTitle)).toThrow();
   });

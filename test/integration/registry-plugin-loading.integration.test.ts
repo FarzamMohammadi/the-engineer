@@ -125,7 +125,6 @@ describe("Registry plugin loading (integration)", () => {
         new FakeTriggerPlugin(),
       );
       expect(second.success).toBe(false);
-      // biome-ignore lint/performance/useTopLevelRegex: test assertion inline regex
       expect(second.message).toMatch(/already registered/i);
     });
   });

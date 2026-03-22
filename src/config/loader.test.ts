@@ -56,7 +56,6 @@ describe("resolveEnvVars", () => {
   });
 
   it("throws EnvVarError for undefined env var", () => {
-    // biome-ignore lint/performance/noDelete: delete is required to truly unset env vars (assignment to undefined sets the string "undefined")
     delete process.env["NONEXISTENT_VAR"];
     expect(() => resolveEnvVars("${NONEXISTENT_VAR}", "test.yaml")).toThrow(EnvVarError);
     try {

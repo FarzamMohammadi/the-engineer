@@ -249,7 +249,6 @@ describe("Orchestrator — Decomposition", () => {
     // Mock comm plugin with issue_management capability
     const mockCommPlugin = {
       hasCapability: (cap: string) => cap === "issue_management",
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op mock
       commentOnIssue: async () => {},
       manifest: { id: "github-comm" },
     };

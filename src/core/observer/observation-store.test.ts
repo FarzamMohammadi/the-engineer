@@ -11,7 +11,6 @@ import type { Observation } from "./types.js";
 const ULID_PATTERN = /^[0-9A-Z]{26}$/;
 const SNAKE_CASE_PATTERN = /^[a-z_]+$/;
 
-// biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop for mock
 const noop = () => {};
 
 describe("Observer", () => {
@@ -582,9 +581,7 @@ describe("Observer", () => {
   describe("ObserverStream", () => {
     it("clear() removes all subscribers", () => {
       const stream = new ObserverStream();
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop subscriber
       stream.subscribe(() => {});
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop subscriber
       stream.subscribe(() => {});
       expect(stream.subscriberCount()).toBe(2);
 

@@ -174,7 +174,6 @@ describe("checkPermission (pure function)", () => {
 
   describe("unknown state", () => {
     it("returns not allowed for unknown state", () => {
-      // biome-ignore lint/suspicious/noExplicitAny: testing invalid state
       const result = checkPermission("nonexistent" as any, null, ActionClasses.read);
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain("No permission entry");

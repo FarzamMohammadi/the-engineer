@@ -82,7 +82,6 @@ describe("Orchestrator", () => {
       // 7 phases = 7 LLM calls (all through actionPipeline.execute)
       // execution phase has 2 calls: tool + LLM. So total actionPipeline calls = 8
       const llmCalls = handle.actionPipeline.execute.mock.calls.filter(
-        // biome-ignore lint/suspicious/noExplicitAny: test mock inspection
         (call: any[]) => call[0]?.details?.operation === "llm_infer",
       );
       expect(llmCalls).toHaveLength(7);

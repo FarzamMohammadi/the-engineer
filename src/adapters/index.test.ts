@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-// biome-ignore lint/style/noNamespaceImport: intentional — testing the full SDK boundary surface
 import * as sdk from "./index.js";
 
 describe("SDK boundary (src/adapters/index.ts)", () => {

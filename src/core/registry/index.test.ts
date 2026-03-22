@@ -500,10 +500,7 @@ describe("Registry", () => {
       registry.register(createManifest("trigger", "t1"), instance);
 
       // Override healthCheck to hang
-      vi.spyOn(instance, "healthCheck").mockImplementation(
-        // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional never-resolving promise for timeout test
-        () => new Promise(() => {}),
-      );
+      vi.spyOn(instance, "healthCheck").mockImplementation(() => new Promise(() => {}));
 
       await registry.healthCheckAll();
 

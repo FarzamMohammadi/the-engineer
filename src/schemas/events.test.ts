@@ -61,7 +61,6 @@ describe("EventSchema", () => {
   });
 
   it("rejects missing required fields", () => {
-    // biome-ignore lint/style/useNamingConvention: destructured discard
     const { id: _id, ...noId } = validEvent;
     expect(() => EventSchema.parse(noId)).toThrow();
   });
@@ -622,7 +621,6 @@ describe("eventPayloadSchemas", () => {
   });
 
   it("every schema can validate an object", () => {
-    // biome-ignore lint/style/useNamingConvention: unused loop variable
     for (const [_type, schema] of Object.entries(eventPayloadSchemas)) {
       const result = schema.safeParse({});
       // Empty object should fail validation (all schemas have required fields)

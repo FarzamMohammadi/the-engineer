@@ -139,7 +139,6 @@ describe("sanitizeSecrets", () => {
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-test-key-12345678";
     const input = "Using key sk-ant-test-key-12345678 for API";
     expect(sanitizeSecrets(input)).toBe("Using key [REDACTED] for API");
-    // biome-ignore lint/performance/noDelete: test cleanup
     delete process.env["ANTHROPIC_API_KEY"];
   });
 

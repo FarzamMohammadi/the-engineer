@@ -384,7 +384,6 @@ describe("ActionPipeline", () => {
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => {
-          // biome-ignore lint/style/useThrowOnlyError: testing non-Error throw handling
           throw "unexpected string error";
         },
       });

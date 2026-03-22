@@ -33,7 +33,6 @@ describe("rowToEvent", () => {
   it("returns fallback payload for corrupted JSON", () => {
     const row = { ...baseRow, payload: "{not valid json" };
     const event = rowToEvent(row);
-    // biome-ignore lint/style/useNamingConvention: matches production diagnostic field names
     expect(event.payload).toEqual({ _parse_error: true, _raw: "{not valid json" });
     expect(event.id).toBe("01ABC");
     expect(event.type).toBe("task.created");
@@ -42,7 +41,6 @@ describe("rowToEvent", () => {
   it("returns fallback payload for empty string", () => {
     const row = { ...baseRow, payload: "" };
     const event = rowToEvent(row);
-    // biome-ignore lint/style/useNamingConvention: matches production diagnostic field names
     expect(event.payload).toEqual({ _parse_error: true, _raw: "" });
   });
 

@@ -75,8 +75,19 @@
       "include": ["**/*.test.ts", "test/**/*.ts"],
       "linter": {
         "rules": {
+          "performance": {
+            "noDelete": "off",
+            "useTopLevelRegex": "off"
+          },
+          "suspicious": {
+            "noEmptyBlockStatements": "off",
+            "noExplicitAny": "off"
+          },
           "style": {
-            "noNonNullAssertion": "off"
+            "noNonNullAssertion": "off",
+            "noNamespaceImport": "off",
+            "useNamingConvention": "off",
+            "useThrowOnlyError": "off"
           }
         }
       }

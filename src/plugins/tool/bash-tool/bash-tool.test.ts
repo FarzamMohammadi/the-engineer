@@ -163,7 +163,6 @@ describe("BashToolPlugin", () => {
       makeContext(),
     );
     expect(result.output.trim()).toBe("hello123");
-    // biome-ignore lint/performance/noDelete: test cleanup
     delete process.env["TEST_BASH_TOOL_VAR"];
   });
 
@@ -248,7 +247,6 @@ describe("BashToolPlugin", () => {
       makeContext(),
     );
     expect(execResult.output.trim()).toBe("custom_value");
-    // biome-ignore lint/performance/noDelete: test cleanup
     delete process.env["MY_CUSTOM_VAR"];
   });
 

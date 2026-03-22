@@ -182,7 +182,6 @@ describe("checkPluginManifests", () => {
 describe("checkGitHubConnectivity", () => {
   it("returns warn when no token in env", () => {
     const originalToken = process.env["GITHUB_TOKEN"];
-    // biome-ignore lint/performance/noDelete: delete is required for process.env
     delete process.env["GITHUB_TOKEN"];
     try {
       const result = checkGitHubConnectivity();
@@ -206,7 +205,6 @@ describe("checkGitHubConnectivity", () => {
       if (originalToken !== undefined) {
         process.env["GITHUB_TOKEN"] = originalToken;
       } else {
-        // biome-ignore lint/performance/noDelete: delete is required for process.env
         delete process.env["GITHUB_TOKEN"];
       }
     }
@@ -217,9 +215,7 @@ describe("checkTelegramConnectivity", () => {
   it("returns warn when no token in env", () => {
     const originalToken = process.env["TELEGRAM_BOT_TOKEN"];
     const originalChatId = process.env["TELEGRAM_CHAT_ID"];
-    // biome-ignore lint/performance/noDelete: delete is required for process.env
     delete process.env["TELEGRAM_BOT_TOKEN"];
-    // biome-ignore lint/performance/noDelete: delete is required for process.env
     delete process.env["TELEGRAM_CHAT_ID"];
     try {
       const result = checkTelegramConnectivity();
@@ -248,7 +244,6 @@ describe("checkTelegramConnectivity", () => {
       if (originalToken !== undefined) {
         process.env["TELEGRAM_BOT_TOKEN"] = originalToken;
       } else {
-        // biome-ignore lint/performance/noDelete: delete is required for process.env
         delete process.env["TELEGRAM_BOT_TOKEN"];
       }
     }
@@ -265,7 +260,6 @@ describe("checkTelegramConnectivity", () => {
       if (originalChatId !== undefined) {
         process.env["TELEGRAM_CHAT_ID"] = originalChatId;
       } else {
-        // biome-ignore lint/performance/noDelete: delete is required for process.env
         delete process.env["TELEGRAM_CHAT_ID"];
       }
     }
@@ -273,7 +267,6 @@ describe("checkTelegramConnectivity", () => {
 
   it("warns when TELEGRAM_CHAT_ID is missing", () => {
     const originalChatId = process.env["TELEGRAM_CHAT_ID"];
-    // biome-ignore lint/performance/noDelete: delete is required for process.env
     delete process.env["TELEGRAM_CHAT_ID"];
     try {
       const result = checkTelegramConnectivity();

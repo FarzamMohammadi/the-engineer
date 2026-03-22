@@ -919,7 +919,6 @@ describe("SafetyLayer — input validation", () => {
 
   it("invalid action_class returns deny verdict", () => {
     handle = createTestSafetyLayer();
-    // biome-ignore lint/suspicious/noExplicitAny: testing invalid input
     const verdict = handle.safetyLayer.evaluateAction("task-1", "destroy_everything" as any, {});
     expect(verdict.allowed).toBe(false);
     expect(verdict.action).toBe("deny");

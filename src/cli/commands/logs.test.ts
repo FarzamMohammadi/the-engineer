@@ -9,7 +9,6 @@ let tempDir: string;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "logs-test-"));
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op to suppress console in tests
   vi.spyOn(console, "log").mockImplementation(() => {});
 });
 

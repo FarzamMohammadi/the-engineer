@@ -106,6 +106,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
     let totalCacheReadTokens = 0;
 
     for (const obs of llmObs) {
+      // observe() stores data in `input`; span.end() stores in `output`. Check both.
       const out = (obs.output ?? obs.input) as Record<string, unknown> | null;
       if (!out) {
         continue;

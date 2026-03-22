@@ -92,6 +92,13 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
   private activeProcess: ChildProcess | null = null;
   private lastRateLimits: RateLimitInfo[] = [];
 
+  // Quota API cache — instance-level so each plugin instance has its own cache.
+  // Anthropic's usage API has aggressive per-token rate limits (~5 requests before 429).
+  // Cache for 30 minutes to stay well within limits across multi-phase task pipelines.
+  private readonly quotaCacheTtlMs = 30 * 60 * 1000;
+  private cachedQuota: QuotaStatus | null = null;
+  private cachedQuotaAt = 0;
+
   protected doInfer(request: InferenceRequest): Promise<InferenceResult> {
     // --setting-sources user: prevent loading project-level CLAUDE.md and settings
     // from the CWD — the Engineer provides all context via the prompt.
@@ -129,7 +136,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
   async getQuotaStatus(): Promise<QuotaStatus | null> {
     // Try the secure API call first (real percentages), fall back to cached rate_limit_event data
-    const apiQuota = fetchQuotaFromApi();
+    const apiQuota = this.fetchQuotaFromApi();
     if (apiQuota) {
       return apiQuota;
     }
@@ -289,6 +296,50 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
       child.stdin?.end();
     });
   }
+
+  /**
+   * Fetch quota/usage data from Anthropic's OAuth usage API.
+   *
+   * Security:
+   * - OAuth token is read from Claude Code's credential store (OS-specific)
+   * - Token is piped via stdin to curl so it never appears in the process list
+   * - Token is NEVER logged, written to disk, passed to env vars, or stored as a field
+   *
+   * Cross-platform credential access:
+   * - macOS: reads from macOS Keychain via `security` CLI
+   * - Linux/Windows: reads from `~/.claude/.credentials.json` file
+   *
+   * Rate limiting: caches results for 30 minutes to avoid Anthropic's aggressive
+   * per-token rate limits (~5 requests before 429).
+   */
+  private fetchQuotaFromApi(): QuotaStatus | null {
+    if (this.cachedQuota && Date.now() - this.cachedQuotaAt < this.quotaCacheTtlMs) {
+      return this.cachedQuota;
+    }
+
+    const token = readOAuthToken();
+    if (!token) {
+      return this.cachedQuota;
+    }
+
+    try {
+      const raw = execSync(
+        "curl -sf -H @- -H 'anthropic-beta: oauth-2025-04-20' 'https://api.anthropic.com/api/oauth/usage'",
+        { timeout: 5000, encoding: "utf-8", input: `Authorization: Bearer ${token}` },
+      ).trim();
+
+      if (!raw) {
+        return this.cachedQuota;
+      }
+
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      this.cachedQuota = parseUsageApiResponse(data);
+      this.cachedQuotaAt = Date.now();
+      return this.cachedQuota;
+    } catch {
+      return this.cachedQuota;
+    }
+  }
 }
 
 // ── Module-level helpers ─────────────────────────────────────────────────
@@ -412,68 +463,7 @@ function extractUsage(resultEvent: Record<string, unknown>): InferenceUsage | nu
   };
 }
 
-// ── Secure Quota API Call ────────────────────────────────────────────────────
-
-// ── Cached quota to avoid API rate limiting ──────────────────────────────────
-
-let cachedQuota: QuotaStatus | null = null;
-let cachedQuotaAt = 0;
-// Anthropic's usage API has aggressive per-token rate limits (~5 requests before 429).
-// Cache for 30 minutes to stay well within limits across multi-phase task pipelines.
-// Token rotates every ~5 hours (Claude Code handles it), resetting the rate limit.
-const QUOTA_CACHE_TTL_MS = 30 * 60 * 1000;
-
-/**
- * Fetch quota/usage data from Anthropic's OAuth usage API.
- *
- * Security:
- * - OAuth token is read from Claude Code's credential store (OS-specific)
- * - Token exists in Node.js memory only for the duration of the HTTPS call
- * - Token is NEVER logged, written to disk, passed to env vars, or stored as a field
- * - After the API call, the token variable falls out of scope and is garbage collected
- *
- * Cross-platform credential access:
- * - macOS: reads from macOS Keychain via `security` CLI
- * - Linux: reads from `~/.claude/.credentials.json` file
- * - Windows: reads from `~/.claude/.credentials.json` file
- * - Falls back to `~/.claude/.credentials.json` on any platform if OS-specific method fails
- *
- * Rate limiting: caches results for 5 minutes to avoid Anthropic's aggressive
- * per-token rate limits (~5 requests before 429).
- */
-function fetchQuotaFromApi(): QuotaStatus | null {
-  // Return cache if fresh
-  if (cachedQuota && Date.now() - cachedQuotaAt < QUOTA_CACHE_TTL_MS) {
-    return cachedQuota;
-  }
-
-  const token = readOAuthToken();
-  if (!token) {
-    return cachedQuota; // Return stale cache if available, null otherwise
-  }
-
-  // Synchronous HTTPS call via curl — Node.js native https is async-only,
-  // and getQuotaStatus() needs to be callable synchronously from the cache path.
-  // Token is passed as a CLI arg (not env var) and exists in memory only briefly.
-  try {
-    const raw = execSync(
-      `curl -sf -H 'Authorization: Bearer ${token}' -H 'anthropic-beta: oauth-2025-04-20' 'https://api.anthropic.com/api/oauth/usage'`,
-      { timeout: 5000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-    ).trim();
-
-    if (!raw) {
-      return cachedQuota;
-    }
-
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    cachedQuota = parseUsageApiResponse(data);
-    cachedQuotaAt = Date.now();
-    return cachedQuota;
-  } catch {
-    // Rate limited (429) or other failure — return stale cache
-    return cachedQuota;
-  }
-}
+// ── Credential Access ────────────────────────────────────────────────────────
 
 /**
  * Read the OAuth access token from Claude Code's credential store.

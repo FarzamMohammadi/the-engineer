@@ -153,13 +153,14 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
   }
 
   function emitCostIncurred(taskId: string, result: InferenceResult): void {
+    const task = ctx.taskEngine.getTask(taskId);
     ctx.eventBus.publish({
       type: "cost.incurred",
       source: "orchestrator",
       task_id: taskId,
       payload: {
         task_id: taskId,
-        repo: "",
+        repo: task?.repo ?? "",
         provider_id: "llm",
         operation: "phase_completion",
         spend_usd: result.cost_usd,
@@ -174,13 +175,14 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
   }
 
   function emitAgentLoopCost(taskId: string, phase: string, loopResult: AgentLoopResult): void {
+    const task = ctx.taskEngine.getTask(taskId);
     ctx.eventBus.publish({
       type: "cost.incurred",
       source: "orchestrator",
       task_id: taskId,
       payload: {
         task_id: taskId,
-        repo: "",
+        repo: task?.repo ?? "",
         provider_id: "llm",
         operation: `agent_loop:${phase}`,
         spend_usd: loopResult.totalCost.spend_usd,

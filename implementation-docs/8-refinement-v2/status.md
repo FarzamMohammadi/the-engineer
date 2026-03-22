@@ -6,7 +6,7 @@
 
 ## Last Session
 
-Session 065 (2026-03-22): Built the Dashboard Simple Rebuild. Audited all data export surfaces (Observer, EventBus, agent loop callbacks, blob store). Created 2 new API endpoints (observations query + SSE stream). Rewrote index.html from scratch — 8 tabs, SSE-driven real-time, type-specific observation rendering, blob store links for LLM prompts/responses, cross-tab navigation. Clean dark theme without decorative elements.
+Session 065 (2026-03-22): Built the Dashboard Simple Rebuild. Audited all data export surfaces (Observer, EventBus, agent loop callbacks, blob store). Created 2 new API endpoints (observations query + SSE stream). Rewrote index.html from scratch — 8 tabs, SSE-driven real-time, type-specific observation rendering, blob store links for LLM prompts/responses, cross-tab navigation. Clean dark theme without decorative elements. Added flicker-free 3-second auto-refresh with updateIfChanged() and ID-based fingerprinting.
 
 ## Next
 

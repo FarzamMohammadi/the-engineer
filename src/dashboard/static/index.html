@@ -1868,7 +1868,7 @@ async function loadCost() {
   // Quota status — split into session (shortest window) and long-term (rest)
   // Generic: plugins report windows, dashboard auto-categorizes by duration
   const quotaData = await api('/api/metrics/quota');
-  const noQuotaMsg = '<span style="color:var(--text-ghost);font-size:0.78rem">Will populate after first LLM call</span>';
+  const noQuotaMsg = '<span style="color:var(--text-ghost);font-size:0.78rem">Awaiting data from provider</span>';
 
   if (quotaData && quotaData.available && quotaData.live && quotaData.live.windows && quotaData.live.windows.length > 0) {
     const nowSec = Math.floor(Date.now() / 1000);

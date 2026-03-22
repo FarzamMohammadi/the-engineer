@@ -418,7 +418,10 @@ function extractUsage(resultEvent: Record<string, unknown>): InferenceUsage | nu
 
 let cachedQuota: QuotaStatus | null = null;
 let cachedQuotaAt = 0;
-const QUOTA_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// Anthropic's usage API has aggressive per-token rate limits (~5 requests before 429).
+// Cache for 30 minutes to stay well within limits across multi-phase task pipelines.
+// Token rotates every ~5 hours (Claude Code handles it), resetting the rate limit.
+const QUOTA_CACHE_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Fetch quota/usage data from Anthropic's OAuth usage API.

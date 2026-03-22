@@ -336,35 +336,16 @@ async getQuotaStatus(): Promise<QuotaStatus | null> {
 
 Don't override `getQuotaStatus()`. The base class returns `null`. Core skips quota display and never pauses for quota resets.
 
-### Enriching Quota with Real Percentages (Secure API Call)
+### Enriching Quota with Real Percentages (API Call)
 
 Some providers have a separate API endpoint that returns actual usage percentages (e.g. "43% of session used"). The Claude Code plugin uses Anthropic's `/api/oauth/usage` endpoint for this.
 
-**Security principle: the OAuth token never enters the Node.js process.** It flows through a shell pipe:
+**How it works:**
 
-```
-macOS Keychain → python3 (extract) → curl (API call) → JSON response
-                                                            ↓
-                                            Node.js only sees this
-```
-
-The plugin spawns a single shell command:
-
-```typescript
-function fetchQuotaFromApi(): QuotaStatus | null {
-  try {
-    const extractToken = `python3 -c "import json,sys; print(json.loads(sys.stdin.read())['claudeAiOauth']['accessToken'])"`;
-    const curlApi = `xargs -I{} curl -sf -H "Authorization: Bearer {}" -H "anthropic-beta: oauth-2025-04-20" "https://api.anthropic.com/api/oauth/usage"`;
-    const cmd = `security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null | ${extractToken} 2>/dev/null | ${curlApi} 2>/dev/null`;
-
-    const raw = execSync(cmd, { timeout: 5000, encoding: "utf-8" }).trim();
-    if (!raw) return null;
-    return parseUsageApiResponse(JSON.parse(raw));
-  } catch {
-    return null; // Any failure: graceful fallback
-  }
-}
-```
+1. Read Claude Code's OAuth token from the OS credential store (macOS Keychain or `~/.claude/.credentials.json` fallback)
+2. Call `https://api.anthropic.com/api/oauth/usage` with the token
+3. Parse the response into `QuotaWindow[]` with real `used_percentage` values
+4. Token exists in memory only for the duration of the HTTP call, never stored/logged
 
 **API response shape (Anthropic-specific):**
 
@@ -377,37 +358,45 @@ function fetchQuotaFromApi(): QuotaStatus | null {
 }
 ```
 
-Each entry maps to a `QuotaWindow` with `used_percentage` populated from `utilization`.
-
 **Fallback chain in `getQuotaStatus()`:**
 
-1. Try the API call → returns real percentages
-2. If API fails (rate limited, expired token, not macOS) → use cached `rate_limit_event` data from last `doInfer()` (has status + reset time, no percentages)
+1. Try the API call → returns real percentages for all windows
+2. If API fails (rate limited, expired token) → use cached `rate_limit_event` data from last `doInfer()` (has status + reset time, no percentages)
 3. If no rate limit events either → return `null`
+
+### Known Limitation: API Rate Limiting
+
+> **Anthropic's `/api/oauth/usage` endpoint has aggressive per-token rate limits (~5 requests before returning HTTP 429).** The rate limit is tied to the OAuth access token, which Claude Code rotates automatically every ~5 hours.
+
+**What this means in practice:**
+
+- The plugin caches API results for 30 minutes to stay within limits
+- On a fresh daemon start, the first API call succeeds and returns real percentages
+- Subsequent calls within the cache window return cached data
+- If the rate limit is hit (429), the plugin falls back to `rate_limit_event` data which has `status` (allowed/denied) and `resetsAt` but no `used_percentage`
+- When Claude Code rotates the token (~every 5 hours), the rate limit resets
+
+**Dashboard behavior:**
+
+- After the first successful API call: shows real percentages for all windows (session, weekly, per-model)
+- After API rate limit hit: shows window status (OK/EXHAUSTED) and reset times, but percentages may be stale or unavailable
+- Data refreshes automatically when token rotates
+
+**Future improvement:** If Anthropic loosens the rate limit on this endpoint or provides an alternative (e.g. via CLI flag), the cache TTL can be reduced for fresher data.
 
 ### Platform Considerations
 
-> **The secure API call approach described above is macOS-only.** It uses the macOS Keychain (`security find-generic-password`) to access Claude Code's OAuth token without ever reading it into the Node.js process.
+**Credential access is cross-platform:**
 
-**On other platforms, you'll need to adapt the credential access method:**
+| Platform | Primary source | Fallback |
+|----------|---------------|----------|
+| **macOS** | macOS Keychain (`security` CLI) | `~/.claude/.credentials.json` |
+| **Linux** | `~/.claude/.credentials.json` | — |
+| **Windows** | `~/.claude/.credentials.json` | — |
 
-| Platform | Claude Code stores credentials in | Adaptation needed |
-|----------|----------------------------------|-------------------|
-| **macOS** | macOS Keychain (`security` CLI) | Current implementation works as-is |
-| **Linux** | `libsecret` / `gnome-keyring` / file-based | Replace `security find-generic-password` with `secret-tool lookup` or read from `~/.claude/.credentials.json` if it exists |
-| **Windows** | Windows Credential Manager | Replace with `cmdkey` or PowerShell `Get-StoredCredential`, or read from the Windows-equivalent credential file |
+The plugin tries the OS-specific credential store first, then falls back to the file-based path. Token expiry is checked before use — expired tokens are skipped.
 
-**If you're adapting for a new platform:**
-
-1. Find where Claude Code stores its OAuth credentials on your OS (check Claude Code source or look for credential files)
-2. Replace the `security find-generic-password` command with your platform's equivalent
-3. Keep the same pipe pattern — credential → extract token → curl API → JSON result
-4. The token must never be stored in a variable, file, log, or env var in the Node.js process
-5. Test the fallback: if your credential access fails, `getQuotaStatus()` must return `null` gracefully, never throw
-
-**If your CLI tool doesn't use OAuth or has a different auth model**, the fallback to `rate_limit_event` parsing still works. You'll get status (allowed/denied) and reset times — just not percentages.
-
-**If your CLI tool has its own usage API** (e.g. OpenCode might expose usage through its own mechanism), implement `fetchQuotaFromApi()` with whatever secure approach works for that provider. The contract (`QuotaStatus` with `QuotaWindow[]`) is provider-agnostic.
+**If your CLI tool has its own usage API** (e.g. OpenCode might expose usage through its own mechanism), implement `fetchQuotaFromApi()` with whatever approach works for that provider. The contract (`QuotaStatus` with `QuotaWindow[]`) is provider-agnostic.
 
 ---
 

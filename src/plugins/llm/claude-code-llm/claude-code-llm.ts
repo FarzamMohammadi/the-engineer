@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execSync, spawn } from "node:child_process";
 import {
   AdapterMethodError,
   type HealthStatus,
@@ -125,6 +125,13 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
   }
 
   async getQuotaStatus(): Promise<QuotaStatus | null> {
+    // Try the secure API call first (real percentages), fall back to cached rate_limit_event data
+    const apiQuota = fetchQuotaFromApi();
+    if (apiQuota) {
+      return apiQuota;
+    }
+
+    // Fallback: use cached rate_limit_event data from last infer() call
     if (this.lastRateLimits.length === 0) {
       return null;
     }
@@ -399,5 +406,79 @@ function extractUsage(resultEvent: Record<string, unknown>): InferenceUsage | nu
     },
     model_id: modelId,
     service_tier: serviceTier,
+  };
+}
+
+// ── Secure Quota API Call ────────────────────────────────────────────────────
+
+/**
+ * Fetch quota/usage data from Anthropic's OAuth usage API.
+ *
+ * Security: The OAuth token is NEVER read or stored by our process. It flows
+ * through a shell pipe: macOS Keychain → python3 (extract) → curl (API call).
+ * Only the usage response (percentages, reset times) enters our process.
+ *
+ * Falls back to null on any error (no Keychain, expired token, rate limited,
+ * non-macOS, missing tools). Callers should fall back to rate_limit_event data.
+ */
+function fetchQuotaFromApi(): QuotaStatus | null {
+  try {
+    // Single shell pipeline: Keychain → extract token → curl API → return JSON
+    // Token never touches our Node.js process memory
+    const extractToken = `python3 -c "import json,sys; print(json.loads(sys.stdin.read())['claudeAiOauth']['accessToken'])"`;
+    const curlApi = `xargs -I{} curl -sf -H "Authorization: Bearer {}" -H "anthropic-beta: oauth-2025-04-20" "https://api.anthropic.com/api/oauth/usage"`;
+    const cmd = `security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null | ${extractToken} 2>/dev/null | ${curlApi} 2>/dev/null`;
+
+    const raw = execSync(cmd, { timeout: 5000, encoding: "utf-8" }).trim();
+    if (!raw) {
+      return null;
+    }
+
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    return parseUsageApiResponse(data);
+  } catch {
+    // Any failure (no Keychain, expired token, rate limited, non-macOS, etc.)
+    return null;
+  }
+}
+
+/** Parse the Anthropic usage API response into our QuotaStatus shape. */
+function parseUsageApiResponse(data: Record<string, unknown>): QuotaStatus {
+  const windows: QuotaWindow[] = [];
+
+  // Map known API fields to our QuotaWindow format
+  const windowMappings: Array<{ key: string; displayType: string }> = [
+    { key: "five_hour", displayType: "five_hour" },
+    { key: "seven_day", displayType: "seven_day" },
+    { key: "seven_day_sonnet", displayType: "seven_day_sonnet" },
+    { key: "seven_day_opus", displayType: "seven_day_opus" },
+    { key: "seven_day_oauth_apps", displayType: "seven_day_oauth_apps" },
+  ];
+
+  for (const mapping of windowMappings) {
+    const entry = data[mapping.key] as Record<string, unknown> | null | undefined;
+    if (!entry) {
+      continue;
+    }
+
+    const utilization = typeof entry["utilization"] === "number" ? entry["utilization"] : null;
+    const resetsAtStr = typeof entry["resets_at"] === "string" ? entry["resets_at"] : null;
+    const resetsAtSec = resetsAtStr ? Math.floor(new Date(resetsAtStr).getTime() / 1000) : null;
+
+    windows.push({
+      window_type: mapping.displayType,
+      resets_at: resetsAtSec,
+      is_exhausted: utilization !== null && utilization >= 100,
+      used_percentage: utilization,
+    });
+  }
+
+  const isRateLimited = windows.some((w) => w.is_exhausted);
+  const resetTimes = windows.map((w) => w.resets_at).filter((t): t is number => t !== null);
+
+  return {
+    windows,
+    is_rate_limited: isRateLimited,
+    earliest_reset_at: resetTimes.length > 0 ? Math.min(...resetTimes) : null,
   };
 }

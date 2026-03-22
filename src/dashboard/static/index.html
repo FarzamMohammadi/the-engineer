@@ -946,6 +946,15 @@ function fmtDateTime(iso) {
 
 function truncate(s, max) { return s && s.length > max ? s.slice(0, max) + '...' : (s || ''); }
 function shortId(id) { return id ? id.slice(0, 8) : '-'; }
+
+// Anti-flicker: only update DOM when content actually changed
+function updateIfChanged(el, newHtml) {
+  if (typeof el === 'string') el = document.getElementById(el);
+  if (!el) return;
+  if (el._lastHtml === newHtml) return;
+  el._lastHtml = newHtml;
+  el.innerHTML = newHtml;
+}
 function shortIdWithTitle(id) { return id ? `<span title="${esc(id)}" style="cursor:help">${esc(id.slice(0, 8))}</span>` : '-'; }
 
 function jsonPre(obj) {
@@ -1162,25 +1171,25 @@ async function pollSystemStatus() {
   document.getElementById('tab-tasks-count').textContent = data.total_tasks || 0;
 
   // Overview status
-  document.getElementById('overview-status').innerHTML = `
+  updateIfChanged('overview-status', `
     <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.78rem">
       <div><span style="color:var(--text-muted)">Daemon:</span> <span style="color:${data.daemon_running ? 'var(--green)' : 'var(--red)'}">${data.daemon_running ? 'Running (PID ' + data.daemon_pid + ')' : 'Stopped'}</span></div>
       <div><span style="color:var(--text-muted)">LLM:</span> <span style="color:var(--text-bright)">${esc(data.llm_provider || 'None detected')}</span></div>
       <div><span style="color:var(--text-muted)">Total Tasks:</span> <span style="color:var(--text-bright)">${data.total_tasks}</span></div>
       <div><span style="color:var(--text-muted)">Actions:</span> <span style="color:var(--text-bright)">${data.total_action_traces}</span></div>
       <div><span style="color:var(--text-muted)">LLM Calls:</span> <span style="color:var(--text-bright)">${data.total_llm_traces}</span></div>
-    </div>`;
+    </div>`);
 
   // Active tasks in overview
   const activeTasks = allTasks.filter(t => t.state === 'active');
   if (activeTasks.length > 0) {
-    document.getElementById('overview-active-tasks').innerHTML = activeTasks.map(t => `
+    updateIfChanged('overview-active-tasks', activeTasks.map(t => `
       <div style="padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:0.78rem">
         <div style="color:var(--text-bright)">${esc(t.title)}</div>
         <div style="color:var(--text-muted);font-size:0.72rem">Phase: ${esc(t.phase || 'none')} | Cost: ${fmt$(t.llm_cost_usd)}</div>
-      </div>`).join('');
+      </div>`).join(''));
   } else {
-    document.getElementById('overview-active-tasks').innerHTML = '<div class="empty-state" style="padding:12px">No active tasks</div>';
+    updateIfChanged('overview-active-tasks', '<div class="empty-state" style="padding:12px">No active tasks</div>');
   }
 }
 
@@ -1199,11 +1208,11 @@ async function pollObsTypeDist() {
   data.observations.forEach(o => { counts[o.type] = (counts[o.type] || 0) + 1; });
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   if (sorted.length === 0) {
-    document.getElementById('overview-obs-types').innerHTML = '<span style="color:var(--text-ghost)">No observations yet</span>';
+    updateIfChanged('overview-obs-types', '<span style="color:var(--text-ghost)">No observations yet</span>');
     return;
   }
   const maxCount = sorted[0][1];
-  document.getElementById('overview-obs-types').innerHTML = sorted.map(([type, count]) => {
+  updateIfChanged('overview-obs-types', sorted.map(([type, count]) => {
     const pct = maxCount > 0 ? (count / maxCount * 100) : 0;
     const colorClass = OBS_TYPE_COLORS[type] || 'badge-dim';
     return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0">
@@ -1213,21 +1222,21 @@ async function pollObsTypeDist() {
       </div>
       <span style="color:var(--text-secondary);min-width:30px;text-align:right">${count}</span>
     </div>`;
-  }).join('');
+  }).join(''));
 }
 
 async function pollHealth() {
   const data = await api('/api/system/health');
   if (!data || !data.events || data.events.length === 0) {
-    document.getElementById('overview-health').innerHTML = '<div style="font-size:0.78rem;color:var(--text-ghost)">No health events</div>';
+    updateIfChanged('overview-health', '<div style="font-size:0.78rem;color:var(--text-ghost)">No health events</div>');
     return;
   }
-  document.getElementById('overview-health').innerHTML = data.events.slice(0, 10).map(e => `
+  updateIfChanged('overview-health', data.events.slice(0, 10).map(e => `
     <div style="padding:4px 0;font-size:0.75rem;border-bottom:1px solid var(--border-dim)">
       <span style="color:var(--text-ghost)">${esc(fmtTime(e.timestamp))}</span>
       <span class="badge badge-red">${esc(e.type)}</span>
       <span style="color:var(--text-secondary)">${esc(truncate(JSON.stringify(e.payload), 80))}</span>
-    </div>`).join('');
+    </div>`).join(''));
 }
 
 // ── Tasks ──────────────────────────────────────────────────────
@@ -1282,7 +1291,7 @@ function renderKanban() {
     html += '</div></div>';
   });
 
-  container.innerHTML = html;
+  updateIfChanged(container, html);
 }
 
 async function showTaskDetail(taskId) {
@@ -1533,7 +1542,7 @@ async function loadAgentLoop(taskId) {
     html += '</div></div>';
   });
 
-  document.getElementById('agent-loop-content').innerHTML = html;
+  updateIfChanged('agent-loop-content', html);
 }
 
 async function toggleBlob(elId, ref) {
@@ -1579,10 +1588,14 @@ async function loadObservations() {
   const data = await api(url);
   if (!data) return;
 
-  const tbody = document.getElementById('obs-tbody');
-  tbody.innerHTML = '';
-  // Reverse to show newest first
+  // Skip rebuild if data unchanged (anti-flicker)
   const obs = (data.observations || []).reverse();
+  const fingerprint = obs.map(o => o.id).join(',');
+  const tbody = document.getElementById('obs-tbody');
+  if (tbody._lastFingerprint === fingerprint) return;
+  tbody._lastFingerprint = fingerprint;
+
+  tbody.innerHTML = '';
   obs.forEach(o => appendObservationRow(o, tbody));
 }
 
@@ -1711,9 +1724,15 @@ async function loadEvents() {
   const data = await api(url);
   if (!data) return;
 
+  // Skip rebuild if data unchanged (anti-flicker)
+  const events = data.events || [];
+  const fingerprint = events.map(e => e.id).join(',');
   const feed = document.getElementById('events-feed');
+  if (feed._lastFingerprint === fingerprint) return;
+  feed._lastFingerprint = fingerprint;
+
   feed.innerHTML = '';
-  (data.events || []).forEach(e => appendEventRow(e, feed));
+  events.forEach(e => appendEventRow(e, feed));
 }
 
 function appendEventRow(e, feed) {
@@ -1778,18 +1797,18 @@ async function loadCost() {
       <span style="width:70px;text-align:right;color:var(--amber)">${fmt$(p.spend_usd)}</span>
       <span style="width:50px;text-align:right;color:var(--text-ghost)">${p.executions}x</span>
     </div>`).join('');
-  document.getElementById('cost-by-phase').innerHTML = phaseHtml || '<div class="empty-state" style="padding:12px">No phase cost data</div>';
+  updateIfChanged('cost-by-phase', phaseHtml || '<div class="empty-state" style="padding:12px">No phase cost data</div>');
 
   // By day
   const days = data.per_day || [];
   if (days.length > 0) {
     const maxDay = Math.max(...days.map(d => d.spend_usd));
-    document.getElementById('cost-by-day').innerHTML = days.map(d => {
+    updateIfChanged('cost-by-day', days.map(d => {
       const pct = maxDay > 0 ? (d.spend_usd / maxDay * 100) : 0;
       return `<div class="cost-bar-item" style="height:${Math.max(2, pct)}%">
         <div class="cost-bar-label">${d.day.slice(5)}</div>
       </div>`;
-    }).join('');
+    }).join(''));
   }
 
   // By task
@@ -1800,13 +1819,13 @@ async function loadCost() {
       <span style="color:var(--amber)">${fmt$(t.llm_cost_usd)}</span>
       <span style="color:var(--text-ghost)">${(t.llm_tokens || 0).toLocaleString()} tok</span>
     </div>`).join('');
-  document.getElementById('cost-by-task').innerHTML = taskHtml || '<div class="empty-state" style="padding:12px">No task cost data</div>';
+  updateIfChanged('cost-by-task', taskHtml || '<div class="empty-state" style="padding:12px">No task cost data</div>');
 
   // LLM calls
   const llmData = await api('/api/observations?type=llm_call&limit=100');
   if (llmData?.observations) {
     const reversed = [...llmData.observations].reverse();
-    document.getElementById('cost-llm-calls').innerHTML = reversed.map(o => {
+    updateIfChanged('cost-llm-calls', reversed.map(o => {
       const spend = o.input?.spend_usd || o.output?.spend_usd || 0;
       const tokIn = o.input?.tokens_in || o.output?.tokens_in || 0;
       const tokOut = o.input?.tokens_out || o.output?.tokens_out || 0;
@@ -1818,7 +1837,7 @@ async function loadCost() {
         <span style="color:var(--text-ghost)">${tokIn.toLocaleString()}in/${tokOut.toLocaleString()}out</span>
         <span style="color:var(--text-ghost)">${fmtMs(o.duration_ms)}</span>
       </div>`;
-    }).join('') || '<div style="font-size:0.75rem;color:var(--text-ghost)">No LLM calls yet</div>';
+    }).join('') || '<div style="font-size:0.75rem;color:var(--text-ghost)">No LLM calls yet</div>');
   }
 }
 
@@ -1826,12 +1845,12 @@ async function loadCost() {
 async function loadDecisions() {
   const data = await api('/api/observations?type=decision_point&limit=100');
   if (!data || !data.observations || data.observations.length === 0) {
-    document.getElementById('decisions-content').innerHTML = '<div class="empty-state">No decision points recorded yet</div>';
+    updateIfChanged('decisions-content', '<div class="empty-state">No decision points recorded yet</div>');
     return;
   }
 
   const reversed = [...data.observations].reverse();
-  document.getElementById('decisions-content').innerHTML = reversed.map(d => renderDecisionCard(d)).join('');
+  updateIfChanged('decisions-content', reversed.map(d => renderDecisionCard(d)).join(''));
 }
 
 function renderDecisionCard(d) {
@@ -1869,12 +1888,12 @@ async function loadErrors() {
 
   const data = await api(url);
   if (!data || !data.observations || data.observations.length === 0) {
-    document.getElementById('errors-content').innerHTML = '<div class="empty-state">No errors recorded</div>';
+    updateIfChanged('errors-content', '<div class="empty-state">No errors recorded</div>');
     return;
   }
 
   const reversed = [...data.observations].reverse();
-  document.getElementById('errors-content').innerHTML = reversed.map(o => renderErrorCard(o, false)).join('');
+  updateIfChanged('errors-content', reversed.map(o => renderErrorCard(o, false)).join(''));
 }
 
 function renderErrorCard(o, flash) {
@@ -1911,6 +1930,46 @@ function prependErrorCard(obs, flash) {
 
 document.getElementById('error-level-filter').addEventListener('change', loadErrors);
 
+// ── Active Tab Detection ───────────────────────────────────────
+function getActiveTab() {
+  const active = document.querySelector('.tab-btn.active');
+  return active ? active.dataset.tab : 'overview';
+}
+
+// ── Unified Refresh Loop ───────────────────────────────────────
+let refreshing = false;
+async function refreshLoop() {
+  if (refreshing) return; // skip if previous refresh still running
+  refreshing = true;
+  try {
+    // Always refresh system bar + cost (lightweight)
+    await Promise.all([pollSystemStatus(), pollCost()]);
+
+    // Refresh the currently visible tab
+    const tab = getActiveTab();
+    if (tab === 'overview') {
+      await Promise.all([pollHealth(), pollObsTypeDist()]);
+    } else if (tab === 'tasks') {
+      if (!currentDetailTaskId) await pollTasks();
+    } else if (tab === 'agent-loop') {
+      const taskId = document.getElementById('al-task-select').value;
+      if (taskId) await loadAgentLoop(taskId);
+    } else if (tab === 'observations') {
+      await loadObservations();
+    } else if (tab === 'events') {
+      await loadEvents();
+    } else if (tab === 'cost') {
+      await loadCost();
+    } else if (tab === 'decisions') {
+      await loadDecisions();
+    } else if (tab === 'errors') {
+      await loadErrors();
+    }
+  } finally {
+    refreshing = false;
+  }
+}
+
 // ── Initialization ─────────────────────────────────────────────
 async function init() {
   // Initial data load
@@ -1919,11 +1978,8 @@ async function init() {
   // Start SSE
   connectSSE();
 
-  // Polling for aggregates
-  setInterval(pollSystemStatus, 5000);
-  setInterval(pollCost, 15000);
-  setInterval(pollHealth, 30000);
-  setInterval(pollObsTypeDist, 30000);
+  // Unified 3-second refresh loop
+  setInterval(refreshLoop, 3000);
 }
 
 init();

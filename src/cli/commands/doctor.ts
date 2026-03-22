@@ -453,6 +453,21 @@ export function checkExternalDependencies(): DoctorCategory {
     });
   }
 
+  // Optional LLM CLIs — only show when found (these are opt-in plugins)
+  try {
+    const version = execSync("opencode --version", { encoding: "utf8", timeout: 5000 }).trim();
+    checks.push({ label: "OpenCode CLI", status: "pass", message: version });
+  } catch {
+    // Optional — silently skip if not installed
+  }
+
+  try {
+    const version = execSync("gemini --version", { encoding: "utf8", timeout: 5000 }).trim();
+    checks.push({ label: "Gemini CLI", status: "pass", message: version });
+  } catch {
+    // Optional — silently skip if not installed
+  }
+
   return { category: "External Dependencies", checks };
 }
 

@@ -850,15 +850,15 @@ a:hover { text-decoration: underline; }
 <div class="tab-panel" id="panel-cost">
   <div class="grid-3" id="cost-summary">
     <div class="stat-card">
-      <div class="stat-big" style="color:var(--amber)" id="cost-today">$0.00</div>
+      <div class="stat-big" style="color:var(--amber)" id="cost-today">-</div>
       <div class="stat-label">Today</div>
     </div>
     <div class="stat-card">
-      <div class="stat-big" style="color:var(--amber)" id="cost-month">$0.00</div>
+      <div class="stat-big" style="color:var(--amber)" id="cost-month">-</div>
       <div class="stat-label">This Month</div>
     </div>
     <div class="stat-card">
-      <div class="stat-big" style="color:var(--text-bright)" id="cost-total">$0.00</div>
+      <div class="stat-big" style="color:var(--text-bright)" id="cost-total">-</div>
       <div class="stat-label">All Time</div>
     </div>
   </div>
@@ -935,7 +935,7 @@ function esc(str) {
 }
 
 function fmt$(n) {
-  if (n === null || n === undefined) return '$0.00';
+  if (n === null || n === undefined) return 'N/A';
   return '$' + Number(n).toFixed(4);
 }
 
@@ -1303,6 +1303,7 @@ function renderKanban() {
           <span>${fmt$(t.llm_cost_usd)}</span>
           ${t.children_count > 0 ? '<span>' + t.children_count + ' children</span>' : ''}
         </div>
+        ${t.blocked_reason ? '<div style="font-size:0.68rem;color:var(--red);margin-top:4px;padding:4px 6px;background:rgba(255,80,80,0.08);border-radius:3px">' + esc(truncate(t.blocked_reason, 80)) + '</div>' : ''}
         ${phaseBar}
       </div>`;
     });
@@ -1351,6 +1352,14 @@ async function showTaskDetail(taskId) {
   });
   phaseHtml += '</div>';
 
+  // Blocked reason banner
+  const blockedReason = (t.state === 'blocked' || t.state === 'failed') && t.last_transition_reason
+    ? `<div style="margin:8px 0;padding:10px 14px;background:rgba(255,80,80,0.1);border:1px solid var(--red);border-radius:6px">
+        <div style="color:var(--red);font-weight:600;font-size:0.78rem;margin-bottom:4px">Reason</div>
+        <div style="color:var(--text-secondary);font-size:0.75rem">${esc(t.last_transition_reason)}</div>
+      </div>`
+    : '';
+
   // Detail fields
   const fields = [
     ['State', `<span class="badge ${stateBadge(t.state)}">${esc(t.state)}</span>${t.sub_state ? ' / ' + esc(t.sub_state) : ''}`],
@@ -1382,6 +1391,7 @@ async function showTaskDetail(taskId) {
       <div class="detail-meta">ID: ${esc(t.id)}</div>
     </div>
     ${phaseHtml}
+    ${blockedReason}
     <div class="detail-grid">${fields.map(([l, v]) => `<div><div class="detail-field-label">${l}</div><div class="detail-field-value">${typeof v === 'number' ? v : v}</div></div>`).join('')}</div>
     <div style="margin-bottom:12px">
       <button class="expand-btn" style="font-size:0.78rem;padding:4px 12px" onclick="switchToAgentLoop('${esc(t.id)}')">View in Agent Loop &rarr;</button>

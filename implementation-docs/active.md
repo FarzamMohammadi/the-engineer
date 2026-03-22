@@ -4,7 +4,7 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** Dashboard — Simple Rebuild. Evaluation done (happy path confirmed). Next: audit data export coverage, then rebuild simple dashboard for maximum visibility.
+**Current phase:** Multi-CLI Plugin Integration — DONE. Next: RPI Integration (Research → Plan → Implement).
 
 Previous layers:
 - [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)

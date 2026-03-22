@@ -17,24 +17,37 @@ Then help me set up an LLM plugin by doing the following:
 
 3. Verify the CLI tool is installed by running its version command (e.g. `claude --version`, `opencode --version`, `gemini --version`).
 
-4. Walk me through configuration:
+4. If the CLI tool already has a built-in plugin (check the "Available LLM Plugins" section in the README), skip to step 6 — just configure it.
+
+5. If building a NEW plugin for a CLI tool that doesn't have one yet:
+
+   a. Research the CLI's output format by running it with a trivial prompt and structured output flags. Capture the real NDJSON/JSON output. Identify: which event type carries content, which carries cost/tokens, what flags enable non-interactive mode, whether there's a --system-prompt flag, and critically — how the CLI reads from stdin (prompts MUST be piped via stdin, never as CLI args, because orchestrator prompts are 50KB+).
+
+   b. Read the reference implementations for the closest match:
+      - Claude Code: src/plugins/llm/claude-code-llm/claude-code-llm.ts (NDJSON, cost+tokens+quota)
+      - OpenCode: src/plugins/llm/opencode-llm/opencode-llm.ts (NDJSON, cost+tokens, no quota)
+      - Gemini CLI: src/plugins/llm/gemini-cli-llm/gemini-cli-llm.ts (NDJSON, tokens only, no cost)
+
+   c. Create the new plugin following the same patterns:
+      - config.ts with a Zod schema (use z.output<> for the type)
+      - plugin.ts extending LLMAdapter (doInfer, getCapabilities, doInitialize, doShutdown, doHealthCheck)
+      - CRITICAL: pipe prompt via stdin (child.stdin.write), NEVER as a CLI arg — orchestrator prompts are 50KB+ and will hit OS arg length limits
+      - If the CLI has no --system-prompt flag, prepend with [SYSTEM INSTRUCTIONS]...[END SYSTEM INSTRUCTIONS] delimiters
+      - Copy the buildLlmEnv() env isolation pattern into the plugin
+      - Export the output parser function for unit testing
+      - plugin.test.ts with mock CLI scripts + contract compliance suite (runLLMContractSuite)
+
+   d. Register in src/plugins/builtin.ts:
+      - Import the plugin class
+      - Add a manifest entry (set enabled: false for opt-in plugins)
+      - Add a factory function
+
+   e. Run the contract compliance suite and all tests: pnpm test
+
+6. Walk me through configuration:
    - Ask for any provider-specific settings (model, timeout, CLI path if non-default)
    - Check if credentials/authentication are set up for the CLI tool
    - Generate the plugin config for ~/.engineer/config/plugins.yaml
-
-5. If building a NEW plugin (not Claude Code which is built-in):
-   - Read the source of the reference implementation at src/plugins/llm/claude-code-llm/claude-code-llm.ts
-   - Create the new plugin following the same patterns:
-     a. Extend LLMAdapter from src/adapters/llm.ts
-     b. Implement doInfer() — spawn the CLI, parse output, return InferenceResult
-     c. Implement getCapabilities() — model_id + feature flags
-     d. Implement getQuotaStatus() if the CLI exposes rate limit data
-     e. Create config.ts with a Zod schema
-     f. Create engineer.plugin.yaml manifest
-     g. Register in src/plugins/builtin.ts
-   - Run the contract compliance suite to validate: test/helpers/contract-suites/llm-contract.ts
-
-6. Test the setup by running a simple inference call through The Engineer.
 
 7. If quota/usage tracking is available for this CLI tool, set that up too — explain what data will be visible on the dashboard and what won't be available.
 

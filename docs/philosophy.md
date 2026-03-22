@@ -75,6 +75,17 @@ The reader's time is sacred. Every doc earns its existence by saving time or pre
 - **Automation over prose.** A copy-pasteable command that works on first try beats a paragraph explaining what to do. A `--help` flag that stays in sync with code beats a manually maintained table.
 - **Docs ship with features.** Every change to user-facing behavior updates docs in the same step — not "later."
 
+## Agent-Assisted Everything
+
+No user should have to manually figure out setup, configuration, or integration. We live in the age of AI — every process that a human would struggle with should be automated or agent-guided.
+
+- **Contribution guides are agent prompts.** A user points their LLM at the guide and the agent handles OS detection, credential setup, config generation, and testing interactively. The guide is written for the agent to execute, not for a human to puzzle through.
+- **Zero-pain plugin development.** Adding a new plugin means following a prompt, not reading architecture docs. The agent reads the contract, examines the reference implementation, builds the plugin, and runs the compliance suite.
+- **Self-validating setup.** Every setup path ends with a verification step the agent can run. If something is wrong, the agent diagnoses it — the user never sees a cryptic error.
+- **Platform adaptation is automatic.** The agent detects the user's OS and adapts. No manual "if you're on Linux, do X instead" — the agent handles the branching.
+
+The bar: any user with any LLM CLI tool can set up, extend, and contribute to The Engineer without pain. If they need to read a stack trace or hunt for a config path, we failed.
+
 ## Derive from Proven Systems
 
 Don't invent from scratch. Study how proven systems solved the same class of problem, then derive our approach from theirs.

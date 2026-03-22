@@ -93,6 +93,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
   const app = new Hono();
 
   /** List tasks, optionally filter by state. */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: list endpoint with phase + reason enrichment
   app.get("/", (c) => {
     const state = c.req.query("state");
     const limitStr = c.req.query("limit");
@@ -134,9 +135,33 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       }
     }
 
+    // Fetch latest transition reason for blocked/failed tasks (single batch query)
+    const reasonMap: Record<string, string> = {};
+    const blockedIds = tasks
+      .filter((t) => t.state === "blocked" || t.state === "failed")
+      .map((t) => t.id);
+    if (blockedIds.length > 0) {
+      try {
+        const rows = deps.db
+          .prepare(
+            `SELECT task_id, reason FROM state_transitions
+             WHERE rowid IN (SELECT MAX(rowid) FROM state_transitions WHERE task_id IN (${blockedIds.map(() => "?").join(",")}) GROUP BY task_id)`,
+          )
+          .all(...blockedIds) as Array<{ task_id: string; reason: string }>;
+        for (const row of rows) {
+          if (row.reason) {
+            reasonMap[row.task_id] = row.reason;
+          }
+        }
+      } catch {
+        // table may not exist yet
+      }
+    }
+
     const tasksWithPhases = tasks.map((t) => ({
       ...t,
       phases_ran: phasesRanMap[t.id] ?? [],
+      blocked_reason: reasonMap[t.id] ?? null,
     }));
 
     return c.json({ tasks: tasksWithPhases, count: tasksWithPhases.length });
@@ -153,7 +178,22 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       return c.json({ error: "Task not found" }, 404);
     }
 
-    return c.json({ task: mapFullTask(row) });
+    // Fetch the latest state transition reason (explains WHY task is in current state)
+    const lastTransition = deps.db
+      .prepare(
+        `SELECT reason, triggered_by, from_state, to_state, timestamp
+         FROM state_transitions WHERE task_id = ? ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get(taskId) as Record<string, unknown> | undefined;
+
+    const task = mapFullTask(row);
+    if (lastTransition) {
+      task["last_transition_reason"] = lastTransition["reason"];
+      task["last_transition_by"] = lastTransition["triggered_by"];
+      task["last_transition_from"] = lastTransition["from_state"];
+    }
+
+    return c.json({ task });
   });
 
   /** Task timeline: state transitions + journal + action observations, chronological. */

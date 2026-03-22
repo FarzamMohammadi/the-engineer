@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { Separator, checkbox } from "@inquirer/prompts";
+import { Separator, checkbox, select } from "@inquirer/prompts";
 import chalk from "chalk";
 
 import { BUILTIN_PLUGINS, type BuiltinPlugin } from "../../plugins/builtin.js";
@@ -31,11 +31,31 @@ const CATEGORY_ORDER: Array<{ type: string; label: string }> = [
   { type: "communication", label: "Communication:" },
 ];
 
-/** Single checkbox prompt — all plugins listed, grouped by category, all pre-checked. */
+/** LLM uses single-select (exactly one provider), everything else uses multi-select checkbox. */
 async function selectPlugins(available: BuiltinPlugin[]): Promise<BuiltinPlugin[]> {
+  const selectedIds: string[] = [];
+
+  // LLM provider — single select (only one LLM at a time)
+  const llmPlugins = available.filter((p) => p.manifest.type === "llm");
+  if (llmPlugins.length > 0) {
+    const defaultLlm =
+      llmPlugins.find((p) => p.manifest.enabled)?.manifest.id ?? llmPlugins[0]?.manifest.id;
+    const llmId = await select({
+      message: chalk.bold("Select LLM provider (one at a time):"),
+      choices: llmPlugins.map((p) => ({
+        name: `${p.manifest.name} — ${p.manifest.description}`,
+        value: p.manifest.id,
+      })),
+      default: defaultLlm,
+    });
+    selectedIds.push(llmId);
+  }
+
+  // Everything else — multi-select checkbox
+  const nonLlmCategories = CATEGORY_ORDER.filter((c) => c.type !== "llm");
   const choices: Array<{ name: string; value: string; checked: boolean } | Separator> = [];
 
-  for (const cat of CATEGORY_ORDER) {
+  for (const cat of nonLlmCategories) {
     const plugins = available.filter((p) => p.manifest.type === cat.type);
     if (plugins.length === 0) {
       continue;
@@ -48,17 +68,20 @@ async function selectPlugins(available: BuiltinPlugin[]): Promise<BuiltinPlugin[
       choices.push({
         name: `${p.manifest.name} — ${p.manifest.description}`,
         value: p.manifest.id,
-        checked: true,
+        checked: p.manifest.enabled,
       });
     }
   }
 
-  const selectedIds = await checkbox({
-    message: chalk.bold("Select plugins to enable:"),
-    choices,
-    required: true,
-    loop: false,
-  });
+  if (choices.length > 0) {
+    const otherIds = await checkbox({
+      message: chalk.bold("Select other plugins to enable:"),
+      choices,
+      required: true,
+      loop: false,
+    });
+    selectedIds.push(...otherIds);
+  }
 
   return available.filter((p) => selectedIds.includes(p.manifest.id));
 }

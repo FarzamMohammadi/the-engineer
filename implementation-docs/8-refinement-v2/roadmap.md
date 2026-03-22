@@ -20,7 +20,7 @@ Dashboard testing deferred entirely to the Dashboard Full Rebuild at the end of 
 
 ---
 
-## CLI-Only LLM Pivot
+## CLI-Only LLM Pivot (DONE)
 
 Remove API-based LLM integration entirely. The Engineer integrates exclusively with CLI-based tools. This is a permanent architectural simplification, not a temporary pivot.
 
@@ -38,21 +38,11 @@ Ensure the plugin architecture supports multiple CLI tools cleanly. Each CLI too
 
 ---
 
-## Multi-CLI Plugin Integration
+## Multi-CLI Plugin Integration (DONE)
 
-With the CLI-only adapter contract in place, build and test plugins for the additional CLI tools. All three CLIs (Claude Code, OpenCode, Gemini CLI) are installed locally. Each CLI tool gets its own plugin implementing the same adapter contract — different flags and output parsing, same core pattern.
+Three LLM plugins built, live-tested, and registered. Code quality review of S066 changes. Contribution guide dogfooded and refined. Dashboard: N/A for null cost, blocked reason visibility. `engineer init` single-select for LLM. Philosophy: "Agent-Assisted Everything".
 
-### OpenCode Plugin
-
-Build plugin for OpenCode CLI. Test against a real repo.
-
-### Gemini CLI Plugin
-
-Build plugin for Gemini CLI. Test against a real repo.
-
-### Cross-Plugin Validation
-
-Verify all three plugins pass the contract compliance suite and produce equivalent results for the same prompts. Validate config switching between providers.
+Key learnings: always pipe via stdin (not CLI args), detect rate limits from both stdout (structured error) and stderr (retry messages), kill infinite-retry CLIs immediately.
 
 ---
 

@@ -92,9 +92,11 @@ export class MyLLMPlugin extends LLMAdapter {
         ));
       });
 
-      // Pipe prompt via stdin — avoids OS argument length limits
-      if (request.prompt) child.stdin?.write(request.prompt);
-      if (request.system_prompt) child.stdin?.write(`\n---SYSTEM---\n${request.system_prompt}`);
+      // ALWAYS pipe via stdin — avoids OS argument length limits on large orchestrator prompts
+      const fullPrompt = request.system_prompt
+        ? `[SYSTEM INSTRUCTIONS]\n${request.system_prompt}\n[END SYSTEM INSTRUCTIONS]\n\n${request.prompt}`
+        : request.prompt;
+      child.stdin?.write(fullPrompt);
       child.stdin?.end();
     });
   }
@@ -627,27 +629,150 @@ For unit tests that don't hit a real CLI, create mock scripts that write expecte
 
 ---
 
+## Registration
+
+After building your plugin, register it in `src/plugins/builtin.ts`:
+
+1. Import your plugin class
+2. Add a manifest entry to the `manifests` array (set `enabled: false` for optional plugins)
+3. Add a factory function to the `factories` map
+
+```typescript
+// In manifests array:
+{
+  id: "my-llm",
+  type: "llm",
+  version: "1.0.0",
+  name: "My LLM CLI",
+  description: "LLM reasoning via My CLI process",
+  critical: true,
+  enabled: false,  // User opts in via config
+  entry: "builtin",
+  adapter_meta: { provider_type: "cli" },
+  contributes: { events: ["cost.incurred"] },
+},
+
+// In factories map:
+"my-llm": () => new MyLLMPlugin(),
+```
+
+Users enable the plugin in `~/.engineer/config/plugins.yaml`:
+
+```yaml
+plugins:
+  my-llm:
+    enabled: true
+    config:
+      model: "my-model"
+```
+
+Note: There are no `engineer.plugin.yaml` manifest files — all built-in plugins are registered programmatically in `builtin.ts`.
+
+---
+
+## Available LLM Plugins
+
+Three LLM plugins ship with The Engineer. Only one is enabled by default.
+
+| Plugin | CLI Tool | Cost Reporting | Usage Reporting | Quota Reporting |
+|--------|----------|----------------|-----------------|-----------------|
+| **Claude Code** (default) | `claude` | Yes (USD) | Yes (full token breakdown) | Yes (API + rate limit events) |
+| **OpenCode** | `opencode` | Yes (USD) | Yes (tokens + cache) | No |
+| **Gemini CLI** | `gemini` | No | Yes (tokens + cache) | No |
+
+### Claude Code (`claude-code-llm`) — Default
+
+Full-featured reference implementation. Uses `--output-format stream-json --verbose` for NDJSON with result + rate_limit_event parsing. Quota API integration via Anthropic's `/api/oauth/usage` endpoint with macOS Keychain credential access.
+
+### OpenCode (`opencode-llm`) — Opt-in
+
+Multi-provider CLI (Anthropic, OpenAI, Google, etc.). Uses `--format json` for NDJSON with step_start/text/step_finish events. Reports cost and full token breakdown including reasoning tokens. No system prompt flag — prepends to user prompt.
+
+### Gemini CLI (`gemini-cli-llm`) — Opt-in
+
+Google's CLI tool. Uses `-o stream-json` for NDJSON with init/message/result events. Reports token usage but not cost (free tier). No system prompt flag — prepends to user prompt. Requires `--yolo` for non-interactive tool approval.
+
+---
+
+## CLI Output Format Research
+
+Before building a plugin for a new CLI tool, capture its actual output format. Run the CLI with a trivial prompt and structured output flags:
+
+```bash
+# Example: capture NDJSON output
+echo "Say hello" | my-cli --format json 2>&1
+
+# Check available flags
+my-cli --help
+```
+
+Key things to identify:
+1. **Content delivery** — which event type carries the response text?
+2. **Cost/tokens** — does the CLI report cost in USD? Token counts? Cache stats?
+3. **Structured output** — NDJSON (line-per-event) or single JSON blob?
+4. **System prompt** — is there a `--system-prompt` flag, or must you prepend to the user prompt?
+5. **Non-interactive mode** — what flags enable headless operation with auto-approved tool use?
+6. **Stderr noise** — does the CLI print status messages to stderr (e.g. "Loaded cached credentials.")?
+7. **Stdin support** — does the CLI read prompts from stdin? How? (See critical warning below.)
+
+Design your parser around the *real output*, not documentation. CLI output formats change between versions.
+
+### Critical: Always Pipe Prompts via Stdin
+
+**NEVER pass the prompt as a positional argument or flag value.** The Orchestrator's prompts (system prompt + phase context + user prompt) are massive — often 50KB+. Passing them as CLI arguments hits OS argument length limits (`ARG_MAX`, typically 256KB on macOS but varies) and causes silent failures where the CLI receives a truncated or empty prompt.
+
+Always pipe the prompt via stdin:
+
+```typescript
+// WRONG — will break on real orchestrator prompts
+args.push(prompt);                    // positional arg
+args.push("-p", prompt);              // flag value
+
+// RIGHT — no size limit
+child.stdin?.write(prompt);
+child.stdin?.end();
+```
+
+**CLI-specific stdin patterns discovered during development:**
+
+| CLI Tool | Stdin Pattern | Notes |
+|----------|--------------|-------|
+| Claude Code | Reads from stdin when no positional arg given | Native stdin support |
+| OpenCode | Reads from stdin when no message args given | `opencode run --format json` + pipe |
+| Gemini CLI | Appends stdin to `-p` value | Use `-p ""` to enable non-interactive mode, pipe actual prompt via stdin |
+
+### System Prompt Prepending
+
+Most CLI tools lack a `--system-prompt` flag (Claude Code is the exception). For CLIs without one, prepend the system prompt to the user prompt with clear delimiters:
+
+```typescript
+const prompt = request.system_prompt
+  ? `[SYSTEM INSTRUCTIONS]\n${request.system_prompt}\n[END SYSTEM INSTRUCTIONS]\n\n${request.prompt}`
+  : request.prompt;
+```
+
+This format works reliably across all tested LLM providers. The delimiters help the model distinguish system instructions from user content.
+
+---
+
 ## Reference
 
 Canonical example: `src/plugins/llm/claude-code-llm/`
 
+All three plugins follow the same pattern — good references for different output formats:
+
 | File | Purpose |
 |------|---------|
-| `src/plugins/llm/claude-code-llm/claude-code-llm.ts` | Full implementation (spawn, parse, usage, quota, env isolation) |
-| `src/plugins/llm/claude-code-llm/config.ts` | Zod config schema |
-| `src/plugins/llm/claude-code-llm/claude-code-llm.test.ts` | Tests with mock CLI scripts |
-| `src/adapters/llm.ts` | Abstract `LLMAdapter` base class (three-layer contract, `getQuotaStatus()` default) |
+| `src/plugins/llm/claude-code-llm/claude-code-llm.ts` | Reference: spawn, parse NDJSON, usage, quota, env isolation |
+| `src/plugins/llm/opencode-llm/opencode-llm.ts` | Reference: step_start/text/step_finish NDJSON, cost from step_finish |
+| `src/plugins/llm/gemini-cli-llm/gemini-cli-llm.ts` | Reference: init/message/result NDJSON, no cost, model from init |
+| `src/adapters/llm.ts` | Abstract `LLMAdapter` base class (three-layer contract) |
 | `src/adapters/base.ts` | `BaseAdapter` — lifecycle template methods |
 | `src/adapters/index.ts` | Plugin SDK barrel — the single import point |
-| `src/schemas/adapters.ts` | All Zod schemas (InferenceRequest, InferenceResult, TokenUsage, QuotaStatus, LLMCapabilities) |
+| `src/schemas/adapters.ts` | All Zod schemas (InferenceRequest, InferenceResult, TokenUsage, QuotaStatus) |
+| `src/plugins/builtin.ts` | Plugin registration — manifests + factories |
 | `test/helpers/contract-suites/llm-contract.ts` | Contract compliance test suite |
-| `src/dashboard/api/metrics.ts` | Dashboard endpoints — `/quota` includes the same secure API pipe (macOS) |
 
 ### Platform-specific code locations
 
-The macOS Keychain integration lives in two places:
-
-1. **Plugin** — `fetchQuotaFromApi()` in `claude-code-llm.ts` (called during daemon operation)
-2. **Dashboard** — `fetchQuotaViaShellPipe()` in `metrics.ts` (called when dashboard loads, before any daemon run)
-
-Both use the same shell pipe pattern. If adapting for Linux/Windows, update both locations.
+The macOS Keychain integration lives in `ClaudeCodeLLMPlugin.fetchQuotaFromApi()` (called during daemon operation). If adapting for Linux/Windows, update credential access in that method.

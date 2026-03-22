@@ -4,6 +4,8 @@ import { GitHubCommPlugin } from "./communication/github-comm/github-comm.js";
 import { TelegramCommPlugin } from "./communication/telegram-comm/telegram-comm.js";
 import { GitHubHostingPlugin } from "./git-hosting/github-hosting/github-hosting.js";
 import { ClaudeCodeLLMPlugin } from "./llm/claude-code-llm/claude-code-llm.js";
+import { GeminiCliLLMPlugin } from "./llm/gemini-cli-llm/gemini-cli-llm.js";
+import { OpenCodeLLMPlugin } from "./llm/opencode-llm/opencode-llm.js";
 import { BashToolPlugin } from "./tool/bash-tool/bash-tool.js";
 import { GitHubTriggerPlugin } from "./trigger/github-trigger/github-trigger.js";
 
@@ -37,6 +39,30 @@ const manifests = [
     description: "LLM reasoning via Claude Code CLI process",
     critical: true,
     enabled: true,
+    entry: "builtin",
+    adapter_meta: { provider_type: "cli" },
+    contributes: { events: ["cost.incurred"] },
+  },
+  {
+    id: "opencode-llm",
+    type: "llm",
+    version: "1.0.0",
+    name: "OpenCode CLI",
+    description: "Multi-provider LLM reasoning via OpenCode CLI process",
+    critical: true,
+    enabled: false,
+    entry: "builtin",
+    adapter_meta: { provider_type: "cli" },
+    contributes: { events: ["cost.incurred"] },
+  },
+  {
+    id: "gemini-cli-llm",
+    type: "llm",
+    version: "1.0.0",
+    name: "Gemini CLI",
+    description: "LLM reasoning via Google Gemini CLI process",
+    critical: true,
+    enabled: false,
     entry: "builtin",
     adapter_meta: { provider_type: "cli" },
     contributes: { events: ["cost.incurred"] },
@@ -99,6 +125,8 @@ const validatedManifests = manifests.map((manifest) => PluginManifestSchema.pars
 const factories: Record<string, () => BaseAdapter> = {
   "github-trigger": () => new GitHubTriggerPlugin(),
   "claude-code-llm": () => new ClaudeCodeLLMPlugin(),
+  "opencode-llm": () => new OpenCodeLLMPlugin(),
+  "gemini-cli-llm": () => new GeminiCliLLMPlugin(),
   "bash-tool": () => new BashToolPlugin(),
   "github-comm": () => new GitHubCommPlugin(),
   "telegram-comm": () => new TelegramCommPlugin(),

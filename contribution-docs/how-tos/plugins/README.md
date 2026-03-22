@@ -21,7 +21,7 @@ The Engineer uses a plugin system for all external integrations — LLM provider
 
 Connects The Engineer to an LLM CLI tool for inference. The Engineer is the agent — the LLM just receives prompts and returns text.
 
-**Supported CLIs:** Claude Code, OpenCode, Gemini CLI (others can be added)
+**Built-in plugins:** Claude Code (default), OpenCode, Gemini CLI. Others can be added by following the guide.
 
 **Setup prompt:** [`llm-adapter/prompt.md`](llm-adapter/prompt.md)
 **Technical reference:** [`llm-adapter/README.md`](llm-adapter/README.md)

@@ -297,6 +297,22 @@ export const CLAUDE_CODE_LLM_TEMPLATE = `# Claude Code LLM plugin
 # cli_path: claude                        # Path to claude CLI binary
 `;
 
+export const OPENCODE_LLM_TEMPLATE = `# OpenCode LLM plugin
+# Multi-provider LLM reasoning via OpenCode CLI
+# Supports Anthropic, OpenAI, Google, and more — configure model as provider/model
+
+# model: opencode/gemini-3.1-pro             # Model in provider/model format
+# cli_path: opencode                         # Path to opencode CLI binary
+`;
+
+export const GEMINI_CLI_LLM_TEMPLATE = `# Gemini CLI LLM plugin
+# Uses Google Gemini CLI for LLM completions
+# Free tier — no cost tracking (cost_usd always null)
+
+# model: gemini-2.5-pro                      # Model to use
+# cli_path: gemini                           # Path to gemini CLI binary
+`;
+
 export const BASH_TOOL_TEMPLATE = `# Bash tool plugin
 # Executes shell commands in task workspaces
 # Duration fields accept human-readable strings: "5s", "30m", "8h"
@@ -658,6 +674,28 @@ max_tokens: 16384                         # Max output tokens per completion (de
 cli_path: claude                          # Path to claude CLI binary (default: claude)
 `;
 
+export const EXAMPLE_OPENCODE_LLM = `# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  OPENCODE LLM PLUGIN — Full Reference                                    │
+# │  Copy to ~/.engineer/config/plugins/opencode-llm.yaml and customize.     │
+# │  Multi-provider LLM via OpenCode CLI (Anthropic, OpenAI, Google, etc.)   │
+# └─────────────────────────────────────────────────────────────────────────────┘
+
+# All fields are optional — defaults shown below.
+model: opencode/gemini-3.1-pro             # Model in provider/model format (default: opencode/gemini-3.1-pro)
+cli_path: opencode                         # Path to opencode CLI binary (default: opencode)
+`;
+
+export const EXAMPLE_GEMINI_CLI_LLM = `# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  GEMINI CLI LLM PLUGIN — Full Reference                                  │
+# │  Copy to ~/.engineer/config/plugins/gemini-cli-llm.yaml and customize.   │
+# │  Uses Google Gemini CLI for LLM completions. Free tier, no cost data.    │
+# └─────────────────────────────────────────────────────────────────────────────┘
+
+# All fields are optional — defaults shown below.
+model: gemini-2.5-pro                       # Model to use (default: gemini-2.5-pro)
+cli_path: gemini                            # Path to gemini CLI binary (default: gemini)
+`;
+
 export const EXAMPLE_BASH_TOOL = `# ┌─────────────────────────────────────────────────────────────────────────────┐
 # │  BASH TOOL PLUGIN — Full Reference                                       │
 # │  Copy to ~/.engineer/config/plugins/bash-tool.yaml and customize.        │
@@ -692,6 +730,8 @@ export const ALL_TEMPLATES: TemplateFile[] = [
   { relativePath: "config/plugins/github-comm.yaml", content: GITHUB_COMM_TEMPLATE },
   { relativePath: "config/plugins/github-hosting.yaml", content: GITHUB_HOSTING_TEMPLATE },
   { relativePath: "config/plugins/claude-code-llm.yaml", content: CLAUDE_CODE_LLM_TEMPLATE },
+  { relativePath: "config/plugins/opencode-llm.yaml", content: OPENCODE_LLM_TEMPLATE },
+  { relativePath: "config/plugins/gemini-cli-llm.yaml", content: GEMINI_CLI_LLM_TEMPLATE },
   { relativePath: "config/plugins/bash-tool.yaml", content: BASH_TOOL_TEMPLATE },
 ];
 
@@ -709,6 +749,8 @@ export const SEED_TEMPLATES: TemplateFile[] = [
   { relativePath: "config/plugins/github-comm.yaml", content: EXAMPLE_GITHUB_COMM },
   { relativePath: "config/plugins/github-hosting.yaml", content: EXAMPLE_GITHUB_HOSTING },
   { relativePath: "config/plugins/claude-code-llm.yaml", content: EXAMPLE_CLAUDE_CODE_LLM },
+  { relativePath: "config/plugins/opencode-llm.yaml", content: EXAMPLE_OPENCODE_LLM },
+  { relativePath: "config/plugins/gemini-cli-llm.yaml", content: EXAMPLE_GEMINI_CLI_LLM },
   { relativePath: "config/plugins/bash-tool.yaml", content: EXAMPLE_BASH_TOOL },
 ];
 
@@ -724,5 +766,7 @@ export const ALL_EXAMPLE_TEMPLATES: TemplateFile[] = [
   { relativePath: "example-templates/github-comm.yaml", content: EXAMPLE_GITHUB_COMM },
   { relativePath: "example-templates/github-hosting.yaml", content: EXAMPLE_GITHUB_HOSTING },
   { relativePath: "example-templates/claude-code-llm.yaml", content: EXAMPLE_CLAUDE_CODE_LLM },
+  { relativePath: "example-templates/opencode-llm.yaml", content: EXAMPLE_OPENCODE_LLM },
+  { relativePath: "example-templates/gemini-cli-llm.yaml", content: EXAMPLE_GEMINI_CLI_LLM },
   { relativePath: "example-templates/bash-tool.yaml", content: EXAMPLE_BASH_TOOL },
 ];

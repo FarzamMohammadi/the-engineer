@@ -154,10 +154,11 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
         type: "quota_status",
         limit: 1,
       });
+      // observe() stores data in `input` field (output is for span end-data only)
       const liveQuota: Record<string, unknown> | null =
         latestObs.length > 0
           ? {
-              ...(latestObs[0]?.output as Record<string, unknown> | null),
+              ...(latestObs[0]?.input as Record<string, unknown> | null),
               observed_at: latestObs[0]?.start_time,
             }
           : null;

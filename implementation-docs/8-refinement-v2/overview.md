@@ -51,15 +51,29 @@ For each phase in the roadmap:
 5. **Verify** — Farzam manually tests where needed. Agent runs automated checks.
 6. **Move on** — Update status, mark phase done in roadmap, proceed to next.
 
+## Strategic Decisions
+
+Three load-bearing decisions shape everything in this phase:
+
+1. **CLI-only LLM integration.** Remove API-based LLM adapter entirely. The Engineer integrates exclusively with CLI tools (Claude CLI, Codex, Gemini CLI, OpenCode). Permanent simplification — CLI tools are the right abstraction for agentic work.
+
+2. **RPI methodology (Research → Plan → Implement).** Research and planning phases produce real files in the workspace, not in-memory objects. These files serve as context for execution, appear in PRs for reviewer visibility, and act as crash-safe checkpoints. Configurable cleanup before merge. Inspired by [HumanLayer's RPI pattern](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/ace-fca.md).
+
+3. **Dashboard-first.** Rebuild the simple dashboard before refining anything else. Maximum data visibility gives us (and future users) the instrument panel needed to guide every refinement that follows. Full React rebuild comes at the end, once we know exactly what we want.
+
+**Resilience is a lens, not a phase.** Every phase we touch, we ask: what happens when this breaks? Can the engineer explain what happened? Can it recover? Can the user unstick it? Woven into every refinement.
+
 ## What "Done" Looks Like
 
 Layer 8 is done when:
 
 - Every runtime phase has been manually tested and refined
 - The happy path works flawlessly end-to-end
-- Error paths are graceful and informative
+- Error paths are graceful and recoverable — the engineer explains what went wrong and can be unstuck
+- LLM integration is CLI-only, supporting multiple CLI tools as plugins
+- RPI methodology produces real research/plan files that appear in PRs
 - The engineer is something we use daily with confidence
 - Communication (notifications, feedback) is polished
-- The War Room dashboard provides real-time visibility
+- The War Room dashboard provides full real-time visibility into everything the engineer does
 - The project is ready for the open source community
 - We love using it

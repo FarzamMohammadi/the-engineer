@@ -2,235 +2,141 @@
 
 Phases are fluid. New phases can be inserted anywhere as discoveries warrant. Completed phases get a `(DONE)` suffix. The order reflects our best thinking now — it will evolve as we learn.
 
----
-
-## Evaluation & Baseline
-
-The starting point. Before we refine anything, we need to know exactly where we stand after Layer 7's massive restructuring.
-
-### Code Audit
-
-Walk through each runtime phase in code. Verify the structure matches our architecture decisions. Surface any issues from the Layer 7 restructuring that need attention. Produce a findings report.
-
-### Live Run
-
-Fire up the engineer against a real repo. Watch it work phase by phase. Document what works, what breaks, what feels wrong. This is the ground truth that shapes everything after.
+**Resilience is not a phase — it's a lens.** Every phase we touch, we ask: what happens when this breaks? Can the engineer explain what happened? Can it recover? Can the user unstick it? Error handling, recovery, and clear communication are woven into every refinement, not bolted on at the end.
 
 ---
 
-## Startup & Configuration
+## Evaluation & Baseline (DONE)
 
-The first thing any user experiences. Must be clean, informative, and fail gracefully.
-
-### CLI Entry & Environment
-
-`engineer start`, `engineer status`, `engineer stop`. Environment validation, directory setup, error messages. First impressions matter.
-
-### Bootstrap & Wiring
-
-Component initialization order, dependency injection, startup timing. Should be fast and transparent.
-
-### Plugin Loading
-
-Discovery, validation, initialization, health checks. Error messages when plugins fail. The experience of adding a new plugin.
-
-### Daemon Startup
-
-PID management, crash recovery, orphan detection. The transition from "starting" to "running."
+Confirmed happy path works end-to-end after Layer 7 restructuring: trigger → intake → all phases → PR creation → feedback rework loop. Validated in Session 064 via manual live run.
 
 ---
 
-## Trigger & Intake
+## Dashboard — Simple Rebuild
 
-How work enters the system. The bridge between external events and internal tasks.
+Before refining anything else, we need eyes on everything. Rebuild the existing simple dashboard to expose *maximum data* — every LLM prompt sent, every response back, every tool call, every phase transition, every cost event, every decision the agent loop makes. Raw, ugly, functional. No build step — simple HTML files.
 
-### Trigger Polling & Dedup
+This becomes our instrument panel for all refinement that follows.
 
-Polling intervals, watermarks, idempotency, backoff on failures. GitHub-specific logic vs. adapter-generic logic.
+### Verify Data Export Coverage
 
-### Task Creation & Prioritization
+Audit what the Observer, EventBus, and agent loop callbacks actually export vs. what we designed them to export. Identify gaps — data we generate but don't surface.
 
-Intake state, initial priority assignment, metadata extraction from trigger events.
+### Rebuild Simple Dashboard
 
----
-
-## Scheduling & Dispatch
-
-How tasks move from waiting to working. The scheduler's judgment.
-
-### Priority & Eligibility
-
-Priority calculation, parent/child eligibility rules, cascade policies.
-
-### Slot Management & Dispatch
-
-Concurrency limits, dispatch packaging (session, knowledge, checkpoint), fire-and-forget execution.
+Rebuild the current dashboard to show everything we can. SSE for real-time. Prioritize completeness over aesthetics. This is our dev tool, not a product yet.
 
 ---
 
-## Workspace & Session
+## CLI-Only LLM Pivot
 
-Task isolation and context. Where the engineer actually works.
+Remove API-based LLM integration entirely. The Engineer integrates exclusively with CLI-based tools. This is a permanent architectural simplification, not a temporary pivot.
 
-### Worktree Lifecycle
+### Remove API LLM Path
 
-Creation, branch naming, parent branch inheritance, cleanup. Git operations and token handling.
+Strip out the API-oriented `LLMAdapter` contract (`complete/doComplete`). Remove any code paths, schemas, or config that assume direct API integration. Clean deletion, not deprecation.
 
-### Session Setup & Resume
+### Redesign LLM Adapter for CLI
 
-New sessions, checkpoint resume, rework detection. Context handoff between sessions.
+New adapter contract designed around CLI tool patterns: process spawning, stdin/stdout, streaming output, process lifecycle management. The contract should work naturally for Claude CLI, Codex, Gemini CLI, and OpenCode.
 
----
+### Multi-CLI Plugin Support
 
-## Intake & Research
-
-The engineer's first look at a task. Understanding before action.
-
-### Intake Analysis & Complexity Detection
-
-Complexity scoring, fast-path detection, decomposition signals. The prompt that shapes everything downstream.
-
-### Research & Context Gathering
-
-File discovery, pattern recognition, existing code analysis. Building the context that makes planning effective.
+Ensure the plugin architecture supports multiple CLI tools cleanly. Each CLI tool is a separate plugin implementing the new adapter. Users configure which one(s) to use. OpenCode serves as the "bring your own API key" option for OSS users.
 
 ---
 
-## Planning & Execution
+## RPI Integration (Research → Plan → Implement)
 
-The core of the work. Where code gets written.
+Adopt the RPI methodology: research and planning phases produce *real files* in the workspace, not just in-memory phase outputs. Inspired by [HumanLayer's RPI pattern](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/ace-fca.md).
 
-### Plan Generation & Decomposition
+### Research Phase → File Output
 
-Planning prompts, decomposition decisions, child task creation. The quality of the plan determines the quality of the output.
+Research phase produces a structured markdown file in the worktree (e.g., `thoughts/research/YYYY-MM-DD-topic.md`). Documents what exists — files, patterns, flows, open questions. No opinions, no planning. This file becomes primary context for planning.
 
-### Agent Loop & Tool Execution
+### Planning Phase → File Output
 
-The iterative loop: LLM call, action parse, tool execute, feed back. Tool restrictions per phase. Workspace confinement.
+Planning phase reads the research file and produces a structured plan file (e.g., `thoughts/plans/YYYY-MM-DD-description.md`). Includes phases, file paths, success criteria, checkboxes for tracking. The plan file is the source of truth for execution.
 
-### Test-Fix Iteration
+### Execution Phase Reads Files
 
-Running tests, interpreting failures, fixing code. The inner loop of execution quality.
+Execution phase reads the plan file as its primary guide. Updates checkboxes as phases complete. This makes the plan file a crash-safe progress tracker — if context fills or the process crashes, progress is tracked in the file itself.
 
----
+### PR Integration & Cleanup Config
 
-## Self-Review & Quality
-
-The engineer reviewing its own work before showing anyone.
-
-### Self-Review & Loopback
-
-Quality assessment, loopback decisions (max 3), the prompt that catches what execution missed.
-
-### Quality Gates
-
-What triggers loopback vs. proceeding. The bar for "good enough to show."
+Research and plan files go into the PR by default — reviewers can see the reasoning. Configurable option to remove these files before merge for repos that want clean history. Small config: `rpi.include_in_pr: true/false` or similar.
 
 ---
 
-## Demo & PR
+## Runtime Phase Refinement
 
-Presenting work for review. The handoff from engineer to human.
+With the dashboard giving us visibility, CLI integration simplified, and RPI giving us better output structure — now we refine each runtime phase. Order is priority-driven based on what the dashboard reveals, not strictly sequential.
 
-### Commit, Push & PR Creation
+### Startup & Configuration
 
-Commit messages, push mechanics, draft PR creation, token lifecycle during push.
+CLI entry, bootstrap, plugin loading, daemon startup. First impressions. Fast, informative, fail gracefully.
 
-### Demo Artifacts & Narrative
+### Trigger & Intake
 
-PR description quality, what the demo communicates, how reviewers experience the work.
+Trigger polling, dedup, task creation, prioritization. The bridge between external events and internal tasks.
 
----
+### Scheduling & Dispatch
 
-## Review & Feedback
+Priority, eligibility, slot management, concurrency. How tasks move from waiting to working.
 
-The human feedback loop. How the engineer responds to critique.
+### Workspace & Session
 
-### Review Polling & Detection
+Worktree lifecycle, session setup, resume, rework detection. Task isolation and context.
 
-Polling mechanics, feedback aggregation, self-comment filtering, circuit breakers.
+### Intake & Research (RPI-aware)
 
-### Feedback Rework Loop
+Intake analysis, complexity detection, research file generation. Now produces real files per RPI methodology.
 
-Feedback injection into prompts, rework detection, PR updates, the cycle of improvement.
+### Planning & Decomposition (RPI-aware)
 
----
+Plan file generation, decomposition decisions, child task creation. Now produces real files per RPI methodology.
 
-## Completion & Cleanup
+### Agent Loop & Execution
 
-Finishing cleanly. No loose ends.
+The iterative loop: CLI LLM call, action parse, tool execute, feed back. Plan file as primary guide. Test-fix iteration.
 
-### Terminal States & Notifications
+### Self-Review & Quality
 
-Completion transitions, notification content, multi-channel delivery (Telegram + GitHub).
+Self-review assessment, loopback decisions (max 3), quality gates. What's "good enough to show."
 
-### Workspace Cleanup & Parent Integration
+### Demo & PR
 
-Worktree removal, branch preservation, child completion detection, parent integration phase.
+Commit, push, draft PR creation. Demo artifacts, PR narrative. Research/plan files included per config.
 
----
+### Review & Feedback
 
-## Resilience
+Review polling, feedback detection, rework loop. The cycle of human feedback → engineer improvement.
 
-When things go wrong. Grace under pressure.
+### Completion & Cleanup
 
-### Error Handling & Escalation
+Terminal states, notifications, workspace cleanup, parent integration for decomposed tasks.
 
-Error classification, escalation stages, self-unblock attempts, human alerts.
+### Communication
 
-### Preemption & Crash Recovery
+Notification wiring (Telegram + GitHub), message formatting, what notifications say and when.
 
-Priority-based preemption, checkpoint integrity, crash recovery on restart, orphan detection.
+### Background Services
 
-### Stuck Detection
-
-Staleness heuristics, blocked task detection, timeout escalation.
+Cost tracking, data lifecycle, health monitoring. The continuous machinery.
 
 ---
 
-## Background Services
+## Dashboard — Full Rebuild
 
-The continuous machinery. Runs alongside everything else.
-
-### Cost Tracking & Limits
-
-Per-task and global cost accumulation, limit enforcement, warning thresholds.
-
-### Data Lifecycle & Retention
-
-Event/trace cleanup, TTL enforcement, database maintenance.
-
-### Health Monitoring
-
-Plugin health checks, state machine transitions, failure alerting.
-
----
-
-## Communication
-
-How the engineer talks to humans. Every message should be useful.
-
-### Notification Wiring (Telegram + GitHub)
-
-Channel routing, message formatting, fire-and-forget delivery, error handling.
-
-### Message Formatting & Templates
-
-What notifications say, how they're structured, what information they carry.
-
----
-
-## War Room Dashboard
-
-Real-time visibility into what the engineer is doing and has done.
-
-### Backend Instrumentation
-
-New events, richer traces, agent loop visibility. The data that powers the dashboard.
+Now that we know exactly what we want from refinement, rebuild the dashboard as a proper project.
 
 ### Frontend (React + Vite + shadcn/ui)
 
-The dashboard UI. Real-time via SSE. Task status, phase progress, cost tracking, logs.
+Production-grade UI. Real-time via SSE. Task status, phase progress, agent loop visibility, cost tracking, RPI file viewing, logs.
+
+### Backend Instrumentation Polish
+
+Any remaining data gaps identified during refinement. Richer traces, better event metadata.
 
 ---
 

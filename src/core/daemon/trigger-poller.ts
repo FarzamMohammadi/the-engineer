@@ -95,6 +95,45 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     }
   }
 
+  /** Check if a blocked task matches this external ref; if so, unblock it. */
+  function tryUnblockMatchingTask(ref: ExternalRef, event: TriggerEvent): boolean {
+    const blockedTasks = taskEngine.getTasksByState(TaskStates.blocked);
+    const match = blockedTasks.find(
+      (t) => t.external_ref !== null && externalRefsMatch(t.external_ref, ref),
+    );
+
+    if (!match) {
+      return false;
+    }
+
+    // Clear blocked details before transitioning
+    taskEngine.updateTaskField(match.id, "blocked", null);
+
+    const result = taskEngine.requestTransition(
+      match.id,
+      TaskStates.queued,
+      null,
+      "trigger_response_received",
+      "daemon",
+    );
+
+    if (!result.success) {
+      observer.warn("Failed to unblock task on trigger response", {
+        taskId: match.id,
+        reason: result.reason,
+      });
+      return false;
+    }
+
+    observer.info("Blocked task unblocked by trigger response", {
+      taskId: match.id,
+      title: match.title,
+      triggerSource: event.source,
+    });
+
+    return true;
+  }
+
   function processNewTriggerEvent(event: TriggerEvent, now: number): void {
     const expiry = seenTriggerKeys.get(event.idempotency_key);
     if (expiry !== undefined && expiry > now) {
@@ -122,12 +161,21 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       },
     } satisfies PublishInput<"trigger.new_event">);
 
-    // Create task: intake → queued
+    // Parse external ref from URL
     const parsed = parseGitHubUrl(event.external_ref);
     const externalRef = parsed
       ? toExternalRef(parsed.owner, parsed.repo, parsed.number, parsed.type)
       : null;
 
+    // Check if a blocked task matches — unblock instead of creating a duplicate
+    if (externalRef) {
+      const unblocked = tryUnblockMatchingTask(externalRef, event);
+      if (unblocked) {
+        return;
+      }
+    }
+
+    // Create task: intake → queued
     const task = taskEngine.createTask({
       title: event.title,
       repo: event.repo,
@@ -208,6 +256,13 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     drainNewBasePriorities,
     removeBasePriority,
   };
+}
+
+// ── External Ref Matching ─────────────────────────────────────────────────
+
+/** Technology-agnostic comparison of two ExternalRef values by repo + number. */
+export function externalRefsMatch(a: ExternalRef, b: ExternalRef): boolean {
+  return a.repo === b.repo && a.number === b.number;
 }
 
 // ── URL Parsing (inlined — core must not import from plugins) ────────────

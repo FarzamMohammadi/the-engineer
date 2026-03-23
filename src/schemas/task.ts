@@ -267,6 +267,7 @@ export const ValidTransitions = [
   { from: "blocked", to: "active", to_sub: "working" },
   { from: "blocked", to: "active", to_sub: "supervising" },
   { from: "blocked", to: "failed" },
+  { from: "blocked", to: "queued" },
   { from: "review_pending", from_sub: "demo", to: "active", to_sub: "working" },
   { from: "review_pending", from_sub: "demo", to: "review_pending", to_sub: "code" },
   { from: "review_pending", from_sub: "demo", to: "queued" },

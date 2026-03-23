@@ -392,8 +392,8 @@ describe("StateTransitionSchema", () => {
 // ── ValidTransitions ───────────────────────────────────────────────────────────
 
 describe("ValidTransitions", () => {
-  it("has exactly 27 entries", () => {
-    expect(ValidTransitions).toHaveLength(27);
+  it("has exactly 28 entries", () => {
+    expect(ValidTransitions).toHaveLength(28);
   });
 
   it("has no duplicate entries", () => {

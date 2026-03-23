@@ -242,11 +242,7 @@ packages/
 
 ## Automatic Unblocking on Response
 
-**Current state:** When a blocked task's source gets new activity (e.g., new comment on its GitHub issue), nothing detects this and unblocks the task. Blocked tasks only get attention via timeout escalation (`health-monitor.ts` `checkBlockedEscalation`), which tries LLM self-diagnosis — not a response handler.
-
-**Design (trigger-agnostic):** The trigger poller already polls for events via TriggerAdapter contract. Before dedup, check if any blocked task has a matching `external_ref`. If so, transition blocked → queued instead of creating a new task. Works for ANY trigger adapter (GitHub, GitLab, Jira, webhooks) because matching is on `external_ref`, not plugin type.
-
-**Key files:** `src/core/daemon/trigger-poller.ts` (`processNewTriggerEvent`, dedup logic), `src/schemas/task.ts` (`ExternalRef`), `src/core/daemon/health-monitor.ts` (keep timeout fallback as-is).
+**IMPLEMENTED** (Session 071). Trigger poller checks blocked tasks before creating new tasks. Matching on `external_ref` (repo + number). `blocked → queued` transition added. Health monitor timeout escalation kept as fallback.
 
 ---
 

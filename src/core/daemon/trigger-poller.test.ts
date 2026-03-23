@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
-import { createTriggerPoller } from "./trigger-poller.js";
+import { createTriggerPoller, externalRefsMatch } from "./trigger-poller.js";
 import type { TriggerPollerContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -69,6 +69,8 @@ function createMockContext(overrides?: Partial<TriggerPollerContext>): TriggerPo
         priority: 50,
       })),
       requestTransition: vi.fn().mockReturnValue({ success: true }),
+      getTasksByState: vi.fn().mockReturnValue([]),
+      updateTaskField: vi.fn(),
     },
     clock: { now: () => 1000 },
     observer: createTestObserverFacade("daemon"),
@@ -420,5 +422,137 @@ describe("TriggerPoller", () => {
     expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
     // The failing trigger should be tracked
     expect(poller.getTriggerFailures()).toEqual(expect.objectContaining({ "fail-trigger": 1 }));
+  });
+
+  // ── Blocked Task Unblocking ───────────────────────────────────────────────
+
+  describe("blocked task unblocking", () => {
+    function makeBlockedTask(repo: string, number: number, id = "blocked-1") {
+      return {
+        id,
+        title: "Blocked task",
+        state: "blocked",
+        external_ref: { type: "github_issue", repo, number },
+      };
+    }
+
+    it("unblocks a matching blocked task instead of creating a new one", async () => {
+      const blockedTask = makeBlockedTask("test/repo", 1);
+      (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([blockedTask]);
+
+      const trigger = makeTriggerPlugin([makeTriggerEvent("unblock-key")]);
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+      const poller = createTriggerPoller(ctx);
+      await poller.poll(100_000);
+
+      // Should NOT create a new task
+      expect(ctx.taskEngine.createTask).not.toHaveBeenCalled();
+      // Should clear blocked details and transition to queued
+      expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith("blocked-1", "blocked", null);
+      expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "blocked-1",
+        "queued",
+        null,
+        "trigger_response_received",
+        "daemon",
+      );
+    });
+
+    it("creates a new task when no blocked task matches", async () => {
+      const blockedTask = makeBlockedTask("other/repo", 99);
+      (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([blockedTask]);
+
+      const trigger = makeTriggerPlugin([makeTriggerEvent("no-match-key")]);
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+      const poller = createTriggerPoller(ctx);
+      await poller.poll(100_000);
+
+      // No match — should create a new task
+      expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
+    });
+
+    it("creates a new task when externalRef is null (non-parseable URL)", async () => {
+      const blockedTask = makeBlockedTask("test/repo", 1);
+      (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([blockedTask]);
+
+      const event = {
+        ...makeTriggerEvent("null-ref-key"),
+        external_ref: "not-a-github-url",
+      };
+      const trigger = makeTriggerPlugin([event]);
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+      const poller = createTriggerPoller(ctx);
+      await poller.poll(100_000);
+
+      // Non-parseable URL → null externalRef → skip blocked check → create task
+      expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls through to create task when unblock transition fails", async () => {
+      const blockedTask = makeBlockedTask("test/repo", 1);
+      (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([blockedTask]);
+      // First call: unblock transition fails. Second call: new task transition succeeds.
+      (ctx.taskEngine.requestTransition as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce({ success: false, reason: "concurrent_modification" })
+        .mockReturnValueOnce({ success: true });
+
+      const trigger = makeTriggerPlugin([makeTriggerEvent("fail-unblock-key")]);
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+      const poller = createTriggerPoller(ctx);
+      await poller.poll(100_000);
+
+      // Unblock failed → falls through to create a new task
+      expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
+    });
+
+    it("clears blocked field before transitioning", async () => {
+      const blockedTask = makeBlockedTask("test/repo", 1);
+      (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([blockedTask]);
+
+      const trigger = makeTriggerPlugin([makeTriggerEvent("clear-key")]);
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+      const poller = createTriggerPoller(ctx);
+      await poller.poll(100_000);
+
+      // updateTaskField should be called BEFORE requestTransition
+      const updateOrder = (ctx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0];
+      const transitionOrder = (ctx.taskEngine.requestTransition as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0];
+      expect(updateOrder).toBeLessThan(transitionOrder!);
+    });
+  });
+});
+
+// ── externalRefsMatch (pure function) ────────────────────────────────────────
+
+describe("externalRefsMatch", () => {
+  it("returns true for matching repo + number", () => {
+    const a = { type: "github_issue", repo: "owner/repo", number: 42 };
+    const b = { type: "github_issue", repo: "owner/repo", number: 42 };
+    expect(externalRefsMatch(a, b)).toBe(true);
+  });
+
+  it("returns true when types differ (matches on repo + number only)", () => {
+    const a = { type: "github_issue", repo: "owner/repo", number: 42 };
+    const b = { type: "github_pr", repo: "owner/repo", number: 42 };
+    expect(externalRefsMatch(a, b)).toBe(true);
+  });
+
+  it("returns false when repos differ", () => {
+    const a = { type: "github_issue", repo: "owner/repo-a", number: 42 };
+    const b = { type: "github_issue", repo: "owner/repo-b", number: 42 };
+    expect(externalRefsMatch(a, b)).toBe(false);
+  });
+
+  it("returns false when numbers differ", () => {
+    const a = { type: "github_issue", repo: "owner/repo", number: 1 };
+    const b = { type: "github_issue", repo: "owner/repo", number: 2 };
+    expect(externalRefsMatch(a, b)).toBe(false);
   });
 });

@@ -61,6 +61,8 @@ export interface PipelineState {
   thoughtsDir: string | null;
   /** Cached repo context — gathered once at task start, refreshed after execution phase. */
   repoContext: RepoContext | null;
+  /** Phase that invoked requirements_gathering fallback — return here after requirements complete. */
+  returnToPhase: Phase | null;
 }
 
 // ── Phase Completion Outcome ──────────────────────────────────────────────

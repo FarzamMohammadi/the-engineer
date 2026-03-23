@@ -364,6 +364,14 @@ The CLI fills in actual values. If untouched (placeholders remain), the Orchestr
 
 The rich content lives in the `.md` file. The `.md` accumulates across reruns — if requirements gathering loops back, the same `requirements.md` gets updated, not replaced. Each phase reads prior phases' `.md` files directly from disk.
 
+### Separation of Concerns: Routing vs. Content (Session 070)
+
+session-result.json is pure state routing — three fields (status, next_phase, summary). It answers "what happened?" and "where next?" All rich context — ambiguities, questions, findings, reasoning — lives in the `.md` deliverable files.
+
+When a phase encounters ambiguity, it documents everything in its `.md` file and signals `need_more_info` in session-result.json. Requirements Gathering reads the calling phase's `.md` file to understand what's unclear. Only Requirements Gathering interacts with people (via People Directory) — other phases never specify contacts or questions in session-result.json.
+
+This separation keeps the routing layer simple and validatable while letting the content layer be as rich and free-form as the LLM needs it to be.
+
 ---
 
 ## ~~Signal Protocol~~ (Superseded)

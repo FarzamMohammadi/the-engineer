@@ -206,6 +206,7 @@ export class Orchestrator {
       requirementsLoopCount: 0,
       thoughtsDir,
       repoContext,
+      returnToPhase: null,
     };
 
     // ── Run phase pipeline ─────────────────────────────────────────────────

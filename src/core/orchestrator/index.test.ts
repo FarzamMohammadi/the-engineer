@@ -336,8 +336,8 @@ describe("Orchestrator", () => {
 
   describe("safeParse failure handling", () => {
     it("handles invalid JSON gracefully with fallback output", async () => {
-      // Requirements gathering + research use CLI-native (file-based, content ignored).
-      // Planning (LLM calls 3+) uses agent loop — override ALL its iterations to return non-JSON.
+      // Requirements gathering, research, planning, execution use CLI-native (file-based, content ignored).
+      // Self-review (LLM calls 5+) uses agent loop — override ALL its iterations to return non-JSON.
       // The agent loop exhausts max_iterations and returns empty phaseData → fallback output.
       handle.setAllPhaseResponses();
       let llmCallCount = 0;
@@ -345,9 +345,9 @@ describe("Orchestrator", () => {
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           if (input.details?.operation === "llm_infer") {
             llmCallCount++;
-            // LLM calls 3+ = planning phase and beyond (agent-loop phases)
-            // Return non-JSON for all planning iterations so agent loop exhausts retries
-            if (llmCallCount >= 3 && llmCallCount <= 12) {
+            // LLM calls 5+ = self_review phase and beyond (agent-loop phases)
+            // Return non-JSON for all self_review iterations so agent loop exhausts retries
+            if (llmCallCount >= 5 && llmCallCount <= 14) {
               return {
                 outcome: "executed",
                 result: {
@@ -370,10 +370,10 @@ describe("Orchestrator", () => {
       // Pipeline should continue despite parse failure
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        // Planning phase gets fallback output (low confidence) from agent loop parse failure
-        const planningOutput = result.phaseOutputs.get("planning");
-        expect(planningOutput?.confidence).toBe("low");
-        expect(planningOutput?.open_questions.length).toBeGreaterThan(0);
+        // Self-review phase gets fallback output (low confidence) from agent loop parse failure
+        const selfReviewOutput = result.phaseOutputs.get("self_review");
+        expect(selfReviewOutput?.confidence).toBe("low");
+        expect(selfReviewOutput?.open_questions.length).toBeGreaterThan(0);
       }
     });
 
@@ -415,9 +415,9 @@ describe("Orchestrator", () => {
     it("fallback output when all LLM responses are unparseable", async () => {
       // Override ALL LLM calls to return non-JSON — agent loop exhausts retries
       // and returns empty phaseData, which fails schema validation → fallback output.
-      // CLI-native phases (requirements_gathering, research) ignore content and use
-      // file-based routing, so they get "high" confidence from defaults.
-      // Agent-loop phases (planning onwards) get "low" confidence fallback.
+      // CLI-native phases (requirements_gathering, research, planning, execution)
+      // ignore content and use file-based routing, so they get "high" confidence.
+      // Agent-loop phases (self_review onwards) get "low" confidence fallback.
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           if (input.details?.operation === "llm_infer") {
@@ -446,9 +446,13 @@ describe("Orchestrator", () => {
         expect(reqOutput?.data).toHaveProperty("status");
         expect(reqOutput?.data).toHaveProperty("deliverable_path");
 
-        // Agent-loop phases get fallback with "low" confidence
+        // Planning is now CLI-native — gets "high" confidence
         const planningOutput = result.phaseOutputs.get("planning");
-        expect(planningOutput?.confidence).toBe("low");
+        expect(planningOutput?.confidence).toBe("high");
+
+        // Agent-loop phases (self_review) get fallback with "low" confidence
+        const selfReviewOutput = result.phaseOutputs.get("self_review");
+        expect(selfReviewOutput?.confidence).toBe("low");
       }
     });
   });

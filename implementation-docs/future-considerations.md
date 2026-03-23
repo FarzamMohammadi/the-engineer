@@ -223,3 +223,19 @@ packages/
 5. Document per-platform setup in each adapter's README (or rely on LLM-guided setup)
 
 ---
+
+## Decomposition Detection from plan.md
+
+**Current state:** Decomposition triggers from `planningOutput.data.decomposition_plan` (agent loop structured output). With CLI-native planning (Session 070), this field is absent — CLI-native PhaseOutput contains `deliverable_path`, `status`, `next_phase`, `summary` instead.
+
+**When it becomes relevant:** When a task is complex enough to require decomposition into child tasks and planning is CLI-native.
+
+**What it enables:** The planning phase CLI writes a `## Decomposition` section in plan.md with a JSON code block containing the decomposition plan. The Orchestrator parses this and feeds it to the existing `handleDecomposition()` pipeline.
+
+**Migration path:**
+1. Add `parseDecompositionFromPlanFile()` function to `decomposition-handler.ts` — reads plan.md, extracts `## Decomposition` section, parses JSON code block, validates against `LLMDecompositionPlanSchema`
+2. Update planning prompt (`prompts/planning.ts`) to include JSON template for the decomposition section
+3. In `phase-runner.ts` planning check: detect CLI-native output (has `deliverable_path`, no `decomposition_plan`), read plan.md, parse, inject into output before calling `handleDecomposition()`
+4. Existing `handleDecomposition()` stays unchanged — it still expects `decomposition_plan` in output data
+
+---

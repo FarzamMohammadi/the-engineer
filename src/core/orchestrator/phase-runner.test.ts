@@ -126,6 +126,7 @@ function createState(overrides?: Partial<PipelineState>): PipelineState {
     requirementsLoopCount: 0,
     thoughtsDir: null,
     repoContext: null,
+    returnToPhase: null,
     ...overrides,
   };
 }
@@ -530,6 +531,194 @@ describe("PhaseRunner", () => {
       const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
         .calls;
       expect(checkpointCalls.length).toBe(7);
+    });
+  });
+
+  describe("universal fallback routing", () => {
+    it("planning signals need_more_info → requirements → returns to planning", async () => {
+      const ctx = createMockContext();
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      // Planning signals need_more_info on first call, then ready on second
+      let planningCalls = 0;
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          vi.fn(() => {
+            if (phase === Phases.planning) {
+              planningCalls++;
+              if (planningCalls === 1) {
+                return Promise.resolve(
+                  makeOutput(phase, {
+                    status: "need_more_info",
+                    next_phase: "requirements_gathering",
+                  }),
+                );
+              }
+            }
+            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
+          }),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      // Planning should have been called twice (once need_more_info, once ready)
+      expect(planningCalls).toBe(2);
+      // Requirements gathering should have been called at least twice (initial + fallback)
+      expect(handlerFns[Phases.requirements_gathering]).toHaveBeenCalledTimes(2);
+    });
+
+    it("execution signals need_more_info → requirements → returns to execution", async () => {
+      const ctx = createMockContext();
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      let executionCalls = 0;
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          vi.fn(() => {
+            if (phase === Phases.execution) {
+              executionCalls++;
+              if (executionCalls === 1) {
+                return Promise.resolve(
+                  makeOutput(phase, {
+                    status: "need_more_info",
+                    next_phase: "requirements_gathering",
+                  }),
+                );
+              }
+            }
+            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
+          }),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      expect(executionCalls).toBe(2);
+    });
+
+    it("requirements_gathering need_more_info blocks the task", async () => {
+      const ctx = createMockContext();
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      // Requirements gathering signals need_more_info (needs human)
+      outputs.set(
+        Phases.requirements_gathering,
+        makeOutput(Phases.requirements_gathering, { status: "need_more_info" }),
+      );
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("error");
+      if (result.outcome === "error") {
+        expect(result.reason).toContain("Blocked");
+      }
+      // Should have transitioned to blocked
+      expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "task-001",
+        "blocked",
+        null,
+        expect.stringContaining("Awaiting human input"),
+        "orchestrator",
+      );
+    });
+
+    it("persists return_to_phase when blocking from a fallback", async () => {
+      const ctx = createMockContext();
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      // Planning triggers need_more_info → requirements also needs_more_info (human needed)
+      let planningCalls = 0;
+      let reqCalls = 0;
+      // Planning signals need_more_info on first call; requirements signals need_more_info on second call
+      const planningHandler = vi.fn(() => {
+        planningCalls++;
+        if (planningCalls === 1) {
+          return Promise.resolve(
+            makeOutput(Phases.planning, {
+              status: "need_more_info",
+              next_phase: "requirements_gathering",
+            }),
+          );
+        }
+        return Promise.resolve(outputs.get(Phases.planning) ?? makeOutput(Phases.planning));
+      });
+      const reqHandler = vi.fn(() => {
+        reqCalls++;
+        if (reqCalls === 2) {
+          return Promise.resolve(
+            makeOutput(Phases.requirements_gathering, { status: "need_more_info" }),
+          );
+        }
+        return Promise.resolve(
+          outputs.get(Phases.requirements_gathering) ?? makeOutput(Phases.requirements_gathering),
+        );
+      });
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          phase === Phases.planning
+            ? planningHandler
+            : phase === Phases.requirements_gathering
+              ? reqHandler
+              : vi.fn(() => Promise.resolve(outputs.get(phase) ?? makeOutput(phase))),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("error");
+      // return_to_phase should be persisted as "planning"
+      expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
+        "task-001",
+        "return_to_phase",
+        "planning",
+      );
+    });
+
+    it("reads return_to_phase from task on re-dispatch", async () => {
+      const ctx = createMockContext();
+      // Simulate a task with return_to_phase set from prior blocked dispatch
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "task-001",
+        return_to_phase: "planning",
+      });
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      // Should clear return_to_phase after reading
+      expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
+        "task-001",
+        "return_to_phase",
+        null,
+      );
     });
   });
 

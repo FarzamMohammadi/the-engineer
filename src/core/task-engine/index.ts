@@ -87,6 +87,7 @@ const UPDATABLE_FIELDS: readonly UpdatableField[] = [
   "priority",
   "repo",
   "clone_url",
+  "return_to_phase",
 ];
 
 const JSON_FIELDS: ReadonlySet<UpdatableField> = new Set([
@@ -140,6 +141,7 @@ export class TaskEngine implements ITaskEngine {
         title, description, source_text, acceptance_criteria,
         team, related, decisions, child_summaries,
         repo, clone_url, thoughts_id, workspace, review, blocked,
+        return_to_phase,
         priority, llm_tokens, llm_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
         session_id, version
@@ -149,6 +151,7 @@ export class TaskEngine implements ITaskEngine {
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
+        ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?
@@ -210,6 +213,7 @@ export class TaskEngine implements ITaskEngine {
       null, // workspace
       null, // review
       null, // blocked
+      null, // return_to_phase
       priority,
       0, // llm_tokens
       0.0, // llm_cost_usd
@@ -260,6 +264,7 @@ export class TaskEngine implements ITaskEngine {
       workspace: null,
       review: null,
       blocked: null,
+      return_to_phase: null,
       priority,
       llm_tokens: 0,
       llm_cost_usd: 0,

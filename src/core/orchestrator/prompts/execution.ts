@@ -76,6 +76,7 @@ function buildInstructions(): string {
     "What YOU Need To Do",
     [
       "1. **Read plan.md — this is your guide.** Understand the approach, the phases, the risks.",
+      "   - **If session-result.json already has values (not placeholders),** this is a resumed session. Re-evaluate plan.md and the current state of the codebase before continuing — checked `[x]` boxes indicate prior progress, but verify the work is sound before moving forward.",
       "",
       "2. **Implement each phase in order.** Update checkboxes to `[x]` as you complete steps. This tracks progress and enables crash recovery.",
       "",

@@ -207,6 +207,9 @@ export const TaskSchema = z.object({
   // Blocked
   blocked: BlockedDetailsSchema.nullable(),
 
+  // Universal fallback: phase to return to after requirements_gathering unblocks
+  return_to_phase: z.string().nullable(),
+
   // Tracking
   priority: z.number().int(),
   llm_tokens: z.number().int(),

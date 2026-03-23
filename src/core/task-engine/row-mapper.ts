@@ -39,6 +39,7 @@ export interface TaskRow {
   workspace: string | null;
   review: string | null;
   blocked: string | null;
+  return_to_phase: string | null;
   priority: number;
   llm_tokens: number;
   llm_cost_usd: number;
@@ -90,6 +91,7 @@ export function rowToTask(row: TaskRow): Task {
     workspace: row.workspace ? (JSON.parse(row.workspace) as TaskWorkspace) : null,
     review: row.review ? (JSON.parse(row.review) as ReviewState) : null,
     blocked: row.blocked ? (JSON.parse(row.blocked) as BlockedDetails) : null,
+    return_to_phase: row.return_to_phase,
     priority: row.priority,
     llm_tokens: row.llm_tokens,
     llm_cost_usd: row.llm_cost_usd,

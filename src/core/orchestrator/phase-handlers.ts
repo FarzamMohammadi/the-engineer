@@ -20,8 +20,8 @@ import type { OrchestratorContext, PipelineState } from "./types.js";
 /**
  * Create all 7 phase handlers.
  *
- * Requirements gathering + research use CLI-native invocation (runPhaseWithCli).
- * Planning through integration use the agent loop (runPhaseWithAgentLoop) until Session 072.
+ * Requirements gathering, research, planning, execution use CLI-native invocation (runPhaseWithCli).
+ * Self-review, demo_prep, integration use the agent loop (runPhaseWithAgentLoop) until Session 072.
  */
 export function createPhaseHandlers(
   llmCaller: LlmCaller,
@@ -85,7 +85,7 @@ export function createPhaseHandlers(
     );
   }
 
-  // ── Agent-loop phases (Session 072: migrate to CLI-native) ─────────────
+  // ── CLI-native phases (Session 070) ─────────────────────────────────
 
   function handlePlanning(
     taskId: string,
@@ -94,10 +94,10 @@ export function createPhaseHandlers(
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
-    return llmCaller.runPhaseWithAgentLoop(
+    return llmCaller.runPhaseWithCli(
       Phases.planning,
       taskId,
-      buildSystemPrompt(Phases.planning),
+      buildCliNativeSystemPrompt(Phases.planning),
       buildPlanningPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
@@ -106,6 +106,7 @@ export function createPhaseHandlers(
         thoughtsDir,
       }),
       state,
+      thoughtsDir,
     );
   }
 
@@ -120,10 +121,10 @@ export function createPhaseHandlers(
       (r) => !r.applied,
     );
 
-    return llmCaller.runPhaseWithAgentLoop(
+    return llmCaller.runPhaseWithCli(
       Phases.execution,
       taskId,
-      buildSystemPrompt(Phases.execution),
+      buildCliNativeSystemPrompt(Phases.execution),
       buildExecutionPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
@@ -133,8 +134,11 @@ export function createPhaseHandlers(
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
       }),
       state,
+      thoughtsDir,
     );
   }
+
+  // ── Agent-loop phases (Session 072: migrate self_review, demo_prep, integration to CLI-native)
 
   function handleSelfReview(
     taskId: string,

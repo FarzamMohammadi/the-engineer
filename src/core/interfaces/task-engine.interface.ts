@@ -61,7 +61,8 @@ export type UpdatableField =
   | "acceptance_criteria"
   | "priority"
   | "repo"
-  | "clone_url";
+  | "clone_url"
+  | "return_to_phase";
 
 export interface ITaskEngine {
   createTask(input: CreateTaskInput): Task;

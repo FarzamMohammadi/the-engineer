@@ -105,6 +105,7 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     workspace: null,
     review: null,
     blocked: null,
+    return_to_phase: null,
     priority: 50,
     llm_tokens: 0,
     llm_cost_usd: 0,

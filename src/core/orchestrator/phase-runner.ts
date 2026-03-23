@@ -6,6 +6,7 @@ import {
   JournalEntryTypes,
   SessionEndReasons,
 } from "../../schemas/session-memory.js";
+import { TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
@@ -427,22 +428,24 @@ async function handlePostPhaseActions(
   const phases = currentPhases;
   let loopbackCount = state.loopbackCount;
 
-  // Requirements ↔ Research loop: if research signals need_more_info, loop back
-  if (phase === Phases.research) {
-    const researchData = output.data as { status?: string; next_phase?: string };
+  // Universal fallback: any non-requirements phase can signal need_more_info → requirements_gathering
+  if (phase !== Phases.requirements_gathering) {
+    const phaseData = output.data as { status?: string; next_phase?: string };
     if (
-      researchData.status === "need_more_info" ||
-      researchData.next_phase === "requirements_gathering"
+      phaseData.status === "need_more_info" ||
+      phaseData.next_phase === "requirements_gathering"
     ) {
       const maxLoops = ctx.config.rrpir?.max_requirements_loops ?? 5;
       const newLoopCount = state.requirementsLoopCount + 1;
       if (newLoopCount <= maxLoops) {
-        ctx.observer.info("Research needs more info, looping back to requirements gathering", {
+        ctx.observer.info("Phase needs more info, routing to requirements gathering", {
           taskId,
+          callingPhase: phase,
           loopCount: newLoopCount,
           maxLoops,
         });
         state.requirementsLoopCount = newLoopCount;
+        state.returnToPhase = phase;
         const reqIndex = phases.indexOf(Phases.requirements_gathering);
         if (reqIndex >= 0) {
           return {
@@ -451,12 +454,66 @@ async function handlePostPhaseActions(
           };
         }
       } else {
-        ctx.observer.warn("Max requirements loops exceeded, continuing to planning", {
+        ctx.observer.warn("Max requirements loops exceeded, continuing to next phase", {
           taskId,
+          callingPhase: phase,
           loopCount: newLoopCount,
           maxLoops,
         });
       }
+    }
+  }
+
+  // Requirements_gathering signals need_more_info = needs a human. Block the task.
+  // Must check BEFORE returnToPhase routing — blocking takes priority over returning.
+  if (phase === Phases.requirements_gathering) {
+    const reqData = output.data as { status?: string };
+    if (reqData.status === "need_more_info") {
+      ctx.observer.info("Requirements gathering needs human input, blocking task", { taskId });
+
+      // Persist return_to_phase so re-dispatch knows where to resume
+      if (state.returnToPhase) {
+        ctx.taskEngine.updateTaskField(taskId, "return_to_phase", state.returnToPhase);
+      }
+
+      ctx.taskEngine.requestTransition(
+        taskId,
+        TaskStates.blocked,
+        null,
+        "Awaiting human input — see requirements.md",
+        "orchestrator",
+      );
+      ctx.taskEngine.updateTaskField(taskId, "blocked", {
+        reason: "need_more_info",
+        efforts_made: ["Requirements gathering documented questions in requirements.md"],
+        waiting_for: "human",
+      });
+
+      ctx.sessionMemory.endSession(sessionId, SessionEndReasons.crashed);
+      return {
+        completion: {
+          kind: "exit",
+          result: { outcome: "error", phase, reason: "Blocked: awaiting human input" },
+        },
+        loopbackCount,
+      };
+    }
+  }
+
+  // After requirements_gathering: if returnToPhase is set, jump back to calling phase
+  if (phase === Phases.requirements_gathering && state.returnToPhase) {
+    const returnPhase = state.returnToPhase;
+    state.returnToPhase = null;
+    const returnIndex = phases.indexOf(returnPhase);
+    if (returnIndex >= 0) {
+      ctx.observer.info("Requirements complete, returning to calling phase", {
+        taskId,
+        returnToPhase: returnPhase,
+      });
+      return {
+        completion: { kind: "loopback", phases, targetIndex: returnIndex - 1 },
+        loopbackCount,
+      };
     }
   }
 
@@ -594,6 +651,17 @@ export async function runPhasePipeline(
   // biome-ignore lint/style/noNonNullAssertion: startIndex is within bounds
   const initialPhase = phases[startIndex]!;
   ctx.taskEngine.updateTaskField(taskId, "phase", initialPhase);
+
+  // ── Restore return_to_phase from prior blocked dispatch ──────────────
+  const task = ctx.taskEngine.getTask(taskId);
+  if (task?.return_to_phase) {
+    currentState = { ...currentState, returnToPhase: task.return_to_phase as Phase };
+    ctx.taskEngine.updateTaskField(taskId, "return_to_phase", null);
+    ctx.observer.info("Restored return_to_phase from prior blocked dispatch", {
+      taskId,
+      returnToPhase: task.return_to_phase,
+    });
+  }
 
   // ── Phase loop ─────────────────────────────────────────────────────────
   const priorOutputs = new Map<Phase, PhaseOutput>();

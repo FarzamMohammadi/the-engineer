@@ -2,6 +2,7 @@ import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouterContext } from "./types.js";
 
 // ── Notification Templates ───────────────────────────────────────────────────
@@ -78,7 +79,7 @@ export interface NotificationRouter {
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createNotificationRouter(ctx: NotificationRouterContext): NotificationRouter {
-  const { registry, taskEngine, peopleDirectory, observer } = ctx;
+  const { registry, taskEngine, peopleDirectory, eventBus, observer } = ctx;
 
   function getCommPlugins(): CommunicationAdapter[] {
     return registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
@@ -140,6 +141,18 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
               recipientId: person.id,
               pluginId: comm.manifest.id,
             });
+            eventBus.publish({
+              type: "comm.message_sent",
+              source: "daemon",
+              task_id: taskId,
+              payload: {
+                task_id: taskId,
+                target: person.id,
+                message_type: messageType,
+                content_summary: safeContent,
+                channel: comm.manifest.id,
+              },
+            } satisfies PublishInput<"comm.message_sent">);
           })
           .catch((err) => {
             observer.error(`Failed to send ${logLabel} notification`, {

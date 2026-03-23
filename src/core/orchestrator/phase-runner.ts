@@ -163,6 +163,18 @@ async function sendOutreachFromFiles(
                 personId,
                 pluginId: plugin.manifest.id,
               });
+              ctx.eventBus.publish({
+                type: "comm.message_sent",
+                source: "orchestrator",
+                task_id: taskId,
+                payload: {
+                  task_id: taskId,
+                  target: personId,
+                  message_type: "notification" as const,
+                  content_summary: message,
+                  channel: plugin.manifest.id,
+                },
+              } satisfies PublishInput<"comm.message_sent">);
             } else {
               ctx.observer.warn("Outreach delivery failed", {
                 taskId,

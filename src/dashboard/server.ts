@@ -16,6 +16,7 @@ import { cors } from "hono/cors";
 import { BlobStore } from "../core/observer/index.js";
 import { createObservationStore } from "../core/observer/index.js";
 import { eventRoutes } from "./api/events.js";
+import { messagesRoutes } from "./api/messages.js";
 import { metricsRoutes } from "./api/metrics.js";
 import { observationRoutes } from "./api/observations.js";
 import { streamRoutes } from "./api/stream.js";
@@ -32,11 +33,17 @@ export interface DashboardConfig {
 export function createDashboardApp(config: DashboardConfig): {
   app: Hono;
   db: Database.Database;
+  writeDb: Database.Database;
 } {
   // Open DB read-only (WAL mode allows concurrent readers)
   const db = new BetterSqlite3(config.dbPath, { readonly: true });
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
+
+  // Writable connection for dashboard responses (WAL supports concurrent writers)
+  const writeDb = new BetterSqlite3(config.dbPath);
+  writeDb.pragma("journal_mode = WAL");
+  writeDb.pragma("busy_timeout = 5000");
 
   const blobStore = new BlobStore(config.tracesDir);
   const observationStore = createObservationStore(db, blobStore);
@@ -55,6 +62,7 @@ export function createDashboardApp(config: DashboardConfig): {
   app.route("/api/blob", blobRoutes({ observationStore }));
   app.route("/api/observations", observationRoutes({ observationStore }));
   app.route("/api/stream", streamRoutes({ db }));
+  app.route("/api/messages", messagesRoutes({ writeDb }));
 
   // Open a directory in VS Code
   app.post("/api/open-explorer", async (c) => {
@@ -81,5 +89,5 @@ export function createDashboardApp(config: DashboardConfig): {
     return c.html(html);
   });
 
-  return { app, db };
+  return { app, db, writeDb };
 }

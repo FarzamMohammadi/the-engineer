@@ -9,7 +9,7 @@ import type { DashboardConfig } from "./server.js";
 export type { DashboardConfig } from "./server.js";
 
 export function startDashboard(config: DashboardConfig, port: number): { close: () => void } {
-  const { app, db } = createDashboardApp(config);
+  const { app, db, writeDb } = createDashboardApp(config);
 
   const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
     console.log("\n  The Engineer — War Room Dashboard");
@@ -18,6 +18,7 @@ export function startDashboard(config: DashboardConfig, port: number): { close: 
 
   return {
     close() {
+      writeDb.close();
       db.close();
       server.close();
     },

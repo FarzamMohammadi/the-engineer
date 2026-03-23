@@ -4,7 +4,7 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** UnblockResolver extracted, dashboard response API built, comm.message_sent events wired (Session 073). Next: Response Poller — proper separation of triggers (intake) from communication (responses). CommunicationAdapter gets `pollMessages()`, new `response-poller.ts` daemon subsystem, trigger poller unblock check removed. See [`8-refinement-v2/dashboard-comm-research.md`](8-refinement-v2/dashboard-comm-research.md) for dashboard design.
+**Current phase:** Communication flow COMPLETE (Sessions 072-074). Full blocked/unblock lifecycle: outreach via comm plugins, response detection via ResponsePoller (GitHub comment polling + dashboard API), UnblockResolver as shared Core abstraction. Triple-reviewed (Engineer persona, Technical Architect, QA Integration Tester). 3 bugs found and fixed. Next: dashboard UI for blocked task responses, live E2E testing.
 
 Previous layers:
 - [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)

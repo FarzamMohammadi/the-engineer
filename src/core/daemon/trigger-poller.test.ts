@@ -509,7 +509,7 @@ describe("TriggerPoller", () => {
       expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
     });
 
-    it("clears blocked field before transitioning", async () => {
+    it("clears blocked field after successful transition", async () => {
       const blockedTask = makeBlockedTask("test/repo", 1);
       (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([blockedTask]);
 
@@ -519,12 +519,37 @@ describe("TriggerPoller", () => {
       const poller = createTriggerPoller(ctx);
       await poller.poll(100_000);
 
-      // updateTaskField should be called BEFORE requestTransition
-      const updateOrder = (ctx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock
-        .invocationCallOrder[0];
+      // requestTransition should be called BEFORE updateTaskField (transition first, then clear)
       const transitionOrder = (ctx.taskEngine.requestTransition as ReturnType<typeof vi.fn>).mock
         .invocationCallOrder[0];
-      expect(updateOrder).toBeLessThan(transitionOrder!);
+      const updateOrder = (ctx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0];
+      expect(transitionOrder).toBeLessThan(updateOrder!);
+    });
+
+    it("only unblocks the matching task when multiple are blocked", async () => {
+      const unrelated = makeBlockedTask("other/repo", 99, "blocked-other");
+      const matching = makeBlockedTask("test/repo", 1, "blocked-match");
+      (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([
+        unrelated,
+        matching,
+      ]);
+
+      const trigger = makeTriggerPlugin([makeTriggerEvent("multi-key")]);
+      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+      const poller = createTriggerPoller(ctx);
+      await poller.poll(100_000);
+
+      // Only the matching task should be unblocked
+      expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "blocked-match",
+        "queued",
+        null,
+        "trigger_response_received",
+        "daemon",
+      );
+      expect(ctx.taskEngine.createTask).not.toHaveBeenCalled();
     });
   });
 });

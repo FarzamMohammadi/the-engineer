@@ -106,9 +106,6 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       return false;
     }
 
-    // Clear blocked details before transitioning
-    taskEngine.updateTaskField(match.id, "blocked", null);
-
     const result = taskEngine.requestTransition(
       match.id,
       TaskStates.queued,
@@ -124,6 +121,10 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       });
       return false;
     }
+
+    // Clear blocked details only after successful transition —
+    // if the transition fails, the task stays blocked with its original context intact.
+    taskEngine.updateTaskField(match.id, "blocked", null);
 
     observer.info("Blocked task unblocked by trigger response", {
       taskId: match.id,
@@ -260,7 +261,12 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
 
 // ── External Ref Matching ─────────────────────────────────────────────────
 
-/** Technology-agnostic comparison of two ExternalRef values by repo + number. */
+/**
+ * Technology-agnostic comparison of two ExternalRef values by repo + number.
+ * Intentionally ignores `type` — on GitHub, issue and PR numbers share the same
+ * sequence (issue #42 and PR #42 cannot coexist). A response on any entity with
+ * the same repo + number should unblock the matching task.
+ */
 export function externalRefsMatch(a: ExternalRef, b: ExternalRef): boolean {
   return a.repo === b.repo && a.number === b.number;
 }

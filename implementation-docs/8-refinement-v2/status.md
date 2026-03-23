@@ -2,17 +2,17 @@
 
 ## Current Phase
 
-**RRPIR Design — DONE.** Full methodology designed: Requirements Gathering → Research → Planning → Implementation → Review. CLI-native agent architecture. Universal requirements fallback. Multi-phase configurable review pipeline. See [rrpir-design.md](rrpir-design.md).
+**RRPIR Implementation — Session 069 DONE.** File-first architecture implemented. CLI-native prompts for all 7 phases. Task-scoped thoughts/ directory. session-result.json routing. Requirements ↔ research loop. Post-commit refinement applied (3 critical bugs fixed, ~300 lines deduplicated, dead code removed).
 
 ## Last Session
 
-Session 068 (2026-03-22): CLI-native philosophy pivot + RRPIR methodology design. Researched RPI ecosystem (HumanLayer, Goose, Burleigh RPIR, patrob). Designed The Engineer's own RRPIR methodology. Four new architecture decisions. Six design concerns flagged with resolution plans. See `sessions/068.md`.
+Session 069 (2026-03-22): RRPIR implementation. Renamed intake_analysis → requirements_gathering. Built file-first architecture (session-result.json + .md deliverables). Task-scoped thoughts/ directory with trigger-provided thoughts_id. CLI-native prompts for all phases. runPhaseWithCli coexists with agent loop. Post-commit triple review (simplify + persona + PR reviewer) → refinement pass. See `sessions/069.md`.
 
 ## Next
 
-1. **Session 069 — Requirements Gathering + Research** — Rename intake_analysis, signal protocol, People Directory wiring, thoughts/ setup, CLI-native prompts, requirements ↔ research loop. First live test of RRPIR.
-2. **Session 070 — Planning + Implementation + Universal Fallback** — Plan file with checkboxes, implementation reads plan, any-phase-to-requirements routing, crash recovery.
-3. **Session 071 — Review Pipeline + Demo/PR** — Configurable multi-phase review, refinement pass, PR with thoughts/ files.
+1. **Session 070 — Planning + Implementation + Universal Fallback** — Plan file with checkboxes, implementation reads plan, any-phase-to-requirements routing, crash recovery, need_more_info resolution.
+2. **Session 071 — Review Pipeline + Demo/PR** — Configurable multi-phase review, refinement pass, PR with thoughts/ files.
+3. **Session 072 — Agent Loop Removal** — Remove agent-loop.ts, action-executor.ts, phase-tools.ts, migrate remaining phases to CLI-native.
 
 See [roadmap.md](roadmap.md) for full session plan through 073+.
 
@@ -30,7 +30,9 @@ Permanent discoveries that affect how we build. Resolved bugs removed — they'r
 - Requirements Gathering is a universal fallback — any phase can invoke it when stuck
 - Review is a configurable pipeline of focused sub-phases (requirements check, security, code quality)
 - Plan file checkboxes are crash-safe progress trackers
-- Signal protocol: `ENGINEER_SIGNAL: {"status": "ready"}` at end of CLI output for reliable parsing
+- File-first routing: session-result.json (status, next_phase, summary) replaces signal protocol
+- thoughts/ directory is task-scoped: `thoughts/{date}-{thoughts_id}/` with phase subdirs
+- thoughts_id flows from trigger plugin → task → workspace → orchestrator (Core never derives it)
 - `thoughts/` files appear in PRs by default (configurable via `rrpir.include_thoughts_in_pr`)
 
 ### CLI-Native Architecture (Revises D143)

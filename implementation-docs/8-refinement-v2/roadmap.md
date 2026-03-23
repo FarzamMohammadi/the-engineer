@@ -65,21 +65,22 @@ Key decisions made:
 
 Broken into focused sessions. Each session implements one or two RRPIR phases and tests them live.
 
-### Session 069 — Requirements Gathering + Research
+### Session 069 — Requirements Gathering + Research (DONE)
 
-- Rename `intake_analysis` → `requirements_gathering` in schemas, phase enum, state machine
-- Design and implement the signal protocol (`ENGINEER_SIGNAL` JSON lines)
-- Wire People Directory into requirements gathering prompt
-- Implement `thoughts/` directory creation in workspace setup
-- Build requirements gathering + research prompts (CLI-native framing)
-- Implement the requirements ↔ research loop in phase-runner
-- Test with live CLI run
+- Renamed `intake_analysis` → `requirements_gathering` across entire codebase
+- File-first architecture: session-result.json + .md deliverables (supersedes signal protocol)
+- Task-scoped thoughts/ directory with trigger-provided thoughts_id
+- CLI-native prompts for ALL 7 phases (shared helpers in format.ts)
+- runPhaseWithCli() alongside agent loop (coexist until Session 072)
+- Requirements ↔ research loop in phase runner
+- Removed fast-path entirely, removed getContinueArgs (deferred)
+- Post-commit triple review → refinement pass (3 critical bugs, ~300 lines deduplicated)
 
 ### Session 070 — Planning + Implementation + Universal Fallback
 
-- Build planning prompt (reads research.md, writes plan.md with checkboxes)
-- Build implementation prompt (reads plan.md, updates checkboxes, follows research.md conventions)
+- Wire planning + execution handlers to use runPhaseWithCli (currently still agent-loop)
 - Implement universal fallback routing (`return_to_phase` mechanism for any phase → requirements gathering → return)
+- Implement need_more_info resolution flow (how blocked tasks unblock when responses arrive)
 - Implement decomposition detection from plan.md
 - Crash recovery via plan.md checkboxes
 - Test with live CLI run

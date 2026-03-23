@@ -6,13 +6,13 @@ pre-commit:
       run: pnpm biome check --staged --no-errors-on-unmatched
     type-check:
       run: pnpm tsc --noEmit
+    check-exports:
+      run: pnpm check:exports
+    check-circular:
+      run: pnpm check:circular
 
 pre-push:
   parallel: true
   commands:
     test:
       run: pnpm vitest run --no-cache
-    check-exports:
-      run: pnpm check:exports
-    check-circular:
-      run: pnpm check:circular

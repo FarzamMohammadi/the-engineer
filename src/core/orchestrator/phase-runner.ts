@@ -632,14 +632,13 @@ async function handlePostPhaseActions(
         await sendOutreachFromFiles(taskId, outreachDir, ctx);
       }
 
-      // Persist return_to_phase so re-dispatch knows where to resume
-      if (returnToPhase) {
-        ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase);
-      }
+      // Always persist return_to_phase when blocking — defaults to the current phase.
+      // On resume, the pipeline reads this and routes back here after requirements_gathering.
+      ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase ?? phase);
 
-      // Create checkpoint before blocking so re-dispatch resumes correctly
-      // (workspace already exists, thoughtsDir set — checkpoint preserves this state)
-      createPhaseCheckpoint(sessionId, taskId, phase, priorOutputs, null, ctx);
+      // No checkpoint — blocking is a pause, not a completion. Re-dispatch starts fresh
+      // at requirements_gathering (startIndex 0). The workspace already exists and is
+      // re-registered via the task's persisted workspace field.
 
       ctx.taskEngine.requestTransition(
         taskId,
@@ -836,6 +835,9 @@ export async function runPhasePipeline(
   ctx.taskEngine.updateTaskField(taskId, "phase", initialPhase);
 
   // ── Restore return_to_phase from prior blocked dispatch ──────────────
+  // When return_to_phase is set, always start at requirements_gathering (index 0).
+  // Requirements_gathering reads the response, decides if satisfied, and the
+  // returnToPhase routing sends it back to the right phase.
   const task = ctx.taskEngine.getTask(taskId);
   if (task?.return_to_phase) {
     currentState = { ...currentState, returnToPhase: task.return_to_phase };

@@ -546,7 +546,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       worktreePath: workspace.worktree_path,
       baseBranch: this.config.default_base_branch,
       baseCommit: "",
-      thoughtsDir: null,
+      thoughtsDir: workspace.thoughts_dir ?? null,
     });
     this.observer.debug("Registered existing workspace", {
       taskId,

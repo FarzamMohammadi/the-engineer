@@ -128,6 +128,7 @@ export const TaskWorkspaceSchema = z.object({
   repo: z.string(),
   branch: z.string(),
   worktree_path: z.string().nullable(),
+  thoughts_dir: z.string().nullable(),
 });
 export type TaskWorkspace = z.infer<typeof TaskWorkspaceSchema>;
 

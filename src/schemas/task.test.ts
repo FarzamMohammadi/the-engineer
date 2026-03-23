@@ -248,6 +248,7 @@ describe("TaskWorkspaceSchema", () => {
         repo: "owner/repo",
         branch: "engineer/47-dark-mode",
         worktree_path: null,
+        thoughts_dir: null,
       }),
     ).toBeDefined();
 
@@ -256,6 +257,7 @@ describe("TaskWorkspaceSchema", () => {
         repo: "owner/repo",
         branch: "engineer/47-dark-mode",
         worktree_path: "/tmp/worktree",
+        thoughts_dir: "thoughts/2026-03-23-issue-42",
       }),
     ).toBeDefined();
   });

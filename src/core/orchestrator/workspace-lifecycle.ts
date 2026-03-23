@@ -59,6 +59,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
             repo,
             branch: record.branch,
             worktree_path: record.worktreePath,
+            thoughts_dir: record.thoughtsDir,
           });
         }
       } else {

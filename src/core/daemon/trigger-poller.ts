@@ -6,6 +6,7 @@ import { TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { TriggerPollerContext } from "./types.js";
+import type { UnblockResolver } from "./unblock-resolver.js";
 
 // ── TriggerPoller Interface ──────────────────────────────────────────────────
 
@@ -35,7 +36,10 @@ const MAX_BACKOFF_EXPONENT = 8;
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
+export function createTriggerPoller(
+  ctx: TriggerPollerContext,
+  unblockResolver: UnblockResolver,
+): TriggerPoller {
   const { config, eventBus, registry, taskEngine, observer } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
@@ -95,46 +99,6 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     }
   }
 
-  /** Check if a blocked task matches this external ref; if so, unblock it. */
-  function tryUnblockMatchingTask(ref: ExternalRef, event: TriggerEvent): boolean {
-    const blockedTasks = taskEngine.getTasksByState(TaskStates.blocked);
-    const match = blockedTasks.find(
-      (t) => t.external_ref !== null && externalRefsMatch(t.external_ref, ref),
-    );
-
-    if (!match) {
-      return false;
-    }
-
-    const result = taskEngine.requestTransition(
-      match.id,
-      TaskStates.queued,
-      null,
-      "trigger_response_received",
-      "daemon",
-    );
-
-    if (!result.success) {
-      observer.warn("Failed to unblock task on trigger response", {
-        taskId: match.id,
-        reason: result.reason,
-      });
-      return false;
-    }
-
-    // Clear blocked details only after successful transition —
-    // if the transition fails, the task stays blocked with its original context intact.
-    taskEngine.updateTaskField(match.id, "blocked", null);
-
-    observer.info("Blocked task unblocked by trigger response", {
-      taskId: match.id,
-      title: match.title,
-      triggerSource: event.source,
-    });
-
-    return true;
-  }
-
   function processNewTriggerEvent(event: TriggerEvent, now: number): void {
     const expiry = seenTriggerKeys.get(event.idempotency_key);
     if (expiry !== undefined && expiry > now) {
@@ -170,8 +134,12 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
 
     // Check if a blocked task matches — unblock instead of creating a duplicate
     if (externalRef) {
-      const unblocked = tryUnblockMatchingTask(externalRef, event);
-      if (unblocked) {
+      const result = unblockResolver.tryUnblock({
+        by: "external_ref",
+        ref: externalRef,
+        source: event.source,
+      });
+      if (result.unblocked) {
         return;
       }
     }
@@ -257,18 +225,6 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     drainNewBasePriorities,
     removeBasePriority,
   };
-}
-
-// ── External Ref Matching ─────────────────────────────────────────────────
-
-/**
- * Technology-agnostic comparison of two ExternalRef values by repo + number.
- * Intentionally ignores `type` — on GitHub, issue and PR numbers share the same
- * sequence (issue #42 and PR #42 cannot coexist). A response on any entity with
- * the same repo + number should unblock the matching task.
- */
-export function externalRefsMatch(a: ExternalRef, b: ExternalRef): boolean {
-  return a.repo === b.repo && a.number === b.number;
 }
 
 // ── URL Parsing (inlined — core must not import from plugins) ────────────

@@ -29,6 +29,7 @@ import { createReviewHandler } from "./review-handler.js";
 import { createTaskScheduler, isSlotConsuming } from "./task-scheduler.js";
 import { createTriggerPoller } from "./trigger-poller.js";
 import type { DaemonContext } from "./types.js";
+import { createUnblockResolver } from "./unblock-resolver.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -157,7 +158,44 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     (taskId) => scheduler.removeActiveDispatch(taskId),
   );
 
-  const triggerPoller = createTriggerPoller(ctx);
+  const unblockResolver = createUnblockResolver({
+    taskEngine: ctx.taskEngine,
+    workspaceManager: ctx.workspaceManager,
+    observer: ctx.observer,
+  });
+
+  const triggerPoller = createTriggerPoller(ctx, unblockResolver);
+
+  // Dashboard response polling — check for comm.message_received events from dashboard
+  let lastDashboardResponseSeq = 0;
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: will be extracted to response-poller subsystem
+  function pollDashboardResponses(): void {
+    const rows = ctx.eventBus.getEventsSince(lastDashboardResponseSeq);
+    for (const row of rows) {
+      if (row.type === "comm.message_received") {
+        const payload = row.payload as {
+          source?: string;
+          task_id?: string | null;
+          content?: string;
+        };
+        if (payload.source === "dashboard" && payload.task_id) {
+          const result = unblockResolver.tryUnblock({
+            by: "task_id",
+            taskId: payload.task_id,
+            source: "dashboard",
+            ...(payload.content ? { content: payload.content } : {}),
+          });
+          if (result.unblocked) {
+            ctx.observer.info("Dashboard response unblocked task", {
+              taskId: payload.task_id,
+            });
+          }
+        }
+      }
+      lastDashboardResponseSeq = row.sequence;
+    }
+  }
 
   const reviewHandler = createReviewHandler(ctx, notifications, {
     onTaskCompletionFinalized: (taskId) => scheduler.checkAndEmitChildrenAllDone(taskId),
@@ -419,8 +457,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Step 1: Process event-driven flags
     costLimitQueue.process();
 
-    // Step 2: Poll triggers
+    // Step 2: Poll triggers + dashboard responses
     await triggerPoller.poll(now);
+    pollDashboardResponses();
 
     // Sync only newly added base priorities from trigger poller to scheduler
     const newBasePriorities = triggerPoller.drainNewBasePriorities();

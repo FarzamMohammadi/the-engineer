@@ -79,5 +79,5 @@ export type ReviewHandlerContext = Pick<
 
 export type NotificationRouterContext = Pick<
   DaemonContext,
-  "registry" | "taskEngine" | "peopleDirectory" | "observer"
+  "registry" | "taskEngine" | "peopleDirectory" | "eventBus" | "observer"
 >;

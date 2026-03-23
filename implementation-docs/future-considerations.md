@@ -239,3 +239,52 @@ packages/
 4. Existing `handleDecomposition()` stays unchanged — it still expects `decomposition_plan` in output data
 
 ---
+
+## Automatic Unblocking on Response
+
+**Current state:** When a blocked task's source gets new activity (e.g., new comment on its GitHub issue), nothing detects this and unblocks the task. Blocked tasks only get attention via timeout escalation (`health-monitor.ts` `checkBlockedEscalation`), which tries LLM self-diagnosis — not a response handler.
+
+**Design (trigger-agnostic):** The trigger poller already polls for events via TriggerAdapter contract. Before dedup, check if any blocked task has a matching `external_ref`. If so, transition blocked → queued instead of creating a new task. Works for ANY trigger adapter (GitHub, GitLab, Jira, webhooks) because matching is on `external_ref`, not plugin type.
+
+**Key files:** `src/core/daemon/trigger-poller.ts` (`processNewTriggerEvent`, dedup logic), `src/schemas/task.ts` (`ExternalRef`), `src/core/daemon/health-monitor.ts` (keep timeout fallback as-is).
+
+---
+
+## Telegram Receive Capability
+
+**Current state:** Telegram plugin is send-only. The Engineer can message people but can't receive replies via Telegram. Responses currently come through trigger polling (e.g., GitHub issue comments detected by TriggerAdapter).
+
+**Design:** Add `receive` capability to CommunicationAdapter contract. Telegram plugin implements via webhook or long-polling. Received messages routed through the same `comm.message_received` event the daemon already subscribes to. The daemon matches incoming messages to blocked tasks and unblocks them.
+
+**Principle:** Goes through CommunicationAdapter contract, not Telegram-specific code. Any future comm plugin (Slack, Discord, email) that implements `receive` capability works the same way.
+
+---
+
+## `engineer telegram-setup` CLI Command
+
+**Current state:** Users must manually get their `TELEGRAM_CHAT_ID` by messaging the bot and calling Telegram's `getUpdates` API.
+
+**Design:** `engineer telegram-setup` command that:
+1. Prompts user: "Send /start to @YourBotName on Telegram"
+2. Polls `getUpdates` for ~60 seconds
+3. When message arrives, extracts `chat.id`
+4. Writes to plugin config automatically
+5. Done — never needs manual `TELEGRAM_CHAT_ID` again
+
+---
+
+## Plugin How-To Guides
+
+Each adapter type needs a "How to build a plugin" guide so contributors can add new integrations without reading Core code. One guide per adapter type:
+
+- **TriggerAdapter** — How to build a trigger plugin (poll for events, produce `TriggerEvent[]` with `external_ref`, idempotency keys, watermarks). Example: building a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
+- **CommunicationAdapter** — How to build a comm plugin (send messages, format for your platform, capability gates for send/receive/sync/issue_management). Example: building a Slack plugin, a Discord plugin, an email plugin.
+- **LLMAdapter** — How to build an LLM plugin (spawn CLI process, pipe prompt via stdin, parse output, report cost/tokens, detect rate limits). Example: building a plugin for a new CLI tool.
+- **ToolAdapter** — How to build a tool plugin (describe capabilities, execute within workspace confinement, ToolExecutionContext). Example: building a custom tool plugin.
+- **GitHostingAdapter** — How to build a git hosting plugin (PR lifecycle: create, update, merge, get status, list comments). Example: building a GitLab hosting plugin.
+
+**Format:** Each guide should include the adapter interface, required vs optional methods, capability gates, manifest format (`engineer.plugin.yaml`), config schema, a minimal working example, and how to register/test.
+
+**Location:** `docs/plugins/` or `implementation-docs/plugin-guides/`
+
+---

@@ -967,7 +967,7 @@ function fmtDateTime(iso) {
 function truncate(s, max) { return s && s.length > max ? s.slice(0, max) + '...' : (s || ''); }
 function shortId(id) { return id ? id.slice(0, 8) : '-'; }
 
-function openInExplorer(path) {
+function openInVSCode(path) {
   fetch('/api/open-explorer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1314,7 +1314,7 @@ function renderKanban() {
           ${t.children_count > 0 ? '<span>' + t.children_count + ' children</span>' : ''}
         </div>
         ${t.blocked_reason ? '<div style="font-size:0.68rem;color:var(--red);margin-top:4px;padding:4px 6px;background:rgba(255,80,80,0.08);border-radius:3px">' + esc(truncate(t.blocked_reason, 80)) + '</div>' : ''}
-        ${t.worktree_path ? '<div class="worktree-link" onclick="event.stopPropagation();openInExplorer(\'' + esc(t.worktree_path) + '\')" title="' + esc(t.worktree_path) + '">&#128193; ' + esc(t.worktree_path.split('/').slice(-2).join('/')) + '</div>' : ''}
+        ${t.worktree_path ? '<div class="worktree-link" onclick="event.stopPropagation();openInVSCode(\'' + esc(t.worktree_path) + '\')" title="' + esc(t.worktree_path) + '">&#128193; ' + esc(t.worktree_path.split('/').slice(-2).join('/')) + '</div>' : ''}
         ${phaseBar}
       </div>`;
     });
@@ -1407,7 +1407,7 @@ async function showTaskDetail(taskId) {
     <div style="margin-bottom:12px">
       <button class="expand-btn" style="font-size:0.78rem;padding:4px 12px" onclick="switchToAgentLoop('${esc(t.id)}')">View in Agent Loop &rarr;</button>
     </div>
-    ${t.workspace ? '<div class="card"><div class="card-title">Workspace' + (t.workspace.worktree_path ? ' <span class="worktree-link" style="font-size:0.72rem;margin-left:8px" onclick="openInExplorer(\'' + esc(t.workspace.worktree_path) + '\')">&#128193; Open in Explorer</span>' : '') + '</div>' + jsonPre(t.workspace) + '</div>' : ''}
+    ${t.workspace ? '<div class="card"><div class="card-title">Workspace' + (t.workspace.worktree_path ? ' <span class="worktree-link" style="font-size:0.72rem;margin-left:8px" onclick="openInVSCode(\'' + esc(t.workspace.worktree_path) + '\')">&#128193; Open in VS Code</span>' : '') + '</div>' + jsonPre(t.workspace) + '</div>' : ''}
     ${t.external_ref ? '<div class="card"><div class="card-title">External Ref</div>' + jsonPre(t.external_ref) + '</div>' : ''}
     ${t.acceptance_criteria ? '<div class="card"><div class="card-title">Acceptance Criteria</div>' + jsonPre(t.acceptance_criteria) + '</div>' : ''}
     <div class="card">

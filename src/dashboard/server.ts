@@ -56,7 +56,7 @@ export function createDashboardApp(config: DashboardConfig): {
   app.route("/api/observations", observationRoutes({ observationStore }));
   app.route("/api/stream", streamRoutes({ db }));
 
-  // Open a directory in the system file explorer
+  // Open a directory in VS Code
   app.post("/api/open-explorer", async (c) => {
     const body = await c.req.json<{ path: string }>();
     const dirPath = body.path;
@@ -66,10 +66,9 @@ export function createDashboardApp(config: DashboardConfig): {
     if (!existsSync(dirPath)) {
       return c.json({ error: "Path does not exist" }, 404);
     }
-    const opener = process.platform === "darwin" ? "open" : "xdg-open";
-    execFile(opener, [dirPath], (err) => {
+    execFile("code", [dirPath], (err) => {
       if (err) {
-        console.error("Failed to open explorer:", err.message);
+        console.error("Failed to open in VS Code:", err.message);
       }
     });
     return c.json({ ok: true });

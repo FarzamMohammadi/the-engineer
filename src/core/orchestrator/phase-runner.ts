@@ -423,20 +423,24 @@ async function handlePostPhaseActions(
   dispatch: Dispatch,
   state: PipelineState,
   deps: PhaseRunnerDeps,
-): Promise<{ completion: PhaseCompletionResult; loopbackCount: number }> {
+): Promise<{
+  completion: PhaseCompletionResult;
+  loopbackCount: number;
+  requirementsLoopCount: number;
+  returnToPhase: Phase | null;
+}> {
   const { ctx, prManager, decompositionHandler } = deps;
   const phases = currentPhases;
   let loopbackCount = state.loopbackCount;
+  let { requirementsLoopCount, returnToPhase } = state;
 
   // Universal fallback: any non-requirements phase can signal need_more_info → requirements_gathering
+  // Routing is driven by status only. next_phase is for the Orchestrator's default sequencing.
   if (phase !== Phases.requirements_gathering) {
-    const phaseData = output.data as { status?: string; next_phase?: string };
-    if (
-      phaseData.status === "need_more_info" ||
-      phaseData.next_phase === "requirements_gathering"
-    ) {
+    const phaseData = output.data as { status?: string };
+    if (phaseData.status === "need_more_info") {
       const maxLoops = ctx.config.rrpir?.max_requirements_loops ?? 5;
-      const newLoopCount = state.requirementsLoopCount + 1;
+      const newLoopCount = requirementsLoopCount + 1;
       if (newLoopCount <= maxLoops) {
         ctx.observer.info("Phase needs more info, routing to requirements gathering", {
           taskId,
@@ -444,13 +448,16 @@ async function handlePostPhaseActions(
           loopCount: newLoopCount,
           maxLoops,
         });
-        state.requirementsLoopCount = newLoopCount;
-        state.returnToPhase = phase;
+        requirementsLoopCount = newLoopCount;
+        returnToPhase = phase;
+        // targetIndex - 1 because the for loop's i++ will increment to the target
         const reqIndex = phases.indexOf(Phases.requirements_gathering);
         if (reqIndex >= 0) {
           return {
             completion: { kind: "loopback", phases, targetIndex: reqIndex - 1 },
             loopbackCount,
+            requirementsLoopCount,
+            returnToPhase,
           };
         }
       } else {
@@ -472,8 +479,8 @@ async function handlePostPhaseActions(
       ctx.observer.info("Requirements gathering needs human input, blocking task", { taskId });
 
       // Persist return_to_phase so re-dispatch knows where to resume
-      if (state.returnToPhase) {
-        ctx.taskEngine.updateTaskField(taskId, "return_to_phase", state.returnToPhase);
+      if (returnToPhase) {
+        ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase);
       }
 
       ctx.taskEngine.requestTransition(
@@ -489,6 +496,7 @@ async function handlePostPhaseActions(
         waiting_for: "human",
       });
 
+      // TODO: Add "blocked" to SessionEndReasonSchema — using "crashed" as closest available
       ctx.sessionMemory.endSession(sessionId, SessionEndReasons.crashed);
       return {
         completion: {
@@ -496,23 +504,28 @@ async function handlePostPhaseActions(
           result: { outcome: "error", phase, reason: "Blocked: awaiting human input" },
         },
         loopbackCount,
+        requirementsLoopCount,
+        returnToPhase,
       };
     }
   }
 
   // After requirements_gathering: if returnToPhase is set, jump back to calling phase
-  if (phase === Phases.requirements_gathering && state.returnToPhase) {
-    const returnPhase = state.returnToPhase;
-    state.returnToPhase = null;
+  if (phase === Phases.requirements_gathering && returnToPhase) {
+    const returnPhase = returnToPhase;
+    returnToPhase = null;
     const returnIndex = phases.indexOf(returnPhase);
     if (returnIndex >= 0) {
       ctx.observer.info("Requirements complete, returning to calling phase", {
         taskId,
         returnToPhase: returnPhase,
       });
+      // targetIndex - 1 because the for loop's i++ will increment to the target
       return {
         completion: { kind: "loopback", phases, targetIndex: returnIndex - 1 },
         loopbackCount,
+        requirementsLoopCount,
+        returnToPhase,
       };
     }
   }
@@ -530,6 +543,8 @@ async function handlePostPhaseActions(
       return {
         completion: { kind: "exit", result: decompositionResult },
         loopbackCount,
+        requirementsLoopCount,
+        returnToPhase,
       };
     }
   }
@@ -543,6 +558,8 @@ async function handlePostPhaseActions(
       return {
         completion: { kind: "loopback", phases, targetIndex: loopbackResult.targetIndex - 1 },
         loopbackCount,
+        requirementsLoopCount,
+        returnToPhase,
       };
     }
   }
@@ -560,7 +577,7 @@ async function handlePostPhaseActions(
       prManager,
     );
     if (prResult) {
-      return { completion: prResult, loopbackCount };
+      return { completion: prResult, loopbackCount, requirementsLoopCount, returnToPhase };
     }
   }
 
@@ -590,7 +607,7 @@ async function handlePostPhaseActions(
     );
     ctx.observer.debug("Fast-path PR result", { taskId, hasResult: !!prResult });
     if (prResult) {
-      return { completion: prResult, loopbackCount };
+      return { completion: prResult, loopbackCount, requirementsLoopCount, returnToPhase };
     }
   }
 
@@ -608,12 +625,16 @@ async function handlePostPhaseActions(
         result: handlePreemption(sessionId, taskId, nextPhase, ctx, preemptingId),
       },
       loopbackCount,
+      requirementsLoopCount,
+      returnToPhase,
     };
   }
 
   return {
     completion: { kind: "continue", phases },
     loopbackCount,
+    requirementsLoopCount,
+    returnToPhase,
   };
 }
 
@@ -655,7 +676,7 @@ export async function runPhasePipeline(
   // ── Restore return_to_phase from prior blocked dispatch ──────────────
   const task = ctx.taskEngine.getTask(taskId);
   if (task?.return_to_phase) {
-    currentState = { ...currentState, returnToPhase: task.return_to_phase as Phase };
+    currentState = { ...currentState, returnToPhase: task.return_to_phase };
     ctx.taskEngine.updateTaskField(taskId, "return_to_phase", null);
     ctx.observer.info("Restored return_to_phase from prior blocked dispatch", {
       taskId,
@@ -734,7 +755,12 @@ export async function runPhasePipeline(
         deps,
       );
       completion = result.completion;
-      currentState = { ...currentState, loopbackCount: result.loopbackCount };
+      currentState = {
+        ...currentState,
+        loopbackCount: result.loopbackCount,
+        requirementsLoopCount: result.requirementsLoopCount,
+        returnToPhase: result.returnToPhase,
+      };
     } catch (completionError) {
       return handlePhaseError(sessionId, taskId, phase, completionError, ctx);
     }

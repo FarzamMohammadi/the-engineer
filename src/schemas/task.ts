@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PhaseSchema } from "./orchestrator.js";
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -208,7 +209,7 @@ export const TaskSchema = z.object({
   blocked: BlockedDetailsSchema.nullable(),
 
   // Universal fallback: phase to return to after requirements_gathering unblocks
-  return_to_phase: z.string().nullable(),
+  return_to_phase: PhaseSchema.nullable(),
 
   // Tracking
   priority: z.number().int(),

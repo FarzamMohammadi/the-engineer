@@ -138,7 +138,7 @@ export function createPhaseHandlers(
     );
   }
 
-  // ── Agent-loop phases (Session 072: migrate self_review, demo_prep, integration to CLI-native)
+  // ── Agent-loop phases (Session 072: migrate self_review, demo_prep, integration) ──
 
   function handleSelfReview(
     taskId: string,

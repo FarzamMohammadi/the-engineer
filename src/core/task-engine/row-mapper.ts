@@ -1,3 +1,4 @@
+import type { Phase } from "../../schemas/orchestrator.js";
 import type {
   BlockedDetails,
   CascadePolicy,
@@ -91,7 +92,7 @@ export function rowToTask(row: TaskRow): Task {
     workspace: row.workspace ? (JSON.parse(row.workspace) as TaskWorkspace) : null,
     review: row.review ? (JSON.parse(row.review) as ReviewState) : null,
     blocked: row.blocked ? (JSON.parse(row.blocked) as BlockedDetails) : null,
-    return_to_phase: row.return_to_phase,
+    return_to_phase: row.return_to_phase as Phase | null,
     priority: row.priority,
     llm_tokens: row.llm_tokens,
     llm_cost_usd: row.llm_cost_usd,

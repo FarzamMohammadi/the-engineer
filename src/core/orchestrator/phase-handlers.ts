@@ -54,7 +54,7 @@ export function createPhaseHandlers(
         thoughtsDir,
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
         prNumber: dispatch.task.review?.pr_number ?? undefined,
-        isRerun: state.requirementsLoopCount > 0,
+        isRerun: state.requirementsLoopCount > 0 || state.returnToPhase !== null,
       }),
       state,
       thoughtsDir,

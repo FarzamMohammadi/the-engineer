@@ -82,9 +82,9 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** RRPIR implementation complete (Session 069). File-first architecture, CLI-native prompts for all phases, task-scoped thoughts/ directory, session-result.json routing. Requirements gathering + research use CLI-native invocation; other phases still on agent loop until Session 072. Next: Session 070 (Planning + Implementation + Universal Fallback). See `8-refinement-v2/status.md` for live status.
+**Layer 8 — Refinement v2: IN PROGRESS.** Session 070 DONE. Planning + execution wired to CLI-native (4/7 phases now CLI-native). Universal fallback routing (any phase → requirements_gathering → return to calling phase). External blocking with persistent `return_to_phase` (DB migration 007). Crash recovery via session-result.json detection. Decomposition from plan.md deferred. Triple review (simplify + persona + PR reviewer) → refinement pass (schema validation, state mutation safety, test deduplication). Next: Session 071 (Review Pipeline + Demo/PR). See `8-refinement-v2/status.md` for live status.
 
-**Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,280 tests (100 files).
+**Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,285 tests (100 files).
 
 - Phase 0: Project Bootstrap — **DONE** (Session 31). 12 files: package.json, tsconfig.json, biome.json, lefthook.yml, 4 vitest configs, test/setup.ts, src/index.ts, .gitignore, .node-version. All verification passes.
 - Phase 1a: Core Data Schemas — **DONE** (Session 32). 7 files in `src/schemas/`: task.ts (4 enums, 12 sub-schemas, TaskSchema, StateTransitionSchema, ValidTransitions 25 rules, PermissionTable 10 entries), events.ts (EventSchema envelope, 30 payload schemas, EventPayloads mapped type, TypedEvent generic, eventPayloadSchemas runtime registry), session-memory.ts (Session, JournalEntry, Checkpoint, KnowledgeEntry, knowledgeId()), 3 test files (126 tests), index.ts barrel. 3 Biome exceptions added (useNamingConvention, noBarrelFile, noReExportAll). All verification passes.

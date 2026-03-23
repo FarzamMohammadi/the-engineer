@@ -76,14 +76,16 @@ Broken into focused sessions. Each session implements one or two RRPIR phases an
 - Removed fast-path entirely, removed getContinueArgs (deferred)
 - Post-commit triple review → refinement pass (3 critical bugs, ~300 lines deduplicated)
 
-### Session 070 — Planning + Implementation + Universal Fallback
+### Session 070 — Planning + Implementation + Universal Fallback (DONE)
 
-- Wire planning + execution handlers to use runPhaseWithCli (currently still agent-loop)
-- Implement universal fallback routing (`return_to_phase` mechanism for any phase → requirements gathering → return)
-- Implement need_more_info resolution flow (how blocked tasks unblock when responses arrive)
-- Implement decomposition detection from plan.md
-- Crash recovery via plan.md checkboxes
-- Test with live CLI run
+- Wired planning + execution to runPhaseWithCli (4/7 phases now CLI-native)
+- Universal fallback: any phase → requirements_gathering → return to calling phase (returnToPhase on PipelineState)
+- External blocking with persistent return_to_phase (DB migration 007, task schema, row mapper, task engine)
+- Crash recovery: execution prompt detects resumed sessions via session-result.json state
+- Separation of concerns: session-result.json = pure routing, .md files = rich context (documented in rrpir-design.md)
+- Decomposition from plan.md deferred to future-considerations.md
+- Triple review (simplify + persona + PR reviewer) → refinement pass (PhaseSchema validation, state mutation safety, test deduplication)
+- 5 new tests, 2285 total
 
 ### Session 071 — Review Pipeline + Demo/PR
 

@@ -2,17 +2,17 @@
 
 ## Current Phase
 
-**RRPIR Implementation — Session 069 DONE.** File-first architecture implemented. CLI-native prompts for all 7 phases. Task-scoped thoughts/ directory. session-result.json routing. Requirements ↔ research loop. Post-commit refinement applied (3 critical bugs fixed, ~300 lines deduplicated, dead code removed).
+**RRPIR Implementation — Session 070 DONE.** Planning + execution wired to CLI-native (4/7 phases). Universal fallback routing: any phase → requirements_gathering → return to calling phase. External blocking with persistent `return_to_phase` (DB migration 007). Crash recovery via session-result.json detection. Key design decision: session-result.json is pure routing, .md files carry all rich context. Post-commit triple review → refinement pass (schema validation, state mutation safety, test deduplication).
 
 ## Last Session
 
-Session 069 (2026-03-22): RRPIR implementation. Renamed intake_analysis → requirements_gathering. Built file-first architecture (session-result.json + .md deliverables). Task-scoped thoughts/ directory with trigger-provided thoughts_id. CLI-native prompts for all phases. runPhaseWithCli coexists with agent loop. Post-commit triple review (simplify + persona + PR reviewer) → refinement pass. See `sessions/069.md`.
+Session 070 (2026-03-22): Planning + execution → CLI-native. Universal fallback routing (returnToPhase on PipelineState). External blocking with return_to_phase persistence (migration 007, task schema, row mapper, task engine). Crash recovery prompt. Separation of concerns documented in rrpir-design.md. Decomposition from plan.md deferred to future-considerations.md. 5 new tests, 2285 total. Triple review (simplify + persona + PR reviewer) → refinement pass. See `sessions/070.md`.
 
 ## Next
 
-1. **Session 070 — Planning + Implementation + Universal Fallback** — Plan file with checkboxes, implementation reads plan, any-phase-to-requirements routing, crash recovery, need_more_info resolution.
-2. **Session 071 — Review Pipeline + Demo/PR** — Configurable multi-phase review, refinement pass, PR with thoughts/ files.
-3. **Session 072 — Agent Loop Removal** — Remove agent-loop.ts, action-executor.ts, phase-tools.ts, migrate remaining phases to CLI-native.
+1. **Session 071 — Review Pipeline + Demo/PR** — Configurable multi-phase review, refinement pass, PR with thoughts/ files.
+2. **Session 072 — Agent Loop Removal** — Remove agent-loop.ts, action-executor.ts, phase-tools.ts, migrate remaining phases to CLI-native.
+3. **Session 073+ — RRPIR Refinement** — Live testing, prompt tuning, cross-CLI validation.
 
 See [roadmap.md](roadmap.md) for full session plan through 073+.
 

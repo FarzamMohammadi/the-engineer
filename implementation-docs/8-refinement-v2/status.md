@@ -2,17 +2,16 @@
 
 ## Current Phase
 
-**RRPIR Implementation — Session 070 DONE.** Planning + execution wired to CLI-native (4/7 phases). Universal fallback routing: any phase → requirements_gathering → return to calling phase. External blocking with persistent `return_to_phase` (DB migration 007). Crash recovery via session-result.json detection. Key design decision: session-result.json is pure routing, .md files carry all rich context. Post-commit triple review → refinement pass (schema validation, state mutation safety, test deduplication).
+**RRPIR Implementation — Session 071 DONE.** All 7/7 phases CLI-native. Configurable multi-phase review pipeline: review sub-phases (requirements_check, security_review, code_quality) run as separate CLI calls, then refinement consolidates and fixes. Demo-prep is narrative-only (writes pr-description.md, orchestrator handles git/PR). Quality assessment derived from refinement session-result.json routing. `pnpm lint` unified to run all 4 checks.
 
 ## Last Session
 
-Session 070 (2026-03-22): Planning + execution → CLI-native. Universal fallback routing (returnToPhase on PipelineState). External blocking with return_to_phase persistence (migration 007, task schema, row mapper, task engine). Crash recovery prompt. Separation of concerns documented in rrpir-design.md. Decomposition from plan.md deferred to future-considerations.md. 5 new tests, 2285 total. Triple review (simplify + persona + PR reviewer) → refinement pass. See `sessions/070.md`.
+Session 071 (2026-03-22): Review pipeline + CLI-native migration of remaining 3 phases. `ReviewPhaseNameSchema` + `review_phases` config (default: `["requirements_check"]`). New `prompts/review.ts` (review sub-phase + refinement builders). `overridePhaseDir` on `runPhaseWithCli`. self_review handler runs N review sub-phases + 1 refinement, maps next_phase → quality_assessment for loopback compatibility. demo_prep → narrative-only (pr-manager reads pr-description.md from deliverable file). integration → CLI-native. Defense-in-depth loopback check. `pnpm lint` = biome + typecheck + knip + circular. 4 new tests, 2289 total. See `sessions/071.md`.
 
 ## Next
 
-1. **Session 071 — Review Pipeline + Demo/PR** — Configurable multi-phase review, refinement pass, PR with thoughts/ files.
-2. **Session 072 — Agent Loop Removal** — Remove agent-loop.ts, action-executor.ts, phase-tools.ts, migrate remaining phases to CLI-native.
-3. **Session 073+ — RRPIR Refinement** — Live testing, prompt tuning, cross-CLI validation.
+1. **Session 072 — Agent Loop Removal** — Remove agent-loop.ts, action-executor.ts, phase-tools.ts, json-parser.ts. Simplify llm-caller.ts. Update/remove ~200+ agent loop tests.
+2. **Session 073+ — RRPIR Refinement** — Live testing, prompt tuning, cross-CLI validation.
 
 See [roadmap.md](roadmap.md) for full session plan through 073+.
 

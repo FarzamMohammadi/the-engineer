@@ -307,8 +307,19 @@ function checkSelfReviewLoopback(
   state: PipelineState,
   ctx: OrchestratorContext,
 ): { targetIndex: number; loopbackCount: number } | null {
-  const reviewData = output.data as { quality_assessment?: string };
-  const assessment = reviewData.quality_assessment ?? "";
+  const reviewData = output.data as { quality_assessment?: string; next_phase?: string };
+
+  // Primary: quality_assessment from handler (CLI-native maps next_phase → quality_assessment).
+  // Fallback: derive from next_phase directly (defense-in-depth).
+  let assessment = reviewData.quality_assessment ?? "";
+  if (!assessment && reviewData.next_phase) {
+    assessment =
+      reviewData.next_phase === "execution"
+        ? "needs_work"
+        : reviewData.next_phase === "requirements_gathering"
+          ? "fundamental_issues"
+          : "";
+  }
 
   // Only loopback when the LLM explicitly assessed "needs_work" or
   // "fundamental_issues". Any other value (including "unknown" from fallback

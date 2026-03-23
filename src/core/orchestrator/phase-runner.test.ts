@@ -324,6 +324,42 @@ describe("PhaseRunner", () => {
       );
     });
 
+    it("loops back via next_phase when quality_assessment is absent", async () => {
+      const ctx = createMockContext();
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+
+      let selfReviewCallCount = 0;
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          vi.fn(() => {
+            if (phase === Phases.self_review) {
+              selfReviewCallCount++;
+              if (selfReviewCallCount === 1) {
+                // CLI-native style: next_phase without quality_assessment
+                return Promise.resolve(
+                  makeOutput(Phases.self_review, {
+                    next_phase: "execution",
+                  }),
+                );
+              }
+            }
+            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
+          }),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      expect(selfReviewCallCount).toBe(2);
+    });
+
     it("halts on preemption and creates checkpoint", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();

@@ -108,6 +108,7 @@ export interface LlmCaller {
     prompt: string,
     state: PipelineState,
     thoughtsDir: string,
+    overridePhaseDir?: string,
   ): Promise<PhaseOutput>;
   /** Emit cost.incurred event from inference result. */
   emitCostIncurred(taskId: string, result: InferenceResult): void;
@@ -499,6 +500,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     prompt: string,
     state: PipelineState,
     thoughtsDir: string,
+    overridePhaseDir?: string,
   ): Promise<PhaseOutput> {
     if (!thoughtsDir) {
       throw new WorkspaceNotReadyError(
@@ -511,7 +513,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       throw new WorkspaceNotReadyError(taskId);
     }
 
-    const phaseSubDir = PHASE_DIR_MAP[phase];
+    const phaseSubDir = overridePhaseDir ?? PHASE_DIR_MAP[phase];
     const phaseDir = phaseSubDir ? path.join(worktreePath, thoughtsDir, phaseSubDir) : null;
     const { traceId, sessionId } = state;
 

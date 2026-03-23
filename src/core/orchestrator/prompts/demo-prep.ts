@@ -67,24 +67,23 @@ function buildDemoPrepInstructions(): string {
   return section(
     "What YOU Need To Do",
     [
-      "Prepare this work for review. Communication quality is half an engineer's value.",
+      "Write a PR description that tells the full story. Communication quality is half an engineer's value.",
       "",
       "1. Read the thoughts/ files to understand the full story of what was built and why.",
       "",
-      "2. Commit all changes with clear, descriptive commit messages. Each commit should represent a logical unit of work.",
+      "2. Read the review findings and refinements to understand what was caught and fixed.",
       "",
-      "3. Push to the remote branch.",
-      "",
-      "4. Create a draft PR with a narrative that tells the full story:",
+      "3. Write a `pr-description.md` with a clear narrative:",
       "   - What changed and why (reference the task requirements)",
       "   - Technical approach taken (reference the plan)",
       "   - How to test the changes (concrete steps a reviewer can follow)",
       "   - Any breaking changes, migration steps, or deployment notes",
       "   - Key decisions made during implementation",
       "",
-      "5. The thoughts/ directory will be included in the PR for reviewer context.",
+      "4. The thoughts/ directory will be included in the PR for reviewer context.",
       "",
-      "IMPORTANT: Do NOT start dev servers, watch processes, or any long-running commands.",
+      "IMPORTANT: Do NOT commit, push, or create PRs. Do NOT start dev servers or long-running commands.",
+      "The orchestrator handles all git operations and PR creation. Your job is to write the PR narrative.",
     ].join("\n"),
   );
 }
@@ -93,7 +92,7 @@ function buildOutputInstructions(thoughtsDir: string): string {
   return section(
     "Where To Put Your Work",
     [
-      "The PR itself is your primary deliverable. No .md file needed for this phase.",
+      `Write the PR description to: \`${thoughtsDir}/demo-prep/pr-description.md\``,
       "",
       `Update session-result.json at \`${thoughtsDir}/demo-prep/session-result.json\` with:`,
       "",

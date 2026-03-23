@@ -77,6 +77,7 @@ How this works:
  * Includes JSON output protocol for phases still using the agent loop.
  * Session 072: remove this, keep only buildCliNativeSystemPrompt.
  */
+/** @public -- used by agent-loop tests, removed in Session 072 */
 export function buildSystemPrompt(phase: Phase): string {
   return [IDENTITY, "", OUTPUT_PROTOCOL, "", SECURITY_BOUNDARY, "", PHASE_GUIDANCE[phase]].join(
     "\n",

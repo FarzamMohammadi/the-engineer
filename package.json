@@ -21,11 +21,11 @@
     "test:coverage": "vitest run --coverage",
     "build": "tsdown src/index.ts --format esm && cp -r src/db/migrations dist/migrations && cp -r src/dashboard/static dist/static",
     "dev": "tsx src/index.ts",
-    "lint": "biome check --write .",
+    "lint": "biome check --write . && tsc --noEmit && tsc --noEmit -p tsconfig.test.json && knip && madge --circular --extensions ts src/",
+    "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "check:exports": "knip",
-    "check:circular": "madge --circular --extensions ts src/",
-    "check:all": "pnpm typecheck && pnpm lint -- --error-on-warnings && pnpm check:exports && pnpm check:circular"
+    "check:circular": "madge --circular --extensions ts src/"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",

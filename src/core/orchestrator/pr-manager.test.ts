@@ -13,7 +13,18 @@ vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
+// Mock fs for deliverable file reading
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    existsSync: vi.fn().mockReturnValue(false),
+    readFileSync: vi.fn().mockReturnValue(""),
+  };
+});
+
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -344,5 +355,60 @@ describe("PrManager", () => {
       // Just verify it was called with a body field
       expect(prArgs.body).toBeDefined();
     }
+  });
+
+  it("reads PR description from deliverable file when not in PhaseOutput.data", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 42, url: "https://github.com/pr/42" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    // Simulate staged changes
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    // Configure fs mocks to return file content for the deliverable path
+    vi.mocked(existsSync).mockImplementation((p: unknown) => {
+      if (String(p).endsWith("pr-description.md")) {
+        return true;
+      }
+      return false;
+    });
+    vi.mocked(readFileSync).mockImplementation((p: unknown) => {
+      if (String(p).endsWith("pr-description.md")) {
+        return "# PR from file\n\nDescription read from deliverable file." as any;
+      }
+      return "" as any;
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { deliverable_path: "thoughts/2026-03-22-issue-1/demo-prep/pr-description.md" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+    const dispatch = createDispatch();
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining("Description read from deliverable file"),
+      }),
+    );
   });
 });

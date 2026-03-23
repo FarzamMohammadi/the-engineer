@@ -21,6 +21,12 @@ export {
   type IntegrationPromptContext,
   type ChildTaskSummary,
 } from "./integration.js";
+export {
+  buildReviewSubPhasePrompt,
+  type ReviewSubPhaseContext,
+  buildRefinementPrompt,
+  type RefinementPromptContext,
+} from "./review.js";
 
 // Formatting utilities
 export {

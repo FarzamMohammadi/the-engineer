@@ -222,9 +222,18 @@ export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 // ── Orchestrator Config ─────────────────────────────────────────────────────────
 // Loaded from orchestrator.yaml. Startup-only — not hot-reloadable.
 
+export const ReviewPhaseNameSchema = z.enum([
+  "requirements_check",
+  "security_review",
+  "code_quality",
+]);
+export type ReviewPhaseName = z.infer<typeof ReviewPhaseNameSchema>;
+
 export const RrpirConfigSchema = z.object({
   max_requirements_loops: z.number().int().positive().default(5),
   include_thoughts_in_pr: z.boolean().default(true),
+  review_phases: z.array(ReviewPhaseNameSchema).default(["requirements_check"]),
+  max_review_loopbacks: z.number().int().positive().default(3),
 });
 export type RrpirConfig = z.infer<typeof RrpirConfigSchema>;
 

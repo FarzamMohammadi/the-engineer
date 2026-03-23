@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
@@ -199,9 +201,19 @@ export function createPrManager(
 
     observer.info("Creating draft PR", { taskId, repo: record.repo });
     try {
-      const rawDescription =
-        (demoPrepOutput.data as { pr_description?: string }).pr_description ??
-        `Automated PR for: ${dispatch.task.title}`;
+      // CLI-native: read PR description from deliverable file when not in PhaseOutput.data
+      let rawDescription = (demoPrepOutput.data as { pr_description?: string }).pr_description;
+      if (!rawDescription) {
+        const deliverablePath = (demoPrepOutput.data as { deliverable_path?: string })
+          .deliverable_path;
+        if (deliverablePath) {
+          const absPath = path.join(worktreePath, deliverablePath);
+          if (existsSync(absPath)) {
+            rawDescription = readFileSync(absPath, "utf-8").trim();
+          }
+        }
+      }
+      rawDescription = rawDescription || `Automated PR for: ${dispatch.task.title}`;
 
       // Sanitize PR description to prevent secret leakage (D154)
       const prDescription = sanitizeSecrets(rawDescription);

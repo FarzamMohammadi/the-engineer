@@ -25,6 +25,7 @@ export interface SelfReviewPromptContext {
  *
  * Pure function: context in, prompt string out.
  */
+/** @public -- used by agent-loop tests, removed in Session 072 */
 export function buildSelfReviewPrompt(ctx: SelfReviewPromptContext): string {
   const parts: string[] = [];
 

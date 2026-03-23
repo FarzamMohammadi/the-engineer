@@ -99,6 +99,19 @@ describe("RrpirConfigSchema", () => {
     const config = RrpirConfigSchema.parse({});
     expect(config.max_requirements_loops).toBe(5);
     expect(config.include_thoughts_in_pr).toBe(true);
+    expect(config.review_phases).toEqual(["requirements_check"]);
+    expect(config.max_review_loopbacks).toBe(3);
+  });
+
+  it("accepts custom review_phases", () => {
+    const config = RrpirConfigSchema.parse({
+      review_phases: ["requirements_check", "security_review", "code_quality"],
+    });
+    expect(config.review_phases).toEqual(["requirements_check", "security_review", "code_quality"]);
+  });
+
+  it("rejects invalid review phase names", () => {
+    expect(() => RrpirConfigSchema.parse({ review_phases: ["nonexistent"] })).toThrow();
   });
 });
 

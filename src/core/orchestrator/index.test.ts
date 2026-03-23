@@ -79,12 +79,11 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      // 7 phases = 7 LLM calls (all through actionPipeline.execute)
-      // execution phase has 2 calls: tool + LLM. So total actionPipeline calls = 8
+      // 7 phases = 8 LLM calls (self_review runs 1 review sub-phase + 1 refinement)
       const llmCalls = handle.actionPipeline.execute.mock.calls.filter(
         (call: any[]) => call[0]?.details?.operation === "llm_infer",
       );
-      expect(llmCalls).toHaveLength(7);
+      expect(llmCalls).toHaveLength(8);
     });
   });
 
@@ -370,10 +369,9 @@ describe("Orchestrator", () => {
       // Pipeline should continue despite parse failure
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        // Self-review phase gets fallback output (low confidence) from agent loop parse failure
+        // Self-review (CLI-native) falls back to ready status with high confidence
         const selfReviewOutput = result.phaseOutputs.get("self_review");
-        expect(selfReviewOutput?.confidence).toBe("low");
-        expect(selfReviewOutput?.open_questions.length).toBeGreaterThan(0);
+        expect(selfReviewOutput?.confidence).toBe("high");
       }
     });
 
@@ -450,9 +448,9 @@ describe("Orchestrator", () => {
         const planningOutput = result.phaseOutputs.get("planning");
         expect(planningOutput?.confidence).toBe("high");
 
-        // Agent-loop phases (self_review) get fallback with "low" confidence
+        // Self-review is now CLI-native — gets "high" confidence
         const selfReviewOutput = result.phaseOutputs.get("self_review");
-        expect(selfReviewOutput?.confidence).toBe("low");
+        expect(selfReviewOutput?.confidence).toBe("high");
       }
     });
   });
@@ -619,8 +617,8 @@ describe("Orchestrator", () => {
       const costEvents = handle.eventBus.publish.mock.calls.filter(
         (call: unknown[]) => (call[0] as { type: string }).type === "cost.incurred",
       );
-      // 7 LLM calls = 7 cost events
-      expect(costEvents).toHaveLength(7);
+      // 8 LLM calls = 8 cost events (self_review: 1 review sub-phase + 1 refinement)
+      expect(costEvents).toHaveLength(8);
     });
 
     it("cost.incurred payload includes correct usage data", async () => {

@@ -8,10 +8,10 @@ import {
   buildExecutionPrompt,
   buildIntegrationPrompt,
   buildPlanningPrompt,
+  buildRefinementPrompt,
   buildRequirementsGatheringPrompt,
   buildResearchPrompt,
-  buildSelfReviewPrompt,
-  buildSystemPrompt,
+  buildReviewSubPhasePrompt,
 } from "./prompts/index.js";
 import type { OrchestratorContext, PipelineState } from "./types.js";
 
@@ -20,8 +20,8 @@ import type { OrchestratorContext, PipelineState } from "./types.js";
 /**
  * Create all 7 phase handlers.
  *
- * Requirements gathering, research, planning, execution use CLI-native invocation (runPhaseWithCli).
- * Self-review, demo_prep, integration use the agent loop (runPhaseWithAgentLoop) until Session 072.
+ * All phases use CLI-native invocation (runPhaseWithCli).
+ * Self-review runs a multi-step review pipeline: one CLI call per review lens + one refinement call.
  */
 export function createPhaseHandlers(
   llmCaller: LlmCaller,
@@ -138,29 +138,80 @@ export function createPhaseHandlers(
     );
   }
 
-  // ── Agent-loop phases (Session 072: migrate self_review, demo_prep, integration) ──
+  // ── CLI-native phases (Session 071) ─────────────────────────────────
 
-  function handleSelfReview(
+  /**
+   * Multi-step review pipeline: one CLI call per review lens, then one refinement call.
+   *
+   * Review sub-phases write findings to `thoughts/{thoughtsDir}/review/{name}.md`.
+   * Refinement reads all findings, applies fixes, writes `thoughts/{thoughtsDir}/refinements/`.
+   * The refinement step's session-result.json drives routing (loopback to execution or proceed to demo_prep).
+   */
+  async function handleSelfReview(
     taskId: string,
     dispatch: Dispatch,
     _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
-    return llmCaller.runPhaseWithAgentLoop(
+    const reviewPhases = ctx.config.rrpir?.review_phases ?? ["requirements_check" as const];
+
+    // Step 1: Run each review sub-phase as a separate CLI call
+    for (const reviewPhaseName of reviewPhases) {
+      await llmCaller.runPhaseWithCli(
+        Phases.self_review,
+        taskId,
+        buildCliNativeSystemPrompt(Phases.self_review),
+        buildReviewSubPhasePrompt({
+          task: dispatch.task,
+          repoContext: state.repoContext,
+          repoKnowledge: dispatch.knowledge.repo,
+          userKnowledge: dispatch.knowledge.user,
+          thoughtsDir,
+          reviewPhaseName,
+          loopbackCount: state.loopbackCount,
+        }),
+        state,
+        thoughtsDir,
+        "review",
+      );
+    }
+
+    // Step 2: Run refinement — consolidate findings, apply fixes
+    const refinementOutput = await llmCaller.runPhaseWithCli(
       Phases.self_review,
       taskId,
-      buildSystemPrompt(Phases.self_review),
-      buildSelfReviewPrompt({
+      buildCliNativeSystemPrompt(Phases.self_review),
+      buildRefinementPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
         thoughtsDir,
+        reviewPhases,
         loopbackCount: state.loopbackCount,
       }),
       state,
+      thoughtsDir,
+      "refinements",
     );
+
+    // Step 3: Map next_phase → quality_assessment for checkSelfReviewLoopback compatibility
+    const nextPhase = (refinementOutput.data as { next_phase?: string }).next_phase;
+    const qualityAssessment =
+      nextPhase === "execution"
+        ? "needs_work"
+        : nextPhase === "requirements_gathering"
+          ? "fundamental_issues"
+          : "ship_it";
+
+    return {
+      ...refinementOutput,
+      data: {
+        ...refinementOutput.data,
+        quality_assessment: qualityAssessment,
+      },
+    };
   }
 
   function handleDemoPrep(
@@ -170,10 +221,10 @@ export function createPhaseHandlers(
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
-    return llmCaller.runPhaseWithAgentLoop(
+    return llmCaller.runPhaseWithCli(
       Phases.demo_prep,
       taskId,
-      buildSystemPrompt(Phases.demo_prep),
+      buildCliNativeSystemPrompt(Phases.demo_prep),
       buildDemoPrepPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
@@ -182,6 +233,7 @@ export function createPhaseHandlers(
         thoughtsDir,
       }),
       state,
+      thoughtsDir,
     );
   }
 
@@ -200,10 +252,10 @@ export function createPhaseHandlers(
       files_changed: cs.key_outputs.map((o) => o.path),
     }));
 
-    return llmCaller.runPhaseWithAgentLoop(
+    return llmCaller.runPhaseWithCli(
       Phases.integration,
       taskId,
-      buildSystemPrompt(Phases.integration),
+      buildCliNativeSystemPrompt(Phases.integration),
       buildIntegrationPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
@@ -211,6 +263,7 @@ export function createPhaseHandlers(
         childSummaries,
       }),
       state,
+      thoughtsDir,
     );
   }
 

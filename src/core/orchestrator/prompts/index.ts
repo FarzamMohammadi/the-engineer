@@ -26,9 +26,9 @@ export {
 export {
   section,
   buildTaskBrief,
-  formatOutputSchema,
-  formatActionReference,
   formatKnowledge,
-  formatPriorPhaseOutput,
+  buildRRPIROverview,
+  buildKnowledgeSection,
+  buildRepoOverview,
   type TaskBriefInput,
 } from "./format.js";

@@ -99,24 +99,24 @@ describe("RequirementsGatheringOutputSchema", () => {
   it("parses valid output", () => {
     const output = RequirementsGatheringOutputSchema.parse({
       deliverable_path: "thoughts/test/requirements.md",
-      signal_status: "ready",
+      status: "ready",
       contact: null,
       question: null,
       assessment: null,
     });
-    expect(output.signal_status).toBe("ready");
+    expect(output.status).toBe("ready");
   });
 
-  it("accepts both signal_status values", () => {
+  it("accepts both status values", () => {
     for (const s of ["ready", "need_more_info"]) {
       expect(
         RequirementsGatheringOutputSchema.parse({
           deliverable_path: "thoughts/test/requirements.md",
-          signal_status: s,
+          status: s,
           contact: null,
           question: null,
           assessment: null,
-        }).signal_status,
+        }).status,
       ).toBe(s);
     }
   });
@@ -124,7 +124,7 @@ describe("RequirementsGatheringOutputSchema", () => {
   it("accepts string values for contact and question", () => {
     const output = RequirementsGatheringOutputSchema.parse({
       deliverable_path: "thoughts/test/requirements.md",
-      signal_status: "need_more_info",
+      status: "need_more_info",
       contact: "farzam",
       question: "Which auth provider?",
       assessment: "needs clarification",
@@ -138,12 +138,12 @@ describe("ResearchOutputSchema", () => {
   it("parses valid output", () => {
     const output = ResearchOutputSchema.parse({
       deliverable_path: "thoughts/test/research.md",
-      signal_status: "ready",
+      status: "ready",
       contact: null,
       question: null,
       complexity_hint: "moderate",
     });
-    expect(output.signal_status).toBe("ready");
+    expect(output.status).toBe("ready");
   });
 });
 

@@ -2,7 +2,14 @@ import type { Person } from "../../../schemas/adapters.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
-import { buildTaskBrief, formatKnowledge, section, wrapUntrustedContent } from "./format.js";
+import {
+  buildKnowledgeSection,
+  buildRRPIROverview,
+  buildRepoOverview,
+  buildTaskBrief,
+  section,
+  wrapUntrustedContent,
+} from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +46,7 @@ export function buildRequirementsGatheringPrompt(ctx: RequirementsGatheringPromp
   const isFeedbackRework = hasUnappliedFeedback(ctx);
 
   // 1. How The Engineer Works
-  parts.push(buildRrpirOverview(ctx.thoughtsDir));
+  parts.push(buildRRPIROverview("Requirements Gathering", ctx.thoughtsDir));
 
   // 2. What Happened Before You
   parts.push(buildPriorContext(ctx));
@@ -61,19 +68,6 @@ export function buildRequirementsGatheringPrompt(ctx: RequirementsGatheringPromp
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildRrpirOverview(thoughtsDir: string): string {
-  return section(
-    "How The Engineer Works",
-    [
-      "You are running as part of The Engineer, an autonomous software engineering agent. The Engineer uses RRPIR methodology — Requirements Gathering, Research, Planning, Implementation, Review. Each phase is a separate CLI session. You are the Requirements Gathering session.",
-      "",
-      "You have full CLI capabilities: read files, write files, search code, run commands. Use them freely to explore the codebase and gather context.",
-      "",
-      `Your deliverable goes in \`${thoughtsDir}/requirements/requirements.md\`. After you finish, update \`${thoughtsDir}/requirements/session-result.json\` to tell The Engineer where to go next.`,
-    ].join("\n"),
-  );
-}
 
 function buildPriorContext(ctx: RequirementsGatheringPromptContext): string {
   if (ctx.isRerun) {
@@ -250,64 +244,6 @@ function buildTeamContactsSection(contacts: Person[]): string {
   }
 
   return section("Team Contacts", lines.join("\n"));
-}
-
-function buildRepoOverview(repoContext: RepoContext | null): string {
-  if (!repoContext) {
-    return section(
-      "Repository",
-      "No repository context available. Assess based on the task description and explore the codebase yourself.",
-    );
-  }
-
-  const parts: string[] = [];
-
-  if (repoContext.gitBranch) {
-    parts.push(`Branch: ${repoContext.gitBranch}`);
-  }
-
-  if (repoContext.packageInfo) {
-    parts.push("", repoContext.packageInfo);
-  }
-
-  if (repoContext.readme) {
-    parts.push("", "### README (excerpt)", "", repoContext.readme);
-  }
-
-  if (repoContext.directoryTree) {
-    parts.push("", "### File Structure", "", repoContext.directoryTree);
-  }
-
-  if (repoContext.recentCommits) {
-    parts.push("", "### Recent Commits", "", repoContext.recentCommits);
-  }
-
-  return section("Repository", parts.join("\n"));
-}
-
-function buildKnowledgeSection(
-  repoKnowledge: KnowledgeEntry[],
-  userKnowledge: KnowledgeEntry[],
-): string | null {
-  const repoFormatted = formatKnowledge(repoKnowledge);
-  const userFormatted = formatKnowledge(userKnowledge);
-
-  if (!(repoFormatted || userFormatted)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (repoFormatted) {
-    parts.push("Repository knowledge:", repoFormatted);
-  }
-  if (userFormatted) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push("User knowledge:", userFormatted);
-  }
-
-  return section("Known Context", parts.join("\n"));
 }
 
 /** Check if context has unapplied feedback rounds. */

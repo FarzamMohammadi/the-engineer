@@ -15,6 +15,8 @@ export interface WorkspaceRecord {
   worktreePath: string;
   baseBranch: string;
   baseCommit: string;
+  /** Relative path to the thoughts directory (e.g., "thoughts/2026-03-22-issue-42"), or null if none. */
+  thoughtsDir: string | null;
 }
 
 /** Optional parameters for createWorkspace(). */

@@ -12,6 +12,7 @@ import {
   WorkspaceCreatedPayloadSchema,
   WorkspaceVerifiedPayloadSchema,
 } from "../../schemas/events.js";
+import { PHASE_DIRECTORIES } from "../../schemas/orchestrator.js";
 import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
@@ -247,25 +248,19 @@ export class WorkspaceManager implements IWorkspaceManager {
     validateWorkspacePath(worktreePath, this.config.workspace_root);
 
     // Create thoughts/ directory structure for RRPIR file-based handoffs
+    let thoughtsDirRelative: string | null = null;
     if (thoughtsId) {
       const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      const thoughtsDir = path.join(worktreePath, "thoughts", `${dateStr}-${thoughtsId}`);
-      const phaseDirs = [
-        "requirements",
-        "research",
-        "planning",
-        "implementation",
-        "review",
-        "refinements",
-      ];
-      for (const phase of phaseDirs) {
-        const phaseDir = path.join(thoughtsDir, phase);
+      thoughtsDirRelative = `thoughts/${dateStr}-${thoughtsId}`;
+      const thoughtsDirAbsolute = path.join(worktreePath, thoughtsDirRelative);
+      for (const phase of PHASE_DIRECTORIES) {
+        const phaseDir = path.join(thoughtsDirAbsolute, phase);
         mkdirSync(phaseDir, { recursive: true });
         writeSessionResultTemplate(phaseDir);
       }
       this.observer.debug("Created thoughts/ directory structure", {
         taskId,
-        thoughtsDir,
+        thoughtsDir: thoughtsDirRelative,
       });
     }
 
@@ -276,6 +271,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       worktreePath,
       baseBranch: resolvedBase,
       baseCommit,
+      thoughtsDir: thoughtsDirRelative,
     };
 
     this.workspaces.set(taskId, workspace);
@@ -550,6 +546,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       worktreePath: workspace.worktree_path,
       baseBranch: this.config.default_base_branch,
       baseCommit: "",
+      thoughtsDir: null,
     });
     this.observer.debug("Registered existing workspace", {
       taskId,

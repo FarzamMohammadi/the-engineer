@@ -16,6 +16,22 @@ export type Phase = z.infer<typeof PhaseSchema>;
 /** Constant enum values for Phase. Use instead of raw strings. */
 export const Phases = PhaseSchema.enum;
 
+// ── Phase Directory Constants ────────────────────────────────────────────────────
+
+/**
+ * Subdirectory names inside the thoughts/ directory — one per RRPIR phase.
+ * Shared between WorkspaceManager (directory creation) and Orchestrator (file routing).
+ */
+export const PHASE_DIRECTORIES = [
+  "requirements",
+  "research",
+  "planning",
+  "implementation",
+  "review",
+  "refinements",
+  "demo-prep",
+] as const;
+
 // ── Phase Output Envelope ───────────────────────────────────────────────────────
 
 export const PhaseOutputSchema = z.object({
@@ -42,7 +58,7 @@ export type SessionResult = z.infer<typeof SessionResultSchema>;
 
 export const RequirementsGatheringOutputSchema = z.object({
   deliverable_path: z.string(),
-  signal_status: z.enum(["ready", "need_more_info"]),
+  status: z.enum(["ready", "need_more_info"]),
   contact: z.string().nullable(),
   question: z.string().nullable(),
   assessment: z.string().nullable(),
@@ -51,7 +67,7 @@ export type RequirementsGatheringOutput = z.infer<typeof RequirementsGatheringOu
 
 export const ResearchOutputSchema = z.object({
   deliverable_path: z.string(),
-  signal_status: z.enum(["ready", "need_more_info"]),
+  status: z.enum(["ready", "need_more_info"]),
   contact: z.string().nullable(),
   question: z.string().nullable(),
   complexity_hint: z.string().nullable(),

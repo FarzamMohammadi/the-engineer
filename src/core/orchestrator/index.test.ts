@@ -443,7 +443,7 @@ describe("Orchestrator", () => {
         // CLI-native phases return file-based output with "high" confidence
         const reqOutput = result.phaseOutputs.get("requirements_gathering");
         expect(reqOutput?.confidence).toBe("high");
-        expect(reqOutput?.data).toHaveProperty("signal_status");
+        expect(reqOutput?.data).toHaveProperty("status");
         expect(reqOutput?.data).toHaveProperty("deliverable_path");
 
         // Agent-loop phases get fallback with "low" confidence
@@ -887,6 +887,8 @@ describe("Orchestrator", () => {
         branch: "engineer/task-001-test",
         baseBranch: "main",
         worktreePath: "/tmp/worktree/task-001",
+        baseCommit: "abc123",
+        thoughtsDir: "thoughts/2026-03-22-issue-1",
       });
       const task = createMockTask({
         repo: "org/repo",

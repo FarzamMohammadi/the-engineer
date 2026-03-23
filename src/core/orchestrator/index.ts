@@ -194,11 +194,10 @@ export class Orchestrator {
     const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath, this.ctx.observer);
 
-    // thoughts_id comes from the trigger plugin via the task — Core never derives it
-    const thoughtsId = dispatch.task.thoughts_id ?? null;
-    const thoughtsDir = thoughtsId
-      ? `thoughts/${new Date().toISOString().slice(0, 10)}-${thoughtsId}`
-      : null;
+    // Read thoughtsDir from the workspace record (set during workspace creation)
+    // to avoid midnight-boundary date mismatch with workspace-manager.
+    const workspaceRecord = this.ctx.workspaceManager.getWorkspaceRecord(taskId);
+    const thoughtsDir = workspaceRecord?.thoughtsDir ?? null;
 
     const state: PipelineState = {
       traceId,

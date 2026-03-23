@@ -41,10 +41,13 @@ function createMockContext(): OrchestratorContext {
     workspaceManager: {
       getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree"),
       getWorkspaceRecord: vi.fn().mockReturnValue({
+        taskId: "task-001",
         repo: "owner/repo",
         branch: "engineer/task-001",
         baseBranch: "main",
         worktreePath: "/tmp/worktree",
+        baseCommit: "abc123",
+        thoughtsDir: "thoughts/2026-03-22-issue-1",
       }),
       pushBranch: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],

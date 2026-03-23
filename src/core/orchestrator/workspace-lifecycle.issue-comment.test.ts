@@ -96,10 +96,13 @@ describe("Orchestrator commentOnSourceIssue", () => {
 
     // Set up workspace record for PR creation
     handle.workspaceManager.getWorkspaceRecord.mockReturnValue({
+      taskId: "task-001",
       repo: "owner/repo",
       branch: "engineer/task-001/test-task",
       baseBranch: "main",
       worktreePath: "/tmp/worktree",
+      baseCommit: "abc123",
+      thoughtsDir: "thoughts/2026-03-22-issue-1",
     });
 
     // Set up a git hosting plugin for PR creation

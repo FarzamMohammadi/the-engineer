@@ -34,17 +34,17 @@ import { createTestObserverFacade } from "./test-observer-facade.js";
 export const VALID_PHASE_DATA: Record<Phase, Record<string, unknown>> = {
   requirements_gathering: {
     deliverable_path: "thoughts/test/requirements.md",
-    signal_status: "ready",
+    status: "ready",
     contact: null,
     question: null,
     assessment: null,
   },
   research: {
-    relevant_files: ["src/index.ts"],
-    relevant_modules: ["core"],
-    conventions: [],
-    existing_patterns: ["singleton"],
-    dependencies: [],
+    deliverable_path: "thoughts/test/research.md",
+    status: "ready",
+    contact: null,
+    question: null,
+    complexity_hint: null,
   },
   planning: {
     approach: "Implement the feature in src/index.ts",
@@ -79,7 +79,7 @@ export const VALID_PHASE_DATA: Record<Phase, Record<string, unknown>> = {
 /** Valid requirements_gathering data for trivial tasks. */
 export const TRIVIAL_REQUIREMENTS_DATA: Record<string, unknown> = {
   deliverable_path: "thoughts/test/requirements.md",
-  signal_status: "ready",
+  status: "ready",
   contact: null,
   question: null,
   assessment: "trivial task",
@@ -280,7 +280,6 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       supports_quota_reporting: false,
       context_window: null,
     }),
-    getContinueArgs: vi.fn().mockReturnValue([]),
     getQuotaStatus: vi.fn().mockResolvedValue(null),
   };
 
@@ -415,7 +414,15 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       recoveryAction: null,
     } satisfies WorkspaceVerification),
     getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree/task-001"),
-    getWorkspaceRecord: vi.fn().mockReturnValue(null),
+    getWorkspaceRecord: vi.fn().mockReturnValue({
+      taskId: "task-001",
+      repo: "test/repo",
+      branch: "engineer/task-001-test",
+      worktreePath: "/tmp/worktree/task-001",
+      baseBranch: "main",
+      baseCommit: "abc123",
+      thoughtsDir: "thoughts/2026-03-22-issue-1",
+    }),
     registerExistingWorkspace: vi.fn(),
     pushBranch: vi.fn(),
     cleanupWorkspace: vi.fn(),

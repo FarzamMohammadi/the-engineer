@@ -81,8 +81,8 @@ export const TriggerEventSchema = z.object({
     .refine((u) => u.startsWith("https://"), {
       message: "clone_url must use HTTPS",
     }),
-  /** Trigger-provided identifier for the thoughts/ directory (e.g., "issue-42"). */
-  thoughts_id: z.string(),
+  /** Trigger-provided identifier for the thoughts/ directory (e.g., "issue-42"). Null if not provided. */
+  thoughts_id: z.string().nullable(),
   metadata: z.record(z.unknown()).nullable(),
 });
 export type TriggerEvent = z.infer<typeof TriggerEventSchema>;

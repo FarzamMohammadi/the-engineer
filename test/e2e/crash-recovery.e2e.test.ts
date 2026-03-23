@@ -239,7 +239,7 @@ describe("E2E: Crash recovery", () => {
     await waitForIdle(daemon2);
 
     // Orchestrator should have resumed from checkpoint at "planning"
-    // → skip intake_analysis, research, planning → run execution, self_review, demo_prep, integration
+    // → skip requirements_gathering, research, planning → run execution, self_review, demo_prep, integration
     expect(ctx.fakes.llm.getCallCount()).toBe(4);
     expect(daemon2.getState().tasksCompleted).toBe(1);
   });

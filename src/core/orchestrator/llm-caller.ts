@@ -8,6 +8,7 @@ import {
   DemoPrepOutputSchema,
   ExecutionOutputSchema,
   IntegrationOutputSchema,
+  PHASE_DIRECTORIES,
   type Phase,
   type PhaseOutput,
   Phases,
@@ -22,7 +23,7 @@ import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { LlmCallRejectedError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
-import { isTemplateFilled, readSessionResult } from "./session-result.js";
+import { readSessionResult } from "./session-result.js";
 import { type OrchestratorContext, PHASE_SEQUENCE, type PipelineState } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -38,14 +39,17 @@ const PHASE_OUTPUT_SCHEMAS: Record<Phase, ZodType> = {
   [Phases.integration]: IntegrationOutputSchema,
 };
 
-/** Map phase → subdirectory name inside the thoughts/ directory. */
+/**
+ * Map phase → subdirectory name inside the thoughts/ directory.
+ * Directory names come from PHASE_DIRECTORIES in schemas/orchestrator.ts.
+ */
 const PHASE_DIR_MAP: Partial<Record<Phase, string>> = {
-  [Phases.requirements_gathering]: "requirements",
-  [Phases.research]: "research",
-  [Phases.planning]: "planning",
-  [Phases.execution]: "implementation",
-  [Phases.self_review]: "review",
-  [Phases.demo_prep]: "demo-prep",
+  [Phases.requirements_gathering]: PHASE_DIRECTORIES[0],
+  [Phases.research]: PHASE_DIRECTORIES[1],
+  [Phases.planning]: PHASE_DIRECTORIES[2],
+  [Phases.execution]: PHASE_DIRECTORIES[3],
+  [Phases.self_review]: PHASE_DIRECTORIES[4],
+  [Phases.demo_prep]: PHASE_DIRECTORIES[6],
   [Phases.integration]: "integration",
 };
 
@@ -333,14 +337,14 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const defaults: Record<Phase, Record<string, unknown>> = {
       [Phases.requirements_gathering]: {
         deliverable_path: "",
-        signal_status: "ready",
+        status: "ready",
         contact: null,
         question: null,
         assessment: null,
       },
       [Phases.research]: {
         deliverable_path: "",
-        signal_status: "ready",
+        status: "ready",
         contact: null,
         question: null,
         complexity_hint: null,
@@ -496,6 +500,12 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     state: PipelineState,
     thoughtsDir: string,
   ): Promise<PhaseOutput> {
+    if (!thoughtsDir) {
+      throw new WorkspaceNotReadyError(
+        `${taskId}: thoughtsDir is required for CLI-native phase "${phase}"`,
+      );
+    }
+
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
       throw new WorkspaceNotReadyError(taskId);
@@ -520,45 +530,27 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const result = await callLlm(prompt, taskId, systemPrompt);
 
     // ── Read session-result.json ─────────────────────────────────────────
-    let sessionResult = phaseDir ? readSessionResult(phaseDir) : null;
-
-    // ── Continue-retry if template not filled ────────────────────────────
-    if (phaseDir && !(sessionResult && isTemplateFilled(sessionResult))) {
-      ctx.observer.warn("session-result.json not filled, attempting continue-session", {
-        phase,
-        taskId,
-      });
-
-      const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
-      if (llm) {
-        const continueArgs = llm.getContinueArgs();
-        if (continueArgs.length > 0) {
-          const nudgePrompt = `You forgot to update session-result.json. Please read the file at ${thoughtsDir}/${phaseSubDir}/session-result.json, replace the placeholder values with your actual results, and save it. The valid values for status are: "ready", "need_more_info", or "error". Set next_phase to the appropriate phase and summary to a one-line description of what you accomplished.`;
-
-          await callLlm(nudgePrompt, taskId, systemPrompt);
-          sessionResult = readSessionResult(phaseDir);
-        }
-      }
-    }
+    const sessionResult = phaseDir ? readSessionResult(phaseDir) : null;
 
     // ── Resolve final session result ────────────────────────────────────
+    // If the CLI wrote session-result.json, use it. Otherwise default to "ready"
+    // with the next phase in sequence — no retry burn.
     const nextPhaseIndex = PHASE_SEQUENCE.indexOf(phase);
     const expectedNext: Phase =
       (nextPhaseIndex >= 0 && nextPhaseIndex < PHASE_SEQUENCE.length - 1
         ? PHASE_SEQUENCE[nextPhaseIndex + 1]
         : undefined) ?? phase;
 
-    const finalResult =
-      sessionResult && isTemplateFilled(sessionResult)
-        ? sessionResult
-        : (() => {
-            ctx.observer.warn("session-result.json not filled after retry, using defaults", {
-              phase,
-              taskId,
-              expectedNext,
-            });
-            return { status: "ready" as const, next_phase: expectedNext, summary: "" };
-          })();
+    const finalResult = sessionResult
+      ? sessionResult
+      : (() => {
+          ctx.observer.warn("session-result.json not filled, using defaults", {
+            phase,
+            taskId,
+            expectedNext,
+          });
+          return { status: "ready" as const, next_phase: expectedNext, summary: "" };
+        })();
 
     // ── Verify deliverable exists ────────────────────────────────────────
     const deliverableFile = PHASE_DELIVERABLE_MAP[phase];
@@ -598,7 +590,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       {
         deliverable_path:
           phaseDir && deliverableFile ? `${thoughtsDir}/${phaseSubDir}/${deliverableFile}` : "",
-        signal_status: finalResult.status,
+        status: finalResult.status,
         next_phase: finalResult.next_phase,
         summary: finalResult.summary,
       },

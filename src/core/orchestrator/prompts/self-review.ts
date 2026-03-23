@@ -1,6 +1,6 @@
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import { buildTaskBrief, formatKnowledge, section } from "./format.js";
+import { buildKnowledgeSection, buildRRPIROverview, buildTaskBrief, section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ export function buildSelfReviewPrompt(ctx: SelfReviewPromptContext): string {
   const parts: string[] = [];
 
   // 1. How The Engineer Works
-  parts.push(buildRRPIROverview());
+  parts.push(buildRRPIROverview("Review", ctx.thoughtsDir));
 
   // 2. What Happened Before You
   parts.push(buildPriorPhasePointers(ctx.thoughtsDir, ctx.loopbackCount));
@@ -47,23 +47,6 @@ export function buildSelfReviewPrompt(ctx: SelfReviewPromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildRRPIROverview(): string {
-  return section(
-    "How The Engineer Works",
-    [
-      "You are one session in a multi-phase pipeline called RRPIR (Requirements Gathering -> Research -> Planning -> Implementation -> Review).",
-      "Each phase is a separate CLI session with a fresh context window. File-based handoffs connect the phases.",
-      "",
-      "- Each phase has a directory in thoughts/ containing deliverables (.md files) and a session-result.json file.",
-      "- You read previous phases' files for context. You write your phase's deliverables and update session-result.json.",
-      "- session-result.json tells The Engineer where to route next. You MUST update it before finishing.",
-      "- You have full CLI capabilities: read files, write files, search code, run commands. Use them freely.",
-      "",
-      "You are the Review session. Your job is to review the implementation with the critical eye of a senior code reviewer.",
-    ].join("\n"),
-  );
-}
 
 function buildPriorPhasePointers(thoughtsDir: string, loopbackCount: number): string {
   const lines = [
@@ -166,29 +149,4 @@ function buildTaskContext(ctx: SelfReviewPromptContext): string {
   }
 
   return section("The Task Context", parts.join("\n\n"));
-}
-
-function buildKnowledgeSection(
-  repoKnowledge: KnowledgeEntry[],
-  userKnowledge: KnowledgeEntry[],
-): string | null {
-  const repoFormatted = formatKnowledge(repoKnowledge);
-  const userFormatted = formatKnowledge(userKnowledge);
-
-  if (!(repoFormatted || userFormatted)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (repoFormatted) {
-    parts.push("Repository knowledge:", repoFormatted);
-  }
-  if (userFormatted) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push("User knowledge:", userFormatted);
-  }
-
-  return section("Known Context", parts.join("\n"));
 }

@@ -76,10 +76,6 @@ export class FakeLLMPlugin extends LLMAdapter {
     this.cannedQuotaStatus = status;
   }
 
-  getContinueArgs(): string[] {
-    return ["--continue"];
-  }
-
   getCapabilities(): LLMCapabilities {
     return {
       model_id: "fake-model-v1",

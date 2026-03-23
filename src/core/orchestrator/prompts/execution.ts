@@ -1,7 +1,14 @@
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
-import { buildTaskBrief, formatKnowledge, section, wrapUntrustedContent } from "./format.js";
+import {
+  buildKnowledgeSection,
+  buildRRPIROverview,
+  buildRepoOverview,
+  buildTaskBrief,
+  section,
+  wrapUntrustedContent,
+} from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,7 +37,7 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
   const parts: string[] = [];
 
   // 1. How The Engineer Works
-  parts.push(buildRrpirOverview());
+  parts.push(buildRRPIROverview("Implementation", ctx.thoughtsDir));
 
   // 2. What Happened Before You
   parts.push(buildPriorPhasesSection(ctx.thoughtsDir));
@@ -48,23 +55,6 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildRrpirOverview(): string {
-  return section(
-    "How The Engineer Works",
-    [
-      "You are the Implementation session in a multi-phase pipeline called RRPIR:",
-      "**Requirements Gathering → Research → Planning → Implementation → Review**",
-      "",
-      "Each phase is a separate CLI session with a fresh context window. File-based handoffs connect the phases:",
-      "- Each phase reads previous phases' `.md` deliverables for context.",
-      "- Each phase writes its own deliverable and updates a `session-result.json` for routing.",
-      "- You have full CLI capabilities: read files, write files, search code, run commands. Use them freely.",
-      "",
-      "You are Implementation. Requirements have been gathered, research is done, and a plan has been written. Your job is to execute the plan — write code, run tests, ship quality.",
-    ].join("\n"),
-  );
-}
 
 function buildPriorPhasesSection(thoughtsDir: string): string {
   return section(
@@ -139,10 +129,7 @@ function buildTaskContext(ctx: ExecutionPromptContext): string {
   }
 
   // Repo context
-  const repoSection = buildRepoOverview(ctx.repoContext);
-  if (repoSection) {
-    parts.push(repoSection);
-  }
+  parts.push(buildRepoOverview(ctx.repoContext));
 
   // Knowledge
   const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
@@ -150,54 +137,7 @@ function buildTaskContext(ctx: ExecutionPromptContext): string {
     parts.push(knowledge);
   }
 
-  return section("The Task Context", parts.join("\n\n"));
-}
-
-function buildRepoOverview(repoContext: RepoContext | null): string | null {
-  if (!repoContext) {
-    return null;
-  }
-
-  const parts: string[] = [];
-
-  if (repoContext.gitBranch) {
-    parts.push(`Branch: ${repoContext.gitBranch}`);
-  }
-
-  if (repoContext.packageInfo) {
-    parts.push("", repoContext.packageInfo);
-  }
-
-  if (repoContext.directoryTree) {
-    parts.push("", "### File Structure", "", repoContext.directoryTree);
-  }
-
-  return parts.length > 0 ? `### Repository\n\n${parts.join("\n")}` : null;
-}
-
-function buildKnowledgeSection(
-  repoKnowledge: KnowledgeEntry[],
-  userKnowledge: KnowledgeEntry[],
-): string | null {
-  const repoFormatted = formatKnowledge(repoKnowledge);
-  const userFormatted = formatKnowledge(userKnowledge);
-
-  if (!(repoFormatted || userFormatted)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (repoFormatted) {
-    parts.push("Repository knowledge:", repoFormatted);
-  }
-  if (userFormatted) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push("User knowledge:", userFormatted);
-  }
-
-  return `### Known Context\n\n${parts.join("\n")}`;
+  return parts.join("\n\n");
 }
 
 function buildFeedbackSection(feedbackRounds?: FeedbackRound[]): string | null {

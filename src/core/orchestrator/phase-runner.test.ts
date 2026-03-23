@@ -65,7 +65,7 @@ function makeOutput(phase: Phase, data?: Record<string, unknown>): PhaseOutput {
   const defaults: Record<string, Record<string, unknown>> = {
     requirements_gathering: {
       deliverable_path: "thoughts/test/requirements.md",
-      signal_status: "ready",
+      status: "ready",
       contact: null,
       question: null,
       assessment: null,
@@ -226,7 +226,7 @@ describe("PhaseRunner", () => {
         Phases.requirements_gathering,
         makeOutput(Phases.requirements_gathering, {
           deliverable_path: "thoughts/test/requirements.md",
-          signal_status: "ready",
+          status: "ready",
           contact: null,
           question: null,
           assessment: "trivial task",

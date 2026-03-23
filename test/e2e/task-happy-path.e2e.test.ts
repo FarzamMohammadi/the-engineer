@@ -52,26 +52,18 @@ function makeResponse(json: Record<string, unknown>): InferenceResult {
 function makeFullPipelineResponses(): InferenceResult[] {
   return [
     makeResponse({
-      complexity: "moderate",
-      estimated_phases: [
-        "intake_analysis",
-        "research",
-        "planning",
-        "execution",
-        "self_review",
-        "demo_prep",
-        "integration",
-      ],
-      ambiguities: [],
-      fast_path: false,
-      decomposition_likely: false,
+      deliverable_path: "thoughts/test/requirements.md",
+      status: "ready",
+      contact: null,
+      question: null,
+      assessment: null,
     }),
     makeResponse({
-      relevant_files: ["src/index.ts"],
-      relevant_modules: ["core"],
-      conventions: [],
-      existing_patterns: ["singleton"],
-      dependencies: ["zod"],
+      deliverable_path: "thoughts/test/research.md",
+      status: "ready",
+      contact: null,
+      question: null,
+      complexity_hint: "moderate",
     }),
     makeResponse({
       approach: "Modify the settings module to add dark mode toggle",
@@ -202,40 +194,17 @@ describe("E2E: Task happy path", () => {
     expect(checkpoint?.phase).toBe("integration");
   });
 
-  it("fast path skips phases when intake says fast_path=true", async () => {
+  it("trivial task still runs all 7 phases (no fast path in v1)", async () => {
     setup();
 
-    const fastPathResponses = [
-      // intake_analysis with fast_path: true
-      makeResponse({
-        complexity: "trivial",
-        estimated_phases: ["intake_analysis", "execution", "self_review"],
-        ambiguities: [],
-        fast_path: true,
-        decomposition_likely: false,
-      }),
-      // execution (phase 2 of fast path)
-      makeResponse({
-        files_changed: ["src/typo.ts"],
-        tests_written: [],
-        test_results: { passed: 1, failed: 0, skipped: 0 },
-        build_status: "passing",
-      }),
-      // self_review (phase 3 of fast path)
-      makeResponse({
-        findings: [],
-        refactoring_applied: [],
-        quality_assessment: "ship_it",
-      }),
-    ];
-
+    // All 7 phases run even for trivial tasks — fast path was removed
     ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Fix typo" })]);
-    ctx.fakes.llm.setCannedResponses(fastPathResponses);
+    ctx.fakes.llm.setCannedResponses(makeFullPipelineResponses());
 
     await runFullLifecycle(ctx);
 
-    // Fast path: intake_analysis + execution + self_review = 3 LLM calls
-    expect(ctx.fakes.llm.getCallCount()).toBe(3);
+    // All 7 phases = 7 LLM calls
+    expect(ctx.fakes.llm.getCallCount()).toBe(7);
     expect(ctx.daemon.getState().tasksCompleted).toBe(1);
   });
 

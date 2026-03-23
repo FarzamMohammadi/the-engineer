@@ -1,6 +1,12 @@
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import { buildTaskBrief, formatKnowledge, section } from "./format.js";
+import {
+  buildKnowledgeSection,
+  buildRRPIROverview,
+  buildRepoOverview,
+  buildTaskBrief,
+  section,
+} from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,7 +34,7 @@ export function buildResearchPrompt(ctx: ResearchPromptContext): string {
   const parts: string[] = [];
 
   // 1. How The Engineer Works
-  parts.push(buildRrpirOverview(ctx.thoughtsDir));
+  parts.push(buildRRPIROverview("Research", ctx.thoughtsDir));
 
   // 2. What Happened Before You
   parts.push(buildPriorContext(ctx.thoughtsDir));
@@ -46,19 +52,6 @@ export function buildResearchPrompt(ctx: ResearchPromptContext): string {
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function buildRrpirOverview(thoughtsDir: string): string {
-  return section(
-    "How The Engineer Works",
-    [
-      "You are running as part of The Engineer, an autonomous software engineering agent. The Engineer uses RRPIR methodology — Requirements Gathering, Research, Planning, Implementation, Review. Each phase is a separate CLI session. You are the Research session.",
-      "",
-      "You have full CLI capabilities: read files, write files, search code, run commands. Use them freely to explore the codebase. You are researching — do NOT make code changes or plan solutions.",
-      "",
-      `Your deliverable goes in \`${thoughtsDir}/research/research.md\`. After you finish, update \`${thoughtsDir}/research/session-result.json\` to tell The Engineer where to go next.`,
-    ].join("\n"),
-  );
-}
 
 function buildPriorContext(thoughtsDir: string): string {
   return section(
@@ -162,60 +155,4 @@ function buildTaskContextSection(ctx: ResearchPromptContext): string {
   }
 
   return parts.join("\n\n");
-}
-
-function buildRepoOverview(repoContext: RepoContext | null): string {
-  if (!repoContext) {
-    return section(
-      "Repository",
-      "No repository context available. Explore the codebase yourself using search and read commands.",
-    );
-  }
-
-  const parts: string[] = [];
-
-  if (repoContext.gitBranch) {
-    parts.push(`Branch: ${repoContext.gitBranch}`);
-  }
-
-  if (repoContext.packageInfo) {
-    parts.push("", repoContext.packageInfo);
-  }
-
-  if (repoContext.directoryTree) {
-    parts.push("", "### File Structure", "", repoContext.directoryTree);
-  }
-
-  // README omitted in research — the CLI already has access and requirements.md
-  // captures the relevant context. Recent commits included for change history.
-  if (repoContext.recentCommits) {
-    parts.push("", "### Recent Commits", "", repoContext.recentCommits);
-  }
-
-  return section("Repository", parts.join("\n"));
-}
-
-function buildKnowledgeSection(
-  repoKnowledge: KnowledgeEntry[],
-  userKnowledge: KnowledgeEntry[],
-): string | null {
-  const repoFormatted = formatKnowledge(repoKnowledge);
-  const userFormatted = formatKnowledge(userKnowledge);
-
-  if (!(repoFormatted || userFormatted)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (repoFormatted) {
-    parts.push("Repository knowledge:", repoFormatted);
-  }
-  if (userFormatted) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push("User knowledge:", userFormatted);
-  }
-
-  return section("Known Context", parts.join("\n"));
 }

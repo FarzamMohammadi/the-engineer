@@ -3,8 +3,6 @@ import path from "node:path";
 
 import { type SessionResult, SessionResultSchema } from "../../schemas/orchestrator.js";
 
-const PLACEHOLDER_PATTERN = /^<.+>$/;
-
 /** Read and validate session-result.json from a phase directory. */
 export function readSessionResult(phaseDir: string): SessionResult | null {
   const filePath = path.join(phaseDir, "session-result.json");
@@ -15,19 +13,11 @@ export function readSessionResult(phaseDir: string): SessionResult | null {
   try {
     const raw = JSON.parse(readFileSync(filePath, "utf-8"));
     const result = SessionResultSchema.safeParse(raw);
+    // safeParse rejects template placeholders (they don't match the enum values)
     return result.success ? result.data : null;
   } catch {
     return null;
   }
-}
-
-/** Check if a session result has been filled in (not still template placeholders). */
-export function isTemplateFilled(result: SessionResult): boolean {
-  return !(
-    PLACEHOLDER_PATTERN.test(result.status) ||
-    PLACEHOLDER_PATTERN.test(result.next_phase) ||
-    PLACEHOLDER_PATTERN.test(result.summary)
-  );
 }
 
 /** Write a session-result.json template with placeholder options to a phase directory. */

@@ -49,10 +49,13 @@ function createMockContext(): OrchestratorContext {
       getWorktreePath: vi.fn().mockReturnValue(null),
       getWorkspaceRecord: vi.fn().mockReturnValue(null),
       createWorkspace: vi.fn().mockReturnValue({
+        taskId: "task-001",
         branch: "engineer/task-001",
         worktreePath: "/tmp/worktree/task-001",
         repo: "owner/repo",
         baseBranch: "main",
+        baseCommit: "abc123",
+        thoughtsDir: "thoughts/2026-03-22-issue-1",
       }),
       verifyWorkspace: vi.fn(),
       registerExistingWorkspace: vi.fn(),

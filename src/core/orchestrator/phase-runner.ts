@@ -429,9 +429,9 @@ async function handlePostPhaseActions(
 
   // Requirements ↔ Research loop: if research signals need_more_info, loop back
   if (phase === Phases.research) {
-    const researchData = output.data as { signal_status?: string; next_phase?: string };
+    const researchData = output.data as { status?: string; next_phase?: string };
     if (
-      researchData.signal_status === "need_more_info" ||
+      researchData.status === "need_more_info" ||
       researchData.next_phase === "requirements_gathering"
     ) {
       const maxLoops = ctx.config.rrpir?.max_requirements_loops ?? 5;

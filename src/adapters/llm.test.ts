@@ -38,10 +38,6 @@ class TestLLMAdapter extends LLMAdapter {
     return this.capabilities;
   }
 
-  getContinueArgs(): string[] {
-    return ["--continue"];
-  }
-
   protected doInitialize(_config: Record<string, unknown>): Promise<InitResult> {
     return Promise.resolve({ success: true, message: null });
   }

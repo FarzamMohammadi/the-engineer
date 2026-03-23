@@ -63,9 +63,6 @@ export abstract class LLMAdapter extends BaseAdapter {
    */
   abstract getCapabilities(): LLMCapabilities;
 
-  /** CLI arguments for continuing an existing session (e.g., ["--continue"] for Claude Code). */
-  abstract getContinueArgs(): string[];
-
   /**
    * Query the provider's current quota/rate limit status.
    *

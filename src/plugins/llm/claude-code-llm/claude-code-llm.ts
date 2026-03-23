@@ -125,10 +125,6 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
     return this.spawnAndParse(args, request.prompt, request.cwd ?? undefined);
   }
 
-  getContinueArgs(): string[] {
-    return ["--continue"];
-  }
-
   getCapabilities(): LLMCapabilities {
     return {
       model_id: this.config?.model ?? "claude-sonnet-4-20250514",

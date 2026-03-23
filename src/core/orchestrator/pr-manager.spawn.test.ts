@@ -31,6 +31,7 @@ const WORKSPACE_RECORD: WorkspaceRecord = {
   worktreePath: WORKTREE_PATH,
   baseBranch: "main",
   baseCommit: "abc123",
+  thoughtsDir: "thoughts/2026-03-22-issue-1",
 };
 
 /** Configure execFileSync to handle standard git commands for the happy path. */
@@ -149,8 +150,11 @@ describe("commitPushAndCreatePR", () => {
     expect(fakeGitHosting.createPR).not.toHaveBeenCalled();
   });
 
-  it("returns early when no workspace record exists", async () => {
-    h.workspaceManager.getWorkspaceRecord.mockReturnValue(null);
+  it("returns early when no workspace record exists at PR creation time", async () => {
+    // Return workspace record for initial thoughtsDir read, then null for PR creation
+    h.workspaceManager.getWorkspaceRecord
+      .mockReturnValueOnce(WORKSPACE_RECORD)
+      .mockReturnValue(null);
     setupGitMocks({ hasStagedChanges: false });
 
     const dispatch = dispatchWithWorkspace();
@@ -344,8 +348,11 @@ describe("commitPushAndCreatePR", () => {
     expect(result.outcome).toBe("completed");
   });
 
-  it("returns completed when no workspace (no PR to create)", async () => {
-    h.workspaceManager.getWorkspaceRecord.mockReturnValue(null);
+  it("returns completed when no workspace record at PR creation time (no PR to create)", async () => {
+    // Return workspace record for initial thoughtsDir read, then null for PR creation
+    h.workspaceManager.getWorkspaceRecord
+      .mockReturnValueOnce(WORKSPACE_RECORD)
+      .mockReturnValue(null);
     setupGitMocks({ hasStagedChanges: false });
 
     const dispatch = dispatchWithWorkspace();

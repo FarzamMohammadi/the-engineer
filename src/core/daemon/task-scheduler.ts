@@ -253,6 +253,7 @@ export function createTaskScheduler(
     return (
       outcome === Outcomes.completed ||
       outcome === Outcomes.error ||
+      outcome === Outcomes.blocked ||
       outcome === Outcomes.review_pending ||
       outcome === Outcomes.decomposed
     );
@@ -384,6 +385,13 @@ export function createTaskScheduler(
       });
     } else if (result.outcome === Outcomes.preempted) {
       handlePreemptedOutcome(taskId, result.lastPhase);
+    } else if (result.outcome === Outcomes.blocked) {
+      // Task already transitioned to blocked by the phase-runner. No re-transition needed.
+      observer.info("Task blocked awaiting human input", {
+        taskId,
+        phase: result.phase,
+        reason: result.reason,
+      });
     } else if (result.outcome === Outcomes.error) {
       handleErrorOutcome(taskId, result);
     } else {

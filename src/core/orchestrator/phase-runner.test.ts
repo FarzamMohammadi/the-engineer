@@ -12,6 +12,7 @@ import {
   type PhaseRunnerDeps,
   createPhaseHandlerRegistry,
   formatPhaseHandoff,
+  parsePendingOutreach,
   runPhasePipeline,
 } from "./phase-runner.js";
 import type { PrManager } from "./pr-manager.js";
@@ -636,9 +637,9 @@ describe("PhaseRunner", () => {
 
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
-      expect(result.outcome).toBe("error");
-      if (result.outcome === "error") {
-        expect(result.reason).toContain("Blocked");
+      expect(result.outcome).toBe("blocked");
+      if (result.outcome === "blocked") {
+        expect(result.reason).toContain("Awaiting human input");
       }
       // Should have transitioned to blocked
       expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
@@ -698,7 +699,7 @@ describe("PhaseRunner", () => {
 
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
-      expect(result.outcome).toBe("error");
+      expect(result.outcome).toBe("blocked");
       // return_to_phase should be persisted as "planning"
       expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
         "task-001",
@@ -773,6 +774,66 @@ describe("PhaseRunner", () => {
       const handoff = formatPhaseHandoff(Phases.research, Phases.planning, output, dispatch);
 
       expect(handoff).toContain("Open questions need attention");
+    });
+  });
+
+  describe("parsePendingOutreach", () => {
+    it("parses pending Q/A entries from requirements.md", () => {
+      const md = [
+        "# Requirements: Test Task",
+        "",
+        "## Questions Asked",
+        "### Farzam (owner) — 2026-03-22",
+        "**Q:** What is the expected behavior for edge case X?",
+        "**A:** PENDING",
+        "",
+        "### Alice (tech_lead) — 2026-03-22",
+        "**Q:** Should we use pattern A or B?",
+        "**A:** Use pattern A.",
+      ].join("\n");
+
+      const entries = parsePendingOutreach(md);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toEqual({
+        person: "Farzam",
+        role: "owner",
+        question: "What is the expected behavior for edge case X?",
+      });
+    });
+
+    it("returns empty array when no pending questions", () => {
+      const md = [
+        "# Requirements: Test Task",
+        "## Questions Asked",
+        "### Farzam (owner) — 2026-03-22",
+        "**Q:** What is X?",
+        "**A:** It is Y.",
+      ].join("\n");
+
+      expect(parsePendingOutreach(md)).toHaveLength(0);
+    });
+
+    it("returns empty array when no Questions Asked section", () => {
+      const md = "# Requirements: Test Task\n\n## Assessment\nLooks good.";
+      expect(parsePendingOutreach(md)).toHaveLength(0);
+    });
+
+    it("handles multiple pending questions", () => {
+      const md = [
+        "## Questions Asked",
+        "### Farzam (owner) — 2026-03-22",
+        "**Q:** Question one?",
+        "**A:** PENDING",
+        "",
+        "### Bob (pm) — 2026-03-22",
+        "**Q:** Question two?",
+        "**A:** pending",
+      ].join("\n");
+
+      const entries = parsePendingOutreach(md);
+      expect(entries).toHaveLength(2);
+      expect(entries[0]?.person).toBe("Farzam");
+      expect(entries[1]?.person).toBe("Bob");
     });
   });
 

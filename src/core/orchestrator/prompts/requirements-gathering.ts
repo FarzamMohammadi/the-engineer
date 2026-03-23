@@ -54,6 +54,8 @@ export function buildRequirementsGatheringPrompt(ctx: RequirementsGatheringPromp
   // 3. What YOU Need To Do
   if (isFeedbackRework) {
     parts.push(buildFeedbackReworkInstructions(ctx));
+  } else if (ctx.isRerun) {
+    parts.push(buildNeedsInfoInstructions(ctx));
   } else {
     parts.push(buildRequirementsInstructions(ctx));
   }
@@ -103,6 +105,34 @@ function buildRequirementsInstructions(ctx: RequirementsGatheringPromptContext):
       "5. Make your routing decision:",
       '   - If you have enough context to proceed, set next_phase to "research" in session-result.json.',
       '   - If you need more information from people, document what is needed in the .md file (with PENDING answers) and set next_phase to "requirements_gathering" so The Engineer knows to reach out and loop back.',
+    ].join("\n"),
+  );
+}
+
+function buildNeedsInfoInstructions(ctx: RequirementsGatheringPromptContext): string {
+  return section(
+    "What YOU Need To Do",
+    [
+      "A previous phase got stuck and needs help. Your job is to figure out what's unclear, who to contact, and draft the outreach messages — like a real engineer who stops to ask the right questions before continuing.",
+      "",
+      `1. **Read the accumulated context.** Open \`${ctx.thoughtsDir}/requirements/requirements.md\` to understand what's been gathered so far. Then read the deliverables from other phases (research.md, plan.md, etc.) to see where things got stuck.`,
+      "",
+      "2. **Assess: can you resolve this yourself?** Maybe the answer is in the codebase, in the task description, or in existing documentation. If so, resolve it, update requirements.md, and signal ready.",
+      "",
+      "3. **If you need a person:** look at the team contacts below. Match the question to the right person based on their role (PM for product questions, tech lead for architecture, designer for UX, owner for priority/scope).",
+      "",
+      "4. **Draft the outreach.** For each person you need to contact, write an entry in requirements.md under `## Questions Asked`:",
+      "   ```",
+      "   ### [Person Name] ([Role]) — [Date]",
+      "   **Q:** [Your question — include enough context that the person can answer without reading the codebase. Explain what the task is, what you've found, and what's unclear.]",
+      "   **A:** PENDING",
+      "   ```",
+      "",
+      "5. **Signal your decision:**",
+      '   - Resolved it yourself → set status to "ready", next_phase to "research"',
+      '   - Need human responses → set status to "need_more_info", next_phase to "requirements_gathering"',
+      "",
+      "The Engineer will read your outreach entries and send the messages to the right people via their preferred channels (Telegram, GitHub, etc.). You draft the content; The Engineer handles delivery.",
     ].join("\n"),
   );
 }

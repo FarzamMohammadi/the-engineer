@@ -1,6 +1,10 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import type { CommunicationAdapter } from "../../adapters/communication.js";
+import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
-import { Phases } from "../../schemas/orchestrator.js";
+import { PHASE_DIRECTORIES, Phases } from "../../schemas/orchestrator.js";
 import {
   CheckpointReasons,
   JournalEntryTypes,
@@ -88,6 +92,126 @@ export interface PhaseRunnerDeps {
   andonCord: AndonCord;
   /** Cooperative preemption state (Protocol P8). */
   preemption: PreemptionGate;
+}
+
+// ── Outreach Helpers ─────────────────────────────────────────────────────
+
+/** A pending outreach question parsed from requirements.md. */
+export interface OutreachEntry {
+  person: string;
+  role: string;
+  question: string;
+}
+
+/** Regex patterns for parsing outreach entries (hoisted for performance). */
+const SECTION_SPLIT_RE = /^### /m;
+const HEADER_RE = /^(.+?)\s*\((.+?)\)/;
+const QUESTION_RE = /\*\*Q:\*\*\s*(.+?)(?:\n|$)/;
+const ANSWER_RE = /\*\*A:\*\*\s*(.+?)(?:\n|$)/;
+
+/**
+ * Parse pending outreach entries from requirements.md.
+ * Looks for `### Person (Role)` headings followed by `**Q:** ...` with `**A:** PENDING`.
+ */
+export function parsePendingOutreach(requirementsMd: string): OutreachEntry[] {
+  const entries: OutreachEntry[] = [];
+  const sections = requirementsMd.split(SECTION_SPLIT_RE).slice(1);
+
+  for (const section of sections) {
+    const headerMatch = section.match(HEADER_RE);
+    if (!headerMatch) {
+      continue;
+    }
+
+    const person = headerMatch[1]?.trim() ?? "";
+    const role = headerMatch[2]?.trim() ?? "";
+
+    const qMatch = section.match(QUESTION_RE);
+    const aMatch = section.match(ANSWER_RE);
+
+    if (qMatch?.[1] && aMatch?.[1]?.trim().toUpperCase() === "PENDING") {
+      entries.push({ person, role, question: qMatch[1].trim() });
+    }
+  }
+
+  return entries;
+}
+
+/** Send outreach messages via comm plugins for pending questions. Fire-and-forget. */
+function sendOutreachMessages(
+  taskId: string,
+  entries: OutreachEntry[],
+  ctx: OrchestratorContext,
+): void {
+  if (entries.length === 0) {
+    return;
+  }
+
+  const commPlugins = ctx.registry.getPluginsByType<CommunicationAdapter>(
+    AdapterTypes.communication,
+  );
+  const sendPlugins = commPlugins.filter((p) => p.hasCapability("send"));
+  if (sendPlugins.length === 0) {
+    ctx.observer.warn("No comm plugins with send capability — outreach messages not delivered", {
+      taskId,
+      entryCount: entries.length,
+    });
+    return;
+  }
+
+  const task = ctx.taskEngine.getTask(taskId);
+  const taskTitle = task?.title ?? taskId;
+
+  for (const entry of entries) {
+    // Match person against People Directory
+    const byRole = ctx.peopleDirectory.getByRole(entry.role);
+    const contact = byRole[0] ?? ctx.peopleDirectory.getOwner();
+    if (!contact) {
+      continue;
+    }
+
+    const message = `Question about "${taskTitle}":\n\n${entry.question}`;
+
+    for (const plugin of sendPlugins) {
+      const formatted = plugin.formatMessage(message, "notification");
+      plugin
+        .sendMessage(
+          { user_id: contact.id, channel: null },
+          { content: formatted, metadata: { task_id: taskId, type: "notification" } },
+        )
+        .catch((err: unknown) => {
+          ctx.observer.warn("Outreach message send failed", {
+            taskId,
+            person: entry.person,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    }
+
+    ctx.observer.info("Outreach message sent", {
+      taskId,
+      person: entry.person,
+      role: entry.role,
+      contactId: contact.id,
+    });
+  }
+
+  // Also comment on the source issue if applicable
+  const issuePlugin = commPlugins.find((p) => p.hasCapability("issue_management"));
+  if (issuePlugin && task?.external_ref) {
+    const { type, repo, number } = task.external_ref;
+    if (type === "github_issue" || type === "github_pr") {
+      const summary = entries.map((e) => `- **${e.person}** (${e.role}): ${e.question}`).join("\n");
+      issuePlugin
+        .commentOnIssue(repo, number, `Blocked — waiting for answers:\n\n${summary}`)
+        .catch((err: unknown) => {
+          ctx.observer.warn("Issue comment for outreach failed", {
+            taskId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    }
+  }
 }
 
 /** Discriminated union of post-phase processing outcomes (internal to the pipeline runner). */
@@ -489,6 +613,24 @@ async function handlePostPhaseActions(
     if (reqData.status === "need_more_info") {
       ctx.observer.info("Requirements gathering needs human input, blocking task", { taskId });
 
+      // Send outreach messages before blocking — read requirements.md for pending questions
+      const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
+      if (worktreePath && state.thoughtsDir) {
+        const reqMdPath = path.join(
+          worktreePath,
+          state.thoughtsDir,
+          PHASE_DIRECTORIES[0],
+          "requirements.md",
+        );
+        if (existsSync(reqMdPath)) {
+          const reqMd = readFileSync(reqMdPath, "utf-8");
+          const outreach = parsePendingOutreach(reqMd);
+          if (outreach.length > 0) {
+            sendOutreachMessages(taskId, outreach, ctx);
+          }
+        }
+      }
+
       // Persist return_to_phase so re-dispatch knows where to resume
       if (returnToPhase) {
         ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase);
@@ -512,7 +654,11 @@ async function handlePostPhaseActions(
       return {
         completion: {
           kind: "exit",
-          result: { outcome: "error", phase, reason: "Blocked: awaiting human input" },
+          result: {
+            outcome: "blocked",
+            phase,
+            reason: "Awaiting human input — see requirements.md",
+          },
         },
         loopbackCount,
         requirementsLoopCount,

@@ -73,6 +73,7 @@ export const Outcomes = {
   review_pending: "review_pending",
   decomposed: "decomposed",
   preempted: "preempted",
+  blocked: "blocked",
   error: "error",
 } as const;
 
@@ -88,6 +89,7 @@ export type ExecuteTaskResult =
       phaseOutputs: Map<Phase, PhaseOutput>;
     }
   | { outcome: typeof Outcomes.preempted; lastPhase: Phase; checkpointId: string }
+  | { outcome: typeof Outcomes.blocked; phase: Phase; reason: string }
   | { outcome: typeof Outcomes.error; phase: Phase; reason: string };
 
 // ── Pipeline Constants ───────────────────────────────────────────────────

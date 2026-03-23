@@ -207,17 +207,32 @@ export class TelegramCommPlugin extends CommunicationAdapter {
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-  protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {
+  protected async doInitialize(config: Record<string, unknown>): Promise<InitResult> {
     const parsed = TelegramCommConfigSchema.safeParse(config);
     if (!parsed.success) {
-      return Promise.resolve({
-        success: false,
-        message: `Invalid config: ${parsed.error.message}`,
-      });
+      return { success: false, message: `Invalid config: ${parsed.error.message}` };
     }
     this.config = parsed.data;
     this.bot = new Bot(this.config.bot_token);
-    return Promise.resolve({ success: true, message: null });
+
+    // Drain all pending updates so we only process messages sent AFTER startup.
+    // Without this, old messages (sent before the daemon started) trigger false unblocks.
+    try {
+      const pending = await this.bot.api.getUpdates({
+        timeout: 0,
+        allowed_updates: ["message"] as const,
+      });
+      for (const update of pending) {
+        if (update.update_id > this.lastUpdateId) {
+          this.lastUpdateId = update.update_id;
+        }
+      }
+    } catch {
+      // Non-fatal — if drain fails, first poll may return stale messages
+      // but the response poller's cursor mechanism provides a second safety net
+    }
+
+    return { success: true, message: null };
   }
 
   protected async doHealthCheck(): Promise<HealthStatus> {

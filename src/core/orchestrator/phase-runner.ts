@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
@@ -96,54 +96,27 @@ export interface PhaseRunnerDeps {
 
 // ── Outreach Helpers ─────────────────────────────────────────────────────
 
-/** A pending outreach question parsed from requirements.md. */
-export interface OutreachEntry {
-  person: string;
-  role: string;
-  question: string;
-}
-
-/** Regex patterns for parsing outreach entries (hoisted for performance). */
-const SECTION_SPLIT_RE = /^### /m;
-const HEADER_RE = /^(.+?)\s*\((.+?)\)/;
-const QUESTION_RE = /\*\*Q:\*\*\s*(.+?)(?:\n|$)/;
-const ANSWER_RE = /\*\*A:\*\*\s*(.+?)(?:\n|$)/;
+const TXT_SUFFIX_RE = /\.txt$/;
 
 /**
- * Parse pending outreach entries from requirements.md.
- * Looks for `### Person (Role)` headings followed by `**Q:** ...` with `**A:** PENDING`.
+ * Read outreach messages from `outreach/` directory and send via comm plugins.
+ *
+ * The LLM writes one `.txt` file per person to contact:
+ *   `thoughts/{id}/requirements/outreach/{person-id}.txt`
+ * Filename = person ID from People Directory. Content = the message to send.
+ * No parsing — the LLM does the heavy lifting, we just deliver files.
  */
-export function parsePendingOutreach(requirementsMd: string): OutreachEntry[] {
-  const entries: OutreachEntry[] = [];
-  const sections = requirementsMd.split(SECTION_SPLIT_RE).slice(1);
-
-  for (const section of sections) {
-    const headerMatch = section.match(HEADER_RE);
-    if (!headerMatch) {
-      continue;
-    }
-
-    const person = headerMatch[1]?.trim() ?? "";
-    const role = headerMatch[2]?.trim() ?? "";
-
-    const qMatch = section.match(QUESTION_RE);
-    const aMatch = section.match(ANSWER_RE);
-
-    if (qMatch?.[1] && aMatch?.[1]?.trim().toUpperCase() === "PENDING") {
-      entries.push({ person, role, question: qMatch[1].trim() });
-    }
-  }
-
-  return entries;
-}
-
-/** Send outreach messages via comm plugins for pending questions. Awaits delivery. */
-async function sendOutreachMessages(
+async function sendOutreachFromFiles(
   taskId: string,
-  entries: OutreachEntry[],
+  outreachDir: string,
   ctx: OrchestratorContext,
 ): Promise<void> {
-  if (entries.length === 0) {
+  if (!existsSync(outreachDir)) {
+    return;
+  }
+
+  const files = readdirSync(outreachDir).filter((f) => f.endsWith(".txt"));
+  if (files.length === 0) {
     return;
   }
 
@@ -152,25 +125,28 @@ async function sendOutreachMessages(
   );
   const sendPlugins = commPlugins.filter((p) => p.hasCapability("send"));
   if (sendPlugins.length === 0) {
-    ctx.observer.warn("No comm plugins with send capability — outreach messages not delivered", {
+    ctx.observer.warn("No comm plugins with send capability — outreach not delivered", {
       taskId,
-      entryCount: entries.length,
+      fileCount: files.length,
     });
     return;
   }
 
-  const task = ctx.taskEngine.getTask(taskId);
-  const taskTitle = task?.title ?? taskId;
   const sendPromises: Promise<void>[] = [];
 
-  for (const entry of entries) {
-    const byRole = ctx.peopleDirectory.getByRole(entry.role);
-    const contact = byRole[0] ?? ctx.peopleDirectory.getOwner();
-    if (!contact) {
+  for (const file of files) {
+    const personId = file.replace(TXT_SUFFIX_RE, "");
+    const message = readFileSync(path.join(outreachDir, file), "utf-8").trim();
+    if (!message) {
       continue;
     }
 
-    const message = `Question about "${taskTitle}":\n\n${entry.question}`;
+    // Match person against People Directory, fall back to owner
+    const contact = ctx.peopleDirectory.getPerson(personId) ?? ctx.peopleDirectory.getOwner();
+    if (!contact) {
+      ctx.observer.warn("Outreach: no contact found for person", { taskId, personId });
+      continue;
+    }
 
     for (const plugin of sendPlugins) {
       const formatted = plugin.formatMessage(message, "notification");
@@ -182,26 +158,24 @@ async function sendOutreachMessages(
           )
           .then((result) => {
             if (result.success) {
-              ctx.observer.info("Outreach message delivered", {
+              ctx.observer.info("Outreach delivered", {
                 taskId,
-                person: entry.person,
-                role: entry.role,
-                contactId: contact.id,
+                personId,
                 pluginId: plugin.manifest.id,
               });
             } else {
-              ctx.observer.warn("Outreach message delivery failed", {
+              ctx.observer.warn("Outreach delivery failed", {
                 taskId,
-                person: entry.person,
+                personId,
                 pluginId: plugin.manifest.id,
                 error: result.error?.message ?? "unknown",
               });
             }
           })
           .catch((err: unknown) => {
-            ctx.observer.warn("Outreach message send failed", {
+            ctx.observer.warn("Outreach send error", {
               taskId,
-              person: entry.person,
+              personId,
               error: err instanceof Error ? err.message : String(err),
             });
           }),
@@ -209,15 +183,16 @@ async function sendOutreachMessages(
     }
   }
 
-  // Also comment on the source issue if applicable
+  // Also comment on the source issue with a summary
+  const task = ctx.taskEngine.getTask(taskId);
   const issuePlugin = commPlugins.find((p) => p.hasCapability("issue_management"));
   if (issuePlugin && task?.external_ref) {
     const { type, repo, number } = task.external_ref;
     if (type === "github_issue" || type === "github_pr") {
-      const summary = entries.map((e) => `- **${e.person}** (${e.role}): ${e.question}`).join("\n");
+      const summary = files.map((f) => `- ${f.replace(TXT_SUFFIX_RE, "")}`).join("\n");
       sendPromises.push(
         issuePlugin
-          .commentOnIssue(repo, number, `Blocked — waiting for answers:\n\n${summary}`)
+          .commentOnIssue(repo, number, `Blocked — reaching out for answers:\n\n${summary}`)
           .then(() => {
             ctx.observer.info("Outreach issue comment posted", { taskId, repo, number });
           })
@@ -231,7 +206,6 @@ async function sendOutreachMessages(
     }
   }
 
-  // Await all sends — ensures messages are delivered before blocking
   await Promise.allSettled(sendPromises);
 }
 
@@ -634,22 +608,16 @@ async function handlePostPhaseActions(
     if (reqData.status === "need_more_info") {
       ctx.observer.info("Requirements gathering needs human input, blocking task", { taskId });
 
-      // Send outreach messages before blocking — read requirements.md for pending questions
+      // Send outreach messages before blocking — read .txt files from outreach/ directory
       const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
       if (worktreePath && state.thoughtsDir) {
-        const reqMdPath = path.join(
+        const outreachDir = path.join(
           worktreePath,
           state.thoughtsDir,
           PHASE_DIRECTORIES[0],
-          "requirements.md",
+          "outreach",
         );
-        if (existsSync(reqMdPath)) {
-          const reqMd = readFileSync(reqMdPath, "utf-8");
-          const outreach = parsePendingOutreach(reqMd);
-          if (outreach.length > 0) {
-            await sendOutreachMessages(taskId, outreach, ctx);
-          }
-        }
+        await sendOutreachFromFiles(taskId, outreachDir, ctx);
       }
 
       // Persist return_to_phase so re-dispatch knows where to resume
@@ -889,6 +857,22 @@ export async function runPhasePipeline(
         new Error(`AndonCord pulled: ${reason}`),
         ctx,
       );
+    }
+
+    // Clean outreach directory at requirements_gathering start so stale files aren't re-sent
+    if (phase === Phases.requirements_gathering) {
+      const wt = ctx.workspaceManager.getWorktreePath(taskId);
+      if (wt && currentState.thoughtsDir) {
+        const outreachDir = path.join(
+          wt,
+          currentState.thoughtsDir,
+          PHASE_DIRECTORIES[0],
+          "outreach",
+        );
+        if (existsSync(outreachDir)) {
+          rmSync(outreachDir, { recursive: true, force: true });
+        }
+      }
     }
 
     // Execute the phase handler

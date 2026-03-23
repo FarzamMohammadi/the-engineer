@@ -12,7 +12,6 @@ import {
   type PhaseRunnerDeps,
   createPhaseHandlerRegistry,
   formatPhaseHandoff,
-  parsePendingOutreach,
   runPhasePipeline,
 } from "./phase-runner.js";
 import type { PrManager } from "./pr-manager.js";
@@ -655,19 +654,8 @@ describe("PhaseRunner", () => {
       const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
       const { join } = await import("node:path");
 
-      // Create a real temp dir with requirements.md containing PENDING questions
       const tmpDir = join("/tmp", `outreach-test-${Date.now()}`);
-      const reqDir = join(tmpDir, "thoughts", "test", "requirements");
-      mkdirSync(reqDir, { recursive: true });
-      writeFileSync(
-        join(reqDir, "requirements.md"),
-        [
-          "## Questions Asked",
-          "### Farzam (owner) — 2026-03-23",
-          "**Q:** What scenes need updating?",
-          "**A:** PENDING",
-        ].join("\n"),
-      );
+      const outreachDir = join(tmpDir, "thoughts", "test", "requirements", "outreach");
 
       try {
         const ctx = createMockContext();
@@ -692,7 +680,7 @@ describe("PhaseRunner", () => {
 
         // Mock people directory
         const pd = ctx.peopleDirectory as unknown as Record<string, ReturnType<typeof vi.fn>>;
-        pd["getByRole"] = vi.fn().mockReturnValue([{ id: "farzam", name: "Farzam" }]);
+        pd["getPerson"] = vi.fn().mockReturnValue({ id: "farzam", name: "Farzam" });
         pd["getOwner"] = vi.fn().mockReturnValue({ id: "farzam", name: "Farzam" });
 
         (ctx.taskEngine.requestTransition as ReturnType<typeof vi.fn>).mockImplementation(() => {
@@ -704,11 +692,24 @@ describe("PhaseRunner", () => {
         for (const phase of PHASE_SEQUENCE) {
           outputs.set(phase, makeOutput(phase));
         }
-        outputs.set(
-          Phases.requirements_gathering,
-          makeOutput(Phases.requirements_gathering, { status: "need_more_info" }),
-        );
-        const handlers = createHandlersThatReturn(outputs);
+        // Handler creates outreach files during execution (simulating CLI writing them)
+        const handlerFns = Object.fromEntries(
+          PHASE_SEQUENCE.map((phase) => [
+            phase,
+            vi.fn(() => {
+              if (phase === Phases.requirements_gathering) {
+                mkdirSync(outreachDir, { recursive: true });
+                writeFileSync(
+                  join(outreachDir, "farzam.txt"),
+                  "Hi Farzam, what scenes need updating and what kind of updates?",
+                );
+                return Promise.resolve(makeOutput(phase, { status: "need_more_info" }));
+              }
+              return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
+            }),
+          ]),
+        ) as Record<Phase, ReturnType<typeof vi.fn>>;
+        const handlers = createPhaseHandlerRegistry(handlerFns);
         const deps = createDeps(ctx, handlers);
 
         const result = await runPhasePipeline(
@@ -851,66 +852,6 @@ describe("PhaseRunner", () => {
       const handoff = formatPhaseHandoff(Phases.research, Phases.planning, output, dispatch);
 
       expect(handoff).toContain("Open questions need attention");
-    });
-  });
-
-  describe("parsePendingOutreach", () => {
-    it("parses pending Q/A entries from requirements.md", () => {
-      const md = [
-        "# Requirements: Test Task",
-        "",
-        "## Questions Asked",
-        "### Farzam (owner) — 2026-03-22",
-        "**Q:** What is the expected behavior for edge case X?",
-        "**A:** PENDING",
-        "",
-        "### Alice (tech_lead) — 2026-03-22",
-        "**Q:** Should we use pattern A or B?",
-        "**A:** Use pattern A.",
-      ].join("\n");
-
-      const entries = parsePendingOutreach(md);
-      expect(entries).toHaveLength(1);
-      expect(entries[0]).toEqual({
-        person: "Farzam",
-        role: "owner",
-        question: "What is the expected behavior for edge case X?",
-      });
-    });
-
-    it("returns empty array when no pending questions", () => {
-      const md = [
-        "# Requirements: Test Task",
-        "## Questions Asked",
-        "### Farzam (owner) — 2026-03-22",
-        "**Q:** What is X?",
-        "**A:** It is Y.",
-      ].join("\n");
-
-      expect(parsePendingOutreach(md)).toHaveLength(0);
-    });
-
-    it("returns empty array when no Questions Asked section", () => {
-      const md = "# Requirements: Test Task\n\n## Assessment\nLooks good.";
-      expect(parsePendingOutreach(md)).toHaveLength(0);
-    });
-
-    it("handles multiple pending questions", () => {
-      const md = [
-        "## Questions Asked",
-        "### Farzam (owner) — 2026-03-22",
-        "**Q:** Question one?",
-        "**A:** PENDING",
-        "",
-        "### Bob (pm) — 2026-03-22",
-        "**Q:** Question two?",
-        "**A:** pending",
-      ].join("\n");
-
-      const entries = parsePendingOutreach(md);
-      expect(entries).toHaveLength(2);
-      expect(entries[0]?.person).toBe("Farzam");
-      expect(entries[1]?.person).toBe("Bob");
     });
   });
 

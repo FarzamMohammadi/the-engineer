@@ -22,6 +22,7 @@ function createMockContext(): UnblockResolverContext {
     },
     workspaceManager: {
       getWorktreePath: vi.fn().mockReturnValue(null),
+      getWorkspaceRecord: vi.fn().mockReturnValue(null),
     },
     observer: createTestObserverFacade("unblock-resolver"),
   } as unknown as UnblockResolverContext;
@@ -228,6 +229,9 @@ describe("UnblockResolver", () => {
       (mockCtx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(
         tempDir,
       );
+      (mockCtx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue({
+        thoughtsDir: "thoughts/2026-03-23-issue-42",
+      });
 
       const resolver = createUnblockResolver(mockCtx);
       resolver.tryUnblock({
@@ -240,7 +244,7 @@ describe("UnblockResolver", () => {
       const responsePath = path.join(
         tempDir,
         "thoughts",
-        "issue-42",
+        "2026-03-23-issue-42",
         "requirements",
         "responses",
         "github.txt",

@@ -76,9 +76,15 @@ function buildPriorContext(ctx: RequirementsGatheringPromptContext): string {
     return section(
       "What Happened Before You",
       [
-        "This is a continuation. A previous phase (or a prior requirements gathering session) determined that more information was needed.",
+        "This is a continuation. Previously, you (or a prior session) reached out for more information. People were contacted, and they may have responded.",
         "",
-        `Read your prior work at \`${ctx.thoughtsDir}/requirements/requirements.md\` and incorporate the new context below. Update the same file — accumulate, do not replace.`,
+        "## Where to find context",
+        "",
+        `- **Your prior work:** \`${ctx.thoughtsDir}/requirements/requirements.md\` — read it, understand what was gathered, what questions were asked.`,
+        `- **Responses received:** Check \`${ctx.thoughtsDir}/requirements/responses/\` — if people responded, their answers are here as \`.txt\` files (one per source/channel). These are the answers to questions you previously asked.`,
+        `- **Your outreach:** \`${ctx.thoughtsDir}/requirements/outreach/\` — what you sent out last time.`,
+        "",
+        "Read everything. Incorporate what you learn into requirements.md — accumulate, do not replace. The responses directory is your primary new input. If someone answered your question, use that answer. If the answer is incomplete or raises new questions, you may reach out again.",
       ].join("\n"),
     );
   }

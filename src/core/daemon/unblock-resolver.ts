@@ -109,7 +109,7 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
     return { unblocked: true, taskId, reason: null };
   }
 
-  /** Write response content to thoughts/{id}/requirements/responses/{source}.txt */
+  /** Write response content to {thoughtsDir}/requirements/responses/{source}.txt */
   function writeResponseToWorktree(taskId: string, source: string, content: string): void {
     const worktreePath = workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
@@ -117,20 +117,15 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
       return;
     }
 
-    const task = taskEngine.getTask(taskId);
-    const thoughtsId = task?.thoughts_id;
-    if (!thoughtsId) {
-      observer.debug("No thoughts_id for task — skipping response file write", { taskId });
+    // Use thoughtsDir from workspace record (includes date prefix, e.g., "thoughts/2026-03-23-issue-42")
+    const record = workspaceManager.getWorkspaceRecord(taskId);
+    const thoughtsDir = record?.thoughtsDir;
+    if (!thoughtsDir) {
+      observer.debug("No thoughtsDir for task — skipping response file write", { taskId });
       return;
     }
 
-    const responsesDir = path.join(
-      worktreePath,
-      "thoughts",
-      thoughtsId,
-      "requirements",
-      "responses",
-    );
+    const responsesDir = path.join(worktreePath, thoughtsDir, "requirements", "responses");
     try {
       mkdirSync(responsesDir, { recursive: true });
       writeFileSync(path.join(responsesDir, `${source}.txt`), content, "utf-8");

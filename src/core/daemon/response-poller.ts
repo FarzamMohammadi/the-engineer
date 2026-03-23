@@ -59,8 +59,12 @@ export function createResponsePoller(
   const pluginCursors = new Map<string, string>();
   // Failure tracking for adaptive backoff (same pattern as trigger-poller)
   const pluginFailures = new Map<string, number>();
-  // Last processed event sequence for event bus scanning (dashboard responses)
-  let lastEventSeq = 0;
+  // Last processed event sequence for event bus scanning (dashboard responses).
+  // Initialize to current max sequence — skip historical events on startup/restart.
+  // Only new events written after this point will be processed.
+  const startupEvents = eventBus.getEventsSince(0);
+  let lastEventSeq =
+    startupEvents.length > 0 ? (startupEvents[startupEvents.length - 1]?.sequence ?? 0) : 0;
 
   /** Maximum backoff interval (5 minutes, same as trigger-poller). */
   const MAX_BACKOFF_MS = 300_000;
@@ -128,7 +132,8 @@ export function createResponsePoller(
       return;
     }
 
-    const cursor = pluginCursors.get(pluginId) ?? "";
+    // Default cursor to "now" on first poll — skip historical comments that predate blocking
+    const cursor = pluginCursors.get(pluginId) ?? new Date(now).toISOString();
 
     try {
       const result = await plugin.pollMessages(channels, cursor);

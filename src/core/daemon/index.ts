@@ -325,6 +325,11 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     eventBus.subscribe("daemon:comm", EventTypes["comm.message_received"], (event: Event) => {
       const payload = event.payload as EventPayloads["comm.message_received"];
+      // Skip task-directed responses — those are handled by the ResponsePoller for unblocking.
+      // Only general queries (no task_id) go to the QueryHandler.
+      if (payload.task_id) {
+        return;
+      }
       const queryDeps: QueryHandlerDeps = {
         taskEngine,
         safetyLayer: ctx.safetyLayer,

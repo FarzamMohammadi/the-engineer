@@ -137,7 +137,11 @@ describe("ResponsePoller", () => {
     const poller = createResponsePoller(ctx, resolver);
     await poller.poll(100_000);
 
-    expect(plugin.pollMessages).toHaveBeenCalledWith(["owner/repo#42"], "");
+    // Cursor defaults to ISO timestamp of "now" (100_000ms) on first poll — skips historical comments
+    expect(plugin.pollMessages).toHaveBeenCalledWith(
+      ["owner/repo#42"],
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    );
   });
 
   it("does not poll plugins without receive capability", async () => {

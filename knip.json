@@ -1,6 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["src/adapters/index.ts"],
+  "entry": [
+    "src/adapters/index.ts",
+    "src/schemas/*.ts",
+    "src/core/observer/logging.ts",
+    "src/core/orchestrator/types.ts",
+    "src/core/safety-layer/errors.ts",
+    "src/core/task-engine/errors.ts"
+  ],
   "project": ["src/**/*.ts"],
   "ignoreDependencies": ["pino-pretty", "pino-roll", "@types/node-fetch"],
   "ignoreExportsUsedInFile": true,

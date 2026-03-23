@@ -4,7 +4,8 @@
  * Runs as a separate process from the daemon. Reads from the same
  * SQLite database in WAL mode (concurrent readers are safe).
  */
-import { readFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import BetterSqlite3 from "better-sqlite3";
@@ -54,6 +55,25 @@ export function createDashboardApp(config: DashboardConfig): {
   app.route("/api/blob", blobRoutes({ observationStore }));
   app.route("/api/observations", observationRoutes({ observationStore }));
   app.route("/api/stream", streamRoutes({ db }));
+
+  // Open a directory in the system file explorer
+  app.post("/api/open-explorer", async (c) => {
+    const body = await c.req.json<{ path: string }>();
+    const dirPath = body.path;
+    if (!dirPath || typeof dirPath !== "string") {
+      return c.json({ error: "Missing path" }, 400);
+    }
+    if (!existsSync(dirPath)) {
+      return c.json({ error: "Path does not exist" }, 404);
+    }
+    const opener = process.platform === "darwin" ? "open" : "xdg-open";
+    execFile(opener, [dirPath], (err) => {
+      if (err) {
+        console.error("Failed to open explorer:", err.message);
+      }
+    });
+    return c.json({ ok: true });
+  });
 
   // Serve static dashboard HTML
   app.get("/", (c) => {

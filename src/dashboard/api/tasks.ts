@@ -14,7 +14,7 @@ export interface TaskRoutesDeps {
 /** Columns for the lightweight task list. Avoids needing rowToTask. */
 const LIST_COLUMNS = `id, title, state, sub_state, phase, priority, repo,
   llm_cost_usd, llm_tokens, created_at, started_at, completed_at,
-  last_transition_at, parent_id, children`;
+  last_transition_at, parent_id, children, workspace`;
 
 interface TaskListRow {
   id: string;
@@ -32,6 +32,7 @@ interface TaskListRow {
   last_transition_at: string;
   parent_id: string | null;
   children: string;
+  workspace: string | null;
 }
 
 function mapListRow(row: TaskListRow) {
@@ -40,6 +41,15 @@ function mapListRow(row: TaskListRow) {
     childrenCount = (JSON.parse(row.children) as unknown[]).length;
   } catch {
     /* empty */
+  }
+  let worktreePath: string | null = null;
+  if (row.workspace) {
+    try {
+      const ws = JSON.parse(row.workspace) as Record<string, unknown>;
+      worktreePath = (ws["worktree_path"] as string) ?? null;
+    } catch {
+      /* empty */
+    }
   }
   return {
     id: row.id,
@@ -57,6 +67,7 @@ function mapListRow(row: TaskListRow) {
     last_transition_at: row.last_transition_at,
     parent_id: row.parent_id,
     children_count: childrenCount,
+    worktree_path: worktreePath,
   };
 }
 

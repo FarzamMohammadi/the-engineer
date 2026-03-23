@@ -273,10 +273,11 @@ function buildTeamContactsSection(contacts: Person[]): string {
   for (const person of contacts) {
     const roles = person.roles.join(", ");
     const contactDetails = person.contacts.map((c) => `${c.channel}: ${c.handle}`).join(", ");
+    // Include person.id — this is the filename for outreach/*.txt files
     if (contactDetails) {
-      lines.push(`- ${person.name} (${roles}) — ${contactDetails}`);
+      lines.push(`- **${person.id}** — ${person.name} (${roles}) — ${contactDetails}`);
     } else {
-      lines.push(`- ${person.name} (${roles})`);
+      lines.push(`- **${person.id}** — ${person.name} (${roles})`);
     }
   }
 

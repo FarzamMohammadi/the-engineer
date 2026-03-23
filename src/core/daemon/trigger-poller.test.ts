@@ -3,7 +3,7 @@ import { createTestObserverFacade } from "../../../test/helpers/test-observer-fa
 import type { DaemonConfig } from "../../schemas/config.js";
 import { createTriggerPoller } from "./trigger-poller.js";
 import type { TriggerPollerContext } from "./types.js";
-import { type UnblockResolver, externalRefsMatch } from "./unblock-resolver.js";
+import { externalRefsMatch } from "./unblock-resolver.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,28 +101,20 @@ function makeTriggerPlugin(events: unknown[] = [makeTriggerEvent("key-1")]) {
   };
 }
 
-function createMockResolver(): UnblockResolver {
-  return {
-    tryUnblock: vi.fn().mockReturnValue({ unblocked: false, taskId: null, reason: "no_match" }),
-  };
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("TriggerPoller", () => {
   let ctx: TriggerPollerContext;
-  let resolver: UnblockResolver;
 
   beforeEach(() => {
     ctx = createMockContext();
-    resolver = createMockResolver();
   });
 
   it("creates a task from a trigger event", async () => {
     const trigger = makeTriggerPlugin();
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
 
     expect(ctx.taskEngine.createTask).toHaveBeenCalledWith(
@@ -145,7 +137,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([makeTriggerEvent("dup-key")]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
 
     // First poll — event should be processed
     await poller.poll(100_000);
@@ -161,7 +153,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([makeTriggerEvent("expire-key")]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
 
     // First poll
     await poller.poll(100_000);
@@ -176,7 +168,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin();
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
 
     await poller.poll(100_000);
     expect(trigger.poll).toHaveBeenCalledTimes(1);
@@ -195,7 +187,7 @@ describe("TriggerPoller", () => {
     trigger.poll.mockRejectedValueOnce(new Error("network error"));
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
 
     // First poll fails
     await poller.poll(100_000);
@@ -212,7 +204,7 @@ describe("TriggerPoller", () => {
     trigger.poll.mockRejectedValue(new Error("persistent failure"));
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
 
     // Fail 3 times (threshold is 3) with enough time between polls for backoff
     await poller.poll(100_000); // failure 1
@@ -240,7 +232,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
 
     // Success at t=100_000 — sets lastPoll to 100_000
     await poller.poll(100_000);
@@ -277,7 +269,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
 
     // Success at t=1_000_000 — sets lastPoll
     await poller.poll(1_000_000);
@@ -344,7 +336,7 @@ describe("TriggerPoller", () => {
       triggerB,
     ]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
 
     // Both should start before either ends (parallel)
@@ -358,7 +350,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([makeTriggerEvent("key-a"), makeTriggerEvent("key-b")]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
     expect(poller.getSeenKeyCount()).toBe(2);
 
@@ -375,7 +367,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([makeTriggerEvent("prio-key")]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
 
     const priorities = poller.drainNewBasePriorities();
@@ -386,7 +378,7 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([makeTriggerEvent("evt-key", "My new issue")]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
 
     const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
@@ -405,7 +397,7 @@ describe("TriggerPoller", () => {
   });
 
   it("handles no registered triggers gracefully", async () => {
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
     await expect(poller.poll(100_000)).resolves.toBeUndefined();
     expect(poller.getSeenKeyCount()).toBe(0);
     expect(poller.getTriggerFailures()).toEqual({});
@@ -424,73 +416,13 @@ describe("TriggerPoller", () => {
       successTrigger,
     ]);
 
-    const poller = createTriggerPoller(ctx, resolver);
+    const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
 
     // The successful trigger's event should still create a task
     expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
     // The failing trigger should be tracked
     expect(poller.getTriggerFailures()).toEqual(expect.objectContaining({ "fail-trigger": 1 }));
-  });
-
-  // ── UnblockResolver Delegation ──────────────────────────────────────────────
-
-  describe("unblock delegation", () => {
-    it("delegates to resolver when externalRef is parseable", async () => {
-      const trigger = makeTriggerPlugin([makeTriggerEvent("unblock-key")]);
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
-
-      const poller = createTriggerPoller(ctx, resolver);
-      await poller.poll(100_000);
-
-      expect(resolver.tryUnblock).toHaveBeenCalledWith({
-        by: "external_ref",
-        ref: { type: "github_issue", repo: "test/repo", number: 1 },
-        source: "test",
-      });
-    });
-
-    it("skips task creation when resolver returns unblocked", async () => {
-      (resolver.tryUnblock as ReturnType<typeof vi.fn>).mockReturnValue({
-        unblocked: true,
-        taskId: "blocked-1",
-        reason: null,
-      });
-
-      const trigger = makeTriggerPlugin([makeTriggerEvent("unblock-key")]);
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
-
-      const poller = createTriggerPoller(ctx, resolver);
-      await poller.poll(100_000);
-
-      expect(ctx.taskEngine.createTask).not.toHaveBeenCalled();
-    });
-
-    it("creates task when resolver returns not unblocked", async () => {
-      const trigger = makeTriggerPlugin([makeTriggerEvent("no-match-key")]);
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
-
-      const poller = createTriggerPoller(ctx, resolver);
-      await poller.poll(100_000);
-
-      // Resolver returns unblocked: false by default → create task
-      expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
-    });
-
-    it("does not call resolver when externalRef is null (non-parseable URL)", async () => {
-      const event = {
-        ...makeTriggerEvent("null-ref-key"),
-        external_ref: "not-a-github-url",
-      };
-      const trigger = makeTriggerPlugin([event]);
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
-
-      const poller = createTriggerPoller(ctx, resolver);
-      await poller.poll(100_000);
-
-      expect(resolver.tryUnblock).not.toHaveBeenCalled();
-      expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(1);
-    });
   });
 });
 

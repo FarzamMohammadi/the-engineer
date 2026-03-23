@@ -6,7 +6,6 @@ import { TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { TriggerPollerContext } from "./types.js";
-import type { UnblockResolver } from "./unblock-resolver.js";
 
 // ── TriggerPoller Interface ──────────────────────────────────────────────────
 
@@ -36,10 +35,7 @@ const MAX_BACKOFF_EXPONENT = 8;
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createTriggerPoller(
-  ctx: TriggerPollerContext,
-  unblockResolver: UnblockResolver,
-): TriggerPoller {
+export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   const { config, eventBus, registry, taskEngine, observer } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
@@ -131,18 +127,6 @@ export function createTriggerPoller(
     const externalRef = parsed
       ? toExternalRef(parsed.owner, parsed.repo, parsed.number, parsed.type)
       : null;
-
-    // Check if a blocked task matches — unblock instead of creating a duplicate
-    if (externalRef) {
-      const result = unblockResolver.tryUnblock({
-        by: "external_ref",
-        ref: externalRef,
-        source: event.source,
-      });
-      if (result.unblocked) {
-        return;
-      }
-    }
 
     // Create task: intake → queued
     const task = taskEngine.createTask({

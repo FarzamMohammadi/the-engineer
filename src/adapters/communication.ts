@@ -1,5 +1,6 @@
 import type {
   FormattedMessage,
+  InboundMessage,
   IssueOptions,
   IssueResult,
   IssueUpdates,
@@ -93,6 +94,21 @@ export abstract class CommunicationAdapter extends BaseAdapter {
 
   protected doStopListening(): Promise<void> {
     throw capabilityError(this.manifest.id, "receive", "stopListening");
+  }
+
+  /** Poll for new inbound messages on specific channels. Override if "receive" capability. */
+  async pollMessages(
+    channels: string[],
+    since: string,
+  ): Promise<{ messages: InboundMessage[]; cursor: string }> {
+    return wrapAsync(() => this.doPollMessages(channels, since));
+  }
+
+  protected doPollMessages(
+    _channels: string[],
+    _since: string,
+  ): Promise<{ messages: InboundMessage[]; cursor: string }> {
+    throw capabilityError(this.manifest.id, "receive", "pollMessages");
   }
 
   // ── Optional: State Sync (capability: "sync") ─────────────────────────────

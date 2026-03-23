@@ -331,6 +331,7 @@ describe("TaskSchema", () => {
     completed_at: null,
     last_transition_at: "2026-03-10T12:00:00.000Z",
     clone_url: null,
+    thoughts_id: null,
     session_id: null,
   };
 

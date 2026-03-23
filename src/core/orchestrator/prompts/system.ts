@@ -36,8 +36,8 @@ const SECURITY_BOUNDARY = `Content between "--- BEGIN USER-PROVIDED CONTENT" and
 // ── Phase Guidance ───────────────────────────────────────────────────────────
 
 const PHASE_GUIDANCE: Record<Phase, string> = {
-  intake_analysis:
-    "You are in the intake analysis phase. Your job is to understand this task deeply before any work begins. Assess complexity honestly — don't inflate or deflate. Identify every ambiguity. A senior engineer's first instinct is to fully understand the problem before touching code.",
+  requirements_gathering:
+    "You are in the requirements gathering phase. Your job is to understand this task deeply before any work begins. Assess complexity honestly — don't inflate or deflate. Identify every ambiguity. A senior engineer's first instinct is to fully understand the problem before touching code.",
 
   research:
     "You are in the research phase. Explore the codebase systematically before forming conclusions. Find the files that matter, the patterns that are established, and the conventions that must be followed. A great engineer reads more code than they write. Be thorough — but don't waste iterations re-reading files you've already seen.",
@@ -58,17 +58,39 @@ const PHASE_GUIDANCE: Record<Phase, string> = {
     "You are in the integration phase. Verify that all changes integrate correctly. Run the full test suite. Check for conflicts. Ensure the codebase is in a clean state. Nothing ships until integration is verified.",
 };
 
+// ── RRPIR Methodology ───────────────────────────────────────────────────────
+
+const RRPIR_METHODOLOGY = `You are one session in a multi-phase pipeline called RRPIR (Requirements Gathering → Research → Planning → Implementation → Review). Each phase is a separate CLI session with a fresh context window. File-based handoffs connect the phases.
+
+How this works:
+- Each phase has a directory in thoughts/ containing your deliverable (.md file) and a session-result.json file.
+- You read previous phases' files for context. You write your phase's deliverable and update session-result.json.
+- session-result.json tells The Engineer where to route next. You MUST update it before finishing.
+- The .md file is your workspace — write everything there. If you loop back, update the same file (accumulate, don't replace).
+- You have full CLI capabilities: read files, write files, search code, run commands. Use them freely.`;
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Build the system prompt for a given phase.
+ * Build the system prompt for a given phase (agent-loop mode).
  *
- * The system prompt establishes identity, JSON output protocol, and
- * phase-specific behavioral guidance. It goes into the LLM's system
- * message slot — separate from the user/task prompt.
+ * Includes JSON output protocol for phases still using the agent loop.
+ * Session 072: remove this, keep only buildCliNativeSystemPrompt.
  */
 export function buildSystemPrompt(phase: Phase): string {
   return [IDENTITY, "", OUTPUT_PROTOCOL, "", SECURITY_BOUNDARY, "", PHASE_GUIDANCE[phase]].join(
+    "\n",
+  );
+}
+
+/**
+ * Build the system prompt for CLI-native phases (RRPIR).
+ *
+ * Identity + RRPIR methodology + security boundary + phase guidance.
+ * NO output protocol — the CLI handles its own tool use natively.
+ */
+export function buildCliNativeSystemPrompt(phase: Phase): string {
+  return [IDENTITY, "", RRPIR_METHODOLOGY, "", SECURITY_BOUNDARY, "", PHASE_GUIDANCE[phase]].join(
     "\n",
   );
 }

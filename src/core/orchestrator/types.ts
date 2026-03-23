@@ -55,6 +55,10 @@ export interface PipelineState {
   traceId: string;
   sessionId: string;
   loopbackCount: number;
+  /** How many times we've looped between requirements ↔ research. */
+  requirementsLoopCount: number;
+  /** Path to the task's thoughts directory (e.g., "thoughts/2026-03-22-issue-42"). */
+  thoughtsDir: string | null;
   /** Cached repo context — gathered once at task start, refreshed after execution phase. */
   repoContext: RepoContext | null;
 }
@@ -88,7 +92,7 @@ export type ExecuteTaskResult =
 
 /** The standard 7-phase pipeline sequence. */
 export const PHASE_SEQUENCE: Phase[] = [
-  Phases.intake_analysis,
+  Phases.requirements_gathering,
   Phases.research,
   Phases.planning,
   Phases.execution,

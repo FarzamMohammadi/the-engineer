@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  FAST_PATH_INTAKE_DATA,
+  TRIVIAL_REQUIREMENTS_DATA,
   type TestOrchestratorHandle,
   createMockCheckpoint,
   createMockDispatch,
@@ -131,7 +131,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       const calls = handle.sessionMemory.createCheckpoint.mock.calls;
-      // First checkpoint (intake_analysis) should reference research
+      // First checkpoint (requirements_gathering) should reference research
       expect((calls[0]![0] as { nextAction: string }).nextAction).toContain("research");
       // Last checkpoint (integration) should say complete
       expect((calls[6]![0] as { nextAction: string }).nextAction).toContain("complete");
@@ -208,8 +208,8 @@ describe("Orchestrator", () => {
       const phaseCalls = handle.taskEngine.updateTaskField.mock.calls.filter(
         (call: unknown[]) => (call as string[])[1] === "phase",
       );
-      // 7 phase updates: 1 initial (intake_analysis) + 6 transitions (research through integration)
-      // Last phase (integration) doesn't trigger a transition, but initial set covers intake_analysis
+      // 7 phase updates: 1 initial (requirements_gathering) + 6 transitions (research through integration)
+      // Last phase (integration) doesn't trigger a transition, but initial set covers requirements_gathering
       expect(phaseCalls).toHaveLength(7);
       const phaseValues = phaseCalls.map((call: unknown[]) => (call as string[])[2]);
       expect(phaseValues).toEqual(PHASE_SEQUENCE);
@@ -294,7 +294,7 @@ describe("Orchestrator", () => {
       if (result.outcome === "completed") {
         // Should have 5 phase outputs (planning through integration)
         expect(result.phaseOutputs.size).toBe(5);
-        expect(result.phaseOutputs.has("intake_analysis")).toBe(false);
+        expect(result.phaseOutputs.has("requirements_gathering")).toBe(false);
         expect(result.phaseOutputs.has("research")).toBe(false);
         expect(result.phaseOutputs.has("planning")).toBe(true);
       }
@@ -336,24 +336,28 @@ describe("Orchestrator", () => {
 
   describe("safeParse failure handling", () => {
     it("handles invalid JSON gracefully with fallback output", async () => {
-      // Set first response to non-JSON
+      // Requirements gathering + research use CLI-native (file-based, content ignored).
+      // Planning (LLM calls 3+) uses agent loop — override ALL its iterations to return non-JSON.
+      // The agent loop exhausts max_iterations and returns empty phaseData → fallback output.
       handle.setAllPhaseResponses();
-      handle.setLlmResponseAtIndex(0, {} as Record<string, unknown>);
-      // Override the actionPipeline to return non-JSON content for first call
-      let callCount = 0;
+      let llmCallCount = 0;
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
-          callCount++;
-          if (callCount === 1 && input.details?.operation === "llm_infer") {
-            return {
-              outcome: "executed",
-              result: {
-                content: "This is not JSON at all",
-                cost_usd: null,
-                duration_ms: 100,
-                usage: null,
-              },
-            };
+          if (input.details?.operation === "llm_infer") {
+            llmCallCount++;
+            // LLM calls 3+ = planning phase and beyond (agent-loop phases)
+            // Return non-JSON for all planning iterations so agent loop exhausts retries
+            if (llmCallCount >= 3 && llmCallCount <= 12) {
+              return {
+                outcome: "executed",
+                result: {
+                  content: "This is not JSON at all",
+                  cost_usd: null,
+                  duration_ms: 100,
+                  usage: null,
+                },
+              };
+            }
           }
           const result = await input.executeFn();
           return { outcome: "executed", result };
@@ -366,9 +370,10 @@ describe("Orchestrator", () => {
       // Pipeline should continue despite parse failure
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        const intakeOutput = result.phaseOutputs.get("intake_analysis");
-        expect(intakeOutput?.confidence).toBe("low");
-        expect(intakeOutput?.open_questions.length).toBeGreaterThan(0);
+        // Planning phase gets fallback output (low confidence) from agent loop parse failure
+        const planningOutput = result.phaseOutputs.get("planning");
+        expect(planningOutput?.confidence).toBe("low");
+        expect(planningOutput?.open_questions.length).toBeGreaterThan(0);
       }
     });
 
@@ -401,7 +406,7 @@ describe("Orchestrator", () => {
 
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        const intakeOutput = result.phaseOutputs.get("intake_analysis");
+        const intakeOutput = result.phaseOutputs.get("requirements_gathering");
         // Agent loop retries successfully, so confidence is high
         expect(intakeOutput?.confidence).toBe("high");
       }
@@ -409,7 +414,10 @@ describe("Orchestrator", () => {
 
     it("fallback output when all LLM responses are unparseable", async () => {
       // Override ALL LLM calls to return non-JSON — agent loop exhausts retries
-      // and returns empty phaseData, which fails schema validation → fallback output
+      // and returns empty phaseData, which fails schema validation → fallback output.
+      // CLI-native phases (requirements_gathering, research) ignore content and use
+      // file-based routing, so they get "high" confidence from defaults.
+      // Agent-loop phases (planning onwards) get "low" confidence fallback.
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           if (input.details?.operation === "llm_infer") {
@@ -432,11 +440,15 @@ describe("Orchestrator", () => {
       const result = await handle.orchestrator.executeTask(dispatch);
 
       if (result.outcome === "completed") {
-        const intakeOutput = result.phaseOutputs.get("intake_analysis");
-        // All LLM calls failed → fallback with low confidence and default data
-        expect(intakeOutput?.confidence).toBe("low");
-        expect(intakeOutput?.data).toHaveProperty("fast_path", false);
-        expect(intakeOutput?.data).toHaveProperty("complexity", "moderate");
+        // CLI-native phases return file-based output with "high" confidence
+        const reqOutput = result.phaseOutputs.get("requirements_gathering");
+        expect(reqOutput?.confidence).toBe("high");
+        expect(reqOutput?.data).toHaveProperty("signal_status");
+        expect(reqOutput?.data).toHaveProperty("deliverable_path");
+
+        // Agent-loop phases get fallback with "low" confidence
+        const planningOutput = result.phaseOutputs.get("planning");
+        expect(planningOutput?.confidence).toBe("low");
       }
     });
   });
@@ -480,38 +492,34 @@ describe("Orchestrator", () => {
 
   // ── Fast-Path ──────────────────────────────────────────────────────────────
 
-  describe("fast-path", () => {
-    it("skips research, planning, demo_prep when intake returns fast_path: true", async () => {
+  describe("trivial tasks (no fast-path skip)", () => {
+    it("runs all 7 phases even for trivial requirements_gathering output", async () => {
       handle.setAllPhaseResponses();
-      // Override first LLM response (intake) to return fast_path: true
-      handle.setLlmResponseAtIndex(0, FAST_PATH_INTAKE_DATA);
+      // Override first LLM response (intake) with trivial data — pipeline still runs all phases
+      handle.setLlmResponseAtIndex(0, TRIVIAL_REQUIREMENTS_DATA);
 
       const dispatch = createMockDispatch();
       const result = await handle.orchestrator.executeTask(dispatch);
 
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        // Should only have: intake_analysis, execution, self_review
-        expect(result.phaseOutputs.size).toBe(3);
-        expect(result.phaseOutputs.has("intake_analysis")).toBe(true);
-        expect(result.phaseOutputs.has("execution")).toBe(true);
-        expect(result.phaseOutputs.has("self_review")).toBe(true);
-        expect(result.phaseOutputs.has("research")).toBe(false);
-        expect(result.phaseOutputs.has("planning")).toBe(false);
-        expect(result.phaseOutputs.has("demo_prep")).toBe(false);
-        expect(result.phaseOutputs.has("integration")).toBe(false);
+        // All 7 phases run — no fast-path skipping in current architecture
+        expect(result.phaseOutputs.size).toBe(7);
+        for (const phase of PHASE_SEQUENCE) {
+          expect(result.phaseOutputs.has(phase)).toBe(true);
+        }
       }
     });
 
-    it("fast-path produces fewer checkpoints", async () => {
+    it("trivial task produces checkpoints for all 7 phases", async () => {
       handle.setAllPhaseResponses();
-      handle.setLlmResponseAtIndex(0, FAST_PATH_INTAKE_DATA);
+      handle.setLlmResponseAtIndex(0, TRIVIAL_REQUIREMENTS_DATA);
 
       const dispatch = createMockDispatch();
       await handle.orchestrator.executeTask(dispatch);
 
-      // 3 phases = 3 checkpoints
-      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(3);
+      // 7 phases = 7 checkpoints (no fast-path reduction)
+      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(7);
     });
   });
 
@@ -574,7 +582,7 @@ describe("Orchestrator", () => {
 
       expect(result.outcome).toBe("error");
       if (result.outcome === "error") {
-        expect(result.phase).toBe("intake_analysis");
+        expect(result.phase).toBe("requirements_gathering");
       }
     });
 
@@ -813,7 +821,7 @@ describe("Orchestrator", () => {
   // ── Feedback Loop (resolveStartState, rework push, auto-merge) ──────────
 
   describe("resolveStartState — feedback rework", () => {
-    it("starts from intake_analysis for task with unapplied feedback", async () => {
+    it("starts from requirements_gathering for task with unapplied feedback", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch({
         task: {
@@ -830,11 +838,11 @@ describe("Orchestrator", () => {
 
       // Should start from intake (index 0), run full pipeline
       expect(result.outcome).toBe("completed");
-      // Verify first phase was intake_analysis (task.phase set to intake_analysis first)
+      // Verify first phase was requirements_gathering (task.phase set to requirements_gathering first)
       const phaseUpdates = handle.taskEngine.updateTaskField.mock.calls
         .filter((c: unknown[]) => c[1] === "phase")
         .map((c: unknown[]) => c[2]);
-      expect(phaseUpdates[0]).toBe("intake_analysis");
+      expect(phaseUpdates[0]).toBe("requirements_gathering");
     });
   });
 

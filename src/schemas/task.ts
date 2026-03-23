@@ -197,6 +197,8 @@ export const TaskSchema = z.object({
   // Workspace
   repo: z.string().nullable(),
   clone_url: z.string().nullable(),
+  /** Trigger-provided identifier for the thoughts/ directory (e.g., "issue-42"). */
+  thoughts_id: z.string().nullable(),
   workspace: TaskWorkspaceSchema.nullable(),
 
   // Review

@@ -229,6 +229,7 @@ describe("table structure", () => {
       "child_summaries",
       "repo",
       "clone_url",
+      "thoughts_id",
       "workspace",
       "review",
       "blocked",

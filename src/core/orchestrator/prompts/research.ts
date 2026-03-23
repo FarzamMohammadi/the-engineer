@@ -1,14 +1,6 @@
-import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import {
-  buildTaskBrief,
-  formatActionReference,
-  formatKnowledge,
-  formatOutputSchema,
-  formatPriorPhaseOutput,
-  section,
-} from "./format.js";
+import { buildTaskBrief, formatKnowledge, section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,81 +11,164 @@ export interface ResearchPromptContext {
     description: string | null;
   };
   repoContext: RepoContext | null;
-  intakeOutput: Record<string, unknown> | null;
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
+  /** Full path to the thoughts directory, e.g. "thoughts/2026-03-22-issue-42" */
+  thoughtsDir: string;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Build the initial prompt for the research phase.
+ * Build the prompt for the research phase (CLI-native RRPIR).
  *
  * Pure function: context in, prompt string out.
  */
 export function buildResearchPrompt(ctx: ResearchPromptContext): string {
   const parts: string[] = [];
 
-  // 1. Task Brief
-  parts.push(buildTaskBrief(ctx.task));
+  // 1. How The Engineer Works
+  parts.push(buildRrpirOverview(ctx.thoughtsDir));
 
-  // 2. Intake Results
-  parts.push(buildIntakeResultsSection(ctx.intakeOutput));
+  // 2. What Happened Before You
+  parts.push(buildPriorContext(ctx.thoughtsDir));
 
-  // 3. Repository Overview
-  parts.push(buildRepoOverview(ctx.repoContext));
+  // 3. What YOU Need To Do
+  parts.push(buildResearchInstructions(ctx.thoughtsDir));
 
-  // 4. Known Knowledge
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
-  }
+  // 4. Where To Put Your Work
+  parts.push(buildDeliverableInstructions(ctx.thoughtsDir));
 
-  // 5. Phase Instructions
-  parts.push(buildResearchInstructions());
-
-  // 6. Research Strategy (adapts to complexity)
-  parts.push(buildResearchStrategy(ctx.intakeOutput));
-
-  // 7. Iteration Budget
-  parts.push(
-    section(
-      "Iteration Budget",
-      "You have up to 15 iterations. Be systematic and efficient.\n\nDon't re-read files you've already seen. Use search_content to find patterns across the codebase. Use search_files to locate files by name. Use run_command for git operations (e.g., git log for a specific file's history).",
-    ),
-  );
-
-  // 8. Output Schema
-  parts.push(section("Output Requirements", formatOutputSchema(Phases.research)));
-
-  // 9. Action Reference
-  parts.push(
-    section(
-      "Actions",
-      formatActionReference(["read_file", "search_files", "search_content", "run_command", "done"]),
-    ),
-  );
+  // 5. The Task Context
+  parts.push(buildTaskContextSection(ctx));
 
   return parts.join("\n\n");
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
-function buildIntakeResultsSection(intakeOutput: Record<string, unknown> | null): string {
-  if (!intakeOutput) {
-    return section(
-      "Intake Analysis",
-      "No intake analysis available. Proceed with research based on the task description.",
-    );
+function buildRrpirOverview(thoughtsDir: string): string {
+  return section(
+    "How The Engineer Works",
+    [
+      "You are running as part of The Engineer, an autonomous software engineering agent. The Engineer uses RRPIR methodology — Requirements Gathering, Research, Planning, Implementation, Review. Each phase is a separate CLI session. You are the Research session.",
+      "",
+      "You have full CLI capabilities: read files, write files, search code, run commands. Use them freely to explore the codebase. You are researching — do NOT make code changes or plan solutions.",
+      "",
+      `Your deliverable goes in \`${thoughtsDir}/research/research.md\`. After you finish, update \`${thoughtsDir}/research/session-result.json\` to tell The Engineer where to go next.`,
+    ].join("\n"),
+  );
+}
+
+function buildPriorContext(thoughtsDir: string): string {
+  return section(
+    "What Happened Before You",
+    [
+      "Requirements were gathered in the previous phase.",
+      "",
+      `Read \`${thoughtsDir}/requirements/requirements.md\` for full task context and \`${thoughtsDir}/requirements/session-result.json\` for the previous phase's status.`,
+      "",
+      "Start by reading the requirements file — it contains the task description, gathered context, any Q&A with stakeholders, and an assessment of readiness.",
+    ].join("\n"),
+  );
+}
+
+function buildResearchInstructions(thoughtsDir: string): string {
+  return section(
+    "What YOU Need To Do",
+    [
+      "Research the codebase to build a complete picture of what this task involves. You are a senior engineer studying the code before writing a single line.",
+      "",
+      `1. Read \`${thoughtsDir}/requirements/requirements.md\` first for full task context.`,
+      "",
+      "2. Explore the codebase systematically. Document what exists, how it works, what patterns to follow:",
+      "   - Map the relevant files: find every file that will need to change, plus files that provide critical context (interfaces, types, tests, configs).",
+      "   - Identify conventions: coding style, naming patterns, test patterns (file location, naming, assertion style), directory structure, import/export patterns, error handling.",
+      "   - Identify dependencies: external packages involved, internal modules that interact with target code, shared types/schemas/utilities.",
+      "   - Look at existing tests for the relevant modules. Understand the testing approach so new tests follow the same patterns.",
+      "   - Check configuration, build setup, and CI/CD patterns that might affect changes.",
+      "",
+      "3. Do NOT make code changes. Do NOT plan solutions. Research only.",
+      "",
+      `4. If you discover you need more information from people that was not covered in requirements gathering, document it in research.md and set next_phase to "requirements_gathering" in session-result.json.`,
+      "",
+      `5. Write your findings to \`${thoughtsDir}/research/research.md\`. Use the template provided in the deliverable section.`,
+    ].join("\n"),
+  );
+}
+
+function buildDeliverableInstructions(thoughtsDir: string): string {
+  return section(
+    "Where To Put Your Work",
+    [
+      `Deliverable: \`${thoughtsDir}/research/research.md\``,
+      `Session result: \`${thoughtsDir}/research/session-result.json\``,
+      "",
+      "Update session-result.json with:",
+      "```json",
+      "{",
+      '  "status": "ready" or "need_more_info",',
+      '  "next_phase": "planning" (if ready) or "requirements_gathering" (if need more info),',
+      '  "summary": "<one-line summary of your research findings>"',
+      "}",
+      "```",
+      "",
+      "Use this template for research.md:",
+      "",
+      "```markdown",
+      "# Research: [Task Title]",
+      "",
+      "## Task Context",
+      "[Brief — full details in requirements.md]",
+      "",
+      "## Codebase Analysis",
+      "[What exists, how it works, relevant architecture]",
+      "",
+      "## Relevant Files",
+      "- `path/to/file.ts` — [why relevant, what it does]",
+      "",
+      "## Patterns & Conventions",
+      "[Coding style, test patterns, directory structure, naming]",
+      "",
+      "## Dependencies & Integration Points",
+      "[What this change touches, what depends on it, ripple effects]",
+      "",
+      "## Complexity Assessment",
+      "[Simple/moderate/complex — informs planning depth]",
+      "",
+      "## Open Questions",
+      "[Anything still unclear after research]",
+      "",
+      "## Key Findings",
+      "[Most important discoveries that should guide planning]",
+      "```",
+    ].join("\n"),
+  );
+}
+
+function buildTaskContextSection(ctx: ResearchPromptContext): string {
+  const parts: string[] = [];
+
+  // Task brief
+  parts.push(buildTaskBrief(ctx.task));
+
+  // Repository overview
+  parts.push(buildRepoOverview(ctx.repoContext));
+
+  // Knowledge
+  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
+  if (knowledge) {
+    parts.push(knowledge);
   }
-  return section("Intake Analysis", formatPriorPhaseOutput(Phases.intake_analysis, intakeOutput));
+
+  return parts.join("\n\n");
 }
 
 function buildRepoOverview(repoContext: RepoContext | null): string {
   if (!repoContext) {
     return section(
       "Repository",
-      "No repository context available. Use search actions to explore the codebase.",
+      "No repository context available. Explore the codebase yourself using search and read commands.",
     );
   }
 
@@ -111,8 +186,8 @@ function buildRepoOverview(repoContext: RepoContext | null): string {
     parts.push("", "### File Structure", "", repoContext.directoryTree);
   }
 
-  // README omitted in research — the LLM already saw it in intake.
-  // Recent commits included for context on recent changes.
+  // README omitted in research — the CLI already has access and requirements.md
+  // captures the relevant context. Recent commits included for change history.
   if (repoContext.recentCommits) {
     parts.push("", "### Recent Commits", "", repoContext.recentCommits);
   }
@@ -143,65 +218,4 @@ function buildKnowledgeSection(
   }
 
   return section("Known Context", parts.join("\n"));
-}
-
-function buildResearchInstructions(): string {
-  return section(
-    "Instructions",
-    [
-      "Research the codebase to build a complete picture of what this task involves.",
-      "",
-      "1. Start from the ambiguities identified in intake. If requirements are unclear, note what needs human clarification — but don't block on it. Gather what you can.",
-      "",
-      "2. Map the relevant files: find every file that will need to change, plus files that provide critical context (interfaces, types, tests, configs).",
-      "",
-      "3. Identify conventions by looking at existing similar code:",
-      "   - Coding style and naming patterns",
-      "   - Test patterns (test file location, naming, assertion style)",
-      "   - Directory structure conventions",
-      "   - Import/export patterns",
-      "   - Error handling patterns",
-      "",
-      "4. Identify dependencies:",
-      "   - External packages involved in the affected area",
-      "   - Internal modules that interact with the target code",
-      "   - Shared types, schemas, or utilities that must be respected",
-      "",
-      "5. Look at existing tests for the relevant modules. Understand the testing approach so new tests follow the same patterns.",
-      "",
-      "6. Pay attention to configuration, build setup, and any CI/CD patterns that might affect your changes.",
-    ].join("\n"),
-  );
-}
-
-function buildResearchStrategy(intakeOutput: Record<string, unknown> | null): string {
-  const complexity = (intakeOutput?.["complexity"] as string) ?? "moderate";
-
-  if (complexity === "trivial" || complexity === "simple") {
-    return section(
-      "Research Strategy",
-      "This task has low complexity. Focus on the single file or area involved. 2-3 file reads should suffice. Identify the file to change, its test file, and any types/interfaces it uses. Don't over-research simple tasks.",
-    );
-  }
-
-  if (complexity === "complex" || complexity === "epic") {
-    return section(
-      "Research Strategy",
-      [
-        "This task has high complexity. Use a systematic approach:",
-        "1. Start with the directory structure to orient yourself.",
-        "2. Read the key files in the affected area.",
-        "3. Trace dependencies — what does the target code import? What imports it?",
-        "4. Read test files for the affected modules.",
-        "5. Search for related patterns across the codebase (search_content).",
-        "6. Check for related configuration or build setup.",
-      ].join("\n"),
-    );
-  }
-
-  // Moderate (default)
-  return section(
-    "Research Strategy",
-    "Read the target files, their test files, and their imports. Search for related patterns if the task touches shared code. Balance thoroughness with efficiency — you have 15 iterations, use them to build a complete picture without redundant reads.",
-  );
 }

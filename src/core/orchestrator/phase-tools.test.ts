@@ -3,7 +3,7 @@ import type { Phase } from "../../schemas/orchestrator.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
 
 const ALL_PHASES: Phase[] = [
-  "intake_analysis",
+  "requirements_gathering",
   "research",
   "planning",
   "execution",
@@ -26,7 +26,12 @@ describe("getPhaseToolConfig", () => {
   });
 
   it("read-only phases do not allow write_file or edit_file", () => {
-    const readOnlyPhases: Phase[] = ["intake_analysis", "research", "planning", "self_review"];
+    const readOnlyPhases: Phase[] = [
+      "requirements_gathering",
+      "research",
+      "planning",
+      "self_review",
+    ];
     for (const phase of readOnlyPhases) {
       const config = getPhaseToolConfig(phase);
       expect(config.allowed_actions).not.toContain("write_file");

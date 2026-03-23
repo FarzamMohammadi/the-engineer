@@ -222,13 +222,11 @@ export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 // ── Orchestrator Config ─────────────────────────────────────────────────────────
 // Loaded from orchestrator.yaml. Startup-only — not hot-reloadable.
 
-export const FastPathConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  max_files: z.number().int().positive().default(2),
-  skip_demo: z.boolean().default(true),
-  max_estimated_minutes: z.number().int().positive().default(30),
+export const RrpirConfigSchema = z.object({
+  max_requirements_loops: z.number().int().positive().default(5),
+  include_thoughts_in_pr: z.boolean().default(true),
 });
-export type FastPathConfig = z.infer<typeof FastPathConfigSchema>;
+export type RrpirConfig = z.infer<typeof RrpirConfigSchema>;
 
 export const QuietHoursConfigSchema = z.object({
   enabled: z.boolean().default(false),
@@ -256,7 +254,6 @@ export const NotificationConfigSchema = z.object({
   batch_window_ms: z.number().int().positive().default(120_000),
   quiet_hours: QuietHoursConfigSchema.default({}),
   digest: DigestConfigSchema.default({}),
-  fast_path_collapse: z.boolean().default(true),
 });
 export type NotificationConfig = z.infer<typeof NotificationConfigSchema>;
 
@@ -293,7 +290,7 @@ export const JournalConfigSchema = z.object({
 export type JournalConfig = z.infer<typeof JournalConfigSchema>;
 
 export const OrchestratorConfigSchema = z.object({
-  fast_path: FastPathConfigSchema.default({}),
+  rrpir: RrpirConfigSchema.default({}),
   notification: NotificationConfigSchema.default({}),
   question_batching: QuestionBatchingConfigSchema.default({}),
   decomposition: DecompositionConfigSchema.default({}),

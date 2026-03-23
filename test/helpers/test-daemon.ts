@@ -365,6 +365,7 @@ export function createTestTriggerEvent(overrides?: Partial<TriggerEvent>): Trigg
     repo: "test/repo",
     clone_url: "https://github.com/test/repo.git",
     metadata: null,
+    thoughts_id: "test-1",
     ...overrides,
   };
 }

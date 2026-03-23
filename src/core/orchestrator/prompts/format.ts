@@ -19,10 +19,10 @@ const ACTION_DESCRIPTIONS: Record<string, string> = {
 // ── Output Schema Descriptions ───────────────────────────────────────────────
 
 const OUTPUT_SCHEMAS: Record<Phase, string> = {
-  intake_analysis: [
+  requirements_gathering: [
     "Required fields in your done result:",
     '- complexity: one of "trivial", "simple", "moderate", "complex", "epic"',
-    "- estimated_phases: array of phase names this task needs (from: intake_analysis, research, planning, execution, self_review, demo_prep, integration)",
+    "- estimated_phases: array of phase names this task needs (from: requirements_gathering, research, planning, execution, self_review, demo_prep, integration)",
     "- ambiguities: array of strings — unclear requirements or missing information",
     "- fast_path: boolean — true only if this is truly trivial (single file, no ambiguity, no new deps, no architectural changes)",
     "- decomposition_likely: boolean — true if the task should be split into subtasks",
@@ -87,8 +87,8 @@ const OUTPUT_SCHEMAS: Record<Phase, string> = {
 // ── Prior Phase Output Formatters ────────────────────────────────────────────
 
 const PHASE_OUTPUT_FORMATTERS: Partial<Record<Phase, (data: Record<string, unknown>) => string>> = {
-  intake_analysis: (data) => {
-    const lines = ["Intake Analysis Results:"];
+  requirements_gathering: (data) => {
+    const lines = ["Requirements Gathering Results:"];
     if (data["complexity"]) {
       lines.push(`- Complexity: ${String(data["complexity"])}`);
     }

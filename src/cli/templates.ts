@@ -78,19 +78,16 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # All fields are optional — defaults shown as comments
 # Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
-# --- Fast path (trivial task shortcut) ---
-# fast_path:
-#   enabled: true                     # Enable fast-path for trivial tasks
-#   max_files: 2                      # Max files changed to qualify
-#   skip_demo: true                   # Skip demo prep for fast-path tasks
-#   max_estimated_minutes: 30         # Max estimated time to qualify
+# --- RRPIR methodology ---
+# rrpir:
+#   max_requirements_loops: 5         # Max requirement-gathering loops (default: 5)
+#   include_thoughts_in_pr: true      # Include thoughts in PR description (default: true)
 
 # --- Notifications ---
 # notification:
 #   milestone_based: true             # Notify only on milestones (not every step)
 #   suppress_window_ms: "5m"          # Suppress duplicate notifications (default: 5m)
 #   batch_window_ms: "2m"             # Batch rapid notifications (default: 2m)
-#   fast_path_collapse: true          # Collapse fast-path to single notification
 #   quiet_hours:
 #     enabled: false
 #     start: "22:00"
@@ -410,19 +407,16 @@ export const EXAMPLE_ORCHESTRATOR = `# ┌────────────�
 # │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
-# ── Fast Path (trivial task shortcut) ────────────────────────────────────────
-fast_path:
-  enabled: true                           # Enable fast-path for trivial tasks (default: true)
-  max_files: 2                            # Max files changed to qualify (default: 2)
-  skip_demo: true                         # Skip demo prep for fast-path (default: true)
-  max_estimated_minutes: 30               # Max estimated time to qualify (default: 30)
+# ── RRPIR Methodology ────────────────────────────────────────────────────────
+rrpir:
+  max_requirements_loops: 5               # Max requirement-gathering loops (default: 5)
+  include_thoughts_in_pr: true            # Include thoughts in PR description (default: true)
 
 # ── Notifications ────────────────────────────────────────────────────────────
 notification:
   milestone_based: true                   # Notify only on milestones (default: true)
   suppress_window_ms: "5m"                # Suppress duplicate notifications (default: 5m)
   batch_window_ms: "2m"                   # Batch rapid notifications (default: 2m)
-  fast_path_collapse: true                # Collapse fast-path to single notification (default: true)
   quiet_hours:
     enabled: false                        # Enable quiet hours (default: false)
     start: "22:00"                        # Quiet period start time (default: "22:00")

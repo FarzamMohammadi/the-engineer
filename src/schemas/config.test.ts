@@ -11,7 +11,6 @@ import {
   DecompositionConfigSchema,
   DemoConfigSchema,
   DigestConfigSchema,
-  FastPathConfigSchema,
   JournalConfigSchema,
   MergePolicySchema,
   MultiRepoConfigSchema,
@@ -23,6 +22,7 @@ import {
   QuestionBatchingConfigSchema,
   QuietHoursConfigSchema,
   ResponseTimeoutSchema,
+  RrpirConfigSchema,
   SafetyConfigSchema,
   ScopeBoundariesSchema,
   TimeoutStageSchema,
@@ -94,13 +94,11 @@ describe("DaemonConfigSchema", () => {
 
 // ── Orchestrator Config ─────────────────────────────────────────────────────────
 
-describe("FastPathConfigSchema", () => {
+describe("RrpirConfigSchema", () => {
   it("produces valid defaults from empty input", () => {
-    const config = FastPathConfigSchema.parse({});
-    expect(config.enabled).toBe(true);
-    expect(config.max_files).toBe(2);
-    expect(config.skip_demo).toBe(true);
-    expect(config.max_estimated_minutes).toBe(30);
+    const config = RrpirConfigSchema.parse({});
+    expect(config.max_requirements_loops).toBe(5);
+    expect(config.include_thoughts_in_pr).toBe(true);
   });
 });
 
@@ -131,7 +129,6 @@ describe("NotificationConfigSchema", () => {
     expect(config.milestone_based).toBe(true);
     expect(config.suppress_window_ms).toBe(300_000);
     expect(config.batch_window_ms).toBe(120_000);
-    expect(config.fast_path_collapse).toBe(true);
     expect(config.quiet_hours.enabled).toBe(false);
     expect(config.digest.enabled).toBe(false);
   });
@@ -182,7 +179,7 @@ describe("JournalConfigSchema", () => {
 describe("OrchestratorConfigSchema", () => {
   it("produces valid config from empty input with all nested defaults", () => {
     const config = OrchestratorConfigSchema.parse({});
-    expect(config.fast_path.enabled).toBe(true);
+    expect(config.rrpir.max_requirements_loops).toBe(5);
     expect(config.notification.milestone_based).toBe(true);
     expect(config.question_batching.enabled).toBe(true);
     expect(config.decomposition.auto_threshold_ms).toBe(14_400_000);
@@ -193,10 +190,10 @@ describe("OrchestratorConfigSchema", () => {
 
   it("allows partial nested override", () => {
     const config = OrchestratorConfigSchema.parse({
-      fast_path: { max_files: 5 },
+      rrpir: { max_requirements_loops: 10 },
     });
-    expect(config.fast_path.max_files).toBe(5);
-    expect(config.fast_path.enabled).toBe(true);
+    expect(config.rrpir.max_requirements_loops).toBe(10);
+    expect(config.rrpir.include_thoughts_in_pr).toBe(true);
     expect(config.notification.milestone_based).toBe(true);
   });
 });

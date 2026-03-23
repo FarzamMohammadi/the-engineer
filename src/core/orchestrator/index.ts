@@ -144,7 +144,7 @@ export class Orchestrator {
     );
 
     // Build phase handler registry from extracted phase-handlers module
-    this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.llmCaller));
+    this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.llmCaller, this.ctx));
   }
 
   /**
@@ -194,10 +194,18 @@ export class Orchestrator {
     const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath, this.ctx.observer);
 
+    // thoughts_id comes from the trigger plugin via the task — Core never derives it
+    const thoughtsId = dispatch.task.thoughts_id ?? null;
+    const thoughtsDir = thoughtsId
+      ? `thoughts/${new Date().toISOString().slice(0, 10)}-${thoughtsId}`
+      : null;
+
     const state: PipelineState = {
       traceId,
       sessionId,
       loopbackCount: 0,
+      requirementsLoopCount: 0,
+      thoughtsDir,
       repoContext,
     };
 

@@ -179,6 +179,7 @@ describe("TriggerEventSchema", () => {
     body: "The dark mode toggle doesn't work",
     repo: "owner/repo",
     clone_url: "https://github.com/owner/repo.git",
+    thoughts_id: "issue-47",
     metadata: { labels: ["bug"] },
   };
 

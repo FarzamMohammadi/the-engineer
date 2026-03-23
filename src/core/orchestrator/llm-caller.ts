@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { ZodType } from "zod";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import type { ToolAdapter } from "../../adapters/tool.js";
@@ -5,12 +7,12 @@ import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import {
   DemoPrepOutputSchema,
   ExecutionOutputSchema,
-  IntakeAnalysisOutputSchema,
   IntegrationOutputSchema,
   type Phase,
   type PhaseOutput,
   Phases,
   PlanningOutputSchema,
+  RequirementsGatheringOutputSchema,
   ResearchOutputSchema,
   SelfReviewOutputSchema,
 } from "../../schemas/orchestrator.js";
@@ -20,19 +22,40 @@ import { executeAction as executeAgentAction } from "./action-executor.js";
 import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { LlmCallRejectedError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
 import { getPhaseToolConfig } from "./phase-tools.js";
+import { isTemplateFilled, readSessionResult } from "./session-result.js";
 import { type OrchestratorContext, PHASE_SEQUENCE, type PipelineState } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /** Phase-specific Zod schemas for output validation. */
 const PHASE_OUTPUT_SCHEMAS: Record<Phase, ZodType> = {
-  [Phases.intake_analysis]: IntakeAnalysisOutputSchema,
+  [Phases.requirements_gathering]: RequirementsGatheringOutputSchema,
   [Phases.research]: ResearchOutputSchema,
   [Phases.planning]: PlanningOutputSchema,
   [Phases.execution]: ExecutionOutputSchema,
   [Phases.self_review]: SelfReviewOutputSchema,
   [Phases.demo_prep]: DemoPrepOutputSchema,
   [Phases.integration]: IntegrationOutputSchema,
+};
+
+/** Map phase → subdirectory name inside the thoughts/ directory. */
+const PHASE_DIR_MAP: Partial<Record<Phase, string>> = {
+  [Phases.requirements_gathering]: "requirements",
+  [Phases.research]: "research",
+  [Phases.planning]: "planning",
+  [Phases.execution]: "implementation",
+  [Phases.self_review]: "review",
+  [Phases.demo_prep]: "demo-prep",
+  [Phases.integration]: "integration",
+};
+
+/** Map phase → expected .md deliverable filename. */
+const PHASE_DELIVERABLE_MAP: Partial<Record<Phase, string>> = {
+  [Phases.requirements_gathering]: "requirements.md",
+  [Phases.research]: "research.md",
+  [Phases.planning]: "plan.md",
+  [Phases.self_review]: "requirements-check.md",
+  [Phases.demo_prep]: "pr-description.md",
 };
 
 /** Maximum LLM retry attempts for transient failures. */
@@ -65,13 +88,22 @@ export function isRetryableError(error: unknown): boolean {
 export interface LlmCaller {
   /** Call LLM through ActionPipeline. Throws on rejection or no plugin. */
   callLlm(prompt: string, taskId: string, systemPrompt?: string | null): Promise<InferenceResult>;
-  /** Run a phase through the agent loop (multi-turn LLM + tool execution). */
+  /** Run a phase through the agent loop (multi-turn LLM + tool execution). Session 072: remove. */
   runPhaseWithAgentLoop(
     phase: Phase,
     taskId: string,
     systemPrompt: string,
     initialPrompt: string,
     state: PipelineState,
+  ): Promise<PhaseOutput>;
+  /** Run a phase via CLI-native invocation. Single CLI call, file-based routing. */
+  runPhaseWithCli(
+    phase: Phase,
+    taskId: string,
+    systemPrompt: string,
+    prompt: string,
+    state: PipelineState,
+    thoughtsDir: string,
   ): Promise<PhaseOutput>;
   /** Emit cost.incurred event from inference result. */
   emitCostIncurred(taskId: string, result: InferenceResult): void;
@@ -299,19 +331,19 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
   function getPhaseDefaults(phase: Phase): Record<string, unknown> {
     const defaults: Record<Phase, Record<string, unknown>> = {
-      [Phases.intake_analysis]: {
-        complexity: "moderate",
-        estimated_phases: [...PHASE_SEQUENCE],
-        ambiguities: [],
-        fast_path: false,
-        decomposition_likely: false,
+      [Phases.requirements_gathering]: {
+        deliverable_path: "",
+        signal_status: "ready",
+        contact: null,
+        question: null,
+        assessment: null,
       },
       [Phases.research]: {
-        relevant_files: [],
-        relevant_modules: [],
-        conventions: [],
-        existing_patterns: [],
-        dependencies: [],
+        deliverable_path: "",
+        signal_status: "ready",
+        contact: null,
+        question: null,
+        complexity_hint: null,
       },
       [Phases.planning]: {
         approach: "Unable to generate plan from LLM output",
@@ -450,9 +482,135 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     return validateLoopResult(phase, taskId, loopResult);
   }
 
+  /**
+   * Run a phase via CLI-native invocation (RRPIR).
+   *
+   * Single CLI call → read session-result.json → validate → continue-retry if needed.
+   */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: phase lifecycle with observability, cost tracking, continue-retry, and fallback
+  async function runPhaseWithCli(
+    phase: Phase,
+    taskId: string,
+    systemPrompt: string,
+    prompt: string,
+    state: PipelineState,
+    thoughtsDir: string,
+  ): Promise<PhaseOutput> {
+    const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
+    if (!worktreePath) {
+      throw new WorkspaceNotReadyError(taskId);
+    }
+
+    const phaseSubDir = PHASE_DIR_MAP[phase];
+    const phaseDir = phaseSubDir ? path.join(worktreePath, thoughtsDir, phaseSubDir) : null;
+    const { traceId, sessionId } = state;
+
+    // ── Observability span ────────────────────────────────────────────────
+    const phaseSpan =
+      ctx.observationStore && traceId && sessionId
+        ? ctx.observationStore.startSpan(
+            "phase_transition",
+            phase,
+            { task_id: taskId, session_id: sessionId },
+            { task_id: taskId, session_id: sessionId, trace_id: traceId, phase },
+          )
+        : null;
+
+    // ── Single CLI call ──────────────────────────────────────────────────
+    const result = await callLlm(prompt, taskId, systemPrompt);
+
+    // ── Read session-result.json ─────────────────────────────────────────
+    let sessionResult = phaseDir ? readSessionResult(phaseDir) : null;
+
+    // ── Continue-retry if template not filled ────────────────────────────
+    if (phaseDir && !(sessionResult && isTemplateFilled(sessionResult))) {
+      ctx.observer.warn("session-result.json not filled, attempting continue-session", {
+        phase,
+        taskId,
+      });
+
+      const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
+      if (llm) {
+        const continueArgs = llm.getContinueArgs();
+        if (continueArgs.length > 0) {
+          const nudgePrompt = `You forgot to update session-result.json. Please read the file at ${thoughtsDir}/${phaseSubDir}/session-result.json, replace the placeholder values with your actual results, and save it. The valid values for status are: "ready", "need_more_info", or "error". Set next_phase to the appropriate phase and summary to a one-line description of what you accomplished.`;
+
+          await callLlm(nudgePrompt, taskId, systemPrompt);
+          sessionResult = readSessionResult(phaseDir);
+        }
+      }
+    }
+
+    // ── Resolve final session result ────────────────────────────────────
+    const nextPhaseIndex = PHASE_SEQUENCE.indexOf(phase);
+    const expectedNext: Phase =
+      (nextPhaseIndex >= 0 && nextPhaseIndex < PHASE_SEQUENCE.length - 1
+        ? PHASE_SEQUENCE[nextPhaseIndex + 1]
+        : undefined) ?? phase;
+
+    const finalResult =
+      sessionResult && isTemplateFilled(sessionResult)
+        ? sessionResult
+        : (() => {
+            ctx.observer.warn("session-result.json not filled after retry, using defaults", {
+              phase,
+              taskId,
+              expectedNext,
+            });
+            return { status: "ready" as const, next_phase: expectedNext, summary: "" };
+          })();
+
+    // ── Verify deliverable exists ────────────────────────────────────────
+    const deliverableFile = PHASE_DELIVERABLE_MAP[phase];
+    if (phaseDir && deliverableFile) {
+      const deliverablePath = path.join(phaseDir, deliverableFile);
+      if (!existsSync(deliverablePath)) {
+        ctx.observer.warn("Phase deliverable not found", { phase, deliverablePath });
+      }
+    }
+
+    // ── Cost + tracking ──────────────────────────────────────────────────
+    emitCostIncurred(taskId, result);
+    ctx.taskEngine.updateTracking(
+      taskId,
+      result.usage?.tokens.total_tokens ?? 0,
+      result.cost_usd ?? 0,
+      result.duration_ms,
+    );
+
+    // ── End span ─────────────────────────────────────────────────────────
+    if (phaseSpan) {
+      phaseSpan.end({
+        llm_iterations: 1,
+        spend_usd: result.cost_usd,
+        duration_ms: result.duration_ms,
+        outcome: finalResult.status,
+        input_tokens: result.usage?.tokens.input_tokens ?? 0,
+        output_tokens: result.usage?.tokens.output_tokens ?? 0,
+        total_tokens: result.usage?.tokens.total_tokens ?? 0,
+      });
+    }
+
+    // ── Build PhaseOutput ────────────────────────────────────────────────
+    return buildPhaseOutput(
+      phase,
+      taskId,
+      {
+        deliverable_path:
+          phaseDir && deliverableFile ? `${thoughtsDir}/${phaseSubDir}/${deliverableFile}` : "",
+        signal_status: finalResult.status,
+        next_phase: finalResult.next_phase,
+        summary: finalResult.summary,
+      },
+      finalResult.status === "ready" ? "high" : "medium",
+      finalResult.status === "need_more_info" ? [finalResult.summary] : [],
+    );
+  }
+
   return {
     callLlm,
     runPhaseWithAgentLoop,
+    runPhaseWithCli,
     emitCostIncurred,
   };
 }

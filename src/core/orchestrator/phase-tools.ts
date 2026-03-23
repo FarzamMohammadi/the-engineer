@@ -8,7 +8,7 @@ import { type Phase, type PhaseToolConfig, Phases } from "../../schemas/orchestr
  * execution can't merge PRs.
  */
 const PHASE_TOOL_CONFIG: Record<Phase, PhaseToolConfig> = {
-  [Phases.intake_analysis]: {
+  [Phases.requirements_gathering]: {
     allowed_actions: ["read_file", "search_files", "search_content", "done"],
     max_iterations: 5,
     action_classes: ["read"],

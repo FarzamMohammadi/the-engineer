@@ -3,90 +3,97 @@ import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator
 import type { LlmCaller } from "./llm-caller.js";
 import type { PhaseHandler } from "./phase-runner.js";
 import {
+  buildCliNativeSystemPrompt,
   buildDemoPrepPrompt,
   buildExecutionPrompt,
-  buildIntakePrompt,
   buildIntegrationPrompt,
   buildPlanningPrompt,
+  buildRequirementsGatheringPrompt,
   buildResearchPrompt,
   buildSelfReviewPrompt,
   buildSystemPrompt,
-  formatPriorPhaseOutput,
-  section,
 } from "./prompts/index.js";
-import type { PipelineState } from "./types.js";
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Extract prior phase data with safe casting. */
-function priorData(
-  priorOutputs: Map<Phase, PhaseOutput>,
-  phase: Phase,
-): Record<string, unknown> | null {
-  return (priorOutputs.get(phase)?.data as Record<string, unknown> | undefined) ?? null;
-}
+import type { OrchestratorContext, PipelineState } from "./types.js";
 
 // ── Phase Handler Factory ────────────────────────────────────────────────────
 
 /**
- * Create all 7 phase handlers bound to the given LlmCaller.
+ * Create all 7 phase handlers.
  *
- * Each handler: builds system prompt + phase prompt from prior outputs,
- * then delegates to the agent loop via llmCaller.runPhaseWithAgentLoop().
+ * Requirements gathering + research use CLI-native invocation (runPhaseWithCli).
+ * Planning through integration use the agent loop (runPhaseWithAgentLoop) until Session 072.
  */
-export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHandler> {
-  function handleIntakeAnalysis(
+export function createPhaseHandlers(
+  llmCaller: LlmCaller,
+  ctx: OrchestratorContext,
+): Record<Phase, PhaseHandler> {
+  // ── CLI-native phases (RRPIR) ──────────────────────────────────────────
+
+  function handleRequirementsGathering(
     taskId: string,
     dispatch: Dispatch,
     _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
+    const thoughtsDir = state.thoughtsDir ?? "";
+    const teamContacts = ctx.peopleDirectory.getAll();
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
       (r) => !r.applied,
     );
-    return llmCaller.runPhaseWithAgentLoop(
-      Phases.intake_analysis,
+
+    return llmCaller.runPhaseWithCli(
+      Phases.requirements_gathering,
       taskId,
-      buildSystemPrompt(Phases.intake_analysis),
-      buildIntakePrompt({
+      buildCliNativeSystemPrompt(Phases.requirements_gathering),
+      buildRequirementsGatheringPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
+        teamContacts,
+        thoughtsDir,
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
         prNumber: dispatch.task.review?.pr_number ?? undefined,
+        isRerun: state.requirementsLoopCount > 0,
       }),
       state,
+      thoughtsDir,
     );
   }
 
   function handleResearch(
     taskId: string,
     dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
+    _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
-    return llmCaller.runPhaseWithAgentLoop(
+    const thoughtsDir = state.thoughtsDir ?? "";
+
+    return llmCaller.runPhaseWithCli(
       Phases.research,
       taskId,
-      buildSystemPrompt(Phases.research),
+      buildCliNativeSystemPrompt(Phases.research),
       buildResearchPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        intakeOutput: priorData(priorOutputs, Phases.intake_analysis),
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
+        thoughtsDir,
       }),
       state,
+      thoughtsDir,
     );
   }
+
+  // ── Agent-loop phases (Session 072: migrate to CLI-native) ─────────────
 
   function handlePlanning(
     taskId: string,
     dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
+    _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
+    const thoughtsDir = state.thoughtsDir ?? "";
     return llmCaller.runPhaseWithAgentLoop(
       Phases.planning,
       taskId,
@@ -94,10 +101,9 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
       buildPlanningPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        intakeOutput: priorData(priorOutputs, Phases.intake_analysis),
-        researchOutput: priorData(priorOutputs, Phases.research),
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
+        thoughtsDir,
       }),
       state,
     );
@@ -106,34 +112,26 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
   function handleExecution(
     taskId: string,
     dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
+    _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
+    const thoughtsDir = state.thoughtsDir ?? "";
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
       (r) => !r.applied,
     );
-    let prompt = buildExecutionPrompt({
-      task: dispatch.task,
-      repoContext: state.repoContext,
-      intakeOutput: priorData(priorOutputs, Phases.intake_analysis),
-      researchOutput: priorData(priorOutputs, Phases.research),
-      planningOutput: priorData(priorOutputs, Phases.planning),
-      repoKnowledge: dispatch.knowledge.repo,
-      userKnowledge: dispatch.knowledge.user,
-      feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
-    });
-
-    // On loopback: inject self_review findings so execution knows what to fix
-    const reviewData = priorData(priorOutputs, Phases.self_review);
-    if (reviewData) {
-      prompt = `${prompt}\n\n${section("Review Findings to Address", formatPriorPhaseOutput(Phases.self_review, reviewData))}`;
-    }
 
     return llmCaller.runPhaseWithAgentLoop(
       Phases.execution,
       taskId,
       buildSystemPrompt(Phases.execution),
-      prompt,
+      buildExecutionPrompt({
+        task: dispatch.task,
+        repoContext: state.repoContext,
+        repoKnowledge: dispatch.knowledge.repo,
+        userKnowledge: dispatch.knowledge.user,
+        thoughtsDir,
+        feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
+      }),
       state,
     );
   }
@@ -141,9 +139,10 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
   function handleSelfReview(
     taskId: string,
     dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
+    _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
+    const thoughtsDir = state.thoughtsDir ?? "";
     return llmCaller.runPhaseWithAgentLoop(
       Phases.self_review,
       taskId,
@@ -151,13 +150,10 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
       buildSelfReviewPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        intakeOutput: priorData(priorOutputs, Phases.intake_analysis),
-        planningOutput: priorData(priorOutputs, Phases.planning),
-        executionOutput: priorData(priorOutputs, Phases.execution),
-        selfReviewFindings: priorData(priorOutputs, Phases.self_review),
-        loopbackCount: state.loopbackCount,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
+        thoughtsDir,
+        loopbackCount: state.loopbackCount,
       }),
       state,
     );
@@ -166,9 +162,10 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
   function handleDemoPrep(
     taskId: string,
     dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
+    _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
+    const thoughtsDir = state.thoughtsDir ?? "";
     return llmCaller.runPhaseWithAgentLoop(
       Phases.demo_prep,
       taskId,
@@ -176,12 +173,9 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
       buildDemoPrepPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        intakeOutput: priorData(priorOutputs, Phases.intake_analysis),
-        planningOutput: priorData(priorOutputs, Phases.planning),
-        executionOutput: priorData(priorOutputs, Phases.execution),
-        selfReviewOutput: priorData(priorOutputs, Phases.self_review),
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
+        thoughtsDir,
       }),
       state,
     );
@@ -190,12 +184,13 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
   function handleIntegration(
     taskId: string,
     dispatch: Dispatch,
-    priorOutputs: Map<Phase, PhaseOutput>,
+    _priorOutputs: Map<Phase, PhaseOutput>,
     state: PipelineState,
   ): Promise<PhaseOutput> {
+    const thoughtsDir = state.thoughtsDir ?? "";
     const childSummaries = (dispatch.task.child_summaries ?? []).map((cs) => ({
       child_id: cs.child_id,
-      child_title: cs.child_title,
+      title: cs.child_title,
       branch: cs.branch,
       test_status: cs.test_status,
       files_changed: cs.key_outputs.map((o) => o.path),
@@ -208,18 +203,15 @@ export function createPhaseHandlers(llmCaller: LlmCaller): Record<Phase, PhaseHa
       buildIntegrationPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        executionOutput: priorData(priorOutputs, Phases.execution),
-        selfReviewOutput: priorData(priorOutputs, Phases.self_review),
+        thoughtsDir,
         childSummaries,
-        repoKnowledge: dispatch.knowledge.repo,
-        userKnowledge: dispatch.knowledge.user,
       }),
       state,
     );
   }
 
   return {
-    [Phases.intake_analysis]: handleIntakeAnalysis,
+    [Phases.requirements_gathering]: handleRequirementsGathering,
     [Phases.research]: handleResearch,
     [Phases.planning]: handlePlanning,
     [Phases.execution]: handleExecution,

@@ -63,12 +63,12 @@ function createMockContext(
 
 function makeOutput(phase: Phase, data?: Record<string, unknown>): PhaseOutput {
   const defaults: Record<string, Record<string, unknown>> = {
-    intake_analysis: {
-      complexity: "moderate",
-      estimated_phases: [],
-      ambiguities: [],
-      fast_path: false,
-      decomposition_likely: false,
+    requirements_gathering: {
+      deliverable_path: "thoughts/test/requirements.md",
+      signal_status: "ready",
+      contact: null,
+      question: null,
+      assessment: null,
     },
     research: {
       relevant_files: [],
@@ -123,6 +123,8 @@ function createState(overrides?: Partial<PipelineState>): PipelineState {
     traceId: "trace-001",
     sessionId: "session-001",
     loopbackCount: 0,
+    requirementsLoopCount: 0,
+    thoughtsDir: null,
     repoContext: null,
     ...overrides,
   };
@@ -209,25 +211,27 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(dispatch, createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // Should not have called intake_analysis, research, or planning handlers
+      // Should not have called requirements_gathering, research, or planning handlers
       // (execution is at index 3 in PHASE_SEQUENCE)
     });
 
-    it("applies fast-path when intake returns fast_path: true", async () => {
+    it("runs all phases even for trivial requirements_gathering output", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      // Override requirements_gathering with trivial signal
       outputs.set(
-        Phases.intake_analysis,
-        makeOutput(Phases.intake_analysis, {
-          complexity: "trivial",
-          estimated_phases: [],
-          ambiguities: [],
-          fast_path: true,
-          decomposition_likely: false,
+        Phases.requirements_gathering,
+        makeOutput(Phases.requirements_gathering, {
+          deliverable_path: "thoughts/test/requirements.md",
+          signal_status: "ready",
+          contact: null,
+          question: null,
+          assessment: "trivial task",
         }),
       );
-      outputs.set(Phases.execution, makeOutput(Phases.execution));
-      outputs.set(Phases.self_review, makeOutput(Phases.self_review));
 
       const handlers = createHandlersThatReturn(outputs);
       const deps = createDeps(ctx, handlers);
@@ -235,10 +239,10 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // Only 3 phases should have checkpoints (not 7)
+      // All 7 phases should have checkpoints (no fast-path)
       const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
         .calls;
-      expect(checkpointCalls.length).toBe(3);
+      expect(checkpointCalls.length).toBe(7);
     });
 
     it("loops back to execution on self_review needs_work", async () => {
@@ -352,7 +356,7 @@ describe("PhaseRunner", () => {
         PHASE_SEQUENCE.map((phase) => [
           phase,
           vi.fn(() => {
-            if (phase === Phases.intake_analysis) {
+            if (phase === Phases.requirements_gathering) {
               return Promise.reject(new Error("LLM unavailable"));
             }
             return Promise.resolve(makeOutput(phase));
@@ -366,7 +370,7 @@ describe("PhaseRunner", () => {
 
       expect(result.outcome).toBe("error");
       if (result.outcome === "error") {
-        expect(result.phase).toBe("intake_analysis");
+        expect(result.phase).toBe("requirements_gathering");
         expect(result.reason).toContain("LLM unavailable");
       }
     });
@@ -510,22 +514,11 @@ describe("PhaseRunner", () => {
       expect(executionCalls.length).toBeGreaterThanOrEqual(2);
     });
 
-    it("disables fast-path when config.fast_path.enabled is false", async () => {
-      const ctx = createMockContext({ fast_path: { enabled: false } });
+    it("runs all phases with rrpir config defaults", async () => {
+      const ctx = createMockContext({ rrpir: { max_requirements_loops: 3 } });
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
-        outputs.set(
-          phase,
-          phase === Phases.intake_analysis
-            ? makeOutput(Phases.intake_analysis, {
-                complexity: "trivial",
-                estimated_phases: [],
-                ambiguities: [],
-                fast_path: true,
-                decomposition_likely: false,
-              })
-            : makeOutput(phase),
-        );
+        outputs.set(phase, makeOutput(phase));
       }
       const handlers = createHandlersThatReturn(outputs);
       const deps = createDeps(ctx, handlers);
@@ -533,7 +526,7 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // All 7 phases should have checkpoints (fast-path disabled)
+      // All 7 phases should have checkpoints
       const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
         .calls;
       expect(checkpointCalls.length).toBe(7);
@@ -543,7 +536,7 @@ describe("PhaseRunner", () => {
   describe("PhaseHandlerRegistry", () => {
     it("throws for unknown phase", () => {
       const handlers = createPhaseHandlerRegistry({
-        [Phases.intake_analysis]: vi.fn(),
+        [Phases.requirements_gathering]: vi.fn(),
       } as unknown as Record<Phase, ReturnType<typeof vi.fn>>);
 
       expect(() => handlers.get("unknown_phase" as Phase)).toThrow("No handler registered");
@@ -552,10 +545,10 @@ describe("PhaseRunner", () => {
     it("returns registered handler", () => {
       const handler = vi.fn();
       const registry = createPhaseHandlerRegistry({
-        [Phases.intake_analysis]: handler,
+        [Phases.requirements_gathering]: handler,
       } as unknown as Record<Phase, ReturnType<typeof vi.fn>>);
 
-      expect(registry.get(Phases.intake_analysis)).toBe(handler);
+      expect(registry.get(Phases.requirements_gathering)).toBe(handler);
     });
   });
 
@@ -588,8 +581,8 @@ describe("PhaseRunner", () => {
       expect(PHASE_SEQUENCE).toHaveLength(7);
     });
 
-    it("starts with intake_analysis and ends with integration", () => {
-      expect(PHASE_SEQUENCE[0]).toBe("intake_analysis");
+    it("starts with requirements_gathering and ends with integration", () => {
+      expect(PHASE_SEQUENCE[0]).toBe("requirements_gathering");
       expect(PHASE_SEQUENCE[6]).toBe("integration");
     });
   });

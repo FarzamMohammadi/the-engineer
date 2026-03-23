@@ -1,21 +1,12 @@
-import { Phases } from "../../../schemas/orchestrator.js";
-import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import {
-  buildTaskBrief,
-  formatActionReference,
-  formatKnowledge,
-  formatOutputSchema,
-  formatPriorPhaseOutput,
-  section,
-} from "./format.js";
+import { buildTaskBrief, section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Summary of a completed child task for the integration phase. */
 export interface ChildTaskSummary {
   child_id: string;
-  child_title: string;
+  title: string;
   branch: string;
   test_status: string;
   files_changed: string[];
@@ -28,176 +19,149 @@ export interface IntegrationPromptContext {
     description: string | null;
   };
   repoContext: RepoContext | null;
-  executionOutput: Record<string, unknown> | null;
-  selfReviewOutput: Record<string, unknown> | null;
+  thoughtsDir: string;
   childSummaries: ChildTaskSummary[];
-  repoKnowledge: KnowledgeEntry[];
-  userKnowledge: KnowledgeEntry[];
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Build the initial prompt for the integration phase.
+ * Build the prompt for the integration phase (CLI-native RRPIR).
  *
  * Pure function: context in, prompt string out.
  */
 export function buildIntegrationPrompt(ctx: IntegrationPromptContext): string {
   const parts: string[] = [];
 
-  // 1. Task Brief
-  parts.push(buildTaskBrief(ctx.task));
+  // 1. How The Engineer Works
+  parts.push(buildRRPIROverview());
 
-  // 2. Child Task Summaries
-  parts.push(buildChildSummariesSection(ctx.childSummaries));
+  // 2. What Happened Before You
+  parts.push(buildPriorPhasePointers(ctx.thoughtsDir, ctx.childSummaries));
 
-  // 3. Parent Execution Summary
-  parts.push(buildExecutionSection(ctx.executionOutput));
-
-  // 4. Parent Review Assessment
-  parts.push(buildReviewSection(ctx.selfReviewOutput));
-
-  // 5. Repository
-  const repoSection = buildRepoOverview(ctx.repoContext);
-  if (repoSection) {
-    parts.push(repoSection);
-  }
-
-  // 6. Known Knowledge
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
-  }
-
-  // 7. Phase Instructions
+  // 3. What YOU Need To Do
   parts.push(buildIntegrationInstructions());
 
-  // 8. Iteration Budget
-  parts.push(
-    section(
-      "Iteration Budget",
-      "You have up to 20 iterations. Use them to verify each child's output, run integration tests, and resolve any conflicts. Nothing ships until integration is verified.",
-    ),
-  );
+  // 4. Where To Put Your Work
+  parts.push(buildOutputInstructions(ctx.thoughtsDir));
 
-  // 9. Output Schema + Action Reference
-  parts.push(section("Output Requirements", formatOutputSchema(Phases.integration)));
-  parts.push(
-    section(
-      "Actions",
-      formatActionReference([
-        "read_file",
-        "write_file",
-        "edit_file",
-        "search_files",
-        "search_content",
-        "run_command",
-        "done",
-      ]),
-    ),
-  );
+  // 5. The Task Context
+  parts.push(buildTaskContext(ctx));
 
   return parts.join("\n\n");
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
-function buildChildSummariesSection(children: ChildTaskSummary[]): string {
-  if (children.length === 0) {
-    return section(
-      "Child Tasks",
-      "No child tasks to integrate. Verify the changes from the parent task's own execution.",
-    );
-  }
+function buildRRPIROverview(): string {
+  return section(
+    "How The Engineer Works",
+    [
+      "You are one session in a multi-phase pipeline called RRPIR (Requirements Gathering -> Research -> Planning -> Implementation -> Review).",
+      "Each phase is a separate CLI session with a fresh context window. File-based handoffs connect the phases.",
+      "",
+      "- Each phase has a directory in thoughts/ containing deliverables (.md files) and a session-result.json file.",
+      "- You read previous phases' files for context. You write your phase's deliverables and update session-result.json.",
+      "- session-result.json tells The Engineer where to route next. You MUST update it before finishing.",
+      "- You have full CLI capabilities: read files, write files, search code, run commands. Use them freely.",
+      "",
+      "You are the Integration session. This task was decomposed into child tasks that each ran the full RRPIR pipeline independently. Your job is to merge their branches and verify the combined result.",
+    ].join("\n"),
+  );
+}
 
-  const lines = [`${String(children.length)} child task(s) to integrate:`];
+function buildPriorPhasePointers(thoughtsDir: string, children: ChildTaskSummary[]): string {
+  const lines = [
+    "This is a parent task. Child tasks completed their own RRPIR pipelines on separate branches.",
+    "",
+    `Parent thoughts directory: \`${thoughtsDir}/\``,
+    `- \`${thoughtsDir}/requirements/requirements.md\` — original requirements`,
+    `- \`${thoughtsDir}/planning/plan.md\` — the decomposition plan`,
+    "",
+  ];
 
-  for (const child of children) {
+  if (children.length > 0) {
+    lines.push(`${String(children.length)} child task(s) to integrate:`);
     lines.push("");
-    lines.push(`### ${child.child_title} (${child.child_id})`);
-    lines.push(`- Branch: ${child.branch}`);
-    lines.push(`- Test status: ${child.test_status}`);
-    if (child.files_changed.length > 0) {
-      lines.push("- Files changed:");
-      for (const f of child.files_changed) {
-        lines.push(`  - ${f}`);
+
+    for (const child of children) {
+      lines.push(`### ${child.title} (\`${child.child_id}\`)`);
+      lines.push(`- Branch: \`${child.branch}\``);
+      lines.push(`- Test status: ${child.test_status}`);
+      if (child.files_changed.length > 0) {
+        lines.push("- Files changed:");
+        for (const f of child.files_changed) {
+          lines.push(`  - \`${f}\``);
+        }
       }
+      lines.push("");
     }
+  } else {
+    lines.push("No child tasks found. Verify the parent task's own changes.");
   }
 
-  return section("Child Tasks", lines.join("\n"));
-}
-
-function buildExecutionSection(executionOutput: Record<string, unknown> | null): string {
-  if (!executionOutput) {
-    return section(
-      "Parent Execution",
-      "No parent-level execution was performed. Focus on integrating child task outputs.",
-    );
-  }
-  return section("Parent Execution", formatPriorPhaseOutput(Phases.execution, executionOutput));
-}
-
-function buildReviewSection(selfReviewOutput: Record<string, unknown> | null): string {
-  if (!selfReviewOutput) {
-    return section("Parent Review", "No parent-level review was performed.");
-  }
-  return section("Parent Review", formatPriorPhaseOutput(Phases.self_review, selfReviewOutput));
-}
-
-function buildRepoOverview(repoContext: RepoContext | null): string | null {
-  if (!repoContext?.gitBranch) {
-    return null;
-  }
-  return section("Repository", `Branch: ${repoContext.gitBranch}`);
-}
-
-function buildKnowledgeSection(
-  repoKnowledge: KnowledgeEntry[],
-  userKnowledge: KnowledgeEntry[],
-): string | null {
-  const repoFormatted = formatKnowledge(repoKnowledge);
-  const userFormatted = formatKnowledge(userKnowledge);
-
-  if (!(repoFormatted || userFormatted)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (repoFormatted) {
-    parts.push("Repository knowledge:", repoFormatted);
-  }
-  if (userFormatted) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push("User knowledge:", userFormatted);
-  }
-
-  return section("Known Context", parts.join("\n"));
+  return section("What Happened Before You", lines.join("\n"));
 }
 
 function buildIntegrationInstructions(): string {
   return section(
-    "Instructions",
+    "What YOU Need To Do",
     [
-      "Verify the combined output of all child tasks. Integration is about ensuring the whole is greater than the sum of its parts.",
+      "Merge all child branches and verify the combined result. Nothing ships until integration is verified.",
       "",
-      "1. For each child task, read the key files it changed. Verify the changes are complete and correct.",
+      "1. For each child task, merge its branch into the parent branch:",
+      "   - `git merge <child-branch>` for each child",
+      "   - Resolve any merge conflicts carefully",
       "",
-      "2. Check for merge conflicts or integration issues across children's changes. Look for:",
-      "   - Overlapping file modifications",
+      "2. After merging, check for integration issues across children's changes:",
+      "   - Overlapping file modifications that merged cleanly but are logically conflicting",
       "   - Incompatible API changes between children",
       "   - Missing shared dependencies or type updates",
       "   - Broken cross-references between modules",
       "",
-      "3. Run integration tests that exercise the combined changes. Use run_command to execute tests.",
+      "3. Run the full test suite to verify no regressions across the entire codebase.",
       "",
-      "4. If conflicts are found, resolve them. Use edit_file for surgical fixes, write_file for new integration code.",
+      "4. If tests fail, diagnose and fix the issues. Integration bugs are usually at the seams between child tasks.",
       "",
-      "5. Run the full test suite to verify no regressions across the entire codebase.",
+      "5. Run any build/lint/typecheck commands to verify the codebase is in a clean state.",
       "",
-      "6. Document everything: which children were verified, what tests were run, what conflicts were found and how they were resolved.",
+      "6. Commit the merge result with a clear message documenting which children were integrated.",
     ].join("\n"),
   );
+}
+
+function buildOutputInstructions(thoughtsDir: string): string {
+  return section(
+    "Where To Put Your Work",
+    [
+      "The merged branch is your primary deliverable. Integration results go in the parent thoughts directory.",
+      "",
+      `Update session-result.json at \`${thoughtsDir}/integration/session-result.json\` with:`,
+      "",
+      "```json",
+      "{",
+      '  "status": "ready" or "error",',
+      '  "next_phase": "demo_prep" (if integration succeeded) or "execution" (if fundamental issues need rework),',
+      '  "summary": "<one-line integration result>"',
+      "}",
+      "```",
+      "",
+      'Set next_phase to "demo_prep" when all children are merged, tests pass, and the codebase is clean.',
+      'Set next_phase to "execution" only if integration reveals fundamental issues that need rework.',
+    ].join("\n"),
+  );
+}
+
+function buildTaskContext(ctx: IntegrationPromptContext): string {
+  const parts: string[] = [];
+
+  // Task brief
+  parts.push(buildTaskBrief(ctx.task));
+
+  // Repository context (branch only)
+  if (ctx.repoContext?.gitBranch) {
+    parts.push(section("Repository", `Branch: ${ctx.repoContext.gitBranch}`));
+  }
+
+  return section("The Task Context", parts.join("\n\n"));
 }

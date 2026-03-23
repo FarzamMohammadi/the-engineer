@@ -3,7 +3,7 @@ import { z } from "zod";
 // ── Phase Enum ──────────────────────────────────────────────────────────────────
 
 export const PhaseSchema = z.enum([
-  "intake_analysis",
+  "requirements_gathering",
   "research",
   "planning",
   "execution",
@@ -28,23 +28,33 @@ export const PhaseOutputSchema = z.object({
 });
 export type PhaseOutput = z.infer<typeof PhaseOutputSchema>;
 
-// ── Phase Outputs ───────────────────────────────────────────────────────────────
+// ── Session Result (file-based phase routing) ───────────────────────────────────
 
-export const IntakeAnalysisOutputSchema = z.object({
-  complexity: z.string(),
-  estimated_phases: z.array(z.string()),
-  ambiguities: z.array(z.string()),
-  fast_path: z.boolean(),
-  decomposition_likely: z.boolean(),
+/** Schema for session-result.json — the structured file each phase writes for routing. */
+export const SessionResultSchema = z.object({
+  status: z.enum(["ready", "need_more_info", "error"]),
+  next_phase: PhaseSchema,
+  summary: z.string(),
 });
-export type IntakeAnalysisOutput = z.infer<typeof IntakeAnalysisOutputSchema>;
+export type SessionResult = z.infer<typeof SessionResultSchema>;
+
+// ── Phase Outputs (metadata-only for CLI-native phases) ─────────────────────────
+
+export const RequirementsGatheringOutputSchema = z.object({
+  deliverable_path: z.string(),
+  signal_status: z.enum(["ready", "need_more_info"]),
+  contact: z.string().nullable(),
+  question: z.string().nullable(),
+  assessment: z.string().nullable(),
+});
+export type RequirementsGatheringOutput = z.infer<typeof RequirementsGatheringOutputSchema>;
 
 export const ResearchOutputSchema = z.object({
-  relevant_files: z.array(z.string()),
-  relevant_modules: z.array(z.string()),
-  conventions: z.array(z.record(z.unknown())),
-  existing_patterns: z.array(z.string()),
-  dependencies: z.array(z.string()),
+  deliverable_path: z.string(),
+  signal_status: z.enum(["ready", "need_more_info"]),
+  contact: z.string().nullable(),
+  question: z.string().nullable(),
+  complexity_hint: z.string().nullable(),
 });
 export type ResearchOutput = z.infer<typeof ResearchOutputSchema>;
 
@@ -110,7 +120,7 @@ export type IntegrationOutput = z.infer<typeof IntegrationOutputSchema>;
 // ── Phase Output Map ────────────────────────────────────────────────────────────
 
 export type PhaseOutputMap = {
-  intake_analysis: IntakeAnalysisOutput;
+  requirements_gathering: RequirementsGatheringOutput;
   research: ResearchOutput;
   planning: PlanningOutput;
   execution: ExecutionOutput;
@@ -178,18 +188,6 @@ export const LLMDecompositionPlanSchema = z.object({
 });
 export type LLMDecompositionPlan = z.infer<typeof LLMDecompositionPlanSchema>;
 
-// ── Trivial Criteria (Fast-Path) ────────────────────────────────────────────────
-
-export const TrivialCriteriaSchema = z.object({
-  single_file: z.boolean(),
-  no_ambiguity: z.boolean(),
-  no_new_dependencies: z.boolean(),
-  no_architectural: z.boolean(),
-  no_tests_needed: z.boolean(),
-  estimated_time_under_limit: z.boolean(),
-});
-export type TrivialCriteria = z.infer<typeof TrivialCriteriaSchema>;
-
 // ── Safety Query / Verdict ──────────────────────────────────────────────────────
 
 export const SafetyQuerySchema = z.object({
@@ -212,7 +210,7 @@ export const SafetyVerdictSchema = z.object({
 });
 export type SafetyVerdict = z.infer<typeof SafetyVerdictSchema>;
 
-// ── Agent Loop Types ────────────────────────────────────────────────────────────
+// ── Agent Loop Types (Session 072: remove with agent loop) ──────────────────────
 
 /** Actions the LLM can request during the agent loop. Discriminated union on `action`. */
 export const AgentActionSchema = z.discriminatedUnion("action", [

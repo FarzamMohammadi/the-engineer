@@ -189,6 +189,10 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
     return this.spawnAndParse(args, request.cwd ?? undefined, prompt);
   }
 
+  getContinueArgs(): string[] {
+    return ["--continue"];
+  }
+
   getCapabilities(): LLMCapabilities {
     return {
       model_id: this.config?.model ?? "gemini-2.5-pro",

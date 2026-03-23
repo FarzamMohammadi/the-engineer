@@ -32,6 +32,7 @@ CREATE TABLE tasks (
   -- Workspace
   repo                TEXT,                       -- Repository identifier (e.g. "owner/repo")
   clone_url           TEXT,                       -- Git clone URL (D148)
+  thoughts_id         TEXT,                       -- Trigger-provided identifier for thoughts/ dir (e.g., "issue-42")
   workspace           TEXT,                       -- JSON: TaskWorkspace | null
 
   -- Review

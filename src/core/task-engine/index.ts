@@ -139,7 +139,7 @@ export class TaskEngine implements ITaskEngine {
         parent_id, children, cascade_policy,
         title, description, source_text, acceptance_criteria,
         team, related, decisions, child_summaries,
-        repo, clone_url, workspace, review, blocked,
+        repo, clone_url, thoughts_id, workspace, review, blocked,
         priority, llm_tokens, llm_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
         session_id, version
@@ -147,8 +147,8 @@ export class TaskEngine implements ITaskEngine {
         ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?
@@ -206,6 +206,7 @@ export class TaskEngine implements ITaskEngine {
       "[]", // child_summaries
       input.repo, // repo
       input.clone_url ?? null, // clone_url
+      input.thoughts_id ?? null, // thoughts_id
       null, // workspace
       null, // review
       null, // blocked
@@ -255,6 +256,7 @@ export class TaskEngine implements ITaskEngine {
       child_summaries: [],
       repo: input.repo,
       clone_url: input.clone_url ?? null,
+      thoughts_id: input.thoughts_id ?? null,
       workspace: null,
       review: null,
       blocked: null,

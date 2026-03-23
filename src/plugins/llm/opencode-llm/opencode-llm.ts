@@ -167,6 +167,10 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
     return this.spawnAndParse(args, prompt);
   }
 
+  getContinueArgs(): string[] {
+    return ["--continue"];
+  }
+
   getCapabilities(): LLMCapabilities {
     return {
       model_id: this.config?.model ?? "opencode/gemini-3.1-pro",

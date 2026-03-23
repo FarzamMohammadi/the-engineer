@@ -33,6 +33,7 @@ function makeTriggerEvent(overrides?: Partial<TriggerEvent>): TriggerEvent {
     repo: "test/repo",
     clone_url: "",
     metadata: null,
+    thoughts_id: "test-1",
     ...overrides,
   };
 }

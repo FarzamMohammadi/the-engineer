@@ -22,6 +22,7 @@ import type {
   WorkspaceVerification,
 } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
+import { writeSessionResultTemplate } from "../orchestrator/session-result.js";
 import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ export class WorkspaceManager implements IWorkspaceManager {
    * from the base, and sets up a git worktree. Emits `workspace.created`.
    */
   createWorkspace(taskId: string, repo: string, options?: CreateWorkspaceOptions): WorkspaceRecord {
-    const { title, baseBranch, parentBranch, cloneUrl } = options ?? {};
+    const { title, baseBranch, parentBranch, cloneUrl, thoughtsId } = options ?? {};
     const resolvedBase = parentBranch ?? baseBranch ?? this.config.default_base_branch;
     const slug = slugify(title ?? taskId, this.config.slug_max_length);
     const branch = branchName(this.config.branch_prefix, taskId, slug);
@@ -244,6 +245,29 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Defense-in-depth: validate the created worktree resolves within workspace root
     validateWorkspacePath(worktreePath, this.config.workspace_root);
+
+    // Create thoughts/ directory structure for RRPIR file-based handoffs
+    if (thoughtsId) {
+      const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const thoughtsDir = path.join(worktreePath, "thoughts", `${dateStr}-${thoughtsId}`);
+      const phaseDirs = [
+        "requirements",
+        "research",
+        "planning",
+        "implementation",
+        "review",
+        "refinements",
+      ];
+      for (const phase of phaseDirs) {
+        const phaseDir = path.join(thoughtsDir, phase);
+        mkdirSync(phaseDir, { recursive: true });
+        writeSessionResultTemplate(phaseDir);
+      }
+      this.observer.debug("Created thoughts/ directory structure", {
+        taskId,
+        thoughtsDir,
+      });
+    }
 
     const workspace: WorkspaceRecord = {
       taskId,

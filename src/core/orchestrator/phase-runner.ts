@@ -25,9 +25,6 @@ import {
 // Re-export for backward compatibility (tests import from here).
 export { PHASE_SEQUENCE } from "./types.js";
 
-/** Fast-path phases: skip research, planning, demo_prep, integration. */
-const FAST_PATH_PHASES: Phase[] = [Phases.execution, Phases.self_review];
-
 // ── Phase Handler Registry ─────────────────────────────────────────────────
 
 /** A phase handler function. */
@@ -99,26 +96,6 @@ type PhaseCompletionResult =
   | { kind: "exit"; result: ExecuteTaskResult };
 
 // ── Pure Helpers ────────────────────────────────────────────────────────────
-
-/** Check if intake output enables fast-path, return updated phases array. */
-function applyFastPathIfNeeded(
-  intakeOutput: PhaseOutput,
-  currentPhases: Phase[],
-  ctx: OrchestratorContext,
-): Phase[] {
-  if (!ctx.config.fast_path.enabled) {
-    ctx.observer.debug("Fast-path disabled by config");
-    return currentPhases;
-  }
-  const intakeData = intakeOutput.data as { fast_path?: boolean };
-  if (intakeData.fast_path === true) {
-    const newPhases = [Phases.intake_analysis, ...FAST_PATH_PHASES];
-    ctx.observer.info("Fast-path enabled", { phases: newPhases });
-    return newPhases;
-  }
-  ctx.observer.debug("Fast-path not applied", { phaseCount: currentPhases.length });
-  return currentPhases;
-}
 
 /** Determine start index and phase sequence (Protocol P9 resume). */
 function resolveStartState(
@@ -432,7 +409,7 @@ async function tryCreatePRAndExitForReview(
   };
 }
 
-/** Handle post-phase logic: fast-path, decomposition, loopback, transitions, preemption, PR creation. */
+/** Handle post-phase logic: decomposition, loopback, transitions, preemption, PR creation. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-branch pipeline orchestration
 async function handlePostPhaseActions(
   sessionId: string,
@@ -447,12 +424,40 @@ async function handlePostPhaseActions(
   deps: PhaseRunnerDeps,
 ): Promise<{ completion: PhaseCompletionResult; loopbackCount: number }> {
   const { ctx, prManager, decompositionHandler } = deps;
-  let phases = currentPhases;
+  const phases = currentPhases;
   let loopbackCount = state.loopbackCount;
 
-  // Fast-path: after intake_analysis, check if we should skip phases
-  if (phase === Phases.intake_analysis) {
-    phases = applyFastPathIfNeeded(output, phases, ctx);
+  // Requirements ↔ Research loop: if research signals need_more_info, loop back
+  if (phase === Phases.research) {
+    const researchData = output.data as { signal_status?: string; next_phase?: string };
+    if (
+      researchData.signal_status === "need_more_info" ||
+      researchData.next_phase === "requirements_gathering"
+    ) {
+      const maxLoops = ctx.config.rrpir?.max_requirements_loops ?? 5;
+      const newLoopCount = state.requirementsLoopCount + 1;
+      if (newLoopCount <= maxLoops) {
+        ctx.observer.info("Research needs more info, looping back to requirements gathering", {
+          taskId,
+          loopCount: newLoopCount,
+          maxLoops,
+        });
+        state.requirementsLoopCount = newLoopCount;
+        const reqIndex = phases.indexOf(Phases.requirements_gathering);
+        if (reqIndex >= 0) {
+          return {
+            completion: { kind: "loopback", phases, targetIndex: reqIndex - 1 },
+            loopbackCount,
+          };
+        }
+      } else {
+        ctx.observer.warn("Max requirements loops exceeded, continuing to planning", {
+          taskId,
+          loopCount: newLoopCount,
+          maxLoops,
+        });
+      }
+    }
   }
 
   // Decomposition: after planning, check if task should be split into children
@@ -561,7 +566,7 @@ async function handlePostPhaseActions(
  * Execute a task through the phase pipeline.
  *
  * This is the main loop extracted from Orchestrator.executeTask().
- * Handles: phase sequence, fast-path, loopback, preemption, decomposition,
+ * Handles: phase sequence, loopback, preemption, decomposition,
  * PR creation, and phase transitions.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: main pipeline loop with extracted helpers

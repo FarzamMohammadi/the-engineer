@@ -1,14 +1,6 @@
-import { Phases } from "../../../schemas/orchestrator.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import {
-  buildTaskBrief,
-  formatActionReference,
-  formatKnowledge,
-  formatOutputSchema,
-  formatPriorPhaseOutput,
-  section,
-} from "./format.js";
+import { buildTaskBrief, formatKnowledge, section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,96 +11,167 @@ export interface PlanningPromptContext {
     description: string | null;
   };
   repoContext: RepoContext | null;
-  intakeOutput: Record<string, unknown> | null;
-  researchOutput: Record<string, unknown> | null;
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
+  thoughtsDir: string;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Build the initial prompt for the planning phase.
+ * Build the prompt for the planning phase (CLI-native RRPIR).
  *
  * Pure function: context in, prompt string out.
  */
 export function buildPlanningPrompt(ctx: PlanningPromptContext): string {
   const parts: string[] = [];
 
-  // 1. Task Brief
-  parts.push(buildTaskBrief(ctx.task));
+  // 1. How The Engineer Works
+  parts.push(buildRrpirOverview());
 
-  // 2. Intake Analysis
-  parts.push(buildIntakeSection(ctx.intakeOutput));
+  // 2. What Happened Before You
+  parts.push(buildPriorPhasesSection(ctx.thoughtsDir));
 
-  // 3. Research Findings
-  parts.push(buildResearchSection(ctx.researchOutput));
+  // 3. What YOU Need To Do
+  parts.push(buildInstructions(ctx.thoughtsDir));
 
-  // 4. Repository Overview
-  parts.push(buildRepoOverview(ctx.repoContext));
+  // 4. Where To Put Your Work
+  parts.push(buildOutputSection(ctx.thoughtsDir));
 
-  // 5. Known Knowledge
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
-  }
-
-  // 6. Phase Instructions
-  parts.push(buildPlanningInstructions());
-
-  // 7. Planning Strategy (adapts to complexity)
-  parts.push(buildPlanningStrategy(ctx.intakeOutput));
-
-  // 8. Iteration Budget
-  parts.push(
-    section(
-      "Iteration Budget",
-      "You have up to 10 iterations. Use them to verify your plan against the actual code. Read files referenced in research findings to confirm your assumptions before finalizing the plan.",
-    ),
-  );
-
-  // 9. Output Schema
-  parts.push(section("Output Requirements", formatOutputSchema(Phases.planning)));
-
-  // 10. Action Reference
-  parts.push(
-    section(
-      "Actions",
-      formatActionReference(["read_file", "search_files", "search_content", "done"]),
-    ),
-  );
+  // 5. The Task Context
+  parts.push(buildTaskContext(ctx));
 
   return parts.join("\n\n");
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
-function buildIntakeSection(intakeOutput: Record<string, unknown> | null): string {
-  if (!intakeOutput) {
-    return section(
-      "Intake Analysis",
-      "No intake analysis available. Plan based on the task description and research findings.",
-    );
-  }
-  return section("Intake Analysis", formatPriorPhaseOutput(Phases.intake_analysis, intakeOutput));
+function buildRrpirOverview(): string {
+  return section(
+    "How The Engineer Works",
+    [
+      "You are the Planning session in a multi-phase pipeline called RRPIR:",
+      "**Requirements Gathering → Research → Planning → Implementation → Review**",
+      "",
+      "Each phase is a separate CLI session with a fresh context window. File-based handoffs connect the phases:",
+      "- Each phase reads previous phases' `.md` deliverables for context.",
+      "- Each phase writes its own `.md` deliverable and updates a `session-result.json` for routing.",
+      "- You have full CLI capabilities: read files, write files, search code, run commands. Use them freely.",
+      "",
+      "You are Planning. Requirements have been gathered. Research has been done. Your job is to create a precise, actionable implementation plan that makes execution almost mechanical.",
+    ].join("\n"),
+  );
 }
 
-function buildResearchSection(researchOutput: Record<string, unknown> | null): string {
-  if (!researchOutput) {
-    return section(
-      "Research Findings",
-      "No research findings available. Create the plan based on the task description alone.",
-    );
-  }
-  return section("Research Findings", formatPriorPhaseOutput(Phases.research, researchOutput));
+function buildPriorPhasesSection(thoughtsDir: string): string {
+  return section(
+    "What Happened Before You",
+    [
+      "Two phases have already completed. Read their deliverables:",
+      "",
+      `1. **Requirements:** \`${thoughtsDir}/requirements/requirements.md\` — task context, gathered requirements, assessment.`,
+      `2. **Research:** \`${thoughtsDir}/research/research.md\` — codebase analysis, relevant files, patterns, conventions.`,
+      "",
+      "Read both files before you start planning. They contain everything previous sessions discovered.",
+    ].join("\n"),
+  );
 }
 
-function buildRepoOverview(repoContext: RepoContext | null): string {
+function buildInstructions(thoughtsDir: string): string {
+  return section(
+    "What YOU Need To Do",
+    [
+      "1. **Read requirements.md and research.md first.** Understand the full context before planning.",
+      "",
+      "2. **Create a precise implementation plan.** Do NOT write implementation code. Your plan should make execution almost mechanical — every step concrete, every file path specified, every risk considered.",
+      "",
+      '3. **If you need more information to plan properly,** set `next_phase` to `"requirements_gathering"` in session-result.json. Specify what information you need and why in your summary.',
+      "",
+      `4. **Write the plan** to \`${thoughtsDir}/planning/plan.md\` using the template below. Use checkbox format so Implementation can track progress.`,
+      "",
+      "5. **If decomposition is needed** (3+ genuinely independent areas of change), include a `## Decomposition` section in plan.md. Each subtask runs the full RRPIR pipeline independently. Only decompose when subtasks are truly separable — do NOT decompose tightly coupled changes.",
+      "",
+      "6. **Verify your plan** by reading key files if research didn't cover them. The plan must be grounded in actual code, not assumptions.",
+    ].join("\n"),
+  );
+}
+
+function buildOutputSection(thoughtsDir: string): string {
+  return section(
+    "Where To Put Your Work",
+    [
+      "```",
+      `Deliverable: ${thoughtsDir}/planning/plan.md`,
+      `Session result: ${thoughtsDir}/planning/session-result.json`,
+      "```",
+      "",
+      "Update session-result.json with:",
+      "```json",
+      "{",
+      '  "status": "ready" or "need_more_info",',
+      '  "next_phase": "execution" (if ready) or "requirements_gathering" (if need more info),',
+      '  "summary": "<one-line plan summary>"',
+      "}",
+      "```",
+      "",
+      "### plan.md Template",
+      "",
+      "```markdown",
+      "# Plan: [Task Title]",
+      "",
+      "## Approach",
+      "[High-level description of what we'll build and how]",
+      "",
+      "## Phases",
+      "",
+      "### Phase 1: [Name]",
+      "- [ ] [Specific action with file path]",
+      "- [ ] [Specific action with file path]",
+      "- **Verify:** [How to confirm this phase works]",
+      "",
+      "### Phase 2: [Name]",
+      "- [ ] [Specific action with file path]",
+      "- [ ] [Specific action with file path]",
+      "- **Verify:** [How to confirm this phase works]",
+      "",
+      "## Risks & Mitigations",
+      "- **Risk:** [What could go wrong] → **Mitigation:** [How to handle it]",
+      "",
+      "## Test Strategy",
+      "[What tests to write, what to verify, edge cases]",
+      "",
+      "## Success Criteria",
+      "- [ ] [Measurable criterion]",
+      "- [ ] [Measurable criterion]",
+      "```",
+    ].join("\n"),
+  );
+}
+
+function buildTaskContext(ctx: PlanningPromptContext): string {
+  const parts: string[] = [];
+
+  // Task brief
+  parts.push(buildTaskBrief(ctx.task));
+
+  // Repo context
+  const repoSection = buildRepoOverview(ctx.repoContext);
+  if (repoSection) {
+    parts.push(repoSection);
+  }
+
+  // Knowledge
+  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
+  if (knowledge) {
+    parts.push(knowledge);
+  }
+
+  return section("The Task Context", parts.join("\n\n"));
+}
+
+function buildRepoOverview(repoContext: RepoContext | null): string | null {
   if (!repoContext) {
-    return section(
-      "Repository",
-      "No repository context available. Use read actions to explore if needed.",
-    );
+    return null;
   }
 
   const parts: string[] = [];
@@ -121,13 +184,11 @@ function buildRepoOverview(repoContext: RepoContext | null): string {
     parts.push("", repoContext.packageInfo);
   }
 
-  // Include directory tree (helps reason about file placement).
-  // Omit README — already seen in intake.
   if (repoContext.directoryTree) {
     parts.push("", "### File Structure", "", repoContext.directoryTree);
   }
 
-  return section("Repository", parts.join("\n"));
+  return parts.length > 0 ? `### Repository\n\n${parts.join("\n")}` : null;
 }
 
 function buildKnowledgeSection(
@@ -152,65 +213,5 @@ function buildKnowledgeSection(
     parts.push("User knowledge:", userFormatted);
   }
 
-  return section("Known Context", parts.join("\n"));
-}
-
-function buildPlanningInstructions(): string {
-  return section(
-    "Instructions",
-    [
-      "Create a concrete, actionable technical plan. A good plan makes execution almost mechanical.",
-      "",
-      "1. Define the approach — a clear description of what you will build and how. Think about the design before listing changes.",
-      "",
-      '2. List every file change with change_type (create, modify, or delete) and a specific description of what changes in each file. Be precise — "add pagination parameters to listUsers handler" not "modify users.ts".',
-      "",
-      "3. Identify risks and their mitigations. Consider:",
-      "   - Breaking existing tests or functionality",
-      "   - API contract changes that affect consumers",
-      "   - Performance implications",
-      "   - Edge cases and error handling gaps",
-      "",
-      "4. Define the test strategy — which test files to create or modify, what behaviors to test, what edge cases to cover.",
-      "",
-      "5. If the task is complex (multiple independent areas of change), consider decomposition into subtasks with clear boundaries and dependencies.",
-      "",
-      "6. Verify your plan by reading key files if you haven't already seen their content in research. The plan must be grounded in actual code, not assumptions.",
-    ].join("\n"),
-  );
-}
-
-function buildPlanningStrategy(intakeOutput: Record<string, unknown> | null): string {
-  const complexity = (intakeOutput?.["complexity"] as string) ?? "moderate";
-
-  if (complexity === "trivial" || complexity === "simple") {
-    return section(
-      "Planning Strategy",
-      "This task has low complexity. A concise plan with 1-3 file changes should suffice. Don't over-plan simple tasks — state the approach, list the changes, and move on.",
-    );
-  }
-
-  if (complexity === "complex" || complexity === "epic") {
-    return section(
-      "Planning Strategy",
-      [
-        "This task has high complexity. Use a structured approach:",
-        "1. Break the approach into phases or stages.",
-        "2. Consider which changes must come first (dependency ordering).",
-        "3. Plan for incremental testing — each group of changes should be testable independently.",
-        "4. Identify the highest-risk changes and plan those carefully.",
-        "5. If the task has 3+ genuinely independent areas of change, use decomposition_plan to split into subtasks.",
-        "   Each subtask runs the full engineering pipeline independently (research, plan, execute, review).",
-        "   Only decompose when subtasks are truly separable — do NOT decompose when changes are tightly coupled.",
-        "   Good subtask boundaries: separate modules, independent features, different domains.",
-        "   Bad boundaries: UI and API that must match, schema and all consumers, tightly coupled refactors.",
-      ].join("\n"),
-    );
-  }
-
-  // Moderate (default)
-  return section(
-    "Planning Strategy",
-    "Balance detail with pragmatism. Cover all file changes and risks without over-specifying. Focus on getting the approach right and listing concrete changes — a plan that makes execution almost mechanical.",
-  );
+  return `### Known Context\n\n${parts.join("\n")}`;
 }

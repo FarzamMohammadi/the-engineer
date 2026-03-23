@@ -42,6 +42,7 @@ describe("E2E: Daemon lifecycle", () => {
       repo: "test/repo",
       clone_url: "https://github.com/test/repo.git",
       metadata: null,
+      thoughts_id: "test-1",
       ...overrides,
     };
   }

@@ -35,6 +35,7 @@ export interface TaskRow {
   child_summaries: string;
   repo: string | null;
   clone_url: string | null;
+  thoughts_id: string | null;
   workspace: string | null;
   review: string | null;
   blocked: string | null;
@@ -85,6 +86,7 @@ export function rowToTask(row: TaskRow): Task {
     child_summaries: JSON.parse(row.child_summaries) as ChildCompletionSummary[],
     repo: row.repo,
     clone_url: row.clone_url,
+    thoughts_id: row.thoughts_id,
     workspace: row.workspace ? (JSON.parse(row.workspace) as TaskWorkspace) : null,
     review: row.review ? (JSON.parse(row.review) as ReviewState) : null,
     blocked: row.blocked ? (JSON.parse(row.blocked) as BlockedDetails) : null,

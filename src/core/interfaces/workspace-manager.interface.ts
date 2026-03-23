@@ -27,6 +27,8 @@ export interface CreateWorkspaceOptions {
   parentBranch?: string | undefined;
   /** Unauthenticated clone URL (required if repo not yet cloned). */
   cloneUrl?: string | undefined;
+  /** Identifier for the thoughts/ directory (e.g., "issue-42"). Derived from trigger events. */
+  thoughtsId?: string | undefined;
 }
 
 export interface IWorkspaceManager {

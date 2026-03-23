@@ -24,6 +24,8 @@ export interface CreateTaskInput {
   cascade_policy?: CascadePolicy;
   /** Git clone URL for the target repo (D148). */
   clone_url?: string | null;
+  /** Trigger-provided identifier for the thoughts/ directory (e.g., "issue-42"). */
+  thoughts_id?: string | null;
 }
 
 /** Result of requestTransition(). */

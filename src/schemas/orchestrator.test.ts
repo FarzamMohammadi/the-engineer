@@ -10,7 +10,6 @@ import {
   DemoPrepOutputSchema,
   ExecutionOutputSchema,
   FileChangeSchema,
-  IntakeAnalysisOutputSchema,
   IntegrationOutputSchema,
   LLMDecompositionPlanSchema,
   PhaseOutputSchema,
@@ -19,20 +18,21 @@ import {
   PlanningOutputSchema,
   QuestionBatchSchema,
   QuestionSchema,
+  RequirementsGatheringOutputSchema,
   ResearchOutputSchema,
   RiskSchema,
   SafetyQuerySchema,
   SafetyVerdictSchema,
   SelfReviewFindingSchema,
   SelfReviewOutputSchema,
-  TrivialCriteriaSchema,
+  SessionResultSchema,
 } from "./orchestrator.js";
 
 // ── Phase Enum ──────────────────────────────────────────────────────────────────
 
 describe("PhaseSchema", () => {
   const validPhases = [
-    "intake_analysis",
+    "requirements_gathering",
     "research",
     "planning",
     "execution",
@@ -95,54 +95,55 @@ describe("PhaseOutputSchema", () => {
 
 // ── Phase Outputs ───────────────────────────────────────────────────────────────
 
-describe("IntakeAnalysisOutputSchema", () => {
+describe("RequirementsGatheringOutputSchema", () => {
   it("parses valid output", () => {
-    const output = IntakeAnalysisOutputSchema.parse({
-      complexity: "moderate",
-      estimated_phases: ["intake_analysis", "research", "planning", "execution", "self_review"],
-      ambiguities: ["Which auth provider?"],
-      fast_path: false,
-      decomposition_likely: false,
+    const output = RequirementsGatheringOutputSchema.parse({
+      deliverable_path: "thoughts/test/requirements.md",
+      signal_status: "ready",
+      contact: null,
+      question: null,
+      assessment: null,
     });
-    expect(output.complexity).toBe("moderate");
+    expect(output.signal_status).toBe("ready");
   });
 
-  it("accepts all complexity levels", () => {
-    for (const c of ["trivial", "simple", "moderate", "complex", "epic"]) {
+  it("accepts both signal_status values", () => {
+    for (const s of ["ready", "need_more_info"]) {
       expect(
-        IntakeAnalysisOutputSchema.parse({
-          complexity: c,
-          estimated_phases: [],
-          ambiguities: [],
-          fast_path: false,
-          decomposition_likely: false,
-        }).complexity,
-      ).toBe(c);
+        RequirementsGatheringOutputSchema.parse({
+          deliverable_path: "thoughts/test/requirements.md",
+          signal_status: s,
+          contact: null,
+          question: null,
+          assessment: null,
+        }).signal_status,
+      ).toBe(s);
     }
   });
 
-  it("accepts any string values for estimated_phases", () => {
-    const output = IntakeAnalysisOutputSchema.parse({
-      complexity: "simple",
-      estimated_phases: ["custom_phase", "another_phase"],
-      ambiguities: [],
-      fast_path: true,
-      decomposition_likely: false,
+  it("accepts string values for contact and question", () => {
+    const output = RequirementsGatheringOutputSchema.parse({
+      deliverable_path: "thoughts/test/requirements.md",
+      signal_status: "need_more_info",
+      contact: "farzam",
+      question: "Which auth provider?",
+      assessment: "needs clarification",
     });
-    expect(output.estimated_phases).toEqual(["custom_phase", "another_phase"]);
+    expect(output.contact).toBe("farzam");
+    expect(output.question).toBe("Which auth provider?");
   });
 });
 
 describe("ResearchOutputSchema", () => {
   it("parses valid output", () => {
     const output = ResearchOutputSchema.parse({
-      relevant_files: ["src/auth.ts", "src/middleware.ts"],
-      relevant_modules: ["auth"],
-      conventions: [{ pattern: "middleware", description: "Express-style" }],
-      existing_patterns: ["middleware pattern"],
-      dependencies: ["express"],
+      deliverable_path: "thoughts/test/research.md",
+      signal_status: "ready",
+      contact: null,
+      question: null,
+      complexity_hint: "moderate",
     });
-    expect(output.relevant_files).toHaveLength(2);
+    expect(output.signal_status).toBe("ready");
   });
 });
 
@@ -573,33 +574,37 @@ describe("DecompositionChildSchema — security limits", () => {
 
 // ── Trivial Criteria ────────────────────────────────────────────────────────────
 
-describe("TrivialCriteriaSchema", () => {
-  it("parses valid criteria (all true = trivial)", () => {
-    const criteria = TrivialCriteriaSchema.parse({
-      single_file: true,
-      no_ambiguity: true,
-      no_new_dependencies: true,
-      no_architectural: true,
-      no_tests_needed: true,
-      estimated_time_under_limit: true,
+describe("SessionResultSchema", () => {
+  it("parses valid session result", () => {
+    const result = SessionResultSchema.parse({
+      status: "ready",
+      next_phase: "research",
+      summary: "Requirements gathered successfully",
     });
-    expect(criteria.single_file).toBe(true);
+    expect(result.status).toBe("ready");
+    expect(result.next_phase).toBe("research");
   });
 
-  it("parses valid criteria (non-trivial)", () => {
-    const criteria = TrivialCriteriaSchema.parse({
-      single_file: false,
-      no_ambiguity: false,
-      no_new_dependencies: true,
-      no_architectural: false,
-      no_tests_needed: false,
-      estimated_time_under_limit: false,
-    });
-    expect(criteria.single_file).toBe(false);
+  it("accepts all status values", () => {
+    for (const s of ["ready", "need_more_info", "error"]) {
+      expect(
+        SessionResultSchema.parse({
+          status: s,
+          next_phase: "research",
+          summary: "test",
+        }).status,
+      ).toBe(s);
+    }
   });
 
-  it("rejects missing fields", () => {
-    expect(() => TrivialCriteriaSchema.parse({ single_file: true })).toThrow();
+  it("rejects invalid next_phase", () => {
+    expect(() =>
+      SessionResultSchema.parse({
+        status: "ready",
+        next_phase: "invalid_phase",
+        summary: "test",
+      }),
+    ).toThrow();
   });
 });
 

@@ -32,20 +32,12 @@ import { createTestObserverFacade } from "./test-observer-facade.js";
 
 /** Valid phase output data for all 7 phases (passes Zod safeParse). */
 export const VALID_PHASE_DATA: Record<Phase, Record<string, unknown>> = {
-  intake_analysis: {
-    complexity: "moderate",
-    estimated_phases: [
-      "intake_analysis",
-      "research",
-      "planning",
-      "execution",
-      "self_review",
-      "demo_prep",
-      "integration",
-    ],
-    ambiguities: [],
-    fast_path: false,
-    decomposition_likely: false,
+  requirements_gathering: {
+    deliverable_path: "thoughts/test/requirements.md",
+    signal_status: "ready",
+    contact: null,
+    question: null,
+    assessment: null,
   },
   research: {
     relevant_files: ["src/index.ts"],
@@ -84,13 +76,13 @@ export const VALID_PHASE_DATA: Record<Phase, Record<string, unknown>> = {
   },
 };
 
-/** Valid fast-path intake analysis data. */
-export const FAST_PATH_INTAKE_DATA: Record<string, unknown> = {
-  complexity: "trivial",
-  estimated_phases: ["intake_analysis", "execution", "self_review"],
-  ambiguities: [],
-  fast_path: true,
-  decomposition_likely: false,
+/** Valid requirements_gathering data for trivial tasks. */
+export const TRIVIAL_REQUIREMENTS_DATA: Record<string, unknown> = {
+  deliverable_path: "thoughts/test/requirements.md",
+  signal_status: "ready",
+  contact: null,
+  question: null,
+  assessment: "trivial task",
 };
 
 // ── Mock Task ─────────────────────────────────────────────────────────────────
@@ -288,6 +280,8 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       supports_quota_reporting: false,
       context_window: null,
     }),
+    getContinueArgs: vi.fn().mockReturnValue([]),
+    getQuotaStatus: vi.fn().mockResolvedValue(null),
   };
 
   const fakeTool = {
@@ -431,6 +425,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
   const peopleDirectory = {
     getOwner: vi.fn().mockReturnValue(null),
     resolveContact: vi.fn().mockReturnValue(null),
+    getAll: vi.fn().mockReturnValue([]),
   };
 
   const orchestrator = new Orchestrator({
@@ -451,7 +446,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
   const setAllPhaseResponses = (): void => {
     llmCallIndex = 0;
     llmResponses = [
-      createLlmResponse(VALID_PHASE_DATA.intake_analysis),
+      createLlmResponse(VALID_PHASE_DATA.requirements_gathering),
       createLlmResponse(VALID_PHASE_DATA.research),
       createLlmResponse(VALID_PHASE_DATA.planning),
       createLlmResponse(VALID_PHASE_DATA.execution),

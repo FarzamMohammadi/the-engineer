@@ -319,37 +319,91 @@ This is the agile approach: don't push forward blindly. Stop, gather what you ne
 
 ---
 
-## Signal Protocol
+## File-First Architecture (Session 069)
 
-Every CLI call must end with a structured signal line for the Orchestrator to parse:
+**Supersedes the Signal Protocol section below.** Phase outputs are metadata only. Actual content lives in `thoughts/` files. Each phase writes two files:
 
+1. **`{phase}.md`** — the rich human-readable deliverable (requirements doc, research findings, plan, etc.)
+2. **`session-result.json`** — structured metadata the Orchestrator reads to decide what's next
+
+The Orchestrator never parses CLI text output for signals. Instead, it reads `session-result.json` after the CLI exits. This is more robust than text-based signal parsing — JSON files are deterministic, validatable, and survive CLI output formatting variations.
+
+### session-result.json
+
+Pre-filled as a template with valid options before the CLI runs:
+
+```json
+{
+  "status": "<ready | need_more_info | error>",
+  "next_phase": "<research | requirements_gathering | planning | execution | review | demo_prep | integration>",
+  "summary": "<one-line summary of what you accomplished>"
+}
 ```
-ENGINEER_SIGNAL: {"status": "ready"}
-ENGINEER_SIGNAL: {"status": "need_more_info", "contact": "PM", "question": "What are the auth requirements for..."}
-ENGINEER_SIGNAL: {"status": "quality", "assessment": "ship_it"}
-ENGINEER_SIGNAL: {"status": "decompose"}
+
+The CLI fills in actual values. If untouched (placeholders remain), the Orchestrator detects this and continues the same CLI session via `getContinueArgs()` with a nudge prompt. After 1 retry, falls back to expected next phase with a warning.
+
+### Insurance layers
+
+1. **Template pre-fill** — Orchestrator writes session-result.json with placeholder options before CLI runs
+2. **Post-session validation** — After CLI exits, read + validate. Detect unfilled placeholders.
+3. **Continue-session retry** — If invalid, continue the same CLI session with a nudge. CLI retains all context.
+4. **Prompt reinforcement** — Every phase prompt ends with session-result.json instructions and valid values.
+5. **Graceful fallback** — After 1 retry, proceed with expected next phase + log warning.
+
+### Phase outputs as metadata
+
+`PhaseOutput.data` for CLI-native phases contains metadata about what happened:
+
+```typescript
+// Requirements Gathering output
+{ deliverable_path, signal_status, contact, question, assessment }
+
+// Research output
+{ deliverable_path, signal_status, contact, question, complexity_hint }
 ```
 
-The prompt enforces this convention. The Orchestrator parses it with regex + JSON parse. If missing, treat as "ready" (graceful degradation). Exact signal schema to be designed in Session 069.
+The rich content lives in the `.md` file. The `.md` accumulates across reruns — if requirements gathering loops back, the same `requirements.md` gets updated, not replaced. Each phase reads prior phases' `.md` files directly from disk.
+
+---
+
+## ~~Signal Protocol~~ (Superseded)
+
+~~Every CLI call must end with a structured signal line for the Orchestrator to parse.~~
+
+**Replaced by session-result.json files (Session 069).** See "File-First Architecture" above. The signal protocol was fragile (LLMs are inconsistent with structured output in free text). File-based routing is deterministic and validatable.
 
 ---
 
 ## thoughts/ Directory Structure
 
+Task-scoped with `{date}-{thoughts_id}` naming. `thoughts_id` comes from the trigger plugin (e.g., `issue-42` from GitHub).
+
 ```
 <worktree>/
   thoughts/
-    requirements.md              # Requirements gathered, Q&A with stakeholders
-    research.md                  # Codebase analysis, patterns, findings
-    plan.md                      # Implementation plan with checkboxes
-    review/
-      requirements-check.md      # Acceptance criteria verification
-      security-review.md         # Security findings
-      code-quality.md            # Quality/refactoring findings
-    refinements.md               # Consolidated fixes from review pipeline
+    2026-03-22-issue-42/           # Task-scoped directory
+      requirements/
+        requirements.md            # Requirements gathered, Q&A with stakeholders
+        session-result.json        # Routing metadata for Orchestrator
+      research/
+        research.md                # Codebase analysis, patterns, findings
+        session-result.json
+      planning/
+        plan.md                    # Implementation plan with checkboxes
+        session-result.json
+      implementation/
+        session-result.json        # Code changes are in worktree, not .md
+      review/
+        requirements-check.md      # Acceptance criteria verification
+        security-review.md         # Security findings
+        code-quality.md            # Quality/refactoring findings
+        session-result.json
+      refinements/
+        refinements.md             # Consolidated fixes from review pipeline
+        session-result.json
 ```
 
-All files accumulate through the pipeline. Each phase reads prior files. Files appear in PRs (unless configured otherwise). Reviewers see the full reasoning chain — from requirements gathering through review.
+All directories + session-result.json templates created upfront at workspace setup. Files accumulate through the pipeline. Each phase reads prior phases' files. Files appear in PRs (unless configured otherwise). Reviewers see the full reasoning chain.
 
 ---
 

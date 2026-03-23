@@ -135,6 +135,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       description: event.body ?? "",
       external_ref: externalRef,
       clone_url: event.clone_url,
+      thoughts_id: event.thoughts_id,
     });
 
     taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");

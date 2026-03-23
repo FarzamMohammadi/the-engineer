@@ -312,6 +312,9 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
         );
       });
 
+      // Suppress EPIPE — child may exit before stdin is consumed
+      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop — suppress EPIPE when child exits before stdin consumed
+      child.stdin?.on("error", () => {});
       if (stdinContent) {
         child.stdin?.write(stdinContent);
       }

@@ -290,6 +290,9 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
       });
 
       // Pipe prompt via stdin to avoid OS argument length limits
+      // Suppress EPIPE — child may exit before stdin is consumed
+      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional noop — suppress EPIPE when child exits before stdin consumed
+      child.stdin?.on("error", () => {});
       if (stdinContent) {
         child.stdin?.write(stdinContent);
       }

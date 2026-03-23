@@ -107,6 +107,80 @@ function pollEvents(
   }
 }
 
+interface StreamState {
+  lastObsRowId: number;
+  lastEventSeq: number;
+  heartbeatCounter: number;
+}
+
+function initStreamState(
+  db: Database.Database,
+  lastObsRowIdStr: string | undefined,
+  lastEventSeqStr: string | undefined,
+): StreamState {
+  const lastObsRowId = lastObsRowIdStr ? Number.parseInt(lastObsRowIdStr, 10) : getMaxObsRowId(db);
+  const lastEventSeq = lastEventSeqStr ? Number.parseInt(lastEventSeqStr, 10) : getMaxEventSeq(db);
+  return { lastObsRowId, lastEventSeq, heartbeatCounter: 0 };
+}
+
+async function emitObservations(
+  stream: { writeSSE: (msg: { event: string; data: string; id: string }) => Promise<void> },
+  db: Database.Database,
+  state: StreamState,
+): Promise<void> {
+  const obsResult = pollObservations(db, state.lastObsRowId);
+  state.lastObsRowId = obsResult.newCursor;
+  for (const row of obsResult.rows) {
+    const obs = rowToObservation(row);
+    await stream.writeSSE({
+      event: "observation",
+      data: JSON.stringify(obs),
+      id: `obs:${String(row.rowid)}`,
+    });
+  }
+}
+
+async function emitEvents(
+  stream: { writeSSE: (msg: { event: string; data: string; id: string }) => Promise<void> },
+  db: Database.Database,
+  state: StreamState,
+): Promise<void> {
+  const evtResult = pollEvents(db, state.lastEventSeq);
+  state.lastEventSeq = evtResult.newCursor;
+  for (const row of evtResult.rows) {
+    await stream.writeSSE({
+      event: "event",
+      data: JSON.stringify({
+        id: row.id,
+        sequence: row.sequence,
+        type: row.type,
+        source: row.source,
+        task_id: row.task_id,
+        timestamp: row.timestamp,
+        payload: JSON.parse(row.payload || "{}"),
+      }),
+      id: `evt:${String(row.sequence)}`,
+    });
+  }
+}
+
+async function emitHeartbeatIfDue(
+  stream: { writeSSE: (msg: { event: string; data: string }) => Promise<void> },
+  state: StreamState,
+): Promise<void> {
+  state.heartbeatCounter += POLL_INTERVAL_MS;
+  if (state.heartbeatCounter >= HEARTBEAT_INTERVAL_MS) {
+    state.heartbeatCounter = 0;
+    await stream.writeSSE({
+      event: "heartbeat",
+      data: JSON.stringify({
+        lastObsRowId: state.lastObsRowId,
+        lastEventSeq: state.lastEventSeq,
+      }),
+    });
+  }
+}
+
 export function streamRoutes(deps: StreamRoutesDeps): Hono {
   const app = new Hono();
 
@@ -115,61 +189,12 @@ export function streamRoutes(deps: StreamRoutesDeps): Hono {
     const lastEventSeqStr = c.req.query("lastEventSeq");
 
     return streamSSE(c, async (stream) => {
-      let lastObsRowId = lastObsRowIdStr ? Number.parseInt(lastObsRowIdStr, 10) : 0;
-      let lastEventSeq = lastEventSeqStr ? Number.parseInt(lastEventSeqStr, 10) : 0;
-
-      // Start from current max to avoid replaying history on fresh connect
-      if (!lastObsRowIdStr) {
-        lastObsRowId = getMaxObsRowId(deps.db);
-      }
-      if (!lastEventSeqStr) {
-        lastEventSeq = getMaxEventSeq(deps.db);
-      }
-
-      let heartbeatCounter = 0;
+      const state = initStreamState(deps.db, lastObsRowIdStr, lastEventSeqStr);
 
       while (true) {
-        // Poll observations
-        const obsResult = pollObservations(deps.db, lastObsRowId);
-        lastObsRowId = obsResult.newCursor;
-        for (const row of obsResult.rows) {
-          const obs = rowToObservation(row);
-          await stream.writeSSE({
-            event: "observation",
-            data: JSON.stringify(obs),
-            id: `obs:${String(row.rowid)}`,
-          });
-        }
-
-        // Poll events
-        const evtResult = pollEvents(deps.db, lastEventSeq);
-        lastEventSeq = evtResult.newCursor;
-        for (const row of evtResult.rows) {
-          await stream.writeSSE({
-            event: "event",
-            data: JSON.stringify({
-              id: row.id,
-              sequence: row.sequence,
-              type: row.type,
-              source: row.source,
-              task_id: row.task_id,
-              timestamp: row.timestamp,
-              payload: JSON.parse(row.payload || "{}"),
-            }),
-            id: `evt:${String(row.sequence)}`,
-          });
-        }
-
-        // Heartbeat
-        heartbeatCounter += POLL_INTERVAL_MS;
-        if (heartbeatCounter >= HEARTBEAT_INTERVAL_MS) {
-          heartbeatCounter = 0;
-          await stream.writeSSE({
-            event: "heartbeat",
-            data: JSON.stringify({ lastObsRowId, lastEventSeq }),
-          });
-        }
-
+        await emitObservations(stream, deps.db, state);
+        await emitEvents(stream, deps.db, state);
+        await emitHeartbeatIfDue(stream, state);
         await stream.sleep(POLL_INTERVAL_MS);
       }
     });

@@ -651,6 +651,83 @@ describe("PhaseRunner", () => {
       );
     });
 
+    it("awaits outreach delivery before blocking", async () => {
+      const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+      const { join } = await import("node:path");
+
+      // Create a real temp dir with requirements.md containing PENDING questions
+      const tmpDir = join("/tmp", `outreach-test-${Date.now()}`);
+      const reqDir = join(tmpDir, "thoughts", "test", "requirements");
+      mkdirSync(reqDir, { recursive: true });
+      writeFileSync(
+        join(reqDir, "requirements.md"),
+        [
+          "## Questions Asked",
+          "### Farzam (owner) — 2026-03-23",
+          "**Q:** What scenes need updating?",
+          "**A:** PENDING",
+        ].join("\n"),
+      );
+
+      try {
+        const ctx = createMockContext();
+        (ctx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(tmpDir);
+
+        // Track call order to verify delivery completes before transition
+        const callOrder: string[] = [];
+
+        const mockCommPlugin = {
+          hasCapability: vi.fn((cap: string) => cap === "send"),
+          manifest: { id: "telegram-comm" },
+          formatMessage: vi.fn((msg: string) => msg),
+          sendMessage: vi.fn(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            callOrder.push("send_completed");
+            return { success: true, message_id: "42" };
+          }),
+        };
+        (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([
+          mockCommPlugin,
+        ]);
+
+        // Mock people directory
+        const pd = ctx.peopleDirectory as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        pd["getByRole"] = vi.fn().mockReturnValue([{ id: "farzam", name: "Farzam" }]);
+        pd["getOwner"] = vi.fn().mockReturnValue({ id: "farzam", name: "Farzam" });
+
+        (ctx.taskEngine.requestTransition as ReturnType<typeof vi.fn>).mockImplementation(() => {
+          callOrder.push("transition_to_blocked");
+          return { success: true };
+        });
+
+        const outputs = new Map<Phase, PhaseOutput>();
+        for (const phase of PHASE_SEQUENCE) {
+          outputs.set(phase, makeOutput(phase));
+        }
+        outputs.set(
+          Phases.requirements_gathering,
+          makeOutput(Phases.requirements_gathering, { status: "need_more_info" }),
+        );
+        const handlers = createHandlersThatReturn(outputs);
+        const deps = createDeps(ctx, handlers);
+
+        const result = await runPhasePipeline(
+          createDispatch(),
+          createState({ thoughtsDir: "thoughts/test" }),
+          deps,
+        );
+
+        expect(result.outcome).toBe("blocked");
+        expect(mockCommPlugin.sendMessage).toHaveBeenCalled();
+        // Delivery must complete BEFORE transition to blocked
+        expect(callOrder.indexOf("send_completed")).toBeLessThan(
+          callOrder.indexOf("transition_to_blocked"),
+        );
+      } finally {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
     it("persists return_to_phase when blocking from a fallback", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();

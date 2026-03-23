@@ -137,12 +137,12 @@ export function parsePendingOutreach(requirementsMd: string): OutreachEntry[] {
   return entries;
 }
 
-/** Send outreach messages via comm plugins for pending questions. Fire-and-forget. */
-function sendOutreachMessages(
+/** Send outreach messages via comm plugins for pending questions. Awaits delivery. */
+async function sendOutreachMessages(
   taskId: string,
   entries: OutreachEntry[],
   ctx: OrchestratorContext,
-): void {
+): Promise<void> {
   if (entries.length === 0) {
     return;
   }
@@ -161,9 +161,9 @@ function sendOutreachMessages(
 
   const task = ctx.taskEngine.getTask(taskId);
   const taskTitle = task?.title ?? taskId;
+  const sendPromises: Promise<void>[] = [];
 
   for (const entry of entries) {
-    // Match person against People Directory
     const byRole = ctx.peopleDirectory.getByRole(entry.role);
     const contact = byRole[0] ?? ctx.peopleDirectory.getOwner();
     if (!contact) {
@@ -174,26 +174,39 @@ function sendOutreachMessages(
 
     for (const plugin of sendPlugins) {
       const formatted = plugin.formatMessage(message, "notification");
-      plugin
-        .sendMessage(
-          { user_id: contact.id, channel: null },
-          { content: formatted, metadata: { task_id: taskId, type: "notification" } },
-        )
-        .catch((err: unknown) => {
-          ctx.observer.warn("Outreach message send failed", {
-            taskId,
-            person: entry.person,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
+      sendPromises.push(
+        plugin
+          .sendMessage(
+            { user_id: contact.id, channel: null },
+            { content: formatted, metadata: { task_id: taskId, type: "notification" } },
+          )
+          .then((result) => {
+            if (result.success) {
+              ctx.observer.info("Outreach message delivered", {
+                taskId,
+                person: entry.person,
+                role: entry.role,
+                contactId: contact.id,
+                pluginId: plugin.manifest.id,
+              });
+            } else {
+              ctx.observer.warn("Outreach message delivery failed", {
+                taskId,
+                person: entry.person,
+                pluginId: plugin.manifest.id,
+                error: result.error?.message ?? "unknown",
+              });
+            }
+          })
+          .catch((err: unknown) => {
+            ctx.observer.warn("Outreach message send failed", {
+              taskId,
+              person: entry.person,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }),
+      );
     }
-
-    ctx.observer.info("Outreach message sent", {
-      taskId,
-      person: entry.person,
-      role: entry.role,
-      contactId: contact.id,
-    });
   }
 
   // Also comment on the source issue if applicable
@@ -202,16 +215,24 @@ function sendOutreachMessages(
     const { type, repo, number } = task.external_ref;
     if (type === "github_issue" || type === "github_pr") {
       const summary = entries.map((e) => `- **${e.person}** (${e.role}): ${e.question}`).join("\n");
-      issuePlugin
-        .commentOnIssue(repo, number, `Blocked — waiting for answers:\n\n${summary}`)
-        .catch((err: unknown) => {
-          ctx.observer.warn("Issue comment for outreach failed", {
-            taskId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
+      sendPromises.push(
+        issuePlugin
+          .commentOnIssue(repo, number, `Blocked — waiting for answers:\n\n${summary}`)
+          .then(() => {
+            ctx.observer.info("Outreach issue comment posted", { taskId, repo, number });
+          })
+          .catch((err: unknown) => {
+            ctx.observer.warn("Issue comment for outreach failed", {
+              taskId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }),
+      );
     }
   }
+
+  // Await all sends — ensures messages are delivered before blocking
+  await Promise.allSettled(sendPromises);
 }
 
 /** Discriminated union of post-phase processing outcomes (internal to the pipeline runner). */
@@ -626,7 +647,7 @@ async function handlePostPhaseActions(
           const reqMd = readFileSync(reqMdPath, "utf-8");
           const outreach = parsePendingOutreach(reqMd);
           if (outreach.length > 0) {
-            sendOutreachMessages(taskId, outreach, ctx);
+            await sendOutreachMessages(taskId, outreach, ctx);
           }
         }
       }

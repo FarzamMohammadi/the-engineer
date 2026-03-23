@@ -4,7 +4,6 @@ import {
   CommunicationAdapter,
   type FormattedMessage,
   type HealthStatus,
-  type InboundMessage,
   type InitResult,
   type IssueOptions,
   type IssueResult,
@@ -19,36 +18,6 @@ import {
 } from "../../../adapters/index.js";
 import { type GitHubCommConfig, GitHubCommConfigSchema } from "./config.js";
 import { diffStateLabels, parseGitHubUrl, parseTargetChannel } from "./github-utils.js";
-
-/** Prefixes on comments posted by The Engineer — used to filter self-authored comments. */
-const SELF_COMMENT_PREFIXES = [
-  "Task completed",
-  "Pull request created",
-  "Task encountered an error",
-  "PR merged",
-  "Demo approved",
-  "Code approved",
-  "Code review approved",
-  "Pushed rework",
-  "Task picked up",
-  "Blocked — reaching out",
-  "> **Info**",
-  "> **Question**",
-  "> **Status**",
-  "> **Milestone**",
-  "> **Alert**",
-];
-
-const CHANNEL_RE = /^([^/]+)\/([^#]+)#(\d+)$/;
-
-/** Channel string → { owner, repo, number }. Format: "owner/repo#42". */
-function parseChannel(channel: string): { owner: string; repo: string; number: number } | null {
-  const match = CHANNEL_RE.exec(channel);
-  if (!match) {
-    return null;
-  }
-  return { owner: match[1] as string, repo: match[2] as string, number: Number(match[3]) };
-}
 
 /** Message type → GitHub markdown prefix. */
 const TYPE_PREFIXES: Record<MessageType, string> = {
@@ -73,7 +42,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
   protected octokit!: Octokit;
 
   override hasCapability(capability: string): boolean {
-    return ["send", "sync", "issue_management", "receive"].includes(capability);
+    return ["send", "sync", "issue_management"].includes(capability);
   }
 
   formatMessage(content: string, type: MessageType): string {
@@ -367,66 +336,6 @@ export class GitHubCommPlugin extends CommunicationAdapter {
         }
       }
     }
-  }
-
-  // ── Receive: poll issue comments ─────────────────────────────────────────
-
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-channel polling with comment filtering
-  protected async doPollMessages(
-    channels: string[],
-    since: string,
-  ): Promise<{ messages: InboundMessage[]; cursor: string }> {
-    const messages: InboundMessage[] = [];
-    let latestTimestamp = since || "";
-
-    for (const channel of channels) {
-      const parsed = parseChannel(channel);
-      if (!parsed) {
-        continue;
-      }
-
-      const params: { owner: string; repo: string; issue_number: number; since?: string } = {
-        owner: parsed.owner,
-        repo: parsed.repo,
-        issue_number: parsed.number,
-      };
-      if (since) {
-        params.since = since;
-      }
-
-      const { data: comments } = await this.octokit.issues.listComments(params);
-
-      for (const comment of comments) {
-        const body = (comment.body ?? "").trim();
-        if (!body) {
-          continue;
-        }
-
-        // Filter self-comments
-        if (SELF_COMMENT_PREFIXES.some((prefix) => body.startsWith(prefix))) {
-          continue;
-        }
-
-        messages.push({
-          source: "github",
-          sender: comment.user?.login ?? "unknown",
-          content: body,
-          timestamp: comment.created_at,
-          reply_to: null,
-          platform_metadata: {
-            repo: `${parsed.owner}/${parsed.repo}`,
-            issue_number: parsed.number,
-            comment_id: comment.id,
-          },
-        });
-
-        if (comment.created_at > latestTimestamp) {
-          latestTimestamp = comment.created_at;
-        }
-      }
-    }
-
-    return { messages, cursor: latestTimestamp };
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────

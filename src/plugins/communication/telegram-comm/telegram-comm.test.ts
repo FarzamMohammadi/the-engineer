@@ -95,8 +95,8 @@ describe("TelegramCommPlugin", () => {
       expect(plugin.hasCapability("send")).toBe(true);
     });
 
-    it("does not report receive capability", () => {
-      expect(plugin.hasCapability("receive")).toBe(false);
+    it("reports receive capability", () => {
+      expect(plugin.hasCapability("receive")).toBe(true);
     });
 
     it("does not report sync capability", () => {

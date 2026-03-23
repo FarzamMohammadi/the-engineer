@@ -209,9 +209,11 @@ describe("ResponsePoller", () => {
     expect(commEvents.length).toBe(1);
   });
 
-  it("discards messages that cannot be linked to a task", async () => {
-    const task = makeBlockedTask("task-1", "owner/repo", 42);
-    (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
+  it("discards messages that cannot be linked when multiple tasks are blocked", async () => {
+    // With 2+ blocked tasks, the single-task fallback doesn't apply
+    const task1 = makeBlockedTask("task-1", "owner/repo", 42);
+    const task2 = makeBlockedTask("task-2", "owner/repo", 99);
+    (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task1, task2]);
 
     const unlinkable = {
       source: "unknown",

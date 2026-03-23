@@ -3,6 +3,7 @@ import {
   CommunicationAdapter,
   type FormattedMessage,
   type HealthStatus,
+  type InboundMessage,
   type InitResult,
   type MessageType,
   type SendResult,
@@ -114,8 +115,10 @@ export class TelegramCommPlugin extends CommunicationAdapter {
   private config!: TelegramCommConfig;
   protected bot!: Bot;
 
+  private lastUpdateId = 0;
+
   override hasCapability(capability: string): boolean {
-    return capability === "send";
+    return capability === "send" || capability === "receive";
   }
 
   formatMessage(content: string, type: MessageType): string {
@@ -152,6 +155,57 @@ export class TelegramCommPlugin extends CommunicationAdapter {
       };
     }
   }
+
+  // ── Receive: poll for new messages via getUpdates ───────────────────────
+
+  protected async doPollMessages(
+    _channels: string[],
+    _since: string,
+  ): Promise<{ messages: InboundMessage[]; cursor: string }> {
+    const params: { timeout: number; allowed_updates: readonly ["message"]; offset?: number } = {
+      timeout: 0,
+      allowed_updates: ["message"] as const,
+    };
+    if (this.lastUpdateId > 0) {
+      params.offset = this.lastUpdateId + 1;
+    }
+    const updates = await this.bot.api.getUpdates(params);
+
+    const messages: InboundMessage[] = [];
+
+    for (const update of updates) {
+      if (update.update_id > this.lastUpdateId) {
+        this.lastUpdateId = update.update_id;
+      }
+
+      const msg = update.message;
+      if (!msg?.text) {
+        continue;
+      }
+
+      // Skip bot commands (e.g., /start)
+      if (msg.text.startsWith("/")) {
+        continue;
+      }
+
+      messages.push({
+        source: "telegram",
+        sender: msg.from?.username ?? String(msg.from?.id ?? "unknown"),
+        content: msg.text,
+        timestamp: new Date(msg.date * 1000).toISOString(),
+        reply_to: msg.reply_to_message ? String(msg.reply_to_message.message_id) : null,
+        platform_metadata: {
+          chat_id: msg.chat.id,
+          message_id: msg.message_id,
+          from_id: msg.from?.id,
+        },
+      });
+    }
+
+    return { messages, cursor: String(this.lastUpdateId) };
+  }
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {
     const parsed = TelegramCommConfigSchema.safeParse(config);

@@ -113,8 +113,8 @@ describe("GitHubCommPlugin", () => {
       expect(plugin.hasCapability("issue_management")).toBe(true);
     });
 
-    it("reports receive capability", () => {
-      expect(plugin.hasCapability("receive")).toBe(true);
+    it("does not report receive capability", () => {
+      expect(plugin.hasCapability("receive")).toBe(false);
     });
   });
 

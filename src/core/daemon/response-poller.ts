@@ -97,24 +97,21 @@ export function createResponsePoller(
       return;
     }
 
-    // Build channel list from blocked tasks' external_ref
+    // Build channel list from blocked tasks' external_ref (may be empty for Telegram-only tasks)
     const channels: string[] = [];
     for (const task of blockedTasks) {
       if (task.external_ref) {
         channels.push(buildChannel(task.external_ref));
       }
     }
-    if (channels.length === 0) {
-      return;
-    }
 
     // Get receive-capable comm plugins
     const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
     const receivePlugins = commPlugins.filter((p) => p.hasCapability("receive"));
 
-    // Poll each plugin
+    // Poll each plugin (channels may be empty — Telegram ignores them, uses getUpdates)
     await Promise.allSettled(
-      receivePlugins.map((plugin) => pollSinglePlugin(plugin, channels, now)),
+      receivePlugins.map((plugin) => pollSinglePlugin(plugin, channels, now, blockedTasks)),
     );
   }
 
@@ -122,6 +119,7 @@ export function createResponsePoller(
     plugin: CommunicationAdapter,
     channels: string[],
     now: number,
+    blockedTasks: Array<{ id: string }>,
   ): Promise<void> {
     const pluginId = plugin.manifest.id;
 
@@ -142,7 +140,7 @@ export function createResponsePoller(
       pluginCursors.set(pluginId, result.cursor);
 
       for (const msg of result.messages) {
-        processInboundMessage(msg);
+        processInboundMessage(msg, blockedTasks);
       }
     } catch (err) {
       const failures = (pluginFailures.get(pluginId) ?? 0) + 1;
@@ -155,12 +153,26 @@ export function createResponsePoller(
     }
   }
 
-  function processInboundMessage(msg: InboundMessage): void {
-    const input = linkMessageToTask(msg);
+  function processInboundMessage(msg: InboundMessage, blockedTasks: Array<{ id: string }>): void {
+    let input = linkMessageToTask(msg);
+
+    // Fallback: if message can't be linked via metadata (e.g., Telegram has no task context),
+    // and exactly one task is blocked, assume the message is for that task.
+    const soleBlockedTask = blockedTasks.length === 1 ? blockedTasks[0] : undefined;
+    if (!input && soleBlockedTask) {
+      input = {
+        by: "task_id",
+        taskId: soleBlockedTask.id,
+        source: msg.source,
+        content: msg.content,
+      };
+    }
+
     if (!input) {
       observer.debug("Inbound message could not be linked to a task — discarding", {
         source: msg.source,
         sender: msg.sender,
+        blockedCount: blockedTasks.length,
       });
       return;
     }

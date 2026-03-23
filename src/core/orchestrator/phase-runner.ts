@@ -637,6 +637,10 @@ async function handlePostPhaseActions(
         ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase);
       }
 
+      // Create checkpoint before blocking so re-dispatch resumes correctly
+      // (workspace already exists, thoughtsDir set — checkpoint preserves this state)
+      createPhaseCheckpoint(sessionId, taskId, phase, priorOutputs, null, ctx);
+
       ctx.taskEngine.requestTransition(
         taskId,
         TaskStates.blocked,

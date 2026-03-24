@@ -4,7 +4,7 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** Communication flow COMPLETE and LIVE-TESTED (Sessions 072-075). Full blocked/unblock lifecycle: outreach via Telegram, response detection via ResponsePoller, UnblockResolver as shared Core abstraction. Triggers = intake, Communication = conversations. 8 reviews, all bugs fixed, 2,322 tests. Next: agent loop removal, dashboard UI, live E2E multi-scenario testing.
+**Current phase:** RRPIR Hardening (Session 076). Agent loop removed, dashboard UI done, triple review (Engineer/Architect/QA) found 17 issues across the RRPIR pipeline. Four independent worktree branches prepared: WS-1 (directory consolidation), WS-2 (prompt fixes), WS-3 (crash recovery), WS-4 (observability). Next: execute the 4 worktree branches, merge, then begin Runtime Phase Refinement.
 
 Previous layers:
 - [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)
@@ -82,9 +82,9 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** Session 071 DONE. All 7/7 phases now CLI-native. Configurable multi-phase review pipeline (review sub-phases + refinement step). Demo-prep is narrative-only (pr-manager handles git/PR ops). `pnpm lint` now runs all 4 checks (biome + typecheck + knip + circular). Next: Session 072 (Agent Loop Removal). See `8-refinement-v2/status.md` for live status.
+**Layer 8 — Refinement v2: IN PROGRESS.** Session 076 DONE. Agent loop dead code removed (~2,600 lines, 80 tests). Dashboard blocked-task communication panel added (blocked details card, conversation timeline, response input). All 7/7 phases CLI-native. Full blocked/unblock communication lifecycle operational (Telegram + dashboard). Next: finish RRPIR Refinement — cross-plugin validation (OpenCode, Gemini CLI), crash recovery testing, thoughts/ file viewer, live E2E multi-scenario. See `8-refinement-v2/status.md` for live status.
 
-**Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,289 tests (100 files).
+**Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,242 tests (99 files).
 
 - Phase 0: Project Bootstrap — **DONE** (Session 31). 12 files: package.json, tsconfig.json, biome.json, lefthook.yml, 4 vitest configs, test/setup.ts, src/index.ts, .gitignore, .node-version. All verification passes.
 - Phase 1a: Core Data Schemas — **DONE** (Session 32). 7 files in `src/schemas/`: task.ts (4 enums, 12 sub-schemas, TaskSchema, StateTransitionSchema, ValidTransitions 25 rules, PermissionTable 10 entries), events.ts (EventSchema envelope, 30 payload schemas, EventPayloads mapped type, TypedEvent generic, eventPayloadSchemas runtime registry), session-memory.ts (Session, JournalEntry, Checkpoint, KnowledgeEntry, knowledgeId()), 3 test files (126 tests), index.ts barrel. 3 Biome exceptions added (useNamingConvention, noBarrelFile, noReExportAll). All verification passes.

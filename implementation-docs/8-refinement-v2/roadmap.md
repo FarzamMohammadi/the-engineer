@@ -61,7 +61,7 @@ Key decisions made:
 
 ---
 
-## RRPIR Implementation
+## RRPIR Implementation (DONE)
 
 Broken into focused sessions. Each session implements one or two RRPIR phases and tests them live.
 
@@ -87,36 +87,99 @@ Broken into focused sessions. Each session implements one or two RRPIR phases an
 - Triple review (simplify + persona + PR reviewer) → refinement pass (PhaseSchema validation, state mutation safety, test deduplication)
 - 5 new tests, 2285 total
 
-### Session 071 — Review Pipeline + Demo/PR
+### Session 071 — Review Pipeline + Demo/PR (DONE)
 
-- Implement configurable multi-phase review pipeline (`rrpir.review_phases` config)
-- Build review phase prompts (requirements check, security, code quality)
-- Build refinement phase (reads `thoughts/review/*.md`, consolidates, fixes)
-- Wire into demo_prep (PR creation with thoughts/ files, cleanup config)
-- Cost management: default to minimal review phases, per-phase tracking
-- Test full RRPIR pipeline end-to-end
+- Configurable multi-phase review pipeline (`rrpir.review_phases` config)
+- Review phase prompts (requirements check, security, code quality) with `overridePhaseDir`
+- Refinement phase (reads `thoughts/review/*.md`, consolidates, applies fixes)
+- Demo-prep is narrative-only (writes `pr-description.md`; pr-manager handles git/PR ops)
+- All 7/7 phases now CLI-native via `runPhaseWithCli`
+- `pnpm lint` runs all 4 checks (biome + typecheck + knip + circular)
 
-### Session 072 — Agent Loop Removal
+### Session 076 — Agent Loop Removal (DONE)
 
-- Remove `agent-loop.ts`, `action-executor.ts`, `phase-tools.ts`, `json-parser.ts`
-- Simplify `llm-caller.ts` — direct CLI call, read deliverable files
-- Simplify phase output schemas (files are the output, not JSON)
-- Update/remove ~200+ agent loop tests
-- Clean up dead code and unused schemas
+- Deleted agent-loop.ts, action-executor.ts, phase-tools.ts, json-parser.ts, prompts/self-review.ts
+- Removed dead schemas: AgentActionSchema, ActionResultSchema, PhaseToolConfigSchema
+- Simplified llm-caller.ts (611 → 304 lines), removed `runPhaseWithAgentLoop` from interface
+- ~2,600 lines removed, 80 tests dropped. 2,242 tests passing.
 
-### Session 073+ — RRPIR Refinement
+---
 
-- Live testing each phase with all 3 CLI tools (Claude Code, OpenCode, Gemini CLI)
-- Prompt tuning based on real results
-- Cross-plugin validation (equivalent quality across CLIs)
-- Dashboard updates for RRPIR visibility (thoughts/ file viewer, review findings)
-- Crash recovery testing with file-based checkpoints
+## Communication Flow (DONE)
+
+Built the complete blocked/unblock communication lifecycle across Sessions 072-076. This work was not originally on the roadmap — it emerged from live testing as a critical gap.
+
+### Sessions 072-073 — UnblockResolver + Response Poller Design (DONE)
+
+- UnblockResolver: shared Core abstraction (by external_ref + by task_id)
+- Response poller design: triggers = intake, communication = conversations
+- Dashboard response API: POST writes `comm.message_received` event, daemon polls and unblocks
+- `CommunicationAdapter.pollMessages()`: new optional method under `receive` capability
+
+### Session 074 — Response Poller Implementation (DONE)
+
+- Created `response-poller.ts` daemon subsystem with adaptive backoff
+- Implemented `doPollMessages()` in GitHubCommPlugin (issue comment polling, self-filtering)
+- Wired into tick loop, removed unblock check from trigger poller
+- Triple review found and fixed 3 bugs (historical comment replay, event bus replay, spurious query responses)
+
+### Session 075 — Live Testing + Telegram Receive (DONE)
+
+- Moved `receive` capability from GitHub to Telegram (GitHub = intake, Telegram = communication)
+- Fixed blocked task resume: no checkpoint on block, always set `return_to_phase`, persist `thoughts_dir`
+- Updated requirements_gathering prompt to read `responses/` directory on resume
+- Drained pending Telegram updates on startup to prevent false unblocks
+- Live-tested end-to-end: block → Telegram outreach → reply → unblock → resume working
+
+### Session 076 — Dashboard Blocked-Task UI (DONE)
+
+- Blocked details card (reason, needed, waiting_for, efforts)
+- Conversation panel with outreach messages and owner responses
+- Text input with Send button (+ Ctrl+Enter) for dashboard responses
+- Real-time SSE updates for new messages
+
+---
+
+## RRPIR Hardening (Session 076 Triple Review)
+
+Session 076 ran three parallel reviews (Engineer persona, Technical Architect, QA Engineer) of the full RRPIR pipeline. Found 17 issues across 4 categories. Fixes split into 4 independent worktree branches.
+
+### WS-1: Review Directory Consolidation + PHASE_DIRECTORIES Cleanup
+
+- Merge `review/` and `refinements/` into single `review/` directory
+- Remove `"refinements"` from PHASE_DIRECTORIES, add `"integration"`
+- Eliminate magic index access (PHASE_DIRECTORIES[0], [4], [6]) — use PHASE_DIR_MAP exclusively
+- Remove fragile PHASE_DELIVERABLE_MAP entirely (prompts are explicit, check adds no value)
+- Update review.ts refinement output paths, phase-handlers.ts overridePhaseDir
+
+### WS-2: Prompt Data Flow Fixes
+
+- Fix demo-prep.ts hyphen/underscore filename mismatch (CRITICAL — LLM looks for wrong files)
+- Fix review.ts bare `requirements.md` path (missing thoughtsDir prefix)
+- Add `review/refinements.md` reference to demo-prep prompt
+- Fix outreach/ cleanup timing (currently cleaned before LLM can read prior outreach on re-run)
+- Add session-result.json reminder to process steps in requirements-gathering and research prompts
+- Add decomposition mechanics sentence to planning prompt
+
+### WS-3: Crash Recovery + State Persistence
+
+- Persist `loopbackCount` and `requirementsLoopCount` on task record (lost on crash, defeats safety limits)
+- Fix session-result.json invalid JSON fallback (currently defaults to "ready" — should default to "need_more_info")
+- Wire or remove dead `rrpir.max_review_loopbacks` config (defined but never read)
+- Add `"blocked"` to SessionEndReasonSchema (currently uses "crashed" — TODO still open)
+- Fix response file write ordering in unblock-resolver (write content BEFORE transitioning task)
+
+### WS-4: Observability + Preemption + Alert Delivery
+
+- Fix preemption gate: shared singleton → task-scoped (wrong task preempted when max_concurrent > 1)
+- Fix loopback alert delivery (currently publishes event that may never reach human)
+- Add observation spans: top-level pipeline, per-phase handler, workspace ops, loopback/blocking decisions
 
 ---
 
 ## Runtime Phase Refinement
 
-With RRPIR implemented and the dashboard giving visibility, refine the supporting infrastructure. Order is priority-driven.
+With RRPIR hardened, go through each runtime flow phase by phase. Two co-founders refining together — evaluate behavior, fix issues, tune until it's something we love. "Working" is not "good." This is where we make it good.
 
 ### Startup & Configuration
 
@@ -156,17 +219,19 @@ Cost tracking, data lifecycle, health monitoring. The continuous machinery.
 
 ---
 
+## Backend Instrumentation Polish
+
+After Runtime Phase Refinement reveals what data the dashboard actually needs. Fill remaining gaps: richer traces, better event metadata, observation types for every significant operation. This feeds the dashboard rebuild.
+
+---
+
 ## Dashboard — Full Rebuild
 
-Now that we know exactly what we want from refinement, rebuild the dashboard as a proper project.
+Now that instrumentation is complete and we know exactly what we want, rebuild the dashboard as a proper project.
 
 ### Frontend (React + Vite + shadcn/ui)
 
-Production-grade UI. Real-time via SSE. Task status, phase progress, agent loop visibility, cost tracking, RPI file viewing, logs.
-
-### Backend Instrumentation Polish
-
-Any remaining data gaps identified during refinement. Richer traces, better event metadata.
+Production-grade UI. Real-time via SSE. Task status, phase progress, cost tracking, thoughts/ file viewing, communication panel, logs.
 
 ---
 

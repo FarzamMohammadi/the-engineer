@@ -405,6 +405,125 @@ a:hover { text-decoration: underline; }
 .detail-field-label { font-size: 0.68rem; color: var(--text-ghost); text-transform: uppercase; }
 .detail-field-value { font-size: 0.78rem; color: var(--text-primary); margin-top: 2px; }
 
+/* Blocked Details */
+.blocked-details {
+  margin: 8px 0;
+  padding: 12px 14px;
+  background: rgba(255,80,80,0.06);
+  border: 1px solid var(--red-dim);
+  border-radius: var(--radius-md);
+}
+.blocked-details-label {
+  font-size: 0.68rem;
+  color: var(--red);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.blocked-details-field {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.blocked-details-field strong {
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-right: 6px;
+}
+
+/* Conversation Panel */
+.conv-messages {
+  max-height: 350px;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.conv-msg {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  max-width: 85%;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.conv-msg.outbound {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-dim);
+  margin-right: auto;
+  border-left: 3px solid var(--cyan-dim);
+}
+.conv-msg.inbound {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-base);
+  margin-left: auto;
+  border-right: 3px solid var(--green-dim);
+}
+.conv-msg-sender {
+  font-size: 0.65rem;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.conv-msg.outbound .conv-msg-sender { color: var(--cyan); }
+.conv-msg.inbound .conv-msg-sender { color: var(--green); }
+.conv-msg-content {
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.conv-msg-time {
+  font-size: 0.6rem;
+  color: var(--text-ghost);
+  margin-top: 4px;
+  text-align: right;
+}
+.conv-input-area {
+  margin-top: 8px;
+  border-top: 1px solid var(--border-dim);
+  padding-top: 10px;
+}
+.conv-textarea {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border-dim);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  min-height: 60px;
+}
+.conv-textarea:focus {
+  outline: none;
+  border-color: var(--cyan-dim);
+}
+.conv-textarea:disabled { opacity: 0.5; }
+.conv-send-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.conv-send-btn {
+  background: var(--cyan-glow);
+  border: 1px solid var(--cyan-dim);
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+}
+.conv-send-btn:hover {
+  background: rgba(34,211,238,0.25);
+  border-color: var(--cyan);
+}
+.conv-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.conv-status { font-size: 0.68rem; }
+.conv-hint { font-size: 0.6rem; color: var(--text-ghost); margin-left: auto; }
+.conv-empty { text-align: center; padding: 20px; color: var(--text-ghost); font-size: 0.72rem; }
+
 /* Timeline */
 .timeline-item {
   padding: 8px 10px;
@@ -1133,6 +1252,12 @@ function handleLiveEvent(evt) {
   if (evt.type === 'task.state_changed' || evt.type === 'task.created') {
     pollTasks();
   }
+
+  // Live-update conversation panel for blocked tasks
+  if ((evt.type === 'comm.message_sent' || evt.type === 'comm.message_received')
+      && evt.task_id === currentDetailTaskId) {
+    appendConversationMessage(evt);
+  }
 }
 
 function addToLiveFeed(kind, type, name, taskId, time, isError) {
@@ -1331,10 +1456,12 @@ async function showTaskDetail(taskId) {
   detailEl.className = 'visible';
   detailEl.style.display = 'block';
 
-  const [taskData, phasesData, timelineData] = await Promise.all([
+  const [taskData, phasesData, timelineData, sentMsgs, rcvdMsgs] = await Promise.all([
     api('/api/tasks/' + taskId),
     api('/api/tasks/' + taskId + '/phases'),
     api('/api/tasks/' + taskId + '/timeline'),
+    api('/api/events?task_id=' + taskId + '&type=comm.message_sent&limit=100'),
+    api('/api/events?task_id=' + taskId + '&type=comm.message_received&limit=100'),
   ]);
 
   if (!taskData || !taskData.task) {
@@ -1371,6 +1498,28 @@ async function showTaskDetail(taskId) {
       </div>`
     : '';
 
+  // Blocked details card
+  const blockedDetailsHtml = (t.state === 'blocked' && t.blocked)
+    ? buildBlockedDetailsHtml(t.blocked) : '';
+
+  // Conversation panel (outreach + responses)
+  const sentEvents = sentMsgs?.events || [];
+  const rcvdEvents = rcvdMsgs?.events || [];
+  const conversation = [];
+  sentEvents.forEach(evt => conversation.push({
+    direction: 'outbound', sender: 'The Engineer',
+    content: evt.payload.content_summary || '', channel: evt.payload.channel || '',
+    timestamp: evt.timestamp,
+  }));
+  rcvdEvents.forEach(evt => conversation.push({
+    direction: 'inbound', sender: evt.payload.sender || 'Owner',
+    content: evt.payload.content || '', timestamp: evt.timestamp,
+  }));
+  conversation.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  const conversationHtml = (t.state === 'blocked' || conversation.length > 0)
+    ? buildConversationHtml(conversation, taskId, t.state === 'blocked') : '';
+
   // Detail fields
   const fields = [
     ['State', `<span class="badge ${stateBadge(t.state)}">${esc(t.state)}</span>${t.sub_state ? ' / ' + esc(t.sub_state) : ''}`],
@@ -1403,6 +1552,8 @@ async function showTaskDetail(taskId) {
     </div>
     ${phaseHtml}
     ${blockedReason}
+    ${blockedDetailsHtml}
+    ${conversationHtml}
     <div class="detail-grid">${fields.map(([l, v]) => `<div><div class="detail-field-label">${l}</div><div class="detail-field-value">${typeof v === 'number' ? v : v}</div></div>`).join('')}</div>
     <div style="margin-bottom:12px">
       <button class="expand-btn" style="font-size:0.78rem;padding:4px 12px" onclick="switchToAgentLoop('${esc(t.id)}')">View in Agent Loop &rarr;</button>
@@ -1414,6 +1565,10 @@ async function showTaskDetail(taskId) {
       <div class="card-title">Timeline (${timeline.length} items)</div>
       <div style="max-height:400px;overflow:auto">${timelineHtml || '<div class="empty-state" style="padding:12px">No timeline data</div>'}</div>
     </div>`;
+
+  // Auto-scroll conversation to bottom
+  const convContainer = document.getElementById('blocked-conversation-messages');
+  if (convContainer) convContainer.scrollTop = convContainer.scrollHeight;
 }
 
 document.getElementById('task-detail-back').addEventListener('click', () => {
@@ -2062,6 +2217,134 @@ function prependErrorCard(obs, flash) {
 }
 
 document.getElementById('error-level-filter').addEventListener('change', loadErrors);
+
+// ── Blocked Task Communication ─────────────────────────────────
+function buildBlockedDetailsHtml(blocked) {
+  if (!blocked || typeof blocked !== 'object') return '';
+  let html = '<div class="blocked-details"><div class="blocked-details-label">Blocked Details</div>';
+  if (blocked.reason) html += `<div class="blocked-details-field"><strong>Reason:</strong> ${esc(blocked.reason)}</div>`;
+  if (blocked.needed) html += `<div class="blocked-details-field"><strong>Needed:</strong> ${esc(blocked.needed)}</div>`;
+  if (blocked.waiting_for) html += `<div class="blocked-details-field"><strong>Waiting for:</strong> ${esc(blocked.waiting_for)}</div>`;
+  if (blocked.efforts_made && blocked.efforts_made.length > 0) {
+    html += '<div class="blocked-details-field"><strong>Efforts:</strong></div>';
+    html += '<ul style="margin:2px 0 0 16px;font-size:0.72rem;color:var(--text-secondary)">';
+    blocked.efforts_made.forEach(e => { html += `<li>${esc(e)}</li>`; });
+    html += '</ul>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function buildConversationHtml(conversation, taskId, isBlocked) {
+  let msgsHtml = '';
+  if (conversation.length === 0) {
+    msgsHtml = '<div class="conv-empty">No messages yet</div>';
+  } else {
+    conversation.forEach(msg => {
+      const senderLabel = msg.direction === 'outbound' ? 'The Engineer' : (msg.sender || 'Owner');
+      const channelInfo = msg.channel ? ' via ' + esc(msg.channel) : '';
+      msgsHtml += `<div class="conv-msg ${msg.direction}">
+        <div class="conv-msg-sender">${esc(senderLabel)}${channelInfo}</div>
+        <div class="conv-msg-content">${esc(msg.content)}</div>
+        <div class="conv-msg-time">${esc(fmtDateTime(msg.timestamp))}</div>
+      </div>`;
+    });
+  }
+
+  const inputHtml = isBlocked ? `
+    <div class="conv-input-area">
+      <textarea id="blocked-response-input" class="conv-textarea" rows="3"
+        placeholder="Type your response..."
+        onkeydown="handleResponseKeydown(event, '${esc(taskId)}')"></textarea>
+      <div class="conv-send-row">
+        <button id="blocked-response-btn" class="conv-send-btn"
+          onclick="submitBlockedResponse('${esc(taskId)}')">Send Response</button>
+        <span id="blocked-response-status" class="conv-status"></span>
+        <span class="conv-hint">Ctrl+Enter to send</span>
+      </div>
+    </div>` : '';
+
+  return `<div class="card">
+    <div class="card-title">Communication <span class="badge badge-dim" id="conv-count">${conversation.length}</span></div>
+    <div class="conv-messages" id="blocked-conversation-messages">${msgsHtml}</div>
+    ${inputHtml}
+  </div>`;
+}
+
+function appendConversationMessage(evt) {
+  const container = document.getElementById('blocked-conversation-messages');
+  if (!container) return;
+
+  const empty = container.querySelector('.conv-empty');
+  if (empty) empty.remove();
+
+  const isOutbound = evt.type === 'comm.message_sent';
+  const direction = isOutbound ? 'outbound' : 'inbound';
+  const senderLabel = isOutbound ? 'The Engineer' : (evt.payload.sender || 'Owner');
+  const content = isOutbound ? (evt.payload.content_summary || '') : (evt.payload.content || '');
+  const channel = isOutbound && evt.payload.channel ? ' via ' + esc(evt.payload.channel) : '';
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'conv-msg ' + direction;
+  msgDiv.innerHTML = `
+    <div class="conv-msg-sender">${esc(senderLabel)}${channel}</div>
+    <div class="conv-msg-content">${esc(content)}</div>
+    <div class="conv-msg-time">${esc(fmtDateTime(evt.timestamp))}</div>`;
+
+  container.appendChild(msgDiv);
+  container.scrollTop = container.scrollHeight;
+
+  const countEl = document.getElementById('conv-count');
+  if (countEl) countEl.textContent = parseInt(countEl.textContent || '0') + 1;
+}
+
+async function submitBlockedResponse(taskId) {
+  const textarea = document.getElementById('blocked-response-input');
+  const btn = document.getElementById('blocked-response-btn');
+  const status = document.getElementById('blocked-response-status');
+  const content = textarea.value.trim();
+
+  if (!content) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  textarea.disabled = true;
+  status.textContent = '';
+
+  try {
+    const res = await fetch('/api/messages/' + taskId + '/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      textarea.value = '';
+      status.textContent = 'Sent';
+      status.style.color = 'var(--green)';
+      setTimeout(() => { status.textContent = ''; }, 2000);
+    } else {
+      status.textContent = data.error || 'Failed to send';
+      status.style.color = 'var(--red)';
+    }
+  } catch {
+    status.textContent = 'Network error';
+    status.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Response';
+    textarea.disabled = false;
+    textarea.focus();
+  }
+}
+
+function handleResponseKeydown(e, taskId) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    submitBlockedResponse(taskId);
+  }
+}
 
 // ── Active Tab Detection ───────────────────────────────────────
 function getActiveTab() {

@@ -1,13 +1,7 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
-import {
-  PHASE_DIRECTORIES,
-  type Phase,
-  type PhaseOutput,
-  Phases,
-} from "../../schemas/orchestrator.js";
+import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import { LlmCallRejectedError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
@@ -16,27 +10,15 @@ import { type OrchestratorContext, PHASE_SEQUENCE, type PipelineState } from "./
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-/**
- * Map phase → subdirectory name inside the thoughts/ directory.
- * Directory names come from PHASE_DIRECTORIES in schemas/orchestrator.ts.
- */
-const PHASE_DIR_MAP: Partial<Record<Phase, string>> = {
-  [Phases.requirements_gathering]: PHASE_DIRECTORIES[0],
-  [Phases.research]: PHASE_DIRECTORIES[1],
-  [Phases.planning]: PHASE_DIRECTORIES[2],
-  [Phases.execution]: PHASE_DIRECTORIES[3],
-  [Phases.self_review]: PHASE_DIRECTORIES[4],
-  [Phases.demo_prep]: PHASE_DIRECTORIES[6],
+/** Map phase → subdirectory name inside the thoughts/ directory. */
+const PHASE_DIR_MAP: Record<Phase, string> = {
+  [Phases.requirements_gathering]: "requirements",
+  [Phases.research]: "research",
+  [Phases.planning]: "planning",
+  [Phases.execution]: "implementation",
+  [Phases.self_review]: "review",
+  [Phases.demo_prep]: "demo-prep",
   [Phases.integration]: "integration",
-};
-
-/** Map phase → expected .md deliverable filename. */
-const PHASE_DELIVERABLE_MAP: Partial<Record<Phase, string>> = {
-  [Phases.requirements_gathering]: "requirements.md",
-  [Phases.research]: "research.md",
-  [Phases.planning]: "plan.md",
-  [Phases.self_review]: "requirements-check.md",
-  [Phases.demo_prep]: "pr-description.md",
 };
 
 /** Maximum LLM retry attempts for transient failures. */
@@ -236,25 +218,24 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         ? PHASE_SEQUENCE[nextPhaseIndex + 1]
         : undefined) ?? phase;
 
-    const finalResult = sessionResult
-      ? sessionResult
-      : (() => {
-          ctx.observer.warn("session-result.json not filled, using defaults", {
-            phase,
-            taskId,
-            expectedNext,
-          });
-          return { status: "ready" as const, next_phase: expectedNext, summary: "" };
-        })();
-
-    // ── Verify deliverable exists ────────────────────────────────────────
-    const deliverableFile = PHASE_DELIVERABLE_MAP[phase];
-    if (phaseDir && deliverableFile) {
-      const deliverablePath = path.join(phaseDir, deliverableFile);
-      if (!existsSync(deliverablePath)) {
-        ctx.observer.warn("Phase deliverable not found", { phase, deliverablePath });
-      }
-    }
+    const finalResult =
+      sessionResult && sessionResult !== "invalid"
+        ? sessionResult
+        : (() => {
+            if (sessionResult === "invalid") {
+              ctx.observer.error("session-result.json invalid — falling back to need_more_info", {
+                phase,
+                taskId,
+              });
+              return { status: "need_more_info" as const, next_phase: expectedNext, summary: "" };
+            }
+            ctx.observer.warn("session-result.json not found, using defaults", {
+              phase,
+              taskId,
+              expectedNext,
+            });
+            return { status: "ready" as const, next_phase: expectedNext, summary: "" };
+          })();
 
     // ── Cost + tracking ──────────────────────────────────────────────────
     emitCostIncurred(taskId, result);
@@ -284,8 +265,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       task_id: taskId,
       timestamp: new Date().toISOString(),
       data: {
-        deliverable_path:
-          phaseDir && deliverableFile ? `${thoughtsDir}/${phaseSubDir}/${deliverableFile}` : "",
+        deliverable_path: phaseSubDir ? `${thoughtsDir}/${phaseSubDir}` : "",
         status: finalResult.status,
         next_phase: finalResult.next_phase,
         summary: finalResult.summary,

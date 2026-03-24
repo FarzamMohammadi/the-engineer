@@ -28,8 +28,8 @@ export const PHASE_DIRECTORIES = [
   "planning",
   "implementation",
   "review",
-  "refinements",
   "demo-prep",
+  "integration",
 ] as const;
 
 // ── Phase Output Envelope ───────────────────────────────────────────────────────

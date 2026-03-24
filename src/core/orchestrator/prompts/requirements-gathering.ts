@@ -123,6 +123,8 @@ function buildRequirementsInstructions(ctx: RequirementsGatheringPromptContext):
       `5. **Write your findings** to \`${ctx.thoughtsDir}/requirements/requirements.md\` using the template in the deliverable section.`,
       "",
       "6. **Route:** Signal ready only when you genuinely know what to build with zero assumptions. Otherwise signal need_more_info — The Engineer will read your outreach files and deliver them to each person via their preferred channel (Telegram, GitHub, etc.).",
+      "",
+      "7. **Update session-result.json** with your routing decision (see deliverable section below for the format).",
     ].join("\n"),
   );
 }
@@ -146,6 +148,8 @@ function buildNeedsInfoInstructions(ctx: RequirementsGatheringPromptContext): st
       "   The filename is the person's ID from the team contacts (e.g., `farzam.txt`). The content is the full message — include enough context that they can answer without reading the codebase. One file per person.",
       "",
       "5. **Route:** Resolved it yourself → signal ready. Need human responses → signal need_more_info. The Engineer reads your outreach files and delivers them via each person's preferred channel (Telegram, GitHub, etc.).",
+      "",
+      "6. **Update session-result.json** with your routing decision (see deliverable section below for the format).",
     ].join("\n"),
   );
 }

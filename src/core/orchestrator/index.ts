@@ -69,18 +69,15 @@ export const EVENTS: EventDeclaration[] = [
 
 /** Create a PreemptionGate — cooperative preemption state container (Protocol P8). */
 function createPreemptionGate(): WritablePreemptionGate {
-  let requested = false;
-  let payload: { target_task_id: string; preempting_task_id: string } | null = null;
+  const entries = new Map<string, { target_task_id: string; preempting_task_id: string }>();
   return {
-    isRequested: () => requested,
-    getPayload: () => payload,
-    reset() {
-      requested = false;
-      payload = null;
+    isRequested: (taskId) => entries.has(taskId),
+    getPayload: (taskId) => entries.get(taskId) ?? null,
+    reset(taskId) {
+      entries.delete(taskId);
     },
     request(p) {
-      requested = true;
-      payload = p;
+      entries.set(p.target_task_id, p);
     },
   };
 }

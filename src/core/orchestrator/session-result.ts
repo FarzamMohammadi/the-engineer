@@ -3,8 +3,15 @@ import path from "node:path";
 
 import { type SessionResult, SessionResultSchema } from "../../schemas/orchestrator.js";
 
-/** Read and validate session-result.json from a phase directory. */
-export function readSessionResult(phaseDir: string): SessionResult | null {
+/**
+ * Read and validate session-result.json from a phase directory.
+ *
+ * Returns:
+ * - `SessionResult` — valid, parsed result
+ * - `null` — file does not exist (normal for phases that don't write it)
+ * - `"invalid"` — file exists but contains malformed JSON or fails schema validation
+ */
+export function readSessionResult(phaseDir: string): SessionResult | null | "invalid" {
   const filePath = path.join(phaseDir, "session-result.json");
   if (!existsSync(filePath)) {
     return null;
@@ -14,9 +21,9 @@ export function readSessionResult(phaseDir: string): SessionResult | null {
     const raw = JSON.parse(readFileSync(filePath, "utf-8"));
     const result = SessionResultSchema.safeParse(raw);
     // safeParse rejects template placeholders (they don't match the enum values)
-    return result.success ? result.data : null;
+    return result.success ? result.data : "invalid";
   } catch {
-    return null;
+    return "invalid";
   }
 }
 

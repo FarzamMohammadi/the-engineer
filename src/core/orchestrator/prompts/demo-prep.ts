@@ -1,3 +1,4 @@
+import type { ReviewPhaseName } from "../../../schemas/config.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import { buildKnowledgeSection, buildRRPIROverview, buildTaskBrief, section } from "./format.js";
@@ -14,6 +15,8 @@ export interface DemoPrepPromptContext {
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
+  /** Which review phases were run (their .md files exist in review/). */
+  reviewPhases: ReviewPhaseName[];
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -30,7 +33,7 @@ export function buildDemoPrepPrompt(ctx: DemoPrepPromptContext): string {
   parts.push(buildRRPIROverview("Demo/PR", ctx.thoughtsDir));
 
   // 2. What Happened Before You
-  parts.push(buildPriorPhasePointers(ctx.thoughtsDir));
+  parts.push(buildPriorPhasePointers(ctx.thoughtsDir, ctx.reviewPhases));
 
   // 3. What YOU Need To Do
   parts.push(buildDemoPrepInstructions());
@@ -46,7 +49,11 @@ export function buildDemoPrepPrompt(ctx: DemoPrepPromptContext): string {
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
-function buildPriorPhasePointers(thoughtsDir: string): string {
+function buildPriorPhasePointers(thoughtsDir: string, reviewPhases: ReviewPhaseName[]): string {
+  const reviewFiles = reviewPhases
+    .map((name) => `- \`${thoughtsDir}/review/${name}.md\``)
+    .join("\n");
+
   return section(
     "What Happened Before You",
     [
@@ -56,7 +63,9 @@ function buildPriorPhasePointers(thoughtsDir: string): string {
       `- \`${thoughtsDir}/research/research.md\` — codebase analysis and findings`,
       `- \`${thoughtsDir}/planning/plan.md\` — the implementation plan`,
       `- \`${thoughtsDir}/implementation/session-result.json\` — implementation summary`,
-      `- \`${thoughtsDir}/review/\` — review findings (requirements-check.md, security-review.md, code-quality.md)`,
+      "- Review findings:",
+      reviewFiles,
+      `- \`${thoughtsDir}/review/refinements.md\` — refinement summary — what was caught and fixed`,
       "",
       "Also run `git diff` and `git log` to see all code changes and commits.",
     ].join("\n"),

@@ -510,8 +510,8 @@ describe("PhaseRunner", () => {
   });
 
   describe("config-driven behavior", () => {
-    it("respects custom max_loopbacks_before_alert from config", async () => {
-      const ctx = createMockContext({ phases: { max_loopbacks_before_alert: 5 } });
+    it("respects custom rrpir.max_review_loopbacks from config", async () => {
+      const ctx = createMockContext({ rrpir: { max_review_loopbacks: 5 } });
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
         outputs.set(phase, makeOutput(phase));

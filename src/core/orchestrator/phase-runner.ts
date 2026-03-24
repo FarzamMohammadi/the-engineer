@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
-import { PHASE_DIRECTORIES, Phases } from "../../schemas/orchestrator.js";
+import { Phases } from "../../schemas/orchestrator.js";
 import {
   CheckpointReasons,
   JournalEntryTypes,
@@ -474,7 +474,7 @@ function checkSelfReviewLoopback(
 
   const newLoopbackCount = state.loopbackCount + 1;
 
-  if (newLoopbackCount > ctx.config.phases.max_loopbacks_before_alert) {
+  if (newLoopbackCount > ctx.config.rrpir.max_review_loopbacks) {
     emitLoopbackAlert(sessionId, taskId, newLoopbackCount, assessment, ctx);
     return null;
   }
@@ -503,6 +503,9 @@ function emitLoopbackAlert(
   assessment: string,
   ctx: OrchestratorContext,
 ): void {
+  const alertContent = `Self-review loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`;
+
+  // Audit trail event
   ctx.eventBus.publish({
     type: "comm.message_sent",
     source: "orchestrator",
@@ -511,10 +514,32 @@ function emitLoopbackAlert(
       task_id: taskId,
       target: "owner",
       message_type: "alert",
-      content_summary: `Self-review loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`,
+      content_summary: alertContent,
       channel: "primary",
     },
   } satisfies PublishInput<"comm.message_sent">);
+
+  // Deliver alert via comm plugins (fire-and-forget)
+  const commPlugins = ctx.registry
+    .getPluginsByType<CommunicationAdapter>(AdapterTypes.communication)
+    .filter((p) => p.hasCapability("send"));
+  const owner = commPlugins.length > 0 ? ctx.peopleDirectory.getOwner() : null;
+  if (owner) {
+    for (const comm of commPlugins) {
+      const formatted = comm.formatMessage(alertContent, "alert");
+      comm
+        .sendMessage(
+          { user_id: owner.id, channel: null },
+          { content: formatted, metadata: { task_id: taskId, type: "alert" } },
+        )
+        .catch((err: unknown) => {
+          ctx.observer.warn("Failed to deliver loopback alert", {
+            taskId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    }
+  }
 
   ctx.sessionMemory.addJournalEntry({
     sessionId,
@@ -635,12 +660,7 @@ async function handlePostPhaseActions(
       // Send outreach messages before blocking — read .txt files from outreach/ directory
       const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
       if (worktreePath && state.thoughtsDir) {
-        const outreachDir = path.join(
-          worktreePath,
-          state.thoughtsDir,
-          PHASE_DIRECTORIES[0],
-          "outreach",
-        );
+        const outreachDir = path.join(worktreePath, state.thoughtsDir, "requirements", "outreach");
         await sendOutreachFromFiles(taskId, outreachDir, ctx);
       }
 
@@ -667,8 +687,14 @@ async function handlePostPhaseActions(
         waiting_for: "human",
       });
 
-      // TODO: Add "blocked" to SessionEndReasonSchema — using "crashed" as closest available
-      ctx.sessionMemory.endSession(sessionId, SessionEndReasons.crashed);
+      ctx.observationStore?.observe(
+        "state_transition",
+        "task_blocked",
+        { task_id: taskId, reason: "need_more_info", return_to_phase: returnToPhase ?? phase },
+        { task_id: taskId, session_id: sessionId, trace_id: state.traceId },
+      );
+
+      ctx.sessionMemory.endSession(sessionId, SessionEndReasons.blocked);
       return {
         completion: {
           kind: "exit",
@@ -729,6 +755,18 @@ async function handlePostPhaseActions(
     const loopbackResult = checkSelfReviewLoopback(sessionId, taskId, output, phases, state, ctx);
     if (loopbackResult) {
       loopbackCount = loopbackResult.loopbackCount;
+
+      ctx.observationStore?.observe(
+        "decision_point",
+        "loopback_decision",
+        {
+          from_phase: Phases.self_review,
+          to_phase: Phases.execution,
+          loopback_count: loopbackResult.loopbackCount,
+        },
+        { task_id: taskId, session_id: sessionId, trace_id: state.traceId },
+      );
+
       ctx.taskEngine.updateTaskField(taskId, "phase", Phases.execution);
       return {
         completion: { kind: "loopback", phases, targetIndex: loopbackResult.targetIndex - 1 },
@@ -791,9 +829,9 @@ async function handlePostPhaseActions(
   recordPhaseTransition(sessionId, taskId, phase, nextPhase, priorOutputs, dispatch, ctx);
 
   // Check preemption after phase completion
-  if (deps.preemption.isRequested() && nextPhase) {
-    const preemptingId = deps.preemption.getPayload()?.preempting_task_id ?? "unknown";
-    deps.preemption.reset();
+  if (deps.preemption.isRequested(taskId) && nextPhase) {
+    const preemptingId = deps.preemption.getPayload(taskId)?.preempting_task_id ?? "unknown";
+    deps.preemption.reset(taskId);
     return {
       completion: {
         kind: "exit",
@@ -843,16 +881,48 @@ export async function runPhasePipeline(
     resumeFrom: dispatch.resume_from?.phase ?? "none",
   });
 
+  // ── Pipeline observation span ──────────────────────────────────────────
+  const pipelineSpan =
+    ctx.observationStore && state.traceId && state.sessionId
+      ? ctx.observationStore.startSpan(
+          "lifecycle",
+          "pipeline",
+          {
+            task_id: taskId,
+            start_index: startIndex,
+            resume_from: dispatch.resume_from?.phase ?? null,
+          },
+          { task_id: taskId, session_id: state.sessionId, trace_id: state.traceId },
+        )
+      : null;
+
+  /** End the pipeline span with the given result before returning. */
+  function endPipelineSpan(result: ExecuteTaskResult, phasesRun: number): ExecuteTaskResult {
+    pipelineSpan?.end({ outcome: result.outcome, phases_run: phasesRun });
+    return result;
+  }
+
   // Set initial task.phase
   // biome-ignore lint/style/noNonNullAssertion: startIndex is within bounds
   const initialPhase = phases[startIndex]!;
   ctx.taskEngine.updateTaskField(taskId, "phase", initialPhase);
 
-  // ── Restore return_to_phase from prior blocked dispatch ──────────────
+  // ── Restore persisted pipeline state from task record ────────────────
+  const task = ctx.taskEngine.getTask(taskId);
+
+  // Restore loopback counts (crash recovery — counters survive re-dispatch)
+  if (task) {
+    currentState = {
+      ...currentState,
+      loopbackCount: task.loopback_count,
+      requirementsLoopCount: task.requirements_loop_count,
+    };
+  }
+
+  // Restore return_to_phase from prior blocked dispatch.
   // When return_to_phase is set, always start at requirements_gathering (index 0).
   // Requirements_gathering reads the response, decides if satisfied, and the
   // returnToPhase routing sends it back to the right phase.
-  const task = ctx.taskEngine.getTask(taskId);
   if (task?.return_to_phase) {
     currentState = { ...currentState, returnToPhase: task.return_to_phase };
     ctx.taskEngine.updateTaskField(taskId, "return_to_phase", null);
@@ -867,11 +937,15 @@ export async function runPhasePipeline(
 
   for (let i = startIndex; i < phases.length; i++) {
     // Check preemption before phase start
-    if (deps.preemption.isRequested()) {
-      const preemptingId = deps.preemption.getPayload()?.preempting_task_id ?? "unknown";
-      deps.preemption.reset();
+    if (deps.preemption.isRequested(taskId)) {
+      const preemptingId = deps.preemption.getPayload(taskId)?.preempting_task_id ?? "unknown";
+      deps.preemption.reset(taskId);
       // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
-      return handlePreemption(sessionId, taskId, phases[i]!, ctx, preemptingId);
+      const preemptPhase = phases[i]!;
+      return endPipelineSpan(
+        handlePreemption(sessionId, taskId, preemptPhase, ctx, preemptingId),
+        i - startIndex,
+      );
     }
 
     // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
@@ -882,41 +956,31 @@ export async function runPhasePipeline(
     // Check AndonCord
     if (deps.andonCord.isPulled()) {
       const reason = deps.andonCord.getReason() ?? "unknown";
-      return handlePhaseError(
-        sessionId,
-        taskId,
-        phase,
-        new Error(`AndonCord pulled: ${reason}`),
-        ctx,
+      return endPipelineSpan(
+        handlePhaseError(sessionId, taskId, phase, new Error(`AndonCord pulled: ${reason}`), ctx),
+        i - startIndex,
       );
-    }
-
-    // Clean outreach directory at requirements_gathering start so stale files aren't re-sent
-    if (phase === Phases.requirements_gathering) {
-      const wt = ctx.workspaceManager.getWorktreePath(taskId);
-      if (wt && currentState.thoughtsDir) {
-        const outreachDir = path.join(
-          wt,
-          currentState.thoughtsDir,
-          PHASE_DIRECTORIES[0],
-          "outreach",
-        );
-        if (existsSync(outreachDir)) {
-          rmSync(outreachDir, { recursive: true, force: true });
-        }
-      }
     }
 
     // Execute the phase handler
     let output: PhaseOutput;
     ctx.observer.info("Phase starting", { taskId, phase });
     const phaseStart = Date.now();
+    const phaseSpan = pipelineSpan
+      ? pipelineSpan.startChild("phase_transition", phase, { phase, task_id: taskId })
+      : null;
     try {
       const handler = handlers.get(phase);
       output = await handler(taskId, dispatch, priorOutputs, currentState);
     } catch (error: unknown) {
-      return handlePhaseError(sessionId, taskId, phase, error, ctx);
+      phaseSpan?.setError(error);
+      phaseSpan?.end();
+      return endPipelineSpan(
+        handlePhaseError(sessionId, taskId, phase, error, ctx),
+        i - startIndex,
+      );
     }
+    phaseSpan?.end({ duration_ms: Date.now() - phaseStart, confidence: output.confidence });
     ctx.observer.info("Phase completed", { taskId, phase, durationMs: Date.now() - phaseStart });
 
     priorOutputs.set(phase, output);
@@ -949,6 +1013,19 @@ export async function runPhasePipeline(
         deps,
       );
       completion = result.completion;
+
+      // Persist loopback counts if changed (crash recovery)
+      if (result.loopbackCount !== currentState.loopbackCount) {
+        ctx.taskEngine.updateTaskField(taskId, "loopback_count", result.loopbackCount);
+      }
+      if (result.requirementsLoopCount !== currentState.requirementsLoopCount) {
+        ctx.taskEngine.updateTaskField(
+          taskId,
+          "requirements_loop_count",
+          result.requirementsLoopCount,
+        );
+      }
+
       currentState = {
         ...currentState,
         loopbackCount: result.loopbackCount,
@@ -956,12 +1033,15 @@ export async function runPhasePipeline(
         returnToPhase: result.returnToPhase,
       };
     } catch (completionError) {
-      return handlePhaseError(sessionId, taskId, phase, completionError, ctx);
+      return endPipelineSpan(
+        handlePhaseError(sessionId, taskId, phase, completionError, ctx),
+        i - startIndex + 1,
+      );
     }
 
     switch (completion.kind) {
       case "exit":
-        return completion.result;
+        return endPipelineSpan(completion.result, i - startIndex + 1);
       case "loopback": {
         phases = completion.phases;
         i = completion.targetIndex;
@@ -978,6 +1058,10 @@ export async function runPhasePipeline(
   }
 
   // ── Pipeline complete ──────────────────────────────────────────────────
+  // Clear loopback counters — task completed successfully, no need to persist
+  ctx.taskEngine.updateTaskField(taskId, "loopback_count", 0);
+  ctx.taskEngine.updateTaskField(taskId, "requirements_loop_count", 0);
+
   // Session close is important but not worth losing the completed outcome over.
   // If endSession throws (DB corruption, connection closed), log and continue.
   try {
@@ -995,5 +1079,8 @@ export async function runPhasePipeline(
     phasesRun: phases.length - startIndex,
     outcome: "completed",
   });
-  return { outcome: "completed", phaseOutputs: priorOutputs };
+  return endPipelineSpan(
+    { outcome: "completed", phaseOutputs: priorOutputs },
+    phases.length - startIndex,
+  );
 }

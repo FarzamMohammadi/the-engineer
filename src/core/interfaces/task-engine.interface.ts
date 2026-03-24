@@ -62,7 +62,9 @@ export type UpdatableField =
   | "priority"
   | "repo"
   | "clone_url"
-  | "return_to_phase";
+  | "return_to_phase"
+  | "loopback_count"
+  | "requirements_loop_count";
 
 export interface ITaskEngine {
   createTask(input: CreateTaskInput): Task;

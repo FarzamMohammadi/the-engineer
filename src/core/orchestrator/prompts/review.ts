@@ -45,7 +45,7 @@ const REVIEW_LENS: Record<ReviewPhaseName, { title: string; instructions: string
     instructions: [
       "Your sole focus is verifying that the implementation meets all acceptance criteria.",
       "",
-      "1. Read `requirements.md` carefully. Extract every acceptance criterion and requirement.",
+      '1. Read the requirements file (see path in the "What Happened Before You" section above) carefully. Extract every acceptance criterion and requirement.',
       "2. Run `git diff` to see all code changes.",
       "3. For each criterion, verify it is implemented correctly.",
       "4. Check edge cases mentioned in requirements.",
@@ -215,7 +215,7 @@ function buildRefinementPriorPointers(
   if (loopbackCount > 0) {
     lines.push(
       "",
-      `This is refinement iteration ${String(loopbackCount + 1)}. Check \`${thoughtsDir}/refinements/refinements.md\` for what was previously consolidated and fixed.`,
+      `This is refinement iteration ${String(loopbackCount + 1)}. Check \`${thoughtsDir}/review/refinements.md\` for what was previously consolidated and fixed.`,
     );
   }
 
@@ -247,14 +247,14 @@ function buildRefinementOutputInstructions(thoughtsDir: string): string {
   return section(
     "Where To Put Your Work",
     [
-      `Write your consolidation to: \`${thoughtsDir}/refinements/refinements.md\``,
+      `Write your consolidation to: \`${thoughtsDir}/review/refinements.md\``,
       "",
       "Include:",
       "- Summary of all review findings",
       "- What was fixed (with file references)",
       "- What remains unfixed (and why)",
       "",
-      `Update session-result.json at \`${thoughtsDir}/refinements/session-result.json\` with:`,
+      `Update session-result.json at \`${thoughtsDir}/review/session-result.json\` with:`,
       "",
       "```json",
       "{",

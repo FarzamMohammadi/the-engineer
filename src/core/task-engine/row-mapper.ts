@@ -41,6 +41,8 @@ export interface TaskRow {
   review: string | null;
   blocked: string | null;
   return_to_phase: string | null;
+  loopback_count: number;
+  requirements_loop_count: number;
   priority: number;
   llm_tokens: number;
   llm_cost_usd: number;
@@ -93,6 +95,8 @@ export function rowToTask(row: TaskRow): Task {
     review: row.review ? (JSON.parse(row.review) as ReviewState) : null,
     blocked: row.blocked ? (JSON.parse(row.blocked) as BlockedDetails) : null,
     return_to_phase: row.return_to_phase as Phase | null,
+    loopback_count: row.loopback_count,
+    requirements_loop_count: row.requirements_loop_count,
     priority: row.priority,
     llm_tokens: row.llm_tokens,
     llm_cost_usd: row.llm_cost_usd,

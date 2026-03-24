@@ -78,8 +78,15 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
     return transitionAndClear(taskId, source, content);
   }
 
-  /** Shared transition logic: transition first, clear blocked after, write response if content provided. */
+  /** Shared transition logic: write response first, then transition, then clear blocked. */
   function transitionAndClear(taskId: string, source: string, content?: string): UnblockResult {
+    // Write response file FIRST — before state change. If the write fails,
+    // writeResponseToWorktree logs the error internally (try/catch), so we
+    // still proceed with the transition to avoid leaving the task stuck.
+    if (content) {
+      writeResponseToWorktree(taskId, source, content);
+    }
+
     const result = taskEngine.requestTransition(
       taskId,
       TaskStates.queued,
@@ -99,11 +106,6 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
 
     // Clear blocked details only after successful transition
     taskEngine.updateTaskField(taskId, "blocked", null);
-
-    // Write response content to worktree if provided
-    if (content) {
-      writeResponseToWorktree(taskId, source, content);
-    }
 
     observer.info("Task unblocked", { taskId, source });
     return { unblocked: true, taskId, reason: null };

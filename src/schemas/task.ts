@@ -212,6 +212,10 @@ export const TaskSchema = z.object({
   // Universal fallback: phase to return to after requirements_gathering unblocks
   return_to_phase: PhaseSchema.nullable(),
 
+  // Pipeline loop counters (persisted across crashes)
+  loopback_count: z.number().int().default(0),
+  requirements_loop_count: z.number().int().default(0),
+
   // Tracking
   priority: z.number().int(),
   llm_tokens: z.number().int(),

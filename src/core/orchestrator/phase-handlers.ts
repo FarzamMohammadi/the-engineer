@@ -144,7 +144,7 @@ export function createPhaseHandlers(
    * Multi-step review pipeline: one CLI call per review lens, then one refinement call.
    *
    * Review sub-phases write findings to `thoughts/{thoughtsDir}/review/{name}.md`.
-   * Refinement reads all findings, applies fixes, writes `thoughts/{thoughtsDir}/refinements/`.
+   * Refinement reads all findings, applies fixes, writes `thoughts/{thoughtsDir}/review/`.
    * The refinement step's session-result.json drives routing (loopback to execution or proceed to demo_prep).
    */
   async function handleSelfReview(
@@ -193,7 +193,7 @@ export function createPhaseHandlers(
       }),
       state,
       thoughtsDir,
-      "refinements",
+      "review",
     );
 
     // Step 3: Map next_phase → quality_assessment for checkSelfReviewLoopback compatibility
@@ -221,6 +221,7 @@ export function createPhaseHandlers(
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
+    const reviewPhases = ctx.config.rrpir?.review_phases ?? ["requirements_check" as const];
     return llmCaller.runPhaseWithCli(
       Phases.demo_prep,
       taskId,
@@ -231,6 +232,7 @@ export function createPhaseHandlers(
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
         thoughtsDir,
+        reviewPhases,
       }),
       state,
       thoughtsDir,

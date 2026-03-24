@@ -86,6 +86,8 @@ function buildResearchInstructions(thoughtsDir: string): string {
       `4. If you discover you need more information from people that was not covered in requirements gathering, document it in research.md and set next_phase to "requirements_gathering" in session-result.json.`,
       "",
       `5. Write your findings to \`${thoughtsDir}/research/research.md\`. Use the template provided in the deliverable section.`,
+      "",
+      "6. **Update session-result.json** with your routing decision (see deliverable section below for the format).",
     ].join("\n"),
   );
 }

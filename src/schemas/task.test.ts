@@ -325,6 +325,8 @@ describe("TaskSchema", () => {
     review: null,
     blocked: null,
     return_to_phase: null,
+    loopback_count: 0,
+    requirements_loop_count: 0,
     priority: 50,
     llm_tokens: 0,
     llm_cost_usd: 0,

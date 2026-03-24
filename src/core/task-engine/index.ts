@@ -88,6 +88,8 @@ const UPDATABLE_FIELDS: readonly UpdatableField[] = [
   "repo",
   "clone_url",
   "return_to_phase",
+  "loopback_count",
+  "requirements_loop_count",
 ];
 
 const JSON_FIELDS: ReadonlySet<UpdatableField> = new Set([
@@ -265,6 +267,8 @@ export class TaskEngine implements ITaskEngine {
       review: null,
       blocked: null,
       return_to_phase: null,
+      loopback_count: 0,
+      requirements_loop_count: 0,
       priority,
       llm_tokens: 0,
       llm_cost_usd: 0,

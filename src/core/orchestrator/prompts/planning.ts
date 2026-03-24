@@ -78,7 +78,7 @@ function buildInstructions(thoughtsDir: string): string {
       "",
       `4. **Write the plan** to \`${thoughtsDir}/planning/plan.md\` using the template below. Use checkbox format so Implementation can track progress.`,
       "",
-      "5. **If decomposition is needed** (3+ genuinely independent areas of change), include a `## Decomposition` section in plan.md. Each subtask runs the full RRPIR pipeline independently. Only decompose when subtasks are truly separable — do NOT decompose tightly coupled changes.",
+      "5. **If decomposition is needed** (3+ genuinely independent areas of change), include a `## Decomposition` section in plan.md. Each subtask runs the full RRPIR pipeline independently. Only decompose when subtasks are truly separable — do NOT decompose tightly coupled changes. Each subtask gets its own branch, worktree, and independent RRPIR pipeline. Plan accordingly — subtasks should be self-contained.",
       "",
       "6. **Verify your plan** by reading key files if research didn't cover them. The plan must be grounded in actual code, not assumptions.",
     ].join("\n"),

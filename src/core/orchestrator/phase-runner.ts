@@ -650,6 +650,8 @@ async function handlePostPhaseActions(
       ctx.taskEngine.updateTaskField(taskId, "blocked", {
         reason: "need_more_info",
         efforts_made: ["Requirements gathering documented questions in requirements.md"],
+        contacted: [],
+        needed: "Human input on questions in requirements.md",
         waiting_for: "human",
       });
 

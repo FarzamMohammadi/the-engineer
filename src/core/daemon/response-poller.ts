@@ -169,7 +169,7 @@ export function createResponsePoller(
     }
 
     if (!input) {
-      observer.debug("Inbound message could not be linked to a task — discarding", {
+      observer.warn("Inbound message could not be linked to a task — discarding", {
         source: msg.source,
         sender: msg.sender,
         blockedCount: blockedTasks.length,

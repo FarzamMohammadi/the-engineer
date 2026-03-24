@@ -84,11 +84,5 @@ export type NotificationRouterContext = Pick<
 
 export type ResponsePollerContext = Pick<
   DaemonContext,
-  | "config"
-  | "eventBus"
-  | "registry"
-  | "taskEngine"
-  | "workspaceManager"
-  | "peopleDirectory"
-  | "observer"
+  "config" | "eventBus" | "registry" | "taskEngine" | "observer"
 >;

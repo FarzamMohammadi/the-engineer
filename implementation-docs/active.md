@@ -4,7 +4,7 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** Communication flow COMPLETE (Sessions 072-074). Full blocked/unblock lifecycle: outreach via comm plugins, response detection via ResponsePoller (GitHub comment polling + dashboard API), UnblockResolver as shared Core abstraction. Triple-reviewed (Engineer persona, Technical Architect, QA Integration Tester). 3 bugs found and fixed. Next: dashboard UI for blocked task responses, live E2E testing.
+**Current phase:** Communication flow COMPLETE and LIVE-TESTED (Sessions 072-075). Full blocked/unblock lifecycle: outreach via Telegram, response detection via ResponsePoller, UnblockResolver as shared Core abstraction. Triggers = intake, Communication = conversations. 8 reviews, all bugs fixed, 2,322 tests. Next: agent loop removal, dashboard UI, live E2E multi-scenario testing.
 
 Previous layers:
 - [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)

@@ -344,8 +344,7 @@ describe("Orchestrator", () => {
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           if (input.details?.operation === "llm_infer") {
             llmCallCount++;
-            // LLM calls 5+ = self_review phase and beyond (agent-loop phases)
-            // Return non-JSON for all self_review iterations so agent loop exhausts retries
+            // LLM calls 5+ = self_review phase and beyond
             if (llmCallCount >= 5 && llmCallCount <= 14) {
               return {
                 outcome: "executed",
@@ -855,6 +854,7 @@ describe("Orchestrator", () => {
         repo: "org/repo",
         branch: "engineer/task-001-test",
         worktree_path: "/tmp/worktree/task-001",
+        thoughts_dir: null,
       };
       // Task already has a PR and workspace (rework scenario)
       const task = createMockTask({
@@ -899,6 +899,7 @@ describe("Orchestrator", () => {
           repo: "org/repo",
           branch: "engineer/task-001-test",
           worktree_path: "/tmp/worktree/task-001",
+          thoughts_dir: null,
         },
         review: {
           pr_number: 42,
@@ -936,6 +937,7 @@ describe("Orchestrator", () => {
         repo: "org/repo",
         branch: "engineer/task-001-fix-bug",
         worktree_path: "/tmp/worktree/task-001",
+        thoughts_dir: null,
       };
       handle.workspaceManager.getWorktreePath.mockReturnValue("/tmp/worktree/task-001");
 

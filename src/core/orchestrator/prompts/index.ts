@@ -4,7 +4,7 @@
 // All prompt builders are pure functions: context in, prompt string out.
 
 export { gatherRepoContext, gatherRepoContextSafe, type RepoContext } from "./context.js";
-export { buildSystemPrompt, buildCliNativeSystemPrompt } from "./system.js";
+export { buildCliNativeSystemPrompt } from "./system.js";
 
 // Phase prompt builders
 export {
@@ -14,7 +14,6 @@ export {
 export { buildResearchPrompt, type ResearchPromptContext } from "./research.js";
 export { buildPlanningPrompt, type PlanningPromptContext } from "./planning.js";
 export { buildExecutionPrompt, type ExecutionPromptContext } from "./execution.js";
-export { buildSelfReviewPrompt, type SelfReviewPromptContext } from "./self-review.js";
 export { buildDemoPrepPrompt, type DemoPrepPromptContext } from "./demo-prep.js";
 export {
   buildIntegrationPrompt,

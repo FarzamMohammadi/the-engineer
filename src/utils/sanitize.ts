@@ -1,7 +1,7 @@
 /**
  * Secret sanitization utility (D154).
  *
- * Applied at chokepoints (SessionMemory, agent-loop) to prevent tokens
+ * Applied at chokepoints (SessionMemory, LLM caller) to prevent tokens
  * from leaking into journal entries, LLM context, or log output.
  */
 

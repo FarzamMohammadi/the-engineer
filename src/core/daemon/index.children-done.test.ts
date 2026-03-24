@@ -236,7 +236,12 @@ describe("Daemon — Decomposition", () => {
         title: "Schema changes",
         state: "completed",
         description: "Added new schemas",
-        workspace: { repo: "test/repo", branch: "engineer/child-1-schema", worktree_path: null },
+        workspace: {
+          repo: "test/repo",
+          branch: "engineer/child-1-schema",
+          worktree_path: null,
+          thoughts_dir: null,
+        },
         review: { pr_number: 5, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
         decisions: [
           {

@@ -1,43 +1,20 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import type { ZodType } from "zod";
 import type { LLMAdapter } from "../../adapters/llm.js";
-import type { ToolAdapter } from "../../adapters/tool.js";
 import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import {
-  DemoPrepOutputSchema,
-  ExecutionOutputSchema,
-  IntegrationOutputSchema,
   PHASE_DIRECTORIES,
   type Phase,
   type PhaseOutput,
   Phases,
-  PlanningOutputSchema,
-  RequirementsGatheringOutputSchema,
-  ResearchOutputSchema,
-  SelfReviewOutputSchema,
 } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
-import { executeAction as executeAgentAction } from "./action-executor.js";
-import { type AgentLoopCallbacks, type AgentLoopResult, runAgentLoop } from "./agent-loop.js";
 import { LlmCallRejectedError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
-import { getPhaseToolConfig } from "./phase-tools.js";
 import { readSessionResult } from "./session-result.js";
 import { type OrchestratorContext, PHASE_SEQUENCE, type PipelineState } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
-
-/** Phase-specific Zod schemas for output validation. */
-const PHASE_OUTPUT_SCHEMAS: Record<Phase, ZodType> = {
-  [Phases.requirements_gathering]: RequirementsGatheringOutputSchema,
-  [Phases.research]: ResearchOutputSchema,
-  [Phases.planning]: PlanningOutputSchema,
-  [Phases.execution]: ExecutionOutputSchema,
-  [Phases.self_review]: SelfReviewOutputSchema,
-  [Phases.demo_prep]: DemoPrepOutputSchema,
-  [Phases.integration]: IntegrationOutputSchema,
-};
 
 /**
  * Map phase → subdirectory name inside the thoughts/ directory.
@@ -92,14 +69,6 @@ export function isRetryableError(error: unknown): boolean {
 export interface LlmCaller {
   /** Call LLM through ActionPipeline. Throws on rejection or no plugin. */
   callLlm(prompt: string, taskId: string, systemPrompt?: string | null): Promise<InferenceResult>;
-  /** Run a phase through the agent loop (multi-turn LLM + tool execution). Session 072: remove. */
-  runPhaseWithAgentLoop(
-    phase: Phase,
-    taskId: string,
-    systemPrompt: string,
-    initialPrompt: string,
-    state: PipelineState,
-  ): Promise<PhaseOutput>;
   /** Run a phase via CLI-native invocation. Single CLI call, file-based routing. */
   runPhaseWithCli(
     phase: Phase,
@@ -211,282 +180,6 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     } satisfies PublishInput<"cost.incurred">);
   }
 
-  function emitAgentLoopCost(taskId: string, phase: string, loopResult: AgentLoopResult): void {
-    const task = ctx.taskEngine.getTask(taskId);
-    ctx.eventBus.publish({
-      type: "cost.incurred",
-      source: "orchestrator",
-      task_id: taskId,
-      payload: {
-        task_id: taskId,
-        repo: task?.repo ?? "",
-        provider_id: "llm",
-        operation: `agent_loop:${phase}`,
-        spend_usd: loopResult.totalCost.spend_usd,
-        duration_ms: loopResult.totalCost.duration_ms,
-        input_tokens: loopResult.totalCost.input_tokens,
-        output_tokens: loopResult.totalCost.output_tokens,
-        total_tokens: loopResult.totalCost.total_tokens,
-        cache_read_tokens: null,
-        model_id: null,
-      },
-    } satisfies PublishInput<"cost.incurred">);
-  }
-
-  function buildObservabilityCallbacks(
-    taskId: string,
-    sessionId: string,
-    traceId: string,
-    phase: string,
-  ): AgentLoopCallbacks {
-    // biome-ignore lint/style/noNonNullAssertion: caller checks observationStore is not null
-    const store = ctx.observationStore!;
-    const spanOpts = { task_id: taskId, session_id: sessionId, trace_id: traceId, phase };
-    return {
-      onActionComplete: (trace) => {
-        store.observe(
-          "tool_execution",
-          trace.action_type,
-          {
-            action_params: trace.action_params,
-            result_success: trace.result_success,
-            result_output: trace.result_output,
-            result_error: trace.result_error,
-            duration_ms: trace.duration_ms,
-            iteration: trace.iteration,
-          },
-          spanOpts,
-        );
-      },
-      onLlmComplete: (trace) => {
-        const promptRef = trace.prompt_content
-          ? store.storeBlob(trace.prompt_content)
-          : trace.prompt_ref;
-        const responseRef = trace.response_content
-          ? store.storeBlob(trace.response_content)
-          : trace.response_ref;
-
-        store.observe(
-          "llm_call",
-          "inference",
-          {
-            prompt_length: trace.prompt_length,
-            response_length: trace.response_length,
-            cost_usd: trace.cost_usd,
-            duration_ms: trace.duration_ms,
-            provider_id: "llm",
-            model_id: trace.model_id,
-            prompt_ref: promptRef,
-            response_ref: responseRef,
-            iteration: trace.iteration,
-            input_tokens: trace.input_tokens,
-            output_tokens: trace.output_tokens,
-            total_tokens: trace.total_tokens,
-            cache_read_tokens: trace.cache_read_tokens,
-          },
-          spanOpts,
-        );
-      },
-    };
-  }
-
-  function validateLoopResult(
-    phase: Phase,
-    taskId: string,
-    loopResult: AgentLoopResult,
-  ): PhaseOutput {
-    const schema = PHASE_OUTPUT_SCHEMAS[phase];
-    const result = schema.safeParse(loopResult.phaseData);
-
-    if (!result.success) {
-      ctx.observer.warn("Agent loop output validation failed, using fallback", {
-        phase,
-        error: result.error.message,
-      });
-      return buildFallbackOutput(
-        phase,
-        taskId,
-        `Agent loop output invalid: ${result.error.message} (after ${String(loopResult.iterations)} iterations)`,
-      );
-    }
-
-    ctx.observer.debug("Agent loop output validation passed", {
-      phase,
-      dataKeys: Object.keys(result.data as Record<string, unknown>),
-    });
-    return buildPhaseOutput(phase, taskId, result.data as Record<string, unknown>, "high", []);
-  }
-
-  function buildPhaseOutput(
-    phase: Phase,
-    taskId: string,
-    data: Record<string, unknown>,
-    confidence: "high" | "medium" | "low",
-    openQuestions: string[],
-  ): PhaseOutput {
-    return {
-      phase,
-      task_id: taskId,
-      timestamp: new Date().toISOString(),
-      data,
-      confidence,
-      open_questions: openQuestions,
-    };
-  }
-
-  function getPhaseDefaults(phase: Phase): Record<string, unknown> {
-    const defaults: Record<Phase, Record<string, unknown>> = {
-      [Phases.requirements_gathering]: {
-        deliverable_path: "",
-        status: "ready",
-        contact: null,
-        question: null,
-        assessment: null,
-      },
-      [Phases.research]: {
-        deliverable_path: "",
-        status: "ready",
-        contact: null,
-        question: null,
-        complexity_hint: null,
-      },
-      [Phases.planning]: {
-        approach: "Unable to generate plan from LLM output",
-        file_changes: [],
-        risks: [],
-        decomposition_plan: null,
-      },
-      [Phases.execution]: {
-        files_changed: [],
-        tests_written: [],
-        test_results: { passed: 0, failed: 0, skipped: 0 },
-        build_status: "failing",
-      },
-      [Phases.self_review]: {
-        findings: [],
-        refactoring_applied: [],
-        quality_assessment: "unknown",
-      },
-      [Phases.demo_prep]: {
-        artifacts: [],
-        pr_number: 1,
-        pr_description: "Unable to generate PR description from LLM output",
-      },
-      [Phases.integration]: {
-        children_verified: [],
-        integration_tests: { passed: 0, failed: 0 },
-        conflicts_found: [],
-        resolution_actions: [],
-      },
-    };
-    return defaults[phase];
-  }
-
-  function buildFallbackOutput(phase: Phase, taskId: string, errorMessage: string): PhaseOutput {
-    return buildPhaseOutput(phase, taskId, getPhaseDefaults(phase), "low", [errorMessage]);
-  }
-
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: phase lifecycle with metrics, observability, cost, tracking, and quota persistence
-  async function runPhaseWithAgentLoop(
-    phase: Phase,
-    taskId: string,
-    systemPrompt: string,
-    initialPrompt: string,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const toolConfig = getPhaseToolConfig(phase);
-    const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
-    if (!worktreePath) {
-      throw new WorkspaceNotReadyError(taskId);
-    }
-    const toolAdapter = ctx.registry.getPrimaryPlugin<ToolAdapter>(AdapterTypes.tool) ?? null;
-    const { traceId, sessionId } = state;
-
-    // ── Phase metrics: start ─────────────────────────────────────────────
-    const phaseSpan =
-      ctx.observationStore && traceId && sessionId
-        ? ctx.observationStore.startSpan(
-            "phase_transition",
-            phase,
-            {
-              task_id: taskId,
-              session_id: sessionId,
-            },
-            { task_id: taskId, session_id: sessionId, trace_id: traceId, phase },
-          )
-        : null;
-
-    // ── Observability callbacks ──────────────────────────────────────────
-    const observabilityCallbacks =
-      ctx.observationStore && traceId && sessionId
-        ? { callbacks: buildObservabilityCallbacks(taskId, sessionId, traceId, phase) }
-        : {};
-
-    const loopResult = await runAgentLoop(
-      {
-        phase,
-        taskId,
-        systemPrompt,
-        initialPrompt,
-        toolConfig,
-        worktreePath,
-        observer: ctx.observer,
-        ...observabilityCallbacks,
-      },
-      (prompt, sysPrompt) => callLlm(prompt, taskId, sysPrompt),
-      (action, wPath) =>
-        executeAgentAction(action, wPath, {
-          actionPipeline: ctx.actionPipeline,
-          toolAdapter,
-          taskId,
-        }),
-    );
-
-    // ── Phase metrics: complete ──────────────────────────────────────────
-    if (phaseSpan) {
-      const actionsExecuted = loopResult.actions.length;
-      const actionsFailed = loopResult.actions.filter((a) => a.result && !a.result.success).length;
-      phaseSpan.end({
-        llm_iterations: loopResult.iterations,
-        spend_usd: loopResult.totalCost.spend_usd,
-        duration_ms: loopResult.totalCost.duration_ms,
-        actions_executed: actionsExecuted,
-        actions_failed: actionsFailed,
-        outcome: "completed",
-        input_tokens: loopResult.totalCost.input_tokens,
-        output_tokens: loopResult.totalCost.output_tokens,
-        total_tokens: loopResult.totalCost.total_tokens,
-      });
-    }
-
-    emitAgentLoopCost(taskId, phase, loopResult);
-    ctx.taskEngine.updateTracking(
-      taskId,
-      loopResult.totalCost.total_tokens,
-      loopResult.totalCost.spend_usd ?? 0,
-      loopResult.totalCost.duration_ms,
-    );
-
-    // ── Persist quota status for dashboard ────────────────────────────────
-    // Zero extra API calls — reads cached data from the last infer() call.
-    if (ctx.observationStore && traceId && sessionId) {
-      const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
-      if (llm) {
-        const quota = await llm.getQuotaStatus();
-        if (quota) {
-          ctx.observationStore.observe("quota_status", "llm", quota, {
-            task_id: taskId,
-            session_id: sessionId,
-            trace_id: traceId,
-            phase,
-          });
-        }
-      }
-    }
-
-    return validateLoopResult(phase, taskId, loopResult);
-  }
-
   /**
    * Run a phase via CLI-native invocation (RRPIR).
    *
@@ -586,24 +279,24 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     }
 
     // ── Build PhaseOutput ────────────────────────────────────────────────
-    return buildPhaseOutput(
+    return {
       phase,
-      taskId,
-      {
+      task_id: taskId,
+      timestamp: new Date().toISOString(),
+      data: {
         deliverable_path:
           phaseDir && deliverableFile ? `${thoughtsDir}/${phaseSubDir}/${deliverableFile}` : "",
         status: finalResult.status,
         next_phase: finalResult.next_phase,
         summary: finalResult.summary,
       },
-      finalResult.status === "ready" ? "high" : "medium",
-      finalResult.status === "need_more_info" ? [finalResult.summary] : [],
-    );
+      confidence: finalResult.status === "ready" ? ("high" as const) : ("medium" as const),
+      open_questions: finalResult.status === "need_more_info" ? [finalResult.summary] : [],
+    };
   }
 
   return {
     callLlm,
-    runPhaseWithAgentLoop,
     runPhaseWithCli,
     emitCostIncurred,
   };

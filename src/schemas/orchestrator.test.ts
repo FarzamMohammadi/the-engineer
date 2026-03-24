@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  AGENT_ACTION_NAMES,
-  ActionResultSchema,
-  AgentActionSchema,
   CommEventSchema,
   DecompositionChildSchema,
   DecompositionPlanSchema,
@@ -14,7 +11,6 @@ import {
   LLMDecompositionPlanSchema,
   PhaseOutputSchema,
   PhaseSchema,
-  PhaseToolConfigSchema,
   PlanningOutputSchema,
   QuestionBatchSchema,
   QuestionSchema,
@@ -675,141 +671,5 @@ describe("SafetyVerdictSchema", () => {
       warnings: ["Approaching cost limit"],
     });
     expect(verdict.warnings).toHaveLength(1);
-  });
-});
-
-// ── AgentAction Schema ───────────────────────────────────────────────────────────
-
-describe("AgentActionSchema", () => {
-  it("parses read_file action", () => {
-    const action = AgentActionSchema.parse({ action: "read_file", params: { path: "src/a.ts" } });
-    expect(action.action).toBe("read_file");
-  });
-
-  it("parses write_file action", () => {
-    const action = AgentActionSchema.parse({
-      action: "write_file",
-      params: { path: "a.ts", content: "hello" },
-    });
-    expect(action.action).toBe("write_file");
-  });
-
-  it("parses edit_file action with all required params", () => {
-    const action = AgentActionSchema.parse({
-      action: "edit_file",
-      params: { path: "a.ts", old_string: "old", new_string: "new" },
-    });
-    expect(action.action).toBe("edit_file");
-  });
-
-  it("parses search_files with optional path", () => {
-    const withPath = AgentActionSchema.parse({
-      action: "search_files",
-      params: { pattern: "*.ts", path: "src/" },
-    });
-    expect(withPath.action).toBe("search_files");
-
-    const withoutPath = AgentActionSchema.parse({
-      action: "search_files",
-      params: { pattern: "*.ts" },
-    });
-    expect(withoutPath.action).toBe("search_files");
-  });
-
-  it("parses search_content with optional path and glob", () => {
-    const action = AgentActionSchema.parse({
-      action: "search_content",
-      params: { pattern: "TODO", path: "src/", glob: "*.ts" },
-    });
-    expect(action.action).toBe("search_content");
-  });
-
-  it("parses run_command action", () => {
-    const action = AgentActionSchema.parse({
-      action: "run_command",
-      params: { command: "npm test" },
-    });
-    expect(action.action).toBe("run_command");
-  });
-
-  it("parses done action with result record", () => {
-    const action = AgentActionSchema.parse({
-      action: "done",
-      result: { files_changed: ["a.ts"], status: "ok" },
-    });
-    expect(action.action).toBe("done");
-    if (action.action === "done") {
-      expect(action.result).toEqual({ files_changed: ["a.ts"], status: "ok" });
-    }
-  });
-
-  it("accepts optional thinking field", () => {
-    const action = AgentActionSchema.parse({
-      action: "read_file",
-      params: { path: "a.ts" },
-      thinking: "Need to check this",
-    });
-    expect(action.thinking).toBe("Need to check this");
-  });
-
-  it("rejects unknown action names", () => {
-    const result = AgentActionSchema.safeParse({ action: "delete_file", params: {} });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects missing required params", () => {
-    const result = AgentActionSchema.safeParse({ action: "read_file", params: {} });
-    expect(result.success).toBe(false);
-  });
-});
-
-describe("AGENT_ACTION_NAMES", () => {
-  it("contains all 7 action names", () => {
-    expect(AGENT_ACTION_NAMES).toHaveLength(7);
-    expect(AGENT_ACTION_NAMES).toContain("read_file");
-    expect(AGENT_ACTION_NAMES).toContain("done");
-  });
-});
-
-// ── ActionResult Schema ──────────────────────────────────────────────────────────
-
-describe("ActionResultSchema", () => {
-  it("parses success result", () => {
-    const result = ActionResultSchema.parse({ success: true, output: "file contents" });
-    expect(result.success).toBe(true);
-    expect(result.error).toBeUndefined();
-  });
-
-  it("parses error result with optional error field", () => {
-    const result = ActionResultSchema.parse({
-      success: false,
-      output: "",
-      error: "File not found",
-    });
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("File not found");
-  });
-});
-
-// ── PhaseToolConfig Schema ───────────────────────────────────────────────────────
-
-describe("PhaseToolConfigSchema", () => {
-  it("parses valid config", () => {
-    const config = PhaseToolConfigSchema.parse({
-      allowed_actions: ["read_file", "done"],
-      max_iterations: 5,
-      action_classes: ["read"],
-    });
-    expect(config.allowed_actions).toHaveLength(2);
-    expect(config.max_iterations).toBe(5);
-  });
-
-  it("rejects non-positive max_iterations", () => {
-    const result = PhaseToolConfigSchema.safeParse({
-      allowed_actions: ["done"],
-      max_iterations: 0,
-      action_classes: [],
-    });
-    expect(result.success).toBe(false);
   });
 });

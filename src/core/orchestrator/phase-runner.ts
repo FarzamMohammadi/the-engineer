@@ -195,30 +195,42 @@ async function sendOutreachFromFiles(
     }
   }
 
-  // Also comment on the source issue with a summary
-  const task = ctx.taskEngine.getTask(taskId);
-  const issuePlugin = commPlugins.find((p) => p.hasCapability("issue_management"));
-  if (issuePlugin && task?.external_ref) {
-    const { type, repo, number } = task.external_ref;
-    if (type === "github_issue" || type === "github_pr") {
-      const summary = files.map((f) => `- ${f.replace(TXT_SUFFIX_RE, "")}`).join("\n");
-      sendPromises.push(
-        issuePlugin
-          .commentOnIssue(repo, number, `Blocked — reaching out for answers:\n\n${summary}`)
-          .then(() => {
-            ctx.observer.info("Outreach issue comment posted", { taskId, repo, number });
-          })
-          .catch((err: unknown) => {
-            ctx.observer.warn("Issue comment for outreach failed", {
-              taskId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }),
-      );
-    }
-  }
+  commentOnSourceIssue(taskId, files, commPlugins, sendPromises, ctx);
 
   await Promise.allSettled(sendPromises);
+}
+
+/** Post outreach summary as a comment on the originating issue/PR. */
+function commentOnSourceIssue(
+  taskId: string,
+  files: string[],
+  commPlugins: CommunicationAdapter[],
+  sendPromises: Promise<void>[],
+  ctx: OrchestratorContext,
+): void {
+  const task = ctx.taskEngine.getTask(taskId);
+  const issuePlugin = commPlugins.find((p) => p.hasCapability("issue_management"));
+  if (!issuePlugin || !task?.external_ref) {
+    return;
+  }
+  const { type, repo, number } = task.external_ref;
+  if (type !== "github_issue" && type !== "github_pr") {
+    return;
+  }
+  const summary = files.map((f) => `- ${f.replace(TXT_SUFFIX_RE, "")}`).join("\n");
+  sendPromises.push(
+    issuePlugin
+      .commentOnIssue(repo, number, `Blocked — reaching out for answers:\n\n${summary}`)
+      .then(() => {
+        ctx.observer.info("Outreach issue comment posted", { taskId, repo, number });
+      })
+      .catch((err: unknown) => {
+        ctx.observer.warn("Issue comment for outreach failed", {
+          taskId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }),
+  );
 }
 
 /** Discriminated union of post-phase processing outcomes (internal to the pipeline runner). */

@@ -24,9 +24,10 @@ export type ComponentTag =
   | "pr-manager"
   | "phase-runner"
   | "llm-caller"
-  | "agent-loop"
   | "plugin-loader"
-  | "data-lifecycle";
+  | "data-lifecycle"
+  | "response-poller"
+  | "unblock-resolver";
 
 /** Logging config shape from DaemonConfigSchema. */
 export interface LoggingConfig {

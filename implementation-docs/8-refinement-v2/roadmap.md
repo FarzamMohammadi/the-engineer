@@ -181,6 +181,8 @@ Session 076 ran three parallel reviews (Engineer persona, Technical Architect, Q
 
 With RRPIR hardened, go through each runtime flow phase by phase. Two co-founders refining together — evaluate behavior, fix issues, tune until it's something we love. "Working" is not "good." This is where we make it good.
 
+**Ideas & brainstorm:** [roadmap-ideas/refinement.md](roadmap-ideas/refinement.md) — co-founder discussion documented before implementation. A separate plan finalizes scope.
+
 ### Startup & Configuration
 
 CLI entry, bootstrap, plugin loading, daemon startup. First impressions. Fast, informative, fail gracefully.

@@ -82,9 +82,9 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** Session 076 DONE. Agent loop dead code removed (~2,600 lines, 80 tests). Dashboard blocked-task communication panel added (blocked details card, conversation timeline, response input). All 7/7 phases CLI-native. Full blocked/unblock communication lifecycle operational (Telegram + dashboard). Next: finish RRPIR Refinement — cross-plugin validation (OpenCode, Gemini CLI), crash recovery testing, thoughts/ file viewer, live E2E multi-scenario. See `8-refinement-v2/status.md` for live status.
+**Layer 8 — Refinement v2: IN PROGRESS.** Session 076 DONE. Agent loop removed (~2,600 lines), dashboard blocked-task UI added, RRPIR hardened (triple review → 4 worktree fixes merged: directory consolidation, prompt data flow, crash recovery, observability). 2,248 tests, 100 files. Next: begin Runtime Phase Refinement — phase-by-phase co-founder pass starting with Startup & Configuration. See `8-refinement-v2/roadmap.md`.
 
-**Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,242 tests (99 files).
+**Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,248 tests (100 files).
 
 - Phase 0: Project Bootstrap — **DONE** (Session 31). 12 files: package.json, tsconfig.json, biome.json, lefthook.yml, 4 vitest configs, test/setup.ts, src/index.ts, .gitignore, .node-version. All verification passes.
 - Phase 1a: Core Data Schemas — **DONE** (Session 32). 7 files in `src/schemas/`: task.ts (4 enums, 12 sub-schemas, TaskSchema, StateTransitionSchema, ValidTransitions 25 rules, PermissionTable 10 entries), events.ts (EventSchema envelope, 30 payload schemas, EventPayloads mapped type, TypedEvent generic, eventPayloadSchemas runtime registry), session-memory.ts (Session, JournalEntry, Checkpoint, KnowledgeEntry, knowledgeId()), 3 test files (126 tests), index.ts barrel. 3 Biome exceptions added (useNamingConvention, noBarrelFile, noReExportAll). All verification passes.

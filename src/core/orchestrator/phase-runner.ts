@@ -966,21 +966,15 @@ export async function runPhasePipeline(
     let output: PhaseOutput;
     ctx.observer.info("Phase starting", { taskId, phase });
     const phaseStart = Date.now();
-    const phaseSpan = pipelineSpan
-      ? pipelineSpan.startChild("phase_transition", phase, { phase, task_id: taskId })
-      : null;
     try {
       const handler = handlers.get(phase);
       output = await handler(taskId, dispatch, priorOutputs, currentState);
     } catch (error: unknown) {
-      phaseSpan?.setError(error);
-      phaseSpan?.end();
       return endPipelineSpan(
         handlePhaseError(sessionId, taskId, phase, error, ctx),
         i - startIndex,
       );
     }
-    phaseSpan?.end({ duration_ms: Date.now() - phaseStart, confidence: output.confidence });
     ctx.observer.info("Phase completed", { taskId, phase, durationMs: Date.now() - phaseStart });
 
     priorOutputs.set(phase, output);

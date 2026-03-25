@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Engineer — System Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0c0c12;
+    --surface: #14141e;
+    --surface2: #1a1a28;
+    --border: #252538;
+    --border-active: #4a4a70;
+    --text: #d8d8e8;
+    --text-dim: #7878a0;
+    --text-muted: #505070;
+    --accent: #818cf8;
+
+    --l0: #4ade80; --l0-bg: rgba(74,222,128,0.08); --l0-border: rgba(74,222,128,0.25);
+    --l1: #34d399; --l1-bg: rgba(52,211,153,0.08); --l1-border: rgba(52,211,153,0.25);
+    --l2: #22d3ee; --l2-bg: rgba(34,211,238,0.08); --l2-border: rgba(34,211,238,0.25);
+    --l3: #60a5fa; --l3-bg: rgba(96,165,250,0.08); --l3-border: rgba(96,165,250,0.25);
+    --l4: #818cf8; --l4-bg: rgba(129,140,248,0.08); --l4-border: rgba(129,140,248,0.25);
+    --l5: #a78bfa; --l5-bg: rgba(167,139,250,0.08); --l5-border: rgba(167,139,250,0.25);
+    --l6: #c084fc; --l6-bg: rgba(192,132,252,0.08); --l6-border: rgba(192,132,252,0.25);
+    --l7: #f472b6; --l7-bg: rgba(244,114,182,0.08); --l7-border: rgba(244,114,182,0.25);
+
+    --conn-event: #fbbf24;
+    --conn-db: #38bdf8;
+    --conn-direct: #a78bfa;
+    --conn-data: #4ade80;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 40px 48px 0;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  header .subtitle {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── Top stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 32px;
+    padding: 20px 48px;
+    max-width: 1600px;
+    margin: 0 auto;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .stat-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: #f0f0f8;
+  }
+
+  .stat-lbl {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    gap: 24px;
+    padding: 0 48px 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+    flex-wrap: wrap;
+  }
+
+  .legend-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .legend-line {
+    width: 20px;
+    height: 2px;
+    border-radius: 1px;
+  }
+
+  .legend-line.dashed {
+    background: repeating-linear-gradient(90deg, var(--conn-event) 0 4px, transparent 4px 8px);
+  }
+
+  /* ── Main Layout ── */
+  .main {
+    display: flex;
+    gap: 0;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 48px 48px;
+    position: relative;
+  }
+
+  /* ── Diagram area ── */
+  .diagram {
+    flex: 1;
+    position: relative;
+    min-width: 0;
+  }
+
+  /* ── SVG connections ── */
+  .connections-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .connections-svg path {
+    fill: none;
+    stroke-width: 1.5;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .connections-svg path.visible {
+    opacity: 0.5;
+  }
+
+  .connections-svg path.highlight {
+    opacity: 0.9;
+    stroke-width: 2;
+  }
+
+  /* ── Layer rows ── */
+  .layer-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 8px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .layer-tag {
+    width: 36px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border);
+    margin-right: 8px;
+    user-select: none;
+  }
+
+  .layer-systems {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+
+  /* ── System boxes ── */
+  .sys {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    flex: 1;
+    min-width: 120px;
+    max-width: 280px;
+  }
+
+  .sys:hover {
+    border-color: var(--border-active);
+    background: var(--surface2);
+  }
+
+  .sys.selected {
+    z-index: 10;
+  }
+
+  .sys.dimmed {
+    opacity: 0.25;
+  }
+
+  .sys.upstream {
+    border-color: var(--conn-data);
+    box-shadow: 0 0 12px rgba(74,222,128,0.1);
+  }
+
+  .sys.downstream {
+    border-color: var(--conn-event);
+    box-shadow: 0 0 12px rgba(251,191,36,0.1);
+  }
+
+  .sys-name {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sys-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .sys-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-left: auto;
+    font-weight: 400;
+  }
+
+  .sys-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  .sys-meta {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+
+  .sys-meta-item {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .sys-meta-item .val {
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+
+  /* ── Iso bar (extraction readiness) ── */
+  .iso {
+    display: inline-flex;
+    gap: 1.5px;
+    margin-left: 2px;
+    vertical-align: middle;
+  }
+
+  .iso i {
+    width: 3px;
+    height: 8px;
+    border-radius: 1px;
+    background: var(--border);
+    font-style: normal;
+  }
+
+  .iso i.on { background: var(--l0); }
+  .iso i.mid { background: #fbbf24; }
+  .iso i.low { background: #f87171; }
+
+  /* ── Detail Panel ── */
+  .detail-panel {
+    width: 360px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-left: 16px;
+    padding: 0;
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .detail-panel::-webkit-scrollbar { width: 4px; }
+  .detail-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .detail-panel.has-selection {
+    border-color: var(--border-active);
+  }
+
+  .detail-empty {
+    padding: 80px 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .detail-empty .icon {
+    font-size: 24px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+
+  .detail-header {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    display: none;
+  }
+
+  .detail-panel.has-selection .detail-header { display: block; }
+  .detail-panel.has-selection .detail-empty { display: none; }
+
+  .detail-title {
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .detail-layer-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .detail-subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .detail-section {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: none;
+  }
+
+  .detail-panel.has-selection .detail-section { display: block; }
+
+  .detail-section:last-child { border-bottom: none; }
+
+  .detail-section h3 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .detail-files {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+
+  .detail-files .dir {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .detail-deps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .detail-dep {
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.02);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .detail-dep:hover {
+    background: rgba(255,255,255,0.05);
+  }
+
+  .dep-arrow {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .dep-name {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .dep-via {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .detail-api {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+
+  .detail-api .fn {
+    color: var(--accent);
+  }
+
+  .detail-api .type {
+    color: #fbbf24;
+  }
+
+  .detail-concerns {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  .detail-concerns li {
+    margin-bottom: 4px;
+    list-style: none;
+    padding-left: 12px;
+    position: relative;
+  }
+
+  .detail-concerns li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 7px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #f87171;
+  }
+
+  /* ── Shared data flows between layers ── */
+  .data-flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin: 2px 0 2px 52px;
+    padding: 0 8px;
+    position: relative;
+    z-index: 3;
+  }
+
+  .flow-chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 3px;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  .flow-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+    max-width: 60px;
+  }
+
+  /* ── Animation ── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .layer-row {
+    animation: fadeInUp 0.4s ease both;
+  }
+
+  .layer-row:nth-child(1) { animation-delay: 0.0s; }
+  .layer-row:nth-child(2) { animation-delay: 0.04s; }
+  .layer-row:nth-child(3) { animation-delay: 0.08s; }
+  .layer-row:nth-child(4) { animation-delay: 0.12s; }
+  .layer-row:nth-child(5) { animation-delay: 0.16s; }
+  .layer-row:nth-child(6) { animation-delay: 0.20s; }
+  .layer-row:nth-child(7) { animation-delay: 0.24s; }
+  .layer-row:nth-child(8) { animation-delay: 0.28s; }
+  .layer-row:nth-child(9) { animation-delay: 0.32s; }
+  .layer-row:nth-child(10) { animation-delay: 0.36s; }
+  .layer-row:nth-child(11) { animation-delay: 0.40s; }
+  .layer-row:nth-child(12) { animation-delay: 0.44s; }
+  .layer-row:nth-child(13) { animation-delay: 0.48s; }
+  .layer-row:nth-child(14) { animation-delay: 0.52s; }
+  .layer-row:nth-child(15) { animation-delay: 0.56s; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>The Engineer — System Architecture</h1>
+  <div class="subtitle">Click any system to explore its dependencies, API surface, and connections</div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat"><span class="stat-val">16</span><span class="stat-lbl">systems</span></div>
+  <div class="stat"><span class="stat-val">8</span><span class="stat-lbl">layers</span></div>
+  <div class="stat"><span class="stat-val">~130</span><span class="stat-lbl">source files</span></div>
+  <div class="stat"><span class="stat-val">0</span><span class="stat-lbl">circular deps</span></div>
+  <div class="stat"><span class="stat-val">8</span><span class="stat-lbl">interfaces</span></div>
+</div>
+
+<div class="legend">
+  <div class="legend-group">
+    <div class="legend-line dashed" style="--conn: var(--conn-event); background: repeating-linear-gradient(90deg, var(--conn-event) 0 4px, transparent 4px 8px)"></div>
+    Event Bus
+  </div>
+  <div class="legend-group">
+    <div class="legend-line" style="background: var(--conn-db)"></div>
+    Shared SQLite DB
+  </div>
+  <div class="legend-group">
+    <div class="legend-line" style="background: var(--conn-direct)"></div>
+    Direct Import
+  </div>
+  <div class="legend-group">
+    <span style="color:var(--l0)">&#9650;</span> depends on
+    <span style="color:var(--conn-event); margin-left:8px">&#9660;</span> depended by
+  </div>
+</div>
+
+<div class="main">
+
+<div class="diagram" id="diagram">
+
+  <!-- L7: Interface -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l7)">L7</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-cli" data-layer="7" style="border-left: 3px solid var(--l7)"
+           data-depends="s-bootstrap,s-dashboard"
+           data-desc="Commander CLI with 12+ commands. Entry point for all user interaction. Short-lived per command, transitions to long-lived via daemon start."
+           data-files="src/cli/ (index, commands/*, output, progress, home, pid, templates, constants)"
+           data-filecount="17"
+           data-iso="0"
+           data-api="program.parseAsync() | runStart() | runShutdown() | runStatus() | runDoctor() | runInit()"
+           data-concerns="Output singleton (only global mutable state)|Tight coupling to bootstrap (by design)"
+           data-upstream="s-bootstrap,s-config,s-db,s-schemas,s-dashboard"
+           data-downstream=""
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l7)"></span>CLI<span class="sys-id">S14</span></div>
+        <div class="sys-desc">User-facing commands, output formatting</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">17</span></span><span class="sys-meta-item">iso <span class="iso"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-bootstrap" data-layer="7" style="border-left: 3px solid var(--l7)"
+           data-desc="13-step component factory. Creates all systems in dependency order. Error recovery with reverse cleanup. The top of the DAG."
+           data-files="src/cli/bootstrap.ts, src/core/system.ts"
+           data-filecount="2"
+           data-iso="0"
+           data-api="bootstrap(options): BootstrapResult | createCoreComponents(input): CoreComponentGraph"
+           data-concerns="Imports from ALL subsystems (by design)|Most change-sensitive files"
+           data-upstream="s-db,s-config,s-eventbus,s-observer,s-taskengine,s-safety,s-pipeline,s-memory,s-workspace,s-contacts,s-registry,s-hooks,s-orchestrator,s-daemon,s-maintenance,s-plugins"
+           data-downstream="s-cli"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l7)"></span>Bootstrap<span class="sys-id">S14b</span></div>
+        <div class="sys-desc">Wires all 12+ components in order</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">2</span></span><span class="sys-meta-item">iso <span class="iso"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-dashboard" data-layer="7" style="border-left: 3px solid var(--l7)"
+           data-desc="Fully independent HTTP server. Read-only DB + SSE streaming. 15 API endpoints. Works standalone without daemon. React SPA."
+           data-files="src/dashboard/ (index, server, api/tasks, api/events, api/metrics, api/observations, api/traces, api/messages, api/stream, api/system)"
+           data-filecount="10"
+           data-iso="9"
+           data-api="startDashboard(config, port) | GET /api/tasks | GET /api/events | GET /api/stream (SSE) | POST /api/messages/:id/respond"
+           data-concerns="No authentication|POST /api/messages is the only write (creates event for daemon to poll)|98KB bundled SPA"
+           data-upstream="s-db,s-observer"
+           data-downstream="s-cli"
+           data-events="comm.message_received (write)">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l7)"></span>Dashboard<span class="sys-id">S15</span></div>
+        <div class="sys-desc">War Room UI, standalone, read-only DB</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">10</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-flow-row">
+    <div class="flow-line"></div>
+    <div class="flow-chip">creates &amp; wires all below</div>
+    <div class="flow-line"></div>
+  </div>
+
+  <!-- L6: Runtime -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l6)">L6</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-daemon" data-layer="6" style="border-left: 3px solid var(--l6)"
+           data-desc="Always-running heartbeat. 12-step tick loop (5s interval): trigger polling, scheduling, preemption, health monitoring, review handling, notifications, cost limits, unblocking. P1 startup / P15 shutdown protocols. 9 internal subsystems (closure factories)."
+           data-files="src/core/daemon/ (index, types, errors, trigger-poller, task-scheduler, response-poller, preemption-manager, review-handler, health-monitor, notification-router, cost-limit-queue, query-handler, unblock-resolver)"
+           data-filecount="14"
+           data-iso="5"
+           data-api="createDaemon(ctx): Daemon | .start() | .stop() | .tick() | .getState()"
+           data-concerns="Tick loop is synchronous per-step|Fire-and-forget dispatch|State in closures hard to inspect|TTL dedup uses wall-clock time"
+           data-upstream="s-orchestrator,s-taskengine,s-safety,s-memory,s-workspace,s-contacts,s-eventbus,s-observer,s-registry,s-maintenance"
+           data-downstream="s-bootstrap"
+           data-events="trigger.new_event|health.stuck_detected|health.trigger_failure|task.children_all_done|preemption.requested">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l6)"></span>Daemon<span class="sys-id">S13</span></div>
+        <div class="sys-desc">Tick loop, scheduling, health, notifications</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">14</span></span><span class="sys-meta-item">subs <span class="val">9</span></span><span class="sys-meta-item">iso <span class="iso"><i class="low"></i><i class="low"></i><i class="low"></i><i class="low"></i><i class="low"></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-maintenance" data-layer="6" style="border-left: 3px solid var(--l6)"
+           data-desc="Automatic data retention. Prunes old observations, events, journal entries, checkpoints by configurable age. Blob orphan cleanup. Incremental vacuum. Active task protection (never prunes running tasks)."
+           data-files="src/core/data-lifecycle/index.ts"
+           data-filecount="1"
+           data-iso="9"
+           data-api="createDataLifecycleManager(deps) | .start() | .stop() | .runCleanup(): CleanupStats"
+           data-concerns="Blob cleanup filesystem traversal complexity (biome-ignored)|Path confinement checks for security"
+           data-upstream="s-db,s-eventbus,s-observer"
+           data-downstream="s-daemon,s-bootstrap"
+           data-events="system.cleanup_completed">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l6)"></span>Maintenance<span class="sys-id">S16</span></div>
+        <div class="sys-desc">Data retention, blob cleanup, vacuum</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">1</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-flow-row">
+    <div class="flow-line"></div>
+    <div class="flow-chip">dispatches tasks to</div>
+    <div class="flow-line"></div>
+  </div>
+
+  <!-- L5: Intelligence -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l5)">L5</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-orchestrator" data-layer="5" style="border-left: 3px solid var(--l5); flex: 2; max-width: 400px;"
+           data-desc="7-phase RRPIR pipeline: requirements_gathering, research, planning, execution, self_review, demo_prep, integration. CLI-native LLM invocation. Decomposition after planning. Self-review loopback (max 3). PR creation after demo_prep. Preemption between phases. Resume from checkpoint."
+           data-files="src/core/orchestrator/ (index, phase-runner, phase-handlers, llm-caller, workspace-lifecycle, pr-manager, decomposition-handler, orchestrator-notifier, andon-cord, session-result, types, errors, prompts/*)"
+           data-filecount="22"
+           data-iso="5"
+           data-api="Orchestrator.executeTask(dispatch): ExecuteTaskResult | .attemptSelfUnblock(taskId)"
+           data-concerns="handlePostPhaseActions() complexity (8 branches)|Session-result.json fallback (missing = success)|Imports from nearly everything|Andon cord unused"
+           data-upstream="s-taskengine,s-safety,s-pipeline,s-memory,s-workspace,s-contacts,s-eventbus,s-observer,s-registry,s-plugins"
+           data-downstream="s-daemon,s-bootstrap"
+           data-events="cost.incurred|preemption.ready|comm.message_sent">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l5)"></span>Orchestrator<span class="sys-id">S12</span></div>
+        <div class="sys-desc">7-phase pipeline, LLM calls, decomposition, PR creation</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">22</span></span><span class="sys-meta-item">phases <span class="val">7</span></span><span class="sys-meta-item">iso <span class="iso"><i class="low"></i><i class="low"></i><i class="low"></i><i class="low"></i><i class="low"></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-flow-row">
+    <div class="flow-line"></div>
+    <div class="flow-chip">uses all core services via interfaces</div>
+    <div class="flow-line"></div>
+  </div>
+
+  <!-- L4: Plugin Ecosystem -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l4)">L4</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-adapters" data-layer="4" style="border-left: 3px solid var(--l4)"
+           data-desc="5 abstract adapter base classes defining plugin contracts. Template method pattern (initialize/shutdown/healthCheck). Capability gating for optional methods. SDK boundary barrel at adapters/index.ts."
+           data-files="src/adapters/ (index, base, trigger, communication, llm, tool, git-hosting, errors)"
+           data-filecount="8"
+           data-iso="10"
+           data-api="BaseAdapter | TriggerAdapter.poll() | CommunicationAdapter.send/sync/issue | LLMAdapter.infer() | ToolAdapter.execute() | GitHostingAdapter (9 PR methods)"
+           data-concerns="Observer typed as unknown (tier boundary hack)|Capability gating is implicit (runtime, not compile-time)"
+           data-upstream="s-schemas"
+           data-downstream="s-plugins,s-registry,s-orchestrator,s-daemon"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l4)"></span>Adapters<span class="sys-id">S11a</span></div>
+        <div class="sys-desc">5 abstract contracts (SDK boundary)</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">8</span></span><span class="sys-meta-item">types <span class="val">5</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></span></div>
+      </div>
+      <div class="sys" id="s-registry" data-layer="4" style="border-left: 3px solid var(--l4)"
+           data-desc="Plugin lifecycle: registration, initialization, health monitoring (3-state: healthy/unhealthy/failed), shutdown. Type cache for fast lookups. IPluginLookup interface for read-only access."
+           data-files="src/core/registry/ (index, lifecycle, plugin-health), src/core/interfaces/plugin-lookup.interface.ts"
+           data-filecount="4"
+           data-iso="8"
+           data-api="Registry.register() | .getPlugin<T>() | .getPrimaryPlugin<T>() | .initializePlugin() | .shutdownAll() | .healthCheckAll()"
+           data-concerns="deregister() doesn't call shutdown()|Plugin priority = registration order|Health records not persisted"
+           data-upstream="s-adapters,s-eventbus,s-observer,s-hooks"
+           data-downstream="s-orchestrator,s-daemon,s-bootstrap"
+           data-events="health.plugin_unhealthy|health.plugin_failed|health.plugin_recovered">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l4)"></span>Registry<span class="sys-id">S11b</span></div>
+        <div class="sys-desc">Plugin lifecycle, health state machine</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">4</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-hooks" data-layer="4" style="border-left: 3px solid var(--l4)"
+           data-desc="10 lifecycle hook points (pre/post for: task create, task transition, phase start/complete, tool execute, publish). Sequential execution. HookAbortError for pre-hooks."
+           data-files="src/core/hooks/index.ts"
+           data-filecount="1"
+           data-iso="9"
+           data-api="HookRegistry.register(pluginId, hookPoint, handler) | .execute(hookPoint, data) | .deregister(pluginId)"
+           data-concerns="Error logging depends on observer"
+           data-upstream="s-observer"
+           data-downstream="s-registry,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l4)"></span>Hooks<span class="sys-id">S11c</span></div>
+        <div class="sys-desc">10 lifecycle hook points</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">1</span></span><span class="sys-meta-item">hooks <span class="val">10</span></span></div>
+      </div>
+      <div class="sys" id="s-plugins" data-layer="4" style="border-left: 3px solid var(--l4)"
+           data-desc="8 builtin plugins: GitHub Trigger, GitHub Comm, Telegram Comm, GitHub Hosting, Claude Code LLM, Gemini CLI LLM, OpenCode LLM, Bash Tool. Each extends one adapter. Loaded via YAML config discovery."
+           data-files="src/plugins/ (loader, builtin, trigger/github-trigger/*, communication/github-comm/*, communication/telegram-comm/*, git-hosting/github-hosting/*, llm/claude-code-llm/*, llm/gemini-cli-llm/*, llm/opencode-llm/*, tool/bash-tool/*)"
+           data-filecount="19"
+           data-iso="8"
+           data-api="loadBuiltinPlugins(registry, configDir) | discoverEnabledPlugins(configDir)"
+           data-concerns="buildLlmEnv() duplicated in 3 LLM plugins|GitHub error classification duplicated in trigger + comm"
+           data-upstream="s-adapters"
+           data-downstream="s-registry,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l4)"></span>Plugins<span class="sys-id">S11d</span></div>
+        <div class="sys-desc">8 builtin: GitHub, Telegram, Claude, Bash...</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">19</span></span><span class="sys-meta-item">plugins <span class="val">8</span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-flow-row">
+    <div class="flow-line"></div>
+    <div class="flow-chip">plugins implement adapter contracts</div>
+    <div class="flow-line"></div>
+  </div>
+
+  <!-- L3: Core Services -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l3)">L3</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-taskengine" data-layer="3" style="border-left: 3px solid var(--l3)"
+           data-desc="State authority. CPU-derived state machine with 7 states, 27 transitions, optimistic locking. Gate 1: permission oracle (per-state action classes). Exclusive writer to tasks + state_transitions tables."
+           data-files="src/core/task-engine/ (index, state-machine, permissions, queries, row-mapper, errors)"
+           data-filecount="7"
+           data-iso="8"
+           data-api="TaskEngine.createTask() | .requestTransition() | .checkPermission() (Gate 1) | .getTask() | .updateTaskField() | .updateTracking()"
+           data-concerns="15 updatable fields hardcoded|JSON fields not validated on update|State/sub_state pairing implicit"
+           data-upstream="s-eventbus,s-observer,s-schemas,s-db"
+           data-downstream="s-pipeline,s-orchestrator,s-daemon,s-bootstrap"
+           data-events="task.created|task.state_changed">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l3)"></span>Task Engine<span class="sys-id">S6</span></div>
+        <div class="sys-desc">State machine, Gate 1 permissions</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">7</span></span><span class="sys-meta-item">states <span class="val">7</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-pipeline" data-layer="3" style="border-left: 3px solid var(--l3)"
+           data-desc="Thin authorization middleware. Gate 1 (TaskEngine) -> Gate 2 (SafetyLayer, skip for reads) -> Execute -> Notify. Returns discriminated union: executed | rejected | ask_human | error."
+           data-files="src/core/action-pipeline/index.ts"
+           data-filecount="1"
+           data-iso="8"
+           data-api="ActionPipeline.execute<T>(input): PipelineResult<T>"
+           data-concerns="Safety warnings lost in 'executed' path|ask_human is a signal, not a block"
+           data-upstream="s-taskengine,s-safety,s-eventbus,s-observer"
+           data-downstream="s-orchestrator,s-bootstrap"
+           data-events="action.rejected">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l3)"></span>Action Pipeline<span class="sys-id">S7a</span></div>
+        <div class="sys-desc">Gate 1 + Gate 2 middleware</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">1</span></span></div>
+      </div>
+      <div class="sys" id="s-safety" data-layer="3" style="border-left: 3px solid var(--l3)"
+           data-desc="Gate 2: policy enforcement + cost tracking. Scope checks (repo, branch, file), merge policy, cost limits (per-task, daily, monthly). Passive consultation (can_i, should_i_ask, cost_check). Cost accumulation from EventBus, snapshot to _meta every 5s."
+           data-files="src/core/safety-layer/ (index, policy-engine, cost-tracker, errors)"
+           data-filecount="4"
+           data-iso="8"
+           data-api="SafetyLayer.evaluateAction() (Gate 2) | .consultJudgment() | .getCostStatus() | .checkAutoMergeAllowed() | .flushCostSnapshot()"
+           data-concerns="Cost window rollover is event-driven (can be stale)|Snapshot debounce 5s (crash window)|Warnings lost in ActionPipeline proceed path"
+           data-upstream="s-eventbus,s-observer,s-db,s-schemas"
+           data-downstream="s-pipeline,s-orchestrator,s-daemon,s-bootstrap"
+           data-events="cost.limit_reached">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l3)"></span>Safety Layer<span class="sys-id">S7b</span></div>
+        <div class="sys-desc">Gate 2: policy, cost limits, autonomy</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">4</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-tag"></div>
+    <div class="layer-systems">
+      <div class="sys" id="s-memory" data-layer="3" style="border-left: 3px solid var(--l3)"
+           data-desc="Pure DB facade for agent context. Sessions (crash recovery chain), Journal (append-only reasoning log with sanitization), Checkpoints (recovery snapshots), Knowledge (content-hash upsert, per-repo isolation, supersession). Exclusive writer to 4 tables."
+           data-files="src/core/session-memory/ (index, sessions, journal, checkpoints, knowledge, row-mappers, errors)"
+           data-filecount="8"
+           data-iso="9"
+           data-api="SessionMemory.createSession() | .endSession() | .addJournalEntry() | .queryJournal() | .createCheckpoint() | .getLatestCheckpoint() | .storeKnowledge() | .getKnowledge()"
+           data-concerns="Journal dynamic SQL (safe but complex)|Knowledge content-hash collision theoretical|No event emission (by design)"
+           data-upstream="s-db,s-schemas,s-utils"
+           data-downstream="s-orchestrator,s-daemon,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l3)"></span>Memory<span class="sys-id">S8</span></div>
+        <div class="sys-desc">Sessions, journal, checkpoints, knowledge</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">8</span></span><span class="sys-meta-item">tables <span class="val">4</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-workspace" data-layer="3" style="border-left: 3px solid var(--l3)"
+           data-desc="Git worktree isolation. One branch + worktree per task. Transient token injection (never persisted). thoughts/ directory for RRPIR file handoffs. Sync git operations (execFileSync). Path confinement."
+           data-files="src/core/workspace-manager/ (index, errors)"
+           data-filecount="3"
+           data-iso="7"
+           data-api="WorkspaceManager.createWorkspace() | .verifyWorkspace() | .cleanupWorkspace() | .ensureClone() | .pushBranch() | .registerExistingWorkspace()"
+           data-concerns="Imports from orchestrator/session-result.ts (layer violation)|Synchronous git blocks event loop|In-memory map rebuilt on restart"
+           data-upstream="s-eventbus,s-observer,s-schemas,s-orchestrator"
+           data-downstream="s-orchestrator,s-daemon,s-bootstrap"
+           data-events="workspace.created|workspace.verified|workspace.cleaned">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l3)"></span>Workspace<span class="sys-id">S9</span></div>
+        <div class="sys-desc">Git worktrees, branch isolation, push</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">3</span></span><span class="sys-meta-item">iso <span class="iso"><i class="mid"></i><i class="mid"></i><i class="mid"></i><i class="mid"></i><i class="mid"></i><i class="mid"></i><i class="mid"></i><i></i><i></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-contacts" data-layer="3" style="border-left: 3px solid var(--l3)"
+           data-desc="Config-driven contact resolver. People metadata, role-based queries (owner, reviewer), channel resolution (Telegram, GitHub). Hot-reloadable. Pure lookup, no intelligence."
+           data-files="src/core/people-directory/index.ts"
+           data-filecount="1"
+           data-iso="10"
+           data-api="PeopleDirectory.getPerson() | .getOwner() | .getReviewers() | .resolveContact(personId, channel)"
+           data-concerns="Role strings are arbitrary (no enum)|plugin_id = channel name (implicit coupling)"
+           data-upstream="s-schemas"
+           data-downstream="s-orchestrator,s-daemon,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l3)"></span>Contacts<span class="sys-id">S10</span></div>
+        <div class="sys-desc">People directory, role resolution</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">1</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-flow-row">
+    <div class="flow-line"></div>
+    <div class="flow-chip">all communicate via event bus + shared db</div>
+    <div class="flow-line"></div>
+  </div>
+
+  <!-- L2: Communication -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l2)">L2</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-eventbus" data-layer="2" style="border-left: 3px solid var(--l2)"
+           data-desc="In-process pub/sub with SQLite persistence. Every event persisted BEFORE delivery. Glob-pattern subscriptions. EventTopology for schema validation + dashboard graph. Audit trail backbone. Design: EventBus down = system halt."
+           data-files="src/core/event-bus/ (index, pattern, topology, errors)"
+           data-filecount="5"
+           data-iso="8"
+           data-api="EventBus.publish<T>() | .subscribe(id, pattern, cb) | .unsubscribe(id) | .replay(fromSeq) | .getEventsForTask() | .getEventsSince()"
+           data-concerns="Synchronous delivery (slow subscriber blocks all)|Subscriber errors swallowed|Payload sanitization is publisher responsibility"
+           data-upstream="s-db,s-observer,s-schemas"
+           data-downstream="s-taskengine,s-safety,s-pipeline,s-workspace,s-registry,s-orchestrator,s-daemon,s-maintenance,s-bootstrap"
+           data-events="30 event types across 12 groups (task.*, cost.*, health.*, workspace.*, git.*, etc.)">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l2)"></span>Event Bus<span class="sys-id">S4</span></div>
+        <div class="sys-desc">Pub/sub + persistence, audit trail backbone</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">5</span></span><span class="sys-meta-item">events <span class="val">30</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></span></div>
+      </div>
+      <div class="sys" id="s-observer" data-layer="2" style="border-left: 3px solid var(--l2)"
+           data-desc="Three-tier observability: pino logs (ops), observations (traces for War Room), blob store (content-addressable LLM prompts). Late-binding: logger first, tracing after DB via upgrade(). SSE stream for real-time dashboard. 14 observation types."
+           data-files="src/core/observer/ (index, facade, observation-store, store, stream, blob-store, logging, types)"
+           data-filecount="9"
+           data-iso="8"
+           data-api="IObserver.info/warn/error/debug() | .startSpan() | .observe() | .recordDecision() | .recordError() | .child(component) | observer.upgrade(store)"
+           data-concerns="Late-binding (null store until upgrade)|Stream errors never logged (circularity avoidance)|Dual write on recordError()"
+           data-upstream="s-db,s-schemas,s-utils"
+           data-downstream="s-taskengine,s-safety,s-pipeline,s-memory,s-workspace,s-contacts,s-registry,s-hooks,s-orchestrator,s-daemon,s-maintenance,s-dashboard,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l2)"></span>Observability<span class="sys-id">S5</span></div>
+        <div class="sys-desc">Logging, tracing, blobs, SSE streaming</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">9</span></span><span class="sys-meta-item">types <span class="val">14</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-flow-row">
+    <div class="flow-line"></div>
+    <div class="flow-chip">persist to &amp; read from</div>
+    <div class="flow-line"></div>
+  </div>
+
+  <!-- L1: Infrastructure -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l1)">L1</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-db" data-layer="1" style="border-left: 3px solid var(--l1)"
+           data-desc="SQLite lifecycle: create, migrate (9 migrations), configure pragmas (WAL, FK, sync, cache). File permissions (0o600). Exclusive writer per table enforced by architecture. Single DB file shared by all components + dashboard."
+           data-files="src/db/ (database, index) + 9 SQL migrations"
+           data-filecount="11"
+           data-iso="10"
+           data-api="createDatabase(path): DatabaseHandle | createInMemoryDatabase() | runIncrementalVacuum(db)"
+           data-concerns="No migration rollback|Migration guard is filename-based|chmod may fail on some FS"
+           data-upstream="s-utils"
+           data-downstream="s-eventbus,s-observer,s-taskengine,s-safety,s-memory,s-maintenance,s-dashboard,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l1)"></span>Database<span class="sys-id">S2</span></div>
+        <div class="sys-desc">SQLite, WAL, migrations, pragmas</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">2+9</span></span><span class="sys-meta-item">tables <span class="val">8</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></span></div>
+      </div>
+      <div class="sys" id="s-config" data-layer="1" style="border-left: 3px solid var(--l1)"
+           data-desc="YAML config loading with ${ENV_VAR} interpolation, duration string parsing ('30s' -> 30000 via Zod schema introspection), validation. Hot-reload watcher ready (500ms debounce). 5 config files: daemon, orchestrator, workspace, safety, people."
+           data-files="src/config/ (loader, watcher)"
+           data-filecount="2"
+           data-iso="9"
+           data-api="loadConfig<S>(path, schema) | loadConfigSafe<S>() | loadConfigDir() | resolveEnvVars() | parseDurations() | createConfigWatcher()"
+           data-concerns="Duration parsing relies on *_ms naming convention|Watcher ready but not wired in bootstrap"
+           data-upstream="s-schemas,s-utils"
+           data-downstream="s-cli,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l1)"></span>Configuration<span class="sys-id">S3</span></div>
+        <div class="sys-desc">YAML loading, env vars, hot-reload</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">2</span></span><span class="sys-meta-item">configs <span class="val">5</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-flow-row">
+    <div class="flow-line"></div>
+    <div class="flow-chip">validates against</div>
+    <div class="flow-line"></div>
+  </div>
+
+  <!-- L0: Foundation -->
+  <div class="layer-row">
+    <div class="layer-tag" style="color:var(--l0)">L0</div>
+    <div class="layer-systems">
+      <div class="sys" id="s-schemas" data-layer="0" style="border-left: 3px solid var(--l0)"
+           data-desc="8 Zod schema files: config, task (state machine + permissions), events (30 types), adapters, orchestrator (phases), session-memory, observer, ephemeral. Plus 8 interface files defining core contracts. All types derived via z.infer<>. Zero runtime dependencies."
+           data-files="src/schemas/ (config, task, events, adapters, orchestrator, session-memory, observer, ephemeral) + src/core/interfaces/ (8 files)"
+           data-filecount="16"
+           data-iso="10"
+           data-api="TaskStates | Phases | ActionClasses | EventTypes | ValidTransitions | PermissionTable | IEventBus | ITaskEngine | ISafetyLayer | IActionPipeline | ISessionMemory | IWorkspaceManager | IPeopleDirectory | IPluginLookup"
+           data-concerns="ephemeral.ts is a grab-bag of unrelated schemas|PermissionTable defines core behavior in a schema file"
+           data-upstream=""
+           data-downstream="s-config,s-db,s-eventbus,s-observer,s-taskengine,s-safety,s-pipeline,s-memory,s-workspace,s-contacts,s-adapters,s-registry,s-orchestrator,s-daemon,s-plugins,s-dashboard,s-cli,s-bootstrap"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l0)"></span>Schemas + Interfaces<span class="sys-id">S1a</span></div>
+        <div class="sys-desc">Types, validation, state machine defs, contracts</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">16</span></span><span class="sys-meta-item">events <span class="val">30</span></span><span class="sys-meta-item">interfaces <span class="val">8</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></span></div>
+      </div>
+      <div class="sys" id="s-utils" data-layer="0" style="border-left: 3px solid var(--l0)"
+           data-desc="Pure stateless utilities. extractErrorMessage(unknown): string. sanitizeSecrets(): 3-phase token redaction (URL, env, pattern). Clock interface + RealClock. Used at 30+ locations."
+           data-files="src/utils/ (errors, sanitize, clock)"
+           data-filecount="3"
+           data-iso="10"
+           data-api="extractErrorMessage() | sanitizeSecrets() | sanitizeErrorMessage() | Clock interface | RealClock"
+           data-concerns=""
+           data-upstream=""
+           data-downstream="s-config,s-db,s-eventbus,s-observer,s-safety,s-memory,s-orchestrator,s-daemon,s-maintenance,s-plugins"
+           data-events="">
+        <div class="sys-name"><span class="sys-dot" style="background:var(--l0)"></span>Utilities<span class="sys-id">S1b</span></div>
+        <div class="sys-desc">Error extraction, secret sanitization, clock</div>
+        <div class="sys-meta"><span class="sys-meta-item">files <span class="val">3</span></span><span class="sys-meta-item">used at <span class="val">30+</span></span><span class="sys-meta-item">iso <span class="iso"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Detail Panel -->
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-empty">
+    <div class="icon">&#9678;</div>
+    Click any system to explore<br>its dependencies, API, and connections
+  </div>
+  <div class="detail-header" id="detailHeader">
+    <div class="detail-title" id="detailTitle"></div>
+    <div class="detail-subtitle" id="detailSubtitle"></div>
+  </div>
+  <div class="detail-section" id="detailDescSection">
+    <h3>Description</h3>
+    <div class="detail-concerns" id="detailDesc"></div>
+  </div>
+  <div class="detail-section" id="detailApiSection">
+    <h3>Public API</h3>
+    <div class="detail-api" id="detailApi"></div>
+  </div>
+  <div class="detail-section" id="detailEventsSection">
+    <h3>Events Published</h3>
+    <div class="detail-api" id="detailEvents"></div>
+  </div>
+  <div class="detail-section" id="detailUpstreamSection">
+    <h3>Depends On <span style="color:var(--l0)">&#9650;</span></h3>
+    <div class="detail-deps-list" id="detailUpstream"></div>
+  </div>
+  <div class="detail-section" id="detailDownstreamSection">
+    <h3>Depended By <span style="color:var(--conn-event)">&#9660;</span></h3>
+    <div class="detail-deps-list" id="detailDownstream"></div>
+  </div>
+  <div class="detail-section" id="detailFilesSection">
+    <h3>Files</h3>
+    <div class="detail-files" id="detailFiles"></div>
+  </div>
+  <div class="detail-section" id="detailConcernsSection">
+    <h3>Concerns</h3>
+    <ul class="detail-concerns" id="detailConcerns"></ul>
+  </div>
+</div>
+
+</div>
+
+<script>
+const systems = document.querySelectorAll('.sys');
+const panel = document.getElementById('detailPanel');
+let selected = null;
+
+const nameMap = {};
+systems.forEach(s => { nameMap[s.id] = s.querySelector('.sys-name').textContent.replace(/S\d+\w?$/, '').trim(); });
+
+function selectSystem(el) {
+  if (selected === el) { deselectAll(); return; }
+  selected = el;
+
+  // Visual: dim all, highlight selected + deps
+  const upIds = (el.dataset.upstream || '').split(',').filter(Boolean);
+  const downIds = (el.dataset.downstream || '').split(',').filter(Boolean);
+  const allRelated = new Set([el.id, ...upIds, ...downIds]);
+
+  systems.forEach(s => {
+    s.classList.remove('selected', 'dimmed', 'upstream', 'downstream');
+    if (s === el) {
+      s.classList.add('selected');
+      s.style.borderColor = `var(--l${s.dataset.layer})`;
+      s.style.boxShadow = `0 0 16px var(--l${s.dataset.layer}-bg)`;
+    } else if (upIds.includes(s.id)) {
+      s.classList.add('upstream');
+    } else if (downIds.includes(s.id)) {
+      s.classList.add('downstream');
+    } else {
+      s.classList.add('dimmed');
+    }
+  });
+
+  // Populate panel
+  panel.classList.add('has-selection');
+
+  const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--l${el.dataset.layer});margin-right:4px"></span>`;
+  const badge = `<span class="detail-layer-badge" style="background:var(--l${el.dataset.layer}-bg);color:var(--l${el.dataset.layer});border:1px solid var(--l${el.dataset.layer}-border)">L${el.dataset.layer}</span>`;
+  document.getElementById('detailTitle').innerHTML = dot + nameMap[el.id] + ' ' + badge;
+  document.getElementById('detailSubtitle').textContent = el.dataset.filecount + ' files';
+
+  document.getElementById('detailDesc').textContent = el.dataset.desc || '';
+
+  // API
+  const apiEl = document.getElementById('detailApi');
+  const apis = (el.dataset.api || '').split(' | ');
+  apiEl.innerHTML = apis.map(a => {
+    const colored = a.replace(/(\w+)\(/g, '<span class="fn">$1</span>(')
+                      .replace(/:\s*(\w+)/g, ': <span class="type">$1</span>');
+    return colored;
+  }).join('<br>');
+
+  // Events
+  const eventsEl = document.getElementById('detailEvents');
+  const eventsSection = document.getElementById('detailEventsSection');
+  const events = (el.dataset.events || '').split('|').filter(Boolean);
+  if (events.length) {
+    eventsSection.style.display = 'block';
+    eventsEl.innerHTML = events.map(e => `<span style="color:var(--conn-event)">${e}</span>`).join('<br>');
+  } else {
+    eventsSection.style.display = 'none';
+  }
+
+  // Upstream
+  const upSection = document.getElementById('detailUpstreamSection');
+  const upEl = document.getElementById('detailUpstream');
+  if (upIds.length) {
+    upSection.style.display = 'block';
+    upEl.innerHTML = upIds.map(id => {
+      const name = nameMap[id] || id;
+      return `<div class="detail-dep" data-target="${id}"><span class="dep-arrow" style="color:var(--l0)">&#9650;</span><span class="dep-name">${name}</span></div>`;
+    }).join('');
+  } else {
+    upSection.style.display = 'block';
+    upEl.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">None (foundation layer)</div>';
+  }
+
+  // Downstream
+  const downSection = document.getElementById('detailDownstreamSection');
+  const downEl = document.getElementById('detailDownstream');
+  if (downIds.length) {
+    downSection.style.display = 'block';
+    downEl.innerHTML = downIds.map(id => {
+      const name = nameMap[id] || id;
+      return `<div class="detail-dep" data-target="${id}"><span class="dep-arrow" style="color:var(--conn-event)">&#9660;</span><span class="dep-name">${name}</span></div>`;
+    }).join('');
+  } else {
+    downSection.style.display = 'block';
+    downEl.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">None (top layer)</div>';
+  }
+
+  // Files
+  document.getElementById('detailFiles').innerHTML = (el.dataset.files || '').replace(/\//g, '/<wbr>');
+
+  // Concerns
+  const concernsSection = document.getElementById('detailConcernsSection');
+  const concerns = (el.dataset.concerns || '').split('|').filter(Boolean);
+  if (concerns.length) {
+    concernsSection.style.display = 'block';
+    document.getElementById('detailConcerns').innerHTML = concerns.map(c => `<li>${c}</li>`).join('');
+  } else {
+    concernsSection.style.display = 'none';
+  }
+
+  // Click deps in panel to navigate
+  document.querySelectorAll('.detail-dep[data-target]').forEach(dep => {
+    dep.addEventListener('click', () => {
+      const target = document.getElementById(dep.dataset.target);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => selectSystem(target), 300);
+      }
+    });
+  });
+}
+
+function deselectAll() {
+  selected = null;
+  systems.forEach(s => {
+    s.classList.remove('selected', 'dimmed', 'upstream', 'downstream');
+    s.style.borderColor = '';
+    s.style.boxShadow = '';
+  });
+  panel.classList.remove('has-selection');
+}
+
+systems.forEach(s => {
+  s.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectSystem(s);
+  });
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.sys') && !e.target.closest('.detail-panel')) {
+    deselectAll();
+  }
+});
+
+// Keyboard: Escape to deselect
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') deselectAll();
+});
+</script>
+
+</body>
+</html>

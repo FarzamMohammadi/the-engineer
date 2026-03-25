@@ -1331,3 +1331,520 @@ No component imports from any component that depends on it. Verified by tracing 
 | F1 | Andon cord created but never checked in pipeline | LOW | orchestrator/andon-cord.ts |
 | F2 | Config watcher ready but not wired in bootstrap | LOW | config/watcher.ts |
 | F3 | `ephemeral.ts` is a grab-bag of unrelated schemas | LOW | schemas/ephemeral.ts |
+
+---
+
+## Part II: Gap Analysis — The Engineer vs. The Greatest OSS Projects
+
+> The top 5 OSS projects (Linux Kernel, SQLite, PostgreSQL, Git, Nginx) didn't start great. Linux 0.01 was a mess. Git's first commit was rough. What made them legendary is what happened *after* v1 — thousands of real failures that exposed every weak assumption, and maintainers with the taste to simplify instead of patch.
+>
+> We don't care what they started out as. We want to be better than what they are *now*. This analysis holds The Engineer against those projects at their peak — not their v1 — and asks: what will it take to reach and surpass that tier?
+>
+> Three independent perspectives examined the codebase: The Engineer's own persona (taste and judgment), a Technical Architect (engineering rigor), and the lens of Linus Torvalds (data structures and practicality). Their findings are synthesized below.
+
+---
+
+### Where The Engineer Genuinely Excels
+
+These are real strengths — not participation trophies. Things the greats would recognize as correct.
+
+1. **State machine as data, not code.** `ValidTransitions` is a static const array of `{from, to}` pairs. `PermissionTable` couples state to allowed actions. This is the same pattern SQLite uses for its state machines and the Linux kernel uses for TCP state transitions. When the state machine is data, you can validate it exhaustively, visualize it, and reason about it without reading code. This is genuinely good.
+
+2. **EventBus as audit trail with persist-before-deliver.** Every event hits SQLite before any subscriber sees it. This mirrors write-ahead logging in databases. The `replay()` method for state reconstruction on startup is the right pattern. This is not just pub/sub — it's a safety guarantee.
+
+3. **Interface segregation done well.** The 8 interfaces are tight, minimal contracts. `ITaskEngine` is 11 methods. The Orchestrator depends on `IPluginLookup`, not the full `Registry`. These are the narrow interfaces that the greats use — do one thing, take obvious arguments, return obvious results.
+
+4. **Factory-function decomposition in the Daemon.** `createDaemon()` returns `{ start, stop, tick, getState }`. Four methods. The closure-based subsystems (scheduler, triggerPoller, preemption, etc.) create real modularity without class hierarchies. This is closer to how nginx modules work.
+
+5. **Pure function extraction is consistent.** `computeAgedPriority`, `isSlotConsuming`, `matchesPattern`, `checkPermission` — testable, composable, side-effect-free. This discipline runs across the entire codebase, not just one corner.
+
+6. **Zero circular dependencies, exclusive DB writer per table.** Verified by tooling. No component imports from something that depends on it. Each table has exactly one writer. This prevents race conditions without locks and makes the dependency graph a strict DAG. This is a real structural achievement.
+
+7. **Plugin SDK boundary enforcement.** `src/adapters/index.ts` is the single import point. Plugins cannot import from Core. This is how a well-designed SDK works.
+
+---
+
+### Where It Falls Short — Not in Scale, but in Quality of Thinking
+
+#### The Phase Runner Is a God Function
+
+`src/core/orchestrator/phase-runner.ts` — the most important file in the system and the worst designed. Two `biome-ignore` complexity suppressions. `handlePostPhaseActions` takes multiple parameters and contains 8 decision branches. `runPhasePipeline` has a for loop with mutable state, three loopback paths, and a discriminated union of post-phase outcomes that exists solely to manage control flow within one function.
+
+Compare to how Git handles multi-step operations. Git's `merge.c` doesn't have a 1,000-line function. It has a merge strategy interface, and each strategy is a separate module. The orchestration is a thin loop that calls `strategy->merge()`.
+
+The Phase Runner is trying to be the state machine AND the business logic AND the error handler AND the observability layer AND the notification sender AND the outreach manager AND the PR creator. A truly great engineer would split this into a phase state machine (pure data, like `ValidTransitions`) plus individual phase completion handlers.
+
+#### 18 biome-ignore Complexity Suppressions Is a Design Smell
+
+Eighteen functions across the codebase are too complex for the linter. The justification is always "extraction would fragment the logic." That's what every engineer says when they haven't found the right abstraction yet. SQLite has functions over 1,000 lines, but they're generated code or inherently sequential I/O. These 18 suppressions are in business logic, retry logic, and pipeline orchestration — places where the right abstraction would eliminate the complexity.
+
+#### The Task Schema Is a God Object
+
+`TaskSchema` has 33+ fields. A Task knows about its workspace, review state, blocked details, child summaries, loopback counts, decisions, and team members. This is an Active Record anti-pattern hiding behind a Zod schema.
+
+Compare to Git's commit object: tree, parent(s), author, committer, message. Five concepts. Everything else lives in separate objects referenced by hash.
+
+The `updateTaskField` method accepting `value: unknown` for 21 different fields is the symptom. This is stringly-typed mutation. A real type system would have `updateWorkspace(taskId, workspace: TaskWorkspace)` — one method per concern, fully typed. The `JSON_FIELDS` set that decides "does this need serialization?" at runtime is doing work the type system should do at compile time.
+
+#### The OrchestratorContext Has 11 Dependencies
+
+When a component needs 11 collaborators, it has too many responsibilities. The Orchestrator is the "flight director," but a flight director doesn't personally operate the radio, the fuel gauges, the landing gear, and the coffee machine. It delegates to specialist stations. The Orchestrator should take ~5 dependencies; the rest should be injected into the subsystems that actually use them.
+
+#### Over-Abstraction for Current Scale
+
+For a system that currently runs one task at a time (`max_concurrent` defaults to 1):
+- 36 event types. Linux started with `fork()`, `exec()`, and signals.
+- The Observer/ObservationStore/BlobStore/SSE stack is three separate persistence layers for a single-process system.
+- HookRegistry with 10 hook points and zero registrations. Dead infrastructure.
+- PreemptionGate + cooperative preemption protocol — with `max_concurrent: 1`, there's nothing to preempt.
+- EventTopology with publisher/subscriber registration for a system where all participants are known at bootstrap.
+
+Some complexity is earned (safety layer, cost tracking, workspace isolation). Some is not.
+
+#### 16 Systems for ~130 Files Is Over-Segmented
+
+160 non-test source files for ~29K lines of code. That's 180 lines per file average. Some files exist only to re-export or hold 20 lines of type definitions. The system count (16) and the layer count (8) reflect the design documents more than the code's natural structure. A truly great engineer would have fewer, more substantial modules.
+
+---
+
+### Architecture Quality Scores (Technical Architect Assessment)
+
+| Dimension | Score | Key Factor |
+|-----------|-------|------------|
+| Boundary Clarity | 8/10 | Strong tier enforcement, minor concrete dependency leaks |
+| Contract Quality | 8/10 | Good interface design, `updateTaskField` is the weak spot |
+| Simplicity | 6/10 | Substantial machinery for single-task execution |
+| Operational Readiness | 7/10 | Good crash recovery, missing auth + circuit breaking |
+| Extensibility | 8/10 | Plugin substitution works, plugin composition does not |
+| Error Model | 7/10 | Per-subsystem is good, no global taxonomy |
+| Data Model | 8/10 | SQLite is right, JSON columns will hurt at scale |
+| **Overall** | **7.4/10** | |
+
+---
+
+### What Would Reach the Next Tier — Concrete Actions
+
+#### Delete
+
+1. **Delete the AndonCord** (`orchestrator/andon-cord.ts`). Zero callers in production. A concept imported from Toyota that doesn't map to this domain. The system already has cost limits, stuck detection, and blocked escalation. YAGNI.
+
+2. **Delete `ephemeral.ts` Zod schemas for in-memory state.** `DaemonStateSchema`, `WorkspaceStateSchema` — nobody validates in-memory state at runtime. Use TypeScript interfaces. These exist because the architecture was designed documentation-first and implemented literally.
+
+3. **Delete the HookRegistry** (or shelve it). 10 hook points, zero consumers. Speculative infrastructure. When you need hooks, add them. The cost of dead code is that every new developer asks "what are hooks for?" and nobody can answer.
+
+4. **Delete the 10 re-export bridges.** "Re-export for backward compatibility" comments are scar tissue. Update consumers to import from the actual module. PostgreSQL is ruthless about this: when they move a function, they update every caller.
+
+5. **Kill the SBAR handoff formatting.** `formatPhaseHandoff()` formats every phase transition as a medical Situation/Background/Assessment/Recommendation log entry. Nobody reads structured SBAR entries in a log file. A simple `"Completed research, entering planning. 2 open questions."` carries the same information.
+
+6. **Remove the config watcher** until it's wired. Dead code is a lie about the system.
+
+#### Simplify
+
+7. **Split the Task schema into focused objects.** Task identity + state (~10 fields). TaskWorkspace (repo, branch, worktree). TaskReview (PR, feedback rounds). TaskBlocked (reason, contacts, efforts). Related by `task_id` foreign key, not by nesting 33 fields into one row. This also fixes `updateTaskField(field, unknown)` — each sub-table gets typed update methods.
+
+8. **Decompose `phase-runner.ts` into state machine + handlers.** Replace `handlePostPhaseActions` with:
+   - A `PhaseCompletionPolicy` — pure function per phase returning `{next, loopback?, exit?}`
+   - A generic `advancePipeline(phase, output, policy)` — under 50 lines
+   - Move PR creation, decomposition, outreach into phase-specific completion hooks
+
+9. **Reduce OrchestratorContext to ~5 dependencies.** The Orchestrator should take: `taskEngine`, `llmCaller`, `workspaceManager`, `sessionMemory`, and `observer`. Everything else should be injected into subsystems that actually use them.
+
+10. **Unify the 3 LLM plugin NDJSON parsers.** Extract shared `parseNdjsonStream()`. Three complexity suppressions become zero.
+
+11. **Make the tick loop a named step array.** `const TICK_STEPS = [processCostFlags, pollTriggers, pollResponses, ...]`. Then `tick()` is `for (const step of TICK_STEPS) await step(now)`. This is how nginx's event loop works. Self-documenting and testable at the step level.
+
+12. **Eliminate event payload casts.** Throughout the daemon, `event.payload as EventPayloads["cost.limit_reached"]` is an unchecked cast. Add a `typedPayload<T>(event, type)` helper that validates at runtime. ~15 lines that close a real safety gap.
+
+#### Elevate
+
+13. **Introduce a proper error taxonomy.** Nine `errors.ts` files with no common hierarchy. Every error should be one of: `TRANSIENT` (retry), `PERMANENT` (fail the task), `OPERATIONAL` (alert the human), `BUG` (halt and scream). The retry logic in `llm-caller.ts` does string matching on error messages because there's no structured error code to match on.
+
+14. **Split EventBus delivery from persistence.** Current `publish()` does insert + synchronous deliver in one call. Split: `persist()` returns the event, `deliver()` fans out with per-subscriber timeout. This is the difference between "we know about slow subscribers" and "slow subscribers can't cascade."
+
+15. **Add dashboard authentication.** Even localhost-only, a bearer token from a file would prevent rogue processes from reading task data or triggering VS Code via `/api/open-explorer`.
+
+16. **Index the events table for cleanup.** `CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)`. One line. Prevents full table scan on every data lifecycle run.
+
+17. **Move prompt templates to `.md` files loaded at runtime.** The ~1,800 lines of prompt builders are string concatenation in TypeScript. They change every time the LLM interaction model changes. They should be template files, not compiled code.
+
+---
+
+### Principles to Adopt from the Greats
+
+#### From SQLite: Minimal Surface
+
+SQLite has 5 C files that matter. The entire public API fits on one printed page. This codebase has 130 source files for a system that does one thing: take a GitHub issue, run it through an LLM pipeline, and create a PR. SQLite would express this as: TaskStore, Pipeline, Adapter, and main(). Four concepts.
+
+**Lesson:** Count your concepts. If you need more than one hand to list them, ask which ones earn their existence.
+
+#### From Git: Content-Addressable Thinking
+
+Git doesn't have a "FileManager" or a "CommitEngine" or a "BranchScheduler." It has objects (blobs, trees, commits, tags) and operations on objects. The data model IS the system. Everything falls out of the data structures.
+
+**Lesson:** The Engineer should think harder about what its "objects" are. A Task, a Phase Output, a Session, a Cost Record — these are the objects. The 13 "core components" are really operations masquerading as entities.
+
+**The gap:** If The Engineer had Git's clarity, the core insight might be: "A task is a sequence of immutable events, and the current state is always a fold over those events." The events table already exists. The state machine already exists. But the `tasks` table is a mutable god object updated in place, and the events are a parallel record you could delete without changing behavior. Events should be the source of truth, not a log.
+
+#### From Linux Kernel: Layered Contracts, Not Layered Bureaucracy
+
+The kernel has a clear contract between userspace and kernel (syscalls), and between subsystems (internal APIs). But it doesn't have 8 layers of documentation before a single line of code. This project has 175+ decisions for ~29K lines of non-test code — roughly 1 decision per 166 lines. The ratio should be 10x lower. Most decisions should be implicit in the code.
+
+**Lesson:** The codebase respects its own design documents too much. 175 architectural decisions implemented faithfully, but a great engineer would have thrown away 40% during implementation because the code revealed simpler solutions.
+
+#### From Nginx: The Event Loop Is Sacred
+
+Nginx's event loop is tiny, deterministic, and every step is named. The Daemon tick loop has the right instinct but is a procedural sequence rather than a pluggable pipeline. Making the tick a named array of steps — where steps can be added/removed/reordered without touching the loop itself — brings it to nginx's level of clarity.
+
+#### From PostgreSQL: Fail Loudly, Recover Quietly
+
+PostgreSQL's error handling is meticulous — every error has a code, every recovery path is documented, and panic vs. error is a fundamental distinction. This codebase logs warnings for things that should be errors, catches and continues when it should halt, and uses `observer.warn` as a general-purpose "something might be wrong" signal.
+
+**Lesson:** Build a proper error taxonomy. `TRANSIENT`, `PERMANENT`, `OPERATIONAL`, `BUG`. Every error in every subsystem classifies as one. Retry logic keys off classification, not string matching.
+
+---
+
+### What Exists But Shouldn't — The Hardest Question
+
+These are things that seemed like good ideas but a truly great engineer would say "this doesn't need to exist":
+
+1. **`ephemeral.ts` Zod schemas for in-memory state.** A Zod schema for `DaemonStateSchema` that is never validated at runtime is documentation pretending to be code.
+
+2. **The AndonCord.** A Toyota Production System reference that exists as a boolean flag with zero callers.
+
+3. **The SBAR handoff logging.** Medical communication protocol formatting for log messages. Charming conceptual design with zero operational value.
+
+4. **`EventSubscriptionSchema` with `callback: z.unknown()`.** A Zod schema that cannot validate the thing it describes. It exists because "everything gets a schema" was a design rule that shouldn't have been applied here.
+
+5. **The `EventDeclaration` arrays co-located in every module.** Runtime documentation that could be a single catalog file or just test infrastructure.
+
+6. **The dual `observationStore` and `observer` in OrchestratorContext.** The Observer already wraps the ObservationStore. Having both is a leaky abstraction — the Orchestrator calls one in some places and the other in others. Pick one.
+
+7. **The 7 narrowed `Pick<>` types in `daemon/types.ts`.** Seven type aliases to "minimize" context. They add cognitive overhead without preventing misuse. Every subsystem could take `DaemonContext` and behave identically.
+
+8. **The 1,800 lines of prompt templates as TypeScript functions.** These are the largest non-test, non-schema source files. They're string concatenation that changes with every LLM interaction update. They should be template files loaded at runtime, not compiled TypeScript.
+
+---
+
+### What Scares the Experts at 10x Complexity
+
+1. **The Task schema.** 33+ fields, 8 JSON columns, one table. At 10x you need to query by workspace branch, review state, child task status, cost bucket. Every one requires JSON extraction at query time. Normalizing later means rewriting the data access layer.
+
+2. **Synchronous EventBus.** At 10x (10 concurrent tasks), each emitting events on every phase transition. If any subscriber takes 100ms (GitHub API call in notification router), all event delivery blocks. This is the nginx lesson: synchronous I/O in the event path kills throughput.
+
+3. **The Phase Runner at 10x.** Parallel phase execution, streaming LLM output, multi-repo coordination, partial rollback — any of these requires restructuring 1,080 lines of tightly coupled control flow.
+
+4. **Single-process architecture.** One SQLite file, one Daemon, one PID file. Horizontal scaling requires revisiting every design decision (in-memory subscriber registry, closure-based subsystems, synchronous event delivery).
+
+5. **The prompt system.** At 10x task complexity, prompts need context prioritization, summarization, incremental feeding. Current design gathers repo context once with no strategy for growing context windows.
+
+---
+
+### The Path Forward
+
+The path to the next tier is not adding more. It is:
+
+1. **Removing 20% of what exists** — the dead code, the over-abstraction, the ceremony that serves the architecture more than the user.
+
+2. **Collapsing the 33-field Task into focused objects** — identity, workspace, review, tracking as separate concerns related by foreign key.
+
+3. **Turning the 1,080-line Phase Runner into a 200-line state machine** plus pluggable handlers.
+
+4. **Accepting that some design concepts — however beautiful on paper — don't earn their bytes** in the compiled output.
+
+5. **Building a proper error taxonomy** so retry logic, escalation, and alerting are driven by classification, not string matching.
+
+6. **Making events the source of truth** — not a parallel log that could be deleted without changing behavior.
+
+The greats got great by deleting. The interfaces and boundaries survive. The EventBus delivery model, the Task schema, and the phase runner need to evolve. This codebase is ready for that phase.
+
+---
+
+## Part III: Code-Level Brutality — Three Reviews That Read Every File
+
+> The Part II analysis was synthesized from summaries. This section is different. Three reviewers were given the actual source files — not descriptions, not architecture docs — and told to read every line before judging. They did.
+>
+> **Linus Torvalds** — data structures, over-abstraction, "show me the code"
+> **D. Richard Hipp (SQLite creator)** — radical simplicity, minimal surface, testing discipline
+> **Rob Pike (Go, Plan 9)** — "less is exponentially more," clarity over cleverness
+
+---
+
+### Review 1: Linus Torvalds
+
+#### Are the data structures right?
+
+**The Task schema is a junk drawer.** `TaskSchema` in `src/schemas/task.ts` has 33 fields smashed into one flat object. Identity fields, state fields, hierarchy fields, context fields, workspace fields, review fields, blocked fields, tracking fields, timestamps, session links. It has `repo` AND `clone_url` AND `workspace` (which itself contains `repo`). It has `loopback_count` and `requirements_loop_count` — pipeline-internal counters that have no business being persisted on the task entity.
+
+The `children` array stores `ChildEntry` objects with `{ id, state, depends_on }` — denormalizing child state into the parent. Every time a child transitions, you need to update the parent's JSON blob. That's a data consistency bug waiting to happen. You have a relational database. Use a foreign key.
+
+The `events.ts` file is 540 lines of mechanical repetition. Every event type gets its own `FooBarPayloadSchema` + `FooBarPayload` type + entry in `EventPayloads` mapped type + entry in `eventPayloadSchemas` runtime registry. Four places to update for every new event. The payload schemas are fine in principle but the duplication is staggering.
+
+**What's right:** `ValidTransitions` as a static const array is excellent. The state machine is data, not code. `PermissionTable` is the same quality. The knowledge table with content-hash primary keys is the closest thing here to Git-style content addressing.
+
+**Fix:** Split `TaskSchema` into `TaskIdentity`, `TaskState`, `TaskWorkspace`, `TaskReview`, `TaskTracking`. Store children as a DB relationship. Kill `loopback_count` and `requirements_loop_count` from the task — those are session-scoped. The events file should be generated from a single declaration table, not hand-written four times over.
+
+#### Is the adapter hierarchy earned or premature?
+
+**It is premature.**
+
+5 abstract adapter classes. A Registry with a health state machine (healthy/unhealthy/failed with transitions). A plugin loader with critical/non-critical distinction. A manifest schema with `contributes.events`, `contributes.commands`, `contributes.config_keys`, `contributes.hooks`.
+
+And the actual plugins: ONE LLM plugin enabled (Claude Code). ONE trigger (GitHub). ONE tool (Bash). ONE git host (GitHub). The "swappable" LLM plugins (OpenCode, Gemini) are disabled by default.
+
+`CommunicationAdapter` in `src/adapters/communication.ts` has 7 optional capability-gated methods. Each has a `do*` protected method that throws `capabilityError` by default. A lot of ceremony for "send a message" and "post a GitHub comment."
+
+The `hookRegistry` field on `BaseAdapter` is typed as `unknown` "to avoid tier import violations." You built a hooks system with 10 hook points, wired it through bootstrap, injected it into every plugin instance via the Registry — and **nobody calls `hookRegistry.execute()` anywhere in production code.** Zero consumers. That is the textbook definition of speculative generality.
+
+The health state machine — for plugins that are basically `spawn("claude")`. If Claude CLI is down, you don't need a three-state health machine. You need a try/catch.
+
+**Verdict:** You built a plugin platform. You needed a function call. The adapter hierarchy will earn its place when you actually have 3 LLM providers that people switch between in production. Today it is dead weight.
+
+#### Three files that make me wince
+
+**File 1: `src/core/orchestrator/phase-runner.ts`** — 900+ lines containing: outreach file reading, issue commenting, a discriminated union type, start-state resolution, checkpoint creation, phase transition recording, error handling, preemption handling, self-review loopback, loopback alerting, PR creation, post-phase action handling, and the pipeline runner. `handlePostPhaseActions` takes 10 parameters, has a `biome-ignore` for complexity, and handles 9 different concerns. The `targetIndex - 1` trick (returning index minus one so the for loop's `i++` lands correctly) appears three times. That's the kind of clever that makes people curse your name at 2am.
+
+**File 2: `src/schemas/events.ts`** — 540 lines of pure mechanical repetition. Four parallel lists that must stay synchronized. Add one event type? Touch three places. Miss one? Silent type mismatch at runtime. This is a maintenance nightmare.
+
+**File 3: `src/adapters/base.ts`** — `hookRegistry?: unknown` and `observer?: unknown`. You broke your own type system to avoid a tier import violation that you invented. If your architectural tier rules force you to give up type safety, your tier rules are wrong. The template method pattern wraps every lifecycle method in timing + error catching — approximately 60 lines to add `try { const start = Date.now(); ... } catch { ... }` to three methods. A decorator function would do this in 10 lines.
+
+#### 130 files. Yes or no? How many should it be?
+
+**No.** 160 non-test source files is approximately 3x what this needs.
+
+**This should be 50-60 source files.** The collapse:
+- Schemas: 8 files -> 4 (merge events into table-driven, merge adapters + orchestrator)
+- 8 interface files -> 0 (TypeScript has structural typing, you don't need separate interface files)
+- Adapter hierarchy: 5 files -> 1
+- Hooks system: 1 file -> 0 (delete — zero consumers)
+- Event topology: fold into event-bus/index.ts
+- Registry: 3 files -> 1
+- Daemon subsystems: 12 files -> 4-5 (half are under 100 lines)
+- Orchestrator subsystems: 12 files -> 6-7 (prompts are fine separate, rest is over-decomposed)
+- Observer: 7 files -> 3 (logger, store, facade)
+
+#### What to delete TODAY
+
+1. **The entire hooks system.** Zero production consumers. Remove `hookRegistry` from BaseAdapter, Registry, RegistryOptions, and bootstrap.
+2. **All 8 interface files.** Replace with `type IFoo = Pick<Foo, ...>` co-located next to the class, or just use the class directly. One TaskEngine. Will always be that TaskEngine.
+3. **EventTopology as a separate class.** Fold into EventBus. The dashboard graph is not being consumed by anything that couldn't query the bus directly.
+4. **Collapse the Registry.** Merge lifecycle.ts and plugin-health.ts into index.ts. A thin facade delegating to a 186-line file is architecture astronautics.
+5. **Kill `unknown` typed fields on BaseAdapter.** Fix the tier rules or use a minimal shared interface. `hookRegistry?: unknown` is an insult to TypeScript.
+6. **Flatten `handlePostPhaseActions`.** Each of the 9 concerns becomes a function returning `PhaseCompletionResult | null`. The `targetIndex - 1` hack dies.
+
+**The bottom line:** The state machine is solid. The event bus is clean. The daemon tick loop is sensible. But the ratio of plumbing to actual work is about 3:1. Delete the speculative abstractions. Collapse the files. Make the remaining code so simple that the architecture is obvious from reading it, not from reading the 175-decision design document.
+
+---
+
+### Review 2: D. Richard Hipp (SQLite)
+
+#### API Surface
+
+~50 methods on core classes, plus ~150 schema/type exports. For comparison: SQLite has ~200 functions for a complete relational database. This system manages a task queue and calls an LLM. The operational API (~50 methods) is defensible. The data definition layer has 3x the surface area it needs — 34 individually-named event payload schemas repeated in four different forms.
+
+#### The "Maintain Forever" Test
+
+**Would maintain with confidence:**
+- `src/db/database.ts` — The best file in the project. Clean migration runner, transaction-wrapped, guards against nested transactions, proper errors, WAL/synchronous config, file permission hardening. This is how you write database code.
+- `src/core/task-engine/queries.ts` — Five prepared statements, five methods, zero branching logic.
+- `src/core/observer/blob-store.ts` — Content-addressable storage in 76 lines. SHA-256, filesystem dedup, git-style directories. Nothing to remove.
+- `src/core/observer/stream.ts` — 65 lines. Dead subscriber eviction. Finished component.
+- `src/core/session-memory/knowledge.ts` — Content-hash IDs, idempotent upsert, clean supersession.
+
+**Fills me with dread:**
+- `src/core/orchestrator/phase-runner.ts` — 1,080 lines, two `biome-ignore` suppressions. When this breaks, the person debugging will have to hold the entire state machine in their head simultaneously. In 20 years, every maintainer will curse this file.
+- `src/schemas/events.ts` — 540 lines of boilerplate. Add one event, touch three places. Miss one? Silent type mismatch at runtime.
+- `src/schemas/config.ts` — 623 lines of Zod config definitions nested 6 levels deep. Defaults inside defaults inside defaults.
+
+#### Testing Discipline
+
+2,400 tests. Respectable quantity. But:
+
+**Not tested at all:**
+- **Database corruption.** What happens when the SQLite file is truncated mid-write? When the WAL is corrupted? When `schema_version` has garbage? Zero corruption tests.
+- **Concurrent access.** `busy_timeout = 5000`. What happens when two processes hit the same database past the timeout? No test.
+- **Snapshot corruption in cost-tracker.** `restoreFromSnapshot()` does `JSON.parse` with bare catch. Good fallback. But no test corrupts the snapshot to verify the fallback path.
+- **Event replay under partial failure.** Pages through events 1000 at a time. What if `getEventsSince` throws on page 3 of 5? No test.
+- **Failure during failure handling.** `handlePhaseError` closes the session. What if `endSession` itself throws? The code handles one layer of failure. Not failure-during-failure. In aviation, we call this "loss of both engines." You test for it.
+- **Memory pressure.** The cost tracker's `per_task` Map grows without bound during process lifetime. No test validates cleanup under load.
+
+**Verdict:** Testing the happy path thoroughly and first-layer failures adequately. Not testing corruption, cascading failures, or resource exhaustion. For a daemon managing real money (LLM costs), this gap is significant.
+
+#### The Minimal Surface Principle — What to Collapse
+
+- **Event schema boilerplate:** Replace 34 individual exports + mapped type + runtime registry with a single const record of `{ type, schema }` pairs. One source of truth. Eliminates ~300 lines.
+- **Merge SafetyLayer and PolicyEngine.** The facade adds no logic — it validates inputs and delegates. Merge into one class: `checkAction`, `checkCost`, `checkAutonomy`, `updateConfig`, `flush`.
+- **Remove `consultJudgment`.** It's a switch statement calling three different operations behind one polymorphic method. Make them three separate methods.
+- **SessionMemory: eliminate the facade.** 11 methods, every single one a one-line delegation. Either expose the four stores directly or inline them.
+- **Kill `UpdatableField`.** Replace with specific typed methods or a builder.
+- **Kill re-export chains.** Pick one canonical import path per type.
+
+#### The Observability System
+
+Observer + ObservationStore + BlobStore + ObserverStream + pino logging. Five subsystems for "know what the agent did."
+
+The BlobStore (76 lines), ObserverStream (65 lines), and Observer facade are justified. The ObservationStore (262 lines) is a middle layer that duplicates the Observer facade — three layers of indirection for one SQLite INSERT. Eliminate the middle layer.
+
+Observation writes are synchronous per-span. For a 7-phase pipeline with sub-spans, that's dozens of synchronous SQLite writes per task. Combined with EventBus writing to the same database — you're double-writing overlapping information.
+
+#### ephemeral.ts
+
+Documentation cosplaying as code. `DaemonStateSchema` is never validated at runtime. `CostAccumulatorsSchema` can't even validate its `Map` objects. Replace every schema with a plain TypeScript interface. Save Zod for actual trust boundaries: config files, LLM output, external APIs.
+
+#### What Would I Not Have Built?
+
+**The Event Bus as a persistence layer.** You have EventBus writing events to SQLite, Observer writing observations to SQLite, journal writing entries to SQLite, state transitions writing to SQLite. Four parallel write streams recording overlapping information. In SQLite, we'd have one table. You don't need pub/sub for an in-process single-threaded system. `better-sqlite3` is synchronous. The Event Bus is simulating distributed systems messaging for a process that talks to itself. I would have built a transaction log table and query functions.
+
+**The Action Pipeline.** `ActionPipeline.execute()` is 40 lines. Gate 1 calls `checkPermission`. Gate 2 calls `evaluateAction`. Then calls `executeFn`. Then calls `notifyFn`. This is a function, not a class. Inline at the call sites.
+
+**The Preemption system.** Protocol P8 with PreemptionGate, checkpoint creation, event emission — for `max_concurrent: 1` on a single thread. The preemption code path has never been exercised in production.
+
+**The three-layer Observer indirection.** Observer facade -> ObservationStore -> ObserverStore. Eliminate the middle layer.
+
+#### Files That Would Survive 20 Years
+
+`database.ts`, `queries.ts`, `blob-store.ts`, `stream.ts`, `knowledge.ts` — these are files I would trust in production. Build more of the system to that standard.
+
+---
+
+### Review 3: Rob Pike (Go, Plan 9)
+
+#### "The bigger the interface, the weaker the abstraction."
+
+| Interface | Methods | Verdict |
+|-----------|---------|---------|
+| `IActionPipeline` | 1 | **Excellent.** One method. One job. |
+| `IPluginLookup` | 3 | **Good.** Tight. |
+| `IEventBus` | 7 | **Acceptable.** Query methods could be a separate reader. |
+| `IPeopleDirectory` | 6 | **Too wide.** `getOwner()` and `getReviewers()` are convenience wrappers around `getByRole`. Four methods would be tight. |
+| `ISafetyLayer` | 7 | **Too wide.** Three interfaces pretending to be one: safety gate, cost reporter, config holder. |
+| `ITaskEngine` | 11 | **Too wide.** A state machine, a query store, and mutation operations crammed together. |
+| `ISessionMemory` | 13 | **The worst.** Four domains (sessions, journal, checkpoints, knowledge) in one interface. |
+| `IWorkspaceManager` | 8 | **Borderline.** Most consumers only call `getWorktreePath`. |
+
+#### The Stranger Test
+
+Bug: "PR creation sometimes fails." How many files does a competent engineer need to open?
+
+1. `bootstrap.ts` (265 lines)
+2. `system.ts` (103 lines)
+3. `orchestrator/index.ts` (293 lines)
+4. `orchestrator/types.ts` — 11 fields to understand (107 lines)
+5. `orchestrator/phase-runner.ts` (1,081 lines)
+6. `orchestrator/pr-manager.ts`
+7. `adapters/git-hosting.ts` (122 lines)
+8. The concrete GitHub hosting plugin
+9. `adapters/errors.ts`
+10. `orchestrator/errors.ts`
+
+**Minimum: 10 files.** Realistically 12-15 with schemas and event types.
+
+**Verdict:** Too many concepts for one bug. "PR creation fails" should require reading the PR creation function and the git hosting adapter. Two files. Maybe three.
+
+#### Clarity vs Cleverness — Three Worst
+
+**1. `phase-runner.ts` — The `targetIndex - 1` trick:**
+```
+return { completion: { kind: "loopback", phases, targetIndex: reqIndex - 1 } }
+```
+Returning `index - 1` because the for loop will `i++`. Shows up three times. If you need a comment to explain your loop control, restructure the loop.
+
+**2. `llm-caller.ts` — The fallback IIFE:**
+```
+const finalResult = sessionResult && sessionResult !== "invalid"
+    ? sessionResult
+    : (() => { ... return { status: "ready" as const, ... }; })();
+```
+A ternary with an IIFE inside the false branch. Write two if statements.
+
+**3. `base.ts` — `hookRegistry?: unknown` and `observer?: unknown`:**
+The abstraction punishing you. You created a three-tier rule, then threw away type safety to comply. The architecture is wrong.
+
+#### Three Best (Genuinely Clear)
+
+**1. `action-pipeline.interface.ts` — the entire file.** `PipelineResult<T>` discriminated union. Four outcomes, each with exactly the data it needs. A stranger reads this once and knows what the action pipeline does.
+
+**2. `task-scheduler.ts` — `isSlotConsuming`:**
+```
+export function isSlotConsuming(state: string, subState: string | null): boolean {
+  return state === TaskStates.active && (subState === SubStates.working || subState === SubStates.integrating);
+}
+```
+Pure function. Name says what it does. Body says how. No context needed.
+
+**3. `trigger-poller.ts` — `cleanupExpiredKeys`:**
+```
+for (const [key, expiry] of seenTriggerKeys) {
+  if (expiry <= now) seenTriggerKeys.delete(key);
+}
+```
+Dumb loop. Does what the name says. Doesn't generate bug reports.
+
+#### The Dependency Graph
+
+16 named components for a system that polls for triggers, runs an LLM, commits code, and creates a PR. `DaemonContext` with 12 fields, then each subsystem `Pick`s what it needs (7 different Pick types). This is backwards — if you need 6 specific things, take 6 arguments.
+
+#### Composition Assessment
+
+**The closure pattern wins decisively.** Daemon subsystems (`createTriggerPoller`, `createTaskScheduler`) are clear: factory takes dependencies, returns narrow interface. Internal state is lexically scoped. No `this`, no `protected`, no template method confusion.
+
+**The class hierarchy hurts.** `CommunicationAdapter` with `wrapAsync` wrapping `do*` methods — 176 lines to express "catch errors and wrap them." The `do*` prefix is noise. The duplicated `wrapAsync` in `communication.ts` and `git-hosting.ts` (identical function, defined twice) is the inheritance pattern failing at code sharing.
+
+**The Orchestrator is a class that should be a factory.** One public method. Constructor creates 7 subsystems. Would be cleaner as `createOrchestrator()` matching the daemon pattern.
+
+#### If You Rewrote This in the Simplest Possible Way
+
+```
+src/
+  main.ts              # entry point, wiring, CLI
+  db.ts                # SQLite setup, migrations, queries
+  events.ts            # publish, subscribe, event types
+  tasks.ts             # task state machine, CRUD
+  safety.ts            # cost limits, autonomy checks
+  sessions.ts          # session, journal, checkpoint, knowledge
+  workspace.ts         # git worktree management
+  daemon.ts            # tick loop, trigger polling, scheduling
+  orchestrator.ts      # phase pipeline, LLM calls, PR creation
+  prompts/             # prompt builders
+    system.ts
+    phases.ts
+  plugins/
+    github.ts          # trigger + hosting + comm in one file
+    telegram.ts        # send-only comm
+    claude.ts          # LLM
+  config.ts            # load YAML, validate
+  types.ts             # shared types, schemas
+```
+
+**~15 files.** Not 160. Each file owns its domain completely. The adapter hierarchy disappears. A GitHub plugin exports functions: `pollTriggers()`, `createPR()`, `commentOnIssue()`. No `BaseAdapter`, no template methods. The 8 interface files disappear. For testing, use real modules backed by test databases.
+
+#### The Central Problem
+
+> This codebase has the disease of premature abstraction. Every concept has been given its own file, its own interface, its own error hierarchy, its own context type. The architecture diagrams must look beautiful. But a stranger trying to fix "PR creation sometimes fails" has to open 10+ files and understand 12+ abstractions.
+>
+> The daemon subsystem pattern is the best part of the codebase. It's the simplest, the most readable, and — not coincidentally — it was written as closures returning plain objects. No classes, no inheritance, no interfaces.
+>
+> The worst parts are where object-oriented ceremony was applied: the adapter hierarchy, the error class trees, the 13-method `ISessionMemory` interface.
+>
+> Simplicity is complicated. This codebase chose complexity instead.
+
+---
+
+### What All Three Agree On
+
+Despite different lenses, all three reviewers converge on the same core issues:
+
+1. **The Task schema is a god object.** Split it. 33 fields in one row with 8 JSON columns is a document store pretending to be relational.
+
+2. **`phase-runner.ts` is the most dangerous file.** 1,080 lines, 9 concerns, biome-ignored complexity. The `targetIndex - 1` trick is universally condemned.
+
+3. **The adapter/hooks/topology system is premature.** Zero hook consumers. Health state machine for `spawn("claude")`. `unknown`-typed fields to satisfy tier rules that shouldn't exist.
+
+4. **The event system has 4x duplication.** 34 event types defined in four parallel structures. Maintenance nightmare.
+
+5. **~160 files is ~3x too many.** Consensus range: 15 files (Pike, radical simplicity) to 50-60 files (Torvalds, practical collapse). The interfaces, hooks, topology, and over-decomposed subsystems account for the bloat.
+
+6. **The closure/factory pattern (daemon) beats the class/inheritance pattern (adapters) everywhere it's used.** The best code in the project uses closures. The worst uses class hierarchies.
+
+7. **Testing covers happy paths well but misses corruption, cascading failure, and resource exhaustion.** For a daemon managing money, this is a gap.
+
+8. **The files that would survive 20 years:** `database.ts`, `queries.ts`, `blob-store.ts`, `stream.ts`, `knowledge.ts`, `action-pipeline.interface.ts`, `isSlotConsuming`, `cleanupExpiredKeys`. Build more to that standard.

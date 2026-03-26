@@ -284,3 +284,19 @@ Each adapter type needs a "How to build a plugin" guide so contributors can add 
 **Location:** `docs/plugins/` or `implementation-docs/plugin-guides/`
 
 ---
+
+## Interactive Reconfiguration via `engineer start`
+
+**Current state:** First-run setup is handled by `engineer start` with auto-detection + guided plugin selection. To change configuration after initial setup, users must `engineer stop`, manually edit YAML files in `~/.engineer/config/`, and `engineer start` again.
+
+**When it becomes relevant:** When users frequently change plugin selections, add/remove repos, or switch LLM providers and want a guided experience instead of manual YAML editing.
+
+**What it enables:** `engineer start --reconfigure` (or auto-detection of config changes) that:
+1. Detects existing config and shows current state
+2. Prompts: "Modify current configuration?" with options per category (plugins, core, safety)
+3. Walks through only the changed sections, preserving everything else
+4. Handles plugin additions/removals gracefully (deregister old, register new)
+
+**Migration path:** The schema-driven prompt infrastructure built for first-run setup is reusable. The main complexity is diffing current config against desired state and handling partial changes without breaking running state. Requires careful handling of plugin lifecycle (shutdown old plugin before removing config, initialize new plugin after writing config).
+
+---

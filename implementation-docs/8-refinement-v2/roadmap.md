@@ -183,7 +183,7 @@ With RRPIR hardened, go through each runtime flow phase by phase. Two co-founder
 
 **Ideas & brainstorm:** Each subsection gets its own file in `roadmap-ideas/` — co-founder discussion documented before implementation. A separate plan finalizes scope for each.
 
-- [roadmap-ideas/startup.md](roadmap-ideas/startup.md) — Startup & Configuration
+- [roadmap-ideas/startup/](roadmap-ideas/startup/) — Startup & Configuration (ideation.md + research.md)
 
 ### Startup & Configuration
 

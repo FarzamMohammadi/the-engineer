@@ -2,9 +2,11 @@
 
 Part of Runtime Phase Refinement (roadmap section 1 of 9). Ideas discussed between co-founders before implementation. Not everything here will be built — a separate plan will finalize scope.
 
+Reviewed by expert panel (Linus Torvalds, D. Richard Hipp, Rob Pike, The Engineer Persona, Technical Architect). Findings incorporated below — over-engineered pieces trimmed, missed gaps added.
+
 ---
 
-### Command Surface Consolidation
+## Command Surface Consolidation
 
 Current state: 14 CLI commands. Three of them (`prepare`, `init`, `setup`) all solve "get me configured." A new user has to pick between them and then still has to run `doctor` and `start` separately.
 
@@ -12,16 +14,19 @@ Current state: 14 CLI commands. Three of them (`prepare`, `init`, `setup`) all s
 
 `start` absorbs `setup`, `init`, and `prepare`. It detects state and does the right thing — no separate commands for getting started. The user never needs to discover which setup command to use.
 
+**Panel note:** 4/5 panelists cautioned that the setup logic must be a separable module that `start` calls — not woven into `start.ts` directly. The underlying detection/generation/bootstrap code stays modular regardless of CLI surface. One panelist (Pike) argued for keeping `setup` as a separate command. This is a two-way door — we can always re-expose `setup` if needed.
+
 Commands removed:
-- `engineer prepare` — absorbed into start's auto-config (seed mechanism becomes documentation or `config export`)
-- `engineer init` — absorbed into start (non-interactive mode via `start --non-interactive`)
-- `engineer setup` — absorbed into start (first-run detection triggers interactive setup)
+- `engineer prepare` — absorbed into start's auto-config
+- `engineer init` — absorbed into start (non-interactive mode via `start --plugins <path>`)
+- `engineer setup` — absorbed into start (first-run detection triggers interactive flow)
 - `engineer config validate` — absorbed into `doctor` (config validation IS a health check)
+- `engineer config migrate` — deferred entirely (zero config versions exist today; add when needed)
 
 Commands renamed:
 - `engineer shutdown` -> `engineer stop` (every CLI uses `stop` — Docker, systemctl, pm2, brew services)
 
-**Proposed command surface (14 -> 10):**
+**Proposed command surface (14 -> 9):**
 ```
 # Daily use (5 commands — this IS the product for 95% of usage)
 engineer start              # Smart: auto-setup on first run, then run
@@ -33,37 +38,134 @@ engineer why <task-id>      # Explain why a task is in its current state
 # Diagnostics & maintenance
 engineer doctor             # Health checks (absorbs config validate)
 engineer dashboard          # Reconnect to War Room standalone
-engineer config migrate     # Rare config version migration
 
 # Developer
 engineer install            # Generate OS service config (launchd/systemd)
 engineer create-plugin      # Scaffold a new plugin
 ```
 
-### Smart `start` — Zero-Question Auto-Detection
+---
+
+## Smart `start` — Auto-Detection with One Confirmation
 
 The core idea: **detect, don't interrogate.** Plugins declare what they need. `start` checks what's available in the environment and auto-configures.
 
-**State machine inside `start`:**
+### State Detection (simplified per panel feedback)
+
 ```
 engineer start
   |
   +--> detect state
   |     |
-  |     +--> no config?       --> auto-detect + confirm --> start
-  |     +--> partial config?  --> fill gaps + confirm   --> start
-  |     +--> full config?     --> pre-flight            --> start
+  |     +--> no config?       --> auto-detect + guided setup + confirm --> start
+  |     +--> valid config?    --> pre-flight --> bootstrap --> start
   |     +--> already running? --> friendly message + suggest stop/status
-  |     +--> stale config?    --> auto-migrate          --> start
 ```
 
-**Auto-detection approach:**
-- Each builtin plugin gets a `canAutoEnable()` method — checks if its requirements exist (CLI on PATH, env vars set, etc.)
-- Repos detected from `git remote -v` in current working directory
-- Detection is plugin-driven, not hardcoded — new plugins automatically participate
+**Panel feedback applied:** "Partial config" and "stale config" states dropped. Either config exists and is valid (start normally) or it doesn't (run setup). `doctor` handles diagnosis of what's broken. This eliminates significant complexity for scenarios that almost never happen.
+
+### Auto-Detection via Declarative Requirements (not methods)
+
+**Panel feedback applied:** All panelists agreed `canAutoEnable()` methods are the wrong abstraction. Plugin requirements should be declarative data on the manifest, not per-plugin code.
+
+```typescript
+// On the plugin manifest — data, not behavior:
+requirements: [
+  { type: "binary", name: "claude" },
+  { type: "env", name: "GITHUB_TOKEN" },
+]
+```
+
+One generic checker function walks the requirements array for all plugins. No per-plugin detection code. New plugins automatically participate by declaring their requirements.
+
+Additional detection:
+- Repos detected from `git remote -v` in current working directory (unreliable signal — validate before trusting)
 - Safety level defaults to conservative (safest default, user can change later)
 
-**The one confirmation:** After detection, show what was found and ask ONE yes/no: "Start with these settings?" If no, show config dir for manual editing. This prevents surprise auto-enabling (e.g., GITHUB_TOKEN set for a different purpose).
+### TTY Guard (BLOCKER — panel unanimous)
+
+**This was missed in the original brainstorm.** `start` must detect `!process.stdin.isTTY` as the FIRST thing. If setup is needed but there's no terminal (systemd, Docker, CI, cron), fail with a clear message:
+
+```
+First-run setup requires an interactive terminal.
+Run 'engineer start' in a terminal first, or provide --plugins <path>.
+```
+
+Never silently hang waiting for input in a headless environment.
+
+### Concurrent Start Protection (panel finding)
+
+Two terminals running `engineer start` simultaneously during first-run = race condition. Both detect "no config," both write configs. Fix: acquire a lock file BEFORE state detection, release after config is written or setup is skipped.
+
+---
+
+## Plugin Setup — Guided One-by-One Flow
+
+Current state: `init` dumps ALL plugins as a checkbox list with category separators. No guidance, no sequencing, no explanation. Overwhelming.
+
+**Decision: Walk the user through plugins one category at a time, guided and contextual.**
+
+The flow lives inside `engineer start` on first run, after auto-detection.
+
+### The Flow
+
+**Step 1: LLM Selection (the anchor).** This is the first and most important question. Not "select plugins" — "which AI do you use?" Every user already has an opinion here. Frame it in human terms, not adapter jargon. If only one LLM CLI is on PATH, pre-select it.
+
+```
+  The Engineer works with these AI tools:
+
+    1. Claude Code CLI     (Anthropic)
+    2. Codex CLI           (OpenAI)
+    3. Gemini CLI          (Google)
+    4. OpenCode            (open-source, bring your own key)
+
+  Which one do you use? (1-4): _
+```
+
+**Step 2: Task Source.** "Where do your tasks come from?" Currently only GitHub. Auto-select with a note if only one option.
+
+**Step 3: Code Hosting.** "Where does your code live?" Same — GitHub only today but structured for growth.
+
+**Step 4: Communication.** "How should The Engineer reach you?" GitHub comments, Telegram, or both.
+
+**Step 5: Per-plugin config.** For each selected plugin, prompt only for REQUIRED fields that have no default and no detected value. Show defaults in a summary — don't prompt for them.
+
+### Multi-Select per Adapter Type
+
+Some adapter types allow only one plugin (LLM), others allow multiple (Communication). Simple config on the adapter type metadata: `{ selectionMode: "single" | "multi", setupOrder: number, setupLabel: string }`. Adding a new adapter type is data, not code.
+
+### One Confirmation
+
+After plugin selection and config, show everything that was detected/configured and ask ONE yes/no: "Start with these settings?" If no, show config dir for manual editing.
+
+---
+
+## Plugin Configuration — Hardcoded Prompts (not schema walker)
+
+**Panel feedback applied:** All 5 panelists independently rejected the Zod schema-to-prompt walker. The reasoning:
+
+1. **8 plugins, 20-40 total fields.** A generic walker is a framework to avoid writing 60-80 lines of direct code.
+2. **Zod internals (`_def`, `typeName`) aren't a public API.** They break between versions.
+3. **Prompts need human judgment** — which fields are secrets, which get masked, ordering, grouping, conditional display. That's UX logic, not derivable from types.
+4. **Schema walker failure modes are ugly** — union types, transforms, refinements all need escape hatches.
+
+**Decision: Write explicit prompt functions per plugin. Graduate to schema-driven at 15+ plugins.**
+
+```typescript
+// ~20 lines per plugin. Direct, obvious, testable.
+async function promptGitHubTrigger(detected: DetectedEnv): Promise<GitHubTriggerConfig> {
+  const token = detected.env.GITHUB_TOKEN ?? await input({ message: "GitHub token:" });
+  const repos = detected.gitRemote
+    ? await confirmRepos(detected.gitRemote)
+    : await inputRepos();
+  return { github_token: `\${GITHUB_TOKEN}`, repos };
+  // labels, poll_interval get defaults — not prompted
+}
+```
+
+**Still add `.describe()` to plugin schemas** — good hygiene for error messages, docs, and future tooling. Just don't couple the prompts to it.
+
+**Prompt only required fields.** Fields with sensible defaults (poll_interval, parse_mode, merge_strategy) are NOT prompted. They appear in a summary: "Defaults applied: poll interval 30s, merge strategy squash." Power users edit YAML to customize.
 
 ### Concrete Workflows
 
@@ -167,181 +269,36 @@ $ engineer start
   The Engineer is ready (1.1s). War Room: http://localhost:3847
 ```
 
-### Plugin Setup — Guided One-by-One Flow
+---
 
-Current state: `init` dumps ALL plugins as a checkbox list with category separators. No guidance, no sequencing, no explanation. Overwhelming.
+## AI Plugin Generation — Deferred
 
-**Decision: Walk the user through plugins one category at a time, guided and contextual.**
+**Panel feedback applied:** All 5 panelists independently said defer this. No plugin SDK docs exist, adapter contracts are still being refined (Layer 8), the feature has never been tested even once. This is architecture for a capability that doesn't work yet.
 
-The flow lives inside `engineer start` on first run, after auto-detection, before the final confirmation.
+**For now:** Document in README: "Use your AI tool to generate plugins using our adapter contracts as reference." Add the tooling when: (a) plugin SDK is documented, (b) contract test runner validates plugins in isolation, (c) users have asked for it.
 
-**Step 1: LLM Selection (the anchor).** This is the first and most important question. Not "select plugins" — "which AI do you use?" Every user already has an opinion here. Frame it in human terms, not adapter jargon.
+The re-entrant loop concept (start -> build plugin -> come back -> start again -> see new plugin) is the right eventual pattern. It's just premature today.
 
-```
-  The Engineer works with these AI tools:
+---
 
-    1. Claude Code CLI     (Anthropic)
-    2. Codex CLI           (OpenAI)
-    3. Gemini CLI          (Google)
-    4. OpenCode            (open-source, bring your own key)
+## Core Config — Always Defaults
 
-  Which one do you use? (1-4): _
-```
+**Panel feedback applied:** No user on first run wants to tune daemon tick intervals. Conservative defaults, always. Power users edit YAML. The "Use defaults? (Y/n)" question was cut — it serves almost nobody and adds a prompt.
 
-**Step 2: Task Source.** "Where do your tasks come from?" Currently only GitHub. Auto-select with a note if only one option, but structure supports adding GitLab, Linear, etc. later.
+---
 
-**Step 3: Code Hosting.** "Where does your code live?" Same — GitHub only today but structured for growth. If GitHub token already detected from step 2, note it.
+## Ctrl+C Mid-Setup — Simple Approach
 
-**Step 4: Communication.** "How should The Engineer reach you?" GitHub comments (included with GitHub), Telegram, or both.
+**Panel feedback applied:** Transactional rollback (tracking created vs overwritten files, backup-and-restore) was over-engineered. Simpler approach:
 
-**Step 5: Custom Plugin Generation (escape hatch).** "Want to add a custom plugin?" If yes, spawn the user's chosen CLI tool (from step 1) with a crafted prompt pointing at our plugin SDK docs, adapter contracts, and examples. The AI builds the plugin. User comes back, runs `engineer start` again, auto-detection finds the new plugin.
+1. Collect all answers during prompts (no files written yet)
+2. Write all config files at the end, in one batch (takes milliseconds)
+3. If Ctrl+C arrives during prompts — nothing was written, nothing to clean up
+4. If Ctrl+C arrives during the write batch (extremely unlikely) — accept partial state, `start` handles it on re-run
 
-```
-  Want to add a custom plugin?
+---
 
-    1. No, I'm good
-    2. Yes, generate a custom plugin with AI
-
-  Describe what you want:
-  > I want a plugin that monitors a Jira board for new tickets
-
-  Launching Claude Code CLI to generate your plugin...
-  (When done, run 'engineer start' again to pick it up.)
-```
-
-**Step 6: Per-plugin config — Schema-Driven Prompts.** After plugin selection, walk the user through each selected plugin's configuration field by field, using the Zod schema as the source of truth.
-
-### Schema-Driven Plugin Configuration
-
-**The insight:** We already have Zod schemas for every plugin config, and the core config schemas already use `.describe()` extensively (41+ instances). Plugin schemas currently lack `.describe()` — adding it creates a complete metadata layer for interactive prompts.
-
-**Current state of plugin schemas:**
-- 8 plugin config schemas exist, all bare Zod (types + defaults, no descriptions)
-- Core config schemas (`DaemonConfig`, `WorkspaceConfig`, `SafetyConfig`) already use `.describe()` throughout
-- A `walkSchema()` function already exists in `config/loader.ts` that introspects Zod schemas (used for duration parsing) — this pattern is reusable
-
-**The approach: Zod schema drives the prompt type, detected/default values pre-fill, `.describe()` provides the label.**
-
-Every field gets prompted — nothing is hidden or silently skipped. But detected values and defaults are pre-filled so the user can just hit Enter to accept. Full visibility, fast happy path.
-
-Schema type → prompt style mapping:
-- `z.string()` → text input, pre-filled with detected/default value
-- `z.enum([...])` → select list, default option pre-selected
-- `z.boolean()` → yes/no confirmation, default capitalized (Y/n or y/N)
-- `z.number()` → number input, default shown
-- `z.array(z.object({...}))` → repeated object prompts ("Add another? y/N")
-- `z.string()` with `${ENV_VAR}` pattern → show detected env var value, masked
-
-**Example — GitHub Trigger setup:**
-```
-  Setting up GitHub Trigger...
-
-    GitHub token (${GITHUB_TOKEN}): ghp_****...****3f2a (detected) [Enter to keep] _
-
-    Repos to watch:
-      Owner: FarzamMohammadi (detected from git remote) [Enter to keep] _
-      Name:  the-engineer (detected from git remote) [Enter to keep] _
-      Add another repo? (y/N): _
-
-    Labels filter (default: all issues) [Enter to skip]: _
-    Poll interval (default: 30s) [Enter to keep]: _
-
-    ✓ github-trigger.yaml written
-```
-
-**Example — GitHub Hosting setup (enum field):**
-```
-  Setting up GitHub Hosting...
-
-    GitHub token (${GITHUB_TOKEN}): ghp_****...****3f2a (detected) [Enter to keep] _
-
-    Merge strategy:
-    > squash (default)
-      merge
-      rebase
-
-    ✓ github-hosting.yaml written
-```
-
-**Example — Telegram setup (boolean field):**
-```
-  Setting up Telegram...
-
-    Bot token (${TELEGRAM_BOT_TOKEN}): (not set — required)
-    Enter bot token: _
-
-    Chat ID (${TELEGRAM_CHAT_ID}): (not set — required)
-    Enter chat ID: _
-
-    Disable link previews? (Y/n): _
-    Parse mode:
-    > MarkdownV2 (default)
-      Markdown
-      HTML
-
-    ✓ telegram-comm.yaml written
-```
-
-**Implementation:**
-1. Add `.describe()` to all plugin config schema fields (follow core config pattern)
-2. Build a `schemaToPrompts()` walker extending the existing `walkSchema()` pattern
-3. For each field: extract type, default, description, validation rules, env var references
-4. Generate appropriate `@inquirer/prompts` call (input/select/confirm) with pre-filled values
-5. Validate final values against the Zod schema before writing YAML
-6. Write the validated config as YAML to the plugin config directory
-
-**Key design principles:**
-- Every field prompted — nothing hidden. User sees exactly what's being configured.
-- Detected/default values pre-filled — Enter to accept. Fast path without hiding anything.
-- One question at a time — use proper CLI prompt libraries (`@inquirer/prompts`)
-- Schema is the single source of truth — add a field to the schema, it appears in setup automatically
-- AI plugin generation is a separate session — user comes back to `start` when done
-
-### Multi-Select per Adapter Type
-
-Some adapter types allow only one plugin (LLM — one brain at a time), others allow multiple (Communication — Telegram + Slack + GitHub Comments simultaneously). This is a per-adapter-type configuration, not per-plugin.
-
-During plugin selection, single-select types show a radio-style picker. Multi-select types show checkboxes. The adapter type metadata declares which mode applies. Simple config lookup — no special logic.
-
-### AI Plugin Generation — The Re-Entrant Loop
-
-When the user selects "Build a custom plugin with AI" during plugin setup:
-
-1. Show a message: "We're about to open a terminal session with your chosen AI tool. It will have access to our plugin SDK docs, adapter contracts, and examples. Describe what you want, and the AI will build it."
-2. Spawn a new terminal with the user's chosen CLI tool (from LLM selection step) + a crafted prompt pointing at plugin documentation.
-3. User interacts with the AI to build their plugin in that separate session.
-4. When done, user comes back and runs `engineer start` again.
-5. `start` detects the new plugin in the plugins directory and includes it in the plugin selection list.
-6. User selects their new plugin alongside the others, configures it (schema-driven), and continues to startup.
-
-This is a loop: `start` → plugin selection → "build with AI" → separate session → come back → `start` again → see new plugin → continue. Each re-entry to `start` picks up any new plugins.
-
-**Prerequisite:** Plugin SDK documentation, adapter contract docs, and examples must be complete before this feature works. The AI needs good reference material to generate plugins. Schema definitions based on adapters are the foundation — the plugin implements an adapter, so the adapter schema is what matters.
-
-### Core Config — Defaults with Optional Customization
-
-After plugin setup is complete, prompt the user:
-
-```
-  Use default settings for The Engineer? (Y/n): _
-```
-
-If yes (default): apply conservative defaults for daemon, workspace, safety configs. Continue to startup. Don't bother people.
-
-If no: walk through each core config category one-by-one, same schema-driven approach as plugins. Safety level (conservative/balanced/autonomous) becomes a select. Workspace settings, daemon tuning, etc. — all driven by existing Zod schemas which already have `.describe()` on every field.
-
-Most users will say yes. Power users who want fine control say no and get the full walkthrough.
-
-### Ctrl+C Mid-Setup — Clean Rollback
-
-If the user sends Ctrl+C (SIGINT) during the setup flow, do a complete cleanup:
-- Delete any config files written so far during this setup session
-- Remove any directories created during this session
-- Show a clean message: "Setup cancelled. Everything rolled back. Run `engineer start` again when ready."
-
-No partial state left behind. Next `engineer start` starts fresh as if nothing happened.
-
-### Non-Interactive Mode — `engineer start --plugins <path>`
+## Non-Interactive Mode — `engineer start --plugins <path>`
 
 For CI/automation/teams: skip all interactive prompts by providing pre-made plugin configs.
 
@@ -350,36 +307,123 @@ $ engineer start --plugins ./my-plugin-configs/
 ```
 
 - Plugin YAML files are read from the provided path and copied into `~/.engineer/config/plugins/`
-- Core configs (daemon, workspace, safety) use defaults — The Engineer manages `~/.engineer/` itself
+- Core configs (daemon, workspace, safety) use defaults
 - No prompts, no questions — if plugin configs are provided and valid, just start
 - If a plugin config is invalid, fail with a clear error pointing to the file and field
 
-This is the only thing non-interactive needs: where are the plugin configs? Everything else is defaults. Users don't pre-populate `~/.engineer/` — we manage that.
+**Panel finding — config drift:** Copying creates divergence between source and running config. Consider symlinks or an include mechanism in a future iteration.
 
-For automated setups without the flag, pre-populating `~/.engineer/config/` before running `engineer start` also works — `start` detects existing config and skips setup entirely.
+---
 
-### Reconfiguration — Deferred (Future Consideration)
-
-Changing plugin selection or re-running setup after initial configuration is deferred. For now: `engineer stop`, edit configs manually in `~/.engineer/config/`, then `engineer start`. Document this in CLI help output.
-
-The smart approach (auto-detect existing config, prompt for changes, preserve what's unchanged) is the right eventual solution but adds significant complexity. Added to `future-considerations.md`.
-
-### Bootstrap Transparency
+## Bootstrap Transparency
 
 Current state: 12-step sequential init with good error handling and reverse-order cleanup. Solid engineering. But opaque to the user — only spinner states shown.
 
 **Decision: Show everything inline during startup.**
-- Per-step timing (database, core system, each plugin)
-- Per-plugin load status with name and result (loaded / SKIPPED + reason)
+- Plugin names and load status (loaded / SKIPPED + reason)
 - Total startup time in the final ready message
 - Pre-flight results with warning count, warnings always shown (not hidden behind --verbose)
-- Structured `bootstrap_complete` observation for War Room with full step timeline and plugin details
+- Structured `bootstrap_complete` observation for War Room with step timeline and plugin details
 
-### Safety & Internals
+**Panel note:** Per-step millisecond timings (database: 45ms, wiring: 12ms) are developer vanity when total startup is ~1 second. Show plugin names + pass/fail and total time. That's the useful information.
+
+---
+
+## Safety & Internals (Ship Independently)
+
+**Panel unanimous: these are real bugs. Fix them NOW, don't bundle with the larger refactor.**
 
 **Signal handler dedup:** Both `start.ts` (lines 189-190) and `daemon.start()` (lines 518-526) register SIGTERM/SIGINT handlers. Two async shutdown sequences race on the same signal. Fix: CLI owns signal handling (it knows about dashboard + DB + logger cleanup). Daemon only exposes `stop()`, does NOT register its own signal handlers. Single deterministic shutdown path.
 
-**Global crash safety net:** `src/index.ts` is 7 lines with no `uncaughtException` or `unhandledRejection` handler. For a long-running daemon, that's a gap. Fix: add handlers that write to stderr (logger may not exist) and set exit code. Safety net, not primary error handling.
+**Global crash safety net:** `src/index.ts` is 7 lines with no `uncaughtException` or `unhandledRejection` handler. For a long-running daemon, that's a gap. Fix: add handlers that write to stderr (logger may not exist) and set exit code.
 
 **Friendly "already running" message:** Detect `DaemonAlreadyRunningError` specifically, show PID, suggest `engineer stop` or `engineer status` instead of raw error.
 
+**Config file permissions (panel finding):** `writeFileSync` doesn't set mode. Plugin configs containing token references are world-readable by default (`0o644`). Fix: write with `mode: 0o600` for all config files.
+
+---
+
+## Existing Bugs Discovered During Review
+
+These exist TODAY and should be fixed regardless of the larger refactor:
+
+1. **`bash-tool` has no config YAML by default.** `setup.ts` doesn't write `bash-tool.yaml`, but `discoverEnabledPlugins` requires a YAML file to exist. Bash tool silently doesn't load after setup.
+
+2. **`enabled` field on manifests is dead code.** Three plugins have `enabled: false` in `builtin.ts`, but `discoverEnabledPlugins` ignores this field entirely — it only checks for YAML file existence. Either use it or delete it.
+
+3. **"detected" vs "enabled" gap.** Auto-detection creates YAML files. After first run, every detected plugin becomes permanently enabled even if the user later wants to disable it. Need an explicit enabled/disabled mechanism, not file-existence-as-truth.
+
+---
+
+## Panel-Identified Gaps (Not in Original Brainstorm)
+
+These were surfaced by the expert panel and should be addressed during planning:
+
+1. **Validate detected values before confirmation, not after.** Auto-detection finds GITHUB_TOKEN but doesn't verify it works (scope, expiration). User confirms, config written, THEN pre-flight discovers the token is bad. Consider lightweight validation (API call to check token scopes) before the Y/n.
+
+2. **Atomic config writes.** Write all configs to a temp directory first, then rename into place. Same pattern databases use for crash safety. No partial config from interrupted writes.
+
+3. **Version-stamp generated configs.** Add `# Generated by The Engineer v0.0.1` comment to written files. When schemas evolve, migration tooling knows which version generated the file.
+
+4. **Plugin dependency grouping.** GitHub Trigger, Comm, and Hosting all need the same token. One detection should enable the GitHub family. This is implicit in the plan but never stated — must be explicit in implementation.
+
+5. **Config portability story.** `prepare`/`seed` mechanism solved "same config on another machine." Removing `prepare` without preserving this capability is a gap. The `--plugins <path>` flag partially covers it.
+
+6. **`git remote -v` is an unreliable signal.** User might run `engineer start` from home directory, /tmp, or a repo they don't want to monitor. Detect but always confirm.
+
+7. **Concurrent start race condition.** Lock file before state detection prevents two terminals from both detecting "no config" and clobbering each other's setup.
+
+---
+---
+
+# Deferred Items
+
+Everything below is intentionally deferred — not forgotten, just not v1. Each item has a clear trigger for when it becomes relevant.
+
+---
+
+## Deferred: AI Plugin Generation
+
+**Trigger:** When plugin SDK docs are complete, adapter contracts are stable, and a contract test runner can validate plugins in isolation.
+
+The re-entrant loop concept (start -> build plugin in separate AI session -> come back -> start again -> see new plugin) is the right eventual pattern. For now: document in README "use your AI tool to generate plugins using our adapter contracts as reference."
+
+---
+
+## Deferred: Schema-Driven Prompt Walker
+
+**Trigger:** When the project has 15+ plugins and maintaining hardcoded prompt functions becomes a burden.
+
+A generic `schemaToPrompts()` that introspects Zod schemas to generate CLI prompts. Deferred because: Zod internals aren't a public API, only 8 plugins exist today (60-80 lines of hardcoded prompts is simpler), and prompts need human judgment about secrets/masking/ordering that types can't express.
+
+---
+
+## Deferred: Config Migration (`engineer config migrate`)
+
+**Trigger:** When a config schema actually changes in a breaking way and there are existing users with old configs.
+
+Zero config versions exist today. Don't ship dead code.
+
+---
+
+## Deferred: Interactive Reconfiguration
+
+**Trigger:** When users frequently change plugin selections and the "stop, edit YAML, start" workflow becomes painful.
+
+Smart approach: auto-detect existing config, prompt for changes, preserve what's unchanged. For now: `engineer stop`, edit configs in `~/.engineer/config/`, `engineer start`. Added to `future-considerations.md`.
+
+---
+
+## Deferred: Core Config Walkthrough
+
+**Trigger:** When users consistently report that conservative defaults don't work for their use case and need guidance choosing settings.
+
+No user on first run wants to tune daemon tick intervals. Conservative defaults, always. Power users edit YAML.
+
+---
+
+## Deferred: Config Portability / Export
+
+**Trigger:** When teams need to share The Engineer configs across machines or onboard new team members.
+
+The `prepare`/`seed` mechanism partially solved this. The `--plugins <path>` flag partially covers it. A proper `engineer config export` command is the eventual solution.

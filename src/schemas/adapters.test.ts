@@ -77,7 +77,6 @@ describe("PluginManifestSchema", () => {
     expect(manifest.id).toBe("github-trigger");
     expect(manifest.config_schema).toEqual({});
     expect(manifest.critical).toBe(true);
-    expect(manifest.enabled).toBe(true);
     expect(manifest.entry).toBe("index.ts");
     expect(manifest.adapter_meta).toEqual({});
   });
@@ -86,11 +85,9 @@ describe("PluginManifestSchema", () => {
     const manifest = PluginManifestSchema.parse({
       ...minimal,
       critical: false,
-      enabled: false,
       entry: "main.ts",
     });
     expect(manifest.critical).toBe(false);
-    expect(manifest.enabled).toBe(false);
     expect(manifest.entry).toBe("main.ts");
   });
 

@@ -219,9 +219,19 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // plugin, the instance is deregistered without calling shutdown(), which is safe.
     progress?.("Loading plugins", "start");
     const pluginConfigDir = join(engineerHome, "config", "plugins");
-    await loadBuiltinPlugins(registry, pluginConfigDir, observer.child("plugin-loader"));
+    const pluginResult = await loadBuiltinPlugins(
+      registry,
+      pluginConfigDir,
+      observer.child("plugin-loader"),
+    );
     milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");
+
+    observer.info("Plugins loaded", {
+      loaded: pluginResult.loaded,
+      failed: pluginResult.failed,
+      total: pluginResult.loaded.length + pluginResult.failed.length,
+    });
 
     const bootstrapElapsedMs = Date.now() - bootstrapStartMs;
     observer.info("Bootstrap complete", {

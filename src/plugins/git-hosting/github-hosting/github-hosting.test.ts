@@ -72,7 +72,6 @@ const MANIFEST: PluginManifest = {
   description: "PR lifecycle management via GitHub API",
   config_schema: {},
   critical: true,
-  enabled: true,
   entry: "index.ts",
   adapter_meta: {},
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },

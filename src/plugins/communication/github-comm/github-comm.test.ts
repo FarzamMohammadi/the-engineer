@@ -46,7 +46,6 @@ const MANIFEST: PluginManifest = {
   description: "Posts comments and manages labels on GitHub issues/PRs",
   config_schema: {},
   critical: false,
-  enabled: true,
   entry: "index.ts",
   adapter_meta: { capabilities: ["send", "sync", "issue_management"] },
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },

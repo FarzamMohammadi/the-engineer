@@ -36,7 +36,6 @@ describe("mock-factories", () => {
       const manifest = createMockManifest();
       expect(manifest.id).toBe("mock-plugin");
       expect(manifest.version).toBe("1.0.0");
-      expect(manifest.enabled).toBe(true);
     });
   });
 

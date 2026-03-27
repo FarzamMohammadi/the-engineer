@@ -42,7 +42,6 @@ const MANIFEST: PluginManifest = {
   description: "Polls GitHub for assigned issues",
   config_schema: {},
   critical: true,
-  enabled: true,
   entry: "index.ts",
   adapter_meta: {},
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },

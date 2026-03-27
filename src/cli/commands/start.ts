@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
+import { DaemonAlreadyRunningError } from "../../core/daemon/errors.js";
 import { discoverEnabledPlugins } from "../../plugins/loader.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 
@@ -9,6 +10,7 @@ import { type BootstrapResult, type ProgressCallback, bootstrap } from "../boots
 import { type EngineerDirectories, resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 import { Spinner } from "../progress.js";
+import { needsSetup, runFirstTimeSetup } from "../setup/setup.js";
 import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "./doctor.js";
 import { spawnBackground } from "./start-background.js";
 import { DASHBOARD_PORT, launchDashboard } from "./start-dashboard.js";
@@ -17,6 +19,7 @@ interface StartOptions {
   daemon: boolean;
   verbose: boolean;
   dryRun: boolean;
+  pluginsPath?: string;
 }
 
 /** Create all required directories. Throws on failure. */
@@ -34,9 +37,28 @@ function ensureDirectories(dirs: EngineerDirectories): void {
 /** Boots the daemon. Returns exit code. */
 export async function runStart(engineerHome: string, options: StartOptions): Promise<number> {
   const out = getOutput();
-
-  // 1. Auto-create directories
   const dirs = resolveDirectories(engineerHome);
+
+  // 0. First-run detection — TTY guard + setup BEFORE anything else
+  if (needsSetup(engineerHome)) {
+    if (!options.pluginsPath && !process.stdin.isTTY) {
+      out.error("First-run setup requires an interactive terminal.");
+      out.log("  Run 'engineer start' in a terminal first, or provide --plugins <path>.");
+      return 1;
+    }
+
+    const setupOpts: Parameters<typeof runFirstTimeSetup>[0] = { engineerHome };
+    if (options.pluginsPath) {
+      setupOpts.pluginsPath = options.pluginsPath;
+    }
+    const completed = await runFirstTimeSetup(setupOpts);
+    if (!completed) {
+      out.log("Setup cancelled. Run 'engineer start' to try again.");
+      return 0;
+    }
+  }
+
+  // 1. Auto-create directories (idempotent — may already exist after setup)
   try {
     ensureDirectories(dirs);
   } catch (error) {
@@ -44,7 +66,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     return 1;
   }
 
-  // 2. Load config
+  // 2. Load config (AFTER setup has written config files)
   let bundle: ConfigBundle;
   try {
     const result = loadConfigDir(dirs.config);
@@ -54,10 +76,11 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     }
   } catch (error) {
     out.error(`Config error: ${sanitizeErrorMessage(error)}`);
+    out.log("  Run 'engineer doctor' to diagnose.");
     return 1;
   }
 
-  // 3. Run pre-flight checks (doctor categories 1-6)
+  // 3. Run pre-flight checks (doctor categories 1-7)
   let preFlightResults: ReturnType<typeof runPreFlightChecks>;
   try {
     preFlightResults = runPreFlightChecks(engineerHome);
@@ -202,6 +225,13 @@ async function runForeground(
     out.blank();
     out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
   } catch (error) {
+    if (error instanceof DaemonAlreadyRunningError) {
+      const pidHint = error.existingPid != null ? ` (PID: ${String(error.existingPid)})` : "";
+      out.error(`The Engineer is already running${pidHint}.`);
+      out.log("  Use 'engineer stop' to stop it, or 'engineer status' to check.");
+      cleanup();
+      return 1;
+    }
     observer.recordError(error, { operation: "daemon-start", component: "cli" });
     out.error(`Startup failed: ${sanitizeErrorMessage(error)}`);
     try {

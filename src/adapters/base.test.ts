@@ -42,7 +42,6 @@ function createManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     description: "A test plugin",
     config_schema: {},
     critical: true,
-    enabled: true,
     entry: "index.ts",
     adapter_meta: {},
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },

@@ -42,7 +42,7 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # --- Plugin lifecycle ---
 # plugins:
 #   dirs:
-#     - ~/.engineer/plugins            # Plugin discovery directories (auto-populated by engineer init)
+#     - ~/.engineer/plugins            # Plugin discovery directories (auto-populated by engineer start)
 #   health_check_interval_ms: "1m"    # How often to health-check plugins (default: 1m)
 #   health_check_timeout_ms: "5s"     # Timeout per health check (default: 5s)
 #   consecutive_failures_threshold: 3  # Failures before marking plugin as failed
@@ -322,7 +322,7 @@ export const BASH_TOOL_TEMPLATE = `# Bash tool plugin
 
 // ── Example Templates (fully documented reference files) ─────────────────────
 // Like .env.example — every field visible, documented, with defaults and valid options.
-// Written to ~/.engineer/example-templates/ during `engineer init`.
+// Written to ~/.engineer/example-templates/ during first-run setup.
 
 export const EXAMPLE_DAEMON = `# ┌─────────────────────────────────────────────────────────────────────────────┐
 # │  DAEMON CONFIGURATION — Full Reference                                    │
@@ -727,25 +727,6 @@ export const ALL_TEMPLATES: TemplateFile[] = [
   { relativePath: "config/plugins/opencode-llm.yaml", content: OPENCODE_LLM_TEMPLATE },
   { relativePath: "config/plugins/gemini-cli-llm.yaml", content: GEMINI_CLI_LLM_TEMPLATE },
   { relativePath: "config/plugins/bash-tool.yaml", content: BASH_TOOL_TEMPLATE },
-];
-
-/** Seed templates — fully documented configs for seed/ directory (used by `engineer prepare`). */
-export const SEED_TEMPLATES: TemplateFile[] = [
-  // Core configs — same paths as ALL_TEMPLATES, but with full documentation
-  { relativePath: "config/daemon.yaml", content: EXAMPLE_DAEMON },
-  { relativePath: "config/orchestrator.yaml", content: EXAMPLE_ORCHESTRATOR },
-  { relativePath: "config/safety.yaml", content: EXAMPLE_SAFETY },
-  { relativePath: "config/workspace.yaml", content: EXAMPLE_WORKSPACE },
-  { relativePath: "config/people.yaml", content: EXAMPLE_PEOPLE },
-  // Plugin configs
-  { relativePath: "config/plugins/github-trigger.yaml", content: EXAMPLE_GITHUB_TRIGGER },
-  { relativePath: "config/plugins/telegram-comm.yaml", content: EXAMPLE_TELEGRAM_COMM },
-  { relativePath: "config/plugins/github-comm.yaml", content: EXAMPLE_GITHUB_COMM },
-  { relativePath: "config/plugins/github-hosting.yaml", content: EXAMPLE_GITHUB_HOSTING },
-  { relativePath: "config/plugins/claude-code-llm.yaml", content: EXAMPLE_CLAUDE_CODE_LLM },
-  { relativePath: "config/plugins/opencode-llm.yaml", content: EXAMPLE_OPENCODE_LLM },
-  { relativePath: "config/plugins/gemini-cli-llm.yaml", content: EXAMPLE_GEMINI_CLI_LLM },
-  { relativePath: "config/plugins/bash-tool.yaml", content: EXAMPLE_BASH_TOOL },
 ];
 
 /** Fully documented example templates — written to ~/.engineer/example-templates/. */

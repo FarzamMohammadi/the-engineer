@@ -25,7 +25,7 @@ export async function runDashboard(
 
   if (!existsSync(dbPath)) {
     out.error(`Database not found at ${dbPath}`);
-    out.error('Run "engineer init" and "engineer start" first.');
+    out.error('Run "engineer start" first.');
     process.exitCode = 1;
     return;
   }
@@ -39,7 +39,7 @@ export async function runDashboard(
     options.port,
   );
 
-  // Write PID file so `engineer shutdown` can find us
+  // Write PID file so `engineer stop` can find us
   const pidPath = join(dirs.run, "dashboard.pid");
   writeFileSync(pidPath, String(process.pid), "utf8");
 

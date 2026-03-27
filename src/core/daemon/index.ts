@@ -143,7 +143,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   let shuttingDown = false;
   let startedAt: string | null = null;
   let tickInterval: ReturnType<typeof setInterval> | null = null;
-  const signalHandlers: { signal: string; handler: () => void }[] = [];
+  // Note: Signal handling is the CLI's responsibility (src/cli/commands/start.ts).
+  // When using the daemon programmatically, the caller must call daemon.stop() on shutdown signals.
 
   // ── Create Subsystems ─────────────────────────────────────────────────
   const notifications = createNotificationRouter(ctx);
@@ -514,17 +515,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       });
     }, config.tick_interval_ms);
 
-    // Signal handling (tracked for cleanup in stop())
-    for (const signal of ["SIGTERM", "SIGINT"] as const) {
-      const handler = () => {
-        stop().catch((error: unknown) => {
-          observer.error(`Error during ${signal} shutdown`, { err: sanitizeErrorMessage(error) });
-        });
-      };
-      signalHandlers.push({ signal, handler });
-      process.on(signal, handler);
-    }
-
     observer.info("Daemon started — entering main loop", { startedAt });
   }
 
@@ -559,12 +549,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     // Unsubscribe from Event Bus
     unregisterSubscriptions();
-
-    // Remove signal handlers
-    for (const { signal, handler } of signalHandlers) {
-      process.removeListener(signal, handler);
-    }
-    signalHandlers.length = 0;
 
     // Remove PID file
     removePidFile();

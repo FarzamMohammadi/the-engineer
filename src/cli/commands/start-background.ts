@@ -36,6 +36,6 @@ export function spawnBackground(engineerHome: string, verbose: boolean): number 
   }
 
   out.success(`The Engineer started in background (PID ${String(child.pid)}).`);
-  out.log("  Use 'engineer status' to verify startup, 'engineer shutdown' to stop.");
+  out.log("  Use 'engineer status' to verify startup, 'engineer stop' to stop.");
   return 0;
 }

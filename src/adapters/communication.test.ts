@@ -118,7 +118,6 @@ function createManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     description: "A test comm plugin",
     config_schema: {},
     critical: true,
-    enabled: true,
     entry: "index.ts",
     adapter_meta: { capabilities: ["send"] },
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },

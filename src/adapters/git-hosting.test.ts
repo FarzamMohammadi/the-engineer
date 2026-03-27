@@ -132,7 +132,6 @@ function createManifest(): PluginManifest {
     description: "A test hosting plugin",
     config_schema: {},
     critical: true,
-    enabled: true,
     entry: "index.ts",
     adapter_meta: { action_classes: ["git-remote", "merge"] },
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },

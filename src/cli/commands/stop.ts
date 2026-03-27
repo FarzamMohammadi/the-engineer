@@ -25,7 +25,7 @@ export async function waitForProcessExit(pid: number, timeoutMs: number): Promis
 }
 
 /** Shuts down the daemon and all subsidiary processes. Returns exit code. */
-export async function runShutdown(engineerHome: string, timeoutMs: number): Promise<number> {
+export async function runStop(engineerHome: string, timeoutMs: number): Promise<number> {
   const out = getOutput();
   const pid = readPidFile(engineerHome);
 

@@ -61,7 +61,6 @@ function createManifest(): PluginManifest {
     description: "A test LLM",
     config_schema: {},
     critical: true,
-    enabled: true,
     entry: "index.ts",
     adapter_meta: { provider_type: "api" },
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },

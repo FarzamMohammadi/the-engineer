@@ -111,7 +111,9 @@ describe("loadBuiltinPlugins", () => {
     registry.register(manifest, new FakeTriggerPlugin());
 
     // Should not throw — warn and continue
-    await expect(loadBuiltinPlugins(registry, tmpDir, observer)).resolves.toBeUndefined();
+    const result = await loadBuiltinPlugins(registry, tmpDir, observer);
+    expect(result.loaded).toEqual([]);
+    expect(result.failed).toEqual([{ id: "optional-trigger", reason: "initialization failed" }]);
   });
 
   it("loads and initializes a plugin successfully", async () => {

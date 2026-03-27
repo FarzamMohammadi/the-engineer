@@ -142,6 +142,13 @@ async function loadSinglePlugin(
   return true;
 }
 
+export interface PluginLoadResult {
+  /** Plugin IDs that loaded successfully. */
+  loaded: string[];
+  /** Plugin IDs that failed to load, with reasons. */
+  failed: Array<{ id: string; reason: string }>;
+}
+
 /**
  * Discover and load all enabled builtin plugins.
  *
@@ -152,16 +159,24 @@ export async function loadBuiltinPlugins(
   registry: Registry,
   pluginConfigDir: string,
   observer: IObserver,
-): Promise<void> {
+): Promise<PluginLoadResult> {
   const plugins = discoverEnabledPlugins(pluginConfigDir);
-  let loadedCount = 0;
+  const result: PluginLoadResult = { loaded: [], failed: [] };
 
   for (const plugin of plugins) {
+    // Critical plugin failures throw from loadSinglePlugin — let them propagate
     const loaded = await loadSinglePlugin(plugin, registry, pluginConfigDir, observer);
     if (loaded) {
-      loadedCount++;
+      result.loaded.push(plugin.manifest.id);
+    } else {
+      result.failed.push({ id: plugin.manifest.id, reason: "initialization failed" });
     }
   }
 
-  observer.info("Plugin loading complete", { loaded: loadedCount, total: plugins.length });
+  observer.info("Plugin loading complete", {
+    loaded: result.loaded.length,
+    failed: result.failed.length,
+    total: plugins.length,
+  });
+  return result;
 }

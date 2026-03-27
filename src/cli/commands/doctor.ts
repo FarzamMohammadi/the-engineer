@@ -59,7 +59,7 @@ export function checkDataDirectory(engineerHome: string): DoctorCategory {
       label: "ENGINEER_HOME",
       status: "fail",
       message: `${engineerHome} does not exist`,
-      remedy: `Run: engineer init --home ${engineerHome}`,
+      remedy: `Run: engineer start --home ${engineerHome}`,
     });
     return { category: "Data Directory", checks };
   }
@@ -263,8 +263,8 @@ export function checkPluginManifests(engineerHome: string): DoctorCategory {
     checks.push({
       label: "Plugin configs",
       status: "warn",
-      message: "No plugin config directory found — run 'engineer init' first",
-      remedy: "Run 'engineer init' to set up plugins",
+      message: "No plugin config directory found — run 'engineer start' for first-run setup",
+      remedy: "Run 'engineer start' to set up plugins",
     });
     return { category: "Plugins", checks };
   }
@@ -276,7 +276,7 @@ export function checkPluginManifests(engineerHome: string): DoctorCategory {
       label: "Plugin configs",
       status: "warn",
       message: "No plugin configs found — no plugins will be loaded",
-      remedy: "Run 'engineer init' to enable plugins",
+      remedy: "Run 'engineer start' to enable plugins",
     });
   } else {
     for (const file of configFiles) {

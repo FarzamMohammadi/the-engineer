@@ -1,22 +1,15 @@
-import { join } from "node:path";
-
 import { Command } from "commander";
 import ms from "ms";
 
 import { loadConfigDir } from "../config/loader.js";
-import { runConfigMigrate } from "./commands/config-migrate.js";
-import { runConfigValidate } from "./commands/config-validate.js";
 import { runCreatePlugin } from "./commands/create-plugin.js";
 import { runDashboard } from "./commands/dashboard.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
-import { runInit } from "./commands/init.js";
 import { runInstall } from "./commands/install.js";
 import { runLogs } from "./commands/logs.js";
-import { runPrepare } from "./commands/prepare.js";
-import { runSetup } from "./commands/setup.js";
-import { runShutdown } from "./commands/shutdown.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
+import { runStop } from "./commands/stop.js";
 import { runWhy } from "./commands/why.js";
 import { resolveDirectories, resolveEngineerHome } from "./home.js";
 import { type OutputMode, createOutput, getOutput } from "./output.js";
@@ -62,29 +55,34 @@ program
   .description("Start the daemon")
   .option("--daemon", "Run in background")
   .option("--dry-run", "Validate config and show what would happen without starting")
-  .action(async (options: { daemon?: boolean; dryRun?: boolean }) => {
+  .option("--plugins <path>", "Plugin config directory for non-interactive setup")
+  .action(async (options: { daemon?: boolean; dryRun?: boolean; plugins?: string }) => {
     const globals = program.opts<{ home?: string; verbose?: boolean }>();
     const home = resolveEngineerHome(globals.home);
-    const code = await runStart(home, {
+    const startOptions: Parameters<typeof runStart>[1] = {
       daemon: options.daemon ?? false,
       verbose: globals.verbose ?? false,
       dryRun: options.dryRun ?? false,
-    });
+    };
+    if (options.plugins) {
+      startOptions.pluginsPath = options.plugins;
+    }
+    const code = await runStart(home, startOptions);
     if (code !== 0) {
       process.exitCode = code;
     }
   });
 
-// ── shutdown ─────────────────────────────────────────────────────────────────
+// ── stop ─────────────────────────────────────────────────────────────────────
 
 program
-  .command("shutdown")
-  .description("Shut down the daemon and all subsidiary processes")
+  .command("stop")
+  .description("Stop the daemon and all subsidiary processes")
   .option("--timeout <duration>", "Shutdown timeout (e.g. 30s, 1m)", "30s")
   .action(async (options: { timeout: string }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
-    const code = await runShutdown(home, parseDuration(options.timeout));
+    const code = await runStop(home, parseDuration(options.timeout));
     if (code !== 0) {
       process.exitCode = code;
     }
@@ -123,38 +121,6 @@ program
     if (code !== 0) {
       process.exitCode = code;
     }
-  });
-
-// ── prepare ──────────────────────────────────────────────────────────────────
-
-program
-  .command("prepare")
-  .description("Scaffold a seed/ directory with config templates for local customization")
-  .option("--force", "Overwrite existing seed files")
-  .action((options: { force?: boolean }) => {
-    const seedDir = join(process.cwd(), "seed");
-    const seedExampleDir = join(process.cwd(), "seed-example");
-    runPrepare(seedDir, { force: options.force ?? false, seedExampleDir });
-  });
-
-// ── init ─────────────────────────────────────────────────────────────────────
-
-program
-  .command("init")
-  .description(
-    "Create directory structure and config files from templates (for experienced users or CI)",
-  )
-  .option("--force", "Overwrite existing config files")
-  .option("--all-plugins", "Install all available plugins without prompting")
-  .action(async (options: { force?: boolean; allPlugins?: boolean }) => {
-    const globals = program.opts<{ home?: string }>();
-    const home = resolveEngineerHome(globals.home);
-    const seedDir = join(process.cwd(), "seed");
-    await runInit(home, {
-      force: options.force ?? false,
-      seedDir,
-      allPlugins: options.allPlugins ?? false,
-    });
   });
 
 // ── doctor ───────────────────────────────────────────────────────────────────
@@ -231,48 +197,6 @@ program
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runWhy(home, taskId);
-    if (code !== 0) {
-      process.exitCode = code;
-    }
-  });
-
-// ── setup ────────────────────────────────────────────────────────────────────
-
-program
-  .command("setup")
-  .description("Interactive first-run setup wizard (recommended for new users)")
-  .action(async () => {
-    const globals = program.opts<{ home?: string }>();
-    const home = resolveEngineerHome(globals.home);
-    const code = await runSetup(home);
-    if (code !== 0) {
-      process.exitCode = code;
-    }
-  });
-
-// ── config (subcommand) ──────────────────────────────────────────────────────
-
-const configCmd = program.command("config").description("Configuration management");
-
-configCmd
-  .command("validate")
-  .description("Validate all config files")
-  .action(() => {
-    const globals = program.opts<{ home?: string }>();
-    const home = resolveEngineerHome(globals.home);
-    const code = runConfigValidate(home);
-    if (code !== 0) {
-      process.exitCode = code;
-    }
-  });
-
-configCmd
-  .command("migrate")
-  .description("Migrate config files to the current version")
-  .action(() => {
-    const globals = program.opts<{ home?: string }>();
-    const home = resolveEngineerHome(globals.home);
-    const code = runConfigMigrate(home);
     if (code !== 0) {
       process.exitCode = code;
     }

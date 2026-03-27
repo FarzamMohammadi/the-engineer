@@ -44,7 +44,6 @@ function createManifest(): PluginManifest {
     description: "A test trigger",
     config_schema: {},
     critical: true,
-    enabled: true,
     entry: "index.ts",
     adapter_meta: {},
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },

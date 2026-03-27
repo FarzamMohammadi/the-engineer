@@ -8,6 +8,12 @@ export type AdapterType = z.infer<typeof AdapterTypeSchema>;
 /** Constant enum values for AdapterType. Use instead of raw strings. */
 export const AdapterTypes = AdapterTypeSchema.enum;
 
+export const PluginRequirementSchema = z.object({
+  type: z.enum(["binary", "env"]),
+  name: z.string(),
+});
+export type PluginRequirement = z.output<typeof PluginRequirementSchema>;
+
 export const PluginManifestSchema = z.object({
   id: z.string(),
   type: AdapterTypeSchema,
@@ -16,7 +22,7 @@ export const PluginManifestSchema = z.object({
   description: z.string(),
   config_schema: z.record(z.unknown()).default({}),
   critical: z.boolean().default(true),
-  enabled: z.boolean().default(true),
+  requirements: z.array(PluginRequirementSchema).default([]),
   entry: z.string().default("index.ts"),
   adapter_meta: z.record(z.unknown()).default({}),
   contributes: z

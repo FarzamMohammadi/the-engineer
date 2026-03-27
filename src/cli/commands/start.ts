@@ -51,9 +51,15 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     if (options.pluginsPath) {
       setupOpts.pluginsPath = options.pluginsPath;
     }
+    if (options.dryRun) {
+      setupOpts.dryRun = true;
+    }
     const completed = await runFirstTimeSetup(setupOpts);
     if (!completed) {
       out.log("Setup cancelled. Run 'engineer start' to try again.");
+      return 0;
+    }
+    if (options.dryRun) {
       return 0;
     }
   }

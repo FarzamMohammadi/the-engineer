@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { stringify as yamlStringify } from "yaml";
@@ -221,6 +221,7 @@ export function needsSetup(engineerHome: string): boolean {
 export interface SetupOptions {
   engineerHome: string;
   pluginsPath?: string;
+  dryRun?: boolean;
 }
 
 /**
@@ -228,10 +229,10 @@ export interface SetupOptions {
  * Orchestrates: detect → guide → prompt → generate → write.
  */
 export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean> {
-  const { engineerHome, pluginsPath } = options;
+  const { engineerHome, pluginsPath, dryRun } = options;
   const out = getOutput();
 
-  // Ensure base directories exist
+  // Ensure base directories exist (even for dry-run, so detection can work)
   const dirs = resolveDirectories(engineerHome);
   for (const dir of Object.values(dirs)) {
     if (!existsSync(dir)) {
@@ -241,7 +242,7 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
 
   // Non-interactive mode: copy provided plugin configs
   if (pluginsPath) {
-    return runNonInteractiveSetup(engineerHome, pluginsPath);
+    return runNonInteractiveSetup(engineerHome, pluginsPath, dryRun ?? false);
   }
 
   // Interactive mode
@@ -263,6 +264,17 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
   }
 
   const files = generateConfigFiles(result.selectedPlugins, result.pluginConfigs);
+
+  if (dryRun) {
+    out.blank();
+    out.log("  Dry run — would write:");
+    for (const file of files) {
+      out.log(`    ${file.relativePath}`);
+    }
+    out.blank();
+    return true;
+  }
+
   writeConfigFiles(engineerHome, files);
 
   out.blank();
@@ -275,7 +287,11 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
 
 // ── Non-Interactive Setup ────────────────────────────────────────────────────
 
-function runNonInteractiveSetup(engineerHome: string, pluginsPath: string): boolean {
+function runNonInteractiveSetup(
+  engineerHome: string,
+  pluginsPath: string,
+  dryRun: boolean,
+): boolean {
   const out = getOutput();
 
   if (!existsSync(pluginsPath)) {
@@ -289,12 +305,23 @@ function runNonInteractiveSetup(engineerHome: string, pluginsPath: string): bool
     return false;
   }
 
+  if (dryRun) {
+    out.blank();
+    out.log("  Dry run — would copy from ${pluginsPath}:");
+    for (const file of yamlFiles) {
+      out.log(`    config/plugins/${file}`);
+    }
+    out.log("  Plus core configs with conservative defaults.");
+    out.blank();
+    return true;
+  }
+
   // Copy plugin configs
   const dirs = resolveDirectories(engineerHome);
   for (const file of yamlFiles) {
     const source = join(pluginsPath, file);
     const dest = join(dirs.plugins, file);
-    const content = require("node:fs").readFileSync(source, "utf8") as string;
+    const content = readFileSync(source, "utf8");
     writeFileSync(dest, content, { encoding: "utf8", mode: 0o600 });
   }
 

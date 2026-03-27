@@ -4,7 +4,7 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** RRPIR Hardening (Session 076). Agent loop removed, dashboard UI done, triple review (Engineer/Architect/QA) found 17 issues across the RRPIR pipeline. Four independent worktree branches prepared: WS-1 (directory consolidation), WS-2 (prompt fixes), WS-3 (crash recovery), WS-4 (observability). Next: execute the 4 worktree branches, merge, then begin Runtime Phase Refinement.
+**Current phase:** Runtime Phase Refinement — Startup & Configuration (Session 077). Brainstorm + expert panel review complete. Ideation and research documented in `8-refinement-v2/roadmap-ideas/startup/`. Now in planning — implementation plan being built from ideation + research files.
 
 Previous layers:
 - [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)
@@ -82,7 +82,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** Session 076 DONE. Agent loop removed (~2,600 lines), dashboard blocked-task UI added, RRPIR hardened (triple review → 4 worktree fixes merged: directory consolidation, prompt data flow, crash recovery, observability). 2,248 tests, 100 files. Next: begin Runtime Phase Refinement — phase-by-phase co-founder pass starting with Startup & Configuration. See `8-refinement-v2/roadmap.md`.
+**Layer 8 — Refinement v2: IN PROGRESS.** Session 077 DONE. Runtime Phase Refinement started — Startup & Configuration brainstormed, expert-panel-reviewed, and documented. Full ideation + technical research ready for planning. See `8-refinement-v2/roadmap-ideas/startup/`. Next: planning session to finalize implementation plan from ideation + research, then execute. 2,248 tests, 100 files.
 
 **Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,248 tests (100 files).
 

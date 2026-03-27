@@ -12,8 +12,8 @@ if [ -z "${PNPM_HOME:-}" ]; then
   export PATH="$PNPM_HOME:$PATH"
 fi
 
-echo "Shutting down (if running)..."
-engineer shutdown 2>/dev/null || true
+echo "Stopping (if running)..."
+engineer stop 2>/dev/null || true
 
 echo "Building..."
 pnpm run build
@@ -24,21 +24,13 @@ pnpm link --global
 echo "Wiping ~/.engineer..."
 rm -rf ~/.engineer
 
-echo "Preparing seed (if needed)..."
-if [ ! -d "seed" ]; then
-  engineer prepare
-fi
-
-echo "Initializing..."
-engineer init
-
 echo ""
-echo "Done."
+echo "Done. Run 'engineer start' to set up and start."
 read -p "Shall we start up the engineer? [Y/n] " answer
 answer="${answer:-Y}"
 if [[ "$answer" =~ ^[Yy]$ ]]; then
-  engineer start
+  engineer start --plugins "$(dirname "$0")/../seed-example/config/plugins/"
 else
   echo "Ready to run:"
-  echo "  engineer start"
+  echo "  engineer start --plugins ./seed-example/config/plugins/"
 fi

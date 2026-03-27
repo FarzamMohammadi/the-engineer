@@ -23,6 +23,7 @@ export const PluginManifestSchema = z.object({
   config_schema: z.record(z.unknown()).default({}),
   critical: z.boolean().default(true),
   requirements: z.array(PluginRequirementSchema).default([]),
+  combined_with: z.array(z.string()).default([]),
   entry: z.string().default("index.ts"),
   adapter_meta: z.record(z.unknown()).default({}),
   contributes: z

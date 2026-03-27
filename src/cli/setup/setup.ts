@@ -9,17 +9,51 @@ import type { PluginRequirement } from "../../schemas/adapters.js";
 import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../templates.js";
+import type { DetectionResult } from "./types.js";
+import type { AdapterTypeConfig } from "./types.js";
 
-// ── Detection Types ──────────────────────────────────────────────────────────
+export type { DetectionResult } from "./types.js";
+export type { AdapterTypeConfig } from "./types.js";
 
-export interface DetectionResult {
-  /** Binary name → resolved path or null if not found. */
-  binaries: Record<string, string | null>;
-  /** Env var names that are present AND non-empty. */
-  envVars: Set<string>;
-  /** Detected git remote (origin), or null. */
-  gitRemote: { owner: string; name: string } | null;
-}
+// ── Adapter Type Configuration ───────────────────────────────────────────────
+
+export const ADAPTER_TYPE_CONFIGS: AdapterTypeConfig[] = [
+  {
+    type: "llm",
+    label: "Which AI do you use?",
+    selectionMode: "single",
+    setupOrder: 1,
+    required: true,
+  },
+  {
+    type: "trigger",
+    label: "Where do your tasks come from?",
+    selectionMode: "single",
+    setupOrder: 2,
+    required: true,
+  },
+  {
+    type: "git_hosting",
+    label: "Where does your code live?",
+    selectionMode: "single",
+    setupOrder: 3,
+    required: true,
+  },
+  {
+    type: "communication",
+    label: "How should The Engineer reach you?",
+    selectionMode: "multi",
+    setupOrder: 4,
+    required: false,
+  },
+  {
+    type: "tool",
+    label: "Which tools should The Engineer use?",
+    selectionMode: "multi",
+    setupOrder: 5,
+    required: true,
+  },
+];
 
 // ── Pure Detection Functions ─────────────────────────────────────────────────
 
@@ -114,10 +148,20 @@ function getGitRemoteOutput(): string | null {
   }
 }
 
-/** Run environment detection with real I/O. Production entry point. */
+/** Run environment detection with real I/O. Derives check list from plugin manifests. */
 export function runDetection(): DetectionResult {
-  const binaryNames = ["claude", "opencode", "gemini", "bash"];
-  const envVarNames = ["GITHUB_TOKEN", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"];
+  // Derive what to check from plugin manifest requirements — no hardcoded lists
+  const binaryNames = new Set<string>();
+  const envVarNames = new Set<string>();
+  for (const plugin of BUILTIN_PLUGINS) {
+    for (const req of plugin.manifest.requirements) {
+      if (req.type === "binary") {
+        binaryNames.add(req.name);
+      } else if (req.type === "env") {
+        envVarNames.add(req.name);
+      }
+    }
+  }
 
   const binaryPaths: Record<string, string | null> = {};
   for (const name of binaryNames) {
@@ -254,7 +298,7 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
 
   // Lazy import to avoid loading @inquirer/prompts unless needed
   const { runGuidedSetup } = await import("./prompts.js");
-  const result = await runGuidedSetup(detection, BUILTIN_PLUGINS);
+  const result = await runGuidedSetup(detection, BUILTIN_PLUGINS, ADAPTER_TYPE_CONFIGS);
 
   if (!result) {
     out.blank();

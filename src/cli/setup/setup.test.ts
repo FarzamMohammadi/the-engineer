@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+import { AdapterTypeSchema } from "../../schemas/adapters.js";
 import {
+  ADAPTER_TYPE_CONFIGS,
   checkRequirementsMet,
   detectEnvironment,
   generateConfigFiles,
@@ -314,5 +317,88 @@ describe("needsSetup", () => {
     const { writeFileSync: wfs } = require("node:fs");
     wfs(join(pluginsDir, "claude-code-llm.yaml"), "# config");
     expect(needsSetup(tmpHome)).toBe(false);
+  });
+});
+
+// ── ADAPTER_TYPE_CONFIGS ─────────────────────────────────────────────────────
+
+describe("ADAPTER_TYPE_CONFIGS", () => {
+  it("has an entry for every AdapterType value", () => {
+    const schemaValues = AdapterTypeSchema.options;
+    const configTypes = ADAPTER_TYPE_CONFIGS.map((c) => c.type);
+    for (const value of schemaValues) {
+      expect(configTypes).toContain(value);
+    }
+  });
+
+  it("every config entry maps to an adapter type with at least one plugin", () => {
+    for (const config of ADAPTER_TYPE_CONFIGS) {
+      const plugins = BUILTIN_PLUGINS.filter((p) => p.manifest.type === config.type);
+      expect(plugins.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("has unique setupOrder values", () => {
+    const orders = ADAPTER_TYPE_CONFIGS.map((c) => c.setupOrder);
+    expect(new Set(orders).size).toBe(orders.length);
+  });
+
+  it("communication is the only non-required type", () => {
+    const optional = ADAPTER_TYPE_CONFIGS.filter((c) => !c.required);
+    expect(optional.length).toBe(1);
+    expect(optional[0]?.type).toBe("communication");
+  });
+});
+
+// ── combined_with ────────────────────────────────────────────────────────────
+
+describe("combined_with on manifests", () => {
+  it("github plugins reference each other", () => {
+    const trigger = BUILTIN_PLUGINS.find((p) => p.manifest.id === "github-trigger");
+    const comm = BUILTIN_PLUGINS.find((p) => p.manifest.id === "github-comm");
+    const hosting = BUILTIN_PLUGINS.find((p) => p.manifest.id === "github-hosting");
+
+    expect(trigger?.manifest.combined_with).toContain("github-comm");
+    expect(trigger?.manifest.combined_with).toContain("github-hosting");
+    expect(comm?.manifest.combined_with).toContain("github-trigger");
+    expect(hosting?.manifest.combined_with).toContain("github-trigger");
+  });
+
+  it("non-github plugins have empty combined_with", () => {
+    const nonGithub = BUILTIN_PLUGINS.filter((p) => !p.manifest.id.startsWith("github-"));
+    for (const plugin of nonGithub) {
+      expect(plugin.manifest.combined_with).toEqual([]);
+    }
+  });
+});
+
+// ── manifest-driven detection ────────────────────────────────────────────────
+
+describe("detection derives from manifests", () => {
+  it("every plugin requirement type is covered by detection", () => {
+    const allRequirements = BUILTIN_PLUGINS.flatMap((p) => p.manifest.requirements);
+    const binaryReqs = allRequirements.filter((r) => r.type === "binary");
+    const envReqs = allRequirements.filter((r) => r.type === "env");
+
+    // Build a detection with all binaries missing and all env vars missing
+    const binaryPaths: Record<string, string | null> = {};
+    for (const req of binaryReqs) {
+      binaryPaths[req.name] = null;
+    }
+    const env: Record<string, string | undefined> = {};
+    for (const req of envReqs) {
+      env[req.name] = undefined;
+    }
+
+    const result = detectEnvironment(env, binaryPaths, null);
+
+    // Every binary requirement name should appear in result.binaries
+    for (const req of binaryReqs) {
+      expect(req.name in result.binaries).toBe(true);
+    }
+    // Every env requirement name should NOT be in envVars (all undefined)
+    for (const req of envReqs) {
+      expect(result.envVars.has(req.name)).toBe(false);
+    }
   });
 });

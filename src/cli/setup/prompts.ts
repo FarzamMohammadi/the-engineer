@@ -1,19 +1,14 @@
-import { confirm, input, select } from "@inquirer/prompts";
+import { checkbox, confirm, input, select } from "@inquirer/prompts";
 
 import type { BuiltinPlugin } from "../../plugins/builtin.js";
 import { getOutput } from "../output.js";
+import type { AdapterTypeConfig, DetectionResult, GuidedSetupResult } from "./types.js";
 
-/** Matches DetectionResult from setup.ts — duplicated to avoid circular import. */
-interface DetectionInput {
-  binaries: Record<string, string | null>;
-  envVars: Set<string>;
-  gitRemote: { owner: string; name: string } | null;
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Check if all of a plugin's requirements are met. */
 function checkRequirementsMet(
   plugin: { requirements: ReadonlyArray<{ type: string; name: string }> },
-  detection: DetectionInput,
+  detection: DetectionResult,
 ): boolean {
   for (const req of plugin.requirements) {
     if (req.type === "binary") {
@@ -29,145 +24,223 @@ function checkRequirementsMet(
   return true;
 }
 
-interface GuidedSetupResult {
-  selectedPlugins: string[];
-  pluginConfigs: Record<string, Record<string, unknown>>;
+function isCombinedWith(plugin: BuiltinPlugin, alreadySelected: readonly string[]): boolean {
+  const combinedWith = plugin.manifest.combined_with;
+  if (!combinedWith || combinedWith.length === 0) {
+    return false;
+  }
+  return alreadySelected.some((id) => combinedWith.includes(id));
 }
 
+function formatPluginChoice(plugin: BuiltinPlugin, detected: boolean): string {
+  return detected ? `${plugin.manifest.name} (detected)` : plugin.manifest.name;
+}
+
+// ── Detection Summary ────────────────────────────────────────────────────────
+
+function showDetectionSummary(detection: DetectionResult): void {
+  const out = getOutput();
+  out.log("  Detected:");
+  for (const [name, path] of Object.entries(detection.binaries)) {
+    const status = path ? `found (${path})` : "not found";
+    out.log(`    ${name.padEnd(22)} ${status}`);
+  }
+  for (const name of detection.envVars) {
+    out.log(`    ${name.padEnd(22)} found`);
+  }
+  if (detection.gitRemote) {
+    out.log(
+      `    ${"Current repo".padEnd(22)} ${detection.gitRemote.owner}/${detection.gitRemote.name}`,
+    );
+  }
+  out.blank();
+}
+
+// ── Per-Adapter-Type Prompts ─────────────────────────────────────────────────
+
+async function promptSingleSelect(
+  config: AdapterTypeConfig,
+  typePlugins: readonly BuiltinPlugin[],
+  detection: DetectionResult,
+  alreadySelected: readonly string[],
+): Promise<string[]> {
+  const choices = typePlugins.map((p) => {
+    const detected = checkRequirementsMet(p.manifest, detection);
+    const combined = isCombinedWith(p, alreadySelected);
+    let name = formatPluginChoice(p, detected);
+    if (combined) {
+      name += " (recommended)";
+    }
+    return { name, value: p.manifest.id };
+  });
+
+  // Pre-select: combined_with match first, then detected, then first
+  const combined = typePlugins.find((p) => isCombinedWith(p, alreadySelected));
+  const detected = typePlugins.find((p) => checkRequirementsMet(p.manifest, detection));
+  const defaultValue = combined?.manifest.id ?? detected?.manifest.id ?? choices[0]?.value;
+
+  const selected = await select({
+    message: config.label,
+    choices,
+    default: defaultValue,
+  });
+
+  return [selected];
+}
+
+async function promptMultiSelect(
+  config: AdapterTypeConfig,
+  typePlugins: readonly BuiltinPlugin[],
+  detection: DetectionResult,
+  alreadySelected: readonly string[],
+): Promise<string[]> {
+  const choices = typePlugins.map((p) => {
+    const detected = checkRequirementsMet(p.manifest, detection);
+    const combined = isCombinedWith(p, alreadySelected);
+    const preChecked = detected || combined;
+    return {
+      name: formatPluginChoice(p, detected),
+      value: p.manifest.id,
+      checked: preChecked,
+    };
+  });
+
+  const selected = await checkbox({
+    message: config.label,
+    choices,
+    required: config.required,
+  });
+
+  return selected;
+}
+
+function promptForAdapterType(
+  config: AdapterTypeConfig,
+  typePlugins: readonly BuiltinPlugin[],
+  detection: DetectionResult,
+  alreadySelected: readonly string[],
+): Promise<string[]> {
+  if (config.selectionMode === "single") {
+    return promptSingleSelect(config, typePlugins, detection, alreadySelected);
+  }
+  return promptMultiSelect(config, typePlugins, detection, alreadySelected);
+}
+
+// ── Per-Plugin Config ────────────────────────────────────────────────────────
+
+async function configureSelectedPlugins(
+  selectedPlugins: readonly string[],
+): Promise<Record<string, Record<string, unknown>>> {
+  const configs: Record<string, Record<string, unknown>> = {};
+
+  // GitHub token — shared across all selected github-* plugins
+  const githubPlugins = selectedPlugins.filter((id) => id.startsWith("github-"));
+  if (githubPlugins.length > 0) {
+    const tokenRef = "${GITHUB_TOKEN}";
+    for (const id of githubPlugins) {
+      configs[id] = { github_token: tokenRef };
+    }
+  }
+
+  // GitHub trigger repos
+  if (selectedPlugins.includes("github-trigger")) {
+    const repos = await promptForRepos();
+    const triggerConfig = configs["github-trigger"];
+    if (triggerConfig) {
+      triggerConfig["repos"] = repos;
+    }
+  }
+
+  // Telegram config
+  if (selectedPlugins.includes("telegram-comm")) {
+    configs["telegram-comm"] = {
+      bot_token: "${TELEGRAM_BOT_TOKEN}",
+      chat_id: "${TELEGRAM_CHAT_ID}",
+    };
+  }
+
+  return configs;
+}
+
+async function promptForRepos(): Promise<Array<{ owner: string; name: string }>> {
+  const repoInput = await input({
+    message: "Repo to watch (owner/name):",
+    validate: (v) => /^[^/]+\/[^/]+$/.test(v.trim()) || "Format: owner/name",
+  });
+  const parts = repoInput.trim().split("/");
+  return [{ owner: parts[0] ?? "", name: parts[1] ?? "" }];
+}
+
+// ── Warnings ─────────────────────────────────────────────────────────────────
+
+function showSelectionWarnings(
+  selectedPlugins: readonly string[],
+  plugins: readonly BuiltinPlugin[],
+): void {
+  const out = getOutput();
+  const selectedTypes = new Set(
+    plugins.filter((p) => selectedPlugins.includes(p.manifest.id)).map((p) => p.manifest.type),
+  );
+
+  if (!selectedTypes.has("trigger")) {
+    out.warn("No trigger plugin selected. The Engineer will start but won't pick up tasks.");
+  }
+  if (!selectedTypes.has("llm")) {
+    out.warn("No LLM plugin selected. The Engineer cannot reason without an LLM.");
+  }
+  if (!selectedTypes.has("communication")) {
+    out.warn("No communication plugin selected. The Engineer won't send notifications.");
+  }
+  if (!selectedTypes.has("git_hosting")) {
+    out.warn("No git hosting plugin selected. The Engineer won't create PRs.");
+  }
+}
+
+// ── Main Flow ────────────────────────────────────────────────────────────────
+
 /**
- * Run the guided first-run setup flow. Thin interactive layer.
+ * Run the guided first-run setup flow. One prompt per adapter type.
  * Returns null if user cancels (Ctrl+C or declines confirmation).
  */
 export async function runGuidedSetup(
-  detection: DetectionInput,
+  detection: DetectionResult,
   plugins: readonly BuiltinPlugin[],
+  adapterConfigs: readonly AdapterTypeConfig[],
 ): Promise<GuidedSetupResult | null> {
   const out = getOutput();
 
   try {
-    // Show detection results
-    out.log("  Detected:");
-    for (const [name, path] of Object.entries(detection.binaries)) {
-      const status = path ? `found (${path})` : "not found";
-      out.log(`    ${name.padEnd(20)} ${status}`);
+    showDetectionSummary(detection);
+
+    // Per-adapter-type selection, sorted by setupOrder
+    const sorted = [...adapterConfigs].sort((a, b) => a.setupOrder - b.setupOrder);
+    const allSelected: string[] = [];
+
+    for (const config of sorted) {
+      const typePlugins = plugins.filter((p) => p.manifest.type === config.type);
+      if (typePlugins.length === 0) {
+        continue;
+      }
+
+      const selected = await promptForAdapterType(config, typePlugins, detection, allSelected);
+      allSelected.push(...selected);
     }
-    for (const envName of ["GITHUB_TOKEN", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]) {
-      const status = detection.envVars.has(envName) ? "found" : "not found";
-      out.log(`    ${envName.padEnd(20)} ${status}`);
-    }
-    if (detection.gitRemote) {
-      out.log(`    Current repo         ${detection.gitRemote.owner}/${detection.gitRemote.name}`);
-    }
+
+    // Warnings for gaps
+    showSelectionWarnings(allSelected, plugins);
+
+    // Per-plugin config (tokens, repos, etc.)
+    const pluginConfigs = await configureSelectedPlugins(allSelected);
+
+    // Summary
     out.blank();
-
-    // Step 1: LLM selection (single-select)
-    const llmPlugins = plugins.filter((p) => p.manifest.type === "llm");
-    const detectedLlms = llmPlugins.filter((p) => checkRequirementsMet(p.manifest, detection));
-
-    let selectedLlm = "";
-    if (detectedLlms.length === 0) {
-      out.warn("No LLM CLI detected on PATH. The Engineer needs an LLM to work.");
-      out.log("  Install one of: claude, opencode, gemini");
-      selectedLlm = await select({
-        message: "Which AI do you use?",
-        choices: llmPlugins.map((p) => ({ name: p.manifest.name, value: p.manifest.id })),
-      });
-    } else if (detectedLlms.length === 1) {
-      const [detected] = detectedLlms;
-      if (detected) {
-        selectedLlm = detected.manifest.id;
-        out.log(`  LLM: ${detected.manifest.name} (auto-detected)`);
-      }
-    } else {
-      selectedLlm = await select({
-        message: "Multiple LLM CLIs found. Which one do you use?",
-        choices: detectedLlms.map((p) => ({ name: p.manifest.name, value: p.manifest.id })),
-      });
-    }
-
-    // Step 2-3: Task source + code hosting (GitHub only today)
-    const hasGitHub = detection.envVars.has("GITHUB_TOKEN");
-    const githubPlugins = hasGitHub ? ["github-trigger", "github-comm", "github-hosting"] : [];
-
-    if (hasGitHub) {
-      out.log("  GitHub: enabled (trigger, communication, hosting)");
-    } else {
-      out.warn("GITHUB_TOKEN not found. GitHub plugins will be skipped.");
-      out.log("  To fix: export GITHUB_TOKEN=ghp_... and restart.");
-    }
-
-    // Step 4: Communication
-    const hasTelegram =
-      detection.envVars.has("TELEGRAM_BOT_TOKEN") && detection.envVars.has("TELEGRAM_CHAT_ID");
-    const telegramPlugins = hasTelegram ? ["telegram-comm"] : [];
-    if (hasTelegram) {
-      out.log("  Telegram: enabled");
-    }
-
-    // Bash tool — always included if bash is found
-    const hasBash = detection.binaries["bash"] != null;
-    const bashPlugins = hasBash ? ["bash-tool"] : [];
-
-    // Assemble selection
-    const selectedPlugins = [selectedLlm, ...githubPlugins, ...telegramPlugins, ...bashPlugins];
-
-    // Step 5: Per-plugin config (only required fields without defaults)
-    const pluginConfigs: Record<string, Record<string, unknown>> = {};
-
-    // GitHub plugins share the token
-    if (hasGitHub) {
-      const tokenRef = "${GITHUB_TOKEN}";
-      pluginConfigs["github-trigger"] = { github_token: tokenRef };
-      pluginConfigs["github-comm"] = { github_token: tokenRef };
-      pluginConfigs["github-hosting"] = { github_token: tokenRef };
-
-      // Repos — detect from git remote or ask
-      let repos: Array<{ owner: string; name: string }>;
-      if (detection.gitRemote) {
-        const { owner, name } = detection.gitRemote;
-        const useDetected = await confirm({
-          message: `Watch repo ${owner}/${name}?`,
-          default: true,
-        });
-        if (useDetected) {
-          repos = [{ owner, name }];
-        } else {
-          const repoInput = await input({
-            message: "Repo to watch (owner/name):",
-            validate: (v) => /^[^/]+\/[^/]+$/.test(v.trim()) || "Format: owner/name",
-          });
-          const parts = repoInput.trim().split("/");
-          repos = [{ owner: parts[0] ?? "", name: parts[1] ?? "" }];
-        }
-      } else {
-        const repoInput = await input({
-          message: "Repo to watch (owner/name):",
-          validate: (v) => /^[^/]+\/[^/]+$/.test(v.trim()) || "Format: owner/name",
-        });
-        const parts = repoInput.trim().split("/");
-        repos = [{ owner: parts[0] ?? "", name: parts[1] ?? "" }];
-      }
-      const triggerConfig = pluginConfigs["github-trigger"];
-      if (triggerConfig) {
-        triggerConfig["repos"] = repos;
+    out.log("  Selected plugins:");
+    for (const id of allSelected) {
+      const plugin = plugins.find((p) => p.manifest.id === id);
+      if (plugin) {
+        out.log(`    ${plugin.manifest.name}`);
       }
     }
-
-    // Telegram config
-    if (hasTelegram) {
-      pluginConfigs["telegram-comm"] = {
-        bot_token: "${TELEGRAM_BOT_TOKEN}",
-        chat_id: "${TELEGRAM_CHAT_ID}",
-      };
-    }
-
-    // Warnings
-    if (!selectedPlugins.includes("github-trigger")) {
-      out.blank();
-      out.warn("No trigger plugin enabled. The Engineer will start but won't pick up tasks.");
-    }
-
-    // Step 6: Confirmation
     out.blank();
     out.log("  Safety: conservative (default)");
     out.blank();
@@ -177,11 +250,12 @@ export async function runGuidedSetup(
       default: true,
     });
 
-    if (!proceed) return null;
+    if (!proceed) {
+      return null;
+    }
 
-    return { selectedPlugins, pluginConfigs };
+    return { selectedPlugins: allSelected, pluginConfigs };
   } catch (error) {
-    // Handle Ctrl+C (ExitPromptError from @inquirer/prompts)
     if (error instanceof Error && error.name === "ExitPromptError") {
       return null;
     }

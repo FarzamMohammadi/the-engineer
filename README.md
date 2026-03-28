@@ -22,8 +22,7 @@ pnpm link --global                        # Link `engineer` command
 engineer init                            # Create ~/.engineer/ with template configs
 # Edit ~/.engineer/config/*.yaml          # Add API keys, repos, preferences
 engineer doctor                          # Verify health (10 checks)
-engineer start                           # Start daemon (foreground)
-engineer dashboard --open                # War room dashboard (browser)
+engineer start                           # Start daemon (foreground, includes dashboard)
 ```
 
 Any command accepts `--home <path>` to use a custom data directory instead of `~/.engineer`.

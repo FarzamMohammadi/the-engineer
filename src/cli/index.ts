@@ -3,7 +3,6 @@ import ms from "ms";
 
 import { loadConfigDir } from "../config/loader.js";
 import { runCreatePlugin } from "./commands/create-plugin.js";
-import { runDashboard } from "./commands/dashboard.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runInstall } from "./commands/install.js";
 import { runLogs } from "./commands/logs.js";
@@ -169,23 +168,6 @@ program
     if (code !== 0) {
       process.exitCode = code;
     }
-  });
-
-// ── dashboard ───────────────────────────────────────────────────────────────
-
-program
-  .command("dashboard")
-  .description("Open the War Room dashboard")
-  .option("--port <port>", "HTTP port", "3847")
-  .option("--open", "Open browser automatically")
-  .action(async (options: { port: string; open?: boolean }) => {
-    const globals = program.opts<{ home?: string }>();
-    const home = resolveEngineerHome(globals.home);
-    const dirs = resolveDirectories(home);
-    await runDashboard(dirs, {
-      port: Number.parseInt(options.port, 10),
-      open: options.open ?? false,
-    });
   });
 
 // ── why ──────────────────────────────────────────────────────────────────────

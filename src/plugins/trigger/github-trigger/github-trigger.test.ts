@@ -386,6 +386,72 @@ describe("GitHubTriggerPlugin", () => {
     });
   });
 
+  describe("ETag handling", () => {
+    it("returns empty array on 304 Not Modified", async () => {
+      // First poll succeeds and caches the ETag
+      await plugin.poll();
+
+      // Second poll: Octokit throws 304 (cache hit)
+      mockOctokit.issues.listForRepo.mockRejectedValueOnce({ status: 304 });
+
+      const events = await plugin.poll();
+      expect(events).toHaveLength(0);
+    });
+
+    it("sends If-None-Match header on subsequent polls", async () => {
+      // First poll caches ETag
+      await plugin.poll();
+
+      // Second poll should include the cached ETag
+      mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"updated-etag"' },
+        data: [],
+      });
+      await plugin.poll();
+
+      const calls = mockOctokit.issues.listForRepo.mock.calls;
+      const secondCallArgs = calls[1]?.[0] as Record<string, unknown>;
+      const headers = secondCallArgs["headers"] as Record<string, string> | undefined;
+      expect(headers?.["if-none-match"]).toBe('"mock-etag"');
+    });
+  });
+
+  describe("rate limit backoff", () => {
+    it("skips API call when within Retry-After window", async () => {
+      // Trigger a 429 with Retry-After: 60
+      mockOctokit.issues.listForRepo.mockRejectedValueOnce({
+        status: 429,
+        response: { headers: { "retry-after": "60" } },
+      });
+
+      // First poll hits 429 — error propagates through adapter
+      await expect(plugin.poll()).rejects.toThrow();
+
+      // Reset mock for second call
+      mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
+        data: [
+          {
+            number: 99,
+            title: "Should be suppressed",
+            html_url: "https://github.com/acme/webapp/issues/99",
+            updated_at: "2026-03-11T12:00:00Z",
+            labels: [],
+            assignees: [],
+          },
+        ],
+      });
+
+      // Second poll immediately — should be suppressed by retryAfterUntil
+      const events = await plugin.poll();
+      expect(events).toHaveLength(0);
+      // listForRepo should NOT have been called again (still within retry window)
+      expect(mockOctokit.issues.listForRepo).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("shutdown()", () => {
     it("persists watermarks across shutdown/init cycle", async () => {
       // Poll once to set watermarks

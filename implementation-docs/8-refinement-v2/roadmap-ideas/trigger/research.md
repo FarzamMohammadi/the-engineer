@@ -26,7 +26,7 @@ Implementation reference for the planning session. Every file path, schema field
 
 | File | Current Purpose | What Changes |
 |------|----------------|-------------|
-| `src/core/daemon/trigger-poller.ts` | Dedup, event publish, task creation | Remove `parseGitHubUrl()` (L218–232) and `toExternalRef()` (L234–245). Accept structured `ExternalRef` from plugin. Add DB-backed dedup query before `createTask()`. Add label-based priority lookup. |
+| `src/core/daemon/trigger-poller.ts` | Dedup, event publish, task creation | Remove `parseGitHubUrl()` (L218–232) and `toExternalRef()` (L234–245). Accept structured `ExternalRef` from plugin. Add DB-backed dedup query before `createTask()`. Add ticket variable extraction (`@priority:` from body). |
 | `src/plugins/trigger/github-trigger/github-trigger.ts` | GitHub issue polling | Add ETag support in `pollIssues()` (L88–125). Build `ExternalRef` in `mapIssueToEvent()` (L164). Persist/load watermarks in `doInitialize()`/`doShutdown()` (L45–57, L81–84). Add rate limit header reading. |
 | `src/schemas/adapters.ts` | TriggerEvent schema | Change `external_ref` from `z.string()` (L81) to `ExternalRefSchema.nullable()`. |
 | `src/schemas/events.ts` | Event payload schemas | Change `TriggerNewEventPayloadSchema.external_ref` from `z.string()` (L217) to match new adapter schema type. |
@@ -64,7 +64,7 @@ Implementation reference for the planning session. Every file path, schema field
 | `src/adapters/communication.ts` | CommunicationAdapter — `doSendMessage()`, `doPollMessages()`, capability checks |
 | `src/core/people-directory/index.ts` | `resolveContact()` (L52–69), `getPerson()` (L17–19) — used by outreach sender |
 | `src/core/daemon/task-scheduler.ts` | `computeAgedPriority()` (L24–43), `applyPriorityAging()` (L493–509) — priority system |
-| `src/core/daemon/types.ts` | `TriggerPollerContext` (L35–38) — may need `config` expansion for priority_labels |
+| `src/core/daemon/types.ts` | `TriggerPollerContext` (L35–38) — no config expansion needed (priority extracted from body, not config) |
 | `src/schemas/task.ts` | `ExternalRefSchema` (L51–56), `BlockedDetailsSchema` (L157–170) |
 | `src/plugins/communication/telegram-comm/telegram-comm.ts` | `doPollMessages()` (L161–206) — reply_to field in platform_metadata |
 | `src/plugins/communication/github-comm/github-comm.ts` | `doCommentOnIssue()` (L230–250) — ticket comment with questions |
@@ -92,9 +92,10 @@ Implementation reference for the planning session. Every file path, schema field
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `type` | `z.string()` | `"github_issue"`, `"github_pr"`, etc. |
+| `type` | `z.string()` | `"github_issue"`, `"github_pr"`, etc. — opaque to Core |
 | `repo` | `z.string()` | `"owner/repo"` |
-| `number` | `z.number().int().positive()` | Issue/PR number |
+| `number` | `z.number().int().positive()` | Ticket number |
+| `url` | `z.string().optional()` | **NEW** — display URL provided by plugin. Core reads, never constructs. |
 
 ### BlockedDetails (task.ts L157–170)
 
@@ -476,7 +477,7 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 |-----------|--------|
 | `src/core/daemon/trigger-poller.test.ts` | Update: external_ref now ExternalRef object, not string. Add: DB dedup tests, priority tests. |
 | `src/plugins/trigger/github-trigger/github-trigger.test.ts` | Update: mapIssueToEvent returns ExternalRef. Add: watermark persistence tests. |
-| `src/schemas/adapters.test.ts` | Update: TriggerEvent fixtures with new external_ref type (dual-format). |
+| `src/schemas/adapters.test.ts` | Update: TriggerEvent fixtures with new external_ref type (clean break — structured ExternalRef only). |
 | `src/schemas/events.test.ts` | Update: TriggerNewEventPayload fixtures. |
 | `src/core/daemon/unblock-resolver.test.ts` | Update: response file format (individual files). Add: contacted preservation test. |
 | `src/core/daemon/response-poller.test.ts` | Add: task reference regex tests. |
@@ -519,7 +520,7 @@ This phase is a single atomic change: Core stops parsing URLs, plugin starts pro
 21. Verify blocked timeout in `checkBlockedEscalation()` — use event bus query for prior escalation (no task field needed)
 
 **Phase 3 — Outreach Extraction & Routing**
-22. Extract `sendOutreachFromFiles()` to `outreach-sender.ts` (function, 3 deps: peopleDirectory, registry, observer)
+22. Extract `sendOutreachFromFiles()` to `outreach-sender.ts` (function, 4 deps: peopleDirectory, registry, eventBus, observer)
 23. Add zero-comm-adapter guard (if no "send" adapters, skip blocking, log warning, emit health event)
 24. Add preferred channel routing via `resolveContact()` + Registry adapter lookup (no plugin names)
 25. Add person ID validation (fall back to owner, dedup recipient)
@@ -561,7 +562,7 @@ External Event (any platform)
 **TriggerPoller.processNewTriggerEvent()**
   ├─ In-memory cache check (idempotency_key)
   ├─ **DB check** (findByExternalRef → non-terminal task exists?)
-  ├─ Label → priority mapping (event.metadata.labels + config)
+  ├─ Ticket variable extraction (@priority from body)
   ├─ Publish trigger.new_event
   ├─ **taskEngine.createTask**({priority, external_ref})
   └─ Transition intake → queued

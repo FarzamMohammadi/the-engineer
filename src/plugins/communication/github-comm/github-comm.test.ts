@@ -321,6 +321,19 @@ describe("GitHubCommPlugin", () => {
         );
       }
     });
+
+    it("commentOnTicket() wraps API errors as AdapterMethodError", async () => {
+      mockOctokit.issues.createComment.mockRejectedValueOnce(new Error("API rate limited"));
+      try {
+        await plugin.commentOnTicket(
+          { type: "github_issue", repo: "acme/webapp", id: "42" },
+          "Test comment",
+        );
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        expect(error).toHaveProperty("adapterError");
+      }
+    });
   });
 
   describe("config validation", () => {

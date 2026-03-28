@@ -14,6 +14,7 @@ Implementation reference for the planning session. Every file path, schema field
 - **Test:** Vitest (forks mode)
 - **Architecture:** Core / Adapter / Plugin three-tier model
 - **State dir:** `~/.engineer/`
+- **Deployment:** Local-only. Each user/team runs their own instance. No shared infra, no backward compatibility concerns, no production data to migrate. Schema changes are clean breaks.
 
 ---
 
@@ -214,11 +215,10 @@ try {
 ```typescript
 const stateDir = path.join(process.env.ENGINEER_HOME ?? path.join(os.homedir(), ".engineer"), "state", this.manifest.id);
 fs.mkdirSync(stateDir, { recursive: true });
-fs.writeFileSync(
-  path.join(stateDir, "watermarks.json"),
-  JSON.stringify(Object.fromEntries(this.watermarks)),
-  "utf-8",
-);
+const watermarkPath = path.join(stateDir, "watermarks.json");
+const tempPath = `${watermarkPath}.tmp`;
+fs.writeFileSync(tempPath, JSON.stringify(Object.fromEntries(this.watermarks)), "utf-8");
+fs.renameSync(tempPath, watermarkPath); // Atomic on POSIX
 this.watermarks.clear();
 ```
 
@@ -301,8 +301,7 @@ const responsePath = path.join(responsesDir, `${source}.txt`);
 fs.writeFileSync(responsePath, content, "utf-8");
 
 // After:
-const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-const responsePath = path.join(responsesDir, `response-${timestamp}-${source}.txt`);
+const responsePath = path.join(responsesDir, `response-${Date.now()}-${source}.txt`);
 const tempPath = `${responsePath}.tmp`;
 fs.writeFileSync(tempPath, content, "utf-8");
 fs.renameSync(tempPath, responsePath); // Atomic on POSIX
@@ -429,7 +428,8 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 | Label priority | Event with `urgent` label → task created with priority 80 |
 | Blocked timeout | Block task, advance clock past threshold → escalation notification sent |
 | Preferred channel routing | Two comm adapters with "send" → only person's preferred channel used |
-| Dual-format ExternalRef | Old-format event (string) in DB + new code → replay doesn't crash |
+| Zero trigger plugins | No triggers registered → daemon ticks, no work, no crash |
+| Zero comm plugins | Outreach needed, no comm adapters → skip blocking, log warning |
 | DB dedup with NULL external_ref | Trigger event with no external_ref → DB check skipped, task created |
 | Concurrent unblock | Two responses for same blocked task → both response files written, task unblocked once |
 | Person validation | Outreach file with unknown person ID → falls back to owner, warning logged |
@@ -466,7 +466,7 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 
 **Phase 0 — Schema & Migration (no behavior change)**
 1. Add optional `url: z.string().optional()` field to `ExternalRefSchema` (task.ts)
-2. Change `external_ref` type in `TriggerEventSchema` (adapters.ts) and `TriggerNewEventPayloadSchema` (events.ts) — use `z.union([z.string(), ExternalRefSchema]).nullable()` for dual-format compatibility
+2. Change `external_ref` type in `TriggerEventSchema` (adapters.ts), `TriggerNewEventPayloadSchema` (events.ts), and `SyncMetadata` (adapters.ts) — clean break to `ExternalRefSchema.nullable()` (no union, no dual-format — fresh project, local-only)
 3. Add `priority_labels` and `blocked_timeout_ms` to config schema (NOT `rate_limit_threshold` — that is plugin-internal)
 4. Add migration 010: partial index on `json_extract(external_ref, '$.type')`, `json_extract(external_ref, '$.repo')`, `json_extract(external_ref, '$.number')` WHERE `state NOT IN ('completed', 'failed')`
 5. Add `findByExternalRef(ref: ExternalRef): boolean` to task engine interface + implementation (query includes `type`)
@@ -486,26 +486,27 @@ This phase is a single atomic change: Core stops parsing URLs, plugin starts pro
 
 **Phase 2 — Core Bug Fixes & Improvements (adapter-agnostic)**
 14. Add DB-backed dedup: `findByExternalRef()` check before `createTask()` in trigger-poller
-15. Add label-based priority lookup in trigger-poller (reads `event.metadata.labels`, maps via config)
-16. Fix response file overwrite: individual files `response-{timestamp}-{source}.txt` with atomic write in unblock-resolver
+15. Add label-based priority lookup in trigger-poller (reads `event.metadata.labels`, maps via config). Document `metadata.labels` convention in TriggerAdapter contract.
+16. Fix response file overwrite: individual files `response-{Date.now()}-{source}.txt` (epoch ms — simpler, sorts perfectly) with atomic write (temp+rename) in unblock-resolver
 17. Fix `contacted` erasure: preserve `contacted` data when clearing blocked details in unblock-resolver
-18. Add block/proceed criteria + "number your questions" to requirements-gathering prompt
-19. Add max-loop escalation notification (via CommunicationAdapter, adapter-agnostic)
-20. Verify blocked timeout in `checkBlockedEscalation()` — add "already escalated" guard
+18. Delete `pendingBasePriorities` buffer from trigger-poller.ts (L47) — unnecessary optimization for a small map. Simplify `drainNewBasePriorities()` to return the full `basePriorities` map.
+19. Add block/proceed criteria + "number your questions" to requirements-gathering prompt
+20. Add max-loop escalation notification (via CommunicationAdapter, adapter-agnostic)
+21. Verify blocked timeout in `checkBlockedEscalation()` — use event bus query for prior escalation (no task field needed)
 
 **Phase 3 — Outreach Extraction & Routing**
-21. Extract `sendOutreachFromFiles()` to `outreach-sender.ts` (function, 3 deps: peopleDirectory, registry, observer)
-22. Add zero-comm-adapter guard (if no "send" adapters, skip blocking, log warning, emit health event)
-23. Add preferred channel routing via `resolveContact()` + Registry adapter lookup (no plugin names)
-24. Add person ID validation (fall back to owner, dedup recipient)
-25. Populate `contacted` array after successful delivery
-26. Include questions summary in source issue comment (via `issue_management` capability check — no-op if no adapter)
-27. Add task reference `[Task: {id}]` to outreach messages for response correlation
+22. Extract `sendOutreachFromFiles()` to `outreach-sender.ts` (function, 3 deps: peopleDirectory, registry, observer)
+23. Add zero-comm-adapter guard (if no "send" adapters, skip blocking, log warning, emit health event)
+24. Add preferred channel routing via `resolveContact()` + Registry adapter lookup (no plugin names)
+25. Add person ID validation (fall back to owner, dedup recipient)
+26. Populate `contacted` array after successful delivery
+27. Include questions summary in source issue comment (via `issue_management` capability check — no-op if no adapter)
+28. Add task reference `[Task: {id}]` to outreach messages for response correlation
 
-**Phase 4 — Plugin-Internal Improvements (confined to plugins)**
-28. Trigger plugin: add watermark persistence (JSON file, atomic write, load on init, save on shutdown AFTER processing)
-29. Trigger plugin: add ETag/conditional request support
-30. Trigger plugin: respect `Retry-After` header on 429 responses
+**Phase 4 — Plugin-Internal Improvements (confined to plugins, separate commits)**
+29. Trigger plugin: add watermark persistence (JSON file, atomic write via temp+rename, load on init, save on shutdown AFTER processing)
+30. Trigger plugin: add ETag/conditional request support
+31. Trigger plugin: respect `Retry-After` header on 429 responses
 
 ---
 

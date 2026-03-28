@@ -31,7 +31,7 @@ const externalRef = event.external_ref; // Already ExternalRef | null from plugi
 
 This removes `parseGitHubUrl()` and `toExternalRef()` from core entirely. Any future trigger plugin returns its own ExternalRef objects without core changes. Core compiles and functions identically regardless of which trigger plugin is installed.
 
-**Panel note (one-way door):** This is a schema change with blast radius — `TriggerNewEventPayloadSchema` in events.ts, event payloads in the DB, all trigger plugin tests. Historical events in the database have the old string format. **Resolution: dual-format parsing on read** — the schema accepts both `string` and `ExternalRef`, consuming code handles both. New events always use structured format. Old events degrade gracefully.
+**Note:** This is a clean break — no dual-format handling needed. The project is fresh (each user runs their own local instance, no shared data, no production events to migrate). The schema changes directly from `z.string()` to `ExternalRefSchema.nullable()`. All test fixtures update. `SyncMetadata.external_ref` in adapters.ts must also update to match.
 
 **Panel note:** `ExternalRef.type` is actively ignored in `externalRefsMatch()` (unblock-resolver). **Resolution: include `type` in comparison.** Platform-specific number sequence collisions are the plugin's problem to handle when constructing ExternalRef, not core's problem during matching.
 
@@ -155,6 +155,8 @@ const priority = Math.max(
 
 Core doesn't know what "urgent" means to any particular platform. Labels are opaque strings from any trigger plugin's metadata. Priority is set at creation time — config hot-reload does NOT retroactively change in-flight task priorities.
 
+**Panel finding (Hipp):** `metadata.labels` is a convention, not a contract. The TriggerAdapter docs should specify: "If the trigger plugin wants Core to apply priority mapping, it must include `metadata.labels` as `string[]`." One sentence in the adapter contract documentation makes this explicit.
+
 ---
 
 ## Task Creation — No Intake Gate
@@ -270,17 +272,20 @@ Current state: Response files are `responses/{source}.txt` — same-source respo
 
 **Decision: Blocked duration watchdog in the daemon tick loop.** If a task has been blocked longer than a configurable threshold, escalate via CommunicationAdapter (the owner's preferred channel, resolved through People Directory). Verify existing `healthMonitor.checkBlockedEscalation()` covers this — if it does, no new code needed.
 
-**Panel finding (final sweep — Hipp):** Must track whether escalation was already sent — without it, the watchdog spams every tick after threshold. Add an "escalated" flag to blocked details.
+**Panel finding (final sweep — Hipp):** Must track whether escalation was already sent — without it, the watchdog spams every tick after threshold. **Resolution: query event bus** for prior escalation events for this task instead of adding a task field. Simpler — no schema change, event bus already has the data.
 
 ---
 
 ## Bugs to Fix Pre-Implementation
 
-Three bugs exist TODAY that must be fixed before or alongside the main plan:
+Bugs that exist TODAY, to be fixed as part of the plan:
 
-1. **Response file overwrite** — `unblock-resolver.ts` line 133 writes `{source}.txt`. Second response from same source overwrites first. Data loss bug.
+1. **Response file overwrite** — `unblock-resolver.ts` line 133 writes `{source}.txt`. Second response from same source overwrites first. Data loss bug. Fix: individual files using epoch ms timestamps (`response-{Date.now()}-{source}.txt`), atomic write (temp+rename).
 2. **`contacted` always `[]`** — phase-runner.ts line 685. Outreach is sent but never recorded.
 3. **`contacted` erased on unblock** — `unblock-resolver.ts` line 108 nulls `blocked` details including `contacted`. Any data populated by the outreach sender is immediately destroyed.
+4. **`pendingBasePriorities` buffer is unnecessary** — trigger-poller.ts line 47. A second Map that mirrors `basePriorities` as a "drain buffer." The main map has at most `max_concurrent` entries (small). Scanning it directly is free. Delete `pendingBasePriorities`, simplify `drainNewBasePriorities()` to return the full map.
+5. **Concurrent unblock race is already handled** — `unblock-resolver.ts` writes the response file BEFORE transitioning (line 82-88). A second concurrent unblock finds the task no longer blocked and returns `{unblocked: false}`, but the response file was already written. No data loss. **No fix needed** — the existing code is correct. Remove from plan concerns.
+6. **`SyncMetadata.external_ref` uses old string type** — adapters.ts. Must update alongside the ExternalRef schema change to `ExternalRefSchema.nullable()`.
 
 ---
 

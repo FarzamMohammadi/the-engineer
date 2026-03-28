@@ -201,7 +201,7 @@ describe("NotificationRouter", () => {
     });
     const ctx = createMockContext([sendOnlyPlugin, issuePlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      external_ref: { type: "test_issue", repo: "acme/widgets", number: 42 },
+      external_ref: { type: "test_issue", repo: "acme/widgets", id: "42" },
     });
 
     const router = createNotificationRouter(ctx);
@@ -209,7 +209,7 @@ describe("NotificationRouter", () => {
     await flush();
 
     expect(issuePlugin.commentOnTicket).toHaveBeenCalledWith(
-      { type: "test_issue", repo: "acme/widgets", number: 42 },
+      { type: "test_issue", repo: "acme/widgets", id: "42" },
       "PR merged!",
     );
     expect(sendOnlyPlugin.commentOnTicket).not.toHaveBeenCalled();
@@ -237,7 +237,7 @@ describe("NotificationRouter", () => {
     const ctx = createMockContext([syncPlugin, noSyncPlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
       title: "My task",
-      external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
+      external_ref: { type: "test_issue", repo: "owner/repo", id: "10" },
     });
 
     const payload: TaskStateChangedPayload = {
@@ -260,7 +260,7 @@ describe("NotificationRouter", () => {
       "completed",
       expect.objectContaining({
         task_title: "My task",
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "10" },
         sub_state: null,
         reason: "All done",
       }),
@@ -287,7 +287,7 @@ describe("NotificationRouter", () => {
     commPlugin.commentOnTicket.mockRejectedValue(new Error("GitHub API down"));
     const ctx = createMockContext([commPlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      external_ref: { type: "test_issue", repo: "owner/repo", number: 1 },
+      external_ref: { type: "test_issue", repo: "owner/repo", id: "1" },
     });
 
     const router = createNotificationRouter(ctx);
@@ -411,7 +411,7 @@ describe("NotificationRouter", () => {
     const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
     const ctx = createMockContext([commPlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      external_ref: { type: "test_issue", repo: "org/repo", number: 42 },
+      external_ref: { type: "test_issue", repo: "org/repo", id: "42" },
     });
 
     const router = createNotificationRouter(ctx);

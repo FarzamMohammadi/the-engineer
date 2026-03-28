@@ -321,7 +321,7 @@ describe("WorkspaceLifecycle", () => {
 
       const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
-        external_ref: { type: "test_issue", repo: "org/repo", number: 7 },
+        external_ref: { type: "test_issue", repo: "org/repo", id: "7" },
       } as Partial<Task>);
       const poisonedMessage =
         "Push failed: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
@@ -352,7 +352,7 @@ describe("WorkspaceLifecycle", () => {
       });
       const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 1 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "1" },
       } as Partial<Task>);
 
       expect(() => notifier.commentOnSourceTicket(dispatch, "test")).not.toThrow();
@@ -372,7 +372,7 @@ describe("WorkspaceLifecycle", () => {
 
       const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
       } as Partial<Task>);
 
       // Should not throw

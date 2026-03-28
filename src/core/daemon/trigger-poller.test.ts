@@ -85,7 +85,7 @@ function makeTriggerEvent(key: string, title = "Test issue") {
     idempotency_key: key,
     source: "test",
     event_type: "issue_opened",
-    external_ref: { type: "test_issue", repo: "test/repo", number: 1 },
+    external_ref: { type: "test_issue", repo: "test/repo", id: "1" },
     title,
     body: "Test body",
     repo: "test/repo",
@@ -430,27 +430,27 @@ describe("TriggerPoller", () => {
 // ── externalRefsMatch (pure function) ────────────────────────────────────────
 
 describe("externalRefsMatch", () => {
-  it("returns true for matching repo + number", () => {
-    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "test_issue", repo: "owner/repo", number: 42 };
+  it("returns true for matching repo + id", () => {
+    const a = { type: "test_issue", repo: "owner/repo", id: "42" };
+    const b = { type: "test_issue", repo: "owner/repo", id: "42" };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
-  it("returns true when types differ (matches on repo + number only)", () => {
-    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "test_pr", repo: "owner/repo", number: 42 };
+  it("returns true when types differ (matches on repo + id only)", () => {
+    const a = { type: "test_issue", repo: "owner/repo", id: "42" };
+    const b = { type: "test_pr", repo: "owner/repo", id: "42" };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
   it("returns false when repos differ", () => {
-    const a = { type: "test_issue", repo: "owner/repo-a", number: 42 };
-    const b = { type: "test_issue", repo: "owner/repo-b", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo-a", id: "42" };
+    const b = { type: "test_issue", repo: "owner/repo-b", id: "42" };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 
-  it("returns false when numbers differ", () => {
-    const a = { type: "test_issue", repo: "owner/repo", number: 1 };
-    const b = { type: "test_issue", repo: "owner/repo", number: 2 };
+  it("returns false when ids differ", () => {
+    const a = { type: "test_issue", repo: "owner/repo", id: "1" };
+    const b = { type: "test_issue", repo: "owner/repo", id: "2" };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 });

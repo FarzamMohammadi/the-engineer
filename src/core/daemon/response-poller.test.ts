@@ -32,11 +32,11 @@ function createMockResolver() {
   };
 }
 
-function makeBlockedTask(id: string, repo: string, number: number) {
+function makeBlockedTask(id: string, repo: string, externalId: string) {
   return {
     id,
     state: "blocked",
-    external_ref: { type: "test_issue", repo, number },
+    external_ref: { type: "test_issue", repo, id: externalId },
   };
 }
 
@@ -52,7 +52,7 @@ function makeCommPlugin(id: string, messages: unknown[] = []) {
 
 describe("buildChannel", () => {
   it("formats external_ref as owner/repo#number", () => {
-    expect(buildChannel({ type: "test_issue", repo: "owner/repo", number: 42 })).toBe(
+    expect(buildChannel({ type: "test_issue", repo: "owner/repo", id: "42" })).toBe(
       "owner/repo#42",
     );
   });
@@ -84,13 +84,13 @@ describe("linkMessageToTask", () => {
       timestamp: "2026-01-01T00:00:00Z",
       reply_to: null,
       platform_metadata: {
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
         comment_id: 123,
       },
     });
     expect(result).toEqual({
       by: "external_ref",
-      ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+      ref: { type: "test_issue", repo: "owner/repo", id: "42" },
       source: "github",
       content: "Here's the info",
     });
@@ -131,7 +131,7 @@ describe("ResponsePoller", () => {
   });
 
   it("polls receive-capable plugins with channels from blocked tasks", async () => {
-    const task = makeBlockedTask("task-1", "owner/repo", 42);
+    const task = makeBlockedTask("task-1", "owner/repo", "42");
     (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
 
     const plugin = makeCommPlugin("github-comm");
@@ -148,7 +148,7 @@ describe("ResponsePoller", () => {
   });
 
   it("does not poll plugins without receive capability", async () => {
-    const task = makeBlockedTask("task-1", "owner/repo", 42);
+    const task = makeBlockedTask("task-1", "owner/repo", "42");
     (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
 
     const sendOnly = makeCommPlugin("telegram");
@@ -162,7 +162,7 @@ describe("ResponsePoller", () => {
   });
 
   it("calls UnblockResolver when message links to task via external_ref", async () => {
-    const task = makeBlockedTask("task-1", "owner/repo", 42);
+    const task = makeBlockedTask("task-1", "owner/repo", "42");
     (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
 
     const message = {
@@ -172,7 +172,7 @@ describe("ResponsePoller", () => {
       timestamp: "2026-01-01T00:00:00Z",
       reply_to: null,
       platform_metadata: {
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
         comment_id: 999,
       },
     };
@@ -184,14 +184,14 @@ describe("ResponsePoller", () => {
 
     expect(resolver.tryUnblock).toHaveBeenCalledWith({
       by: "external_ref",
-      ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+      ref: { type: "test_issue", repo: "owner/repo", id: "42" },
       source: "github",
       content: "Here's your answer",
     });
   });
 
   it("emits comm.message_received event for audit trail", async () => {
-    const task = makeBlockedTask("task-1", "owner/repo", 42);
+    const task = makeBlockedTask("task-1", "owner/repo", "42");
     (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
 
     const message = {
@@ -201,7 +201,7 @@ describe("ResponsePoller", () => {
       timestamp: "2026-01-01T00:00:00Z",
       reply_to: null,
       platform_metadata: {
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
         comment_id: 1,
       },
     };
@@ -220,8 +220,8 @@ describe("ResponsePoller", () => {
 
   it("discards messages that cannot be linked when multiple tasks are blocked", async () => {
     // With 2+ blocked tasks, the single-task fallback doesn't apply
-    const task1 = makeBlockedTask("task-1", "owner/repo", 42);
-    const task2 = makeBlockedTask("task-2", "owner/repo", 99);
+    const task1 = makeBlockedTask("task-1", "owner/repo", "42");
+    const task2 = makeBlockedTask("task-2", "owner/repo", "99");
     (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task1, task2]);
 
     const unlinkable = {
@@ -242,7 +242,7 @@ describe("ResponsePoller", () => {
   });
 
   it("handles plugin poll failure gracefully", async () => {
-    const task = makeBlockedTask("task-1", "owner/repo", 42);
+    const task = makeBlockedTask("task-1", "owner/repo", "42");
     (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
 
     const plugin = makeCommPlugin("github-comm");

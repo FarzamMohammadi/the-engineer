@@ -360,7 +360,7 @@ export function createTestTriggerEvent(overrides?: Partial<TriggerEvent>): Trigg
     idempotency_key: `test:issue:repo:${String(Date.now())}`,
     source: "test-trigger",
     event_type: "issue_opened",
-    external_ref: { type: "test_issue", repo: "test/repo", number: 1 },
+    external_ref: { type: "test_issue", repo: "test/repo", id: "1" },
     title: "Test issue",
     body: "Test body",
     repo: "test/repo",

@@ -241,7 +241,7 @@ function mapIssueToEvent(
     external_ref: {
       type: "github_issue",
       repo: `${owner}/${repo}`,
-      number: issue.number,
+      id: String(issue.number),
       url: issue.html_url,
     },
     title: issue.title,

@@ -33,7 +33,7 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
       },
     });
 
@@ -41,10 +41,10 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const commentCalls = commPlugin.commentOnTicket.mock.calls;
     const pickupComment = commentCalls.find((call: unknown[]) => {
-      const ref = call[0] as { repo: string; number: number };
+      const ref = call[0] as { repo: string; id: string };
       return (
         ref.repo === "owner/repo" &&
-        ref.number === 42 &&
+        ref.id === "42" &&
         (call[1] as string).includes("Starting work")
       );
     });
@@ -70,7 +70,7 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
       },
     });
 
@@ -86,7 +86,7 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
       },
     });
 
@@ -127,7 +127,7 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
       },
     });
 
@@ -149,7 +149,7 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "test_issue", repo: "acme/widgets", number: 99 },
+        external_ref: { type: "test_issue", repo: "acme/widgets", id: "99" },
       },
     });
 
@@ -157,9 +157,9 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const commentCalls = commPlugin.commentOnTicket.mock.calls;
     expect(commentCalls.length).toBeGreaterThan(0);
-    const ref = commentCalls[0]![0] as { repo: string; number: number };
+    const ref = commentCalls[0]![0] as { repo: string; id: string };
     expect(ref.repo).toBe("acme/widgets");
-    expect(ref.number).toBe(99);
+    expect(ref.id).toBe("99");
   });
 
   it("posts comment for any external_ref type when plugin has ticket_management", async () => {
@@ -168,7 +168,7 @@ describe("Orchestrator commentOnSourceTicket", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "jira_ticket", repo: "PROJ", number: 123 },
+        external_ref: { type: "jira_ticket", repo: "PROJ", id: "123" },
       },
     });
 

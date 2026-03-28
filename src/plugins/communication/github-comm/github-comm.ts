@@ -109,7 +109,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       const { data: labels } = await this.octokit.issues.listLabelsOnIssue({
         owner,
         repo: repoName,
-        issue_number: ref.number,
+        issue_number: Number(ref.id),
       });
       const currentLabels = labels.map((l) => l.name);
       const diff = diffStateLabels(currentLabels, newState, this.config.label_prefix);
@@ -119,7 +119,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
         await this.octokit.issues.addLabels({
           owner,
           repo: repoName,
-          issue_number: ref.number,
+          issue_number: Number(ref.id),
           labels: diff.add,
         });
       }
@@ -130,7 +130,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
           await this.octokit.issues.removeLabel({
             owner,
             repo: repoName,
-            issue_number: ref.number,
+            issue_number: Number(ref.id),
             name: label,
           });
         } catch {
@@ -141,7 +141,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       throw new AdapterMethodError(
         createAdapterError(
           classifyGitHubError(error),
-          `Failed to sync state for ${ref.repo}#${String(ref.number)}: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to sync state for ${ref.repo}#${String(Number(ref.id))}: ${error instanceof Error ? error.message : String(error)}`,
           { retryable: isRetryable(error), severity: "error" },
         ),
       );
@@ -182,7 +182,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       const { data: labels } = await this.octokit.issues.listLabelsOnIssue({
         owner,
         repo: repoName,
-        issue_number: ref.number,
+        issue_number: Number(ref.id),
       });
 
       const currentLabels = labels.map((l) => l.name);
@@ -190,7 +190,13 @@ export class GitHubCommPlugin extends CommunicationAdapter {
         return "ok";
       }
 
-      await this.applyLabelDiff(owner, repoName, ref.number, currentLabels, task.expected_state);
+      await this.applyLabelDiff(
+        owner,
+        repoName,
+        Number(ref.id),
+        currentLabels,
+        task.expected_state,
+      );
       return "reconciled";
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
@@ -240,7 +246,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     await this.octokit.issues.createComment({
       owner,
       repo: repoName,
-      issue_number: externalRef.number,
+      issue_number: Number(externalRef.id),
       body: comment,
     });
   }

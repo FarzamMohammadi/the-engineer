@@ -108,26 +108,23 @@ describe("ActionClassSchema", () => {
 
 describe("ExternalRefSchema", () => {
   it("parses valid data", () => {
-    const valid = { type: "test_issue", repo: "owner/repo", number: 42 };
+    const valid = { type: "test_issue", repo: "owner/repo", id: "42" };
     expect(ExternalRefSchema.parse(valid)).toEqual(valid);
   });
 
-  it("rejects non-positive number", () => {
-    expect(() => ExternalRefSchema.parse({ type: "test_issue", repo: "a/b", number: 0 })).toThrow();
-    expect(() =>
-      ExternalRefSchema.parse({ type: "test_issue", repo: "a/b", number: -1 }),
-    ).toThrow();
+  it("rejects non-string id", () => {
+    expect(() => ExternalRefSchema.parse({ type: "test_issue", repo: "a/b", id: 42 })).toThrow();
   });
 
-  it("rejects non-integer number", () => {
-    expect(() =>
-      ExternalRefSchema.parse({ type: "test_issue", repo: "a/b", number: 1.5 }),
-    ).toThrow();
+  it("rejects missing id", () => {
+    expect(() => ExternalRefSchema.parse({ type: "test_issue", repo: "a/b" })).toThrow();
   });
 
   it("accepts any string as type (open, not enum)", () => {
-    expect(ExternalRefSchema.parse({ type: "jira_ticket", repo: "a/b", number: 1 })).toBeDefined();
-    expect(ExternalRefSchema.parse({ type: "manual", repo: "a/b", number: 1 })).toBeDefined();
+    expect(
+      ExternalRefSchema.parse({ type: "jira_ticket", repo: "a/b", id: "VE-123" }),
+    ).toBeDefined();
+    expect(ExternalRefSchema.parse({ type: "manual", repo: "a/b", id: "1" })).toBeDefined();
   });
 });
 

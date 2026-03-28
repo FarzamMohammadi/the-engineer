@@ -32,7 +32,7 @@ function setupTaskDispatch(
     title: "Fix the bug",
     state: "queued",
     sub_state: null,
-    external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+    external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
     ...taskOverrides,
   });
   handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
@@ -256,7 +256,7 @@ describe("Daemon Notifications", () => {
         title: "Expensive task",
         state: "active",
         sub_state: "working",
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "10" },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
@@ -302,7 +302,7 @@ describe("Daemon Notifications", () => {
         title: "Expensive task",
         state: "active",
         sub_state: "working",
-        external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
+        external_ref: { type: "test_issue", repo: "owner/repo", id: "10" },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
@@ -366,7 +366,7 @@ describe("Daemon Notifications", () => {
         handle,
         { outcome: "completed", phaseOutputs: new Map() },
         {
-          external_ref: { type: "test_issue", repo: "acme/widgets", number: 99 },
+          external_ref: { type: "test_issue", repo: "acme/widgets", id: "99" },
         },
       );
 
@@ -375,8 +375,8 @@ describe("Daemon Notifications", () => {
 
       const commentCalls = commPlugin.commentOnTicket.mock.calls;
       const matchingCall = commentCalls.find((call: unknown[]) => {
-        const ref = call[0] as { repo: string; number: number };
-        return ref.repo === "acme/widgets" && ref.number === 99;
+        const ref = call[0] as { repo: string; id: string };
+        return ref.repo === "acme/widgets" && ref.id === "99";
       });
       expect(matchingCall).toBeDefined();
     });

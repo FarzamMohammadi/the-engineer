@@ -57,7 +57,7 @@ function createTriggerEvent(overrides?: Partial<TriggerEvent>): TriggerEvent {
     idempotency_key: "test:issue:repo:1",
     source: "test-trigger",
     event_type: "issue_opened",
-    external_ref: { type: "test_issue", repo: "test/repo", number: 1 },
+    external_ref: { type: "test_issue", repo: "test/repo", id: "1" },
     title: "Test Issue",
     body: null,
     repo: "test/repo",

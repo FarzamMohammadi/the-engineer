@@ -86,7 +86,7 @@ class FullCommAdapter extends MinimalCommAdapter {
   }
 
   protected override doCommentOnTicket(
-    _externalRef: { type: string; repo: string; number: number },
+    _externalRef: { type: string; repo: string; id: string },
     _comment: string,
   ): Promise<void> {
     this.issueCalls.push({ method: "commentOnTicket", repo: _externalRef.repo });
@@ -236,7 +236,7 @@ describe("CommunicationAdapter", () => {
         name: "commentOnTicket",
         capability: "ticket_management",
         call: (a) =>
-          a.commentOnTicket({ type: "test_issue", repo: "test/repo", number: 1 }, "A comment"),
+          a.commentOnTicket({ type: "test_issue", repo: "test/repo", id: "1" }, "A comment"),
       },
       {
         name: "createTicket",
@@ -325,10 +325,7 @@ describe("CommunicationAdapter", () => {
       adapter.manifest = createManifest({
         adapter_meta: { capabilities: ["send", "ticket_management"] },
       });
-      await adapter.commentOnTicket(
-        { type: "test_issue", repo: "test/repo", number: 1 },
-        "Comment",
-      );
+      await adapter.commentOnTicket({ type: "test_issue", repo: "test/repo", id: "1" }, "Comment");
       const issueResult = await adapter.createTicket("test/repo", {
         title: "Test",
         body: "Body",

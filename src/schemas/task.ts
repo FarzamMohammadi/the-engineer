@@ -51,7 +51,7 @@ export const ActionClasses = ActionClassSchema.enum;
 export const ExternalRefSchema = z.object({
   type: z.string(),
   repo: z.string(),
-  number: z.number().int().positive(),
+  id: z.string(),
   url: z.string().optional(),
 });
 export type ExternalRef = z.infer<typeof ExternalRefSchema>;

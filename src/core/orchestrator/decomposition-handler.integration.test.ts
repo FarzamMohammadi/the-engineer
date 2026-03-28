@@ -242,7 +242,7 @@ describe("Orchestrator — Decomposition", () => {
       task: {
         repo: "test/repo",
         clone_url: "https://example.com/repo.git",
-        external_ref: { type: "test_issue", repo: "test/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "test/repo", id: "42" },
       },
     });
 

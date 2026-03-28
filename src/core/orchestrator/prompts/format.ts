@@ -7,7 +7,7 @@ import type { RepoContext } from "./context.js";
 export interface TaskBriefInput {
   title: string;
   description: string | null;
-  external_ref?: { type: string; repo: string; number: number } | null;
+  external_ref?: { type: string; repo: string; id: string } | null;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export function buildTaskBrief(task: TaskBriefInput): string {
 
   if (task.external_ref) {
     const ref = task.external_ref;
-    lines.push("", `Source: ${ref.type} ${ref.repo}#${String(ref.number)}`);
+    lines.push("", `Source: ${ref.type} ${ref.repo}#${ref.id}`);
   }
 
   return section("Task", lines.join("\n"));

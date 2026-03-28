@@ -19,7 +19,7 @@ export interface ResponsePoller {
 
 /** Build a channel string from an ExternalRef (e.g., "owner/repo#42"). */
 export function buildChannel(ref: ExternalRef): string {
-  return `${ref.repo}#${String(ref.number)}`;
+  return `${ref.repo}#${ref.id}`;
 }
 
 /** Link an inbound message to an UnblockInput via platform_metadata. */
@@ -38,9 +38,9 @@ export function linkMessageToTask(msg: InboundMessage): UnblockInput | null {
     externalRef &&
     typeof externalRef === "object" &&
     "repo" in externalRef &&
-    "number" in externalRef &&
+    "id" in externalRef &&
     typeof (externalRef as Record<string, unknown>)["repo"] === "string" &&
-    typeof (externalRef as Record<string, unknown>)["number"] === "number"
+    typeof (externalRef as Record<string, unknown>)["id"] === "string"
   ) {
     return {
       by: "external_ref",

@@ -31,14 +31,14 @@ function createMockContext(): UnblockResolverContext {
 function makeBlockedTask(
   id: string,
   repo: string,
-  number: number,
+  externalId: string,
   thoughtsId: string | null = null,
 ) {
   return {
     id,
     title: "Blocked task",
     state: "blocked",
-    external_ref: { type: "test_issue", repo, number },
+    external_ref: { type: "test_issue", repo, id: externalId },
     thoughts_id: thoughtsId,
   };
 }
@@ -46,27 +46,27 @@ function makeBlockedTask(
 // ── externalRefsMatch ────────────────────────────────────────────────────────
 
 describe("externalRefsMatch", () => {
-  it("returns true for matching repo + number", () => {
-    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "test_issue", repo: "owner/repo", number: 42 };
+  it("returns true for matching repo + id", () => {
+    const a = { type: "test_issue", repo: "owner/repo", id: "42" };
+    const b = { type: "test_issue", repo: "owner/repo", id: "42" };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
-  it("returns true when types differ (matches on repo + number only)", () => {
-    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "test_pr", repo: "owner/repo", number: 42 };
+  it("returns true when types differ (matches on repo + id only)", () => {
+    const a = { type: "test_issue", repo: "owner/repo", id: "42" };
+    const b = { type: "test_pr", repo: "owner/repo", id: "42" };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
   it("returns false when repos differ", () => {
-    const a = { type: "test_issue", repo: "owner/repo-a", number: 42 };
-    const b = { type: "test_issue", repo: "owner/repo-b", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo-a", id: "42" };
+    const b = { type: "test_issue", repo: "owner/repo-b", id: "42" };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 
-  it("returns false when numbers differ", () => {
-    const a = { type: "test_issue", repo: "owner/repo", number: 1 };
-    const b = { type: "test_issue", repo: "owner/repo", number: 2 };
+  it("returns false when ids differ", () => {
+    const a = { type: "test_issue", repo: "owner/repo", id: "1" };
+    const b = { type: "test_issue", repo: "owner/repo", id: "2" };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 });
@@ -82,13 +82,13 @@ describe("UnblockResolver", () => {
 
   describe("by external_ref", () => {
     it("unblocks a matching blocked task", () => {
-      const task = makeBlockedTask("task-1", "test/repo", 42);
+      const task = makeBlockedTask("task-1", "test/repo", "42");
       (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
 
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "test_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", id: "42" },
         source: "github",
       });
 
@@ -109,7 +109,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "test_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", id: "42" },
         source: "github",
       });
 
@@ -118,13 +118,13 @@ describe("UnblockResolver", () => {
     });
 
     it("clears blocked field only after successful transition", () => {
-      const task = makeBlockedTask("task-1", "test/repo", 42);
+      const task = makeBlockedTask("task-1", "test/repo", "42");
       (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
 
       const resolver = createUnblockResolver(mockCtx);
       resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "test_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", id: "42" },
         source: "github",
       });
 
@@ -136,7 +136,7 @@ describe("UnblockResolver", () => {
     });
 
     it("returns failure when transition fails (blocked details preserved)", () => {
-      const task = makeBlockedTask("task-1", "test/repo", 42);
+      const task = makeBlockedTask("task-1", "test/repo", "42");
       (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
       (mockCtx.taskEngine.requestTransition as ReturnType<typeof vi.fn>).mockReturnValue({
         success: false,
@@ -146,7 +146,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "test_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", id: "42" },
         source: "github",
       });
 
@@ -162,7 +162,7 @@ describe("UnblockResolver", () => {
 
   describe("by task_id", () => {
     it("unblocks a blocked task by direct ID", () => {
-      const task = makeBlockedTask("task-1", "test/repo", 42);
+      const task = makeBlockedTask("task-1", "test/repo", "42");
       (mockCtx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
 
       const resolver = createUnblockResolver(mockCtx);
@@ -223,7 +223,7 @@ describe("UnblockResolver", () => {
     });
 
     it("writes response content to worktree when provided", () => {
-      const task = makeBlockedTask("task-1", "test/repo", 42, "issue-42");
+      const task = makeBlockedTask("task-1", "test/repo", "42", "issue-42");
       (mockCtx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
       (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
       (mockCtx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -236,7 +236,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "test_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", id: "42" },
         source: "github",
         content: "The answer is 42",
       });
@@ -259,7 +259,7 @@ describe("UnblockResolver", () => {
     });
 
     it("skips file write when no worktree exists", () => {
-      const task = makeBlockedTask("task-1", "test/repo", 42, "issue-42");
+      const task = makeBlockedTask("task-1", "test/repo", "42", "issue-42");
       (mockCtx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
       (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
       // getWorktreePath returns null
@@ -267,7 +267,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "test_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", id: "42" },
         source: "github",
         content: "Some content",
       });

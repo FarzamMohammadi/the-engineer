@@ -118,7 +118,7 @@ describe("GitHubTriggerPlugin", () => {
       expect(events[0]?.external_ref).toEqual({
         type: "github_issue",
         repo: "acme/webapp",
-        number: 42,
+        id: "42",
         url: "https://github.com/acme/webapp/issues/42",
       });
     });

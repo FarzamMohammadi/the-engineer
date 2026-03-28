@@ -43,7 +43,7 @@ export class TaskQueries {
       SELECT 1 FROM tasks
       WHERE json_extract(external_ref, '$.type') = ?
         AND json_extract(external_ref, '$.repo') = ?
-        AND json_extract(external_ref, '$.number') = ?
+        AND json_extract(external_ref, '$.id') = ?
         AND state NOT IN ('completed', 'failed')
       LIMIT 1
     `);
@@ -81,11 +81,11 @@ export class TaskQueries {
 
   /**
    * Check if a non-terminal task exists with the given external ref.
-   * Type-aware matching (type + repo + number) for dedup purposes.
+   * Type-aware matching (type + repo + id) for dedup purposes.
    * Deliberately different from externalRefsMatch() which is type-agnostic for unblock.
    */
   findByExternalRef(ref: ExternalRef): boolean {
-    const row = this.findByExternalRefStmt.get(ref.type, ref.repo, ref.number);
+    const row = this.findByExternalRefStmt.get(ref.type, ref.repo, ref.id);
     return row !== undefined;
   }
 }

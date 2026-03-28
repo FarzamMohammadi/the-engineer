@@ -174,7 +174,7 @@ describe("TriggerEventSchema", () => {
     external_ref: {
       type: "github_issue",
       repo: "owner/repo",
-      number: 47,
+      id: "47",
       url: "https://github.com/owner/repo/issues/47",
     },
     title: "Fix dark mode",
@@ -407,7 +407,7 @@ describe("TaskReconciliationInputSchema", () => {
     expect(
       TaskReconciliationInputSchema.parse({
         task_id: "01ABC",
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "github_issue", repo: "owner/repo", id: "42" },
         expected_state: "active",
         expected_label: "engineer:active",
       }),

@@ -41,7 +41,7 @@ export interface UnblockResolverContext {
  * same number are different entities for task creation purposes.
  */
 export function externalRefsMatch(a: ExternalRef, b: ExternalRef): boolean {
-  return a.repo === b.repo && a.number === b.number;
+  return a.repo === b.repo && a.id === b.id;
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────

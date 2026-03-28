@@ -18,7 +18,7 @@ export interface RequirementsGatheringPromptContext {
   task: {
     title: string;
     description: string | null;
-    external_ref?: { type: string; repo: string; number: number } | null;
+    external_ref?: { type: string; repo: string; id: string } | null;
   };
   repoContext: RepoContext | null;
   repoKnowledge: KnowledgeEntry[];

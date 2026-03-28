@@ -292,10 +292,10 @@ describe("TaskEngine", () => {
     it("accepts external_ref", () => {
       const task = engine.createTask(
         makeInput({
-          external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+          external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
         }),
       );
-      expect(task.external_ref).toEqual({ type: "test_issue", repo: "owner/repo", number: 42 });
+      expect(task.external_ref).toEqual({ type: "test_issue", repo: "owner/repo", id: "42" });
     });
 
     it("accepts parent_id", () => {
@@ -625,7 +625,7 @@ describe("TaskEngine", () => {
     it("returns full task object with correctly parsed JSON fields", () => {
       const task = engine.createTask(
         makeInput({
-          external_ref: { type: "test_issue", repo: "owner/repo", number: 7 },
+          external_ref: { type: "test_issue", repo: "owner/repo", id: "7" },
           acceptance_criteria: ["test1", "test2"],
         }),
       );
@@ -633,7 +633,7 @@ describe("TaskEngine", () => {
       expect(retrieved.external_ref).toEqual({
         type: "test_issue",
         repo: "owner/repo",
-        number: 7,
+        id: "7",
       });
       expect(retrieved.acceptance_criteria).toEqual(["test1", "test2"]);
       expect(retrieved.children).toEqual([]);
@@ -653,7 +653,7 @@ describe("TaskEngine", () => {
           acceptance_criteria: ["ac1"],
           priority: 80,
           cascade_policy: "best_effort",
-          external_ref: { type: "jira", repo: "org/proj", number: 99 },
+          external_ref: { type: "jira", repo: "org/proj", id: "99" },
         }),
       );
       const retrieved = assertDefined(engine.getTask(task.id), "task");
@@ -663,7 +663,7 @@ describe("TaskEngine", () => {
       expect(retrieved.acceptance_criteria).toEqual(["ac1"]);
       expect(retrieved.priority).toBe(80);
       expect(retrieved.cascade_policy).toBe("best_effort");
-      expect(retrieved.external_ref).toEqual({ type: "jira", repo: "org/proj", number: 99 });
+      expect(retrieved.external_ref).toEqual({ type: "jira", repo: "org/proj", id: "99" });
       expect(retrieved.created_at).toBe(task.created_at);
       expect(retrieved.last_transition_at).toBe(task.last_transition_at);
     });

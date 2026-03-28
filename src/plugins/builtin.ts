@@ -14,6 +14,13 @@ import { GitHubTriggerPlugin } from "./trigger/github-trigger/github-trigger.js"
 export interface BuiltinPlugin {
   manifest: PluginManifest;
   create: () => BaseAdapter;
+  /**
+   * Optional interactive config prompt for guided setup.
+   * Called during first-run setup for plugins that need user-specific values
+   * beyond secrets (${VAR} refs handled by promptForSecrets).
+   * Returns config key-value pairs to merge INTO the template.
+   */
+  promptForConfig?: () => Promise<Record<string, unknown>>;
 }
 
 // ── Manifests ───────────────────────────────────────────────────────────────
@@ -126,6 +133,24 @@ const manifests = [
 // Validate all manifests at import time
 const validatedManifests = manifests.map((manifest) => PluginManifestSchema.parse(manifest));
 
+// ── Setup Prompt Functions ───────────────────────��──────────────────────────
+// Plugins that need interactive user input during guided setup declare a prompt
+// function here. Uses dynamic import so @inquirer/prompts is only loaded during setup.
+
+const OWNER_SLASH_NAME = /^[^/]+\/[^/]+$/;
+
+const promptFunctions: Record<string, () => Promise<Record<string, unknown>>> = {
+  "github-trigger": async () => {
+    const { input } = await import("@inquirer/prompts");
+    const repoInput = await input({
+      message: "Repo to watch (owner/name):",
+      validate: (v: string) => OWNER_SLASH_NAME.test(v.trim()) || "Format: owner/name",
+    });
+    const parts = repoInput.trim().split("/");
+    return { repos: [{ owner: parts[0] ?? "", name: parts[1] ?? "" }] };
+  },
+};
+
 // ── Factory map (id → constructor) ──────────────────────────────────────────
 
 const factories: Record<string, () => BaseAdapter> = {
@@ -141,7 +166,14 @@ const factories: Record<string, () => BaseAdapter> = {
 
 // ── Exports ─────────────────────────────────────────────────────────────────
 
-export const BUILTIN_PLUGINS: BuiltinPlugin[] = validatedManifests.map((manifest) => ({
-  manifest,
-  create: factories[manifest.id] as () => BaseAdapter,
-}));
+export const BUILTIN_PLUGINS: BuiltinPlugin[] = validatedManifests.map((manifest) => {
+  const base: BuiltinPlugin = {
+    manifest,
+    create: factories[manifest.id] as () => BaseAdapter,
+  };
+  const promptFn = promptFunctions[manifest.id];
+  if (promptFn) {
+    base.promptForConfig = promptFn;
+  }
+  return base;
+});

@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { stringify as yamlStringify } from "yaml";
+import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 import { writeEnvFile } from "../../config/env.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
@@ -202,20 +202,29 @@ export function generateConfigFiles(
     files.push({ relativePath: template.relativePath, content: template.content });
   }
 
-  // Plugin configs: user-provided values override templates
+  // Plugin configs: user-provided values merge INTO templates (preserving ${VAR} refs)
   for (const pluginId of selectedPlugins) {
     const userConfig = pluginConfigs[pluginId];
-    if (userConfig && Object.keys(userConfig).length > 0) {
-      // User provided config — use it
+    const template = ALL_TEMPLATES.find(
+      (t) => t.relativePath === `config/plugins/${pluginId}.yaml`,
+    );
+
+    if (userConfig && Object.keys(userConfig).length > 0 && template) {
+      // Merge: template provides ${VAR} refs and defaults, user config overlays
+      const templateData = (yamlParse(template.content) as Record<string, unknown>) ?? {};
+      const merged = { ...templateData, ...userConfig };
+      files.push({
+        relativePath: `config/plugins/${pluginId}.yaml`,
+        content: yamlStringify(merged),
+      });
+    } else if (userConfig && Object.keys(userConfig).length > 0) {
+      // No template — use user config as-is
       files.push({
         relativePath: `config/plugins/${pluginId}.yaml`,
         content: yamlStringify(userConfig),
       });
     } else {
-      // Try template, fall back to defaults comment
-      const template = ALL_TEMPLATES.find(
-        (t) => t.relativePath === `config/plugins/${pluginId}.yaml`,
-      );
+      // No user config — use template or defaults comment
       files.push({
         relativePath: `config/plugins/${pluginId}.yaml`,
         content: template?.content ?? "# Using defaults\n",

@@ -216,17 +216,30 @@ describe("generateConfigFiles", () => {
     expect(pluginPaths).not.toContain("config/plugins/telegram-comm.yaml");
   });
 
-  it("uses user-provided config values over templates", () => {
+  it("merges user-provided config with template (preserving ${VAR} refs)", () => {
     const files = generateConfigFiles(["github-trigger"], {
       "github-trigger": {
-        github_token: "${GITHUB_TOKEN}",
         repos: [{ owner: "test", name: "repo" }],
       },
     });
     const triggerFile = files.find((f) => f.relativePath === "config/plugins/github-trigger.yaml");
     expect(triggerFile).toBeDefined();
-    expect(triggerFile?.content).toContain("GITHUB_TOKEN");
+    // User-provided repos should be present
     expect(triggerFile?.content).toContain("test");
+    // Template's ${GITHUB_TOKEN} ref should be preserved via merge
+    expect(triggerFile?.content).toContain("GITHUB_TOKEN");
+  });
+
+  it("user config overrides template values for same key", () => {
+    const files = generateConfigFiles(["github-trigger"], {
+      "github-trigger": {
+        github_token: "literal-token",
+        repos: [{ owner: "test", name: "repo" }],
+      },
+    });
+    const triggerFile = files.find((f) => f.relativePath === "config/plugins/github-trigger.yaml");
+    expect(triggerFile).toBeDefined();
+    expect(triggerFile?.content).toContain("literal-token");
   });
 
   it("generates example templates", () => {
@@ -347,6 +360,32 @@ describe("ADAPTER_TYPE_CONFIGS", () => {
     const optional = ADAPTER_TYPE_CONFIGS.filter((c) => !c.required);
     expect(optional.length).toBe(1);
     expect(optional[0]?.type).toBe("communication");
+  });
+});
+
+// ── promptForConfig ─────────────────────────────────────────────────────────
+
+describe("promptForConfig on builtin plugins", () => {
+  it("github-trigger has a promptForConfig function", () => {
+    const trigger = BUILTIN_PLUGINS.find((p) => p.manifest.id === "github-trigger");
+    expect(trigger?.promptForConfig).toBeDefined();
+    expect(typeof trigger?.promptForConfig).toBe("function");
+  });
+
+  it("plugins with all-default configs do not have promptForConfig", () => {
+    const allDefaultPlugins = ["claude-code-llm", "bash-tool", "opencode-llm", "gemini-cli-llm"];
+    for (const id of allDefaultPlugins) {
+      const plugin = BUILTIN_PLUGINS.find((p) => p.manifest.id === id);
+      expect(plugin?.promptForConfig).toBeUndefined();
+    }
+  });
+
+  it("plugins whose required fields are ${VAR} refs do not have promptForConfig", () => {
+    const varRefPlugins = ["telegram-comm", "github-comm", "github-hosting"];
+    for (const id of varRefPlugins) {
+      const plugin = BUILTIN_PLUGINS.find((p) => p.manifest.id === id);
+      expect(plugin?.promptForConfig).toBeUndefined();
+    }
   });
 });
 

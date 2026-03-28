@@ -254,7 +254,7 @@ repos:
     # poll_interval: "30s"                 # Override default polling interval
     # labels: ["engineer"]                 # Only trigger on issues with these labels
 
-# github_token: "\${GITHUB_TOKEN}"         # GitHub personal access token (env var)
+github_token: "\${GITHUB_TOKEN}"           # <-- set env var
 `;
 
 export const TELEGRAM_COMM_TEMPLATE = `# Telegram communication plugin

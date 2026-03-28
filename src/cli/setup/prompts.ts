@@ -131,6 +131,7 @@ function promptForAdapterType(
 
 async function configureSelectedPlugins(
   selectedPlugins: readonly string[],
+  plugins: readonly BuiltinPlugin[],
 ): Promise<Record<string, Record<string, unknown>>> {
   const configs: Record<string, Record<string, unknown>> = {};
 
@@ -138,9 +139,11 @@ async function configureSelectedPlugins(
   // This function only prompts for values that templates can't provide (user-specific data).
   // Secrets (tokens) are handled by promptForSecrets() which scans ALL ${VAR} refs dynamically.
 
-  if (selectedPlugins.includes("github-trigger")) {
-    const repos = await promptForRepos();
-    configs["github-trigger"] = { repos };
+  for (const pluginId of selectedPlugins) {
+    const plugin = plugins.find((p) => p.manifest.id === pluginId);
+    if (plugin?.promptForConfig) {
+      configs[pluginId] = await plugin.promptForConfig();
+    }
   }
 
   return configs;
@@ -193,15 +196,6 @@ async function promptForSecrets(fileContents: readonly string[]): Promise<Record
   }
 
   return secrets;
-}
-
-async function promptForRepos(): Promise<Array<{ owner: string; name: string }>> {
-  const repoInput = await input({
-    message: "Repo to watch (owner/name):",
-    validate: (v) => /^[^/]+\/[^/]+$/.test(v.trim()) || "Format: owner/name",
-  });
-  const parts = repoInput.trim().split("/");
-  return [{ owner: parts[0] ?? "", name: parts[1] ?? "" }];
 }
 
 // ── Warnings ─────────────────────────────────────────────────────────────────
@@ -263,7 +257,7 @@ export async function runGuidedSetup(
     showSelectionWarnings(allSelected, plugins);
 
     // Per-plugin config (user-specific values like repos)
-    const pluginConfigs = await configureSelectedPlugins(allSelected);
+    const pluginConfigs = await configureSelectedPlugins(allSelected, plugins);
 
     // Collect secrets — scan templates for selected plugins' ${VAR} references
     const selectedTemplateContent = ALL_TEMPLATES.filter((t) => {

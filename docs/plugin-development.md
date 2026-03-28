@@ -343,8 +343,6 @@ Each directory is scanned for subdirectories containing an `engineer.plugin.yaml
     config.ts
 ```
 
-You can also scaffold a new plugin instantly with `engineer create-plugin <name> <type> <output-dir>`, which generates all required files with TODOs marking what to implement.
-
 ## Best Practices
 
 **Error handling:** Use `createAdapterError()` for structured errors with codes, retryability, and severity. Throw via `AdapterMethodError`:

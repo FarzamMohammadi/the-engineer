@@ -28,7 +28,7 @@ src/
   adapters/     # Abstract base classes + SDK boundary (plugin authors import from here)
   plugins/      # Implementations grouped by adapter type (trigger/, communication/, llm/, tool/, git-hosting/)
   schemas/      # Centralized Zod schemas
-  cli/          # Commander CLI (start, shutdown, status, logs, init, doctor, install, setup, dashboard, why, prepare, create-plugin, config-validate, config-migrate)
+  cli/          # Commander CLI (start, stop, status, logs, doctor, why)
   config/       # Config loader + hot-reload watcher
   db/           # SQLite database layer + migrations
   dashboard/    # War room dashboard (Hono + SSE)

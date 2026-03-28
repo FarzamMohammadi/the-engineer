@@ -202,21 +202,6 @@ engineer logs --follow           # Stream new entries (like tail -f)
 
 Source: [`src/cli/commands/logs.ts`](../src/cli/commands/logs.ts)
 
-### install
-
-Generates OS service configuration for running the daemon at login.
-
-```bash
-engineer install                 # Detects platform automatically
-```
-
-- **macOS**: generates launchd plist at `~/Library/LaunchAgents/com.engineer.daemon.plist`
-- **Linux**: generates systemd unit at `~/.config/systemd/user/engineer.service`
-
-Prints the generated file and registration instructions — does not auto-register.
-
-Source: [`src/cli/commands/install.ts`](../src/cli/commands/install.ts)
-
 ### why
 
 Displays a timeline of significant events for a task — state transitions, events, journal entries, and cost. Opens the database read-only; no daemon required.
@@ -252,15 +237,3 @@ engineer config migrate           # Check and apply pending migrations
 
 Source: [`src/cli/commands/config-migrate.ts`](../src/cli/commands/config-migrate.ts)
 
-### create-plugin
-
-Scaffolds a new plugin directory with all required files: manifest (`engineer.plugin.yaml`), entry point, adapter class, config schema, and contract compliance test.
-
-```bash
-engineer create-plugin <name> --type <adapter-type>
-# adapter-type: trigger | communication | llm | tool | git_hosting
-```
-
-Creates the plugin under `src/plugins/<type>/<name>/` with 5 files ready to implement. The generated test file runs the contract compliance suite automatically.
-
-Source: [`src/cli/commands/create-plugin.ts`](../src/cli/commands/create-plugin.ts)

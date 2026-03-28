@@ -2,9 +2,7 @@ import { Command } from "commander";
 import ms from "ms";
 
 import { loadConfigDir } from "../config/loader.js";
-import { runCreatePlugin } from "./commands/create-plugin.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
-import { runInstall } from "./commands/install.js";
 import { runLogs } from "./commands/logs.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
@@ -156,20 +154,6 @@ program
     }
   });
 
-// ── install ──────────────────────────────────────────────────────────────────
-
-program
-  .command("install")
-  .description("Generate OS service configuration (launchd/systemd)")
-  .action(() => {
-    const globals = program.opts<{ home?: string }>();
-    const home = resolveEngineerHome(globals.home);
-    const code = runInstall(home);
-    if (code !== 0) {
-      process.exitCode = code;
-    }
-  });
-
 // ── why ──────────────────────────────────────────────────────────────────────
 
 program
@@ -179,20 +163,6 @@ program
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runWhy(home, taskId);
-    if (code !== 0) {
-      process.exitCode = code;
-    }
-  });
-
-// ── create-plugin ─────────────────────────────────────────────────────────────
-
-program
-  .command("create-plugin <name>")
-  .description("Scaffold a new plugin")
-  .requiredOption("--type <type>", "Adapter type (trigger, communication, llm, tool, git_hosting)")
-  .option("--dir <dir>", "Output directory", process.cwd())
-  .action((name: string, options: { type: string; dir: string }) => {
-    const code = runCreatePlugin(name, options.type, options.dir);
     if (code !== 0) {
       process.exitCode = code;
     }

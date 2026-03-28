@@ -19,6 +19,37 @@ See [roadmap.md](roadmap.md) for full session plan through 073+.
 
 None currently. All RPI design questions resolved in Session 068 design process.
 
+## Mandatory Principles for ALL Layer 8 Work
+
+These two principles apply to every session, every decision, every line of code from now through the end of the Layer 8 roadmap. They were learned the hard way in Session 079 (Trigger & Requirements Flow) and codified to prevent repeated violations.
+
+### 1. Plugin Blindness — Core Sees Only Adapters
+
+Fully documented in `docs/philosophy.md`. The single most important architectural discipline.
+
+**Core never knows which plugins exist.** No hardcoded plugin names, no hardcoded tokens, no platform-specific checks in Core. Core speaks exclusively through adapter contracts. The test: "If I deleted every plugin and replaced them with completely different implementations, would Core still compile and function?"
+
+This was violated repeatedly in earlier sessions — hardcoded GitHub tokens in setup validation, plugin names in doctor checks, platform-specific type-string checks (`"github_issue"`) scattered across Core files. Session 079's panel review found 6 active violations in production Core code. All are now on the plan for remediation.
+
+**Every remaining roadmap phase must apply this lens:** Scheduling & Dispatch, Workspace & Session, Demo & PR, Review & Feedback, Completion & Cleanup, Communication, Background Services. Any decision that names a specific plugin or assumes a specific platform exists is a violation.
+
+### 2. Fresh Project, Local-Only — No Backward Compatibility Tax
+
+The Engineer is a fresh project. Each user/team runs their own instance locally on their own machine, with their own plugins, config, and data. There is no shared infrastructure, no multi-tenant deployment, no production data to migrate.
+
+**What this means for every decision:**
+- Schema changes are clean breaks. No dual-format unions, no migration scripts for old data, no backward compatibility shims.
+- DB schema changes just update the SQL. No versioned migration chains needed for "existing users" — there are none at this stage.
+- Config format changes just update the defaults. No deprecation periods.
+- Event payload format changes just update the schema. No historical event replay concerns.
+- Test fixtures update directly. No "support both old and new format" test matrices.
+
+**This eliminates an entire category of complexity** that the expert panels kept raising (dual-format ExternalRef, event payload migration, response file format transition). The answer is always: clean break, update everything, move on.
+
+**When this changes:** When The Engineer has external users with persistent data. At that point, backward compatibility becomes real. Until then, every minute spent on migration strategies is wasted. Document the eventual need in `future-considerations.md`, not in the current plan.
+
+---
+
 ## Architecture Knowledge
 
 Permanent discoveries that affect how we build. Resolved bugs removed — they're in the code now.

@@ -394,32 +394,16 @@ catch (error) {
 
 ---
 
-## Reply Threading — Platform Details
+## Response Correlation — Adapter-Level
 
-### Telegram
+Communication adapters returning messages from `pollMessages()` provide metadata that may include correlation fields. Core reads whatever the adapter provides — it never reaches into platform-specific threading mechanisms.
 
-- `doPollMessages()` in `telegram-comm.ts` (L161–206) calls `bot.api.getUpdates()`
-- Each update has `message.reply_to_message.message_id` if it's a reply
-- Outreach delivery returns `message_id` from `bot.api.sendMessage()` response
-- **Correlation:** Store outreach `message_id` → `task_id` in `comm.message_sent` event payload. When reply arrives, look up `reply_to_message.message_id` in event history.
+**Current metadata fields used by `linkMessageToTask()` (response-poller.ts L26-48):**
+- `task_id` — direct match (from dashboard responses)
+- `repo` + `issue_number` — match via `externalRefsMatch()` (from issue-scoped adapters)
+- `reply_to` — available in message but not currently used for lookup
 
-### GitHub
-
-- Comments on an issue are inherently scoped to that issue
-- `external_ref` already links task → issue via `repo + number`
-- **Correlation already exists:** If a comment arrives on issue #42, and task T has `external_ref: {repo: "acme/app", number: 42}`, the match is automatic via `linkMessageToTask()` (response-poller.ts L38–44).
-- GitHub reply threading not needed — issue-level scoping is sufficient.
-
----
-
-## Outreach Dedup on Restart
-
-When a blocked task re-enters requirements gathering after daemon restart:
-
-1. Phase runner checks `{thoughtsDir}/requirements/outreach/` directory
-2. If outreach files exist AND `{thoughtsDir}/requirements/responses/` has files → LLM already contacted people and got responses. Skip re-sending.
-3. If outreach files exist AND no responses → Tricky case. Outreach was sent but no response yet. Check task.contacted array (now populated). If populated, don't re-send — the messages are already delivered.
-4. If no outreach files → First run or files were cleaned up. Proceed normally.
+**Task reference fallback:** Outreach messages include `[Task: {short_id}]`. Response poller scans message text with regex. Works across any adapter, any platform.
 
 ---
 
@@ -431,70 +415,86 @@ When a blocked task re-enters requirements gathering after daemon restart:
 |----------|-------|--------|-------|
 | `computePriority(labels, config)` | `string[]`, `Record<string, number>` | `number` | Empty labels → 50, single match, multiple matches (highest wins), no config matches → 50 |
 | `isTerminalState(state)` | `TaskState` | `boolean` | All states: completed/failed = true, others = false |
-| `formatResponseFilename(timestamp, source)` | `string`, `string` | `string` | Timestamp formatting, source sanitization |
 
 ### Integration Tests
 
 | Scenario | What to Verify |
 |----------|----------------|
-| Restart dedup | Create task, restart daemon (clear cache), re-poll same issue → no duplicate |
-| Watermark persistence | Poll issues, shutdown, restart → watermarks loaded, no re-fetch of old issues |
-| ETag 304 | Poll repo (get ETag), poll again (nothing changed) → 304, no events returned |
-| Preferred channel routing | Send outreach with Telegram+GitHub configured → only Telegram used |
+| Restart dedup | Create task, restart daemon (clear cache), re-poll same event → no duplicate |
+| Watermark persistence | Poll events, shutdown, restart → watermarks loaded, no re-fetch |
 | Individual response files | Two responses from same source → two separate files, both readable |
-| Reply threading | Send outreach, receive reply → correctly linked to task via message_id |
-| Label priority | Issue with `urgent` label → task created with priority 80 |
+| Label priority | Event with `urgent` label → task created with priority 80 |
 | Blocked timeout | Block task, advance clock past threshold → escalation notification sent |
+| Preferred channel routing | Two comm adapters with "send" → only person's preferred channel used |
+| Dual-format ExternalRef | Old-format event (string) in DB + new code → replay doesn't crash |
+| DB dedup with NULL external_ref | Trigger event with no external_ref → DB check skipped, task created |
+| Concurrent unblock | Two responses for same blocked task → both response files written, task unblocked once |
+| Person validation | Outreach file with unknown person ID → falls back to owner, warning logged |
+| Contacted preservation | Block with contacted data → unblock → contacted data still accessible |
+
+### Failure Tests (from panel)
+
+| Scenario | What to Verify |
+|----------|----------------|
+| findByExternalRef on malformed JSON | Corrupted external_ref in DB → returns false, not crash |
+| Watermark file corruption | Garbage in watermarks.json → plugin starts fresh, no throw |
+| Preferred channel delivery failure | Primary channel fails → falls back to next contact |
+| No contacts at all | Person + owner both unreachable → outreach skipped, warning logged |
+| Atomic write failure | renameSync fails → error caught, task not in inconsistent state |
+| Blocked timeout re-escalation | Already escalated → second tick does NOT re-send notification |
 
 ### Existing Test Impact
 
 | Test File | Impact |
 |-----------|--------|
 | `src/core/daemon/trigger-poller.test.ts` | Update: external_ref now ExternalRef object, not string. Add: DB dedup tests, priority tests. |
-| `src/plugins/trigger/github-trigger/github-trigger.test.ts` | Update: mapIssueToEvent returns ExternalRef. Add: ETag tests, watermark persistence tests. |
-| `src/schemas/adapters.test.ts` | Update: TriggerEvent fixtures with new external_ref type. |
+| `src/plugins/trigger/github-trigger/github-trigger.test.ts` | Update: mapIssueToEvent returns ExternalRef. Add: watermark persistence tests. |
+| `src/schemas/adapters.test.ts` | Update: TriggerEvent fixtures with new external_ref type (dual-format). |
 | `src/schemas/events.test.ts` | Update: TriggerNewEventPayload fixtures. |
-| `src/core/daemon/unblock-resolver.test.ts` | Update: response file format (individual files, not overwrite). |
-| `src/core/daemon/response-poller.test.ts` | Add: reply threading tests. Update: sole-blocked-task fallback tests. |
-| `src/core/orchestrator/phase-runner.test.ts` | Update: sendOutreachFromFiles extracted. Add: outreach dedup, contacted population. |
+| `src/core/daemon/unblock-resolver.test.ts` | Update: response file format (individual files). Add: contacted preservation test. |
+| `src/core/daemon/response-poller.test.ts` | Add: task reference regex tests. |
+| `src/core/orchestrator/phase-runner.test.ts` | Update: sendOutreachFromFiles extracted. Add: person validation, contacted population. |
 
 ---
 
 ## Implementation Ordering
 
+**Governing principle:** Core changes speak through adapter contracts. Plugin-internal improvements are clearly separated. No step should introduce knowledge of specific plugins into Core.
+
 **Phase 0 — Schema & Migration (no behavior change)**
-1. Change `external_ref` type in `TriggerEventSchema` (adapters.ts) and `TriggerNewEventPayloadSchema` (events.ts)
-2. Add `priority_labels`, `rate_limit_threshold`, `blocked_timeout_ms` to config schema
-3. Add migration 010 for `json_extract` index on tasks.external_ref
+1. Change `external_ref` type in `TriggerEventSchema` (adapters.ts) and `TriggerNewEventPayloadSchema` (events.ts) — use `z.union([z.string(), ExternalRefSchema]).nullable()` for dual-format compatibility
+2. Add `priority_labels` and `blocked_timeout_ms` to config schema
+3. Add migration 010: partial index on `json_extract(external_ref, '$.repo')` and `json_extract(external_ref, '$.number')` WHERE `state NOT IN ('completed', 'failed')`
 4. Update all test fixtures for new external_ref type
-5. Add `findByExternalRef()` to task engine interface + implementation
+5. Add `findByExternalRef(ref: ExternalRef): boolean` to task engine interface + implementation
+6. Fix `externalRefsMatch()` to include `type` field in comparison
 
-**Phase 1 — Trigger Improvements (plugin-side)**
-6. Build ExternalRef in `mapIssueToEvent()` (delete URL, return structured object)
-7. Delete `parseGitHubUrl()` and `toExternalRef()` from trigger-poller.ts
-8. Update `processNewTriggerEvent()` to use structured external_ref directly
-9. Add ETag support to `pollIssues()`
-10. Add watermark persistence (load on init, save on shutdown)
-11. Add rate limit header reading + proactive throttle signal
-12. Add label-based priority lookup in trigger-poller
+**Phase 1 — Core Improvements (adapter-agnostic)**
+7. Delete `parseGitHubUrl()` and `toExternalRef()` from trigger-poller.ts — core no longer parses platform URLs
+8. Update `processNewTriggerEvent()` to read `external_ref` directly from TriggerEvent (already structured from plugin)
+9. Add DB-backed dedup: `findByExternalRef()` check before `createTask()` in trigger-poller
+10. Add label-based priority lookup in trigger-poller (reads `event.metadata.labels`, maps via config)
+11. Fix response file overwrite: change to individual files `response-{timestamp}-{source}.txt` with atomic write (write-temp-then-rename) in unblock-resolver
+12. Fix `contacted` erasure: preserve `contacted` data when clearing blocked details in unblock-resolver
+13. Add block/proceed criteria + "number your questions" to requirements-gathering prompt
+14. Add max-loop escalation notification (via CommunicationAdapter, adapter-agnostic)
+15. Verify blocked timeout in `checkBlockedEscalation()` — add "already escalated" guard
 
-**Phase 2 — Outreach & Communication**
-13. Extract `sendOutreachFromFiles()` to `outreach-sender.ts`
-14. Add preferred channel routing via `resolveContact()`
-15. Add person ID validation (fall back to owner on unknown)
-16. Populate `contacted` array after delivery
-17. Include questions summary in GitHub issue comment
-18. Add outreach dedup check (existing files + contacted array)
-19. Add "number your questions" prompt guidance
-20. Add block/proceed criteria to requirements gathering prompt
+**Phase 2 — Outreach Extraction & Routing**
+16. Extract `sendOutreachFromFiles()` to `outreach-sender.ts` (function, not class, 3 deps: peopleDirectory, registry, observer)
+17. Add preferred channel routing via `resolveContact()` + Registry adapter lookup (no plugin names in code)
+18. Add person ID validation (fall back to owner, dedup recipient)
+19. Populate `contacted` array after successful delivery
+20. Include questions summary in source issue comment (via `issue_management` capability check — no-op if no adapter has it)
+21. Add task reference `[Task: {id}]` to outreach messages for response correlation
 
-**Phase 3 — Response & Dedup**
-21. Add DB-backed dedup (`findByExternalRef`) in trigger-poller
-22. Change response files to individual files (write-temp-then-rename)
-23. Add reply threading to response poller (Telegram message_id lookup)
-24. Add task reference regex as fallback
-25. Add max-loop escalation notification
-26. Add blocked task timeout watchdog (verify checkBlockedEscalation covers it)
+**Phase 3 — Plugin-Internal Improvements (confined to plugins)**
+22. Trigger plugin: build structured `ExternalRef` in `mapIssueToEvent()` (replaces `html_url` string)
+23. Trigger plugin: add watermark persistence (JSON file, atomic write, load on init, save on shutdown AFTER processing)
+24. Trigger plugin: add ETag/conditional request support (plugin-internal optimization)
+25. Trigger plugin: respect `Retry-After` header on 429 responses
+
+**Note:** Phase 3 step 22 is required for Phase 1 step 8 to work. In practice, steps 7-8 and 22 are done together — the core deletion and plugin construction are two sides of the same change.
 
 ---
 
@@ -502,43 +502,41 @@ When a blocked task re-enters requirements gathering after daemon restart:
 
 | Package | Version | Used For |
 |---------|---------|----------|
-| `@octokit/rest` | existing | GitHub API (ETags, rate limit headers) |
-| `grammy` | existing | Telegram API (message_id, reply_to) |
-| `better-sqlite3` | existing | DB dedup query, json_extract |
+| `better-sqlite3` | existing | DB dedup query, json_extract, partial index |
 | `pino` | existing | Debug logging for dedup suppression |
 
-No new dependencies required.
+No new dependencies required. Plugin-specific dependencies (Octokit, grammy) are plugin-internal and not relevant to Core.
 
 ---
 
 ## Event Flow After Changes
 
+Core components in **bold**. Adapter contracts in *italics*. Plugin-internal details in (parentheses).
+
 ```
-GitHub Issue Created/Updated
+External Event (any platform)
         │
         ▼
-GitHubTriggerPlugin.doPoll()
-  ├─ ETag check → 304? Skip.
-  ├─ Watermark filter (since=last_updated_at)
-  ├─ mapIssueToEvent() → TriggerEvent with structured ExternalRef
-  └─ Return TriggerEvent[]
+*TriggerAdapter.poll()* → TriggerEvent[]
+  (Plugin-internal: caching, watermarks, rate limit handling)
+  (Plugin returns structured ExternalRef + opaque idempotency_key)
         │
         ▼
-TriggerPoller.processNewTriggerEvent()
+**TriggerPoller.processNewTriggerEvent()**
   ├─ In-memory cache check (idempotency_key)
-  ├─ DB check (findByExternalRef → non-terminal task exists?)
-  ├─ Label → priority mapping (Math.max)
+  ├─ **DB check** (findByExternalRef → non-terminal task exists?)
+  ├─ Label → priority mapping (event.metadata.labels + config)
   ├─ Publish trigger.new_event
-  ├─ taskEngine.createTask({...priority, external_ref})
+  ├─ **taskEngine.createTask**({priority, external_ref})
   └─ Transition intake → queued
         │
         ▼
-Daemon Tick Loop
-  ├─ scheduler.scheduleNext() → dispatch to Orchestrator
-  └─ Orchestrator.executeTask()
+**Daemon Tick Loop**
+  ├─ **scheduler.scheduleNext()** → dispatch to Orchestrator
+  └─ **Orchestrator.executeTask()**
         │
         ▼
-Requirements Gathering Phase
+**Requirements Gathering Phase**
   ├─ LLM reads: task desc, repo context, team contacts (roles)
   ├─ LLM decides: ready or need_more_info
   │
@@ -546,35 +544,35 @@ Requirements Gathering Phase
   │
   └─ [need_more_info]
       ├─ LLM writes outreach/{person-id}.txt (numbered questions)
-      ├─ sendOutreach() — extracted function:
-      │   ├─ Validate person IDs against People Directory
-      │   ├─ resolveContact() → preferred channel
-      │   ├─ Send via matched comm plugin
-      │   ├─ Record message_id for reply threading
-      │   ├─ Populate contacted array
-      │   └─ Post questions summary to GitHub issue
+      ├─ **sendOutreach()** — extracted function:
+      │   ├─ Validate person IDs against **People Directory**
+      │   ├─ **resolveContact()** → preferred channel
+      │   ├─ **Registry** lookup → *CommunicationAdapter* with matching channel
+      │   ├─ *adapter.sendMessage()* — Core calls adapter contract, not plugin
+      │   ├─ Populate **contacted** array
+      │   └─ If adapter has *issue_management* capability → post summary comment
       ├─ Block task (state → blocked, set return_to_phase)
       └─ End session
             │
             ▼
-Response Poller (daemon tick)
-  ├─ Poll comm plugins (receive capability)
-  ├─ For each inbound message:
-  │   ├─ Check reply threading (reply_to_message_id → outreach message_id → task_id)
+**Response Poller** (daemon tick)
+  ├─ Poll *CommunicationAdapter* plugins with *receive* capability
+  ├─ For each inbound message (adapter-provided metadata):
+  │   ├─ Check adapter metadata (task_id, repo, issue_number)
   │   ├─ Check task reference regex ([Task: abc123])
-  │   └─ (Sole-blocked-task fallback — to be removed)
+  │   └─ Sole-blocked-task heuristic (last resort, v1 only)
   ├─ Link message → blocked task
-  └─ UnblockResolver.tryUnblock()
+  └─ **UnblockResolver.tryUnblock()**
       ├─ Write response-{timestamp}-{source}.txt (atomic: temp+rename)
+      ├─ Preserve contacted data
       ├─ Transition blocked → queued
-      └─ Clear blocked details
+      └─ Clear remaining blocked details
             │
             ▼
-Re-dispatch → Requirements Gathering (resume)
+Re-dispatch → **Requirements Gathering** (resume)
   ├─ LLM reads: requirements.md, responses/*.txt, outreach/*.txt
-  ├─ Checks existing outreach files (dedup — don't re-send)
   └─ Decides: ready or need_more_info again (max 5 loops)
             │
             ▼
-  [If max loops hit] → Block + escalation notification to owner
+  [If max loops hit] → Block + escalation via *CommunicationAdapter*
 ```

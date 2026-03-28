@@ -86,6 +86,29 @@ No user should have to manually figure out setup, configuration, or integration.
 
 The bar: any user with any LLM CLI tool can set up, extend, and contribute to The Engineer without pain. If they need to read a stack trace or hunt for a config path, we failed.
 
+## Plugin Blindness — Core Sees Only Adapters
+
+This is the single most important architectural discipline in The Engineer. Violating it poisons the entire three-tier model.
+
+**Core never knows which plugins exist.** It never references a plugin by name, never checks for a specific plugin, never assumes a particular plugin is loaded. Core speaks exclusively through adapter contracts. A plugin is interchangeable, optional, and invisible to Core.
+
+**What this means in practice:**
+
+- No hardcoded plugin names in Core or setup flows. Not `"github-trigger"`, not `"telegram-comm"`, not any specific plugin ID. If you find yourself writing `if (pluginId === "github-trigger")`, you are violating the architecture.
+- No hardcoded tokens, URLs, or platform-specific checks in Core. Not `GITHUB_TOKEN`, not `TELEGRAM_BOT_TOKEN`. If Core needs to validate connectivity, it calls the adapter's `healthCheck()` — it does not know what the adapter checks internally.
+- No assumptions about which plugins are installed. The system must function correctly with zero plugins of a given adapter type (graceful degradation), one plugin, or many. If a trigger adapter has no plugins, the daemon simply receives no trigger events. It does not crash, warn about missing GitHub config, or prompt for a token.
+- Detection, setup, and configuration derive from plugin manifests and adapter type metadata — never from hardcoded lists. When the setup flow asks "which trigger do you want?", it reads from the registry's discovered plugins, not from a hardcoded array of known options.
+
+**Why this matters so profoundly:**
+
+The entire value proposition of the three-tier model (see [`architecture/three-tier-model.md`](architecture/three-tier-model.md)) is that plugins are the ecosystem — swappable, community-contributed, independently developed. The moment Core contains knowledge about a specific plugin, every future plugin must either (a) be known to Core (defeating the purpose) or (b) be a second-class citizen that Core doesn't accommodate. Both outcomes destroy extensibility.
+
+The adapter contract IS the integration boundary. Everything Core needs from the outside world is defined there: `TriggerAdapter.poll()`, `CommunicationAdapter.sendMessage()`, `LLMAdapter.runInference()`. The plugin behind the contract is irrelevant to Core. GitHub today, GitLab tomorrow, a custom webhook next week — Core's code does not change.
+
+**The test:** Before merging any code, ask: "If I deleted every plugin and replaced them with completely different implementations for different platforms, would Core still compile and function?" If the answer is no, the code violates this principle.
+
+See [`architecture/three-tier-model.md`](architecture/three-tier-model.md) § How the Tiers Interact and § Extensibility by Design for the full architectural specification.
+
 ## Derive from Proven Systems
 
 Don't invent from scratch. Study how proven systems solved the same class of problem, then derive our approach from theirs.

@@ -59,7 +59,7 @@ Three tiers: **Core** (task engine, orchestrator, safety layer, event bus, daemo
 
 The daemon tick loop: poll triggers → create tasks → schedule by priority → dispatch to orchestrator → 7-phase pipeline → ship PR.
 
-Three-tier model: [implementation-docs/1-system/architecture-tiers.md](implementation-docs/1-system/architecture-tiers.md) | Full deep dives: [implementation-docs/](implementation-docs/)
+Architecture guide: [docs/architecture/overview.md](docs/architecture/overview.md) | Three-tier model: [docs/architecture/three-tier-model.md](docs/architecture/three-tier-model.md)
 
 ## Development
 
@@ -71,6 +71,8 @@ pnpm run lint         # Biome (all rules)
 pnpm run build        # Production build
 npx tsx src/index.ts  # Run CLI in dev mode
 ```
+
+> **Note:** [`implementation-docs/`](implementation-docs/) contains internal development documentation used during the design and build process (architectural layers, decision logs, session notes). These will be removed before the v1 release — they are not part of the product documentation. User-facing docs live in [`docs/`](docs/).
 
 ## License
 

@@ -33,7 +33,13 @@ This removes `parseGitHubUrl()` and `toExternalRef()` from core entirely. Any fu
 
 **Note:** This is a clean break — no dual-format handling needed. The project is fresh (each user runs their own local instance, no shared data, no production events to migrate). The schema changes directly from `z.string()` to `ExternalRefSchema.nullable()`. All test fixtures update. `SyncMetadata.external_ref` in adapters.ts must also update to match.
 
-**Panel note:** `ExternalRef.type` is actively ignored in `externalRefsMatch()` (unblock-resolver). **Resolution: include `type` in comparison.** Platform-specific number sequence collisions are the plugin's problem to handle when constructing ExternalRef, not core's problem during matching.
+**Panel note:** `ExternalRef.type` is actively ignored in `externalRefsMatch()` (unblock-resolver).
+
+**Decision: Two matching semantics for two different purposes:**
+- **Dedup (`findByExternalRef`):** Match on `type + repo + number`. Different types with the same number are different entities. This is correct for dedup — an issue and a PR with the same number should create separate tasks.
+- **Unblock (`externalRefsMatch`):** Match on `repo + number` only (current behavior, keep it). A response arriving on a PR comment should unblock a task created from the associated issue — they share a number on platforms where issues and PRs are the same sequence. On platforms where they don't share sequences, the plugin constructs distinct ExternalRefs anyway.
+
+This is a deliberate divergence, not an inconsistency. Document it in both functions.
 
 ---
 
@@ -66,6 +72,7 @@ Core reads `url` when it needs a link. If `url` is absent, Core omits the link �
 | `response-poller.ts` | 41 | Constructs `type: "github_issue"` when building ExternalRef from message metadata |
 | `phase-runner.ts` | 217 | `if (type !== "github_issue" && type !== "github_pr")` — gates issue commenting on platform type |
 | `orchestrator-notifier.ts` | 78 | Same type-string check — second copy |
+| `orchestrator-notifier.ts` | 39 | **Constructs plugin IDs from channel names** (`p.manifest.id === \`${contact.channel}-comm\``) — Core guessing plugin naming conventions |
 | `notification-router.ts` | 256 | Same type-string check — third copy |
 | `notification-router.ts` | 283 | Constructs `https://github.com/` URL from ExternalRef fields |
 
@@ -74,6 +81,7 @@ Core reads `url` when it needs a link. If `url` is absent, Core omits the link �
 - For issue commenting: check `hasCapability("issue_management")` on the CommunicationAdapter. If the adapter has the capability, it knows how to comment on whatever external system it represents. Core does not decide which ExternalRef types support commenting.
 - For `linkMessageToTask()`: the adapter's `pollMessages()` must return the full `external_ref` object in message metadata (same structured type the trigger returns). Core reads it directly — never constructs an ExternalRef from decomposed fields.
 - For URL display: use the new `external_ref.url` field provided by the plugin.
+- For plugin lookup in `orchestrator-notifier.ts:39`: use `resolveContact()` from PeopleDirectory to get the preferred channel, then find a comm adapter with "send" capability via the Registry — NOT by constructing plugin IDs from contact channel names. Same pattern as `sendOutreach`.
 
 This is the same category of fix as `parseGitHubUrl` — Core shedding platform knowledge.
 
@@ -194,6 +202,8 @@ Proceed when: direction is clear, reasonable choice can be documented, task is s
 
 **Decision: Validate every outreach filename against People Directory before sending.** If a person ID isn't found, fall back to the owner. Log a warning. Never block waiting for a non-existent person. Dedup the recipient — if fallback target is already receiving their own outreach, merge or note the redirect.
 
+**Security note (final panel):** The filename comes from LLM output (`outreach/{person-id}.txt`). Apply `path.basename()` before using as a filename lookup — prevents path traversal from a hallucinating or manipulated LLM (e.g., `../../etc/passwd`).
+
 ---
 
 ## Human Outreach — Preferred Channel Routing
@@ -220,6 +230,8 @@ Current state: When blocking, the comment on the source issue (via `issue_manage
 
 **Decision: `sendOutreach` checks for available communication adapters before sending.** If no adapters with "send" capability are registered, log a warning and do NOT transition to blocked. The task proceeds without human input (best effort). If adapters exist but delivery fails for all contacts, emit a `health.outreach_delivery_failure` event so operations can diagnose at 3am.
 
+**Final panel finding:** Also log a warning when recipients exist but no registered adapter has "send" capability — prevents silent no-op where outreach appears to succeed but nothing was sent.
+
 ---
 
 ## Human Outreach — Extract to Own File
@@ -232,7 +244,9 @@ Current state: When blocking, the comment on the source issue (via `issue_manage
 
 **Decision: Populate `contacted` after successful outreach delivery.** Each person + channel + timestamp recorded.
 
-**Panel finding (final sweep — Torvalds):** `unblock-resolver.ts` nulls out `blocked` details (including `contacted`) when unblocking. This erases the data that steps above populate. **Resolution: preserve `contacted` data before clearing blocked details** — either copy to a separate task field or don't null the entire `blocked` object.
+**Panel finding (final sweep — Torvalds):** `unblock-resolver.ts` nulls out `blocked` details (including `contacted`) when unblocking. This erases the data that steps above populate.
+
+**Decision: Don't null the entire `blocked` object.** Instead, clear individual sub-fields while preserving `contacted`. Set `blocked.reason = null`, `blocked.needed = null`, `blocked.waiting_for = null`, `blocked.efforts_made = []` — but keep `blocked.contacted` intact. The `contacted` history remains accessible on the task record for escalation context, resume prompts, and audit. Simple, no new fields, no copy logic.
 
 ---
 
@@ -285,7 +299,7 @@ Bugs that exist TODAY, to be fixed as part of the plan:
 3. **`contacted` erased on unblock** — `unblock-resolver.ts` line 108 nulls `blocked` details including `contacted`. Any data populated by the outreach sender is immediately destroyed.
 4. **`pendingBasePriorities` buffer is unnecessary** — trigger-poller.ts line 47. A second Map that mirrors `basePriorities` as a "drain buffer." The main map has at most `max_concurrent` entries (small). Scanning it directly is free. Delete `pendingBasePriorities`, simplify `drainNewBasePriorities()` to return the full map.
 5. **Concurrent unblock race is already handled** — `unblock-resolver.ts` writes the response file BEFORE transitioning (line 82-88). A second concurrent unblock finds the task no longer blocked and returns `{unblocked: false}`, but the response file was already written. No data loss. **No fix needed** — the existing code is correct. Remove from plan concerns.
-6. **`SyncMetadata.external_ref` uses old string type** — adapters.ts. Must update alongside the ExternalRef schema change to `ExternalRefSchema.nullable()`.
+6. **Multiple schemas still use old `external_ref: z.string()` type** — `SyncMetadata` (adapters.ts:145), `TaskReconciliationInputSchema` (adapters.ts:176), and `TaskStateChangedPayloadSchema` (events.ts:81). All must be audited and updated alongside the ExternalRef schema change. Full grep for `external_ref.*z.string` across all schema files during Phase 0.
 
 ---
 

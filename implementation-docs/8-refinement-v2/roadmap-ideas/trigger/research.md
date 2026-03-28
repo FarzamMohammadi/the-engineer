@@ -314,8 +314,10 @@ fs.renameSync(tempPath, responsePath); // Atomic on POSIX
 Move `sendOutreachFromFiles()` from `phase-runner.ts` (L109–201) into this file. Modify to:
 - Use `resolveContact()` for preferred channel routing (replace `for (plugin of sendPlugins)` loop)
 - Validate person IDs against People Directory (skip + warn on unknown IDs)
+- Apply `path.basename()` to outreach filenames before lookup — prevents path traversal from LLM output
 - Populate `contacted` array and return it
-- Include full questions summary in GitHub issue comment
+- Include full questions summary in source issue comment (via `issue_management` capability check)
+- Log warning when recipients exist but no "send"-capable adapter is registered
 
 **Signature:**
 ```typescript
@@ -466,12 +468,12 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 
 **Phase 0 — Schema & Migration (no behavior change)**
 1. Add optional `url: z.string().optional()` field to `ExternalRefSchema` (task.ts)
-2. Change `external_ref` type in `TriggerEventSchema` (adapters.ts), `TriggerNewEventPayloadSchema` (events.ts), and `SyncMetadata` (adapters.ts) — clean break to `ExternalRefSchema.nullable()` (no union, no dual-format — fresh project, local-only)
+2. Change `external_ref` type in ALL schemas that use it — full grep for `external_ref.*z.string` across schema files. Known locations: `TriggerEventSchema` (adapters.ts:81), `TriggerNewEventPayloadSchema` (events.ts:217), `SyncMetadata` (adapters.ts:145), `TaskReconciliationInputSchema` (adapters.ts:176), `TaskStateChangedPayloadSchema` (events.ts:81). Clean break to `ExternalRefSchema.nullable()` (fresh project, local-only)
 3. Add `priority_labels` and `blocked_timeout_ms` to config schema (NOT `rate_limit_threshold` — that is plugin-internal)
 4. Add migration 010: partial index on `json_extract(external_ref, '$.type')`, `json_extract(external_ref, '$.repo')`, `json_extract(external_ref, '$.number')` WHERE `state NOT IN ('completed', 'failed')`
 5. Add `findByExternalRef(ref: ExternalRef): boolean` to task engine interface + implementation (query includes `type`)
-6. Fix `externalRefsMatch()` to include `type` field in comparison, remove platform-specific comment
-7. Update all test fixtures for new external_ref type (use generic `type: "test_issue"`, NOT platform-specific values)
+6. Document `externalRefsMatch()` semantics: KEEP type-agnostic matching for unblock (repo + number only — a PR response should unblock an issue task). `findByExternalRef` uses type-aware matching for dedup. Remove platform-specific comment, replace with documented rationale for the deliberate divergence.
+7. Update all test fixtures for new external_ref type (use generic `type: "test_issue"`, NOT platform-specific values). **Note:** grep shows 15+ test files with `"github_issue"` / `"github_pr"` strings — this is significant work, treat as its own commit.
 
 **Phase 1 — ExternalRef Migration (Core + Plugin done together)**
 
@@ -479,7 +481,7 @@ This phase is a single atomic change: Core stops parsing URLs, plugin starts pro
 
 8. Delete `parseGitHubUrl()` and `toExternalRef()` from trigger-poller.ts — Core no longer parses platform URLs
 9. Update `processNewTriggerEvent()` to read `external_ref` directly from TriggerEvent
-10. Purge platform type-string checks from Core — replace ALL `type !== "github_issue"` / `type !== "github_pr"` guards in `phase-runner.ts:217`, `orchestrator-notifier.ts:78`, and `notification-router.ts:256` with `issue_management` capability gates
+10. Purge ALL Plugin Blindness violations from Core — replace `type !== "github_issue"` / `type !== "github_pr"` guards in `phase-runner.ts:217`, `orchestrator-notifier.ts:78`, `notification-router.ts:256` with `issue_management` capability gates. Fix plugin ID construction in `orchestrator-notifier.ts:39` (`p.manifest.id === \`${contact.channel}-comm\``) — use Registry + capability lookup instead of constructing plugin IDs from channel names.
 11. Fix `linkMessageToTask()` in `response-poller.ts:41` — stop constructing `{ type: "github_issue" }`. Require full `external_ref` object in adapter message metadata
 12. Fix URL construction in `notification-router.ts:283` — use `external_ref.url` instead of constructing platform-specific URLs
 13. Trigger plugin: build structured `ExternalRef` (with `url` field) in `mapIssueToEvent()` — the plugin-side of steps 8-9
@@ -488,7 +490,7 @@ This phase is a single atomic change: Core stops parsing URLs, plugin starts pro
 14. Add DB-backed dedup: `findByExternalRef()` check before `createTask()` in trigger-poller
 15. Add label-based priority lookup in trigger-poller (reads `event.metadata.labels`, maps via config). Document `metadata.labels` convention in TriggerAdapter contract.
 16. Fix response file overwrite: individual files `response-{Date.now()}-{source}.txt` (epoch ms — simpler, sorts perfectly) with atomic write (temp+rename) in unblock-resolver
-17. Fix `contacted` erasure: preserve `contacted` data when clearing blocked details in unblock-resolver
+17. Fix `contacted` erasure in unblock-resolver: instead of `updateTaskField(taskId, "blocked", null)`, clear individual sub-fields (`reason`, `needed`, `waiting_for`, `efforts_made`) while keeping `contacted` array intact. The `blocked` object persists with contact history.
 18. Delete `pendingBasePriorities` buffer from trigger-poller.ts (L47) — unnecessary optimization for a small map. Simplify `drainNewBasePriorities()` to return the full `basePriorities` map.
 19. Add block/proceed criteria + "number your questions" to requirements-gathering prompt
 20. Add max-loop escalation notification (via CommunicationAdapter, adapter-agnostic)

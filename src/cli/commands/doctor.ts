@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { constants, accessSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { checkEnvFilePermissions, loadEnvFile } from "../../config/env.js";
 import { loadConfigSafe } from "../../config/loader.js";
 import type { ConfigBundle } from "../../config/loader.js";
 import {
@@ -145,6 +146,27 @@ export function checkRequiredSecrets(configDir: string): DoctorCategory {
     return { category: "Required Secrets", checks };
   }
 
+  // Load .env so checks match runtime behavior
+  const engineerHome = join(configDir, "..");
+  loadEnvFile(engineerHome);
+
+  // Check .env file permissions
+  const permWarning = checkEnvFilePermissions(engineerHome);
+  if (permWarning) {
+    checks.push({
+      label: ".env permissions",
+      status: "warn",
+      message: permWarning,
+      remedy: `chmod 600 ${join(engineerHome, ".env")}`,
+    });
+  } else if (existsSync(join(engineerHome, ".env"))) {
+    checks.push({
+      label: ".env file",
+      status: "pass",
+      message: "Found with correct permissions (0600)",
+    });
+  }
+
   const missingVars = new Set<string>();
   const foundVars = new Set<string>();
 
@@ -158,7 +180,7 @@ export function checkRequiredSecrets(configDir: string): DoctorCategory {
       label: varName,
       status: "fail",
       message: `Environment variable ${varName} is not set`,
-      remedy: `export ${varName}=<value>`,
+      remedy: `Add ${varName}=<value> to ~/.engineer/.env, or export ${varName}=<value>`,
     });
   }
 
@@ -288,113 +310,7 @@ export function checkPluginManifests(engineerHome: string): DoctorCategory {
   return { category: "Plugins", checks };
 }
 
-/** Category 7: GitHub connectivity — check token presence (sync, no live API call). */
-export function checkGitHubConnectivity(configDir?: string): DoctorCategory {
-  const checks: DoctorCheck[] = [];
-
-  // Check GITHUB_TOKEN env var or config file
-  const envToken = process.env["GITHUB_TOKEN"];
-  if (envToken && envToken.length > 0) {
-    checks.push({
-      label: "GitHub token (env)",
-      status: "pass",
-      message: `GITHUB_TOKEN set (${String(envToken.length)} chars)`,
-    });
-  } else if (configDir) {
-    // Check if GitHub trigger plugin config exists (config/plugins/github-trigger.yaml)
-    const pluginConfigPath = join(configDir, "plugins", "github-trigger.yaml");
-    if (existsSync(pluginConfigPath)) {
-      checks.push({
-        label: "GitHub token",
-        status: "warn",
-        message:
-          "GITHUB_TOKEN not in env — check config/plugins/github-trigger.yaml for github_token",
-        remedy:
-          "Set GITHUB_TOKEN environment variable or configure github_token in config/plugins/github-trigger.yaml",
-      });
-    } else {
-      checks.push({
-        label: "GitHub token",
-        status: "warn",
-        message: "No GitHub token found in environment",
-        remedy: "Set GITHUB_TOKEN environment variable",
-      });
-    }
-  } else {
-    checks.push({
-      label: "GitHub token",
-      status: "warn",
-      message: "No GitHub token found in environment",
-      remedy: "Set GITHUB_TOKEN environment variable",
-    });
-  }
-
-  return { category: "GitHub Connectivity", checks };
-}
-
-/** Category 8: Telegram connectivity. */
-export function checkTelegramConnectivity(configDir?: string): DoctorCategory {
-  const checks: DoctorCheck[] = [];
-
-  // Check TELEGRAM_BOT_TOKEN env var or config file
-  const envToken = process.env["TELEGRAM_BOT_TOKEN"];
-  if (envToken && envToken.length > 0) {
-    checks.push({
-      label: "Telegram bot token (env)",
-      status: "pass",
-      message: `TELEGRAM_BOT_TOKEN set (${String(envToken.length)} chars)`,
-    });
-  } else if (configDir) {
-    // Check if Telegram plugin config exists (config/plugins/telegram-comm.yaml)
-    const pluginConfigPath = join(configDir, "plugins", "telegram-comm.yaml");
-    if (existsSync(pluginConfigPath)) {
-      checks.push({
-        label: "Telegram bot token",
-        status: "warn",
-        message:
-          "TELEGRAM_BOT_TOKEN not in env — check config/plugins/telegram-comm.yaml for bot_token",
-        remedy:
-          "Set TELEGRAM_BOT_TOKEN environment variable or configure bot_token in config/plugins/telegram-comm.yaml",
-      });
-    } else {
-      checks.push({
-        label: "Telegram bot token",
-        status: "warn",
-        message: "No Telegram bot token found in environment",
-        remedy: "Set TELEGRAM_BOT_TOKEN environment variable",
-      });
-    }
-  } else {
-    checks.push({
-      label: "Telegram bot token",
-      status: "warn",
-      message: "No Telegram bot token found in environment",
-      remedy: "Set TELEGRAM_BOT_TOKEN environment variable",
-    });
-  }
-
-  // Check TELEGRAM_CHAT_ID env var
-  const envChatId = process.env["TELEGRAM_CHAT_ID"];
-  if (envChatId && envChatId.length > 0) {
-    checks.push({
-      label: "Telegram chat ID (env)",
-      status: "pass",
-      message: "TELEGRAM_CHAT_ID set",
-    });
-  } else {
-    checks.push({
-      label: "Telegram chat ID",
-      status: "warn",
-      message: "No Telegram chat ID found in environment",
-      remedy:
-        "Set TELEGRAM_CHAT_ID environment variable or configure chat_id in config/plugins/telegram-comm.yaml",
-    });
-  }
-
-  return { category: "Telegram Connectivity", checks };
-}
-
-/** Category 9: Workspace & git availability. */
+/** Category 7: Workspace & git availability. */
 export function checkWorkspace(engineerHome: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
   const wsRoot = join(engineerHome, "workspaces");
@@ -637,8 +553,6 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
     checkRequiredSecrets(dirs.config),
     checkDatabase(engineerHome),
     checkPluginManifests(engineerHome),
-    checkGitHubConnectivity(dirs.config),
-    checkTelegramConnectivity(dirs.config),
     checkWorkspace(engineerHome),
     checkExternalDependencies(),
   ];

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 
 import { stringify as yamlStringify } from "yaml";
 
+import { writeEnvFile } from "../../config/env.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
 import type { PluginRequirement } from "../../schemas/adapters.js";
 import { resolveDirectories } from "../home.js";
@@ -320,6 +321,11 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
   }
 
   writeConfigFiles(engineerHome, files);
+
+  // Write secrets to .env
+  if (result.secrets && Object.keys(result.secrets).length > 0) {
+    writeEnvFile(engineerHome, result.secrets);
+  }
 
   out.blank();
   out.success("Configuration written.");

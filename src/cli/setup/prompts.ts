@@ -1,7 +1,8 @@
-import { checkbox, confirm, input, select } from "@inquirer/prompts";
+import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 
 import type { BuiltinPlugin } from "../../plugins/builtin.js";
 import { getOutput } from "../output.js";
+import { ALL_TEMPLATES } from "../templates.js";
 import type { AdapterTypeConfig, DetectionResult, GuidedSetupResult } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -133,33 +134,65 @@ async function configureSelectedPlugins(
 ): Promise<Record<string, Record<string, unknown>>> {
   const configs: Record<string, Record<string, unknown>> = {};
 
-  // GitHub token — shared across all selected github-* plugins
-  const githubPlugins = selectedPlugins.filter((id) => id.startsWith("github-"));
-  if (githubPlugins.length > 0) {
-    const tokenRef = "${GITHUB_TOKEN}";
-    for (const id of githubPlugins) {
-      configs[id] = { github_token: tokenRef };
-    }
-  }
+  // Plugin configs with ${VAR} references come from templates (templates.ts).
+  // This function only prompts for values that templates can't provide (user-specific data).
+  // Secrets (tokens) are handled by promptForSecrets() which scans ALL ${VAR} refs dynamically.
 
-  // GitHub trigger repos
   if (selectedPlugins.includes("github-trigger")) {
     const repos = await promptForRepos();
-    const triggerConfig = configs["github-trigger"];
-    if (triggerConfig) {
-      triggerConfig["repos"] = repos;
-    }
-  }
-
-  // Telegram config
-  if (selectedPlugins.includes("telegram-comm")) {
-    configs["telegram-comm"] = {
-      bot_token: "${TELEGRAM_BOT_TOKEN}",
-      chat_id: "${TELEGRAM_CHAT_ID}",
-    };
+    configs["github-trigger"] = { repos };
   }
 
   return configs;
+}
+
+const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
+
+/**
+ * Scan generated config file content for ${VAR} references and prompt for each unique secret.
+ * Fully dynamic — derives vars from whatever templates + user configs produce.
+ * Skips vars already set in process.env.
+ */
+async function promptForSecrets(fileContents: readonly string[]): Promise<Record<string, string>> {
+  const out = getOutput();
+  const varNames = new Set<string>();
+
+  // Collect all ${VAR} references from all generated file content
+  for (const content of fileContents) {
+    ENV_VAR_PATTERN.lastIndex = 0;
+    let match = ENV_VAR_PATTERN.exec(content);
+    while (match) {
+      if (match[1]) {
+        varNames.add(match[1]);
+      }
+      match = ENV_VAR_PATTERN.exec(content);
+    }
+  }
+
+  if (varNames.size === 0) {
+    return {};
+  }
+
+  const secrets: Record<string, string> = {};
+  const sorted = [...varNames].sort();
+
+  out.blank();
+  for (const varName of sorted) {
+    const existing = process.env[varName];
+    if (existing != null && existing.trim().length > 0) {
+      out.log(`  ${varName} (already set in environment)`);
+      continue;
+    }
+
+    // Use plain input for IDs, masked password for tokens/secrets
+    if (varName.endsWith("_ID")) {
+      secrets[varName] = await input({ message: `${varName}:` });
+    } else {
+      secrets[varName] = await password({ message: `${varName}:`, mask: "*" });
+    }
+  }
+
+  return secrets;
 }
 
 async function promptForRepos(): Promise<Array<{ owner: string; name: string }>> {
@@ -229,8 +262,18 @@ export async function runGuidedSetup(
     // Warnings for gaps
     showSelectionWarnings(allSelected, plugins);
 
-    // Per-plugin config (tokens, repos, etc.)
+    // Per-plugin config (user-specific values like repos)
     const pluginConfigs = await configureSelectedPlugins(allSelected);
+
+    // Collect secrets — scan templates for selected plugins' ${VAR} references
+    const selectedTemplateContent = ALL_TEMPLATES.filter((t) => {
+      if (!t.relativePath.startsWith("config/plugins/")) {
+        return false;
+      }
+      const pluginId = t.relativePath.replace("config/plugins/", "").replace(".yaml", "");
+      return allSelected.includes(pluginId);
+    }).map((t) => t.content);
+    const secrets = await promptForSecrets(selectedTemplateContent);
 
     // Summary
     out.blank();
@@ -240,6 +283,10 @@ export async function runGuidedSetup(
       if (plugin) {
         out.log(`    ${plugin.manifest.name}`);
       }
+    }
+    const secretNames = Object.keys(secrets);
+    if (secretNames.length > 0) {
+      out.log(`  Secrets: ${secretNames.join(", ")} (saved to ~/.engineer/.env)`);
     }
     out.blank();
     out.log("  Safety: conservative (default)");
@@ -254,7 +301,7 @@ export async function runGuidedSetup(
       return null;
     }
 
-    return { selectedPlugins: allSelected, pluginConfigs };
+    return { selectedPlugins: allSelected, pluginConfigs, secrets };
   } catch (error) {
     if (error instanceof Error && error.name === "ExitPromptError") {
       return null;

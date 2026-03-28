@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { loadEnvFile } from "../../config/env.js";
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { DaemonAlreadyRunningError } from "../../core/daemon/errors.js";
 import { discoverEnabledPlugins } from "../../plugins/loader.js";
@@ -64,7 +65,10 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     }
   }
 
-  // 1. Auto-create directories (idempotent — may already exist after setup)
+  // 1. Load .env before config resolution (existing env vars take precedence)
+  loadEnvFile(engineerHome);
+
+  // 2. Auto-create directories (idempotent — may already exist after setup)
   try {
     ensureDirectories(dirs);
   } catch (error) {

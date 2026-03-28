@@ -26,4 +26,5 @@ export interface AdapterTypeConfig {
 export interface GuidedSetupResult {
   selectedPlugins: string[];
   pluginConfigs: Record<string, Record<string, unknown>>;
+  secrets: Record<string, string>;
 }

@@ -27,6 +27,7 @@ Directory structure (created automatically on first `engineer start`):
 
 ```
 ~/.engineer/
+  .env                # Secrets (KEY=VALUE, 0o600 permissions)
   config/             # YAML config files
     plugins/          # Plugin-specific configs
   data/               # SQLite database
@@ -57,12 +58,13 @@ engineer start
 
 That's it. On first run, `start` detects there's no config and launches guided setup:
 
-1. **Environment detection** — scans PATH for LLM CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars (`GITHUB_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)
+1. **Environment detection** — scans PATH for LLM CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars
 2. **Plugin selection** — one prompt per adapter type (LLM, trigger, hosting, communication, tools), grouped by category, with detection status shown
-3. **Per-plugin config** — prompts only for required fields (repos to watch, etc.)
-4. **Confirmation** — summary of selections, Y/n
-5. **Config written** — YAML files to `~/.engineer/config/` with `0o600` permissions
-6. **Daemon starts** — pre-flight checks, bootstrap, tick loop begins
+3. **Per-plugin config** — prompts for required fields (repos to watch, etc.)
+4. **Secret collection** — prompts for token values with masked input (e.g., `GITHUB_TOKEN`). Skips tokens already set in your shell. Saves to `~/.engineer/.env` with `0o600` permissions.
+5. **Confirmation** — summary of selections, Y/n
+6. **Config written** — YAML files to `~/.engineer/config/`, secrets to `~/.engineer/.env`
+7. **Daemon starts** — pre-flight checks, bootstrap, tick loop begins
 
 **Non-interactive setup** (CI, automation, teams):
 
@@ -185,7 +187,14 @@ Config files live in `~/.engineer/config/`. Generated on first run with conserva
 **Plugin configs** (`config/plugins/`):
 - One YAML file per enabled plugin (e.g., `github-trigger.yaml`, `claude-code-llm.yaml`)
 - A plugin is enabled if and only if its config YAML exists
-- Secrets use `${ENV_VAR}` references — never stored as raw values
+- Secrets use `${ENV_VAR}` references — actual values live in `.env`
+
+**Secrets** (`~/.engineer/.env`):
+- Collected during first-run setup with masked input, or add manually
+- Format: `KEY=VALUE` (one per line, `#` for comments)
+- Environment variables already set in your shell take precedence
+- File permissions: `0o600` (owner read/write only) — `engineer doctor` warns if too open
+- Plugin configs reference secrets as `${GITHUB_TOKEN}` — resolved at startup from `.env` or env vars
 
 **Example templates** (`example-templates/`):
 - Fully documented reference for every config field

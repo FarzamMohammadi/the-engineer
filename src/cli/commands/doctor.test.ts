@@ -9,12 +9,10 @@ import {
   checkConfigFiles,
   checkDataDirectory,
   checkDatabase,
-  checkGitHubConnectivity,
   checkNodeRuntime,
   checkPluginManifests,
   checkRequiredSecrets,
   checkRiskyConfig,
-  checkTelegramConnectivity,
   checkWorkspace,
   computeExitCode,
   formatDoctorResults,
@@ -177,110 +175,7 @@ describe("checkPluginManifests", () => {
   });
 });
 
-// ── Category 7 & 8: Connectivity stubs ────────────────────────────────────
-
-describe("checkGitHubConnectivity", () => {
-  it("returns warn when no token in env", () => {
-    const originalToken = process.env["GITHUB_TOKEN"];
-    delete process.env["GITHUB_TOKEN"];
-    try {
-      const result = checkGitHubConnectivity();
-      expect(result.checks[0]?.status).toBe("warn");
-      expect(result.checks[0]?.message).toContain("No GitHub token found");
-    } finally {
-      if (originalToken !== undefined) {
-        process.env["GITHUB_TOKEN"] = originalToken;
-      }
-    }
-  });
-
-  it("returns pass when GITHUB_TOKEN is set", () => {
-    const originalToken = process.env["GITHUB_TOKEN"];
-    process.env["GITHUB_TOKEN"] = "ghp_test1234567890";
-    try {
-      const result = checkGitHubConnectivity();
-      expect(result.checks[0]?.status).toBe("pass");
-      expect(result.checks[0]?.message).toContain("GITHUB_TOKEN set");
-    } finally {
-      if (originalToken !== undefined) {
-        process.env["GITHUB_TOKEN"] = originalToken;
-      } else {
-        delete process.env["GITHUB_TOKEN"];
-      }
-    }
-  });
-});
-
-describe("checkTelegramConnectivity", () => {
-  it("returns warn when no token in env", () => {
-    const originalToken = process.env["TELEGRAM_BOT_TOKEN"];
-    const originalChatId = process.env["TELEGRAM_CHAT_ID"];
-    delete process.env["TELEGRAM_BOT_TOKEN"];
-    delete process.env["TELEGRAM_CHAT_ID"];
-    try {
-      const result = checkTelegramConnectivity();
-      const tokenCheck = result.checks.find((c) => c.label === "Telegram bot token");
-      expect(tokenCheck?.status).toBe("warn");
-      expect(tokenCheck?.message).toContain("No Telegram bot token found");
-    } finally {
-      if (originalToken !== undefined) {
-        process.env["TELEGRAM_BOT_TOKEN"] = originalToken;
-      }
-      if (originalChatId !== undefined) {
-        process.env["TELEGRAM_CHAT_ID"] = originalChatId;
-      }
-    }
-  });
-
-  it("returns pass when TELEGRAM_BOT_TOKEN is set", () => {
-    const originalToken = process.env["TELEGRAM_BOT_TOKEN"];
-    process.env["TELEGRAM_BOT_TOKEN"] = "123456:ABC-DEF1234ghIkl-zyx57W2v";
-    try {
-      const result = checkTelegramConnectivity();
-      const tokenCheck = result.checks.find((c) => c.label === "Telegram bot token (env)");
-      expect(tokenCheck?.status).toBe("pass");
-      expect(tokenCheck?.message).toContain("TELEGRAM_BOT_TOKEN set");
-    } finally {
-      if (originalToken !== undefined) {
-        process.env["TELEGRAM_BOT_TOKEN"] = originalToken;
-      } else {
-        delete process.env["TELEGRAM_BOT_TOKEN"];
-      }
-    }
-  });
-
-  it("checks TELEGRAM_CHAT_ID separately", () => {
-    const originalChatId = process.env["TELEGRAM_CHAT_ID"];
-    process.env["TELEGRAM_CHAT_ID"] = "-1001234567890";
-    try {
-      const result = checkTelegramConnectivity();
-      const chatIdCheck = result.checks.find((c) => c.label === "Telegram chat ID (env)");
-      expect(chatIdCheck?.status).toBe("pass");
-    } finally {
-      if (originalChatId !== undefined) {
-        process.env["TELEGRAM_CHAT_ID"] = originalChatId;
-      } else {
-        delete process.env["TELEGRAM_CHAT_ID"];
-      }
-    }
-  });
-
-  it("warns when TELEGRAM_CHAT_ID is missing", () => {
-    const originalChatId = process.env["TELEGRAM_CHAT_ID"];
-    delete process.env["TELEGRAM_CHAT_ID"];
-    try {
-      const result = checkTelegramConnectivity();
-      const chatIdCheck = result.checks.find((c) => c.label === "Telegram chat ID");
-      expect(chatIdCheck?.status).toBe("warn");
-    } finally {
-      if (originalChatId !== undefined) {
-        process.env["TELEGRAM_CHAT_ID"] = originalChatId;
-      }
-    }
-  });
-});
-
-// ── Category 9: Workspace ─────────────────────────────────────────────────
+// ── Category 7: Workspace ─────────────────────────────────────────────────
 
 describe("checkWorkspace", () => {
   it("checks git binary availability", () => {
@@ -587,14 +482,14 @@ describe("runPreFlightChecks", () => {
 });
 
 describe("runAllChecks", () => {
-  it("runs 10 categories without bundle", () => {
+  it("runs 8 categories without bundle", () => {
     const results = runAllChecks(tempDir);
-    expect(results).toHaveLength(10);
+    expect(results).toHaveLength(8);
   });
 
-  it("runs 11 categories with bundle", () => {
+  it("runs 9 categories with bundle", () => {
     const results = runAllChecks(tempDir, makeSafeBundle());
-    expect(results).toHaveLength(11);
+    expect(results).toHaveLength(9);
   });
 });
 

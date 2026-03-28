@@ -4,7 +4,7 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** Runtime Phase Refinement — Startup & Configuration (Sessions 077-078). Implementation complete. One remaining piece: dynamic plugin config introspection (replace hardcoded `github-trigger` repos prompt with schema-driven field detection). Next: either finish dynamic introspection or move to next runtime phase.
+**Current phase:** Runtime Phase Refinement — Startup & Configuration (Sessions 077-078). COMPLETE. Next: move to next runtime phase on the roadmap.
 
 Previous layers:
 - [`6-refinement/`](6-refinement/) — Layer 6 documentation (D137-D165)
@@ -82,7 +82,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** Session 078 DONE. Startup & Configuration refinement implemented: CLI consolidated 14→6 commands, smart `engineer start` with first-run guided setup, explicit per-adapter-type plugin selection, .env secret management, detection derived from manifests, `combined_with` plugin family grouping. One remaining piece: dynamic plugin config introspection (eliminate last hardcoded `github-trigger` repos prompt — setup should derive required fields from Zod schemas automatically). See `8-refinement-v2/roadmap-ideas/startup/plan.md` for full record. 2,275 tests, 96 files.
+**Layer 8 — Refinement v2: IN PROGRESS.** Session 078 DONE. Startup & Configuration refinement COMPLETE: CLI 14→6 commands, smart `engineer start` with first-run guided setup, explicit per-adapter-type plugin selection, .env secret management, `promptForConfig` for dynamic per-plugin prompts, detection derived from manifests, `combined_with` plugin family grouping, config merging (user values + template `${VAR}` refs). Zero hardcoded plugin names in setup module. See `8-refinement-v2/roadmap-ideas/startup/plan.md` for full record. 2,279 tests, 96 files.
 
 **Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,248 tests (100 files).
 

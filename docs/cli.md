@@ -136,7 +136,7 @@ Source: [`src/cli/commands/logs.ts`](../src/cli/commands/logs.ts)
 
 ### doctor
 
-Runs 11 independent health check categories. No daemon required — works standalone.
+Runs 9 independent health check categories. No daemon required — works standalone.
 
 ```bash
 engineer doctor
@@ -149,14 +149,12 @@ engineer doctor
 | 1 | Node.js Runtime | `process.version >= 22.0.0` |
 | 2 | Data Directory | ENGINEER_HOME exists, writable, subdirs present |
 | 3 | Config Files | All 5 YAML configs parse and pass Zod validation |
-| 4 | Required Secrets | All `${ENV_VAR}` references in configs resolve |
+| 4 | Required Secrets | All `${ENV_VAR}` references in configs resolve + `.env` file permissions |
 | 5 | Database | SQLite file accessible |
 | 6 | Plugin Manifests | Plugin config files parse correctly |
-| 7 | External Dependencies | LLM CLIs on PATH |
-| 8 | GitHub Connectivity | GITHUB_TOKEN present |
-| 9 | Telegram Connectivity | TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID present |
-| 10 | Workspace | Git binary available, workspace dir exists |
-| 11 | Risky Config | Warnings for auto-merge enabled, missing cost limits, high concurrency |
+| 7 | Workspace | Git binary available, workspace dir exists |
+| 8 | External Dependencies | LLM CLIs on PATH |
+| 9 | Risky Config | Warnings for auto-merge enabled, missing cost limits, high concurrency |
 
 Categories 1-7 also run automatically as pre-flight checks on `engineer start`.
 

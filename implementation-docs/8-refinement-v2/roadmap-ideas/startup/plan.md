@@ -63,7 +63,9 @@ Three files:
 
 **Detection** still runs but its role is "show availability status next to each option" and "auto-fill config values" — not "decide what to enable."
 
-**Per-plugin config** — Restructured from monolithic GitHub block to per-plugin functions. GitHub token prompted once, shared across all selected GitHub plugins. Repos always prompted (never auto-detected from git remote — that's The Engineer's own repo, not the target).
+**Per-plugin config** — Fully dynamic via `promptForConfig` optional function on `BuiltinPlugin`. Each plugin that needs interactive user input (beyond `${VAR}` secrets) declares its own prompt function in `builtin.ts`. The setup module calls it generically — zero knowledge of plugin names. `generateConfigFiles` merges user config INTO templates, preserving `${VAR}` refs. Secrets handled separately by `promptForSecrets` which scans all generated template content for `${VAR}` patterns dynamically.
+
+**`.env` secret management** — Tokens collected during setup via masked `password()` prompts, written to `~/.engineer/.env` with 0o600. Loaded on every startup before config resolution. Env vars already set take precedence (CI/Docker compatible). Doctor checks .env permissions.
 
 ### Wiring (`start.ts`)
 - TTY guard as first check (fail clearly for headless environments)
@@ -142,12 +144,16 @@ Three files:
 | `dashboard` command | Auto-launches from `start`. Standalone command redundant. |
 | `install` command | Zero users need launchd/systemd generation today. |
 | `create-plugin` command | No plugin SDK docs, contracts still being refined. Premature. |
+| Hardcoded doctor categories 7-8 | GitHub/Telegram connectivity checks redundant with dynamic category 4 scan. |
+| Hardcoded token refs in setup | Templates already contain `${VAR}` refs. Setup merges, doesn't duplicate. |
+| Zod schema introspection for prompts | `promptForConfig` on BuiltinPlugin is simpler — plugin declares its own prompt. |
 
 ---
 
 ## Test Impact
 
-- 2,271 tests passing (was 2,248 before this work)
-- 4 test files deleted (for removed commands)
-- 42 tests in `setup.test.ts` (detection, git remote parsing, requirements, config generation, needsSetup, adapter config completeness, combined_with, detection derivation)
+- 2,279 tests passing (was 2,248 before this work)
+- 4 test files deleted (for removed commands), 6 doctor tests removed (categories 7-8)
+- 45 tests in `setup.test.ts` (detection, git remote, requirements, config generation, needsSetup, adapter configs, combined_with, promptForConfig, detection derivation)
+- 23 tests in `env.test.ts` (parse, serialize, load, write, permissions)
 - 0 TypeScript errors, 0 Biome errors, 0 circular dependencies

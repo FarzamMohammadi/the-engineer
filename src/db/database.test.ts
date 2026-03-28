@@ -90,7 +90,7 @@ describe("createInMemoryDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("9");
+    expect(row.value).toBe("10");
   });
 
   it("can insert and query a task row", () => {
@@ -196,7 +196,7 @@ describe("createDatabase", () => {
     const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(row.value).toBe("9");
+    expect(row.value).toBe("10");
   });
 });
 
@@ -459,6 +459,8 @@ describe("table structure", () => {
       "idx_knowledge_natural_key",
       "idx_knowledge_active",
       "idx_knowledge_domain",
+      // external_ref dedup (010)
+      "idx_tasks_external_ref_active",
       // observations (003_observer)
       "idx_obs_task",
       "idx_obs_trace",

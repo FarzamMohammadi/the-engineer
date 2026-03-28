@@ -151,7 +151,7 @@ export function createDecompositionHandler(
     });
 
     const subtaskList = plan.children.map((c, i) => `${String(i + 1)}. ${c.title}`).join("\n");
-    notifier.commentOnSourceIssue(
+    notifier.commentOnSourceTicket(
       dispatch,
       `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
     );

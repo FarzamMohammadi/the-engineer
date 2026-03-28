@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ExternalRef } from "../../schemas/task.js";
 import { TaskStates } from "../../schemas/task.js";
@@ -32,9 +32,13 @@ export interface UnblockResolverContext {
 
 /**
  * Technology-agnostic comparison of two ExternalRef values by repo + number.
- * Intentionally ignores `type` — on GitHub, issue and PR numbers share the same
- * sequence (issue #42 and PR #42 cannot coexist). A response on any entity with
- * the same repo + number should unblock the matching task.
+ * Intentionally ignores `type` — on platforms where issue and PR numbers share
+ * the same sequence, a response on any entity with the same repo + number
+ * should unblock the matching task.
+ *
+ * Deliberate divergence from `findByExternalRef()` (TaskEngine) which IS
+ * type-aware (type + repo + number) for dedup: an issue and a PR with the
+ * same number are different entities for task creation purposes.
  */
 export function externalRefsMatch(a: ExternalRef, b: ExternalRef): boolean {
   return a.repo === b.repo && a.number === b.number;
@@ -104,8 +108,20 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
       return { unblocked: false, taskId, reason: result.reason ?? "transition_failed" };
     }
 
-    // Clear blocked details only after successful transition
-    taskEngine.updateTaskField(taskId, "blocked", null);
+    // Clear blocked details but preserve contacted history
+    const task = taskEngine.getTask(taskId);
+    const contacted = task?.blocked?.contacted ?? [];
+    if (contacted.length > 0) {
+      taskEngine.updateTaskField(taskId, "blocked", {
+        reason: "",
+        efforts_made: [],
+        contacted,
+        needed: "",
+        waiting_for: "",
+      });
+    } else {
+      taskEngine.updateTaskField(taskId, "blocked", null);
+    }
 
     observer.info("Task unblocked", { taskId, source });
     return { unblocked: true, taskId, reason: null };
@@ -130,8 +146,12 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
     const responsesDir = path.join(worktreePath, thoughtsDir, "requirements", "responses");
     try {
       mkdirSync(responsesDir, { recursive: true });
-      writeFileSync(path.join(responsesDir, `${source}.txt`), content, "utf-8");
-      observer.debug("Response file written", { taskId, source, dir: responsesDir });
+      const filename = `response-${String(Date.now())}-${source}.txt`;
+      const finalPath = path.join(responsesDir, filename);
+      const tempPath = `${finalPath}.tmp`;
+      writeFileSync(tempPath, content, "utf-8");
+      renameSync(tempPath, finalPath);
+      observer.debug("Response file written", { taskId, source, filename, dir: responsesDir });
     } catch (err) {
       observer.warn("Failed to write response file", {
         taskId,

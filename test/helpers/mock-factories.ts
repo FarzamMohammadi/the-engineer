@@ -40,7 +40,12 @@ export function createMockTriggerEvent(overrides?: Partial<TriggerEvent>): Trigg
     idempotency_key: "mock:issue:test-repo:1",
     source: "mock-trigger",
     event_type: "issue_opened",
-    external_ref: "https://github.com/test/repo/issues/1",
+    external_ref: {
+      type: "test_issue",
+      repo: "test/repo",
+      number: 1,
+      url: "https://github.com/test/repo/issues/1",
+    },
     title: "Mock issue",
     body: null,
     repo: "test/repo",

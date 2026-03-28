@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -38,7 +38,7 @@ function makeBlockedTask(
     id,
     title: "Blocked task",
     state: "blocked",
-    external_ref: { type: "github_issue", repo, number },
+    external_ref: { type: "test_issue", repo, number },
     thoughts_id: thoughtsId,
   };
 }
@@ -47,26 +47,26 @@ function makeBlockedTask(
 
 describe("externalRefsMatch", () => {
   it("returns true for matching repo + number", () => {
-    const a = { type: "github_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "github_issue", repo: "owner/repo", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
+    const b = { type: "test_issue", repo: "owner/repo", number: 42 };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
   it("returns true when types differ (matches on repo + number only)", () => {
-    const a = { type: "github_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "github_pr", repo: "owner/repo", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
+    const b = { type: "test_pr", repo: "owner/repo", number: 42 };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
   it("returns false when repos differ", () => {
-    const a = { type: "github_issue", repo: "owner/repo-a", number: 42 };
-    const b = { type: "github_issue", repo: "owner/repo-b", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo-a", number: 42 };
+    const b = { type: "test_issue", repo: "owner/repo-b", number: 42 };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 
   it("returns false when numbers differ", () => {
-    const a = { type: "github_issue", repo: "owner/repo", number: 1 };
-    const b = { type: "github_issue", repo: "owner/repo", number: 2 };
+    const a = { type: "test_issue", repo: "owner/repo", number: 1 };
+    const b = { type: "test_issue", repo: "owner/repo", number: 2 };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 });
@@ -88,7 +88,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "github_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", number: 42 },
         source: "github",
       });
 
@@ -109,7 +109,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "github_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", number: 42 },
         source: "github",
       });
 
@@ -124,7 +124,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "github_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", number: 42 },
         source: "github",
       });
 
@@ -146,7 +146,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "github_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", number: 42 },
         source: "github",
       });
 
@@ -236,21 +236,26 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "github_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", number: 42 },
         source: "github",
         content: "The answer is 42",
       });
 
-      const responsePath = path.join(
+      const responsesDir = path.join(
         tempDir,
         "thoughts",
         "2026-03-23-issue-42",
         "requirements",
         "responses",
-        "github.txt",
       );
-      expect(existsSync(responsePath)).toBe(true);
-      expect(readFileSync(responsePath, "utf-8")).toBe("The answer is 42");
+      expect(existsSync(responsesDir)).toBe(true);
+      const files = readdirSync(responsesDir);
+      const responseFile = files.find((f) => f.includes("-github.txt"));
+      expect(responseFile).toBeDefined();
+      expect(responseFile).toMatch(/^response-\d+-github\.txt$/);
+      expect(readFileSync(path.join(responsesDir, responseFile!), "utf-8")).toBe(
+        "The answer is 42",
+      );
     });
 
     it("skips file write when no worktree exists", () => {
@@ -262,7 +267,7 @@ describe("UnblockResolver", () => {
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
-        ref: { type: "github_issue", repo: "test/repo", number: 42 },
+        ref: { type: "test_issue", repo: "test/repo", number: 42 },
         source: "github",
         content: "Some content",
       });

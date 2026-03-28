@@ -64,14 +64,15 @@ function createMockContext(overrides?: Partial<TriggerPollerContext>): TriggerPo
     },
     registry: { getPluginsByType: vi.fn().mockReturnValue([]) },
     taskEngine: {
-      createTask: vi.fn((input: { title: string }) => ({
+      createTask: vi.fn((input: { title: string; priority?: number }) => ({
         id: "task-001",
         title: input.title,
-        priority: 50,
+        priority: input.priority ?? 50,
       })),
       requestTransition: vi.fn().mockReturnValue({ success: true }),
       getTasksByState: vi.fn().mockReturnValue([]),
       updateTaskField: vi.fn(),
+      findByExternalRef: vi.fn().mockReturnValue(false),
     },
     clock: { now: () => 1000 },
     observer: createTestObserverFacade("daemon"),
@@ -84,7 +85,7 @@ function makeTriggerEvent(key: string, title = "Test issue") {
     idempotency_key: key,
     source: "test",
     event_type: "issue_opened",
-    external_ref: "https://github.com/test/repo/issues/1",
+    external_ref: { type: "test_issue", repo: "test/repo", number: 1 },
     title,
     body: "Test body",
     repo: "test/repo",
@@ -430,26 +431,26 @@ describe("TriggerPoller", () => {
 
 describe("externalRefsMatch", () => {
   it("returns true for matching repo + number", () => {
-    const a = { type: "github_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "github_issue", repo: "owner/repo", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
+    const b = { type: "test_issue", repo: "owner/repo", number: 42 };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
   it("returns true when types differ (matches on repo + number only)", () => {
-    const a = { type: "github_issue", repo: "owner/repo", number: 42 };
-    const b = { type: "github_pr", repo: "owner/repo", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo", number: 42 };
+    const b = { type: "test_pr", repo: "owner/repo", number: 42 };
     expect(externalRefsMatch(a, b)).toBe(true);
   });
 
   it("returns false when repos differ", () => {
-    const a = { type: "github_issue", repo: "owner/repo-a", number: 42 };
-    const b = { type: "github_issue", repo: "owner/repo-b", number: 42 };
+    const a = { type: "test_issue", repo: "owner/repo-a", number: 42 };
+    const b = { type: "test_issue", repo: "owner/repo-b", number: 42 };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 
   it("returns false when numbers differ", () => {
-    const a = { type: "github_issue", repo: "owner/repo", number: 1 };
-    const b = { type: "github_issue", repo: "owner/repo", number: 2 };
+    const a = { type: "test_issue", repo: "owner/repo", number: 1 };
+    const b = { type: "test_issue", repo: "owner/repo", number: 2 };
     expect(externalRefsMatch(a, b)).toBe(false);
   });
 });

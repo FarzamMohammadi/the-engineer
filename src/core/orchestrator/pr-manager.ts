@@ -181,7 +181,7 @@ export function createPrManager(
           feedback_rounds: updatedRounds,
         });
       }
-      notifier.commentOnSourceIssue(dispatch, "Pushed rework addressing review feedback.");
+      notifier.commentOnSourceTicket(dispatch, "Pushed rework addressing review feedback.");
       observer.info("Rework pushed to existing PR", {
         taskId,
         prNumber: dispatch.task.review?.pr_number,
@@ -245,7 +245,7 @@ export function createPrManager(
       });
 
       notifier.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
-      notifier.commentOnSourceIssue(dispatch, `Draft PR created: ${prResult.url}`);
+      notifier.commentOnSourceTicket(dispatch, `Draft PR created: ${prResult.url}`);
       span.end({ step: "pr_create", success: true, prNumber: prResult.pr_number, elapsedMs });
       return true;
     } catch (error) {

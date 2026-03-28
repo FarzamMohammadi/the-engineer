@@ -51,7 +51,7 @@ export function createCostLimitQueue(
           });
         }
         notifications.sendCostLimit(taskId);
-        notifications.commentOnTaskIssue(taskId, "Task blocked \u2014 cost limit reached.");
+        notifications.commentOnTaskTicket(taskId, "Task blocked \u2014 cost limit reached.");
       }
     }
   }

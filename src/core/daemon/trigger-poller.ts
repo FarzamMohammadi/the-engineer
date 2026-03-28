@@ -1,10 +1,10 @@
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import { AdapterTypes, type TriggerEvent } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
-import type { ExternalRef } from "../../schemas/task.js";
 import { TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import { extractEventVariables } from "./event-variables.js";
 import type { TriggerPollerContext } from "./types.js";
 
 // ── TriggerPoller Interface ──────────────────────────────────────────────────
@@ -43,8 +43,6 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   const triggerFailures = new Map<string, number>();
   const seenTriggerKeys = new Map<string, number>();
   const basePriorities = new Map<string, number>();
-  /** Buffer for priorities added since last drain — avoids full-map scan every tick. */
-  const pendingBasePriorities = new Map<string, number>();
 
   // ── Adaptive Polling ────────────────────────────────────────────────────
 
@@ -96,12 +94,22 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   }
 
   function processNewTriggerEvent(event: TriggerEvent, now: number): void {
+    // 1. Hot cache check (fast path)
     const expiry = seenTriggerKeys.get(event.idempotency_key);
     if (expiry !== undefined && expiry > now) {
       return; // Already seen and not expired
     }
 
-    // Mark seen with TTL
+    // 2. DB check (cold path — only on cache miss with structured external_ref)
+    if (event.external_ref && taskEngine.findByExternalRef(event.external_ref)) {
+      seenTriggerKeys.set(event.idempotency_key, now + config.seen_keys_ttl_ms);
+      observer.debug("Duplicate trigger suppressed by DB dedup", {
+        idempotencyKey: event.idempotency_key,
+      });
+      return;
+    }
+
+    // 3. Mark seen with TTL
     seenTriggerKeys.set(event.idempotency_key, now + config.seen_keys_ttl_ms);
 
     // Emit trigger.new_event
@@ -122,11 +130,8 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       },
     } satisfies PublishInput<"trigger.new_event">);
 
-    // Parse external ref from URL
-    const parsed = parseGitHubUrl(event.external_ref);
-    const externalRef = parsed
-      ? toExternalRef(parsed.owner, parsed.repo, parsed.number, parsed.type)
-      : null;
+    // Extract priority from ticket body (@priority: <number>)
+    const vars = extractEventVariables(event.body);
 
     // Create task: intake → queued
     const task = taskEngine.createTask({
@@ -134,14 +139,14 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       repo: event.repo,
       source: event.source,
       description: event.body ?? "",
-      external_ref: externalRef,
+      external_ref: event.external_ref,
       clone_url: event.clone_url,
       thoughts_id: event.thoughts_id,
+      ...(vars.priority !== undefined ? { priority: vars.priority } : {}),
     });
 
     taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");
     basePriorities.set(task.id, task.priority);
-    pendingBasePriorities.set(task.id, task.priority);
     observer.info("Task created from trigger event", { taskId: task.id, title: event.title });
   }
 
@@ -186,19 +191,13 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     return failures;
   }
 
-  /** Return only priorities added since last drain, then clear the buffer. */
+  /** Return all base priorities — the map is small (at most max_concurrent entries). */
   function drainNewBasePriorities(): Map<string, number> {
-    if (pendingBasePriorities.size === 0) {
-      return pendingBasePriorities;
-    }
-    const snapshot = new Map(pendingBasePriorities);
-    pendingBasePriorities.clear();
-    return snapshot;
+    return basePriorities;
   }
 
   function removeBasePriority(taskId: string): void {
     basePriorities.delete(taskId);
-    pendingBasePriorities.delete(taskId);
   }
 
   return {
@@ -208,38 +207,5 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     cleanupExpiredKeys,
     drainNewBasePriorities,
     removeBasePriority,
-  };
-}
-
-// ── URL Parsing (inlined — core must not import from plugins) ────────────
-
-const GITHUB_URL_RE = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/(issues|pull)\/(\d+)/;
-
-function parseGitHubUrl(
-  url: string,
-): { owner: string; repo: string; number: number; type: "issue" | "pull" } | null {
-  const match = GITHUB_URL_RE.exec(url);
-  if (!match) {
-    return null;
-  }
-  const [, owner, repo, kind, num] = match;
-  return {
-    owner: owner as string,
-    repo: repo as string,
-    number: Number.parseInt(num as string, 10),
-    type: kind === "pull" ? "pull" : "issue",
-  };
-}
-
-function toExternalRef(
-  owner: string,
-  repo: string,
-  number: number,
-  type: "issue" | "pull",
-): ExternalRef {
-  return {
-    type: type === "pull" ? "github_pr" : "github_issue",
-    repo: `${owner}/${repo}`,
-    number,
   };
 }

@@ -220,6 +220,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     checkPermission: vi.fn().mockReturnValue({ allowed: true }),
     getChildren: vi.fn().mockReturnValue([]),
     getStateHistory: vi.fn().mockReturnValue([]),
+    findByExternalRef: vi.fn().mockReturnValue(false),
   };
 
   // ── Orchestrator mock ─────────────────────────────────────────────────
@@ -359,7 +360,7 @@ export function createTestTriggerEvent(overrides?: Partial<TriggerEvent>): Trigg
     idempotency_key: `test:issue:repo:${String(Date.now())}`,
     source: "test-trigger",
     event_type: "issue_opened",
-    external_ref: "https://github.com/test/repo/issues/1",
+    external_ref: { type: "test_issue", repo: "test/repo", number: 1 },
     title: "Test issue",
     body: "Test body",
     repo: "test/repo",

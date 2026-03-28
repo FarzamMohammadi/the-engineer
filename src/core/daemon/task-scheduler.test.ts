@@ -86,7 +86,7 @@ function makeNotifications(): NotificationRouter & Record<string, ReturnType<typ
     sendBlockedReminder: vi.fn(),
     sendEscalationAlert: vi.fn(),
     sendReviewReminder: vi.fn(),
-    commentOnTaskIssue: vi.fn(),
+    commentOnTaskTicket: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }
@@ -265,7 +265,7 @@ describe("TaskScheduler", () => {
     );
     expect(workspaceManager.cleanupWorkspace).toHaveBeenCalledWith("t1", true);
     expect(notifications.sendCompletion).toHaveBeenCalledWith("t1");
-    expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
       "t1",
       "Task completed successfully.",
     );
@@ -299,7 +299,7 @@ describe("TaskScheduler", () => {
       "daemon",
     );
     expect(notifications.sendReviewPending).toHaveBeenCalledWith("t1");
-    expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
       "t1",
       "Pull request created — awaiting review.",
     );
@@ -332,7 +332,7 @@ describe("TaskScheduler", () => {
       "daemon",
     );
     expect(notifications.sendTaskError).toHaveBeenCalledWith("t1", "build_failed");
-    expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
       "t1",
       "Task encountered an error: build_failed",
     );
@@ -795,7 +795,7 @@ describe("TaskScheduler", () => {
     // Notifications and cleanup must be skipped when the transition fails
     expect(workspaceManager.cleanupWorkspace).not.toHaveBeenCalled();
     expect(notifications.sendCompletion).not.toHaveBeenCalled();
-    expect(notifications.commentOnTaskIssue).not.toHaveBeenCalled();
+    expect(notifications.commentOnTaskTicket).not.toHaveBeenCalled();
   });
 
   // 26. F1: handleErrorOutcome skips notifications when transition fails
@@ -820,7 +820,7 @@ describe("TaskScheduler", () => {
     scheduler.handleTaskCompletion("t1", result);
 
     expect(notifications.sendTaskError).not.toHaveBeenCalled();
-    expect(notifications.commentOnTaskIssue).not.toHaveBeenCalled();
+    expect(notifications.commentOnTaskTicket).not.toHaveBeenCalled();
   });
 
   // 27. F2: unknown outcome transitions task to blocked instead of silently dropping it

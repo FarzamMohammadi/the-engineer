@@ -47,7 +47,7 @@ const MANIFEST: PluginManifest = {
   config_schema: {},
   critical: false,
   entry: "index.ts",
-  adapter_meta: { capabilities: ["send", "sync", "issue_management"] },
+  adapter_meta: { capabilities: ["send", "sync", "ticket_management"] },
   requirements: [],
   combined_with: [],
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },
@@ -110,8 +110,8 @@ describe("GitHubCommPlugin", () => {
       expect(plugin.hasCapability("sync")).toBe(true);
     });
 
-    it("reports issue_management capability", () => {
-      expect(plugin.hasCapability("issue_management")).toBe(true);
+    it("reports ticket_management capability", () => {
+      expect(plugin.hasCapability("ticket_management")).toBe(true);
     });
 
     it("does not report receive capability", () => {
@@ -186,7 +186,7 @@ describe("GitHubCommPlugin", () => {
     it("adds new label and removes old one", async () => {
       await plugin.syncTaskState("task-1", "queued", "active", {
         task_title: "Fix bug",
-        external_ref: "https://github.com/acme/webapp/issues/42",
+        external_ref: { type: "github_issue", repo: "acme/webapp", number: 42 },
         sub_state: null,
         reason: null,
       });
@@ -215,10 +215,10 @@ describe("GitHubCommPlugin", () => {
       expect(mockOctokit.issues.listLabelsOnIssue).not.toHaveBeenCalled();
     });
 
-    it("no-ops when external_ref is not a GitHub URL", async () => {
+    it("no-ops when external_ref repo lacks owner/name format", async () => {
       await plugin.syncTaskState("task-1", "queued", "active", {
         task_title: "Fix bug",
-        external_ref: "https://jira.example.com/browse/FOO-1",
+        external_ref: { type: "jira_ticket", repo: "no-slash", number: 1 },
         sub_state: null,
         reason: null,
       });
@@ -231,7 +231,7 @@ describe("GitHubCommPlugin", () => {
       const result = await plugin.reconcileState([
         {
           task_id: "task-1",
-          external_ref: "https://github.com/acme/webapp/issues/42",
+          external_ref: { type: "github_issue", repo: "acme/webapp", number: 42 },
           expected_state: "active",
           expected_label: "engineer:active",
         },
@@ -247,7 +247,7 @@ describe("GitHubCommPlugin", () => {
       const result = await plugin.reconcileState([
         {
           task_id: "task-1",
-          external_ref: "https://github.com/acme/webapp/issues/42",
+          external_ref: { type: "github_issue", repo: "acme/webapp", number: 42 },
           expected_state: "active",
           expected_label: "engineer:active",
         },
@@ -259,7 +259,7 @@ describe("GitHubCommPlugin", () => {
       const result = await plugin.reconcileState([
         {
           task_id: "task-1",
-          external_ref: "not-a-url",
+          external_ref: null,
           expected_state: "active",
           expected_label: "engineer:active",
         },
@@ -269,9 +269,12 @@ describe("GitHubCommPlugin", () => {
     });
   });
 
-  describe("issue management", () => {
-    it("commentOnIssue() posts a comment", async () => {
-      await plugin.commentOnIssue("acme/webapp", 42, "Hello!");
+  describe("ticket management", () => {
+    it("commentOnTicket() posts a comment", async () => {
+      await plugin.commentOnTicket(
+        { type: "github_issue", repo: "acme/webapp", number: 42 },
+        "Hello!",
+      );
       expect(mockOctokit.issues.createComment).toHaveBeenCalledWith({
         owner: "acme",
         repo: "webapp",
@@ -280,8 +283,8 @@ describe("GitHubCommPlugin", () => {
       });
     });
 
-    it("createIssue() creates and returns result", async () => {
-      const result = await plugin.createIssue("acme/webapp", {
+    it("createTicket() creates and returns result", async () => {
+      const result = await plugin.createTicket("acme/webapp", {
         title: "New issue",
         body: "Description",
         labels: ["bug"],
@@ -292,8 +295,8 @@ describe("GitHubCommPlugin", () => {
       expect(result.url).toBe("https://github.com/acme/webapp/issues/99");
     });
 
-    it("updateIssue() updates state and labels", async () => {
-      await plugin.updateIssue("acme/webapp", 42, {
+    it("updateTicket() updates state and labels", async () => {
+      await plugin.updateTicket("acme/webapp", 42, {
         state: "closed",
         labels_add: ["done"],
         labels_remove: ["in-progress"],
@@ -308,9 +311,9 @@ describe("GitHubCommPlugin", () => {
       );
     });
 
-    it("commentOnIssue() throws on invalid repo format", async () => {
+    it("commentOnTicket() throws on invalid repo format", async () => {
       try {
-        await plugin.commentOnIssue("invalid", 42, "Hi");
+        await plugin.commentOnTicket({ type: "github_issue", repo: "invalid", number: 42 }, "Hi");
         expect.unreachable("should have thrown");
       } catch (error) {
         expect((error as { adapterError: { code: string } }).adapterError.code).toBe(

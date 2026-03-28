@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Octokit } from "@octokit/rest";
 import { AdapterMethodError } from "../../../adapters/errors.js";
 import {
@@ -23,6 +26,8 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
   private config!: GitHubTriggerConfig;
   protected octokit!: Octokit;
   private watermarks = new Map<string, string>();
+  private etags = new Map<string, string>();
+  private retryAfterUntil = 0;
 
   protected async doPoll(): Promise<TriggerEvent[]> {
     const events: TriggerEvent[] = [];
@@ -53,6 +58,21 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
     this.config = parsed.data;
     this.octokit = new Octokit({ auth: this.config.github_token });
     this.watermarks.clear();
+
+    // Load persisted watermarks
+    try {
+      const watermarkPath = this.getWatermarkPath();
+      if (existsSync(watermarkPath)) {
+        const data = readFileSync(watermarkPath, "utf-8");
+        const stored = JSON.parse(data) as Record<string, string>;
+        for (const [key, value] of Object.entries(stored)) {
+          this.watermarks.set(key, value);
+        }
+      }
+    } catch {
+      // First run or corrupt — start fresh
+    }
+
     return Promise.resolve({ success: true, message: null });
   }
 
@@ -79,8 +99,25 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
   }
 
   protected doShutdown(): Promise<void> {
+    // Persist watermarks BEFORE clearing — save state after processing
+    try {
+      const watermarkPath = this.getWatermarkPath();
+      const stateDir = join(watermarkPath, "..");
+      mkdirSync(stateDir, { recursive: true });
+      const tempPath = `${watermarkPath}.tmp`;
+      writeFileSync(tempPath, JSON.stringify(Object.fromEntries(this.watermarks)), "utf-8");
+      renameSync(tempPath, watermarkPath);
+    } catch {
+      // Best effort — watermark loss means re-fetching on next startup
+    }
     this.watermarks.clear();
+    this.etags.clear();
     return Promise.resolve();
+  }
+
+  private getWatermarkPath(): string {
+    const engineerHome = process.env["ENGINEER_HOME"] ?? join(homedir(), ".engineer");
+    return join(engineerHome, "state", this.manifest.id, "watermarks.json");
   }
 
   // ── Private Helpers ──────────────────────────────────────────────────
@@ -90,7 +127,13 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
     name: string,
     since: string | undefined,
   ): Promise<TriggerEvent[]> {
+    // Respect Retry-After from previous 429
+    if (Date.now() < this.retryAfterUntil) {
+      return [];
+    }
+
     try {
+      const repoKey = `${owner}/${name}`;
       const params: Record<string, unknown> = {
         owner,
         repo: name,
@@ -106,14 +149,48 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
         params["labels"] = this.config.labels.join(",");
       }
 
-      const { data: issues } = await this.octokit.issues.listForRepo(
+      // ETag conditional request — skip if no changes since last poll
+      const headers: Record<string, string> = {};
+      const cachedEtag = this.etags.get(repoKey);
+      if (cachedEtag) {
+        headers["if-none-match"] = cachedEtag;
+      }
+      params["headers"] = headers;
+
+      const response = await this.octokit.issues.listForRepo(
         params as Parameters<typeof this.octokit.issues.listForRepo>[0],
       );
 
-      return issues
+      // Cache ETag for next request
+      const responseEtag = response.headers.etag;
+      if (responseEtag) {
+        this.etags.set(repoKey, responseEtag);
+      }
+
+      return response.data
         .filter((issue) => !issue.pull_request)
         .map((issue) => mapIssueToEvent(owner, name, issue, this.manifest.id));
     } catch (error) {
+      // Handle 304 Not Modified (ETag cache hit — Octokit throws this)
+      if (error && typeof error === "object" && "status" in error) {
+        if ((error as { status: number }).status === 304) {
+          return [];
+        }
+      }
+
+      // Handle 429 with Retry-After
+      if (error && typeof error === "object" && "status" in error) {
+        const status = (error as { status: number }).status;
+        if (status === 429) {
+          const retryAfter = Number(
+            (error as { response?: { headers?: Record<string, string> } }).response?.headers?.[
+              "retry-after"
+            ] ?? 60,
+          );
+          this.retryAfterUntil = Date.now() + retryAfter * 1000;
+        }
+      }
+
       throw new AdapterMethodError(
         createAdapterError(
           classifyGitHubError(error),
@@ -161,7 +238,12 @@ function mapIssueToEvent(
     idempotency_key: `github:issue:${owner}/${repo}:${String(issue.number)}`,
     source: pluginId,
     event_type: "issue_assigned",
-    external_ref: issue.html_url,
+    external_ref: {
+      type: "github_issue",
+      repo: `${owner}/${repo}`,
+      number: issue.number,
+      url: issue.html_url,
+    },
     title: issue.title,
     body: issue.body ?? null,
     repo: `${owner}/${repo}`,

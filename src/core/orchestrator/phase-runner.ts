@@ -1,4 +1,3 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
@@ -15,6 +14,7 @@ import type { PublishInput } from "../event-bus/index.js";
 import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import { PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
+import { sendOutreach } from "./outreach-sender.js";
 import type { PrManager } from "./pr-manager.js";
 import { gatherRepoContextSafe } from "./prompts/index.js";
 import {
@@ -95,143 +95,6 @@ export interface PhaseRunnerDeps {
 }
 
 // ── Outreach Helpers ─────────────────────────────────────────────────────
-
-const TXT_SUFFIX_RE = /\.txt$/;
-
-/**
- * Read outreach messages from `outreach/` directory and send via comm plugins.
- *
- * The LLM writes one `.txt` file per person to contact:
- *   `thoughts/{id}/requirements/outreach/{person-id}.txt`
- * Filename = person ID from People Directory. Content = the message to send.
- * No parsing — the LLM does the heavy lifting, we just deliver files.
- */
-async function sendOutreachFromFiles(
-  taskId: string,
-  outreachDir: string,
-  ctx: OrchestratorContext,
-): Promise<void> {
-  if (!existsSync(outreachDir)) {
-    return;
-  }
-
-  const files = readdirSync(outreachDir).filter((f) => f.endsWith(".txt"));
-  if (files.length === 0) {
-    return;
-  }
-
-  const commPlugins = ctx.registry.getPluginsByType<CommunicationAdapter>(
-    AdapterTypes.communication,
-  );
-  const sendPlugins = commPlugins.filter((p) => p.hasCapability("send"));
-  if (sendPlugins.length === 0) {
-    ctx.observer.warn("No comm plugins with send capability — outreach not delivered", {
-      taskId,
-      fileCount: files.length,
-    });
-    return;
-  }
-
-  const sendPromises: Promise<void>[] = [];
-
-  for (const file of files) {
-    const personId = file.replace(TXT_SUFFIX_RE, "");
-    const message = readFileSync(path.join(outreachDir, file), "utf-8").trim();
-    if (!message) {
-      continue;
-    }
-
-    // Match person against People Directory, fall back to owner
-    const contact = ctx.peopleDirectory.getPerson(personId) ?? ctx.peopleDirectory.getOwner();
-    if (!contact) {
-      ctx.observer.warn("Outreach: no contact found for person", { taskId, personId });
-      continue;
-    }
-
-    for (const plugin of sendPlugins) {
-      const formatted = plugin.formatMessage(message, "notification");
-      sendPromises.push(
-        plugin
-          .sendMessage(
-            { user_id: contact.id, channel: null },
-            { content: formatted, metadata: { task_id: taskId, type: "notification" } },
-          )
-          .then((result) => {
-            if (result.success) {
-              ctx.observer.info("Outreach delivered", {
-                taskId,
-                personId,
-                pluginId: plugin.manifest.id,
-              });
-              ctx.eventBus.publish({
-                type: "comm.message_sent",
-                source: "orchestrator",
-                task_id: taskId,
-                payload: {
-                  task_id: taskId,
-                  target: personId,
-                  message_type: "notification" as const,
-                  content_summary: message,
-                  channel: plugin.manifest.id,
-                },
-              } satisfies PublishInput<"comm.message_sent">);
-            } else {
-              ctx.observer.warn("Outreach delivery failed", {
-                taskId,
-                personId,
-                pluginId: plugin.manifest.id,
-                error: result.error?.message ?? "unknown",
-              });
-            }
-          })
-          .catch((err: unknown) => {
-            ctx.observer.warn("Outreach send error", {
-              taskId,
-              personId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }),
-      );
-    }
-  }
-
-  commentOnSourceIssue(taskId, files, commPlugins, sendPromises, ctx);
-
-  await Promise.allSettled(sendPromises);
-}
-
-/** Post outreach summary as a comment on the originating issue/PR. */
-function commentOnSourceIssue(
-  taskId: string,
-  files: string[],
-  commPlugins: CommunicationAdapter[],
-  sendPromises: Promise<void>[],
-  ctx: OrchestratorContext,
-): void {
-  const task = ctx.taskEngine.getTask(taskId);
-  const issuePlugin = commPlugins.find((p) => p.hasCapability("issue_management"));
-  if (!issuePlugin || !task?.external_ref) {
-    return;
-  }
-  const { type, repo, number } = task.external_ref;
-  if (type !== "github_issue" && type !== "github_pr") {
-    return;
-  }
-  const summary = files.map((f) => `- ${f.replace(TXT_SUFFIX_RE, "")}`).join("\n");
-  sendPromises.push(
-    issuePlugin
-      .commentOnIssue(repo, number, `Blocked — reaching out for answers:\n\n${summary}`)
-      .then(() => {
-        ctx.observer.info("Outreach issue comment posted", { taskId, repo, number });
-      })
-      .catch((err: unknown) => {
-        ctx.observer.warn("Issue comment for outreach failed", {
-          taskId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }),
-  );
-}
 
 /** Discriminated union of post-phase processing outcomes (internal to the pipeline runner). */
 type PhaseCompletionResult =
@@ -659,18 +522,44 @@ async function handlePostPhaseActions(
 
       // Send outreach messages before blocking — read .txt files from outreach/ directory
       const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
+      let contacted: Array<{ person: string; channel: string; timestamp: string }> = [];
+      let shouldBlock = true;
+
       if (worktreePath && state.thoughtsDir) {
         const outreachDir = path.join(worktreePath, state.thoughtsDir, "requirements", "outreach");
-        await sendOutreachFromFiles(taskId, outreachDir, ctx);
+        const task = ctx.taskEngine.getTask(taskId);
+        const outreachResult = await sendOutreach(taskId, outreachDir, task?.external_ref ?? null, {
+          peopleDirectory: ctx.peopleDirectory,
+          registry: ctx.registry,
+          eventBus: ctx.eventBus,
+          observer: ctx.observer,
+        });
+        if (outreachResult.delivered) {
+          contacted = outreachResult.contacted;
+        } else if (outreachResult.reason === "no_send_adapters") {
+          // No comm adapters — don't block, task proceeds without human input
+          shouldBlock = false;
+          ctx.observer.warn(
+            "No send adapters — skipping blocking, proceeding without human input",
+            { taskId },
+          );
+        }
+        // "all_delivery_failed" or "no_files" — still block, but contacted stays empty
+      }
+
+      if (!shouldBlock) {
+        // Skip blocking — task proceeds to next phase (no send adapters)
+        return {
+          completion: { kind: "continue", phases },
+          loopbackCount,
+          requirementsLoopCount,
+          returnToPhase,
+        };
       }
 
       // Always persist return_to_phase when blocking — defaults to the current phase.
       // On resume, the pipeline reads this and routes back here after requirements_gathering.
       ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase ?? phase);
-
-      // No checkpoint — blocking is a pause, not a completion. Re-dispatch starts fresh
-      // at requirements_gathering (startIndex 0). The workspace already exists and is
-      // re-registered via the task's persisted workspace field.
 
       ctx.taskEngine.requestTransition(
         taskId,
@@ -682,7 +571,7 @@ async function handlePostPhaseActions(
       ctx.taskEngine.updateTaskField(taskId, "blocked", {
         reason: "need_more_info",
         efforts_made: ["Requirements gathering documented questions in requirements.md"],
-        contacted: [],
+        contacted,
         needed: "Human input on questions in requirements.md",
         waiting_for: "human",
       });

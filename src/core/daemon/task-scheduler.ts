@@ -283,7 +283,7 @@ export function createTaskScheduler(
       });
     }
     notifications.sendCompletion(taskId);
-    notifications.commentOnTaskIssue(taskId, "Task completed successfully.");
+    notifications.commentOnTaskTicket(taskId, "Task completed successfully.");
     checkAndEmitChildrenAllDone(taskId);
     const completedTask = taskEngine.getTask(taskId);
     observer.info("Task completed", {
@@ -313,7 +313,7 @@ export function createTaskScheduler(
     }
     checkAndEmitChildrenAllDone(taskId);
     notifications.sendTaskError(taskId, reason);
-    notifications.commentOnTaskIssue(taskId, `Task encountered an error: ${reason}`);
+    notifications.commentOnTaskTicket(taskId, `Task encountered an error: ${reason}`);
   }
 
   function handleReviewPendingOutcome(taskId: string): void {
@@ -326,7 +326,7 @@ export function createTaskScheduler(
     );
     if (reviewTransition.success) {
       notifications.sendReviewPending(taskId);
-      notifications.commentOnTaskIssue(taskId, "Pull request created — awaiting review.");
+      notifications.commentOnTaskTicket(taskId, "Pull request created — awaiting review.");
       observer.info("Task awaiting PR review", { taskId });
     } else {
       observer.warn("Failed to transition task to review_pending — skipping notifications", {

@@ -70,8 +70,8 @@ export interface NotificationRouter {
   sendEscalationAlert(taskId: string): void;
   /** Send review reminder to reviewers. */
   sendReviewReminder(taskId: string, elapsedMs: number): void;
-  /** Comment on a task's source GitHub issue. */
-  commentOnTaskIssue(taskId: string, message: string): void;
+  /** Comment on a task's source trigger ticket. */
+  commentOnTaskTicket(taskId: string, message: string): void;
   /** Sync task state change to communication plugins. */
   syncStateToCommPlugin(payload: TaskStateChangedPayload): void;
 }
@@ -247,25 +247,21 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
     );
   }
 
-  function commentOnTaskIssue(taskId: string, message: string): void {
+  function commentOnTaskTicket(taskId: string, message: string): void {
     const task = taskEngine.getTask(taskId);
     if (!task?.external_ref) {
       return;
     }
-    const { type, repo, number } = task.external_ref;
-    if (type !== "github_issue" && type !== "github_pr") {
-      return;
-    }
 
     const commPlugins = getCommPlugins();
-    const plugin = commPlugins.find((p) => p.hasCapability("issue_management"));
+    const plugin = commPlugins.find((p) => p.hasCapability("ticket_management"));
     if (!plugin) {
       return;
     }
 
-    observer.debug("Commenting on task issue", { taskId, repo, issueNumber: number });
-    plugin.commentOnIssue(repo, number, sanitizeSecrets(message)).catch((err) => {
-      observer.error("Failed to comment on task issue", {
+    observer.debug("Commenting on task ticket", { taskId });
+    plugin.commentOnTicket(task.external_ref, sanitizeSecrets(message)).catch((err) => {
+      observer.error("Failed to comment on task ticket", {
         error: sanitizeErrorMessage(err),
         taskId,
       });
@@ -279,14 +275,11 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
         continue;
       }
       const task = taskEngine.getTask(payload.task_id);
-      const externalRef = task?.external_ref
-        ? `https://github.com/${task.external_ref.repo}/issues/${String(task.external_ref.number)}`
-        : null;
 
       comm
         .syncTaskState(payload.task_id, payload.from_state, payload.to_state, {
           task_title: sanitizeSecrets(task?.title ?? ""),
-          external_ref: externalRef,
+          external_ref: task?.external_ref ?? null,
           sub_state: payload.to_sub,
           reason: payload.reason,
         })
@@ -308,7 +301,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
     sendBlockedReminder,
     sendEscalationAlert,
     sendReviewReminder,
-    commentOnTaskIssue,
+    commentOnTaskTicket,
     syncStateToCommPlugin,
   };
 }

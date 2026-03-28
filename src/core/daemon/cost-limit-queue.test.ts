@@ -28,7 +28,7 @@ function makeNotifications(): NotificationRouter & Record<string, ReturnType<typ
     sendBlockedReminder: vi.fn(),
     sendEscalationAlert: vi.fn(),
     sendReviewReminder: vi.fn(),
-    commentOnTaskIssue: vi.fn(),
+    commentOnTaskTicket: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }
@@ -59,7 +59,7 @@ describe("CostLimitQueue", () => {
       "daemon",
     );
     expect(notifications.sendCostLimit).toHaveBeenCalledWith("cost-1");
-    expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
       "cost-1",
       "Task blocked \u2014 cost limit reached.",
     );

@@ -8,6 +8,7 @@ import {
 } from "../../schemas/events.js";
 import type {
   ActionClass,
+  ExternalRef,
   StateTransition,
   SubState,
   Task,
@@ -236,7 +237,7 @@ export class TaskEngine implements ITaskEngine {
         task_id: id,
         parent_id: parentId,
         title: input.title,
-        external_ref: externalRefJson,
+        external_ref: externalRef,
         source: input.source,
         priority,
         repo: input.repo,
@@ -387,5 +388,9 @@ export class TaskEngine implements ITaskEngine {
     if (result.changes === 0) {
       this.observer.warn("updateTracking — task not found", { taskId });
     }
+  }
+
+  findByExternalRef(ref: ExternalRef): boolean {
+    return this.queries.findByExternalRef(ref);
   }
 }

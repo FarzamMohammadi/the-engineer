@@ -108,22 +108,20 @@ describe("ActionClassSchema", () => {
 
 describe("ExternalRefSchema", () => {
   it("parses valid data", () => {
-    const valid = { type: "github_issue", repo: "owner/repo", number: 42 };
+    const valid = { type: "test_issue", repo: "owner/repo", number: 42 };
     expect(ExternalRefSchema.parse(valid)).toEqual(valid);
   });
 
   it("rejects non-positive number", () => {
+    expect(() => ExternalRefSchema.parse({ type: "test_issue", repo: "a/b", number: 0 })).toThrow();
     expect(() =>
-      ExternalRefSchema.parse({ type: "github_issue", repo: "a/b", number: 0 }),
-    ).toThrow();
-    expect(() =>
-      ExternalRefSchema.parse({ type: "github_issue", repo: "a/b", number: -1 }),
+      ExternalRefSchema.parse({ type: "test_issue", repo: "a/b", number: -1 }),
     ).toThrow();
   });
 
   it("rejects non-integer number", () => {
     expect(() =>
-      ExternalRefSchema.parse({ type: "github_issue", repo: "a/b", number: 1.5 }),
+      ExternalRefSchema.parse({ type: "test_issue", repo: "a/b", number: 1.5 }),
     ).toThrow();
   });
 

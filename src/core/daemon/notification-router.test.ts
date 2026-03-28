@@ -13,7 +13,7 @@ function createMockCommPlugin(overrides?: { id?: string; capabilities?: string[]
     hasCapability: vi.fn((cap: string) => capabilities.includes(cap)),
     formatMessage: vi.fn((content: string) => `[formatted] ${content}`),
     sendMessage: vi.fn().mockResolvedValue({ success: true }),
-    commentOnIssue: vi.fn().mockResolvedValue({ success: true }),
+    commentOnTicket: vi.fn().mockResolvedValue({ success: true }),
     syncTaskState: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -192,39 +192,42 @@ describe("NotificationRouter", () => {
     expect(sendPlugin.sendMessage).toHaveBeenCalledTimes(1);
   });
 
-  // 7. commentOnTaskIssue routes to plugin with issue_management capability
-  it("commentOnTaskIssue routes to plugin with issue_management capability", async () => {
+  // 7. commentOnTaskTicket routes to plugin with ticket_management capability
+  it("commentOnTaskTicket routes to plugin with ticket_management capability", async () => {
     const sendOnlyPlugin = createMockCommPlugin({ id: "telegram", capabilities: ["send"] });
     const issuePlugin = createMockCommPlugin({
       id: "github",
-      capabilities: ["send", "issue_management"],
+      capabilities: ["send", "ticket_management"],
     });
     const ctx = createMockContext([sendOnlyPlugin, issuePlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      external_ref: { type: "github_issue", repo: "acme/widgets", number: 42 },
+      external_ref: { type: "test_issue", repo: "acme/widgets", number: 42 },
     });
 
     const router = createNotificationRouter(ctx);
-    router.commentOnTaskIssue("task-008", "PR merged!");
+    router.commentOnTaskTicket("task-008", "PR merged!");
     await flush();
 
-    expect(issuePlugin.commentOnIssue).toHaveBeenCalledWith("acme/widgets", 42, "PR merged!");
-    expect(sendOnlyPlugin.commentOnIssue).not.toHaveBeenCalled();
+    expect(issuePlugin.commentOnTicket).toHaveBeenCalledWith(
+      { type: "test_issue", repo: "acme/widgets", number: 42 },
+      "PR merged!",
+    );
+    expect(sendOnlyPlugin.commentOnTicket).not.toHaveBeenCalled();
   });
 
-  // 8. commentOnTaskIssue skips when no external_ref
-  it("commentOnTaskIssue skips when task has no external_ref", async () => {
-    const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+  // 8. commentOnTaskTicket skips when no external_ref
+  it("commentOnTaskTicket skips when task has no external_ref", async () => {
+    const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
     const ctx = createMockContext([commPlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
       external_ref: null,
     });
 
     const router = createNotificationRouter(ctx);
-    router.commentOnTaskIssue("task-009", "Hello");
+    router.commentOnTaskTicket("task-009", "Hello");
     await flush();
 
-    expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
+    expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
   });
 
   // 9. syncStateToCommPlugin routes to plugins with sync capability
@@ -234,7 +237,7 @@ describe("NotificationRouter", () => {
     const ctx = createMockContext([syncPlugin, noSyncPlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
       title: "My task",
-      external_ref: { type: "github_issue", repo: "owner/repo", number: 10 },
+      external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
     });
 
     const payload: TaskStateChangedPayload = {
@@ -257,7 +260,7 @@ describe("NotificationRouter", () => {
       "completed",
       expect.objectContaining({
         task_title: "My task",
-        external_ref: "https://github.com/owner/repo/issues/10",
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
         sub_state: null,
         reason: "All done",
       }),
@@ -279,17 +282,17 @@ describe("NotificationRouter", () => {
     await flush();
   });
 
-  it("commentOnIssue failure does not throw from commentOnTaskIssue", async () => {
-    const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
-    commPlugin.commentOnIssue.mockRejectedValue(new Error("GitHub API down"));
+  it("commentOnTicket failure does not throw from commentOnTaskTicket", async () => {
+    const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
+    commPlugin.commentOnTicket.mockRejectedValue(new Error("GitHub API down"));
     const ctx = createMockContext([commPlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      external_ref: { type: "github_issue", repo: "owner/repo", number: 1 },
+      external_ref: { type: "test_issue", repo: "owner/repo", number: 1 },
     });
 
     const router = createNotificationRouter(ctx);
 
-    expect(() => router.commentOnTaskIssue("task-012", "Comment")).not.toThrow();
+    expect(() => router.commentOnTaskTicket("task-012", "Comment")).not.toThrow();
     await flush();
   });
 
@@ -339,16 +342,16 @@ describe("NotificationRouter", () => {
     expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
   });
 
-  it("commentOnTaskIssue skips when task is not found", async () => {
-    const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+  it("commentOnTaskTicket skips when task is not found", async () => {
+    const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
     const ctx = createMockContext([commPlugin]);
     // getTask returns null by default
 
     const router = createNotificationRouter(ctx);
-    router.commentOnTaskIssue("nonexistent-task", "Hello");
+    router.commentOnTaskTicket("nonexistent-task", "Hello");
     await flush();
 
-    expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
+    expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
   });
 
   // SECURITY: sendTaskError strips auth tokens from reason before external delivery
@@ -403,22 +406,22 @@ describe("NotificationRouter", () => {
     expect(syncArgs.task_title).toContain("[REDACTED:github_token]");
   });
 
-  // SECURITY: commentOnTaskIssue strips auth tokens from message before posting to GitHub
-  it("commentOnTaskIssue sanitizes token-bearing message before posting to GitHub", async () => {
-    const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+  // SECURITY: commentOnTaskTicket strips auth tokens from message before posting to GitHub
+  it("commentOnTaskTicket sanitizes token-bearing message before posting to GitHub", async () => {
+    const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
     const ctx = createMockContext([commPlugin]);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      external_ref: { type: "github_issue", repo: "org/repo", number: 42 },
+      external_ref: { type: "test_issue", repo: "org/repo", number: 42 },
     });
 
     const router = createNotificationRouter(ctx);
     const poisonedMessage =
       "Error: clone failed at https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
-    router.commentOnTaskIssue("task-sec", poisonedMessage);
+    router.commentOnTaskTicket("task-sec", poisonedMessage);
     await flush();
 
-    const commentArg = (commPlugin.commentOnIssue as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[2] as string;
+    const commentArg = (commPlugin.commentOnTicket as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as string;
     expect(commentArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
     expect(commentArg).not.toContain("https://git:ghp_");
   });

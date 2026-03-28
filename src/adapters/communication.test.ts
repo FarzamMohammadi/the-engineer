@@ -85,26 +85,25 @@ class FullCommAdapter extends MinimalCommAdapter {
     return Promise.resolve({ reconciled: tasks.length, errors: [] });
   }
 
-  protected override doCommentOnIssue(
-    repo: string,
-    _issueNumber: number,
+  protected override doCommentOnTicket(
+    _externalRef: { type: string; repo: string; number: number },
     _comment: string,
   ): Promise<void> {
-    this.issueCalls.push({ method: "commentOnIssue", repo });
+    this.issueCalls.push({ method: "commentOnTicket", repo: _externalRef.repo });
     return Promise.resolve();
   }
 
-  protected override doCreateIssue(repo: string, _options: IssueOptions): Promise<IssueResult> {
-    this.issueCalls.push({ method: "createIssue", repo });
+  protected override doCreateTicket(repo: string, _options: IssueOptions): Promise<IssueResult> {
+    this.issueCalls.push({ method: "createTicket", repo });
     return Promise.resolve({ number: 42, url: "https://github.com/test/repo/issues/42" });
   }
 
-  protected override doUpdateIssue(
+  protected override doUpdateTicket(
     repo: string,
     _issueNumber: number,
     _updates: unknown,
   ): Promise<void> {
-    this.issueCalls.push({ method: "updateIssue", repo });
+    this.issueCalls.push({ method: "updateTicket", repo });
     return Promise.resolve();
   }
 }
@@ -234,15 +233,16 @@ describe("CommunicationAdapter", () => {
         call: (a) => a.reconcileState([]),
       },
       {
-        name: "commentOnIssue",
-        capability: "issue_management",
-        call: (a) => a.commentOnIssue("test/repo", 1, "A comment"),
+        name: "commentOnTicket",
+        capability: "ticket_management",
+        call: (a) =>
+          a.commentOnTicket({ type: "test_issue", repo: "test/repo", number: 1 }, "A comment"),
       },
       {
-        name: "createIssue",
-        capability: "issue_management",
+        name: "createTicket",
+        capability: "ticket_management",
         call: (a) =>
-          a.createIssue("test/repo", {
+          a.createTicket("test/repo", {
             title: "Test",
             body: "Body",
             labels: null,
@@ -251,10 +251,10 @@ describe("CommunicationAdapter", () => {
           }),
       },
       {
-        name: "updateIssue",
-        capability: "issue_management",
+        name: "updateTicket",
+        capability: "ticket_management",
         call: (a) =>
-          a.updateIssue("test/repo", 1, {
+          a.updateTicket("test/repo", 1, {
             state: null,
             labels_add: null,
             labels_remove: null,
@@ -320,20 +320,23 @@ describe("CommunicationAdapter", () => {
       expect(result.reconciled).toBe(0);
     });
 
-    it("issue management methods work", async () => {
+    it("ticket management methods work", async () => {
       const adapter = new FullCommAdapter();
       adapter.manifest = createManifest({
-        adapter_meta: { capabilities: ["send", "issue_management"] },
+        adapter_meta: { capabilities: ["send", "ticket_management"] },
       });
-      await adapter.commentOnIssue("test/repo", 1, "Comment");
-      const issueResult = await adapter.createIssue("test/repo", {
+      await adapter.commentOnTicket(
+        { type: "test_issue", repo: "test/repo", number: 1 },
+        "Comment",
+      );
+      const issueResult = await adapter.createTicket("test/repo", {
         title: "Test",
         body: "Body",
         labels: null,
         assignees: null,
         parent_issue: null,
       });
-      await adapter.updateIssue("test/repo", 1, {
+      await adapter.updateTicket("test/repo", 1, {
         state: null,
         labels_add: null,
         labels_remove: null,

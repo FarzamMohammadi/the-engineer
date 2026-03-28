@@ -6,12 +6,12 @@ import type { OrchestratorContext } from "./types.js";
 
 // ── OrchestratorNotifier Interface ─────────────────────────────────────────
 
-/** Orchestrator-tier notifications — milestone alerts and issue comments. */
+/** Orchestrator-tier notifications — milestone alerts and ticket comments. */
 export interface OrchestratorNotifier {
   /** Send a milestone notification via PeopleDirectory + comm plugins (D152). */
   notifyMilestone(dispatch: Dispatch, message: string): void;
-  /** Post a comment on the source GitHub issue/PR. */
-  commentOnSourceIssue(dispatch: Dispatch, message: string): void;
+  /** Post a comment on the source trigger ticket. */
+  commentOnSourceTicket(dispatch: Dispatch, message: string): void;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -35,9 +35,7 @@ export function createOrchestratorNotifier(ctx: OrchestratorContext): Orchestrat
       const taskId = dispatch.task.id;
 
       for (const contact of owner.contacts) {
-        const plugin = commPlugins.find(
-          (p) => p.manifest.id === `${contact.channel}-comm` || p.manifest.id === contact.channel,
-        );
+        const plugin = commPlugins.find((p) => p.hasCapability("send"));
         if (!plugin) {
           continue;
         }
@@ -70,41 +68,35 @@ export function createOrchestratorNotifier(ctx: OrchestratorContext): Orchestrat
     }
   }
 
-  function commentOnSourceIssue(dispatch: Dispatch, message: string): void {
+  function commentOnSourceTicket(dispatch: Dispatch, message: string): void {
     try {
       const externalRef = dispatch.task.external_ref;
-      if (
-        !externalRef ||
-        (externalRef.type !== "github_issue" && externalRef.type !== "github_pr")
-      ) {
+      if (!externalRef) {
         return;
       }
 
       const commPlugins = ctx.registry.getPluginsByType<CommunicationAdapter>(
         AdapterTypes.communication,
       );
-      const plugin = commPlugins.find((p) => p.hasCapability("issue_management"));
+      const plugin = commPlugins.find((p) => p.hasCapability("ticket_management"));
       if (!plugin) {
         return;
       }
 
-      plugin
-        .commentOnIssue(externalRef.repo, externalRef.number, sanitizeSecrets(message))
-        .catch((err: unknown) => {
-          // Non-blocking — issue comment failures must never interrupt the pipeline.
-          ctx.observer.warn("Issue comment failed", {
-            repo: externalRef.repo,
-            number: externalRef.number,
-            error: err instanceof Error ? err.message : String(err),
-          });
+      plugin.commentOnTicket(externalRef, sanitizeSecrets(message)).catch((err: unknown) => {
+        // Non-blocking — ticket comment failures must never interrupt the pipeline.
+        ctx.observer.warn("Ticket comment failed", {
+          taskId: dispatch.task.id,
+          error: err instanceof Error ? err.message : String(err),
         });
+      });
     } catch (err) {
       // Unexpected error in the comment helper itself (not a send failure).
-      ctx.observer.warn("Unexpected error in commentOnSourceIssue", {
+      ctx.observer.warn("Unexpected error in commentOnSourceTicket", {
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
-  return { notifyMilestone, commentOnSourceIssue };
+  return { notifyMilestone, commentOnSourceTicket };
 }

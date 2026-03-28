@@ -183,7 +183,7 @@ export class Orchestrator {
 
     // Notify task pickup (D152) — personal channels + GitHub issue comment
     this.notifier.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
-    this.notifier.commentOnSourceIssue(dispatch, "Starting work on this issue.");
+    this.notifier.commentOnSourceTicket(dispatch, "Starting work on this ticket.");
 
     // ── Build pipeline state ───────────────────────────────────────────────
     // Gather repo context once — avoids 5 sync I/O ops × 7 phases per task.

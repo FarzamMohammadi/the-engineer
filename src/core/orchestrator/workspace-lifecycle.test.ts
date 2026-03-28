@@ -290,7 +290,7 @@ describe("WorkspaceLifecycle", () => {
           manifest: { id: "telegram-comm" },
           sendMessage,
           formatMessage,
-          hasCapability: () => false,
+          hasCapability: (cap: string) => cap === "send",
         },
       ]);
 
@@ -309,38 +309,38 @@ describe("WorkspaceLifecycle", () => {
     });
   });
 
-  describe("commentOnSourceIssue (security)", () => {
+  describe("commentOnSourceTicket (security)", () => {
     it("sanitizes token-bearing message before posting to GitHub issue", async () => {
       const ctx = createMockContext();
-      const commentOnIssue = vi.fn().mockResolvedValue(undefined);
+      const commentOnTicket = vi.fn().mockResolvedValue(undefined);
       const mockPlugin = {
         hasCapability: vi.fn().mockReturnValue(true),
-        commentOnIssue,
+        commentOnTicket,
       };
       (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockPlugin]);
 
       const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
-        external_ref: { type: "github_issue", repo: "org/repo", number: 7 },
+        external_ref: { type: "test_issue", repo: "org/repo", number: 7 },
       } as Partial<Task>);
       const poisonedMessage =
         "Push failed: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
 
-      notifier.commentOnSourceIssue(dispatch, poisonedMessage);
+      notifier.commentOnSourceTicket(dispatch, poisonedMessage);
       await new Promise((r) => setTimeout(r, 0));
 
-      const commentArg = commentOnIssue.mock.calls[0]?.[2] as string;
+      const commentArg = commentOnTicket.mock.calls[0]?.[1] as string;
       expect(commentArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
     });
   });
 
-  describe("commentOnSourceIssue", () => {
+  describe("commentOnSourceTicket", () => {
     it("skips when no external_ref", () => {
       const ctx = createMockContext();
       const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch();
 
-      notifier.commentOnSourceIssue(dispatch, "test comment");
+      notifier.commentOnSourceTicket(dispatch, "test comment");
 
       expect(ctx.registry.getPluginsByType).not.toHaveBeenCalled();
     });
@@ -352,37 +352,37 @@ describe("WorkspaceLifecycle", () => {
       });
       const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 1 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 1 },
       } as Partial<Task>);
 
-      expect(() => notifier.commentOnSourceIssue(dispatch, "test")).not.toThrow();
+      expect(() => notifier.commentOnSourceTicket(dispatch, "test")).not.toThrow();
     });
 
-    // F11: commentOnIssue failure is logged via observer.debug (not swallowed silently)
-    it("logs debug when commentOnIssue rejects (F11)", async () => {
+    // F11: commentOnTicket failure is logged via observer.debug (not swallowed silently)
+    it("logs debug when commentOnTicket rejects (F11)", async () => {
       const ctx = createMockContext();
-      const commentOnIssue = vi.fn().mockRejectedValue(new Error("rate limited"));
+      const commentOnTicket = vi.fn().mockRejectedValue(new Error("rate limited"));
 
       (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([
         {
-          hasCapability: (cap: string) => cap === "issue_management",
-          commentOnIssue,
+          hasCapability: (cap: string) => cap === "ticket_management",
+          commentOnTicket,
         },
       ]);
 
       const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
       } as Partial<Task>);
 
       // Should not throw
-      expect(() => notifier.commentOnSourceIssue(dispatch, "Starting work")).not.toThrow();
+      expect(() => notifier.commentOnSourceTicket(dispatch, "Starting work")).not.toThrow();
 
       // Allow the rejected promise to settle
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       // Verify the comment was attempted (code ran) without unhandled rejection
-      expect(commentOnIssue).toHaveBeenCalled();
+      expect(commentOnTicket).toHaveBeenCalled();
     });
   });
 });

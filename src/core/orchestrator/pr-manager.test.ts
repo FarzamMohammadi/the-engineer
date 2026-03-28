@@ -92,7 +92,7 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
 function createMockNotifier(): OrchestratorNotifier {
   return {
     notifyMilestone: vi.fn(),
-    commentOnSourceIssue: vi.fn(),
+    commentOnSourceTicket: vi.fn(),
   };
 }
 

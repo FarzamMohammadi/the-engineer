@@ -36,7 +36,7 @@ function makeBlockedTask(id: string, repo: string, number: number) {
   return {
     id,
     state: "blocked",
-    external_ref: { type: "github_issue", repo, number },
+    external_ref: { type: "test_issue", repo, number },
   };
 }
 
@@ -52,7 +52,7 @@ function makeCommPlugin(id: string, messages: unknown[] = []) {
 
 describe("buildChannel", () => {
   it("formats external_ref as owner/repo#number", () => {
-    expect(buildChannel({ type: "github_issue", repo: "owner/repo", number: 42 })).toBe(
+    expect(buildChannel({ type: "test_issue", repo: "owner/repo", number: 42 })).toBe(
       "owner/repo#42",
     );
   });
@@ -83,11 +83,14 @@ describe("linkMessageToTask", () => {
       content: "Here's the info",
       timestamp: "2026-01-01T00:00:00Z",
       reply_to: null,
-      platform_metadata: { repo: "owner/repo", issue_number: 42, comment_id: 123 },
+      platform_metadata: {
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        comment_id: 123,
+      },
     });
     expect(result).toEqual({
       by: "external_ref",
-      ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+      ref: { type: "test_issue", repo: "owner/repo", number: 42 },
       source: "github",
       content: "Here's the info",
     });
@@ -168,7 +171,10 @@ describe("ResponsePoller", () => {
       content: "Here's your answer",
       timestamp: "2026-01-01T00:00:00Z",
       reply_to: null,
-      platform_metadata: { repo: "owner/repo", issue_number: 42, comment_id: 999 },
+      platform_metadata: {
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        comment_id: 999,
+      },
     };
     const plugin = makeCommPlugin("github-comm", [message]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([plugin]);
@@ -178,7 +184,7 @@ describe("ResponsePoller", () => {
 
     expect(resolver.tryUnblock).toHaveBeenCalledWith({
       by: "external_ref",
-      ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+      ref: { type: "test_issue", repo: "owner/repo", number: 42 },
       source: "github",
       content: "Here's your answer",
     });
@@ -194,7 +200,10 @@ describe("ResponsePoller", () => {
       content: "Response",
       timestamp: "2026-01-01T00:00:00Z",
       reply_to: null,
-      platform_metadata: { repo: "owner/repo", issue_number: 42, comment_id: 1 },
+      platform_metadata: {
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
+        comment_id: 1,
+      },
     };
     const plugin = makeCommPlugin("github-comm", [message]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([plugin]);

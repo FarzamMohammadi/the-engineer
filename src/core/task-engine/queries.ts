@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-import type { StateTransition, Task, TaskState } from "../../schemas/task.js";
+import type { ExternalRef, StateTransition, Task, TaskState } from "../../schemas/task.js";
 import {
   type StateTransitionRow,
   type TaskRow,
@@ -18,6 +18,7 @@ export class TaskQueries {
   private readonly getQueuedStmt: Database.Statement;
   private readonly getChildrenStmt: Database.Statement;
   private readonly getStateHistoryStmt: Database.Statement;
+  private readonly findByExternalRefStmt: Database.Statement;
 
   constructor(db: Database.Database) {
     this.getTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?");
@@ -37,6 +38,15 @@ export class TaskQueries {
     this.getStateHistoryStmt = db.prepare(
       "SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp ASC",
     );
+
+    this.findByExternalRefStmt = db.prepare(`
+      SELECT 1 FROM tasks
+      WHERE json_extract(external_ref, '$.type') = ?
+        AND json_extract(external_ref, '$.repo') = ?
+        AND json_extract(external_ref, '$.number') = ?
+        AND state NOT IN ('completed', 'failed')
+      LIMIT 1
+    `);
   }
 
   /** Get a task by ID. Returns null if not found. */
@@ -67,5 +77,15 @@ export class TaskQueries {
   getStateHistory(taskId: string): StateTransition[] {
     const rows = this.getStateHistoryStmt.all(taskId) as StateTransitionRow[];
     return rows.map(rowToStateTransition);
+  }
+
+  /**
+   * Check if a non-terminal task exists with the given external ref.
+   * Type-aware matching (type + repo + number) for dedup purposes.
+   * Deliberately different from externalRefsMatch() which is type-agnostic for unblock.
+   */
+  findByExternalRef(ref: ExternalRef): boolean {
+    const row = this.findByExternalRefStmt.get(ref.type, ref.repo, ref.number);
+    return row !== undefined;
   }
 }

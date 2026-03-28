@@ -26,19 +26,25 @@ export function buildChannel(ref: ExternalRef): string {
 export function linkMessageToTask(msg: InboundMessage): UnblockInput | null {
   const meta = msg.platform_metadata as Record<string, unknown>;
   const taskId = meta["task_id"];
-  const repo = meta["repo"];
-  const issueNumber = meta["issue_number"];
+  const externalRef = meta["external_ref"];
 
   // Direct task_id (dashboard, future APIs)
   if (typeof taskId === "string") {
     return { by: "task_id", taskId, source: msg.source, content: msg.content };
   }
 
-  // External ref (GitHub issues, etc.)
-  if (typeof repo === "string" && typeof issueNumber === "number") {
+  // Structured external_ref from adapter metadata (plugin-agnostic)
+  if (
+    externalRef &&
+    typeof externalRef === "object" &&
+    "repo" in externalRef &&
+    "number" in externalRef &&
+    typeof (externalRef as Record<string, unknown>)["repo"] === "string" &&
+    typeof (externalRef as Record<string, unknown>)["number"] === "number"
+  ) {
     return {
       by: "external_ref",
-      ref: { type: "github_issue", repo, number: issueNumber },
+      ref: externalRef as ExternalRef,
       source: msg.source,
       content: msg.content,
     };

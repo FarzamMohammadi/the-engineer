@@ -76,7 +76,7 @@ function createPlanningOutput(decompositionPlan: unknown): PhaseOutput {
 function createMockNotifier(): OrchestratorNotifier {
   return {
     notifyMilestone: vi.fn(),
-    commentOnSourceIssue: vi.fn(),
+    commentOnSourceTicket: vi.fn(),
   };
 }
 
@@ -267,11 +267,11 @@ describe("DecompositionHandler", () => {
 
     handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
 
-    expect(wsl.commentOnSourceIssue).toHaveBeenCalledWith(
+    expect(wsl.commentOnSourceTicket).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("Build UI"),
     );
-    expect(wsl.commentOnSourceIssue).toHaveBeenCalledWith(
+    expect(wsl.commentOnSourceTicket).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("Build API"),
     );

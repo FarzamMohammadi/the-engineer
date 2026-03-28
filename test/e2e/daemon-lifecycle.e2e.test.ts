@@ -36,7 +36,7 @@ describe("E2E: Daemon lifecycle", () => {
       idempotency_key: `test:issue:repo:${String(Date.now())}:${String(Math.random()).slice(2, 8)}`,
       source: "fake-trigger",
       event_type: "issue_opened",
-      external_ref: "https://github.com/test/repo/issues/1",
+      external_ref: { type: "test_issue", repo: "test/repo", number: 1 },
       title: "Test issue",
       body: "Test body",
       repo: "test/repo",

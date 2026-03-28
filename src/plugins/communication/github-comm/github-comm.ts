@@ -16,8 +16,9 @@ import {
   type TaskReconciliationInput,
   createAdapterError,
 } from "../../../adapters/index.js";
+import type { ExternalRef } from "../../../schemas/task.js";
 import { type GitHubCommConfig, GitHubCommConfigSchema } from "./config.js";
-import { diffStateLabels, parseGitHubUrl, parseTargetChannel } from "./github-utils.js";
+import { diffStateLabels, parseTargetChannel } from "./github-utils.js";
 
 /** Message type → GitHub markdown prefix. */
 const TYPE_PREFIXES: Record<MessageType, string> = {
@@ -31,7 +32,7 @@ const TYPE_PREFIXES: Record<MessageType, string> = {
 /**
  * GitHubCommPlugin — communicates via GitHub issue/PR comments and labels.
  *
- * Capabilities: send, sync, issue_management.
+ * Capabilities: send, sync, ticket_management.
  * "receive" deferred — see future-considerations.md.
  *
  * Communication plugins are dumb transport (Decision #40).
@@ -42,7 +43,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
   protected octokit!: Octokit;
 
   override hasCapability(capability: string): boolean {
-    return ["send", "sync", "issue_management"].includes(capability);
+    return ["send", "sync", "ticket_management"].includes(capability);
   }
 
   formatMessage(content: string, type: MessageType): string {
@@ -94,20 +95,21 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     newState: string,
     metadata: SyncMetadata,
   ): Promise<void> {
-    if (!metadata.external_ref) {
+    const ref = metadata.external_ref;
+    if (!ref) {
       return;
     }
-    const parsed = parseGitHubUrl(metadata.external_ref);
-    if (!parsed) {
+    const [owner, repoName] = ref.repo.split("/");
+    if (!(owner && repoName)) {
       return;
     }
 
     try {
       // Get current labels
       const { data: labels } = await this.octokit.issues.listLabelsOnIssue({
-        owner: parsed.owner,
-        repo: parsed.repo,
-        issue_number: parsed.number,
+        owner,
+        repo: repoName,
+        issue_number: ref.number,
       });
       const currentLabels = labels.map((l) => l.name);
       const diff = diffStateLabels(currentLabels, newState, this.config.label_prefix);
@@ -115,9 +117,9 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       // Add new label
       if (diff.add.length > 0) {
         await this.octokit.issues.addLabels({
-          owner: parsed.owner,
-          repo: parsed.repo,
-          issue_number: parsed.number,
+          owner,
+          repo: repoName,
+          issue_number: ref.number,
           labels: diff.add,
         });
       }
@@ -126,9 +128,9 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       for (const label of diff.remove) {
         try {
           await this.octokit.issues.removeLabel({
-            owner: parsed.owner,
-            repo: parsed.repo,
-            issue_number: parsed.number,
+            owner,
+            repo: repoName,
+            issue_number: ref.number,
             name: label,
           });
         } catch {
@@ -139,7 +141,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       throw new AdapterMethodError(
         createAdapterError(
           classifyGitHubError(error),
-          `Failed to sync state for ${metadata.external_ref}: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to sync state for ${ref.repo}#${String(ref.number)}: ${error instanceof Error ? error.message : String(error)}`,
           { retryable: isRetryable(error), severity: "error" },
         ),
       );
@@ -168,15 +170,19 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     task: TaskReconciliationInput,
   ): Promise<"ok" | "reconciled" | string> {
     try {
-      const parsed = parseGitHubUrl(task.external_ref);
-      if (!parsed) {
+      const ref = task.external_ref;
+      if (!ref) {
+        return "invalid_external_ref";
+      }
+      const [owner, repoName] = ref.repo.split("/");
+      if (!(owner && repoName)) {
         return "invalid_external_ref";
       }
 
       const { data: labels } = await this.octokit.issues.listLabelsOnIssue({
-        owner: parsed.owner,
-        repo: parsed.repo,
-        issue_number: parsed.number,
+        owner,
+        repo: repoName,
+        issue_number: ref.number,
       });
 
       const currentLabels = labels.map((l) => l.name);
@@ -184,13 +190,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
         return "ok";
       }
 
-      await this.applyLabelDiff(
-        parsed.owner,
-        parsed.repo,
-        parsed.number,
-        currentLabels,
-        task.expected_state,
-      );
+      await this.applyLabelDiff(owner, repoName, ref.number, currentLabels, task.expected_state);
       return "reconciled";
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
@@ -227,29 +227,25 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     }
   }
 
-  protected async doCommentOnIssue(
-    repo: string,
-    issueNumber: number,
-    comment: string,
-  ): Promise<void> {
-    const [owner, repoName] = repo.split("/");
+  protected async doCommentOnTicket(externalRef: ExternalRef, comment: string): Promise<void> {
+    const [owner, repoName] = externalRef.repo.split("/");
     if (!(owner && repoName)) {
       throw new AdapterMethodError(
         createAdapterError(
           "invalid_input",
-          `Invalid repo format: expected "owner/repo", got "${repo}"`,
+          `Invalid repo format: expected "owner/repo", got "${externalRef.repo}"`,
         ),
       );
     }
     await this.octokit.issues.createComment({
       owner,
       repo: repoName,
-      issue_number: issueNumber,
+      issue_number: externalRef.number,
       body: comment,
     });
   }
 
-  protected async doCreateIssue(repo: string, options: IssueOptions): Promise<IssueResult> {
+  protected async doCreateTicket(repo: string, options: IssueOptions): Promise<IssueResult> {
     const [owner, repoName] = repo.split("/");
     if (!(owner && repoName)) {
       throw new AdapterMethodError(
@@ -277,7 +273,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     return { number: data.number, url: data.html_url };
   }
 
-  protected async doUpdateIssue(
+  protected async doUpdateTicket(
     repo: string,
     issueNumber: number,
     updates: IssueUpdates,

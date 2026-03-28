@@ -551,7 +551,7 @@ export function createReviewHandler(
             return;
           }
 
-          notifications.commentOnTaskIssue(
+          notifications.commentOnTaskTicket(
             payload.task_id,
             "Demo approved — PR marked ready for code review.",
           );
@@ -585,7 +585,7 @@ export function createReviewHandler(
     }
     notifications.sendCompletion(taskId);
     if (commentMessage) {
-      notifications.commentOnTaskIssue(taskId, commentMessage);
+      notifications.commentOnTaskTicket(taskId, commentMessage);
     }
     callbacks.onTaskCompletionFinalized(taskId);
   }
@@ -708,7 +708,7 @@ export function createReviewHandler(
       }
       // Clear stale dedup key so re-polling after rework doesn't suppress events
       emittedFeedbackKeys.delete(payload.task_id);
-      notifications.commentOnTaskIssue(
+      notifications.commentOnTaskTicket(
         payload.task_id,
         `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
       );

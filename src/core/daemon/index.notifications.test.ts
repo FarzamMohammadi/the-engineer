@@ -17,7 +17,7 @@ function createMockCommPlugin(overrides?: { id?: string; capabilities?: string[]
     hasCapability: vi.fn((cap: string) => capabilities.includes(cap)),
     formatMessage: vi.fn((content: string, _type: string) => `[formatted] ${content}`),
     sendMessage: vi.fn().mockResolvedValue({ message_id: "msg-1" }),
-    commentOnIssue: vi.fn().mockResolvedValue(undefined),
+    commentOnTicket: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -32,7 +32,7 @@ function setupTaskDispatch(
     title: "Fix the bug",
     state: "queued",
     sub_state: null,
-    external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+    external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
     ...taskOverrides,
   });
   handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
@@ -82,7 +82,7 @@ describe("Daemon Notifications", () => {
     });
 
     it("posts GitHub issue comment when task completes", async () => {
-      const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+      const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
       setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
@@ -90,9 +90,9 @@ describe("Daemon Notifications", () => {
       await handle.daemon.tick();
       await flush();
 
-      const commentCalls = commPlugin.commentOnIssue.mock.calls;
+      const commentCalls = commPlugin.commentOnTicket.mock.calls;
       const completionComment = commentCalls.find((call: unknown[]) =>
-        (call[2] as string).includes("completed successfully"),
+        (call[1] as string).includes("completed successfully"),
       );
       expect(completionComment).toBeDefined();
     });
@@ -114,7 +114,7 @@ describe("Daemon Notifications", () => {
     });
 
     it("skips GitHub comment when task has no external_ref", async () => {
-      const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+      const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
       setupTaskDispatch(
@@ -128,7 +128,7 @@ describe("Daemon Notifications", () => {
       await handle.daemon.tick();
       await flush();
 
-      expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
+      expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
     });
 
     it("notification failure never throws", async () => {
@@ -200,7 +200,7 @@ describe("Daemon Notifications", () => {
     });
 
     it("posts GitHub issue comment with error reason", async () => {
-      const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+      const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
       setupTaskDispatch(handle, {
@@ -212,9 +212,9 @@ describe("Daemon Notifications", () => {
       await handle.daemon.tick();
       await flush();
 
-      const commentCalls = commPlugin.commentOnIssue.mock.calls;
+      const commentCalls = commPlugin.commentOnTicket.mock.calls;
       const errorComment = commentCalls.find((call: unknown[]) =>
-        (call[2] as string).includes("build_failed"),
+        (call[1] as string).includes("build_failed"),
       );
       expect(errorComment).toBeDefined();
     });
@@ -256,7 +256,7 @@ describe("Daemon Notifications", () => {
         title: "Expensive task",
         state: "active",
         sub_state: "working",
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 10 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
@@ -294,7 +294,7 @@ describe("Daemon Notifications", () => {
     });
 
     it("posts GitHub issue comment for cost limit", async () => {
-      const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+      const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
 
       const task = createMockTask({
@@ -302,7 +302,7 @@ describe("Daemon Notifications", () => {
         title: "Expensive task",
         state: "active",
         sub_state: "working",
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 10 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 10 },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
@@ -329,22 +329,22 @@ describe("Daemon Notifications", () => {
       await flush();
       await handle.daemon.stop();
 
-      const commentCalls = commPlugin.commentOnIssue.mock.calls;
+      const commentCalls = commPlugin.commentOnTicket.mock.calls;
       const costComment = commentCalls.find((call: unknown[]) =>
-        (call[2] as string).includes("cost limit"),
+        (call[1] as string).includes("cost limit"),
       );
       expect(costComment).toBeDefined();
     });
   });
 
-  // ── commentOnTaskIssue helper ─────────────────────────────────────────
+  // ── commentOnTaskTicket helper ─────────────────────────────────────────
 
-  describe("commentOnTaskIssue helper", () => {
-    it("routes to comm plugin with issue_management capability", async () => {
+  describe("commentOnTaskTicket helper", () => {
+    it("routes to comm plugin with ticket_management capability", async () => {
       const sendOnlyPlugin = createMockCommPlugin({ id: "telegram-comm", capabilities: ["send"] });
       const issuePlugin = createMockCommPlugin({
         id: "github-comm",
-        capabilities: ["send", "issue_management"],
+        capabilities: ["send", "ticket_management"],
       });
       handle.registry.getPluginsByType.mockReturnValue([sendOnlyPlugin, issuePlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
@@ -353,36 +353,37 @@ describe("Daemon Notifications", () => {
       await handle.daemon.tick();
       await flush();
 
-      // Only issuePlugin should have commentOnIssue called
-      expect(issuePlugin.commentOnIssue).toHaveBeenCalled();
-      expect(sendOnlyPlugin.commentOnIssue).not.toHaveBeenCalled();
+      // Only issuePlugin should have commentOnTicket called
+      expect(issuePlugin.commentOnTicket).toHaveBeenCalled();
+      expect(sendOnlyPlugin.commentOnTicket).not.toHaveBeenCalled();
     });
 
     it("passes correct repo and issue number from external_ref", async () => {
-      const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
+      const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
       setupTaskDispatch(
         handle,
         { outcome: "completed", phaseOutputs: new Map() },
         {
-          external_ref: { type: "github_issue", repo: "acme/widgets", number: 99 },
+          external_ref: { type: "test_issue", repo: "acme/widgets", number: 99 },
         },
       );
 
       await handle.daemon.tick();
       await flush();
 
-      const commentCalls = commPlugin.commentOnIssue.mock.calls;
-      const matchingCall = commentCalls.find(
-        (call: unknown[]) => call[0] === "acme/widgets" && call[1] === 99,
-      );
+      const commentCalls = commPlugin.commentOnTicket.mock.calls;
+      const matchingCall = commentCalls.find((call: unknown[]) => {
+        const ref = call[0] as { repo: string; number: number };
+        return ref.repo === "acme/widgets" && ref.number === 99;
+      });
       expect(matchingCall).toBeDefined();
     });
 
-    it("handles commentOnIssue failure silently", async () => {
-      const commPlugin = createMockCommPlugin({ capabilities: ["send", "issue_management"] });
-      commPlugin.commentOnIssue.mockRejectedValue(new Error("GitHub API down"));
+    it("handles commentOnTicket failure silently", async () => {
+      const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
+      commPlugin.commentOnTicket.mockRejectedValue(new Error("GitHub API down"));
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
       setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
@@ -392,7 +393,7 @@ describe("Daemon Notifications", () => {
       await flush();
     });
 
-    it("skips when no comm plugin has issue_management", async () => {
+    it("skips when no comm plugin has ticket_management", async () => {
       const commPlugin = createMockCommPlugin({ capabilities: ["send"] });
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
@@ -401,7 +402,7 @@ describe("Daemon Notifications", () => {
       await handle.daemon.tick();
       await flush();
 
-      expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
+      expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
     });
   });
 });

@@ -104,8 +104,8 @@ describe("TelegramCommPlugin", () => {
       expect(plugin.hasCapability("sync")).toBe(false);
     });
 
-    it("does not report issue_management capability", () => {
-      expect(plugin.hasCapability("issue_management")).toBe(false);
+    it("does not report ticket_management capability", () => {
+      expect(plugin.hasCapability("ticket_management")).toBe(false);
     });
   });
 

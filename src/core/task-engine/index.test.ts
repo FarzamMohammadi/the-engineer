@@ -292,10 +292,10 @@ describe("TaskEngine", () => {
     it("accepts external_ref", () => {
       const task = engine.createTask(
         makeInput({
-          external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+          external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
         }),
       );
-      expect(task.external_ref).toEqual({ type: "github_issue", repo: "owner/repo", number: 42 });
+      expect(task.external_ref).toEqual({ type: "test_issue", repo: "owner/repo", number: 42 });
     });
 
     it("accepts parent_id", () => {
@@ -625,13 +625,13 @@ describe("TaskEngine", () => {
     it("returns full task object with correctly parsed JSON fields", () => {
       const task = engine.createTask(
         makeInput({
-          external_ref: { type: "github_issue", repo: "owner/repo", number: 7 },
+          external_ref: { type: "test_issue", repo: "owner/repo", number: 7 },
           acceptance_criteria: ["test1", "test2"],
         }),
       );
       const retrieved = assertDefined(engine.getTask(task.id), "task");
       expect(retrieved.external_ref).toEqual({
-        type: "github_issue",
+        type: "test_issue",
         repo: "owner/repo",
         number: 7,
       });

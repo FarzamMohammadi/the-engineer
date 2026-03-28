@@ -67,7 +67,7 @@ describe("createTestRegistry", () => {
         idempotency_key: "test:1",
         source: "fake-trigger",
         event_type: "issue_opened",
-        external_ref: "https://example.com/1",
+        external_ref: { type: "test_issue", repo: "test/repo", number: 1 },
         title: "Test issue",
         body: null,
         repo: "test/repo",

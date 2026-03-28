@@ -9,6 +9,8 @@ function createMockOctokit() {
   return {
     issues: {
       listForRepo: vi.fn().mockResolvedValue({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
         data: [
           {
             number: 42,
@@ -111,9 +113,14 @@ describe("GitHubTriggerPlugin", () => {
       expect(events[0]?.source).toBe("github-trigger");
     });
 
-    it("includes external_ref as GitHub URL", async () => {
+    it("includes external_ref as structured ExternalRef object", async () => {
       const events = await plugin.poll();
-      expect(events[0]?.external_ref).toBe("https://github.com/acme/webapp/issues/42");
+      expect(events[0]?.external_ref).toEqual({
+        type: "github_issue",
+        repo: "acme/webapp",
+        number: 42,
+        url: "https://github.com/acme/webapp/issues/42",
+      });
     });
 
     it("extracts metadata with labels and assignees", async () => {
@@ -126,6 +133,8 @@ describe("GitHubTriggerPlugin", () => {
 
     it("handles null body", async () => {
       mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
         data: [
           {
             number: 1,
@@ -144,6 +153,8 @@ describe("GitHubTriggerPlugin", () => {
 
     it("filters out pull requests from issues list", async () => {
       mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
         data: [
           {
             number: 10,
@@ -197,6 +208,8 @@ describe("GitHubTriggerPlugin", () => {
 
       mockOctokit.issues.listForRepo
         .mockResolvedValueOnce({
+          status: 200,
+          headers: { etag: '"mock-etag"' },
           data: [
             {
               number: 1,
@@ -209,6 +222,8 @@ describe("GitHubTriggerPlugin", () => {
           ],
         })
         .mockResolvedValueOnce({
+          status: 200,
+          headers: { etag: '"mock-etag"' },
           data: [
             {
               number: 2,
@@ -229,6 +244,8 @@ describe("GitHubTriggerPlugin", () => {
 
     it("advances watermark after poll", async () => {
       mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
         data: [
           {
             number: 1,
@@ -244,7 +261,11 @@ describe("GitHubTriggerPlugin", () => {
       await plugin.poll();
 
       // Second poll should pass the watermark as `since` parameter
-      mockOctokit.issues.listForRepo.mockResolvedValueOnce({ data: [] });
+      mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
+        data: [],
+      });
       await plugin.poll();
 
       const secondCallArgs = mockOctokit.issues.listForRepo.mock.calls[1]?.[0] as Record<
@@ -255,7 +276,11 @@ describe("GitHubTriggerPlugin", () => {
     });
 
     it("returns empty array when no issues", async () => {
-      mockOctokit.issues.listForRepo.mockResolvedValueOnce({ data: [] });
+      mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
+        data: [],
+      });
       const events = await plugin.poll();
       expect(events).toEqual([]);
     });
@@ -362,20 +387,25 @@ describe("GitHubTriggerPlugin", () => {
   });
 
   describe("shutdown()", () => {
-    it("clears watermarks", async () => {
+    it("persists watermarks across shutdown/init cycle", async () => {
       // Poll once to set watermarks
       await plugin.poll();
       await plugin.shutdown();
 
-      // Re-init and poll — should not pass `since` param
+      // Re-init and poll — watermarks should be restored from disk
       await plugin.initialize(VALID_CONFIG);
       (plugin as unknown as { octokit: unknown }).octokit = mockOctokit;
-      mockOctokit.issues.listForRepo.mockResolvedValueOnce({ data: [] });
+      mockOctokit.issues.listForRepo.mockResolvedValueOnce({
+        status: 200,
+        headers: { etag: '"mock-etag"' },
+        data: [],
+      });
       await plugin.poll();
 
       const calls = mockOctokit.issues.listForRepo.mock.calls;
       const lastCallArgs = calls[calls.length - 1]?.[0] as Record<string, unknown>;
-      expect(lastCallArgs["since"]).toBeUndefined();
+      // Watermark persisted — since param should be the watermark value
+      expect(lastCallArgs["since"]).toBe("2026-03-11T10:00:00Z");
     });
   });
 });

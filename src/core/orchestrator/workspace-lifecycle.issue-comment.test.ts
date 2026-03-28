@@ -7,19 +7,19 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createMockCommPlugin(capabilities: string[] = ["send", "issue_management"]) {
+function createMockCommPlugin(capabilities: string[] = ["send", "ticket_management"]) {
   return {
     manifest: { id: "github-comm", type: "communication", version: "1.0.0", name: "GitHub Comm" },
     hasCapability: vi.fn((cap: string) => capabilities.includes(cap)),
     formatMessage: vi.fn((content: string) => content),
     sendMessage: vi.fn().mockResolvedValue({ message_id: "msg-1" }),
-    commentOnIssue: vi.fn().mockResolvedValue(undefined),
+    commentOnTicket: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-describe("Orchestrator commentOnSourceIssue", () => {
+describe("Orchestrator commentOnSourceTicket", () => {
   let handle: TestOrchestratorHandle;
 
   beforeEach(() => {
@@ -33,17 +33,21 @@ describe("Orchestrator commentOnSourceIssue", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
       },
     });
 
     await handle.orchestrator.executeTask(dispatch);
 
-    const commentCalls = commPlugin.commentOnIssue.mock.calls;
-    const pickupComment = commentCalls.find(
-      (call: unknown[]) =>
-        call[0] === "owner/repo" && call[1] === 42 && (call[2] as string).includes("Starting work"),
-    );
+    const commentCalls = commPlugin.commentOnTicket.mock.calls;
+    const pickupComment = commentCalls.find((call: unknown[]) => {
+      const ref = call[0] as { repo: string; number: number };
+      return (
+        ref.repo === "owner/repo" &&
+        ref.number === 42 &&
+        (call[1] as string).includes("Starting work")
+      );
+    });
     expect(pickupComment).toBeDefined();
   });
 
@@ -57,32 +61,32 @@ describe("Orchestrator commentOnSourceIssue", () => {
 
     await handle.orchestrator.executeTask(dispatch);
 
-    expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
+    expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
   });
 
-  it("skips comment when no plugin has issue_management capability", async () => {
-    const commPlugin = createMockCommPlugin(["send"]); // no issue_management
+  it("skips comment when no plugin has ticket_management capability", async () => {
+    const commPlugin = createMockCommPlugin(["send"]); // no ticket_management
     handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
       },
     });
 
     await handle.orchestrator.executeTask(dispatch);
 
-    expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
+    expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
   });
 
-  it("never throws when commentOnIssue fails", async () => {
+  it("never throws when commentOnTicket fails", async () => {
     const commPlugin = createMockCommPlugin();
-    commPlugin.commentOnIssue.mockRejectedValue(new Error("GitHub API down"));
+    commPlugin.commentOnTicket.mockRejectedValue(new Error("GitHub API down"));
     handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
       },
     });
 
@@ -123,18 +127,18 @@ describe("Orchestrator commentOnSourceIssue", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "owner/repo", number: 42 },
       },
     });
 
     await handle.orchestrator.executeTask(dispatch);
 
-    const commentCalls = commPlugin.commentOnIssue.mock.calls;
+    const commentCalls = commPlugin.commentOnTicket.mock.calls;
     // PR comment may or may not be present depending on whether the demo_prep
     // phase triggers PR creation (requires specific LLM output + workspace).
     // The pickup comment should always be present.
     const pickupComment = commentCalls.find((call: unknown[]) =>
-      (call[2] as string).includes("Starting work"),
+      (call[1] as string).includes("Starting work"),
     );
     expect(pickupComment).toBeDefined();
   });
@@ -145,19 +149,20 @@ describe("Orchestrator commentOnSourceIssue", () => {
 
     const dispatch = createMockDispatch({
       task: {
-        external_ref: { type: "github_issue", repo: "acme/widgets", number: 99 },
+        external_ref: { type: "test_issue", repo: "acme/widgets", number: 99 },
       },
     });
 
     await handle.orchestrator.executeTask(dispatch);
 
-    const commentCalls = commPlugin.commentOnIssue.mock.calls;
+    const commentCalls = commPlugin.commentOnTicket.mock.calls;
     expect(commentCalls.length).toBeGreaterThan(0);
-    expect(commentCalls[0]![0]).toBe("acme/widgets");
-    expect(commentCalls[0]![1]).toBe(99);
+    const ref = commentCalls[0]![0] as { repo: string; number: number };
+    expect(ref.repo).toBe("acme/widgets");
+    expect(ref.number).toBe(99);
   });
 
-  it("skips comment for non-GitHub external_ref types", async () => {
+  it("posts comment for any external_ref type when plugin has ticket_management", async () => {
     const commPlugin = createMockCommPlugin();
     handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
 
@@ -169,6 +174,6 @@ describe("Orchestrator commentOnSourceIssue", () => {
 
     await handle.orchestrator.executeTask(dispatch);
 
-    expect(commPlugin.commentOnIssue).not.toHaveBeenCalled();
+    expect(commPlugin.commentOnTicket).toHaveBeenCalled();
   });
 });

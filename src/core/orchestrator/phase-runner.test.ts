@@ -665,13 +665,13 @@ describe("PhaseRunner", () => {
         const callOrder: string[] = [];
 
         const mockCommPlugin = {
-          hasCapability: vi.fn((cap: string) => cap === "send"),
           manifest: { id: "telegram-comm" },
+          hasCapability: vi.fn((cap: string) => cap === "send"),
           formatMessage: vi.fn((msg: string) => msg),
           sendMessage: vi.fn(async () => {
             await new Promise((resolve) => setTimeout(resolve, 50));
             callOrder.push("send_completed");
-            return { success: true, message_id: "42" };
+            return { success: true, message_id: "42", error: null };
           }),
         };
         (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -680,8 +680,16 @@ describe("PhaseRunner", () => {
 
         // Mock people directory
         const pd = ctx.peopleDirectory as unknown as Record<string, ReturnType<typeof vi.fn>>;
-        pd["getPerson"] = vi.fn().mockReturnValue({ id: "farzam", name: "Farzam" });
-        pd["getOwner"] = vi.fn().mockReturnValue({ id: "farzam", name: "Farzam" });
+        pd["getPerson"] = vi.fn().mockReturnValue({
+          id: "farzam",
+          name: "Farzam",
+          contacts: [{ channel: "telegram", handle: "farzam_tg" }],
+        });
+        pd["getOwner"] = vi.fn().mockReturnValue({
+          id: "farzam",
+          name: "Farzam",
+          contacts: [{ channel: "telegram", handle: "farzam_tg" }],
+        });
 
         (ctx.taskEngine.requestTransition as ReturnType<typeof vi.fn>).mockImplementation(() => {
           callOrder.push("transition_to_blocked");

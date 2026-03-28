@@ -11,6 +11,7 @@ import type {
   Target,
   TaskReconciliationInput,
 } from "../schemas/adapters.js";
+import type { ExternalRef } from "../schemas/task.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 
@@ -141,36 +142,36 @@ export abstract class CommunicationAdapter extends BaseAdapter {
     throw capabilityError(this.manifest.id, "sync", "reconcileState");
   }
 
-  // ── Optional: Issue Management (capability: "issue_management") ────────────
+  // ── Optional: Ticket Management (capability: "ticket_management") ──────────
 
-  /** Comment on an issue. Override if "issue_management" capability. */
-  async commentOnIssue(repo: string, issueNumber: number, comment: string): Promise<void> {
-    return wrapAsync(() => this.doCommentOnIssue(repo, issueNumber, comment));
+  /** Comment on an external ticket. Override if "ticket_management" capability. */
+  async commentOnTicket(externalRef: ExternalRef, comment: string): Promise<void> {
+    return wrapAsync(() => this.doCommentOnTicket(externalRef, comment));
   }
 
-  /** Create a new issue. Override if "issue_management" capability. */
-  async createIssue(repo: string, options: IssueOptions): Promise<IssueResult> {
-    return wrapAsync(() => this.doCreateIssue(repo, options));
+  /** Create a new ticket. Override if "ticket_management" capability. */
+  async createTicket(repo: string, options: IssueOptions): Promise<IssueResult> {
+    return wrapAsync(() => this.doCreateTicket(repo, options));
   }
 
-  /** Update an existing issue. Override if "issue_management" capability. */
-  async updateIssue(repo: string, issueNumber: number, updates: IssueUpdates): Promise<void> {
-    return wrapAsync(() => this.doUpdateIssue(repo, issueNumber, updates));
+  /** Update an existing ticket. Override if "ticket_management" capability. */
+  async updateTicket(repo: string, issueNumber: number, updates: IssueUpdates): Promise<void> {
+    return wrapAsync(() => this.doUpdateTicket(repo, issueNumber, updates));
   }
 
-  protected doCommentOnIssue(_repo: string, _issueNumber: number, _comment: string): Promise<void> {
-    throw capabilityError(this.manifest.id, "issue_management", "commentOnIssue");
+  protected doCommentOnTicket(_externalRef: ExternalRef, _comment: string): Promise<void> {
+    throw capabilityError(this.manifest.id, "ticket_management", "commentOnTicket");
   }
 
-  protected doCreateIssue(_repo: string, _options: IssueOptions): Promise<IssueResult> {
-    throw capabilityError(this.manifest.id, "issue_management", "createIssue");
+  protected doCreateTicket(_repo: string, _options: IssueOptions): Promise<IssueResult> {
+    throw capabilityError(this.manifest.id, "ticket_management", "createTicket");
   }
 
-  protected doUpdateIssue(
+  protected doUpdateTicket(
     _repo: string,
     _issueNumber: number,
     _updates: IssueUpdates,
   ): Promise<void> {
-    throw capabilityError(this.manifest.id, "issue_management", "updateIssue");
+    throw capabilityError(this.manifest.id, "ticket_management", "updateTicket");
   }
 }

@@ -77,7 +77,7 @@ function makeNotifications(): NotificationRouter & Record<string, ReturnType<typ
     sendBlockedReminder: vi.fn(),
     sendEscalationAlert: vi.fn(),
     sendReviewReminder: vi.fn(),
-    commentOnTaskIssue: vi.fn(),
+    commentOnTaskTicket: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }

@@ -120,6 +120,26 @@ export function checkConfigFiles(configDir: string): DoctorCategory {
     const result = loadConfigSafe(filePath, schema);
     if (result.ok) {
       checks.push({ label: name, status: "pass", message: "Valid" });
+
+      // Owner-must-exist check for people config
+      if (name === "people.yaml" && result.config) {
+        const people = result.config as { people?: Array<{ role?: string }> };
+        const hasOwner = people.people?.some((p) => p.role === "owner") ?? false;
+        if (hasOwner) {
+          checks.push({
+            label: "People Directory — owner",
+            status: "pass",
+            message: "Owner configured",
+          });
+        } else {
+          checks.push({
+            label: "People Directory — owner",
+            status: "warn",
+            message: "No person with role 'owner' configured — outreach fallback will fail",
+            remedy: `Add a person with role: owner to ${filePath}`,
+          });
+        }
+      }
     } else {
       checks.push({
         label: name,

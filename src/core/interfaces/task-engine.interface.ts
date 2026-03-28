@@ -83,4 +83,6 @@ export interface ITaskEngine {
   getStateHistory(taskId: string): StateTransition[];
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void;
   updateTracking(taskId: string, tokens: number, costUsd: number, computeMs: number): void;
+  /** Check if a non-terminal task exists with the given external ref (type-aware dedup). */
+  findByExternalRef(ref: ExternalRef): boolean;
 }

@@ -82,7 +82,7 @@ function createMockNotifications(): NotificationRouter {
     sendBlockedReminder: vi.fn(),
     sendEscalationAlert: vi.fn(),
     sendReviewReminder: vi.fn(),
-    commentOnTaskIssue: vi.fn(),
+    commentOnTaskTicket: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }
@@ -255,7 +255,7 @@ describe("ReviewHandler", () => {
       await handler.checkMerges();
 
       expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
-      expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
         "task-1",
         "PR merged — task completed.",
       );
@@ -516,7 +516,7 @@ describe("ReviewHandler", () => {
         "feedback_rework:changes_requested",
         "daemon",
       );
-      expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
         "task-1",
         "Reviewer feedback received (changes_requested) — reworking.",
       );
@@ -592,7 +592,7 @@ describe("ReviewHandler", () => {
         "code_approved",
         "daemon",
       );
-      expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
         "task-1",
         "Code review approved — ready to merge.",
       );
@@ -680,7 +680,7 @@ describe("ReviewHandler", () => {
         "code_approved",
         "daemon",
       );
-      expect(notifications.commentOnTaskIssue).toHaveBeenCalledWith(
+      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
         "task-1",
         "Code approved — auto-merge failed, please merge manually.",
       );

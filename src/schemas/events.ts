@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ZodType } from "zod";
 
-import { ActionClassSchema, SubStateSchema, TaskStateSchema } from "./task.js";
+import { ActionClassSchema, ExternalRefSchema, SubStateSchema, TaskStateSchema } from "./task.js";
 
 // ── Event Envelope ─────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ export const TaskCreatedPayloadSchema = z.object({
   task_id: z.string(),
   parent_id: z.string().nullable(),
   title: z.string(),
-  external_ref: z.string().nullable(),
+  external_ref: ExternalRefSchema.nullable(),
   source: z.string(),
   priority: z.number().int(),
   repo: z.string(),
@@ -214,7 +214,7 @@ export const TriggerNewEventPayloadSchema = z.object({
   idempotency_key: z.string(),
   source: z.string(),
   event_type: z.string(),
-  external_ref: z.string(),
+  external_ref: ExternalRefSchema.nullable(),
   title: z.string(),
   body: z.string().nullable(),
   repo: z.string(),

@@ -171,7 +171,12 @@ describe("TriggerEventSchema", () => {
     idempotency_key: "github:issue:owner/repo:47",
     source: "github-trigger",
     event_type: "issue_opened",
-    external_ref: "https://github.com/owner/repo/issues/47",
+    external_ref: {
+      type: "github_issue",
+      repo: "owner/repo",
+      number: 47,
+      url: "https://github.com/owner/repo/issues/47",
+    },
     title: "Fix dark mode",
     body: "The dark mode toggle doesn't work",
     repo: "owner/repo",
@@ -402,7 +407,7 @@ describe("TaskReconciliationInputSchema", () => {
     expect(
       TaskReconciliationInputSchema.parse({
         task_id: "01ABC",
-        external_ref: "https://github.com/...",
+        external_ref: { type: "github_issue", repo: "owner/repo", number: 42 },
         expected_state: "active",
         expected_label: "engineer:active",
       }),

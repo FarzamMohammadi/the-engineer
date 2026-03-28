@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ExternalRefSchema } from "./task.js";
+
 // ── Universal Adapter Contract ──────────────────────────────────────────────────
 
 export const AdapterTypeSchema = z.enum(["trigger", "communication", "llm", "tool", "git_hosting"]);
@@ -78,7 +80,7 @@ export const TriggerEventSchema = z.object({
   idempotency_key: z.string(),
   source: z.string(),
   event_type: z.string(),
-  external_ref: z.string(),
+  external_ref: ExternalRefSchema.nullable(),
   title: z.string(),
   body: z.string().nullable(),
   repo: z.string(),
@@ -142,7 +144,7 @@ export type InboundMessage = z.infer<typeof InboundMessageSchema>;
 
 export const SyncMetadataSchema = z.object({
   task_title: z.string(),
-  external_ref: z.string().nullable(),
+  external_ref: ExternalRefSchema.nullable(),
   sub_state: z.string().nullable(),
   reason: z.string().nullable(),
 });
@@ -173,7 +175,7 @@ export type IssueUpdates = z.infer<typeof IssueUpdatesSchema>;
 
 export const TaskReconciliationInputSchema = z.object({
   task_id: z.string(),
-  external_ref: z.string(),
+  external_ref: ExternalRefSchema.nullable(),
   expected_state: z.string(),
   expected_label: z.string(),
 });

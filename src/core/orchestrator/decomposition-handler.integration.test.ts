@@ -237,26 +237,26 @@ describe("Orchestrator — Decomposition", () => {
       };
     });
 
-    // Set up external_ref so commentOnSourceIssue fires
+    // Set up external_ref so commentOnSourceTicket fires
     const dispatch = createMockDispatch({
       task: {
         repo: "test/repo",
         clone_url: "https://example.com/repo.git",
-        external_ref: { type: "github_issue", repo: "test/repo", number: 42 },
+        external_ref: { type: "test_issue", repo: "test/repo", number: 42 },
       },
     });
 
-    // Mock comm plugin with issue_management capability
+    // Mock comm plugin with ticket_management capability
     const mockCommPlugin = {
-      hasCapability: (cap: string) => cap === "issue_management",
-      commentOnIssue: async () => {},
+      hasCapability: (cap: string) => cap === "ticket_management",
+      commentOnTicket: async () => {},
       manifest: { id: "github-comm" },
     };
     h.registry.getPluginsByType.mockReturnValue([mockCommPlugin]);
 
     await h.orchestrator.executeTask(dispatch);
 
-    // commentOnSourceIssue was called — the test just verifies no crash
+    // commentOnSourceTicket was called — the test just verifies no crash
     // The actual comment goes through the comm plugin mock
   });
 

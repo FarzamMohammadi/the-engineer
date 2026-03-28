@@ -76,7 +76,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     return 1;
   }
 
-  // 2. Load config (AFTER setup has written config files)
+  // 3. Load config (AFTER setup has written config files)
   let bundle: ConfigBundle;
   try {
     const result = loadConfigDir(dirs.config);
@@ -90,7 +90,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     return 1;
   }
 
-  // 3. Run pre-flight checks (doctor categories 1-7)
+  // 4. Run pre-flight checks
   let preFlightResults: ReturnType<typeof runPreFlightChecks>;
   try {
     preFlightResults = runPreFlightChecks(engineerHome);
@@ -239,6 +239,7 @@ async function runForeground(
       const pidHint = error.existingPid != null ? ` (PID: ${String(error.existingPid)})` : "";
       out.error(`The Engineer is already running${pidHint}.`);
       out.log("  Use 'engineer stop' to stop it, or 'engineer status' to check.");
+      cleanupDashboard();
       cleanup();
       return 1;
     }

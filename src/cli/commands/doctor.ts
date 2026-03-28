@@ -551,7 +551,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
 
 // ── Aggregation ──────────────────────────────────────────────────────────────
 
-/** Run all 11 doctor check categories. */
+/** Run all doctor check categories (8 base + 1 conditional risky config). */
 export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
   const dirs = resolveDirectories(engineerHome);
   const categories: DoctorCategory[] = [

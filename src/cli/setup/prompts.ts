@@ -188,10 +188,11 @@ async function promptForSecrets(fileContents: readonly string[]): Promise<Record
     }
 
     // Use plain input for IDs, masked password for tokens/secrets
+    const validate = (v: string) => v.trim().length > 0 || "Value cannot be empty";
     if (varName.endsWith("_ID")) {
-      secrets[varName] = await input({ message: `${varName}:` });
+      secrets[varName] = await input({ message: `${varName}:`, validate });
     } else {
-      secrets[varName] = await password({ message: `${varName}:`, mask: "*" });
+      secrets[varName] = await password({ message: `${varName}:`, mask: "*", validate });
     }
   }
 

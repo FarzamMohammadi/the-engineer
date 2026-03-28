@@ -120,8 +120,14 @@ export function parseGitRemote(output: string): { owner: string; name: string } 
   const url = originLine.split(/\s+/)[1];
   if (!url) return null;
 
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = url.match(/https?:\/\/[^/]+\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (httpsMatch?.[1] && httpsMatch[2]) {
+    return { owner: httpsMatch[1], name: httpsMatch[2] };
+  }
+
   // SSH: git@github.com:owner/repo.git
-  const sshMatch = url.match(/[:\/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+  const sshMatch = url.match(/:([^/]+)\/([^/]+?)(?:\.git)?$/);
   if (sshMatch?.[1] && sshMatch[2]) {
     return { owner: sshMatch[1], name: sshMatch[2] };
   }
@@ -366,7 +372,7 @@ function runNonInteractiveSetup(
 
   if (dryRun) {
     out.blank();
-    out.log("  Dry run — would copy from ${pluginsPath}:");
+    out.log(`  Dry run — would copy from ${pluginsPath}:`);
     for (const file of yamlFiles) {
       out.log(`    config/plugins/${file}`);
     }

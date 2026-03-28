@@ -35,7 +35,7 @@ engineer start              # Setup (first run) + start daemon
 engineer stop               # Graceful shutdown
 engineer status             # Is it running? Task queue depth
 engineer logs               # View daemon logs (--follow, --json)
-engineer doctor             # Health checks (11 categories)
+engineer doctor             # Health checks (9 categories)
 engineer why <task-id>      # Explain a task's decision trail
 ```
 

@@ -29,8 +29,10 @@ Implementation reference for the planning session. Every file path, schema field
 | `src/schemas/events.ts` | Event payload schemas | Change `TriggerNewEventPayloadSchema.external_ref` from `z.string()` (L217) to match new adapter schema type. |
 | `src/core/orchestrator/phase-runner.ts` | Phase sequencing + outreach | Extract `sendOutreachFromFiles()` (L109–201) to own file. Populate `contacted` array (currently `[]` at L685). Add outreach dedup check (existing files = already contacted). |
 | `src/core/daemon/unblock-resolver.ts` | Task unblocking | Change `writeFileSync` (L133) to write individual response files (`response-{timestamp}-{source}.txt`). Fix concurrent unblock race: write response regardless of transition success. |
-| `src/core/daemon/response-poller.ts` | Response detection | Add reply-threading check (Telegram `reply_to_message_id`, GitHub comment threading). Add task-reference regex scan as fallback. Plan for removing sole-blocked-task fallback (L156–169). |
-| `src/schemas/config.ts` | Daemon configuration | Add `priority_labels` config field (after L156). Add `rate_limit_threshold` for proactive throttling. Add `blocked_timeout_ms` for blocked task watchdog. |
+| `src/core/daemon/response-poller.ts` | Response detection | Fix `linkMessageToTask()` (L41) — stop constructing platform-specific ExternalRef. Add task-reference regex scan as fallback. Plan for removing sole-blocked-task fallback (L156–169). |
+| `src/core/orchestrator/orchestrator-notifier.ts` | Notifications | Remove platform type-string checks (L78). Fix URL construction (via `external_ref.url`). |
+| `src/core/daemon/notification-router.ts` | Notification routing | Remove platform type-string checks (L256). Fix URL construction (L283 — use `external_ref.url`). |
+| `src/schemas/config.ts` | Daemon configuration | Add `priority_labels` config field (after L156). Add `blocked_timeout_ms` for blocked task watchdog. (`rate_limit_threshold` is plugin-internal, NOT in Core config.) |
 | `src/core/interfaces/task-engine.interface.ts` | Task engine contract | Add `findByExternalRef(ref: ExternalRef): boolean` method (after L86). |
 | `src/core/task-engine/index.ts` | Task engine implementation | Implement `findByExternalRef()` with JSON-based query on tasks table. |
 | `src/core/orchestrator/prompts/requirements-gathering.ts` | Requirements prompt | Add block/proceed criteria examples (around L97–129). Add "number your questions" guidance for outreach. |
@@ -111,7 +113,6 @@ Implementation reference for the planning session. Every file path, schema field
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
 | `priority_labels` | `z.record(z.string(), z.number().int().min(1).max(100))` | `{}` | Label → priority mapping |
-| `rate_limit_threshold` | `z.number().int().positive()` | `100` | Proactive throttle when remaining < threshold |
 | `blocked_timeout_ms` | `z.number().int().positive()` | `86_400_000` (1 day) | Watchdog for stuck blocked tasks |
 
 ---
@@ -251,19 +252,21 @@ seenTriggerKeys.set(event.idempotency_key, now + config.seen_keys_ttl_ms);
 findByExternalRef(ref: ExternalRef): boolean {
   const row = this.db.prepare(`
     SELECT 1 FROM tasks
-    WHERE json_extract(external_ref, '$.repo') = ?
+    WHERE json_extract(external_ref, '$.type') = ?
+      AND json_extract(external_ref, '$.repo') = ?
       AND json_extract(external_ref, '$.number') = ?
       AND state NOT IN ('completed', 'failed')
     LIMIT 1
-  `).get(ref.repo, ref.number);
+  `).get(ref.type, ref.repo, ref.number);
   return row !== undefined;
 }
 ```
 
-**Migration (010):** Add index for performance:
+**Migration (010):** Partial index for performance (only active tasks):
 ```sql
-CREATE INDEX IF NOT EXISTS idx_tasks_external_ref_repo
-  ON tasks(json_extract(external_ref, '$.repo'), json_extract(external_ref, '$.number'));
+CREATE INDEX IF NOT EXISTS idx_tasks_external_ref_active
+  ON tasks(json_extract(external_ref, '$.type'), json_extract(external_ref, '$.repo'), json_extract(external_ref, '$.number'))
+  WHERE state NOT IN ('completed', 'failed');
 ```
 
 ### 6. Label-Based Priority
@@ -376,9 +379,9 @@ if (taskRefMatch) {
 **After every Octokit API call, read rate limit headers:**
 ```typescript
 const remaining = Number(response.headers["x-ratelimit-remaining"] ?? Infinity);
-if (remaining < config.rate_limit_threshold) {
-  // Signal to trigger poller to increase poll interval
-  // Could use a callback or emit a health event
+if (remaining < 100) { // Plugin-internal threshold — NOT in Core config
+  // Plugin can slow its own poll interval or emit a health event
+  // Core handles the error generically via adapter healthCheck()
 }
 ```
 
@@ -459,42 +462,50 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 
 ## Implementation Ordering
 
-**Governing principle:** Core changes speak through adapter contracts. Plugin-internal improvements are clearly separated. No step should introduce knowledge of specific plugins into Core.
+**Governing principle:** Core changes speak through adapter contracts. Plugin-internal improvements are clearly separated. No step should introduce knowledge of specific plugins into Core. Every step must pass the Plugin Blindness test: "If I deleted every plugin and replaced them, would Core still compile?"
 
 **Phase 0 — Schema & Migration (no behavior change)**
-1. Change `external_ref` type in `TriggerEventSchema` (adapters.ts) and `TriggerNewEventPayloadSchema` (events.ts) — use `z.union([z.string(), ExternalRefSchema]).nullable()` for dual-format compatibility
-2. Add `priority_labels` and `blocked_timeout_ms` to config schema
-3. Add migration 010: partial index on `json_extract(external_ref, '$.repo')` and `json_extract(external_ref, '$.number')` WHERE `state NOT IN ('completed', 'failed')`
-4. Update all test fixtures for new external_ref type
-5. Add `findByExternalRef(ref: ExternalRef): boolean` to task engine interface + implementation
-6. Fix `externalRefsMatch()` to include `type` field in comparison
+1. Add optional `url: z.string().optional()` field to `ExternalRefSchema` (task.ts)
+2. Change `external_ref` type in `TriggerEventSchema` (adapters.ts) and `TriggerNewEventPayloadSchema` (events.ts) — use `z.union([z.string(), ExternalRefSchema]).nullable()` for dual-format compatibility
+3. Add `priority_labels` and `blocked_timeout_ms` to config schema (NOT `rate_limit_threshold` — that is plugin-internal)
+4. Add migration 010: partial index on `json_extract(external_ref, '$.type')`, `json_extract(external_ref, '$.repo')`, `json_extract(external_ref, '$.number')` WHERE `state NOT IN ('completed', 'failed')`
+5. Add `findByExternalRef(ref: ExternalRef): boolean` to task engine interface + implementation (query includes `type`)
+6. Fix `externalRefsMatch()` to include `type` field in comparison, remove platform-specific comment
+7. Update all test fixtures for new external_ref type (use generic `type: "test_issue"`, NOT platform-specific values)
 
-**Phase 1 — Core Improvements (adapter-agnostic)**
-7. Delete `parseGitHubUrl()` and `toExternalRef()` from trigger-poller.ts — core no longer parses platform URLs
-8. Update `processNewTriggerEvent()` to read `external_ref` directly from TriggerEvent (already structured from plugin)
-9. Add DB-backed dedup: `findByExternalRef()` check before `createTask()` in trigger-poller
-10. Add label-based priority lookup in trigger-poller (reads `event.metadata.labels`, maps via config)
-11. Fix response file overwrite: change to individual files `response-{timestamp}-{source}.txt` with atomic write (write-temp-then-rename) in unblock-resolver
-12. Fix `contacted` erasure: preserve `contacted` data when clearing blocked details in unblock-resolver
-13. Add block/proceed criteria + "number your questions" to requirements-gathering prompt
-14. Add max-loop escalation notification (via CommunicationAdapter, adapter-agnostic)
-15. Verify blocked timeout in `checkBlockedEscalation()` — add "already escalated" guard
+**Phase 1 — ExternalRef Migration (Core + Plugin done together)**
 
-**Phase 2 — Outreach Extraction & Routing**
-16. Extract `sendOutreachFromFiles()` to `outreach-sender.ts` (function, not class, 3 deps: peopleDirectory, registry, observer)
-17. Add preferred channel routing via `resolveContact()` + Registry adapter lookup (no plugin names in code)
-18. Add person ID validation (fall back to owner, dedup recipient)
-19. Populate `contacted` array after successful delivery
-20. Include questions summary in source issue comment (via `issue_management` capability check — no-op if no adapter has it)
-21. Add task reference `[Task: {id}]` to outreach messages for response correlation
+This phase is a single atomic change: Core stops parsing URLs, plugin starts providing structured objects. Steps 8-9 and 13 must ship together.
 
-**Phase 3 — Plugin-Internal Improvements (confined to plugins)**
-22. Trigger plugin: build structured `ExternalRef` in `mapIssueToEvent()` (replaces `html_url` string)
-23. Trigger plugin: add watermark persistence (JSON file, atomic write, load on init, save on shutdown AFTER processing)
-24. Trigger plugin: add ETag/conditional request support (plugin-internal optimization)
-25. Trigger plugin: respect `Retry-After` header on 429 responses
+8. Delete `parseGitHubUrl()` and `toExternalRef()` from trigger-poller.ts — Core no longer parses platform URLs
+9. Update `processNewTriggerEvent()` to read `external_ref` directly from TriggerEvent
+10. Purge platform type-string checks from Core — replace ALL `type !== "github_issue"` / `type !== "github_pr"` guards in `phase-runner.ts:217`, `orchestrator-notifier.ts:78`, and `notification-router.ts:256` with `issue_management` capability gates
+11. Fix `linkMessageToTask()` in `response-poller.ts:41` — stop constructing `{ type: "github_issue" }`. Require full `external_ref` object in adapter message metadata
+12. Fix URL construction in `notification-router.ts:283` — use `external_ref.url` instead of constructing platform-specific URLs
+13. Trigger plugin: build structured `ExternalRef` (with `url` field) in `mapIssueToEvent()` — the plugin-side of steps 8-9
 
-**Note:** Phase 3 step 22 is required for Phase 1 step 8 to work. In practice, steps 7-8 and 22 are done together — the core deletion and plugin construction are two sides of the same change.
+**Phase 2 — Core Bug Fixes & Improvements (adapter-agnostic)**
+14. Add DB-backed dedup: `findByExternalRef()` check before `createTask()` in trigger-poller
+15. Add label-based priority lookup in trigger-poller (reads `event.metadata.labels`, maps via config)
+16. Fix response file overwrite: individual files `response-{timestamp}-{source}.txt` with atomic write in unblock-resolver
+17. Fix `contacted` erasure: preserve `contacted` data when clearing blocked details in unblock-resolver
+18. Add block/proceed criteria + "number your questions" to requirements-gathering prompt
+19. Add max-loop escalation notification (via CommunicationAdapter, adapter-agnostic)
+20. Verify blocked timeout in `checkBlockedEscalation()` — add "already escalated" guard
+
+**Phase 3 — Outreach Extraction & Routing**
+21. Extract `sendOutreachFromFiles()` to `outreach-sender.ts` (function, 3 deps: peopleDirectory, registry, observer)
+22. Add zero-comm-adapter guard (if no "send" adapters, skip blocking, log warning, emit health event)
+23. Add preferred channel routing via `resolveContact()` + Registry adapter lookup (no plugin names)
+24. Add person ID validation (fall back to owner, dedup recipient)
+25. Populate `contacted` array after successful delivery
+26. Include questions summary in source issue comment (via `issue_management` capability check — no-op if no adapter)
+27. Add task reference `[Task: {id}]` to outreach messages for response correlation
+
+**Phase 4 — Plugin-Internal Improvements (confined to plugins)**
+28. Trigger plugin: add watermark persistence (JSON file, atomic write, load on init, save on shutdown AFTER processing)
+29. Trigger plugin: add ETag/conditional request support
+30. Trigger plugin: respect `Retry-After` header on 429 responses
 
 ---
 

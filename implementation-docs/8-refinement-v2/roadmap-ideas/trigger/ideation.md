@@ -2,7 +2,7 @@
 
 Runtime Phase Refinement section 2 of 9. The bridge between external events and internal tasks: trigger polling, dedup, task creation, prioritization, requirements gathering, human outreach, and response handling.
 
-Brainstormed in Session 079. Two rounds of expert panel review applied (5 panelists each: Torvalds, Hipp, Pike, Engineer Persona, Technical Architect).
+Brainstormed in Session 079. Three rounds of expert panel review applied (5 panelists each: Torvalds, Hipp, Pike, Engineer Persona, Technical Architect). Final round enforced Plugin Blindness as a hard constraint — surfaced 5 additional tier violations in existing Core code beyond `parseGitHubUrl`.
 
 **Governing principle:** Plugin Blindness (see `docs/philosophy.md`). Core sees only adapter contracts. Every decision below is framed through adapters, never through specific plugins. Plugin-internal improvements (ETags, watermarks, platform-specific optimizations) are clearly labeled as such and confined to the plugin tier.
 
@@ -34,6 +34,48 @@ This removes `parseGitHubUrl()` and `toExternalRef()` from core entirely. Any fu
 **Panel note (one-way door):** This is a schema change with blast radius — `TriggerNewEventPayloadSchema` in events.ts, event payloads in the DB, all trigger plugin tests. Historical events in the database have the old string format. **Resolution: dual-format parsing on read** — the schema accepts both `string` and `ExternalRef`, consuming code handles both. New events always use structured format. Old events degrade gracefully.
 
 **Panel note:** `ExternalRef.type` is actively ignored in `externalRefsMatch()` (unblock-resolver). **Resolution: include `type` in comparison.** Platform-specific number sequence collisions are the plugin's problem to handle when constructing ExternalRef, not core's problem during matching.
+
+---
+
+## External Ref — Add Optional `url` Field
+
+**Panel finding (final sweep):** `notification-router.ts:283` constructs `https://github.com/${repo}/issues/${number}` — Core building a platform-specific URL from ExternalRef data. Core should never construct platform URLs.
+
+**Decision: Add optional `url: string` field to ExternalRefSchema.** The trigger plugin provides a display URL when constructing the ExternalRef. Core uses `external_ref.url` for linking — never constructs URLs from `repo` + `number`.
+
+```typescript
+// ExternalRef with url:
+{
+  type: "github_issue",
+  repo: "owner/repo",
+  number: 42,
+  url: "https://github.com/owner/repo/issues/42"  // Plugin provides this
+}
+```
+
+Core reads `url` when it needs a link. If `url` is absent, Core omits the link — it does NOT attempt to construct one.
+
+---
+
+## Plugin Blindness — Purge All Type-String Checks from Core
+
+**Panel finding (final sweep — all 5 panelists):** Beyond `parseGitHubUrl`, Core contains 5 additional Plugin Blindness violations where it checks ExternalRef type strings against platform-specific values:
+
+| File | Line | Violation |
+|------|------|-----------|
+| `response-poller.ts` | 41 | Constructs `type: "github_issue"` when building ExternalRef from message metadata |
+| `phase-runner.ts` | 217 | `if (type !== "github_issue" && type !== "github_pr")` — gates issue commenting on platform type |
+| `orchestrator-notifier.ts` | 78 | Same type-string check — second copy |
+| `notification-router.ts` | 256 | Same type-string check — third copy |
+| `notification-router.ts` | 283 | Constructs `https://github.com/` URL from ExternalRef fields |
+
+**Decision: Remove ALL type-string checks from Core.** Replace with capability gates:
+
+- For issue commenting: check `hasCapability("issue_management")` on the CommunicationAdapter. If the adapter has the capability, it knows how to comment on whatever external system it represents. Core does not decide which ExternalRef types support commenting.
+- For `linkMessageToTask()`: the adapter's `pollMessages()` must return the full `external_ref` object in message metadata (same structured type the trigger returns). Core reads it directly — never constructs an ExternalRef from decomposed fields.
+- For URL display: use the new `external_ref.url` field provided by the plugin.
+
+This is the same category of fix as `parseGitHubUrl` — Core shedding platform knowledge.
 
 ---
 
@@ -170,6 +212,14 @@ Current state: When blocking, the comment on the source issue (via `issue_manage
 
 ---
 
+## Human Outreach — Zero-Adapter Guard
+
+**Panel finding (final sweep — Architect):** If no CommunicationAdapter plugins are registered when outreach is needed, the task should NOT block waiting for responses that can never arrive.
+
+**Decision: `sendOutreach` checks for available communication adapters before sending.** If no adapters with "send" capability are registered, log a warning and do NOT transition to blocked. The task proceeds without human input (best effort). If adapters exist but delivery fails for all contacts, emit a `health.outreach_delivery_failure` event so operations can diagnose at 3am.
+
+---
+
 ## Human Outreach — Extract to Own File
 
 **Decision: Extract `sendOutreachFromFiles` to its own file as a standalone function.** Dependencies injected as arguments (peopleDirectory, registry, observer). Phase runner calls `sendOutreach(taskId, outreachDir, deps)`.
@@ -197,6 +247,8 @@ Current state: Response poller tries to link messages to tasks via `platform_met
 The sole-blocked-task heuristic remains as a last resort for v1 (single-user system). Remove it when correlation is proven reliable in production.
 
 **Panel note:** Full platform-specific threading (e.g., `reply_to_message_id` on specific platforms) is a plugin-internal concern. The communication adapter's `pollMessages()` implementation can use threading internally to enrich the metadata it returns. Core never reaches into platform-specific message fields.
+
+**Panel finding (final sweep — Engineer):** The `receive` capability may not be declared by any comm plugin in production. If no adapter has `receive`, the response poller finds no plugins to poll — blocked tasks can only be unblocked via the dashboard event bus scan. **This is a known limitation for v1.** The plan does not require `receive` to be implemented — correlation improvements (adapter metadata, task reference) simply make the flow smarter when `receive` IS available. The dashboard remains the guaranteed unblock path.
 
 ---
 
@@ -315,3 +367,11 @@ Design consideration: Communication adapters can use platform-native threading (
 **Trigger:** When users report receiving duplicate outreach messages after daemon restarts.
 
 The LLM already reads existing `outreach/` and `responses/` directories on resume. If it re-generates the same questions, the fix is in the prompt, not in a file-existence guard.
+
+## Deferred: ExternalRef Schema Generalization
+
+**Trigger:** When a trigger plugin needs to represent non-numeric identifiers (Jira string keys like `PROJ-123`, Linear alphanumeric IDs like `LIN-42`).
+
+Current `ExternalRefSchema` has `number: z.number().int().positive()` — this works for number-based issue trackers (GitHub, GitLab, Gitea) but not for string-key systems. A future generalization could be `{ type: string, identifier: string, repo?: string, url?: string }` where `identifier` is opaque and plugins own the format. This is a schema migration but a two-way door — the current structure is not load-bearing in ways that prevent evolution.
+
+**Panel finding (final sweep — Hipp):** "GitHub-shaped with the serial numbers filed off." Document this as a known limitation so nobody is surprised when adding a Jira plugin.

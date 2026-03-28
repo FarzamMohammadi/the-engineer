@@ -46,6 +46,8 @@ function createManifest(): PluginManifest {
     critical: true,
     entry: "index.ts",
     adapter_meta: {},
+    requirements: [],
+    combined_with: [],
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },
   };
 }

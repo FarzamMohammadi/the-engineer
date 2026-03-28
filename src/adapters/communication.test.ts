@@ -120,6 +120,8 @@ function createManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     critical: true,
     entry: "index.ts",
     adapter_meta: { capabilities: ["send"] },
+    requirements: [],
+    combined_with: [],
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },
     ...overrides,
   };

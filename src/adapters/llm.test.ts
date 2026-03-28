@@ -63,6 +63,8 @@ function createManifest(): PluginManifest {
     critical: true,
     entry: "index.ts",
     adapter_meta: { provider_type: "api" },
+    requirements: [],
+    combined_with: [],
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },
   };
 }

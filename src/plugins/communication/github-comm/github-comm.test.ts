@@ -48,6 +48,8 @@ const MANIFEST: PluginManifest = {
   critical: false,
   entry: "index.ts",
   adapter_meta: { capabilities: ["send", "sync", "issue_management"] },
+  requirements: [],
+  combined_with: [],
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },
 };
 

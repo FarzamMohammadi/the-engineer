@@ -134,6 +134,8 @@ function createManifest(): PluginManifest {
     critical: true,
     entry: "index.ts",
     adapter_meta: { action_classes: ["git-remote", "merge"] },
+    requirements: [],
+    combined_with: [],
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },
   };
 }

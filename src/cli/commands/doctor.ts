@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { checkEnvFilePermissions, loadEnvFile } from "../../config/env.js";
 import { loadConfigSafe } from "../../config/loader.js";
 import type { ConfigBundle } from "../../config/loader.js";
+import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
 import {
   DaemonConfigSchema,
   OrchestratorConfigSchema,
@@ -352,36 +353,43 @@ export function checkWorkspace(engineerHome: string): DoctorCategory {
   return { category: "Workspace", checks };
 }
 
-/** Category 10: External dependency availability. */
+/** Category 8: External dependency availability — derived from plugin manifests. */
 export function checkExternalDependencies(): DoctorCategory {
   const checks: DoctorCheck[] = [];
 
-  // Check claude CLI binary (required by ClaudeCodeLLMPlugin)
-  try {
-    const version = execSync("claude --version", { encoding: "utf8", timeout: 5000 }).trim();
-    checks.push({ label: "Claude CLI", status: "pass", message: version });
-  } catch {
+  // Derive binary requirements from plugin manifests (no hardcoded list)
+  const binaryRequirements = new Set<string>();
+  for (const plugin of BUILTIN_PLUGINS) {
+    for (const req of plugin.manifest.requirements) {
+      if (req.type === "binary") {
+        binaryRequirements.add(req.name);
+      }
+    }
+  }
+
+  for (const binaryName of binaryRequirements) {
+    try {
+      const version = execSync(`${binaryName} --version`, {
+        encoding: "utf8",
+        timeout: 5000,
+      }).trim();
+      checks.push({ label: binaryName, status: "pass", message: version });
+    } catch {
+      checks.push({
+        label: binaryName,
+        status: "warn",
+        message: `${binaryName} is not available`,
+        remedy: `Install ${binaryName} and ensure it is on PATH`,
+      });
+    }
+  }
+
+  if (binaryRequirements.size === 0) {
     checks.push({
-      label: "Claude CLI",
-      status: "warn",
-      message: "claude CLI is not available — required by the default LLM plugin",
-      remedy: "Install Claude CLI: https://docs.anthropic.com/en/docs/claude-cli",
+      label: "External binaries",
+      status: "pass",
+      message: "No binary requirements declared by plugins",
     });
-  }
-
-  // Optional LLM CLIs — only show when found (these are opt-in plugins)
-  try {
-    const version = execSync("opencode --version", { encoding: "utf8", timeout: 5000 }).trim();
-    checks.push({ label: "OpenCode CLI", status: "pass", message: version });
-  } catch {
-    // Optional — silently skip if not installed
-  }
-
-  try {
-    const version = execSync("gemini --version", { encoding: "utf8", timeout: 5000 }).trim();
-    checks.push({ label: "Gemini CLI", status: "pass", message: version });
-  } catch {
-    // Optional — silently skip if not installed
   }
 
   return { category: "External Dependencies", checks };

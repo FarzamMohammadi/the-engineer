@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import ms from "ms";
 
+import { loadEnvFile } from "../config/env.js";
 import { loadConfigDir } from "../config/loader.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
@@ -131,13 +132,16 @@ program
     const dirs = resolveDirectories(home);
     const out = getOutput();
 
-    // Try to load config for risky config checks (category 11)
+    // Load .env before config resolution (matches startup behavior)
+    loadEnvFile(home);
+
+    // Try to load config for risky config checks (category 9)
     let bundle: import("../config/loader.js").ConfigBundle | undefined;
     try {
       const result = loadConfigDir(dirs.config);
       bundle = result.bundle;
     } catch {
-      // Config loading failed — skip category 11, other checks still run
+      // Config loading failed — skip category 9, other checks still run
     }
 
     const categories = runAllChecks(home, bundle);

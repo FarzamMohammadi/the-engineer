@@ -4,7 +4,7 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** Runtime Phase Refinement — Trigger & Requirements Flow (Session 079). Brainstorm + expert panel review complete. Ideation and research documented in `8-refinement-v2/roadmap-ideas/trigger/`. Next: planning session to build implementation plan from ideation + research files.
+**Current phase:** Runtime Phase Refinement — Trigger & Requirements Flow (Sessions 079–080). Brainstorm, 4 rounds of expert panel review, Plugin Blindness codification, co-founder line-by-line review, and full reconciliation COMPLETE. Ideation and research finalized in `8-refinement-v2/roadmap-ideas/trigger/`. Next: planning session to build implementation plan from ideation + research files.
 
 Previous: Startup & Configuration (Sessions 077–078) — COMPLETE.
 

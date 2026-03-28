@@ -1,6 +1,8 @@
 # Trigger & Requirements Flow — Technical Research
 
-Implementation reference for the planning session. Every file path, schema field, code location, and architectural detail needed to build the plan from `ideation.md`. No external knowledge required — this document is self-contained.
+Implementation reference for the planning session. Every file path, schema field, code location, and architectural detail needed to build the plan from `ideation.md`.
+
+**Important for the planning/implementation session:** This research was compiled at a point in time. Before building the plan, **re-verify all line numbers and code locations** against the current codebase — other sessions may have modified files since this was written. Read each file listed, confirm the code matches what's described here, and update any stale references. Do your own thorough review. Do not blindly trust line numbers.
 
 ---
 
@@ -33,7 +35,7 @@ Implementation reference for the planning session. Every file path, schema field
 | `src/core/daemon/response-poller.ts` | Response detection | Fix `linkMessageToTask()` (L41) — stop constructing platform-specific ExternalRef. Add task-reference regex scan as fallback. Plan for removing sole-blocked-task fallback (L156–169). |
 | `src/core/orchestrator/orchestrator-notifier.ts` | Notifications | Remove platform type-string checks (L78). Fix URL construction (via `external_ref.url`). |
 | `src/core/daemon/notification-router.ts` | Notification routing | Remove platform type-string checks (L256). Fix URL construction (L283 — use `external_ref.url`). |
-| `src/schemas/config.ts` | Daemon configuration | Add `priority_labels` config field (after L156). Add `blocked_timeout_ms` for blocked task watchdog. (`rate_limit_threshold` is plugin-internal, NOT in Core config.) |
+| `src/schemas/config.ts` | Daemon configuration | Add `blocked_timeout_ms` for blocked task watchdog. (`priority_labels` removed — priority extracted from ticket body. `rate_limit_threshold` is plugin-internal, NOT in Core config.) |
 | `src/core/interfaces/task-engine.interface.ts` | Task engine contract | Add `findByExternalRef(ref: ExternalRef): boolean` method (after L86). |
 | `src/core/task-engine/index.ts` | Task engine implementation | Implement `findByExternalRef()` with JSON-based query on tasks table. |
 | `src/core/orchestrator/prompts/requirements-gathering.ts` | Requirements prompt | Add block/proceed criteria examples (around L97–129). Add "number your questions" guidance for outreach. |
@@ -43,6 +45,7 @@ Implementation reference for the planning session. Every file path, schema field
 
 | File | Purpose |
 |------|---------|
+| `src/core/daemon/event-variables.ts` | `extractEventVariables(body)` — extracts `@key: value` patterns from trigger event body (priority for now, extensible) |
 | `src/core/orchestrator/outreach-sender.ts` | Extracted `sendOutreachFromFiles()` function with preferred channel routing |
 | `~/.engineer/state/github-trigger/watermarks.json` | Persisted watermarks (created at runtime by plugin) |
 | `src/db/migrations/010_*.sql` | Index on `external_ref` for dedup query (if needed — may use json_extract) |
@@ -64,7 +67,7 @@ Implementation reference for the planning session. Every file path, schema field
 | `src/core/daemon/types.ts` | `TriggerPollerContext` (L35–38) — may need `config` expansion for priority_labels |
 | `src/schemas/task.ts` | `ExternalRefSchema` (L51–56), `BlockedDetailsSchema` (L157–170) |
 | `src/plugins/communication/telegram-comm/telegram-comm.ts` | `doPollMessages()` (L161–206) — reply_to field in platform_metadata |
-| `src/plugins/communication/github-comm/github-comm.ts` | `doCommentOnIssue()` (L230–250) — issue comment with questions |
+| `src/plugins/communication/github-comm/github-comm.ts` | `doCommentOnIssue()` (L230–250) — ticket comment with questions |
 
 ---
 
@@ -113,7 +116,7 @@ Implementation reference for the planning session. Every file path, schema field
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `priority_labels` | `z.record(z.string(), z.number().int().min(1).max(100))` | `{}` | Label → priority mapping |
+| ~~`priority_labels`~~ | ~~removed~~ | — | Replaced by `@priority: <number>` in ticket body — no config needed |
 | `blocked_timeout_ms` | `z.number().int().positive()` | `86_400_000` (1 day) | Watchdog for stuck blocked tasks |
 
 ---
@@ -269,17 +272,35 @@ CREATE INDEX IF NOT EXISTS idx_tasks_external_ref_active
   WHERE state NOT IN ('completed', 'failed');
 ```
 
-### 6. Label-Based Priority
+### 6. Ticket Variable Extraction (Priority)
+
+**File to create:** `src/core/daemon/event-variables.ts`
+
+```typescript
+export interface EventVariables {
+  priority?: number;
+}
+
+export function extractEventVariables(body: string | null): EventVariables {
+  const vars: EventVariables = {};
+  if (!body) return vars;
+
+  const priorityMatch = body.match(/@priority:\s*(\d+)/);
+  if (priorityMatch) {
+    const value = Number(priorityMatch[1]);
+    if (value >= 1 && value <= 100) vars.priority = value;
+  }
+
+  return vars;
+}
+```
 
 **File:** `src/core/daemon/trigger-poller.ts`
 
 **Add in processNewTriggerEvent(), before createTask() (around L132):**
 ```typescript
-const labels = (event.metadata as Record<string, unknown> | null)?.labels;
-const priority = Array.isArray(labels)
-  ? Math.max(DEFAULT_PRIORITY, ...labels.map((l: unknown) =>
-      typeof l === "string" ? (config.priority_labels?.[l] ?? 0) : 0))
-  : DEFAULT_PRIORITY;
+const vars = extractEventVariables(event.body);
+const priority = vars.priority ?? DEFAULT_PRIORITY;
 ```
 
 **Pass `priority` to createTask():**
@@ -316,7 +337,7 @@ Move `sendOutreachFromFiles()` from `phase-runner.ts` (L109–201) into this fil
 - Validate person IDs against People Directory (skip + warn on unknown IDs)
 - Apply `path.basename()` to outreach filenames before lookup — prevents path traversal from LLM output
 - Populate `contacted` array and return it
-- Include full questions summary in source issue comment (via `issue_management` capability check)
+- Include full questions summary in source ticket comment (via `ticket_management` capability check)
 - Log warning when recipients exist but no "send"-capable adapter is registered
 
 **Signature:**
@@ -327,11 +348,12 @@ export async function sendOutreach(
   deps: {
     peopleDirectory: IPeopleDirectory;
     registry: IRegistry;
-    taskEngine: ITaskEngine;
     eventBus: IEventBus;
     observer: IObserver;
   },
-): Promise<ContactedEntry[]>
+): Promise<OutreachResult>
+// OutreachResult = { delivered: true, contacted: ContactedEntry[] }
+//                | { delivered: false, reason: "no_send_adapters" | "all_delivery_failed" }
 ```
 
 ### 9. Prompt Guidance Updates
@@ -417,7 +439,7 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 
 | Function | Input | Output | Tests |
 |----------|-------|--------|-------|
-| `computePriority(labels, config)` | `string[]`, `Record<string, number>` | `number` | Empty labels → 50, single match, multiple matches (highest wins), no config matches → 50 |
+| `extractEventVariables(body)` | `string \| null` | `EventVariables` | null body → `{}`, no @priority → `{}`, `@priority: 80` → `{priority: 80}`, `@priority: 0` → `{}` (out of range), `@priority: 101` → `{}` (out of range), multiple @priority → first match wins |
 | `isTerminalState(state)` | `TaskState` | `boolean` | All states: completed/failed = true, others = false |
 
 ### Integration Tests
@@ -427,7 +449,7 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 | Restart dedup | Create task, restart daemon (clear cache), re-poll same event → no duplicate |
 | Watermark persistence | Poll events, shutdown, restart → watermarks loaded, no re-fetch |
 | Individual response files | Two responses from same source → two separate files, both readable |
-| Label priority | Event with `urgent` label → task created with priority 80 |
+| Ticket priority | Event body contains `@priority: 80` → task created with priority 80. No `@priority` → default 50. |
 | Blocked timeout | Block task, advance clock past threshold → escalation notification sent |
 | Preferred channel routing | Two comm adapters with "send" → only person's preferred channel used |
 | Zero trigger plugins | No triggers registered → daemon ticks, no work, no crash |
@@ -469,7 +491,7 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 **Phase 0 — Schema & Migration (no behavior change)**
 1. Add optional `url: z.string().optional()` field to `ExternalRefSchema` (task.ts)
 2. Change `external_ref` type in ALL schemas that use it — full grep for `external_ref.*z.string` across schema files. Known locations: `TriggerEventSchema` (adapters.ts:81), `TriggerNewEventPayloadSchema` (events.ts:217), `SyncMetadata` (adapters.ts:145), `TaskReconciliationInputSchema` (adapters.ts:176), `TaskStateChangedPayloadSchema` (events.ts:81). Clean break to `ExternalRefSchema.nullable()` (fresh project, local-only)
-3. Add `priority_labels` and `blocked_timeout_ms` to config schema (NOT `rate_limit_threshold` — that is plugin-internal)
+3. Add `blocked_timeout_ms` to config schema (priority is extracted from ticket body via `@priority:`, no config needed)
 4. Add migration 010: partial index on `json_extract(external_ref, '$.type')`, `json_extract(external_ref, '$.repo')`, `json_extract(external_ref, '$.number')` WHERE `state NOT IN ('completed', 'failed')`
 5. Add `findByExternalRef(ref: ExternalRef): boolean` to task engine interface + implementation (query includes `type`)
 6. Document `externalRefsMatch()` semantics: KEEP type-agnostic matching for unblock (repo + number only — a PR response should unblock an issue task). `findByExternalRef` uses type-aware matching for dedup. Remove platform-specific comment, replace with documented rationale for the deliberate divergence.
@@ -481,14 +503,14 @@ This phase is a single atomic change: Core stops parsing URLs, plugin starts pro
 
 8. Delete `parseGitHubUrl()` and `toExternalRef()` from trigger-poller.ts — Core no longer parses platform URLs
 9. Update `processNewTriggerEvent()` to read `external_ref` directly from TriggerEvent
-10. Purge ALL Plugin Blindness violations from Core — replace `type !== "github_issue"` / `type !== "github_pr"` guards in `phase-runner.ts:217`, `orchestrator-notifier.ts:78`, `notification-router.ts:256` with `issue_management` capability gates. Fix plugin ID construction in `orchestrator-notifier.ts:39` (`p.manifest.id === \`${contact.channel}-comm\``) — use Registry + capability lookup instead of constructing plugin IDs from channel names.
+10. Purge ALL Plugin Blindness violations from Core — replace `type !== "github_issue"` / `type !== "github_pr"` guards in `phase-runner.ts:217`, `orchestrator-notifier.ts:78`, `notification-router.ts:256` with `ticket_management` capability gates. Fix plugin ID construction in `orchestrator-notifier.ts:39` (`p.manifest.id === \`${contact.channel}-comm\``) — use Registry + capability lookup instead of constructing plugin IDs from channel names.
 11. Fix `linkMessageToTask()` in `response-poller.ts:41` — stop constructing `{ type: "github_issue" }`. Require full `external_ref` object in adapter message metadata
 12. Fix URL construction in `notification-router.ts:283` — use `external_ref.url` instead of constructing platform-specific URLs
 13. Trigger plugin: build structured `ExternalRef` (with `url` field) in `mapIssueToEvent()` — the plugin-side of steps 8-9
 
 **Phase 2 — Core Bug Fixes & Improvements (adapter-agnostic)**
 14. Add DB-backed dedup: `findByExternalRef()` check before `createTask()` in trigger-poller
-15. Add label-based priority lookup in trigger-poller (reads `event.metadata.labels`, maps via config). Document `metadata.labels` convention in TriggerAdapter contract.
+15. Add ticket variable extraction: create `event-variables.ts` with `extractEventVariables(body)`. Wire into `processNewTriggerEvent()` for `@priority: <number>` extraction. Default 50 if absent.
 16. Fix response file overwrite: individual files `response-{Date.now()}-{source}.txt` (epoch ms — simpler, sorts perfectly) with atomic write (temp+rename) in unblock-resolver
 17. Fix `contacted` erasure in unblock-resolver: instead of `updateTaskField(taskId, "blocked", null)`, clear individual sub-fields (`reason`, `needed`, `waiting_for`, `efforts_made`) while keeping `contacted` array intact. The `blocked` object persists with contact history.
 18. Delete `pendingBasePriorities` buffer from trigger-poller.ts (L47) — unnecessary optimization for a small map. Simplify `drainNewBasePriorities()` to return the full `basePriorities` map.
@@ -502,7 +524,7 @@ This phase is a single atomic change: Core stops parsing URLs, plugin starts pro
 24. Add preferred channel routing via `resolveContact()` + Registry adapter lookup (no plugin names)
 25. Add person ID validation (fall back to owner, dedup recipient)
 26. Populate `contacted` array after successful delivery
-27. Include questions summary in source issue comment (via `issue_management` capability check — no-op if no adapter)
+27. Include questions summary in source ticket comment (via `ticket_management` capability check — no-op if no adapter)
 28. Add task reference `[Task: {id}]` to outreach messages for response correlation
 
 **Phase 4 — Plugin-Internal Improvements (confined to plugins, separate commits)**
@@ -564,7 +586,7 @@ External Event (any platform)
       │   ├─ **Registry** lookup → *CommunicationAdapter* with matching channel
       │   ├─ *adapter.sendMessage()* — Core calls adapter contract, not plugin
       │   ├─ Populate **contacted** array
-      │   └─ If adapter has *issue_management* capability → post summary comment
+      │   └─ If adapter has *ticket_management* capability → post summary comment
       ├─ Block task (state → blocked, set return_to_phase)
       └─ End session
             │

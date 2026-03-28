@@ -78,7 +78,7 @@ Core reads `url` when it needs a link. If `url` is absent, Core omits the link �
 
 **Decision: Remove ALL type-string checks from Core.** Replace with capability gates:
 
-- For issue commenting: check `hasCapability("issue_management")` on the CommunicationAdapter. If the adapter has the capability, it knows how to comment on whatever external system it represents. Core does not decide which ExternalRef types support commenting.
+- For ticket commenting: check `hasCapability("ticket_management")` on the CommunicationAdapter. If the adapter has the capability, it knows how to comment on whatever external system it represents. Core does not decide which ExternalRef types support commenting.
 - For `linkMessageToTask()`: the adapter's `pollMessages()` must return the full `external_ref` object in message metadata (same structured type the trigger returns). Core reads it directly — never constructs an ExternalRef from decomposed fields.
 - For URL display: use the new `external_ref.url` field provided by the plugin.
 - For plugin lookup in `orchestrator-notifier.ts:39`: use `resolveContact()` from PeopleDirectory to get the preferred channel, then find a comm adapter with "send" capability via the Registry — NOT by constructing plugin IDs from contact channel names. Same pattern as `sendOutreach`.
@@ -138,38 +138,55 @@ if (event.external_ref) {
 
 ---
 
-## Task Creation — Label-Based Priority Mapping
+## Task Creation — Priority from Ticket Variables
 
-Current state: Every trigger-created task gets priority 50. The trigger event has a `metadata` bag with labels, but it's never used for priority.
+Current state: Every trigger-created task gets priority 50. No mechanism for per-ticket priority.
 
-**Decision: Config-driven label-to-priority mapping.** Core reads labels from `event.metadata.labels` (opaque strings provided by any trigger plugin) and maps them to priority values via config:
+**Decision: Extract priority from the trigger event body using `@priority: <number>` syntax.** Core scans the event's `body` field for engineer variables — key-value pairs the user embeds in the ticket description. No plugin config, no platform knowledge, no metadata conventions.
 
-```yaml
-# daemon.yaml
-trigger:
-  priority_labels:
-    urgent: 80
-    critical: 90
-    low-priority: 30
+The user writes in their ticket:
+
+```
+## Engineer Variables
+@priority: 80
 ```
 
-**Highest match wins** (deterministic, order-independent):
+Core extracts it via `extractEventVariables(body)` — a pure function that scans for `@key: value` patterns. For now it extracts only `priority`. The function is extensible — future variables (e.g., `@complexity: high`, `@assignee: alice`) use the same pattern.
+
 ```typescript
-const priority = Math.max(
-  DEFAULT_PRIORITY,
-  ...labels.map(l => config.priority_labels?.[l] ?? 0)
-);
+// Pure function in Core:
+export function extractEventVariables(body: string | null): EventVariables {
+  const vars: EventVariables = {};
+  if (!body) return vars;
+
+  const priorityMatch = body.match(/@priority:\s*(\d+)/);
+  if (priorityMatch) {
+    const value = Number(priorityMatch[1]);
+    if (value >= 1 && value <= 100) vars.priority = value;
+  }
+
+  return vars;
+}
+
+// In processNewTriggerEvent():
+const vars = extractEventVariables(event.body);
+const priority = vars.priority ?? DEFAULT_PRIORITY;
 ```
 
-Core doesn't know what "urgent" means to any particular platform. Labels are opaque strings from any trigger plugin's metadata. Priority is set at creation time — config hot-reload does NOT retroactively change in-flight task priorities.
+**Why this is better than label-based mapping:**
+- Truly platform-agnostic — works with any trigger plugin that provides a body (all of them)
+- Zero plugin config — no `priority_labels` in any config file
+- User-controlled per ticket — not a system-wide mapping
+- Extensible — new `@key: value` patterns added to the same extraction function
+- `metadata` stays a pure audit bag — Core never peeks into it
 
-**Panel finding (Hipp):** `metadata.labels` is a convention, not a contract. The TriggerAdapter docs should specify: "If the trigger plugin wants Core to apply priority mapping, it must include `metadata.labels` as `string[]`." One sentence in the adapter contract documentation makes this explicit.
+Priority is set at creation time. Default 50 if `@priority` is absent. Valid range: 1-100.
 
 ---
 
 ## Task Creation — No Intake Gate
 
-**Decision: No pre-creation gate. Requirements Gathering is the gate.** The RRPIR pipeline's first phase reads the issue, assesses clarity, and blocks with outreach if information is missing. The current flow is correct.
+**Decision: No pre-creation gate. Requirements Gathering is the gate.** The RRPIR pipeline's first phase reads the trigger ticket, assesses clarity, and blocks with outreach if information is missing. The current flow is correct.
 
 ---
 
@@ -200,7 +217,9 @@ Proceed when: direction is clear, reasonable choice can be documented, task is s
 
 ## Requirements Gathering — Outreach Person Validation
 
-**Decision: Validate every outreach filename against People Directory before sending.** If a person ID isn't found, fall back to the owner. Log a warning. Never block waiting for a non-existent person. Dedup the recipient — if fallback target is already receiving their own outreach, merge or note the redirect.
+**Decision: Validate every outreach filename against People Directory before sending.** If a person ID isn't found, fall back to the owner — send the message to the owner with a note ("Originally intended for {person-id}, not found in contacts"). Owner is the guaranteed fallback for ALL unreachable contacts.
+
+**Prerequisite:** Owner must always exist. `getOwner()` currently returns `null` when no owner is configured. Add a doctor/pre-flight check: "People Directory must have at least one person with role 'owner'." Validate at startup, not at outreach time.
 
 **Security note (final panel):** The filename comes from LLM output (`outreach/{person-id}.txt`). Apply `path.basename()` before using as a filename lookup — prevents path traversal from a hallucinating or manipulated LLM (e.g., `../../etc/passwd`).
 
@@ -216,11 +235,27 @@ Core asks the Registry for communication adapters. The Registry returns whatever
 
 ---
 
-## Human Outreach — Source Issue Comments
+## Terminology: Trigger Ticket (not "Issue")
 
-Current state: When blocking, the comment on the source issue (via `issue_management` capability of a CommunicationAdapter) says "Blocked — reaching out for answers" with just names listed.
+Core never says "issue" — that's platform-specific language. Whatever external work item triggered the task is a **trigger ticket**. Could be a GitHub issue, Jira ticket, Azure DevOps work item, Linear issue. Core uses "trigger ticket" or just "ticket." Plugin-specific terms stay in plugins.
 
-**Decision: Include questions summary in the source issue comment.** If a registered CommunicationAdapter has the `issue_management` capability and the task has an `external_ref`, post the full outreach content as a comment. Core checks capability, then calls the adapter contract method. If no adapter has `issue_management`, this is a no-op. Plugin-agnostic.
+**Renames across the codebase:**
+- Capability: `issue_management` → `ticket_management`
+- Methods: `commentOnIssue()` → `commentOnTicket(externalRef: ExternalRef, comment: string)`
+- Related: `createIssue()` → `createTicket()`, `updateIssue()` → `updateTicket()`
+- Method signature simplified: instead of decomposed `(repo, issueNumber, comment)`, pass `(externalRef: ExternalRef, comment: string)`. The plugin extracts what it needs from ExternalRef internally.
+
+This is a mechanical rename across the CommunicationAdapter contract, all plugins that implement `ticket_management`, and all Core code that checks for the capability.
+
+---
+
+## Human Outreach — Source Ticket Comments
+
+Current state: When blocking, the comment on the source trigger ticket (via `ticket_management` capability of a CommunicationAdapter) says "Blocked — reaching out for answers" with just names listed.
+
+**Decision: Include questions summary in the source ticket comment.** If a registered CommunicationAdapter has the `ticket_management` capability and the task has an `external_ref`, post the full outreach content as a comment via `commentOnTicket(externalRef, comment)`. Core checks capability, then calls the adapter contract method. If no adapter has `ticket_management`, this is a no-op. Plugin-agnostic.
+
+Every platform that supports trigger tickets supports posting comments back to them (GitHub, Jira, Azure DevOps, Linear). The adapter receives the `ExternalRef` and knows how to post to its platform. A plain webhook trigger with no backing ticket system simply doesn't declare `ticket_management` — Core skips it.
 
 ---
 
@@ -228,15 +263,21 @@ Current state: When blocking, the comment on the source issue (via `issue_manage
 
 **Panel finding (final sweep — Architect):** If no CommunicationAdapter plugins are registered when outreach is needed, the task should NOT block waiting for responses that can never arrive.
 
-**Decision: `sendOutreach` checks for available communication adapters before sending.** If no adapters with "send" capability are registered, log a warning and do NOT transition to blocked. The task proceeds without human input (best effort). If adapters exist but delivery fails for all contacts, emit a `health.outreach_delivery_failure` event so operations can diagnose at 3am.
+**Decision: `sendOutreach` checks for available communication adapters before sending and returns a result indicating whether outreach was delivered.** The phase runner uses this result to decide whether blocking is safe.
 
-**Final panel finding:** Also log a warning when recipients exist but no registered adapter has "send" capability — prevents silent no-op where outreach appears to succeed but nothing was sent.
+Three failure cases, each handled explicitly:
+
+1. **No adapters with "send" capability registered:** `sendOutreach` returns `{ delivered: false, reason: "no_send_adapters" }`. Log warning. Phase runner does NOT transition to blocked — the task proceeds without human input (best effort).
+2. **Adapters exist but delivery fails for ALL contacts:** `sendOutreach` returns `{ delivered: false, reason: "all_delivery_failed" }`. Emit `health.outreach_delivery_failure` event. Phase runner does NOT block.
+3. **Recipients resolved but no adapter matches their channel:** Log warning ("Recipients exist but no adapter has 'send' capability for channel X"). Fall back to owner's channel. If that also fails, case 2 applies.
+
+Only when `sendOutreach` returns `{ delivered: true, contacted: [...] }` does the phase runner transition to blocked.
 
 ---
 
 ## Human Outreach — Extract to Own File
 
-**Decision: Extract `sendOutreachFromFiles` to its own file as a standalone function.** Dependencies injected as arguments (peopleDirectory, registry, observer). Phase runner calls `sendOutreach(taskId, outreachDir, deps)`.
+**Decision: Extract `sendOutreachFromFiles` to its own file as a standalone function.** Dependencies injected as arguments (peopleDirectory, registry, eventBus, observer). Phase runner calls `sendOutreach(taskId, outreachDir, deps)`. Phase runner handles task state transitions based on the returned result — taskEngine is NOT a dependency of the outreach sender.
 
 ---
 
@@ -256,7 +297,7 @@ Current state: Response poller tries to link messages to tasks via `platform_met
 
 **Decision: Two-tier correlation, both adapter-agnostic:**
 
-1. **Adapter-level correlation** — Communication adapters that support `receive` return messages with metadata that may include `task_id`, `repo`, `issue_number`, or `reply_to` fields. The response poller uses whatever metadata the adapter provides. Core doesn't know the platform-specific correlation mechanism — it just reads the fields the adapter returns.
+1. **Adapter-level correlation** — Communication adapters that support `receive` return messages with metadata that may include `task_id` (direct match from dashboard) or a structured `external_ref` object (same `ExternalRef` type the trigger returns). Core matches via `externalRefsMatch()`. The adapter enriches its metadata however it wants internally (threading, issue scoping, etc.) — Core just reads the structured fields.
 
 2. **Task reference fallback** — Outreach messages include a short task reference (`[Task: abc123]`). Response poller scans message text for this pattern. Works across any platform, any adapter.
 
@@ -355,15 +396,15 @@ Design consideration: Add optional `onEvent()` callback or webhook handler inter
 
 **Trigger:** When team size exceeds ~10 people and role-based routing is insufficient.
 
-## Deferred: Issue Body Sync for In-Progress Tasks
+## Deferred: Trigger Ticket Body Sync for In-Progress Tasks
 
-**Trigger:** When users report working off stale task descriptions after editing the source issue.
+**Trigger:** When users report working off stale task descriptions after editing the source trigger ticket.
 
-## Deferred: Issue Closure as Cancellation
+## Deferred: Trigger Ticket Closure as Cancellation
 
-**Trigger:** When users report that tasks continue running after they close the source issue.
+**Trigger:** When users report that tasks continue running after they close the source trigger ticket.
 
-Design consideration: This should come through the trigger adapter contract (plugin detects closure, returns a cancellation event) — NOT through core checking platform-specific issue status. The trigger adapter's `poll()` could return events with an `event_type` of `"closed"` that the daemon interprets as a preemption signal.
+Design consideration: This should come through the trigger adapter contract (plugin detects closure, returns a cancellation event) — NOT through core checking platform-specific ticket status. The trigger adapter's `poll()` could return events with an `event_type` of `"closed"` that the daemon interprets as a preemption signal.
 
 **Panel feedback applied (final sweep):** All panelists agreed this is a new subsystem feature, underspecified, and wrong time. The API cost (one call per active task per poll) was unaddressed. Deferred with the architectural note that it MUST go through the adapter, not hardcoded in core.
 

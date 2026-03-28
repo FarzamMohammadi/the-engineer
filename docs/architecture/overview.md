@@ -172,7 +172,9 @@ version: "1.0.0"
 name: My Custom Trigger
 description: Polls a custom source for new tasks
 critical: true
-enabled: true
+requirements:
+  - type: binary
+    name: my-trigger-cli
 entry: index.ts
 adapter_meta:
   poll_interval: "60s"

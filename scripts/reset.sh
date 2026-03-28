@@ -29,8 +29,8 @@ echo "Done. Run 'engineer start' to set up and start."
 read -p "Shall we start up the engineer? [Y/n] " answer
 answer="${answer:-Y}"
 if [[ "$answer" =~ ^[Yy]$ ]]; then
-  engineer start --plugins "$(dirname "$0")/../seed-example/config/plugins/"
+  engineer start --plugins "$(dirname "$0")/../seed-example/plugins/"
 else
   echo "Ready to run:"
-  echo "  engineer start --plugins ./seed-example/config/plugins/"
+  echo "  engineer start --plugins ./seed-example/plugins/"
 fi

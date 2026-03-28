@@ -1,10 +1,8 @@
 # CLI Reference
 
-The Engineer is operated through the `engineer` CLI. All commands share a common data directory (`ENGINEER_HOME`) and global options.
+The Engineer is operated through the `engineer` CLI — 6 commands covering daily use, diagnostics, and debugging.
 
 ## Installing the CLI
-
-The `engineer` command is provided via the `bin` field in `package.json`. To make it available globally:
 
 ```bash
 pnpm run build                    # Build to dist/
@@ -25,7 +23,7 @@ Every command reads and writes to a single data directory. Resolution order:
 2. `ENGINEER_HOME` environment variable
 3. `~/.engineer` (default)
 
-Directory structure (created by `engineer init`):
+Directory structure (created automatically on first `engineer start`):
 
 ```
 ~/.engineer/
@@ -36,7 +34,7 @@ Directory structure (created by `engineer init`):
   run/                # PID file
   traces/             # LLM prompt/response blobs (content-addressable)
   workspaces/         # Git worktrees for task isolation
-  example-templates/  # Fully documented config references (like .env.example)
+  example-templates/  # Fully documented config references
 ```
 
 Source: [`src/cli/home.ts`](../src/cli/home.ts)
@@ -47,76 +45,99 @@ Source: [`src/cli/home.ts`](../src/cli/home.ts)
 |--------|-------------|
 | `--home <path>` | Override ENGINEER_HOME |
 | `--verbose` | Debug-level logging |
+| `--json` | Output in JSON format |
 | `--version` | Print version |
 | `--help` | Print help for any command |
 
-## First-Run Walkthrough
+## First Run
 
 ```bash
-# 1. Scaffold seed configs (one-time per machine)
-engineer prepare
-# Edit seed/config/*.yaml — fill in your real values (repos, handles, tokens)
-
-# 2. Initialize ~/.engineer/ (uses seed/ automatically)
-engineer init
-
-# 3. Validate configs parse correctly against schemas
-engineer config validate
-
-# 4. Run full health check (10 categories)
-engineer doctor
-
-# 5. Start the daemon
-engineer start                   # Foreground (recommended for first run)
-engineer start --daemon          # Background (detached process)
+engineer start
 ```
 
-`prepare` copies configs from the tracked `seed-example/` directory into a gitignored `seed/` directory. Edit once, use forever — every future `engineer init` copies from seed automatically.
+That's it. On first run, `start` detects there's no config and launches guided setup:
 
-`init` is safe to run multiple times — it skips existing files unless `--force` is passed.
+1. **Environment detection** — scans PATH for LLM CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars (`GITHUB_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)
+2. **Plugin selection** — one prompt per adapter type (LLM, trigger, hosting, communication, tools), grouped by category, with detection status shown
+3. **Per-plugin config** — prompts only for required fields (repos to watch, etc.)
+4. **Confirmation** — summary of selections, Y/n
+5. **Config written** — YAML files to `~/.engineer/config/` with `0o600` permissions
+6. **Daemon starts** — pre-flight checks, bootstrap, tick loop begins
 
-## Config Workflow
+**Non-interactive setup** (CI, automation, teams):
 
-The project ships a `seed-example/` directory (tracked in git) with working example configs. This is the reference for what a fully configured system looks like.
+```bash
+engineer start --plugins ./path/to/plugin-configs/
+```
 
-- `seed-example/` — tracked in git, shows real config structure (tokens as `${ENV_VAR}` refs)
-- `seed/` — gitignored, your local copy with real secrets filled in
-- `~/.engineer/example-templates/` — verbose reference docs for every field (created by `init`)
+Copies plugin YAML files from the provided directory. Core configs use conservative defaults. No prompts.
+
+**Dry run** (see what would happen without writing):
+
+```bash
+engineer start --dry-run
+```
 
 ## Commands
 
-### prepare
+### start
 
-Creates a `seed/` directory by copying from `seed-example/` (if present in the current directory). Falls back to built-in templates if `seed-example/` is not found (e.g., when installed as a package).
-
-```bash
-engineer prepare                 # Copy seed-example/ → seed/
-engineer prepare --force         # Overwrite existing seed files
-```
-
-Edit `seed/` with your real values (repos, handles, tokens). The `seed/` directory is gitignored — secrets stay local. Every future `engineer init` checks `seed/` first — if a matching config exists there, it copies that instead of the default template. This means `rm -rf ~/.engineer && engineer init` gives you a fully configured system every time.
-
-### init
-
-Creates the directory structure and writes 11 config files. If a `seed/` directory exists (from `engineer prepare`), configs are copied from there instead of using default templates.
+The single entry point. Handles first-run setup, config loading, pre-flight checks, and daemon startup.
 
 ```bash
-engineer init                    # Skip existing files
-engineer init --force            # Overwrite existing configs
+engineer start                           # Foreground (Ctrl+C to stop)
+engineer start --daemon                  # Background (detached process)
+engineer start --verbose                 # Debug logging
+engineer start --dry-run                 # Show what would happen, don't start
+engineer start --plugins ./configs/      # Non-interactive setup from directory
 ```
 
-**Template files created:** 5 core configs (`daemon.yaml`, `orchestrator.yaml`, `safety.yaml`, `workspace.yaml`, `people.yaml`) + 6 plugin configs in `config/plugins/`. Core configs are fully commented (Zod defaults apply). Plugin configs have required fields uncommented with placeholders.
+**Startup sequence:** first-run detection → setup if needed → load config → pre-flight checks (doctor categories 1-7) → bootstrap all components → start tick loop → launch War Room dashboard.
 
-**Example templates:** 11 fully documented reference files are written to `example-templates/`. Each shows every field with descriptions, defaults, required/optional markers, and valid options — like `.env.example` files. Always overwritten on `init` (they're references, not user-edited).
+**Signal handling:** `SIGTERM` and `SIGINT` trigger graceful shutdown — active tasks transition to `queued`, plugins shut down, PID file cleaned up.
 
-Source: [`src/cli/commands/init.ts`](../src/cli/commands/init.ts), [`src/cli/templates.ts`](../src/cli/templates.ts)
+Source: [`src/cli/commands/start.ts`](../src/cli/commands/start.ts), [`src/cli/bootstrap.ts`](../src/cli/bootstrap.ts)
+
+### stop
+
+Graceful shutdown. Sends `SIGTERM` to the daemon and waits for clean exit.
+
+```bash
+engineer stop                            # Default 30s timeout
+engineer stop --timeout 1m              # Custom timeout
+```
+
+Source: [`src/cli/commands/stop.ts`](../src/cli/commands/stop.ts)
+
+### status
+
+Shows whether the daemon is running and task queue depth. Reads SQLite directly (read-only, no IPC).
+
+```bash
+engineer status
+```
+
+Source: [`src/cli/commands/status.ts`](../src/cli/commands/status.ts)
+
+### logs
+
+Tails the daemon log file.
+
+```bash
+engineer logs                            # Last 50 lines, pretty-printed
+engineer logs --json                     # Raw JSON (pino format)
+engineer logs --lines 100               # Last 100 lines
+engineer logs --follow                   # Stream new entries (like tail -f)
+```
+
+Source: [`src/cli/commands/logs.ts`](../src/cli/commands/logs.ts)
 
 ### doctor
 
-Runs 10 independent health check categories. No daemon required — works standalone.
+Runs 11 independent health check categories. No daemon required — works standalone.
 
 ```bash
-engineer doctor                  # Run all 10 categories
+engineer doctor
 ```
 
 **Exit codes:** `0` = all pass, `1` = failures found, `2` = warnings only.
@@ -128,112 +149,48 @@ engineer doctor                  # Run all 10 categories
 | 3 | Config Files | All 5 YAML configs parse and pass Zod validation |
 | 4 | Required Secrets | All `${ENV_VAR}` references in configs resolve |
 | 5 | Database | SQLite file accessible |
-| 6 | Plugin Manifests | `engineer.plugin.yaml` files parse correctly |
-| 7 | GitHub Connectivity | GITHUB_TOKEN present (env or plugin config) |
-| 8 | Telegram Connectivity | TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID present (env or plugin config) |
-| 9 | Workspace | Git binary available, workspace dir exists |
-| 10 | Risky Config | Warnings for auto-merge enabled, missing cost limits |
+| 6 | Plugin Manifests | Plugin config files parse correctly |
+| 7 | External Dependencies | LLM CLIs on PATH |
+| 8 | GitHub Connectivity | GITHUB_TOKEN present |
+| 9 | Telegram Connectivity | TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID present |
+| 10 | Workspace | Git binary available, workspace dir exists |
+| 11 | Risky Config | Warnings for auto-merge enabled, missing cost limits, high concurrency |
 
-Categories 1-6 also run automatically as pre-flight checks on `engineer start`.
+Categories 1-7 also run automatically as pre-flight checks on `engineer start`.
 
 Source: [`src/cli/commands/doctor.ts`](../src/cli/commands/doctor.ts)
-
-### config validate
-
-Validates all config files against their Zod schemas.
-
-```bash
-engineer config validate         # Reports per-file pass/fail
-```
-
-Source: [`src/cli/commands/config-validate.ts`](../src/cli/commands/config-validate.ts)
-
-### start
-
-Boots the daemon. Foreground by default — the process stays alive and logs to stdout.
-
-```bash
-engineer start                   # Foreground (Ctrl+C to stop)
-engineer start --daemon          # Background (detached process)
-engineer start --verbose         # Debug logging
-```
-
-**Startup sequence:** auto-create dirs → load config → pre-flight checks (doctor 1-6) → bootstrap all components → start tick loop.
-
-**Signal handling:** `SIGTERM` and `SIGINT` trigger graceful shutdown — active tasks transition to `queued`, PID file is cleaned up.
-
-**Background mode** (`--daemon`): spawns a detached child process and exits. Use `engineer status` to check, `engineer shutdown` to stop.
-
-Source: [`src/cli/commands/start.ts`](../src/cli/commands/start.ts), [`src/cli/bootstrap.ts`](../src/cli/bootstrap.ts)
-
-### shutdown
-
-Shuts down the daemon and all subsidiary processes (dashboard, etc.). Sends `SIGTERM` and waits for clean exit.
-
-```bash
-engineer shutdown                    # Default 30s timeout
-engineer shutdown --timeout 60000   # Custom timeout in ms
-```
-
-Source: [`src/cli/commands/shutdown.ts`](../src/cli/commands/shutdown.ts)
-
-### status
-
-Shows whether the daemon is running and, if a database exists, task queue depth.
-
-```bash
-engineer status
-```
-
-Reads SQLite directly (read-only) — no IPC to the daemon. Plugin health display is deferred to Phase 14b.
-
-Source: [`src/cli/commands/status.ts`](../src/cli/commands/status.ts)
-
-### logs
-
-Tails the daemon log file.
-
-```bash
-engineer logs                    # Last 50 lines, pretty-printed
-engineer logs --json             # Raw JSON (pino format)
-engineer logs --lines 100        # Last 100 lines
-engineer logs --follow           # Stream new entries (like tail -f)
-```
-
-Source: [`src/cli/commands/logs.ts`](../src/cli/commands/logs.ts)
 
 ### why
 
 Displays a timeline of significant events for a task — state transitions, events, journal entries, and cost. Opens the database read-only; no daemon required.
 
 ```bash
-engineer why <task-id>            # Human-readable timeline
-engineer why <task-id> --json     # Machine-readable JSON output
+engineer why <task-id>                   # Human-readable timeline
+engineer why <task-id> --json            # Machine-readable JSON output
 ```
-
-Shows: current state, priority, creation time, full transition history merged with events (chronological), last 5 journal entries, and cumulative cost.
 
 Source: [`src/cli/commands/why.ts`](../src/cli/commands/why.ts)
 
-### setup
+## Configuration
 
-Interactive first-run setup wizard. Walks through GitHub token guidance, repository selection, LLM provider, Telegram notifications, and safety level presets. Generates all required config files.
+Config files live in `~/.engineer/config/`. Generated on first run with conservative defaults. Edit YAML directly — most changes take effect on next daemon restart.
 
-```bash
-engineer setup                    # Interactive wizard
-```
+**Core configs:**
+- `daemon.yaml` — tick interval, concurrency, plugin health settings
+- `orchestrator.yaml` — RRPIR phases, notifications, decomposition
+- `safety.yaml` — cost limits, autonomy level, merge policy
+- `workspace.yaml` — worktree root, branch prefix, PR defaults, cleanup
+- `people.yaml` — contacts for communication (hot-reloadable)
 
-Produces the same config files as `engineer init` but with answers tailored to your choices. Safe to run if configs already exist — prompts before overwriting.
+**Plugin configs** (`config/plugins/`):
+- One YAML file per enabled plugin (e.g., `github-trigger.yaml`, `claude-code-llm.yaml`)
+- A plugin is enabled if and only if its config YAML exists
+- Secrets use `${ENV_VAR}` references — never stored as raw values
 
-Source: [`src/cli/commands/setup.ts`](../src/cli/commands/setup.ts)
+**Example templates** (`example-templates/`):
+- Fully documented reference for every config field
+- Written on first run — always safe to regenerate
 
-### config migrate
+To reconfigure: `engineer stop`, edit YAML files, `engineer start`.
 
-Runs config schema migrations. Currently infrastructure-only (version 1 is the only version), so it reports that all configs are current.
-
-```bash
-engineer config migrate           # Check and apply pending migrations
-```
-
-Source: [`src/cli/commands/config-migrate.ts`](../src/cli/commands/config-migrate.ts)
-
+To start fresh: `rm -rf ~/.engineer && engineer start`.

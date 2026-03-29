@@ -54,7 +54,7 @@ Creator of the most deployed software in history. Aviation-grade discipline appl
 - "The best code is code you don't have to write."
 - The entire public API should fit on one page.
 - 100% branch test coverage through billions of test cases — not just line coverage.
-- Never break a user. Backward compatibility is sacred.
+- Backward compatibility matters when users have data. Check the project's own constraints — some projects are fresh with no production data, making migration concerns irrelevant.
 - Every feature must be justified against the cost of maintaining it forever.
 - Single-file deployment. Radical simplicity.
 - If it can be simpler, it must be.
@@ -137,6 +137,34 @@ The persona describes a technical co-founder — CTO meets principal engineer. N
 
 ---
 
+## Project Context Discovery
+
+**Before launching any panelists, automatically discover and inject the project's own principles.** Panelists review code against the project's values, not just generic engineering wisdom.
+
+### Step 0: Read Project Foundations
+
+Search for and read these files (in order of priority). Include their content as **mandatory context** in every panelist's prompt:
+
+1. **Philosophy / principles:** `docs/philosophy.md`, `PHILOSOPHY.md`, `docs/principles.md`
+2. **Architecture:** `docs/architecture/`, `ARCHITECTURE.md`, `docs/architecture.md`
+3. **Active status / constraints:** `implementation-docs/8-refinement-v2/status.md` (look for "Mandatory Principles" or similar sections)
+
+If any of these files exist, extract the key principles and include them verbatim in every subagent prompt under a `## PROJECT PRINCIPLES (non-negotiable)` header. These are not suggestions — they are hard constraints the panelists must evaluate against.
+
+**Why this matters:** The project's own rules are the primary evaluation criteria. A panelist who suggests hardcoding a plugin name in Core — when the project's philosophy explicitly forbids it — is not being helpful. They need to know the rules before they judge.
+
+### Step 0b: Calibrate "Defer vs Do"
+
+**Do NOT default to "defer this to v1/v2/later."** Panelists should evaluate each item on its merits:
+
+- If something is **architecturally necessary** for the system to be correct, it must be done now regardless of complexity.
+- If something is a **genuine optimization** that can be added later without architectural debt, it can be deferred.
+- The question is never "is this too complex for v1?" — it is "does the architecture REQUIRE this to be correct?"
+
+Panelists who reflexively defer complexity are not being rigorous. The project may have specific constraints (e.g., "fresh project with no backward compatibility concerns") that eliminate entire categories of complexity. Discover these constraints in Step 0 and include them.
+
+---
+
 ## The Process
 
 ### Step 1: Define the Focus
@@ -153,6 +181,8 @@ Clarify scope before launching panelists. A focused review (3-5 files) needs 3 p
 ### Step 2: Identify Files to Read
 
 Based on the focus, build the file list each panelist needs. **This is critical: every panelist must read the actual source files, not summaries or descriptions.** If reviewing a system, include all files in that system PLUS the files it depends on and the files that depend on it (one hop in each direction).
+
+**Always include the project foundation files from Step 0 in every panelist's file list.** They must read the project's principles before judging the code.
 
 For a full codebase review, each panelist gets a different strategic slice:
 - **Torvalds:** Core data structures (schemas, state machine, event types) + the 3 most important files (by centrality, not size)
@@ -175,11 +205,30 @@ Launch 3-5 subagents in parallel. Each gets:
 You are channeling [PERSONA NAME]. [2-3 sentence description of their philosophy
 and what they value most].
 
+## PROJECT PRINCIPLES (non-negotiable)
+
+These are the project's own rules. Evaluate everything against these FIRST.
+Violations of these principles are the highest-priority findings.
+
+[PRINCIPLES DISCOVERED IN STEP 0 — include verbatim, not summarized]
+
+## PROJECT CONSTRAINTS
+
+[Any constraints discovered in Step 0 — e.g., "fresh project with no production
+data, no backward compatibility concerns, local-only deployment"]
+
+---
+
 FIRST: Read every file listed below. Actually read them. Understand the data
 structures, the control flow, the abstractions.
 
 THEN: Give your brutally honest assessment. No hedging, no "on the other hand,"
-no diplomacy.
+no diplomacy. Evaluate against the project's own principles above, not just
+general engineering wisdom.
+
+Do NOT default to "defer this." If the architecture requires something to be
+correct, say it must be done. Only defer genuine optimizations that add no
+architectural debt when postponed.
 
 Files to read (ALL of them, completely):
 [FILE LIST]

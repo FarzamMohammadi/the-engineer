@@ -6,5 +6,5 @@ tick_interval_ms: 5000
 trigger_poll_interval_ms: 30000
 
 logging:
-  level: info
+  level: debug
   console: false

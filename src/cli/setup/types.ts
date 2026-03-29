@@ -23,8 +23,16 @@ export interface AdapterTypeConfig {
 
 // ── Setup Result ─────────────────────────────────────────────────────────────
 
+export interface PersonSetupEntry {
+  id: string;
+  name: string;
+  roles: string[];
+  contacts: Array<{ channel: string; handle: string }>;
+}
+
 export interface GuidedSetupResult {
   selectedPlugins: string[];
   pluginConfigs: Record<string, Record<string, unknown>>;
   secrets: Record<string, string>;
+  people: PersonSetupEntry[];
 }

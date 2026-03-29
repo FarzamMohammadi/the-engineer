@@ -3,7 +3,12 @@ import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 import type { BuiltinPlugin } from "../../plugins/builtin.js";
 import { getOutput } from "../output.js";
 import { ALL_TEMPLATES } from "../templates.js";
-import type { AdapterTypeConfig, DetectionResult, GuidedSetupResult } from "./types.js";
+import type {
+  AdapterTypeConfig,
+  DetectionResult,
+  GuidedSetupResult,
+  PersonSetupEntry,
+} from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -183,7 +188,9 @@ async function promptForSecrets(fileContents: readonly string[]): Promise<Record
   for (const varName of sorted) {
     const existing = process.env[varName];
     if (existing != null && existing.trim().length > 0) {
-      out.log(`  ${varName} (already set in environment)`);
+      // Persist to .env so the daemon has it even without the shell export
+      secrets[varName] = existing;
+      out.log(`  ${varName} (captured from environment)`);
       continue;
     }
 
@@ -224,6 +231,103 @@ function showSelectionWarnings(
   }
 }
 
+// ── People Directory ────────────────────────────────────────────────────────
+
+const PEOPLE_ROLES = ["reviewer", "stakeholder", "team_member"] as const;
+
+/**
+ * Resolve comm channel names from selected plugin manifests.
+ * Returns array of { channel, pluginName } for each comm plugin with a declared channel.
+ */
+function resolveCommChannels(
+  selectedPlugins: readonly string[],
+  plugins: readonly BuiltinPlugin[],
+): Array<{ channel: string; pluginName: string }> {
+  return plugins
+    .filter((p) => p.manifest.type === "communication" && selectedPlugins.includes(p.manifest.id))
+    .map((p) => ({
+      channel: String(p.manifest.adapter_meta["channel"] ?? p.manifest.id),
+      pluginName: p.manifest.name,
+    }))
+    .filter((c) => c.channel.length > 0);
+}
+
+/** Prompt for a single person's details. */
+async function promptForPerson(
+  commChannels: Array<{ channel: string; pluginName: string }>,
+  isOwner: boolean,
+): Promise<PersonSetupEntry> {
+  const name = await input({
+    message: isOwner ? "Your name:" : "Person's name:",
+    validate: (v: string) => v.trim().length > 0 || "Name cannot be empty",
+  });
+
+  const defaultId = name.trim().toLowerCase().split(/\s+/)[0] ?? "user";
+  const id = await input({
+    message: "Identifier (used in configs):",
+    default: defaultId,
+    validate: (v: string) =>
+      /^[a-z0-9_-]+$/.test(v.trim()) || "Lowercase alphanumeric, hyphens, underscores only",
+  });
+
+  let roles: string[];
+  if (isOwner) {
+    roles = ["owner"];
+  } else {
+    const selectedRoles = await checkbox({
+      message: "Roles:",
+      choices: PEOPLE_ROLES.map((r) => ({ name: r, value: r })),
+      required: true,
+    });
+    roles = selectedRoles;
+  }
+
+  const contacts: Array<{ channel: string; handle: string }> = [];
+  for (const ch of commChannels) {
+    const handle = await input({
+      message: `Your ${ch.pluginName} handle:`,
+      validate: (v: string) => v.trim().length > 0 || "Handle cannot be empty",
+    });
+    contacts.push({ channel: ch.channel, handle: handle.trim() });
+  }
+
+  return { id: id.trim(), name: name.trim(), roles, contacts };
+}
+
+/** Prompt for People Directory entries (owner required, additional people optional). */
+async function promptForPeople(
+  selectedPlugins: readonly string[],
+  plugins: readonly BuiltinPlugin[],
+): Promise<PersonSetupEntry[]> {
+  const out = getOutput();
+  const commChannels = resolveCommChannels(selectedPlugins, plugins);
+
+  if (commChannels.length === 0) {
+    out.log("  No communication plugins selected — skipping people setup.");
+    return [];
+  }
+
+  out.blank();
+  out.log("  People Directory — who should The Engineer contact?");
+  out.blank();
+
+  // Owner is always required
+  out.log("  Owner (required):");
+  const owner = await promptForPerson(commChannels, true);
+  const people: PersonSetupEntry[] = [owner];
+
+  // Additional people (optional loop)
+  let addMore = await confirm({ message: "Add another person?", default: false });
+  while (addMore) {
+    out.blank();
+    const person = await promptForPerson(commChannels, false);
+    people.push(person);
+    addMore = await confirm({ message: "Add another person?", default: false });
+  }
+
+  return people;
+}
+
 // ── Main Flow ────────────────────────────────────────────────────────────────
 
 /**
@@ -260,6 +364,9 @@ export async function runGuidedSetup(
     // Per-plugin config (user-specific values like repos)
     const pluginConfigs = await configureSelectedPlugins(allSelected, plugins);
 
+    // People Directory (owner required, additional people optional)
+    const people = await promptForPeople(allSelected, plugins);
+
     // Collect secrets — scan templates for selected plugins' ${VAR} references
     const selectedTemplateContent = ALL_TEMPLATES.filter((t) => {
       if (!t.relativePath.startsWith("config/plugins/")) {
@@ -283,6 +390,9 @@ export async function runGuidedSetup(
     if (secretNames.length > 0) {
       out.log(`  Secrets: ${secretNames.join(", ")} (saved to ~/.engineer/.env)`);
     }
+    if (people.length > 0) {
+      out.log(`  People: ${people.map((p) => `${p.name} (${p.roles.join(", ")})`).join(", ")}`);
+    }
     out.blank();
     out.log("  Safety: conservative (default)");
     out.blank();
@@ -296,7 +406,7 @@ export async function runGuidedSetup(
       return null;
     }
 
-    return { selectedPlugins: allSelected, pluginConfigs, secrets };
+    return { selectedPlugins: allSelected, pluginConfigs, secrets, people };
   } catch (error) {
     if (error instanceof Error && error.name === "ExitPromptError") {
       return null;

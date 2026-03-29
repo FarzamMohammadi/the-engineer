@@ -61,10 +61,11 @@ That's it. On first run, `start` detects there's no config and launches guided s
 1. **Environment detection** — scans PATH for LLM CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars
 2. **Plugin selection** — one prompt per adapter type (LLM, trigger, hosting, communication, tools), grouped by category, with detection status shown
 3. **Per-plugin config** — prompts for required fields (repos to watch, etc.)
-4. **Secret collection** — prompts for token values with masked input (e.g., `GITHUB_TOKEN`). Skips tokens already set in your shell. Saves to `~/.engineer/.env` with `0o600` permissions.
-5. **Confirmation** — summary of selections, Y/n
-6. **Config written** — YAML files to `~/.engineer/config/`, secrets to `~/.engineer/.env`
-7. **Daemon starts** — pre-flight checks, bootstrap, tick loop begins
+4. **People Directory** — configures owner (required) and optional additional people. For each person: name, identifier, roles, and a handle for each selected communication channel (derived from plugin manifests). Generates `people.yaml` with real values instead of placeholders.
+5. **Secret collection** — prompts for token values with masked input (e.g., `GITHUB_TOKEN`). Tokens already set in your shell are captured and persisted to `~/.engineer/.env` automatically. Permissions: `0o600`.
+6. **Confirmation** — summary of selections, Y/n
+7. **Config written** — YAML files to `~/.engineer/config/`, secrets to `~/.engineer/.env`
+8. **Daemon starts** — pre-flight checks, bootstrap, tick loop begins
 
 **Non-interactive setup** (CI, automation, teams):
 
@@ -72,7 +73,15 @@ That's it. On first run, `start` detects there's no config and launches guided s
 engineer start --seed ./seed-example/
 ```
 
-Seeds both plugin configs (from `plugins/`) and core configs (from `configs/`) from the provided directory. Falls back to template defaults for any missing core configs. No prompts.
+Seeds both plugin configs and core configs from the provided directory. No prompts. The seed directory structure:
+
+```
+seed-example/
+  plugins/          # Plugin YAML configs (required)
+  configs/          # Core YAML configs: people.yaml, daemon.yaml, etc. (optional — falls back to templates)
+```
+
+Validates that `plugins/` exists and has `.yaml` files. If `configs/` is present, uses those files; otherwise generates core configs from templates. Verifies all `${VAR}` references resolve after setup — fails loudly if tokens are missing.
 
 **Dry run** (see what would happen without writing):
 
@@ -94,7 +103,7 @@ engineer start --dry-run                 # Show what would happen, don't start
 engineer start --seed ./seed-example/    # Non-interactive setup from seed directory
 ```
 
-**Startup sequence:** first-run detection → setup if needed → load config → pre-flight checks (doctor categories 1-7) → bootstrap all components → start tick loop → launch War Room dashboard.
+**Startup sequence:** first-run detection → setup if needed → load `.env` → capture shell env vars to `.env` → load config → pre-flight checks (doctor categories 1-7) → bootstrap all components → start tick loop → launch War Room dashboard.
 
 **Signal handling:** `SIGTERM` and `SIGINT` trigger graceful shutdown — active tasks transition to `queued`, plugins shut down, PID file cleaned up.
 
@@ -190,7 +199,8 @@ Config files live in `~/.engineer/config/`. Generated on first run with conserva
 **Secrets** (`~/.engineer/.env`):
 - Collected during first-run setup with masked input, or add manually
 - Format: `KEY=VALUE` (one per line, `#` for comments)
-- Environment variables already set in your shell take precedence
+- **Auto-persistence:** On every `engineer start`, env vars from your shell that match `${VAR}` references in configs are automatically captured and written to `.env`. This ensures tokens survive across terminal sessions and background daemon restarts.
+- Environment variables already set in your shell take precedence over `.env` values
 - File permissions: `0o600` (owner read/write only) — `engineer doctor` warns if too open
 - Plugin configs reference secrets as `${GITHUB_TOKEN}` — resolved at startup from `.env` or env vars
 

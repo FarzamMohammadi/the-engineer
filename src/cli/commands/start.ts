@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { loadEnvFile } from "../../config/env.js";
+import { loadEnvFile, writeEnvFile } from "../../config/env.js";
 import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { DaemonAlreadyRunningError } from "../../core/daemon/errors.js";
 import { discoverEnabledPlugins } from "../../plugins/loader.js";
@@ -11,10 +11,21 @@ import { type BootstrapResult, type ProgressCallback, bootstrap } from "../boots
 import { type EngineerDirectories, resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 import { Spinner } from "../progress.js";
-import { needsSetup, runFirstTimeSetup } from "../setup/setup.js";
+import { findResolvedEnvVars, needsSetup, runFirstTimeSetup } from "../setup/setup.js";
 import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "./doctor.js";
 import { spawnBackground } from "./start-background.js";
 import { DASHBOARD_PORT, launchDashboard } from "./start-dashboard.js";
+
+/**
+ * Persist env vars from the current shell to .env so the daemon always has them.
+ * Scans config files for ${VAR} refs, writes any found in process.env to .env (merge).
+ */
+function captureEnvVarsToFile(engineerHome: string, configDir: string): void {
+  const vars = findResolvedEnvVars(configDir);
+  if (Object.keys(vars).length > 0) {
+    writeEnvFile(engineerHome, vars);
+  }
+}
 
 interface StartOptions {
   daemon: boolean;
@@ -67,6 +78,10 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 
   // 1. Load .env before config resolution (existing env vars take precedence)
   loadEnvFile(engineerHome);
+
+  // 1b. Capture env vars from shell into .env so daemon always has them.
+  // Scans configs for ${VAR} refs, persists any found in process.env but missing from .env.
+  captureEnvVarsToFile(engineerHome, dirs.config);
 
   // 2. Auto-create directories (idempotent — may already exist after setup)
   try {

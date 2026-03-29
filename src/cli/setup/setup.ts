@@ -322,6 +322,38 @@ export function findUnresolvedEnvVars(configDir: string): string[] {
   return missing.sort();
 }
 
+/**
+ * Scan all YAML config files for ${VAR} references and return those that
+ * ARE set in process.env (with their values). Used to persist shell exports to .env.
+ */
+export function findResolvedEnvVars(configDir: string): Record<string, string> {
+  const resolved: Record<string, string> = {};
+  if (!existsSync(configDir)) return resolved;
+
+  const scanDir = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        scanDir(join(dir, entry.name));
+      } else if (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) {
+        const content = readFileSync(join(dir, entry.name), "utf8");
+        ENV_VAR_SCAN_RE.lastIndex = 0;
+        let match = ENV_VAR_SCAN_RE.exec(content);
+        while (match) {
+          const varName = match[1];
+          const value = varName ? process.env[varName] : undefined;
+          if (varName && value != null && value.length > 0) {
+            resolved[varName] = value;
+          }
+          match = ENV_VAR_SCAN_RE.exec(content);
+        }
+      }
+    }
+  };
+
+  scanDir(configDir);
+  return resolved;
+}
+
 // ── First-Run Detection ──────────────────────────────────────────────────────
 
 /**

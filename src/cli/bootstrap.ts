@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
+import { createNotificationRouter } from "../core/daemon/notification-router.js";
 import {
   EVENTS as DATA_LIFECYCLE_EVENTS,
   createDataLifecycleManager,
@@ -138,6 +139,15 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // 7. People Directory
     const peopleDirectory = new PeopleDirectory({ people: config.people });
 
+    // 7b. Notification Router (shared by Orchestrator + Daemon)
+    const notifications = createNotificationRouter({
+      registry,
+      taskEngine,
+      peopleDirectory,
+      eventBus,
+      observer: observer.child("notifications"),
+    });
+
     // 8. Orchestrator
     eventTopology.registerPublisher("orchestrator", ORCHESTRATOR_EVENTS);
     const orchestrator = new Orchestrator({
@@ -152,6 +162,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       peopleDirectory,
       observationStore,
       observer: observer.child("orchestrator"),
+      notifications,
     });
 
     // 9. Data Lifecycle Manager
@@ -180,6 +191,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       clock: new RealClock(),
       observer: observer.child("daemon"),
       engineerHome,
+      notifications,
       dataLifecycleManager,
     });
     progress?.("Wiring system", "done");

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { Daemon } from "../../src/core/daemon/index.js";
 import { createDaemon } from "../../src/core/daemon/index.js";
+import { createNotificationRouter } from "../../src/core/daemon/notification-router.js";
 import type { InferenceResult } from "../../src/schemas/adapters.js";
 import { type DaemonConfig, DaemonConfigSchema } from "../../src/schemas/config.js";
 import {
@@ -154,6 +155,13 @@ function createSecondDaemon(ctx: IntegrationContext): Daemon {
     clock: ctx.clock,
     observer: createTestObserverFacade("daemon"),
     engineerHome: ctx.engineerHome,
+    notifications: createNotificationRouter({
+      registry: ctx.registry,
+      taskEngine: ctx.taskEngine,
+      peopleDirectory: ctx.peopleDirectory,
+      eventBus: ctx.eventBus,
+      observer: createTestObserverFacade("notifications"),
+    }),
   });
 }
 

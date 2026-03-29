@@ -15,15 +15,10 @@ function createMockDeps(): QueryHandlerDeps {
         reason: "within daily limit",
       }),
     } as unknown as QueryHandlerDeps["safetyLayer"],
-    registry: {
-      getPluginsByType: vi.fn().mockReturnValue([]),
-    } as unknown as QueryHandlerDeps["registry"],
-    observer: {
-      error: vi.fn(),
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-    } as unknown as QueryHandlerDeps["observer"],
+    notifications: {
+      notify: vi.fn(),
+      syncStateToCommPlugin: vi.fn(),
+    } as unknown as QueryHandlerDeps["notifications"],
   };
 }
 
@@ -53,24 +48,21 @@ describe("handleQuery", () => {
       },
     );
 
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      hasCapability: vi.fn().mockReturnValue(true),
-      sendMessage: vi.fn().mockResolvedValue({ success: true, message_id: "1", error: null }),
-      formatMessage: vi.fn().mockImplementation((c: string) => c),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
+    handleQuery(payload("what's the status?"), deps);
 
-    await handleQuery(payload("what's the status?"), deps);
-
-    expect(mockComm.sendMessage).toHaveBeenCalledTimes(1);
-    const sentContent = (mockComm.formatMessage as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[0] as string;
-    expect(sentContent).toContain("queued: 2");
-    expect(sentContent).toContain("active: 1");
+    expect(deps.notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "status_response",
+        personId: "farzam",
+      }),
+    );
+    const notification = (deps.notifications.notify as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as { message: string };
+    expect(notification.message).toContain("queued: 2");
+    expect(notification.message).toContain("active: 1");
   });
 
-  it("responds to 'progress #42' with task details", async () => {
+  it("responds to 'progress #42' with task details", () => {
     const deps = createMockDeps();
     (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
       id: "42",
@@ -81,92 +73,53 @@ describe("handleQuery", () => {
       phase: "execution",
     });
 
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      sendMessage: vi.fn().mockResolvedValue({ success: true, message_id: "1", error: null }),
-      formatMessage: vi.fn().mockImplementation((c: string) => c),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
+    handleQuery(payload("progress #42"), deps);
 
-    await handleQuery(payload("progress #42"), deps);
-
-    const sentContent = (mockComm.formatMessage as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[0] as string;
-    expect(sentContent).toContain("Fix login bug");
-    expect(sentContent).toContain("active");
-    expect(sentContent).toContain("execution");
+    const notification = (deps.notifications.notify as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as { message: string };
+    expect(notification.message).toContain("Fix login bug");
+    expect(notification.message).toContain("active");
+    expect(notification.message).toContain("execution");
   });
 
-  it("responds to 'cost' query with safety layer data", async () => {
+  it("responds to 'cost' query with safety layer data", () => {
     const deps = createMockDeps();
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      sendMessage: vi.fn().mockResolvedValue({ success: true, message_id: "1", error: null }),
-      formatMessage: vi.fn().mockImplementation((c: string) => c),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
 
-    await handleQuery(payload("how much cost?"), deps);
+    handleQuery(payload("how much cost?"), deps);
 
-    const sentContent = (mockComm.formatMessage as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[0] as string;
-    expect(sentContent).toContain("within limits");
+    const notification = (deps.notifications.notify as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as { message: string };
+    expect(notification.message).toContain("within limits");
   });
 
-  it("responds with help for unrecognized queries", async () => {
+  it("responds with help for unrecognized queries", () => {
     const deps = createMockDeps();
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      sendMessage: vi.fn().mockResolvedValue({ success: true, message_id: "1", error: null }),
-      formatMessage: vi.fn().mockImplementation((c: string) => c),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
 
-    await handleQuery(payload("hello"), deps);
+    handleQuery(payload("hello"), deps);
 
-    const sentContent = (mockComm.formatMessage as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[0] as string;
-    expect(sentContent).toContain("didn't understand");
+    const notification = (deps.notifications.notify as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as { message: string };
+    expect(notification.message).toContain("didn't understand");
   });
 
-  it("handles no comm plugins gracefully", async () => {
+  it("calls notify even with no special conditions", () => {
     const deps = createMockDeps();
-    await expect(handleQuery(payload("status"), deps)).resolves.toBeUndefined();
+    handleQuery(payload("status"), deps);
+    expect(deps.notifications.notify).toHaveBeenCalled();
   });
 
-  it("logs error when sendMessage fails", async () => {
-    const deps = createMockDeps();
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      sendMessage: vi.fn().mockRejectedValue(new Error("API down")),
-      formatMessage: vi.fn().mockImplementation((c: string) => c),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
-
-    await handleQuery(payload("status"), deps);
-
-    expect(deps.observer.error).toHaveBeenCalled();
-  });
-
-  it("handles task not found for progress query", async () => {
+  it("handles task not found for progress query", () => {
     const deps = createMockDeps();
     (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      sendMessage: vi.fn().mockResolvedValue({ success: true, message_id: "1", error: null }),
-      formatMessage: vi.fn().mockImplementation((c: string) => c),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
+    handleQuery(payload("progress #999"), deps);
 
-    await handleQuery(payload("progress #999"), deps);
-
-    const sentContent = (mockComm.formatMessage as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[0] as string;
-    expect(sentContent).toContain("not found");
+    const notification = (deps.notifications.notify as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as { message: string };
+    expect(notification.message).toContain("not found");
   });
 
-  it("handles '#42 progress' format (reversed)", async () => {
+  it("handles '#42 progress' format (reversed)", () => {
     const deps = createMockDeps();
     (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
       id: "42",
@@ -177,29 +130,18 @@ describe("handleQuery", () => {
       phase: null,
     });
 
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      sendMessage: vi.fn().mockResolvedValue({ success: true, message_id: "1", error: null }),
-      formatMessage: vi.fn().mockImplementation((c: string) => c),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
-
-    await handleQuery(payload("#42 progress"), deps);
+    handleQuery(payload("#42 progress"), deps);
 
     expect(deps.taskEngine.getTask).toHaveBeenCalledWith("42");
   });
 
-  it("formats status_response message type", async () => {
+  it("sends status_response notification kind", () => {
     const deps = createMockDeps();
-    const mockComm = {
-      manifest: { id: "github-comm" },
-      sendMessage: vi.fn().mockResolvedValue({ success: true, message_id: "1", error: null }),
-      formatMessage: vi.fn().mockReturnValue("formatted"),
-    };
-    (deps.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockComm]);
 
-    await handleQuery(payload("status"), deps);
+    handleQuery(payload("status"), deps);
 
-    expect(mockComm.formatMessage).toHaveBeenCalledWith(expect.any(String), "status_response");
+    expect(deps.notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "status_response" }),
+    );
   });
 });

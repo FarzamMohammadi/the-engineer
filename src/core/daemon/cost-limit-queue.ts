@@ -50,8 +50,12 @@ export function createCostLimitQueue(
             reason: result.reason,
           });
         }
-        notifications.sendCostLimit(taskId);
-        notifications.commentOnTaskTicket(taskId, "Task blocked \u2014 cost limit reached.");
+        notifications.notify({ kind: "cost_limit", taskId });
+        notifications.notify({
+          kind: "ticket_comment",
+          taskId,
+          message: "Task blocked \u2014 cost limit reached.",
+        });
       }
     }
   }

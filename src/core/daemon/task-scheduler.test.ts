@@ -77,16 +77,9 @@ function makeMockTask(overrides?: Record<string, unknown>): Task {
   } as unknown as Task;
 }
 
-function makeNotifications(): NotificationRouter & Record<string, ReturnType<typeof vi.fn>> {
+function makeNotifications(): NotificationRouter {
   return {
-    sendCompletion: vi.fn(),
-    sendReviewPending: vi.fn(),
-    sendTaskError: vi.fn(),
-    sendCostLimit: vi.fn(),
-    sendBlockedReminder: vi.fn(),
-    sendEscalationAlert: vi.fn(),
-    sendReviewReminder: vi.fn(),
-    commentOnTaskTicket: vi.fn(),
+    notify: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }
@@ -264,10 +257,15 @@ describe("TaskScheduler", () => {
       "daemon",
     );
     expect(workspaceManager.cleanupWorkspace).toHaveBeenCalledWith("t1", true);
-    expect(notifications.sendCompletion).toHaveBeenCalledWith("t1");
-    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-      "t1",
-      "Task completed successfully.",
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "completion", taskId: "t1" }),
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ticket_comment",
+        taskId: "t1",
+        message: "Task completed successfully.",
+      }),
     );
     expect(scheduler.getTasksCompleted()).toBe(1);
   });
@@ -298,10 +296,15 @@ describe("TaskScheduler", () => {
       "pr_created",
       "daemon",
     );
-    expect(notifications.sendReviewPending).toHaveBeenCalledWith("t1");
-    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-      "t1",
-      "Pull request created — awaiting review.",
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "review_pending", taskId: "t1" }),
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ticket_comment",
+        taskId: "t1",
+        message: "Pull request created — awaiting review.",
+      }),
     );
   });
 
@@ -331,10 +334,15 @@ describe("TaskScheduler", () => {
       "build_failed",
       "daemon",
     );
-    expect(notifications.sendTaskError).toHaveBeenCalledWith("t1", "build_failed");
-    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-      "t1",
-      "Task encountered an error: build_failed",
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "task_error", taskId: "t1", reason: "build_failed" }),
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ticket_comment",
+        taskId: "t1",
+        message: "Task encountered an error: build_failed",
+      }),
     );
   });
 
@@ -723,7 +731,9 @@ describe("TaskScheduler", () => {
     // Should not throw
     expect(() => scheduler.handleTaskCompletion("t1", result)).not.toThrow();
     // Notification should still be sent
-    expect(notifications.sendCompletion).toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "completion" }),
+    );
   });
 
   // 24. isTaskEligible: child of supervising parent with best_effort is eligible
@@ -794,8 +804,15 @@ describe("TaskScheduler", () => {
 
     // Notifications and cleanup must be skipped when the transition fails
     expect(workspaceManager.cleanupWorkspace).not.toHaveBeenCalled();
-    expect(notifications.sendCompletion).not.toHaveBeenCalled();
-    expect(notifications.commentOnTaskTicket).not.toHaveBeenCalled();
+    // notify should not have been called after the failed transition
+    // (it may have been called during dispatch, so check no completion/ticket_comment kinds)
+    const postDispatchCalls = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: unknown[]) => {
+        const kind = (c[0] as { kind: string }).kind;
+        return kind === "completion" || kind === "ticket_comment";
+      },
+    );
+    expect(postDispatchCalls).toHaveLength(0);
   });
 
   // 26. F1: handleErrorOutcome skips notifications when transition fails
@@ -819,8 +836,13 @@ describe("TaskScheduler", () => {
     };
     scheduler.handleTaskCompletion("t1", result);
 
-    expect(notifications.sendTaskError).not.toHaveBeenCalled();
-    expect(notifications.commentOnTaskTicket).not.toHaveBeenCalled();
+    const postDispatchErrorCalls = (
+      notifications.notify as ReturnType<typeof vi.fn>
+    ).mock.calls.filter((c: unknown[]) => {
+      const kind = (c[0] as { kind: string }).kind;
+      return kind === "task_error" || kind === "ticket_comment";
+    });
+    expect(postDispatchErrorCalls).toHaveLength(0);
   });
 
   // 27. F2: unknown outcome transitions task to blocked instead of silently dropping it

@@ -5,6 +5,7 @@ import type {
   ExecuteInput,
   PipelineResult,
 } from "../../src/core/action-pipeline/index.js";
+import type { NotificationRouter } from "../../src/core/daemon/notification-router.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
 import type {
@@ -236,6 +237,10 @@ export interface TestOrchestratorHandle {
     pushBranch: Mock;
     cleanupWorkspace: Mock;
   };
+  notifications: {
+    notify: Mock;
+    syncStateToCommPlugin: Mock;
+  };
   /** Get the preemption.requested subscriber callback captured from subscribe(). */
   triggerPreemption: (targetTaskId: string, preemptingTaskId: string) => void;
   /** Set LLM responses for all 7 phases (happy path). */
@@ -435,6 +440,11 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     getAll: vi.fn().mockReturnValue([]),
   };
 
+  const notifications: NotificationRouter = {
+    notify: vi.fn(),
+    syncStateToCommPlugin: vi.fn(),
+  };
+
   const orchestrator = new Orchestrator({
     config: OrchestratorConfigSchema.parse({}),
     eventBus: eventBus as unknown as EventBus,
@@ -445,6 +455,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     sessionMemory: sessionMemory as unknown as ISessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
+    notifications,
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
   });
@@ -495,6 +506,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     actionPipeline,
     sessionMemory,
     workspaceManager,
+    notifications: notifications as unknown as { notify: Mock; syncStateToCommPlugin: Mock },
     triggerPreemption,
     setAllPhaseResponses,
     setLlmResponseAtIndex,

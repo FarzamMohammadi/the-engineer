@@ -10,3 +10,4 @@ adapter_meta:
   capabilities:
     - send
     - receive
+  channel: fake

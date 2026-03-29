@@ -204,7 +204,7 @@ export function createDaemonHealthMonitor(
     stage: { name: string; action: string },
   ): void {
     if (stage.action === "send_reminder") {
-      notifications.sendBlockedReminder(taskId);
+      notifications.notify({ kind: "blocked_reminder", taskId });
       observer.info("Blocked task reminder sent", { taskId, stage: stage.name });
     } else if (stage.action === "evaluate_self_unblock") {
       orchestrator.attemptSelfUnblock(taskId).then(
@@ -244,7 +244,7 @@ export function createDaemonHealthMonitor(
       );
       if (result.success) {
         callbacks?.onTaskEscalated(taskId);
-        notifications.sendEscalationAlert(taskId);
+        notifications.notify({ kind: "escalation_alert", taskId });
         blockedEscalationState.delete(taskId);
         observer.warn("Blocked task escalated to failed", { taskId, stage: stage.name });
       } else {
@@ -299,7 +299,7 @@ export function createDaemonHealthMonitor(
       return;
     }
 
-    notifications.sendReviewReminder(task.id, elapsedMs);
+    notifications.notify({ kind: "review_reminder", taskId: task.id, elapsedMs });
     reviewReminderTimes.set(task.id, now);
     observer.info("Review pending reminder sent", {
       taskId: task.id,

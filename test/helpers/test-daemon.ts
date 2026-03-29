@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type Mock, vi } from "vitest";
 
 import { type Daemon, type DaemonState, createDaemon } from "../../src/core/daemon/index.js";
+import { createNotificationRouter } from "../../src/core/daemon/notification-router.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "../../src/core/interfaces/session-memory.interface.js";
@@ -312,6 +313,15 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
 
   // ── Build Daemon ──────────────────────────────────────────────────────
   const config = defaultTestConfig(configOverrides);
+  const observer = createTestObserverFacade("daemon");
+
+  const notifications = createNotificationRouter({
+    registry: registry as unknown as Registry,
+    taskEngine: taskEngine as unknown as ITaskEngine,
+    peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
+    eventBus: eventBus as unknown as EventBus,
+    observer,
+  });
 
   const daemon = createDaemon({
     config,
@@ -323,8 +333,9 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     sessionMemory: sessionMemory as unknown as ISessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
+    notifications,
     clock,
-    observer: createTestObserverFacade("daemon"),
+    observer,
     engineerHome,
   });
 

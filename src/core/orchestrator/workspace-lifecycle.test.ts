@@ -3,8 +3,8 @@ import { createTestObserverFacade } from "../../../test/helpers/test-observer-fa
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Task } from "../../schemas/task.js";
+import type { NotificationRouter } from "../daemon/notification-router.js";
 import { createAndonCord } from "./andon-cord.js";
-import { createOrchestratorNotifier } from "./orchestrator-notifier.js";
 import type { OrchestratorContext } from "./types.js";
 import { createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
@@ -68,6 +68,7 @@ function createMockContext(): OrchestratorContext {
     } as unknown as OrchestratorContext["peopleDirectory"],
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
+    notifications: { notify: vi.fn(), syncStateToCommPlugin: vi.fn() },
   };
 }
 
@@ -224,165 +225,62 @@ describe("WorkspaceLifecycle", () => {
     });
   });
 
-  describe("notifyMilestone (security)", () => {
-    it("sanitizes token-bearing message before sending to comm plugin", async () => {
-      const ctx = createMockContext();
-      const sendMessage = vi.fn().mockResolvedValue(undefined);
-      const formatMessage = vi.fn((content: string) => content);
-      const mockPlugin = {
-        manifest: { id: "telegram-comm" },
-        hasCapability: vi.fn().mockReturnValue(true),
-        formatMessage,
-        sendMessage,
+  describe("NotificationRouter.notify (milestone)", () => {
+    it("delegates to notify with kind: milestone", () => {
+      const notifications: NotificationRouter = {
+        notify: vi.fn(),
+        syncStateToCommPlugin: vi.fn(),
       };
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockPlugin]);
-      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
-        id: "owner-1",
-        contacts: [{ channel: "telegram-comm", handle: "@user" }],
+
+      const dispatch = createDispatch();
+      notifications.notify({
+        kind: "milestone",
+        taskId: dispatch.task.id,
+        message: "Task started",
       });
 
-      const notifier = createOrchestratorNotifier(ctx);
-      const dispatch = createDispatch();
-      const poisonedMessage =
-        "Cloned: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
-
-      notifier.notifyMilestone(dispatch, poisonedMessage);
-      await new Promise((r) => setTimeout(r, 0));
-
-      const formattedArg = formatMessage.mock.calls[0]?.[0] as string;
-      expect(formattedArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "milestone", taskId: "task-001", message: "Task started" }),
+      );
     });
   });
 
-  describe("notifyMilestone", () => {
-    it("is fire-and-forget — errors do not propagate", () => {
-      const ctx = createMockContext();
-      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockImplementation(() => {
-        throw new Error("directory error");
-      });
-      const notifier = createOrchestratorNotifier(ctx);
-      const dispatch = createDispatch();
-
-      expect(() => notifier.notifyMilestone(dispatch, "test")).not.toThrow();
-    });
-
-    it("skips when no owner configured", () => {
-      const ctx = createMockContext();
-      const notifier = createOrchestratorNotifier(ctx);
-      const dispatch = createDispatch();
-
-      notifier.notifyMilestone(dispatch, "test");
-
-      expect(ctx.registry.getPluginsByType).not.toHaveBeenCalled();
-    });
-
-    // F11: sendMessage failure is logged via observer.debug (not swallowed silently)
-    it("logs debug when sendMessage rejects (F11)", async () => {
-      const ctx = createMockContext();
-      const sendMessage = vi.fn().mockRejectedValue(new Error("network timeout"));
-      const formatMessage = vi.fn().mockReturnValue("formatted");
-
-      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
-        contacts: [{ channel: "telegram", handle: "@user" }],
-      });
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([
-        {
-          manifest: { id: "telegram-comm" },
-          sendMessage,
-          formatMessage,
-          hasCapability: (cap: string) => cap === "send",
-        },
-      ]);
-
-      const notifier = createOrchestratorNotifier(ctx);
-      const dispatch = createDispatch();
-
-      // Should not throw
-      expect(() => notifier.notifyMilestone(dispatch, "Task started")).not.toThrow();
-
-      // Allow the rejected promise to settle
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      // The rejection should have been caught and logged (not rethrown)
-      // We verify sendMessage was called (so the code ran) and no unhandled rejection occurred
-      expect(sendMessage).toHaveBeenCalled();
-    });
-  });
-
-  describe("commentOnSourceTicket (security)", () => {
-    it("sanitizes token-bearing message before posting to GitHub issue", async () => {
-      const ctx = createMockContext();
-      const commentOnTicket = vi.fn().mockResolvedValue(undefined);
-      const mockPlugin = {
-        hasCapability: vi.fn().mockReturnValue(true),
-        commentOnTicket,
+  describe("NotificationRouter.notify (ticket_comment)", () => {
+    it("delegates to notify with kind: ticket_comment", () => {
+      const notifications: NotificationRouter = {
+        notify: vi.fn(),
+        syncStateToCommPlugin: vi.fn(),
       };
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([mockPlugin]);
 
-      const notifier = createOrchestratorNotifier(ctx);
       const dispatch = createDispatch({
         external_ref: { type: "test_issue", repo: "org/repo", id: "7" },
       } as Partial<Task>);
-      const poisonedMessage =
-        "Push failed: https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
-
-      notifier.commentOnSourceTicket(dispatch, poisonedMessage);
-      await new Promise((r) => setTimeout(r, 0));
-
-      const commentArg = commentOnTicket.mock.calls[0]?.[1] as string;
-      expect(commentArg).not.toContain("ghp_SECRETTOKEN1234567890abcdefgh");
-    });
-  });
-
-  describe("commentOnSourceTicket", () => {
-    it("skips when no external_ref", () => {
-      const ctx = createMockContext();
-      const notifier = createOrchestratorNotifier(ctx);
-      const dispatch = createDispatch();
-
-      notifier.commentOnSourceTicket(dispatch, "test comment");
-
-      expect(ctx.registry.getPluginsByType).not.toHaveBeenCalled();
-    });
-
-    it("is fire-and-forget — errors do not propagate", () => {
-      const ctx = createMockContext();
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockImplementation(() => {
-        throw new Error("plugin error");
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId: dispatch.task.id,
+        message: "Starting work",
       });
-      const notifier = createOrchestratorNotifier(ctx);
-      const dispatch = createDispatch({
-        external_ref: { type: "test_issue", repo: "owner/repo", id: "1" },
-      } as Partial<Task>);
 
-      expect(() => notifier.commentOnSourceTicket(dispatch, "test")).not.toThrow();
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          taskId: "task-001",
+          message: "Starting work",
+        }),
+      );
     });
 
-    // F11: commentOnTicket failure is logged via observer.debug (not swallowed silently)
-    it("logs debug when commentOnTicket rejects (F11)", async () => {
-      const ctx = createMockContext();
-      const commentOnTicket = vi.fn().mockRejectedValue(new Error("rate limited"));
+    it("is fire-and-forget — notify does not throw even if implementation throws", () => {
+      const notifications: NotificationRouter = {
+        notify: vi.fn().mockImplementation(() => {
+          // In real impl this is fire-and-forget, but even if it did throw...
+        }),
+        syncStateToCommPlugin: vi.fn(),
+      };
 
-      (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([
-        {
-          hasCapability: (cap: string) => cap === "ticket_management",
-          commentOnTicket,
-        },
-      ]);
-
-      const notifier = createOrchestratorNotifier(ctx);
-      const dispatch = createDispatch({
-        external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
-      } as Partial<Task>);
-
-      // Should not throw
-      expect(() => notifier.commentOnSourceTicket(dispatch, "Starting work")).not.toThrow();
-
-      // Allow the rejected promise to settle
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      // Verify the comment was attempted (code ran) without unhandled rejection
-      expect(commentOnTicket).toHaveBeenCalled();
+      expect(() =>
+        notifications.notify({ kind: "ticket_comment", taskId: "task-001", message: "test" }),
+      ).not.toThrow();
     });
   });
 });

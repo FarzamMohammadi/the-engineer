@@ -551,10 +551,11 @@ export function createReviewHandler(
             return;
           }
 
-          notifications.commentOnTaskTicket(
-            payload.task_id,
-            "Demo approved — PR marked ready for code review.",
-          );
+          notifications.notify({
+            kind: "ticket_comment",
+            taskId: payload.task_id,
+            message: "Demo approved — PR marked ready for code review.",
+          });
           observer.info("Demo approved — PR marked ready for code review", {
             taskId: payload.task_id,
           });
@@ -583,9 +584,9 @@ export function createReviewHandler(
         error: sanitizeErrorMessage(err),
       });
     }
-    notifications.sendCompletion(taskId);
+    notifications.notify({ kind: "completion", taskId });
     if (commentMessage) {
-      notifications.commentOnTaskTicket(taskId, commentMessage);
+      notifications.notify({ kind: "ticket_comment", taskId, message: commentMessage });
     }
     callbacks.onTaskCompletionFinalized(taskId);
   }
@@ -708,10 +709,11 @@ export function createReviewHandler(
       }
       // Clear stale dedup key so re-polling after rework doesn't suppress events
       emittedFeedbackKeys.delete(payload.task_id);
-      notifications.commentOnTaskTicket(
-        payload.task_id,
-        `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
-      );
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId: payload.task_id,
+        message: `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
+      });
       observer.info("Task re-queued after review feedback", {
         taskId: payload.task_id,
         feedbackType: payload.feedback_type,

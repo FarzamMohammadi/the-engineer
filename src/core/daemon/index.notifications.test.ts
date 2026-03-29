@@ -5,14 +5,20 @@ import type { ExecuteTaskResult } from "../orchestrator/index.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createMockCommPlugin(overrides?: { id?: string; capabilities?: string[] }) {
+function createMockCommPlugin(overrides?: {
+  id?: string;
+  capabilities?: string[];
+  channel?: string;
+}) {
   const capabilities = overrides?.capabilities ?? ["send"];
+  const channel = overrides?.channel ?? "telegram";
   return {
     manifest: {
       id: overrides?.id ?? "test-comm",
       type: "communication",
       version: "1.0.0",
       name: "Test Comm",
+      adapter_meta: { channel },
     },
     hasCapability: vi.fn((cap: string) => capabilities.includes(cap)),
     formatMessage: vi.fn((content: string, _type: string) => `[formatted] ${content}`),

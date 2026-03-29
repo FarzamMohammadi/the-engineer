@@ -1,6 +1,4 @@
 import path from "node:path";
-import type { CommunicationAdapter } from "../../adapters/communication.js";
-import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
@@ -368,41 +366,8 @@ function emitLoopbackAlert(
 ): void {
   const alertContent = `Self-review loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`;
 
-  // Audit trail event
-  ctx.eventBus.publish({
-    type: "comm.message_sent",
-    source: "orchestrator",
-    task_id: taskId,
-    payload: {
-      task_id: taskId,
-      target: "owner",
-      message_type: "alert",
-      content_summary: alertContent,
-      channel: "primary",
-    },
-  } satisfies PublishInput<"comm.message_sent">);
-
-  // Deliver alert via comm plugins (fire-and-forget)
-  const commPlugins = ctx.registry
-    .getPluginsByType<CommunicationAdapter>(AdapterTypes.communication)
-    .filter((p) => p.hasCapability("send"));
-  const owner = commPlugins.length > 0 ? ctx.peopleDirectory.getOwner() : null;
-  if (owner) {
-    for (const comm of commPlugins) {
-      const formatted = comm.formatMessage(alertContent, "alert");
-      comm
-        .sendMessage(
-          { user_id: owner.id, channel: null },
-          { content: formatted, metadata: { task_id: taskId, type: "alert" } },
-        )
-        .catch((err: unknown) => {
-          ctx.observer.warn("Failed to deliver loopback alert", {
-            taskId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-    }
-  }
+  // Deliver alert via centralized notification router
+  ctx.notifications.notify({ kind: "alert", taskId, message: alertContent });
 
   ctx.sessionMemory.addJournalEntry({
     sessionId,
@@ -530,17 +495,17 @@ async function handlePostPhaseActions(
         const task = ctx.taskEngine.getTask(taskId);
         const outreachResult = await sendOutreach(taskId, outreachDir, task?.external_ref ?? null, {
           peopleDirectory: ctx.peopleDirectory,
-          registry: ctx.registry,
+          notifications: ctx.notifications,
           eventBus: ctx.eventBus,
           observer: ctx.observer,
         });
         if (outreachResult.delivered) {
           contacted = outreachResult.contacted;
-        } else if (outreachResult.reason === "no_send_adapters") {
-          // No comm adapters — don't block, task proceeds without human input
+        } else if (outreachResult.reason === "no_contacts") {
+          // No contacts resolved — don't block, task proceeds without human input
           shouldBlock = false;
           ctx.observer.warn(
-            "No send adapters — skipping blocking, proceeding without human input",
+            "No contacts resolved — skipping blocking, proceeding without human input",
             { taskId },
           );
         }

@@ -56,6 +56,10 @@ function createMockContext(
       verifyWorkspace: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],
     peopleDirectory: {} as OrchestratorContext["peopleDirectory"],
+    notifications: {
+      notify: vi.fn(),
+      syncStateToCommPlugin: vi.fn(),
+    } as unknown as OrchestratorContext["notifications"],
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
   };
@@ -319,8 +323,8 @@ describe("PhaseRunner", () => {
 
       // Should proceed past self_review (alert emitted, no loop)
       expect(result.outcome).toBe("completed");
-      expect(ctx.eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "comm.message_sent" }),
+      expect(ctx.notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "alert" }),
       );
     });
 
@@ -727,10 +731,9 @@ describe("PhaseRunner", () => {
         );
 
         expect(result.outcome).toBe("blocked");
-        expect(mockCommPlugin.sendMessage).toHaveBeenCalled();
-        // Delivery must complete BEFORE transition to blocked
-        expect(callOrder.indexOf("send_completed")).toBeLessThan(
-          callOrder.indexOf("transition_to_blocked"),
+        // Outreach goes through centralized notification router
+        expect(ctx.notifications.notify).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: "question", personId: "farzam" }),
         );
       } finally {
         rmSync(tmpDir, { recursive: true, force: true });

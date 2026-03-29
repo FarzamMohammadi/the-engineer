@@ -1,37 +1,30 @@
-import type { CommunicationAdapter } from "../../adapters/communication.js";
-import { AdapterTypes } from "../../schemas/adapters.js";
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import { type TaskState, TaskStates } from "../../schemas/task.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { IObserver } from "../observer/index.js";
-import type { Registry } from "../registry/index.js";
+import type { NotificationRouter } from "./notification-router.js";
 
 const PROGRESS_RE = /progress.*#(\d+)|#(\d+).*progress/;
 
 export interface QueryHandlerDeps {
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
-  registry: Registry;
-  observer: IObserver;
+  notifications: NotificationRouter;
 }
 
 /**
  * Handle an inbound communication message as a query.
  *
  * Basic v1: keyword-match query type, route to data source, format response,
- * send back via the same communication plugin. No LLM involved.
+ * send back via the centralized notification router.
  *
  * Query types supported:
  * - "status" → task summary (counts by state)
  * - "progress #N" → detail for a specific task
  * - "cost" → cost status from safety layer
  */
-export async function handleQuery(
-  payload: CommMessageReceivedPayload,
-  deps: QueryHandlerDeps,
-): Promise<void> {
-  const { taskEngine, safetyLayer, registry, observer } = deps;
+export function handleQuery(payload: CommMessageReceivedPayload, deps: QueryHandlerDeps): void {
+  const { taskEngine, safetyLayer, notifications } = deps;
   const content = payload.content.toLowerCase();
 
   let response: string;
@@ -48,21 +41,13 @@ export async function handleQuery(
     response = "I didn't understand the query. Try: `status`, `progress #N`, or `cost`.";
   }
 
-  // Send response via communication plugins
-  const commPlugins = registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
-  for (const comm of commPlugins) {
-    try {
-      await comm.sendMessage(
-        { user_id: payload.sender, channel: null },
-        {
-          content: comm.formatMessage(response, "status_response"),
-          metadata: { task_id: null, type: "status_response" },
-        },
-      );
-    } catch (err) {
-      observer.error("Failed to send query response", { err, pluginId: comm.manifest.id });
-    }
-  }
+  // Route response through centralized notification router
+  notifications.notify({
+    kind: "status_response",
+    taskId: null,
+    personId: payload.sender,
+    message: response,
+  });
 }
 
 // ── Response Formatters ───────────────────────────────────────────────────

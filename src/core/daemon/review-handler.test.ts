@@ -75,14 +75,7 @@ function createMockHostingPlugin() {
 
 function createMockNotifications(): NotificationRouter {
   return {
-    sendCompletion: vi.fn(),
-    sendReviewPending: vi.fn(),
-    sendTaskError: vi.fn(),
-    sendCostLimit: vi.fn(),
-    sendBlockedReminder: vi.fn(),
-    sendEscalationAlert: vi.fn(),
-    sendReviewReminder: vi.fn(),
-    commentOnTaskTicket: vi.fn(),
+    notify: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }
@@ -254,10 +247,15 @@ describe("ReviewHandler", () => {
 
       await handler.checkMerges();
 
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
-      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-        "task-1",
-        "PR merged — task completed.",
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "completion", taskId: "task-1" }),
+      );
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          taskId: "task-1",
+          message: "PR merged — task completed.",
+        }),
       );
     });
 
@@ -516,9 +514,12 @@ describe("ReviewHandler", () => {
         "feedback_rework:changes_requested",
         "daemon",
       );
-      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-        "task-1",
-        "Reviewer feedback received (changes_requested) — reworking.",
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          taskId: "task-1",
+          message: "Reviewer feedback received (changes_requested) — reworking.",
+        }),
       );
     });
 
@@ -592,16 +593,21 @@ describe("ReviewHandler", () => {
         "code_approved",
         "daemon",
       );
-      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-        "task-1",
-        "Code review approved — ready to merge.",
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          taskId: "task-1",
+          message: "Code review approved — ready to merge.",
+        }),
       );
       // Completion cleanup: workspace, notification, child-done check
       const ws = ctx.workspaceManager as unknown as {
         cleanupWorkspace: ReturnType<typeof vi.fn>;
       };
       expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "completion", taskId: "task-1" }),
+      );
       expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
@@ -647,7 +653,9 @@ describe("ReviewHandler", () => {
         cleanupWorkspace: ReturnType<typeof vi.fn>;
       };
       expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "completion", taskId: "task-1" }),
+      );
       expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
@@ -680,16 +688,21 @@ describe("ReviewHandler", () => {
         "code_approved",
         "daemon",
       );
-      expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-        "task-1",
-        "Code approved — auto-merge failed, please merge manually.",
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          taskId: "task-1",
+          message: "Code approved — auto-merge failed, please merge manually.",
+        }),
       );
       // Completion cleanup still runs even on merge failure
       const ws = ctx.workspaceManager as unknown as {
         cleanupWorkspace: ReturnType<typeof vi.fn>;
       };
       expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
-      expect(notifications.sendCompletion).toHaveBeenCalledWith("task-1");
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "completion", taskId: "task-1" }),
+      );
       expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 

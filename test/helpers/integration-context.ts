@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 
 import { type Daemon, createDaemon } from "../../src/core/daemon/index.js";
+import { createNotificationRouter } from "../../src/core/daemon/notification-router.js";
 import type { IActionPipeline } from "../../src/core/interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../../src/core/interfaces/event-bus.interface.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
@@ -150,6 +151,15 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   const peopleConfig = PeopleConfigSchema.parse({ people: options?.people ?? [] });
   const peopleDirectory = new PeopleDirectory(peopleConfig);
 
+  // 9b. Notification Router
+  const notifications = createNotificationRouter({
+    registry,
+    taskEngine,
+    peopleDirectory,
+    eventBus,
+    observer: createTestObserverFacade("notifications"),
+  });
+
   // 10. Orchestrator
   const orchestrator = new Orchestrator({
     config: OrchestratorConfigSchema.parse({}),
@@ -163,6 +173,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     peopleDirectory,
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
+    notifications,
   });
 
   // 11. Daemon
@@ -181,6 +192,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     clock,
     observer: createTestObserverFacade("daemon"),
     engineerHome,
+    notifications,
   });
 
   return {

@@ -5,8 +5,8 @@ import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
+import type { NotificationRouter } from "../daemon/notification-router.js";
 import { createDecompositionHandler } from "./decomposition-handler.js";
-import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
 import type { OrchestratorContext } from "./types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -40,6 +40,10 @@ function createMockContext(): OrchestratorContext {
     peopleDirectory: {} as OrchestratorContext["peopleDirectory"],
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
+    notifications: {
+      notify: vi.fn(),
+      syncStateToCommPlugin: vi.fn(),
+    } as unknown as OrchestratorContext["notifications"],
   };
 }
 
@@ -73,10 +77,10 @@ function createPlanningOutput(decompositionPlan: unknown): PhaseOutput {
   };
 }
 
-function createMockNotifier(): OrchestratorNotifier {
+function createMockNotifier(): NotificationRouter {
   return {
-    notifyMilestone: vi.fn(),
-    commentOnSourceTicket: vi.fn(),
+    notify: vi.fn(),
+    syncStateToCommPlugin: vi.fn(),
   };
 }
 
@@ -267,13 +271,17 @@ describe("DecompositionHandler", () => {
 
     handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
 
-    expect(wsl.commentOnSourceTicket).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("Build UI"),
+    expect(wsl.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ticket_comment",
+        message: expect.stringContaining("Build UI"),
+      }),
     );
-    expect(wsl.commentOnSourceTicket).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("Build API"),
+    expect(wsl.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ticket_comment",
+        message: expect.stringContaining("Build API"),
+      }),
     );
   });
 });

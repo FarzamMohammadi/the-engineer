@@ -4,7 +4,7 @@ import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
-import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
+import type { NotificationRouter } from "../daemon/notification-router.js";
 import { createPrManager } from "./pr-manager.js";
 import type { OrchestratorContext } from "./types.js";
 
@@ -67,6 +67,7 @@ function createMockContext(): OrchestratorContext {
     } as unknown as OrchestratorContext["peopleDirectory"],
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
+    notifications: { notify: vi.fn(), syncStateToCommPlugin: vi.fn() },
   };
 }
 
@@ -89,10 +90,10 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
   } as Dispatch;
 }
 
-function createMockNotifier(): OrchestratorNotifier {
+function createMockNotifier(): NotificationRouter {
   return {
-    notifyMilestone: vi.fn(),
-    commentOnSourceTicket: vi.fn(),
+    notify: vi.fn(),
+    syncStateToCommPlugin: vi.fn(),
   };
 }
 

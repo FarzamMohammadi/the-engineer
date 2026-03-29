@@ -97,7 +97,7 @@ const manifests = [
     requirements: [{ type: "env", name: "GITHUB_TOKEN" }],
     combined_with: ["github-trigger", "github-hosting"],
     entry: "builtin",
-    adapter_meta: { capabilities: ["send", "sync", "ticket_management"] },
+    adapter_meta: { capabilities: ["send", "sync", "ticket_management"], channel: "github" },
     contributes: { events: ["comm.message_sent"] },
   },
   {
@@ -112,7 +112,7 @@ const manifests = [
       { type: "env", name: "TELEGRAM_CHAT_ID" },
     ],
     entry: "builtin",
-    adapter_meta: { capabilities: ["send"] },
+    adapter_meta: { capabilities: ["send"], channel: "telegram" },
     contributes: { events: ["comm.message_sent"] },
   },
   {

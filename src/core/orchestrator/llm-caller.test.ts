@@ -64,6 +64,10 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
     } as unknown as OrchestratorContext["peopleDirectory"],
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
+    notifications: {
+      notify: vi.fn(),
+      syncStateToCommPlugin: vi.fn(),
+    } as unknown as OrchestratorContext["notifications"],
     ...overrides,
   };
 }

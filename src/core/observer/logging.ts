@@ -26,6 +26,7 @@ export type ComponentTag =
   | "llm-caller"
   | "plugin-loader"
   | "data-lifecycle"
+  | "notifications"
   | "response-poller"
   | "unblock-resolver";
 

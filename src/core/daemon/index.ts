@@ -22,7 +22,6 @@ import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { createCostLimitQueue } from "./cost-limit-queue.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
-import { createNotificationRouter } from "./notification-router.js";
 import { type PendingPreemption, createPreemptionManager } from "./preemption-manager.js";
 import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 import { createResponsePoller } from "./response-poller.js";
@@ -147,7 +146,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   // When using the daemon programmatically, the caller must call daemon.stop() on shutdown signals.
 
   // ── Create Subsystems ─────────────────────────────────────────────────
-  const notifications = createNotificationRouter(ctx);
+  const notifications = ctx.notifications;
 
   const scheduler = createTaskScheduler(ctx, notifications, {
     onTaskCompleted: (taskId, result) => handleTaskCompletion(taskId, result),
@@ -334,12 +333,13 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       const queryDeps: QueryHandlerDeps = {
         taskEngine,
         safetyLayer: ctx.safetyLayer,
-        registry,
-        observer,
+        notifications,
       };
-      handleQuery(payload, queryDeps).catch((err) => {
+      try {
+        handleQuery(payload, queryDeps);
+      } catch (err) {
         observer.error("Query handler error", { err });
-      });
+      }
     });
 
     eventBus.subscribe("daemon:state-sync", EventTypes["task.state_changed"], (event: Event) => {

@@ -3,6 +3,7 @@ import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { INotificationRouter } from "../interfaces/notification-router.interface.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
@@ -28,6 +29,7 @@ export interface OrchestratorContext {
   peopleDirectory: IPeopleDirectory;
   observationStore: IObservationStore | null;
   observer: IObserver;
+  notifications: INotificationRouter;
 }
 
 // ── Preemption Gate ──────────────────────────────────────────────────────

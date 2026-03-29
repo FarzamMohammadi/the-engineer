@@ -1,263 +1,342 @@
 import type { CommunicationAdapter } from "../../adapters/communication.js";
-import { AdapterTypes } from "../../schemas/adapters.js";
+import { AdapterTypes, MessageTypes } from "../../schemas/adapters.js";
+import type { MessageType } from "../../schemas/adapters.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
+import {
+  type Notification,
+  NotificationKinds,
+  recipientsForKind,
+} from "../../schemas/notifications.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
-import type { NotificationRouterContext } from "./types.js";
+import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
+import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
+import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
+import type { IObserver } from "../observer/index.js";
+
+export interface NotificationRouterContext {
+  registry: IPluginLookup;
+  taskEngine: ITaskEngine;
+  peopleDirectory: IPeopleDirectory;
+  eventBus: IEventBus;
+  observer: IObserver;
+}
 
 // ── Notification Templates ───────────────────────────────────────────────────
 
-type MessageType = "milestone" | "notification" | "alert";
-type Recipients = "owner" | "reviewers" | "owner_and_reviewers";
+interface TemplateEntry {
+  format: (vars: Record<string, string>) => string;
+  messageType: MessageType;
+}
 
-const NOTIFICATION_TEMPLATES = {
+const NOTIFICATION_TEMPLATES: Partial<Record<Notification["kind"], TemplateEntry>> = {
   completion: {
-    format: (v: { title: string }) => `Task "${v.title}" completed successfully.`,
-    messageType: "milestone" as MessageType,
-    recipients: "owner" as Recipients,
+    format: (v) => `Task "${v["title"]}" completed successfully.`,
+    messageType: MessageTypes.milestone,
   },
   review_pending: {
-    format: (v: { title: string }) => `Task "${v.title}" — PR created, awaiting review.`,
-    messageType: "milestone" as MessageType,
-    recipients: "owner" as Recipients,
+    format: (v) => `Task "${v["title"]}" — PR created, awaiting review.`,
+    messageType: MessageTypes.milestone,
   },
   task_error: {
-    format: (v: { title: string; reason: string }) =>
-      `Task "${v.title}" encountered an error: ${v.reason}. Status: blocked.`,
-    messageType: "alert" as MessageType,
-    recipients: "owner" as Recipients,
+    format: (v) => `Task "${v["title"]}" encountered an error: ${v["reason"]}. Status: blocked.`,
+    messageType: MessageTypes.alert,
   },
   cost_limit: {
-    format: (v: { title: string }) => `Task "${v.title}" blocked — cost limit reached.`,
-    messageType: "alert" as MessageType,
-    recipients: "owner" as Recipients,
+    format: (v) => `Task "${v["title"]}" blocked — cost limit reached.`,
+    messageType: MessageTypes.alert,
   },
   blocked_reminder: {
-    format: (v: { title: string }) =>
-      `Task "${v.title}" is still blocked and waiting for attention.`,
-    messageType: "notification" as MessageType,
-    recipients: "owner" as Recipients,
+    format: (v) => `Task "${v["title"]}" is still blocked and waiting for attention.`,
+    messageType: MessageTypes.notification,
   },
   escalation_alert: {
-    format: (v: { title: string }) =>
-      `ALERT: Task "${v.title}" has been blocked too long and was transitioned to failed. Please investigate.`,
-    messageType: "alert" as MessageType,
-    recipients: "owner_and_reviewers" as Recipients,
+    format: (v) =>
+      `ALERT: Task "${v["title"]}" has been blocked too long and was transitioned to failed. Please investigate.`,
+    messageType: MessageTypes.alert,
   },
   review_reminder: {
-    format: (v: { title: string; hours: string }) =>
-      `Review reminder: Task "${v.title}" has been pending review for ${v.hours}h.`,
-    messageType: "notification" as MessageType,
-    recipients: "reviewers" as Recipients,
+    format: (v) =>
+      `Review reminder: Task "${v["title"]}" has been pending review for ${v["hours"]}h.`,
+    messageType: MessageTypes.notification,
   },
-} as const;
+};
 
-// ── NotificationRouter Interface ─────────────────────────────────────────────
+import type { INotificationRouter } from "../interfaces/notification-router.interface.js";
 
-/** Handles all outbound notifications and communication. */
-export interface NotificationRouter {
-  /** Send completion notification to owner. */
-  sendCompletion(taskId: string): void;
-  /** Send review-pending notification to owner. */
-  sendReviewPending(taskId: string): void;
-  /** Send task error notification to owner. */
-  sendTaskError(taskId: string, reason: string): void;
-  /** Send cost limit notification to owner. */
-  sendCostLimit(taskId: string): void;
-  /** Send blocked reminder to owner. */
-  sendBlockedReminder(taskId: string): void;
-  /** Send escalation alert to owner + reviewers. */
-  sendEscalationAlert(taskId: string): void;
-  /** Send review reminder to reviewers. */
-  sendReviewReminder(taskId: string, elapsedMs: number): void;
-  /** Comment on a task's source trigger ticket. */
-  commentOnTaskTicket(taskId: string, message: string): void;
-  /** Sync task state change to communication plugins. */
-  syncStateToCommPlugin(payload: TaskStateChangedPayload): void;
-}
+// Re-export the interface for consumers that import from here
+export type { INotificationRouter as NotificationRouter } from "../interfaces/notification-router.interface.js";
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createNotificationRouter(ctx: NotificationRouterContext): NotificationRouter {
+export function createNotificationRouter(ctx: NotificationRouterContext): INotificationRouter {
   const { registry, taskEngine, peopleDirectory, eventBus, observer } = ctx;
+
+  // ── Plugin Lookup ──────────────────────────────────────────────────────
 
   function getCommPlugins(): CommunicationAdapter[] {
     return registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication);
   }
 
-  /** Resolve recipients based on the recipient type. */
-  function resolveRecipients(recipients: Recipients): Array<{ id: string }> {
-    const people: Array<{ id: string }> = [];
-    if (recipients === "owner" || recipients === "owner_and_reviewers") {
-      const owner = peopleDirectory.getOwner();
-      if (owner) {
-        people.push(owner);
-      }
-    }
-    if (recipients === "reviewers" || recipients === "owner_and_reviewers") {
-      people.push(...peopleDirectory.getReviewers());
-    }
-    return people;
+  /**
+   * Find the comm plugin that handles the given channel.
+   * Matches adapter_meta.channel on the plugin manifest. Returns null if none found.
+   */
+  function findPluginForChannel(
+    channel: string,
+    plugins: CommunicationAdapter[],
+  ): CommunicationAdapter | null {
+    return (
+      plugins.find(
+        (p) => p.hasCapability("send") && p.manifest.adapter_meta["channel"] === channel,
+      ) ?? null
+    );
   }
 
-  /** Send a notification to recipients via all comm plugins with send capability. */
-  function sendToRecipients(
-    taskId: string,
-    content: string,
-    messageType: MessageType,
-    recipients: Recipients,
-    logLabel: string,
-  ): void {
-    const people = resolveRecipients(recipients);
-    if (people.length === 0) {
-      observer.debug("No recipients resolved — skipping notification", {
-        taskId,
-        recipients,
-        logLabel,
-      });
-      return;
-    }
+  // ── Recipient Resolution ───────────────────────────────────────────────
 
-    // SECURITY: sanitize before sending to external channels (Telegram, GitHub).
-    // Error reasons may contain auth URLs from failed git operations.
-    const safeContent = sanitizeSecrets(content);
-    const commPlugins = getCommPlugins();
+  interface ResolvedContact {
+    personId: string;
+    channel: string;
+    handle: string;
+  }
 
-    for (const person of people) {
-      for (const comm of commPlugins) {
-        if (!comm.hasCapability("send")) {
-          continue;
+  function resolveContacts(notification: Notification): ResolvedContact[] {
+    const recipients = recipientsForKind(notification.kind);
+    const contacts: ResolvedContact[] = [];
+
+    if (recipients === "person") {
+      // Person-targeted notifications (question, status_response)
+      const personId = "personId" in notification ? notification.personId : null;
+      if (!personId) return contacts;
+
+      const person = peopleDirectory.getPerson(personId) ?? peopleDirectory.getOwner();
+      if (!person) return contacts;
+
+      for (const c of person.contacts) {
+        contacts.push({ personId: person.id, channel: c.channel, handle: c.handle });
+      }
+    } else {
+      // Role-based: owner, reviewers, or both
+      const people: Array<{ id: string; contacts: Array<{ channel: string; handle: string }> }> =
+        [];
+
+      if (recipients === "owner" || recipients === "owner_and_reviewers") {
+        const owner = peopleDirectory.getOwner();
+        if (owner) people.push(owner);
+      }
+      if (recipients === "reviewers" || recipients === "owner_and_reviewers") {
+        people.push(...peopleDirectory.getReviewers());
+      }
+
+      for (const person of people) {
+        for (const c of person.contacts) {
+          contacts.push({ personId: person.id, channel: c.channel, handle: c.handle });
         }
-        const formatted = comm.formatMessage(safeContent, messageType);
-        comm
-          .sendMessage(
-            { user_id: person.id, channel: null },
-            { content: formatted, metadata: { task_id: taskId, type: messageType } },
-          )
-          .then(() => {
-            observer.debug("Notification sent", {
-              taskId,
-              logLabel,
-              recipientId: person.id,
-              pluginId: comm.manifest.id,
-            });
-            eventBus.publish({
-              type: "comm.message_sent",
-              source: "daemon",
-              task_id: taskId,
-              payload: {
-                task_id: taskId,
-                target: person.id,
-                message_type: messageType,
-                content_summary: safeContent,
-                channel: comm.manifest.id,
-              },
-            } satisfies PublishInput<"comm.message_sent">);
-          })
-          .catch((err) => {
-            observer.error(`Failed to send ${logLabel} notification`, {
-              error: sanitizeErrorMessage(err),
-              taskId,
-            });
-          });
       }
     }
+
+    return contacts;
   }
 
-  /** Resolve task title from taskEngine, falling back to taskId. */
+  // ── Message Construction ───────────────────────────────────────────────
+
   function resolveTitle(taskId: string): string {
     return taskEngine.getTask(taskId)?.title ?? taskId;
   }
 
-  function sendCompletion(taskId: string): void {
-    const t = NOTIFICATION_TEMPLATES.completion;
-    sendToRecipients(
-      taskId,
-      t.format({ title: resolveTitle(taskId) }),
-      t.messageType,
-      t.recipients,
-      "completion",
-    );
+  interface ResolvedMessage {
+    content: string;
+    messageType: MessageType;
   }
 
-  function sendReviewPending(taskId: string): void {
-    const t = NOTIFICATION_TEMPLATES.review_pending;
-    sendToRecipients(
-      taskId,
-      t.format({ title: resolveTitle(taskId) }),
-      t.messageType,
-      t.recipients,
-      "review_pending",
-    );
-  }
-
-  function sendTaskError(taskId: string, reason: string): void {
-    const t = NOTIFICATION_TEMPLATES.task_error;
-    sendToRecipients(
-      taskId,
-      t.format({ title: resolveTitle(taskId), reason }),
-      t.messageType,
-      t.recipients,
-      "task_error",
-    );
-  }
-
-  function sendCostLimit(taskId: string): void {
-    const t = NOTIFICATION_TEMPLATES.cost_limit;
-    sendToRecipients(
-      taskId,
-      t.format({ title: resolveTitle(taskId) }),
-      t.messageType,
-      t.recipients,
-      "cost_limit",
-    );
-  }
-
-  function sendBlockedReminder(taskId: string): void {
-    const t = NOTIFICATION_TEMPLATES.blocked_reminder;
-    sendToRecipients(
-      taskId,
-      t.format({ title: resolveTitle(taskId) }),
-      t.messageType,
-      t.recipients,
-      "blocked_reminder",
-    );
-  }
-
-  function sendEscalationAlert(taskId: string): void {
-    const t = NOTIFICATION_TEMPLATES.escalation_alert;
-    sendToRecipients(
-      taskId,
-      t.format({ title: resolveTitle(taskId) }),
-      t.messageType,
-      t.recipients,
-      "escalation_alert",
-    );
-  }
-
-  function sendReviewReminder(taskId: string, elapsedMs: number): void {
-    const hours = String(Math.floor(elapsedMs / 3_600_000));
-    const t = NOTIFICATION_TEMPLATES.review_reminder;
-    sendToRecipients(
-      taskId,
-      t.format({ title: resolveTitle(taskId), hours }),
-      t.messageType,
-      t.recipients,
-      "review_reminder",
-    );
-  }
-
-  function commentOnTaskTicket(taskId: string, message: string): void {
-    const task = taskEngine.getTask(taskId);
-    if (!task?.external_ref) {
-      return;
+  function resolveMessage(notification: Notification): ResolvedMessage {
+    // Custom message kinds — use the message directly
+    if ("message" in notification) {
+      const messageType = kindToMessageType(notification.kind);
+      return { content: notification.message, messageType };
     }
+
+    // Template-based kinds
+    const template = NOTIFICATION_TEMPLATES[notification.kind];
+    if (template) {
+      const vars: Record<string, string> = { title: resolveTitle(notification.taskId) };
+      if (notification.kind === "task_error") {
+        vars["reason"] = notification.reason;
+      }
+      if (notification.kind === "review_reminder") {
+        vars["hours"] = String(Math.floor(notification.elapsedMs / 3_600_000));
+      }
+      return { content: template.format(vars), messageType: template.messageType };
+    }
+
+    // Fallback (should not happen with exhaustive kinds)
+    return {
+      content: `Notification: ${notification.kind}`,
+      messageType: MessageTypes.notification,
+    };
+  }
+
+  function kindToMessageType(kind: Notification["kind"]): MessageType {
+    switch (kind) {
+      case "question":
+        return MessageTypes.question;
+      case "milestone":
+        return MessageTypes.milestone;
+      case "alert":
+        return MessageTypes.alert;
+      case "status_response":
+        return MessageTypes.status_response;
+      default:
+        return MessageTypes.notification;
+    }
+  }
+
+  // ── Core Dispatch ──────────────────────────────────────────────────────
+
+  function notify(notification: Notification): void {
+    try {
+      // Ticket comments route through ticket_management capability, not person channels
+      if (notification.kind === NotificationKinds.ticket_comment) {
+        handleTicketComment(notification.taskId, notification.message);
+        return;
+      }
+
+      const contacts = resolveContacts(notification);
+      if (contacts.length === 0) {
+        observer.debug("No recipients resolved — skipping notification", {
+          kind: notification.kind,
+          taskId: notification.taskId,
+        });
+        return;
+      }
+
+      const { content, messageType } = resolveMessage(notification);
+      const safeContent = sanitizeSecrets(content);
+      const commPlugins = getCommPlugins();
+
+      // Group contacts by person — try each person's contacts in order (first = preferred)
+      const contactsByPerson = new Map<string, ResolvedContact[]>();
+      for (const contact of contacts) {
+        const existing = contactsByPerson.get(contact.personId) ?? [];
+        existing.push(contact);
+        contactsByPerson.set(contact.personId, existing);
+      }
+
+      // For each person, try contacts in order until one succeeds (fire-and-forget)
+      for (const [personId, personContacts] of contactsByPerson) {
+        sendToFirstReachable(
+          personId,
+          personContacts,
+          safeContent,
+          messageType,
+          notification,
+          commPlugins,
+        );
+      }
+    } catch (err) {
+      observer.warn("Unexpected error in notify()", {
+        kind: notification.kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // ── Delivery with Fallback ──────────────────────────────────────────────
+
+  /**
+   * Try contacts in order (first = preferred). Stop on first successful delivery.
+   * If none reachable, log warning.
+   */
+  function sendToFirstReachable(
+    personId: string,
+    personContacts: ResolvedContact[],
+    safeContent: string,
+    messageType: MessageType,
+    notification: Notification,
+    commPlugins: CommunicationAdapter[],
+  ): void {
+    // Fire-and-forget async chain — try contacts sequentially
+    (async () => {
+      for (const contact of personContacts) {
+        const plugin = findPluginForChannel(contact.channel, commPlugins);
+        if (!plugin) {
+          observer.debug("No plugin for channel — trying next contact", {
+            channel: contact.channel,
+            personId,
+          });
+          continue;
+        }
+
+        try {
+          const formatted = plugin.formatMessage(safeContent, messageType);
+          const result = await plugin.sendMessage(
+            { user_id: contact.handle, channel: contact.channel },
+            { content: formatted, metadata: { task_id: notification.taskId, type: messageType } },
+          );
+
+          if (result.success) {
+            observer.debug("Notification delivered", {
+              kind: notification.kind,
+              personId,
+              channel: contact.channel,
+              pluginId: plugin.manifest.id,
+            });
+            eventBus.publish({
+              type: "comm.message_sent",
+              source: "notification-router",
+              task_id: notification.taskId,
+              payload: {
+                task_id: notification.taskId,
+                target: personId,
+                message_type: messageType,
+                content_summary: safeContent,
+                channel: contact.channel,
+              },
+            } satisfies PublishInput<"comm.message_sent">);
+            return; // Stop — delivered successfully
+          }
+
+          // Send returned failure — try next contact
+          observer.debug("Send failed, trying next contact", {
+            personId,
+            channel: contact.channel,
+            error: result.error?.message ?? "unknown",
+          });
+        } catch (err) {
+          // Plugin threw — try next contact
+          observer.debug("Send error, trying next contact", {
+            personId,
+            channel: contact.channel,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      // None succeeded
+      observer.warn("Notification not delivered — no reachable channel for person", {
+        kind: notification.kind,
+        personId,
+        triedChannels: personContacts.map((c) => c.channel),
+      });
+    })().catch((err) => {
+      observer.warn("Unexpected error in delivery chain", {
+        personId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
+  // ── Ticket Comments ────────────────────────────────────────────────────
+
+  function handleTicketComment(taskId: string, message: string): void {
+    const task = taskEngine.getTask(taskId);
+    if (!task?.external_ref) return;
 
     const commPlugins = getCommPlugins();
     const plugin = commPlugins.find((p) => p.hasCapability("ticket_management"));
-    if (!plugin) {
-      return;
-    }
+    if (!plugin) return;
 
     observer.debug("Commenting on task ticket", { taskId });
     plugin.commentOnTicket(task.external_ref, sanitizeSecrets(message)).catch((err) => {
@@ -268,12 +347,12 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
     });
   }
 
+  // ── State Sync ─────────────────────────────────────────────────────────
+
   function syncStateToCommPlugin(payload: TaskStateChangedPayload): void {
     const commPlugins = getCommPlugins();
     for (const comm of commPlugins) {
-      if (!comm.hasCapability("sync")) {
-        continue;
-      }
+      if (!comm.hasCapability("sync")) continue;
       const task = taskEngine.getTask(payload.task_id);
 
       comm
@@ -293,15 +372,5 @@ export function createNotificationRouter(ctx: NotificationRouterContext): Notifi
     }
   }
 
-  return {
-    sendCompletion,
-    sendReviewPending,
-    sendTaskError,
-    sendCostLimit,
-    sendBlockedReminder,
-    sendEscalationAlert,
-    sendReviewReminder,
-    commentOnTaskTicket,
-    syncStateToCommPlugin,
-  };
+  return { notify, syncStateToCommPlugin };
 }

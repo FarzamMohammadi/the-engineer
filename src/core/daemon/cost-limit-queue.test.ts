@@ -19,16 +19,9 @@ function makeTask(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeNotifications(): NotificationRouter & Record<string, ReturnType<typeof vi.fn>> {
+function makeNotifications(): NotificationRouter {
   return {
-    sendCompletion: vi.fn(),
-    sendReviewPending: vi.fn(),
-    sendTaskError: vi.fn(),
-    sendCostLimit: vi.fn(),
-    sendBlockedReminder: vi.fn(),
-    sendEscalationAlert: vi.fn(),
-    sendReviewReminder: vi.fn(),
-    commentOnTaskTicket: vi.fn(),
+    notify: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }
@@ -58,10 +51,15 @@ describe("CostLimitQueue", () => {
       "cost_limit_reached",
       "daemon",
     );
-    expect(notifications.sendCostLimit).toHaveBeenCalledWith("cost-1");
-    expect(notifications.commentOnTaskTicket).toHaveBeenCalledWith(
-      "cost-1",
-      "Task blocked \u2014 cost limit reached.",
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "cost_limit", taskId: "cost-1" }),
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "ticket_comment",
+        taskId: "cost-1",
+        message: "Task blocked \u2014 cost limit reached.",
+      }),
     );
   });
 
@@ -105,6 +103,6 @@ describe("CostLimitQueue", () => {
     queue.process();
 
     expect(taskEngine.requestTransition).not.toHaveBeenCalled();
-    expect(notifications.sendCostLimit).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
   });
 });

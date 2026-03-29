@@ -68,16 +68,9 @@ function makeTask(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeNotifications(): NotificationRouter & Record<string, ReturnType<typeof vi.fn>> {
+function makeNotifications(): NotificationRouter {
   return {
-    sendCompletion: vi.fn(),
-    sendReviewPending: vi.fn(),
-    sendTaskError: vi.fn(),
-    sendCostLimit: vi.fn(),
-    sendBlockedReminder: vi.fn(),
-    sendEscalationAlert: vi.fn(),
-    sendReviewReminder: vi.fn(),
-    commentOnTaskTicket: vi.fn(),
+    notify: vi.fn(),
     syncStateToCommPlugin: vi.fn(),
   };
 }
@@ -259,7 +252,9 @@ describe("DaemonHealthMonitor", () => {
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
       hm.checkBlockedEscalation(now);
 
-      expect(notifications.sendBlockedReminder).toHaveBeenCalledWith("blocked-1");
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "blocked_reminder", taskId: "blocked-1" }),
+      );
     });
 
     it("fires evaluate_self_unblock at second stage", async () => {
@@ -283,7 +278,9 @@ describe("DaemonHealthMonitor", () => {
 
       expect(orchestrator.attemptSelfUnblock).toHaveBeenCalledWith("blocked-2");
       // Also fires reminder since elapsed > reminder threshold too
-      expect(notifications.sendBlockedReminder).toHaveBeenCalled();
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "blocked_reminder" }),
+      );
     });
 
     it("fires escalation_alert at third stage and transitions to failed", () => {
@@ -304,7 +301,9 @@ describe("DaemonHealthMonitor", () => {
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
       hm.checkBlockedEscalation(now);
 
-      expect(notifications.sendEscalationAlert).toHaveBeenCalledWith("blocked-3");
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "escalation_alert", taskId: "blocked-3" }),
+      );
       expect(taskEngine.requestTransition).toHaveBeenCalledWith(
         "blocked-3",
         "failed",
@@ -332,7 +331,7 @@ describe("DaemonHealthMonitor", () => {
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
       const now1 = transitionTime + 15_000_000;
       hm.checkBlockedEscalation(now1);
-      expect(notifications.sendBlockedReminder).toHaveBeenCalledOnce();
+      expect(notifications.notify).toHaveBeenCalledOnce();
 
       // Second call: task is no longer blocked (empty list)
       taskEngine.getTasksByState.mockReturnValue([]);
@@ -343,7 +342,10 @@ describe("DaemonHealthMonitor", () => {
       taskEngine.getTasksByState.mockReturnValue([task]);
       const now3 = now2 + 15_000_000;
       hm.checkBlockedEscalation(now3);
-      expect(notifications.sendBlockedReminder).toHaveBeenCalledTimes(2);
+      const blockedReminderCalls = (
+        notifications.notify as ReturnType<typeof vi.fn>
+      ).mock.calls.filter((c: unknown[]) => (c[0] as { kind: string }).kind === "blocked_reminder");
+      expect(blockedReminderCalls).toHaveLength(2);
     });
   });
 
@@ -368,7 +370,13 @@ describe("DaemonHealthMonitor", () => {
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
       hm.checkReviewPendingReminders(now);
 
-      expect(notifications.sendReviewReminder).toHaveBeenCalledWith("review-1", 87_000_000);
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "review_reminder",
+          taskId: "review-1",
+          elapsedMs: 87_000_000,
+        }),
+      );
     });
 
     it("respects repeat interval — does not fire again too soon", () => {
@@ -387,20 +395,26 @@ describe("DaemonHealthMonitor", () => {
       const getActiveTaskIds = vi.fn(() => []);
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
 
+      const notifyFn = notifications.notify as ReturnType<typeof vi.fn>;
+      const countReviewReminders = () =>
+        notifyFn.mock.calls.filter(
+          (c: unknown[]) => (c[0] as { kind: string }).kind === "review_reminder",
+        ).length;
+
       // First reminder
       const now1 = transitionTime + 87_000_000;
       hm.checkReviewPendingReminders(now1);
-      expect(notifications.sendReviewReminder).toHaveBeenCalledOnce();
+      expect(countReviewReminders()).toBe(1);
 
       // Too soon for repeat (only 1M ms later, need 86_400_000)
       const now2 = now1 + 1_000_000;
       hm.checkReviewPendingReminders(now2);
-      expect(notifications.sendReviewReminder).toHaveBeenCalledOnce(); // still 1
+      expect(countReviewReminders()).toBe(1); // still 1
 
       // After repeat interval
       const now3 = now1 + 86_400_000;
       hm.checkReviewPendingReminders(now3);
-      expect(notifications.sendReviewReminder).toHaveBeenCalledTimes(2);
+      expect(countReviewReminders()).toBe(2);
     });
   });
 });

@@ -12,11 +12,11 @@ import {
 import { SessionEndReasons } from "../../schemas/session-memory.js";
 import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
+import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type AndonCord, createAndonCord } from "./andon-cord.js";
 import { type DecompositionHandler, createDecompositionHandler } from "./decomposition-handler.js";
 import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
-import { type OrchestratorNotifier, createOrchestratorNotifier } from "./orchestrator-notifier.js";
 import { createPhaseHandlers } from "./phase-handlers.js";
 import {
   type PhaseHandlerRegistry,
@@ -92,7 +92,7 @@ function createPreemptionGate(): WritablePreemptionGate {
  * (coordination and communication). Delegates to focused subsystems:
  * - LlmCaller: LLM invocation, retry, cost, validation
  * - WorkspaceLifecycle: workspace setup, session management
- * - OrchestratorNotifier: milestone notifications, issue comments
+ * - NotificationRouter: centralized milestone notifications, issue comments, outreach
  * - PrManager: commit, push, PR creation
  * - DecompositionHandler: task decomposition
  * - PhaseRunner: phase pipeline orchestration
@@ -106,7 +106,7 @@ export class Orchestrator {
   private readonly ctx: OrchestratorContext;
   private readonly llmCaller: LlmCaller;
   private readonly workspaceLifecycle: WorkspaceLifecycle;
-  private readonly notifier: OrchestratorNotifier;
+  private readonly notifications: NotificationRouter;
   private readonly prManager: PrManager;
   private readonly decompositionHandler: DecompositionHandler;
   private readonly andonCord: AndonCord;
@@ -121,9 +121,9 @@ export class Orchestrator {
     // Create subsystems
     this.llmCaller = createLlmCaller(this.ctx);
     this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
-    this.notifier = createOrchestratorNotifier(this.ctx);
-    this.prManager = createPrManager(this.ctx, this.notifier);
-    this.decompositionHandler = createDecompositionHandler(this.ctx, this.notifier);
+    this.notifications = this.ctx.notifications;
+    this.prManager = createPrManager(this.ctx, this.notifications);
+    this.decompositionHandler = createDecompositionHandler(this.ctx, this.notifications);
     this.andonCord = createAndonCord();
 
     // Cooperative preemption state (Protocol P8)
@@ -182,8 +182,16 @@ export class Orchestrator {
     }
 
     // Notify task pickup (D152) — personal channels + GitHub issue comment
-    this.notifier.notifyMilestone(dispatch, `Starting work on: ${dispatch.task.title}`);
-    this.notifier.commentOnSourceTicket(dispatch, "Starting work on this ticket.");
+    this.notifications.notify({
+      kind: "milestone",
+      taskId,
+      message: `Starting work on: ${dispatch.task.title}`,
+    });
+    this.notifications.notify({
+      kind: "ticket_comment",
+      taskId,
+      message: "Starting work on this ticket.",
+    });
 
     // ── Build pipeline state ───────────────────────────────────────────────
     // Gather repo context once — avoids 5 sync I/O ops × 7 phases per task.

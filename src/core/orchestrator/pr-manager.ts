@@ -9,7 +9,7 @@ import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../schemas/session-memory.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
-import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
+import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { OrchestratorContext } from "./types.js";
 
 // ── PrManager Interface ────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ export interface PrManager {
 /** Create a PrManager bound to the given OrchestratorContext. */
 export function createPrManager(
   ctx: OrchestratorContext,
-  notifier: OrchestratorNotifier,
+  notifications: NotificationRouter,
 ): PrManager {
   const observer = ctx.observer;
   function recordPrWorkflowError(
@@ -181,7 +181,11 @@ export function createPrManager(
           feedback_rounds: updatedRounds,
         });
       }
-      notifier.commentOnSourceTicket(dispatch, "Pushed rework addressing review feedback.");
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId: dispatch.task.id,
+        message: "Pushed rework addressing review feedback.",
+      });
       observer.info("Rework pushed to existing PR", {
         taskId,
         prNumber: dispatch.task.review?.pr_number,
@@ -244,8 +248,16 @@ export function createPrManager(
         elapsedMs,
       });
 
-      notifier.notifyMilestone(dispatch, `Draft PR created: ${prResult.url}`);
-      notifier.commentOnSourceTicket(dispatch, `Draft PR created: ${prResult.url}`);
+      notifications.notify({
+        kind: "milestone",
+        taskId: dispatch.task.id,
+        message: `Draft PR created: ${prResult.url}`,
+      });
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId: dispatch.task.id,
+        message: `Draft PR created: ${prResult.url}`,
+      });
       span.end({ step: "pr_create", success: true, prNumber: prResult.pr_number, elapsedMs });
       return true;
     } catch (error) {

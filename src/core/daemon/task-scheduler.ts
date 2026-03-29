@@ -282,8 +282,12 @@ export function createTaskScheduler(
         error: sanitizeErrorMessage(err),
       });
     }
-    notifications.sendCompletion(taskId);
-    notifications.commentOnTaskTicket(taskId, "Task completed successfully.");
+    notifications.notify({ kind: "completion", taskId });
+    notifications.notify({
+      kind: "ticket_comment",
+      taskId,
+      message: "Task completed successfully.",
+    });
     checkAndEmitChildrenAllDone(taskId);
     const completedTask = taskEngine.getTask(taskId);
     observer.info("Task completed", {
@@ -312,8 +316,12 @@ export function createTaskScheduler(
       return;
     }
     checkAndEmitChildrenAllDone(taskId);
-    notifications.sendTaskError(taskId, reason);
-    notifications.commentOnTaskTicket(taskId, `Task encountered an error: ${reason}`);
+    notifications.notify({ kind: "task_error", taskId, reason });
+    notifications.notify({
+      kind: "ticket_comment",
+      taskId,
+      message: `Task encountered an error: ${reason}`,
+    });
   }
 
   function handleReviewPendingOutcome(taskId: string): void {
@@ -325,8 +333,12 @@ export function createTaskScheduler(
       "daemon",
     );
     if (reviewTransition.success) {
-      notifications.sendReviewPending(taskId);
-      notifications.commentOnTaskTicket(taskId, "Pull request created — awaiting review.");
+      notifications.notify({ kind: "review_pending", taskId });
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId,
+        message: "Pull request created — awaiting review.",
+      });
       observer.info("Task awaiting PR review", { taskId });
     } else {
       observer.warn("Failed to transition task to review_pending — skipping notifications", {

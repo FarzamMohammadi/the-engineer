@@ -7,7 +7,7 @@ import {
 } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
-import type { OrchestratorNotifier } from "./orchestrator-notifier.js";
+import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { ExecuteTaskResult, OrchestratorContext } from "./types.js";
 
 // ── DecompositionHandler Interface ──────────────────────────────────────────
@@ -33,7 +33,7 @@ export interface DecompositionHandler {
 /** Create a DecompositionHandler bound to the given OrchestratorContext. */
 export function createDecompositionHandler(
   ctx: OrchestratorContext,
-  notifier: OrchestratorNotifier,
+  notifications: NotificationRouter,
 ): DecompositionHandler {
   function handleDecomposition(
     sessionId: string,
@@ -151,10 +151,11 @@ export function createDecompositionHandler(
     });
 
     const subtaskList = plan.children.map((c, i) => `${String(i + 1)}. ${c.title}`).join("\n");
-    notifier.commentOnSourceTicket(
-      dispatch,
-      `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
-    );
+    notifications.notify({
+      kind: "ticket_comment",
+      taskId: dispatch.task.id,
+      message: `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
+    });
 
     ctx.sessionMemory.endSession(sessionId, SessionEndReasons.decomposed);
 

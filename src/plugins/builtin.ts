@@ -107,10 +107,7 @@ const manifests = [
     name: "Telegram Communication",
     description: "Sends notifications via Telegram bot",
     critical: false,
-    requirements: [
-      { type: "env", name: "TELEGRAM_BOT_TOKEN" },
-      { type: "env", name: "TELEGRAM_CHAT_ID" },
-    ],
+    requirements: [{ type: "env", name: "TELEGRAM_BOT_TOKEN" }],
     entry: "builtin",
     adapter_meta: { capabilities: ["send"], channel: "telegram" },
     contributes: { events: ["comm.message_sent"] },

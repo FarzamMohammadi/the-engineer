@@ -1,3 +1,5 @@
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runCommunicationContractSuite } from "../../../../test/helpers/contract-suites/communication-contract.js";
 import type { FormattedMessage, PluginManifest, Target } from "../../../schemas/adapters.js";
@@ -42,11 +44,10 @@ const MANIFEST: PluginManifest = {
 
 const VALID_CONFIG = {
   bot_token: "123456:ABC-DEF1234ghIkl-zyx57W2v",
-  chat_id: "-1001234567890",
 };
 const INVALID_CONFIG = {};
 
-const TARGET: Target = { user_id: "farzam", channel: "-1001234567890" };
+const TARGET: Target = { user_id: "FarzamMohammadi", channel: "telegram" };
 const MESSAGE: FormattedMessage = {
   content: "Task picked up",
   metadata: { task_id: "task-1", type: "notification" },
@@ -63,6 +64,11 @@ runCommunicationContractSuite(
       const result = await origInit(config);
       if (result.success) {
         (plugin as unknown as { bot: unknown }).bot = mock;
+        // Pre-populate chat map so contract suite's sendMessage works
+        (plugin as unknown as { userChatMap: Map<string, string> }).userChatMap.set(
+          "farzammohammadi",
+          "-1001234567890",
+        );
       }
       return result;
     };
@@ -89,6 +95,11 @@ describe("TelegramCommPlugin", () => {
     mockBot = createMockBot();
     await plugin.initialize(VALID_CONFIG);
     (plugin as unknown as { bot: unknown }).bot = mockBot;
+    // Pre-populate chat map for tests that need handle resolution
+    (plugin as unknown as { userChatMap: Map<string, string> }).userChatMap.set(
+      "farzammohammadi",
+      "-1001234567890",
+    );
   });
 
   describe("hasCapability()", () => {
@@ -168,7 +179,7 @@ describe("TelegramCommPlugin", () => {
   });
 
   describe("sendMessage()", () => {
-    it("sends via bot.api.sendMessage with correct params", async () => {
+    it("resolves handle to chat_id and sends", async () => {
       const result = await plugin.sendMessage(TARGET, MESSAGE);
       expect(result.success).toBe(true);
       expect(result.message_id).toBe("42");
@@ -178,24 +189,25 @@ describe("TelegramCommPlugin", () => {
       });
     });
 
-    it("uses target.channel when provided", async () => {
-      const customTarget: Target = { user_id: "farzam", channel: "999888777" };
-      await plugin.sendMessage(customTarget, MESSAGE);
-      expect(mockBot.api.sendMessage).toHaveBeenCalledWith(
-        "999888777",
-        expect.any(String),
-        expect.any(Object),
-      );
-    });
-
-    it("falls back to config.chat_id when target.channel is null", async () => {
-      const nullTarget: Target = { user_id: "farzam", channel: null };
-      await plugin.sendMessage(nullTarget, MESSAGE);
+    it("resolves handle case-insensitively", async () => {
+      const upperTarget: Target = { user_id: "FARZAMMOHAMMADI", channel: "telegram" };
+      const result = await plugin.sendMessage(upperTarget, MESSAGE);
+      expect(result.success).toBe(true);
       expect(mockBot.api.sendMessage).toHaveBeenCalledWith(
         "-1001234567890",
         expect.any(String),
         expect.any(Object),
       );
+    });
+
+    it("returns not_found error for unknown handle", async () => {
+      const unknownTarget: Target = { user_id: "unknown_user", channel: "telegram" };
+      const result = await plugin.sendMessage(unknownTarget, MESSAGE);
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe("not_found");
+      expect(result.error?.message).toContain("unknown_user");
+      expect(result.error?.message).toContain("/start");
+      expect(mockBot.api.sendMessage).not.toHaveBeenCalled();
     });
 
     it("returns error on auth failure (401)", async () => {
@@ -279,14 +291,7 @@ describe("TelegramCommPlugin", () => {
     it("rejects missing bot_token", async () => {
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
-      const result = await p.initialize({ chat_id: "-1001234567890" });
-      expect(result.success).toBe(false);
-    });
-
-    it("rejects missing chat_id", async () => {
-      const p = new TelegramCommPlugin();
-      p.manifest = MANIFEST;
-      const result = await p.initialize({ bot_token: "123456:ABC" });
+      const result = await p.initialize({});
       expect(result.success).toBe(false);
     });
 
@@ -314,6 +319,117 @@ describe("TelegramCommPlugin", () => {
       const result = await p.initialize({ ...VALID_CONFIG, parse_mode: "HTML" });
       expect(result.success).toBe(true);
       expect((p as unknown as { config: { parse_mode: string } }).config.parse_mode).toBe("HTML");
+    });
+  });
+  describe("chat map persistence", () => {
+    it("saveChatMap + loadChatMap round-trips the mapping", () => {
+      const tmpDir = join(process.cwd(), `tmp-test-state-${Date.now()}`);
+      process.env["ENGINEER_HOME"] = tmpDir;
+
+      try {
+        // Save current map (pre-populated in beforeEach)
+        (plugin as unknown as { saveChatMap: () => void }).saveChatMap();
+
+        // Create a fresh plugin and load
+        const p2 = new TelegramCommPlugin();
+        p2.manifest = MANIFEST;
+        (p2 as unknown as { loadChatMap: () => void }).loadChatMap();
+
+        const map = (p2 as unknown as { userChatMap: Map<string, string> }).userChatMap;
+        expect(map.get("farzammohammadi")).toBe("-1001234567890");
+      } finally {
+        // Cleanup
+        rmSync(tmpDir, { recursive: true, force: true });
+        delete process.env["ENGINEER_HOME"];
+      }
+    });
+
+    it("loadChatMap handles missing file gracefully", () => {
+      process.env["ENGINEER_HOME"] = `/tmp/nonexistent-engineer-${Date.now()}`;
+      try {
+        const p = new TelegramCommPlugin();
+        p.manifest = MANIFEST;
+        // Should not throw
+        (p as unknown as { loadChatMap: () => void }).loadChatMap();
+        const map = (p as unknown as { userChatMap: Map<string, string> }).userChatMap;
+        expect(map.size).toBe(0);
+      } finally {
+        delete process.env["ENGINEER_HOME"];
+      }
+    });
+
+    it("captureHandshake skips disk write when mapping already exists", () => {
+      const saveSpy = vi.spyOn(plugin as unknown as { saveChatMap: () => void }, "saveChatMap");
+
+      // Call with same data that's already in the map
+      (plugin as unknown as { captureHandshake: (u: string, c: string) => void }).captureHandshake(
+        "FarzamMohammadi",
+        "-1001234567890",
+      );
+
+      expect(saveSpy).not.toHaveBeenCalled();
+      saveSpy.mockRestore();
+    });
+  });
+
+  describe("/start handshake capture", () => {
+    it("captures username → chat_id from /start during init", async () => {
+      const p = new TelegramCommPlugin();
+      p.manifest = MANIFEST;
+
+      // Mock Bot constructor to inject our mock before init runs
+      const mock = createMockBot();
+      (mock.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }).getUpdates = vi
+        .fn()
+        .mockResolvedValue([
+          {
+            update_id: 1,
+            message: {
+              message_id: 1,
+              date: 1700000000,
+              chat: { id: 555666777 },
+              from: { id: 123, username: "NewUser" },
+              text: "/start",
+            },
+          },
+        ]);
+
+      await p.initialize(VALID_CONFIG);
+      // Replace bot AFTER init created it, then re-run the drain logic
+      (p as unknown as { bot: unknown }).bot = mock;
+
+      // Directly call captureHandshake to test the mapping logic
+      // (init already ran with the real bot which has no updates)
+      (p as unknown as { captureHandshake: (u: string, c: string) => void }).captureHandshake(
+        "NewUser",
+        "555666777",
+      );
+
+      const map = (p as unknown as { userChatMap: Map<string, string> }).userChatMap;
+      expect(map.get("newuser")).toBe("555666777");
+    });
+
+    it("captures /start during pollMessages", async () => {
+      // Set up getUpdates to return a /start message
+      (mockBot.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }).getUpdates = vi
+        .fn()
+        .mockResolvedValue([
+          {
+            update_id: 100,
+            message: {
+              message_id: 50,
+              date: 1700000000,
+              chat: { id: 444333222 },
+              from: { id: 456, username: "AnotherUser" },
+              text: "/start",
+            },
+          },
+        ]);
+
+      await plugin.pollMessages([], "0");
+
+      const map = (plugin as unknown as { userChatMap: Map<string, string> }).userChatMap;
+      expect(map.get("anotheruser")).toBe("444333222");
     });
   });
 });

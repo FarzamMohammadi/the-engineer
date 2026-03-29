@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Bot } from "grammy";
 import {
   CommunicationAdapter,
@@ -117,6 +120,9 @@ export class TelegramCommPlugin extends CommunicationAdapter {
 
   private lastUpdateId = 0;
 
+  /** Persistent mapping: lowercase username → Telegram chat_id. */
+  private userChatMap = new Map<string, string>();
+
   override hasCapability(capability: string): boolean {
     return capability === "send" || capability === "receive";
   }
@@ -127,7 +133,17 @@ export class TelegramCommPlugin extends CommunicationAdapter {
   }
 
   protected async doSendMessage(target: Target, message: FormattedMessage): Promise<SendResult> {
-    const chatId = target.channel ?? this.config.chat_id;
+    const chatId = this.resolveChatId(target.user_id);
+    if (!chatId) {
+      return {
+        success: false,
+        message_id: null,
+        error: createAdapterError(
+          "not_found",
+          `No chat_id for user "${target.user_id}" — they need to /start the bot first`,
+        ),
+      };
+    }
 
     try {
       const result = await this.bot.api.sendMessage(chatId, message.content, {
@@ -183,7 +199,13 @@ export class TelegramCommPlugin extends CommunicationAdapter {
         continue;
       }
 
-      // Skip bot commands (e.g., /start)
+      // Capture /start handshakes for username → chat_id mapping
+      if (msg.text.startsWith("/start") && msg.from?.username) {
+        this.captureHandshake(msg.from.username, String(msg.chat.id));
+        continue;
+      }
+
+      // Skip other bot commands
       if (msg.text.startsWith("/")) {
         continue;
       }
@@ -215,8 +237,10 @@ export class TelegramCommPlugin extends CommunicationAdapter {
     this.config = parsed.data;
     this.bot = new Bot(this.config.bot_token);
 
-    // Drain all pending updates so we only process messages sent AFTER startup.
-    // Without this, old messages (sent before the daemon started) trigger false unblocks.
+    // Load persisted username → chat_id mapping
+    this.loadChatMap();
+
+    // Drain pending updates, capturing /start handshakes along the way.
     try {
       const pending = await this.bot.api.getUpdates({
         timeout: 0,
@@ -225,6 +249,11 @@ export class TelegramCommPlugin extends CommunicationAdapter {
       for (const update of pending) {
         if (update.update_id > this.lastUpdateId) {
           this.lastUpdateId = update.update_id;
+        }
+        // Capture /start handshakes from messages received while offline
+        const msg = update.message;
+        if (msg?.text?.startsWith("/start") && msg.from?.username) {
+          this.captureHandshake(msg.from.username, String(msg.chat.id));
         }
       }
     } catch {
@@ -253,7 +282,60 @@ export class TelegramCommPlugin extends CommunicationAdapter {
   }
 
   protected doShutdown(): Promise<void> {
+    this.saveChatMap();
     return Promise.resolve();
+  }
+
+  // ── Handle → chat_id resolution ─────────────────────────────────────────
+
+  /** Case-insensitive lookup of username → chat_id. */
+  private resolveChatId(handle: string): string | undefined {
+    return this.userChatMap.get(handle.toLowerCase());
+  }
+
+  /** Record a /start handshake and persist immediately (crash-safe). */
+  private captureHandshake(username: string, chatId: string): void {
+    const key = username.toLowerCase();
+    if (this.userChatMap.get(key) === chatId) {
+      return; // Already known — skip disk write
+    }
+    this.userChatMap.set(key, chatId);
+    this.saveChatMap();
+  }
+
+  // ── Persistent chat map (same pattern as github-trigger watermarks) ───
+
+  private getStatePath(): string {
+    const engineerHome = process.env["ENGINEER_HOME"] ?? join(homedir(), ".engineer");
+    return join(engineerHome, "state", this.manifest.id, "chat-map.json");
+  }
+
+  private loadChatMap(): void {
+    try {
+      const path = this.getStatePath();
+      if (existsSync(path)) {
+        const data = readFileSync(path, "utf-8");
+        const stored = JSON.parse(data) as Record<string, string>;
+        for (const [key, value] of Object.entries(stored)) {
+          this.userChatMap.set(key, value);
+        }
+      }
+    } catch {
+      // First run or corrupt — start fresh
+    }
+  }
+
+  private saveChatMap(): void {
+    try {
+      const path = this.getStatePath();
+      const stateDir = join(path, "..");
+      mkdirSync(stateDir, { recursive: true });
+      const tempPath = `${path}.tmp`;
+      writeFileSync(tempPath, JSON.stringify(Object.fromEntries(this.userChatMap)), "utf-8");
+      renameSync(tempPath, path);
+    } catch {
+      // Best effort — mapping loss means users need to /start again
+    }
   }
 }
 

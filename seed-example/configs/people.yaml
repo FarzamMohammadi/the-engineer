@@ -7,9 +7,9 @@ people:
     roles: [owner]
     contacts:
       - channel: telegram
-        handle: "FarzamMohammadi"
+        handle: 'farzamoh'
       - channel: github
-        handle: "FarzamMohammadi"
+        handle: 'FarzamMohammadi'
     preferences:
       notification_level: milestones
       quiet_hours: null

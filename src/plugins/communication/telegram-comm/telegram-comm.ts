@@ -108,11 +108,30 @@ function getRetryAfterMs(error: unknown): number | undefined {
 /**
  * TelegramCommPlugin — sends notifications via Telegram bot.
  *
- * Capabilities: send.
- * "receive" deferred — see future-considerations.md.
- *
+ * Capabilities: send, receive.
  * Communication plugins are dumb transport (Decision #40).
  * Orchestrator owns all intelligence.
+ *
+ * ## Setup: /start Handshake
+ *
+ * Telegram bots cannot message users unless the user initiates contact first.
+ * Each person in People Directory must send `/start` to the bot once.
+ *
+ * Flow:
+ * 1. Create a bot via @BotFather on Telegram → get bot token
+ * 2. Set TELEGRAM_BOT_TOKEN in ~/.engineer/.env
+ * 3. Each user opens the bot in Telegram and sends `/start`
+ * 4. The plugin captures the username → chat_id mapping automatically
+ * 5. Mapping is persisted to ~/.engineer/state/telegram-comm/chat-map.json
+ *    (crash-safe atomic write via rename)
+ *
+ * The `handle` field in People Directory contacts must match the user's
+ * Telegram username (case-insensitive). If no mapping exists for a handle,
+ * sendMessage returns a clear error: "they need to /start the bot first".
+ *
+ * Mappings are captured both during initialization (drains pending updates)
+ * and during polling (live /start messages). Once captured, the mapping
+ * persists across restarts.
  */
 export class TelegramCommPlugin extends CommunicationAdapter {
   private config!: TelegramCommConfig;

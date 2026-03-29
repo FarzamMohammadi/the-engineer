@@ -20,7 +20,7 @@ interface StartOptions {
   daemon: boolean;
   verbose: boolean;
   dryRun: boolean;
-  pluginsPath?: string;
+  seedPath?: string;
 }
 
 /** Create all required directories. Throws on failure. */
@@ -42,15 +42,15 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 
   // 0. First-run detection — TTY guard + setup BEFORE anything else
   if (needsSetup(engineerHome)) {
-    if (!options.pluginsPath && !process.stdin.isTTY) {
+    if (!options.seedPath && !process.stdin.isTTY) {
       out.error("First-run setup requires an interactive terminal.");
-      out.log("  Run 'engineer start' in a terminal first, or provide --plugins <path>.");
+      out.log("  Run 'engineer start' in a terminal first, or provide --seed <path>.");
       return 1;
     }
 
     const setupOpts: Parameters<typeof runFirstTimeSetup>[0] = { engineerHome };
-    if (options.pluginsPath) {
-      setupOpts.pluginsPath = options.pluginsPath;
+    if (options.seedPath) {
+      setupOpts.seedPath = options.seedPath;
     }
     if (options.dryRun) {
       setupOpts.dryRun = true;

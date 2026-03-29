@@ -69,10 +69,10 @@ That's it. On first run, `start` detects there's no config and launches guided s
 **Non-interactive setup** (CI, automation, teams):
 
 ```bash
-engineer start --plugins ./path/to/plugin-configs/
+engineer start --seed ./seed-example/
 ```
 
-Copies plugin YAML files from the provided directory. Core configs use conservative defaults. No prompts.
+Seeds both plugin configs (from `plugins/`) and core configs (from `configs/`) from the provided directory. Falls back to template defaults for any missing core configs. No prompts.
 
 **Dry run** (see what would happen without writing):
 
@@ -91,7 +91,7 @@ engineer start                           # Foreground (Ctrl+C to stop)
 engineer start --daemon                  # Background (detached process)
 engineer start --verbose                 # Debug logging
 engineer start --dry-run                 # Show what would happen, don't start
-engineer start --plugins ./configs/      # Non-interactive setup from directory
+engineer start --seed ./seed-example/    # Non-interactive setup from seed directory
 ```
 
 **Startup sequence:** first-run detection → setup if needed → load config → pre-flight checks (doctor categories 1-7) → bootstrap all components → start tick loop → launch War Room dashboard.

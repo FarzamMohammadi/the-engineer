@@ -24,7 +24,7 @@ engineer start
 
 First run detects your environment, walks you through plugin selection, writes configs, and starts the daemon. No separate setup step.
 
-For CI/automation: `engineer start --plugins ./path/to/configs/` skips prompts entirely.
+For CI/automation: `engineer start --seed ./seed-example/` skips prompts entirely (seeds both plugin and core configs).
 
 > **Dev mode (without global install):** Use `npx tsx src/index.ts` in place of `engineer` for any command.
 

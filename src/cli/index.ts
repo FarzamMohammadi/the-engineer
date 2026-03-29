@@ -53,8 +53,11 @@ program
   .description("Start the daemon")
   .option("--daemon", "Run in background")
   .option("--dry-run", "Validate config and show what would happen without starting")
-  .option("--plugins <path>", "Plugin config directory for non-interactive setup")
-  .action(async (options: { daemon?: boolean; dryRun?: boolean; plugins?: string }) => {
+  .option(
+    "--seed <path>",
+    "Seed directory for non-interactive setup (contains plugins/ and configs/)",
+  )
+  .action(async (options: { daemon?: boolean; dryRun?: boolean; seed?: string }) => {
     const globals = program.opts<{ home?: string; verbose?: boolean }>();
     const home = resolveEngineerHome(globals.home);
     const startOptions: Parameters<typeof runStart>[1] = {
@@ -62,8 +65,8 @@ program
       verbose: globals.verbose ?? false,
       dryRun: options.dryRun ?? false,
     };
-    if (options.plugins) {
-      startOptions.pluginsPath = options.plugins;
+    if (options.seed) {
+      startOptions.seedPath = options.seed;
     }
     const code = await runStart(home, startOptions);
     if (code !== 0) {

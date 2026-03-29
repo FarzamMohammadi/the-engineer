@@ -441,3 +441,120 @@ describe("detection derives from manifests", () => {
     }
   });
 });
+
+// ── findUnresolvedEnvVars ────────────────────────────────────────────────────
+
+import { writeFileSync } from "node:fs";
+import { findUnresolvedEnvVars } from "./setup.js";
+
+describe("findUnresolvedEnvVars", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "env-scan-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty array when no ${VAR} references exist", () => {
+    writeFileSync(join(tmpDir, "test.yaml"), "key: value\nfoo: bar\n");
+    expect(findUnresolvedEnvVars(tmpDir)).toEqual([]);
+  });
+
+  it("returns missing vars when ${VAR} references are unresolved", () => {
+    writeFileSync(
+      join(tmpDir, "test.yaml"),
+      'token: "${MISSING_TOKEN_XYZ}"\nchat_id: "${MISSING_CHAT_ID_XYZ}"\n',
+    );
+    const result = findUnresolvedEnvVars(tmpDir);
+    expect(result).toContain("MISSING_TOKEN_XYZ");
+    expect(result).toContain("MISSING_CHAT_ID_XYZ");
+  });
+
+  it("does not return vars that are set in process.env", () => {
+    const varName = `TEST_ENV_VAR_${Date.now()}`;
+    process.env[varName] = "some-value";
+    try {
+      writeFileSync(join(tmpDir, "test.yaml"), `token: "\${${varName}}"\n`);
+      expect(findUnresolvedEnvVars(tmpDir)).toEqual([]);
+    } finally {
+      delete process.env[varName];
+    }
+  });
+
+  it("scans subdirectories recursively", () => {
+    const subDir = join(tmpDir, "plugins");
+    mkdirSync(subDir);
+    writeFileSync(join(subDir, "plugin.yaml"), 'key: "${DEEP_MISSING_VAR_XYZ}"\n');
+    expect(findUnresolvedEnvVars(tmpDir)).toContain("DEEP_MISSING_VAR_XYZ");
+  });
+
+  it("returns empty array when config dir does not exist", () => {
+    expect(findUnresolvedEnvVars("/nonexistent/path/xyz")).toEqual([]);
+  });
+
+  it("deduplicates vars referenced in multiple files", () => {
+    writeFileSync(join(tmpDir, "a.yaml"), 'x: "${DUPE_VAR_XYZ}"\n');
+    writeFileSync(join(tmpDir, "b.yaml"), 'y: "${DUPE_VAR_XYZ}"\n');
+    const result = findUnresolvedEnvVars(tmpDir);
+    expect(result.filter((v) => v === "DUPE_VAR_XYZ")).toHaveLength(1);
+  });
+});
+
+// ── generateConfigFiles with people ──────────────────────────────────────────
+
+describe("generateConfigFiles with people", () => {
+  it("generates people.yaml from wizard data instead of template", () => {
+    const people = [
+      {
+        id: "farzam",
+        name: "Farzam",
+        roles: ["owner"],
+        contacts: [{ channel: "telegram", handle: "FarzamMohammadi" }],
+      },
+    ];
+    const files = generateConfigFiles([], {}, people);
+    const peopleFile = files.find((f) => f.relativePath === "config/people.yaml");
+    expect(peopleFile).toBeDefined();
+    expect(peopleFile!.content).toContain("farzam");
+    expect(peopleFile!.content).toContain("FarzamMohammadi");
+    expect(peopleFile!.content).toContain("telegram");
+    expect(peopleFile!.content).not.toContain("your_telegram_username");
+  });
+
+  it("uses template when no people data provided", () => {
+    const files = generateConfigFiles([], {});
+    const peopleFile = files.find((f) => f.relativePath === "config/people.yaml");
+    expect(peopleFile).toBeDefined();
+    // Template has placeholder values
+    expect(peopleFile!.content).toContain("your_telegram_username");
+  });
+});
+
+// ── adapter_meta.channel on comm plugins ─────────────────────────────────────
+
+describe("comm plugin manifests declare channel", () => {
+  it("every communication plugin has adapter_meta.channel", () => {
+    const commPlugins = BUILTIN_PLUGINS.filter((p) => p.manifest.type === "communication");
+    expect(commPlugins.length).toBeGreaterThan(0);
+    for (const plugin of commPlugins) {
+      const channel = plugin.manifest.adapter_meta["channel"];
+      expect(channel, `${plugin.manifest.id} must declare adapter_meta.channel`).toBeTruthy();
+      expect(typeof channel).toBe("string");
+    }
+  });
+
+  it("telegram-comm declares channel 'telegram'", () => {
+    const telegram = BUILTIN_PLUGINS.find((p) => p.manifest.id === "telegram-comm");
+    expect(telegram).toBeDefined();
+    expect(telegram!.manifest.adapter_meta["channel"]).toBe("telegram");
+  });
+
+  it("github-comm declares channel 'github'", () => {
+    const github = BUILTIN_PLUGINS.find((p) => p.manifest.id === "github-comm");
+    expect(github).toBeDefined();
+    expect(github!.manifest.adapter_meta["channel"]).toBe("github");
+  });
+});

@@ -1,0 +1,18 @@
+# Safety configuration
+# Hot-reloadable — changes take effect without restart.
+
+scope:
+  branches:
+    create_pattern: "engineer/.*"
+    push_to: ["engineer/*"]
+    merge_to: ["main"]
+  files:
+    exclude_patterns:
+      - ".env*"
+      - "secrets/**"
+      - "*.pem"
+      - "*.key"
+
+merge:
+  auto_merge_after_approval:
+    default: false

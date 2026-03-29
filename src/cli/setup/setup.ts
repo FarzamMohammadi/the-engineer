@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
-import { writeEnvFile } from "../../config/env.js";
+import { loadEnvFile, writeEnvFile } from "../../config/env.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
 import type { PluginRequirement } from "../../schemas/adapters.js";
 import { resolveDirectories } from "../home.js";
@@ -197,6 +197,12 @@ export interface GeneratedFile {
 export function generateConfigFiles(
   selectedPlugins: string[],
   pluginConfigs: Record<string, Record<string, unknown>>,
+  people?: Array<{
+    id: string;
+    name: string;
+    roles: string[];
+    contacts: Array<{ channel: string; handle: string }>;
+  }>,
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
 
@@ -204,6 +210,23 @@ export function generateConfigFiles(
   for (const template of ALL_TEMPLATES) {
     if (template.relativePath.startsWith("config/plugins/")) {
       continue; // Plugin configs handled below
+    }
+    // If people data was provided from the wizard, generate people.yaml from it
+    if (template.relativePath === "config/people.yaml" && people && people.length > 0) {
+      const peopleConfig = {
+        people: people.map((p) => ({
+          id: p.id,
+          name: p.name,
+          roles: p.roles,
+          contacts: p.contacts,
+          preferences: { notification_level: "milestones", quiet_hours: null },
+        })),
+      };
+      files.push({
+        relativePath: template.relativePath,
+        content: `# People configuration\n# Hot-reloadable — changes take effect without restart.\n\n${yamlStringify(peopleConfig)}`,
+      });
+      continue;
     }
     files.push({ relativePath: template.relativePath, content: template.content });
   }
@@ -262,6 +285,43 @@ export function writeConfigFiles(engineerHome: string, files: GeneratedFile[]): 
   }
 }
 
+// ── Post-Setup Validation ────────────────────────────────────────────────────
+
+const ENV_VAR_SCAN_RE = /\$\{([^}]+)\}/g;
+
+/**
+ * Scan all YAML config files for ${VAR} references and return any that
+ * are not set in process.env. Call AFTER loadEnvFile() so .env is loaded.
+ */
+export function findUnresolvedEnvVars(configDir: string): string[] {
+  const missing: string[] = [];
+  if (!existsSync(configDir)) return missing;
+
+  const scanDir = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        scanDir(join(dir, entry.name));
+      } else if (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) {
+        const content = readFileSync(join(dir, entry.name), "utf8");
+        ENV_VAR_SCAN_RE.lastIndex = 0;
+        let match = ENV_VAR_SCAN_RE.exec(content);
+        while (match) {
+          const varName = match[1];
+          if (varName && (process.env[varName] === undefined || process.env[varName] === "")) {
+            if (!missing.includes(varName)) {
+              missing.push(varName);
+            }
+          }
+          match = ENV_VAR_SCAN_RE.exec(content);
+        }
+      }
+    }
+  };
+
+  scanDir(configDir);
+  return missing.sort();
+}
+
 // ── First-Run Detection ──────────────────────────────────────────────────────
 
 /**
@@ -280,7 +340,7 @@ export function needsSetup(engineerHome: string): boolean {
 
 export interface SetupOptions {
   engineerHome: string;
-  pluginsPath?: string;
+  seedPath?: string;
   dryRun?: boolean;
 }
 
@@ -289,7 +349,7 @@ export interface SetupOptions {
  * Orchestrates: detect → guide → prompt → generate → write.
  */
 export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean> {
-  const { engineerHome, pluginsPath, dryRun } = options;
+  const { engineerHome, seedPath, dryRun } = options;
   const out = getOutput();
 
   // Ensure base directories exist (even for dry-run, so detection can work)
@@ -301,8 +361,8 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
   }
 
   // Non-interactive mode: copy provided plugin configs
-  if (pluginsPath) {
-    return runNonInteractiveSetup(engineerHome, pluginsPath, dryRun ?? false);
+  if (seedPath) {
+    return runNonInteractiveSetup(engineerHome, seedPath, dryRun ?? false);
   }
 
   // Interactive mode
@@ -323,7 +383,7 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
     return false;
   }
 
-  const files = generateConfigFiles(result.selectedPlugins, result.pluginConfigs);
+  const files = generateConfigFiles(result.selectedPlugins, result.pluginConfigs, result.people);
 
   if (dryRun) {
     out.blank();
@@ -352,47 +412,83 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
 
 // ── Non-Interactive Setup ────────────────────────────────────────────────────
 
-function runNonInteractiveSetup(
-  engineerHome: string,
-  pluginsPath: string,
-  dryRun: boolean,
-): boolean {
+/** Known placeholder values that indicate people.yaml was never configured. */
+const PEOPLE_PLACEHOLDERS = ["your_telegram_username", "your-github-username", "Your Name"];
+
+function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: boolean): boolean {
   const out = getOutput();
 
-  if (!existsSync(pluginsPath)) {
-    out.error(`Plugin config directory not found: ${pluginsPath}`);
+  if (!existsSync(seedPath)) {
+    out.error(`Seed directory not found: ${seedPath}`);
     return false;
   }
 
-  const yamlFiles = readdirSync(pluginsPath).filter((f) => f.endsWith(".yaml"));
-  if (yamlFiles.length === 0) {
-    out.error(`No .yaml files found in ${pluginsPath}`);
+  // Validate plugins/ subdirectory exists
+  const pluginsDir = join(seedPath, "plugins");
+  if (!existsSync(pluginsDir)) {
+    out.error(`Seed directory must have a plugins/ subdirectory: ${pluginsDir}`);
     return false;
   }
+
+  const pluginFiles = readdirSync(pluginsDir).filter((f) => f.endsWith(".yaml"));
+  if (pluginFiles.length === 0) {
+    out.error(`No .yaml files found in ${pluginsDir}`);
+    return false;
+  }
+
+  // Check for optional configs/ subdirectory
+  const configsDir = join(seedPath, "configs");
+  const hasConfigs = existsSync(configsDir);
 
   if (dryRun) {
     out.blank();
-    out.log(`  Dry run — would copy from ${pluginsPath}:`);
-    for (const file of yamlFiles) {
+    out.log(`  Dry run — would copy from ${seedPath}:`);
+    for (const file of pluginFiles) {
       out.log(`    config/plugins/${file}`);
     }
-    out.log("  Plus core configs with conservative defaults.");
+    if (hasConfigs) {
+      const configFiles = readdirSync(configsDir).filter((f) => f.endsWith(".yaml"));
+      for (const file of configFiles) {
+        out.log(`    config/${file} (from seed)`);
+      }
+    }
+    out.log("  Plus any missing core configs with conservative defaults.");
     out.blank();
     return true;
   }
 
-  // Copy plugin configs
+  // Copy plugin configs from seedPath/plugins/
   const dirs = resolveDirectories(engineerHome);
-  for (const file of yamlFiles) {
-    const source = join(pluginsPath, file);
+  for (const file of pluginFiles) {
+    const source = join(pluginsDir, file);
     const dest = join(dirs.plugins, file);
     const content = readFileSync(source, "utf8");
     writeFileSync(dest, content, { encoding: "utf8", mode: 0o600 });
   }
 
-  // Write core configs with defaults
+  // Write core configs: use seedPath/configs/ if available, else template defaults
   const coreTemplates = ALL_TEMPLATES.filter((t) => !t.relativePath.startsWith("config/plugins/"));
   for (const template of coreTemplates) {
+    const configName = template.relativePath.replace("config/", "");
+    const seedFile = join(configsDir, configName);
+    const fullPath = join(engineerHome, template.relativePath);
+    const dir = dirname(fullPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
+
+    if (hasConfigs && existsSync(seedFile)) {
+      // Use seed config (real values)
+      const content = readFileSync(seedFile, "utf8");
+      writeFileSync(fullPath, content, { encoding: "utf8", mode: 0o600 });
+    } else {
+      // Fall back to template defaults
+      writeFileSync(fullPath, template.content, { encoding: "utf8", mode: 0o600 });
+    }
+  }
+
+  // Write example templates
+  for (const template of ALL_EXAMPLE_TEMPLATES) {
     const fullPath = join(engineerHome, template.relativePath);
     const dir = dirname(fullPath);
     if (!existsSync(dir)) {
@@ -401,6 +497,30 @@ function runNonInteractiveSetup(
     writeFileSync(fullPath, template.content, { encoding: "utf8", mode: 0o600 });
   }
 
-  out.success(`Copied ${String(yamlFiles.length)} plugin config(s) from ${pluginsPath}`);
+  // Warn if people.yaml has placeholder values
+  const peopleConfigPath = join(engineerHome, "config", "people.yaml");
+  if (existsSync(peopleConfigPath)) {
+    const content = readFileSync(peopleConfigPath, "utf8");
+    const hasPlaceholders = PEOPLE_PLACEHOLDERS.some((p) => content.includes(p));
+    if (hasPlaceholders) {
+      out.warn(
+        "people.yaml contains placeholder values — edit ~/.engineer/config/people.yaml with real contact info.",
+      );
+    }
+  }
+
+  // Post-setup validation: verify all ${VAR} references have values
+  loadEnvFile(engineerHome);
+  const missingVars = findUnresolvedEnvVars(dirs.config);
+  if (missingVars.length > 0) {
+    out.error("Seed incomplete — missing required environment variables:");
+    for (const v of missingVars) {
+      out.log(`    ${v}`);
+    }
+    out.log("  Add them to ~/.engineer/.env or set them in your environment, then restart.");
+    return false;
+  }
+
+  out.success(`Seeded ${String(pluginFiles.length)} plugin config(s) from ${seedPath}`);
   return true;
 }

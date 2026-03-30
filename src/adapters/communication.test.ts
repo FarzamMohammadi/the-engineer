@@ -122,6 +122,7 @@ function createManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     requirements: [],
     combined_with: [],
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },
+    startup_hints: [],
     ...overrides,
   };
 }

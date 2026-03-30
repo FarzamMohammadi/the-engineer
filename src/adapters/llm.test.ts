@@ -66,6 +66,7 @@ function createManifest(): PluginManifest {
     requirements: [],
     combined_with: [],
     contributes: { events: [], commands: [], config_keys: [], hooks: [] },
+    startup_hints: [],
   };
 }
 

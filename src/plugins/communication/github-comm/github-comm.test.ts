@@ -51,6 +51,7 @@ const MANIFEST: PluginManifest = {
   requirements: [],
   combined_with: [],
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },
+  startup_hints: [],
 };
 
 const VALID_CONFIG = { github_token: "ghp_testtoken123" };

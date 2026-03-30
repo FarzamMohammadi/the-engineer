@@ -9,6 +9,7 @@ import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
 import type { PluginRequirement } from "../../schemas/adapters.js";
 import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
+import { ALL_PLUGIN_DOCS } from "../plugin-docs.js";
 import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../templates.js";
 import type { DetectionResult } from "./types.js";
 import type { AdapterTypeConfig } from "./types.js";
@@ -266,6 +267,11 @@ export function generateConfigFiles(
     files.push({ relativePath: template.relativePath, content: template.content });
   }
 
+  // Plugin documentation
+  for (const doc of ALL_PLUGIN_DOCS) {
+    files.push({ relativePath: doc.relativePath, content: doc.content });
+  }
+
   return files;
 }
 
@@ -354,6 +360,23 @@ export function findResolvedEnvVars(configDir: string): Record<string, string> {
   return resolved;
 }
 
+// ── Plugin Documentation ────────────────────────────────────────────────────
+
+/**
+ * Write bundled plugin documentation to ~/.engineer/docs/.
+ * Called before prompts so doc paths are clickable during selection.
+ */
+export function writePluginDocs(engineerHome: string): void {
+  for (const doc of ALL_PLUGIN_DOCS) {
+    const fullPath = join(engineerHome, doc.relativePath);
+    const dir = dirname(fullPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
+    writeFileSync(fullPath, doc.content, { encoding: "utf8", mode: 0o644 });
+  }
+}
+
 // ── First-Run Detection ──────────────────────────────────────────────────────
 
 /**
@@ -402,11 +425,19 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
   out.log("  First run — auto-configuring from environment...");
   out.blank();
 
+  // Write plugin docs before prompts so paths are clickable during selection
+  writePluginDocs(engineerHome);
+
   const detection = runDetection();
 
   // Lazy import to avoid loading @inquirer/prompts unless needed
   const { runGuidedSetup } = await import("./prompts.js");
-  const result = await runGuidedSetup(detection, BUILTIN_PLUGINS, ADAPTER_TYPE_CONFIGS);
+  const result = await runGuidedSetup(
+    detection,
+    BUILTIN_PLUGINS,
+    ADAPTER_TYPE_CONFIGS,
+    engineerHome,
+  );
 
   if (!result) {
     out.blank();
@@ -528,6 +559,9 @@ function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: 
     }
     writeFileSync(fullPath, template.content, { encoding: "utf8", mode: 0o600 });
   }
+
+  // Write plugin documentation
+  writePluginDocs(engineerHome);
 
   // Warn if people.yaml has placeholder values
   const peopleConfigPath = join(engineerHome, "config", "people.yaml");

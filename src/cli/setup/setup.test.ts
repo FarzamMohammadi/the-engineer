@@ -14,6 +14,7 @@ import {
   needsSetup,
   parseGitRemote,
   writeConfigFiles,
+  writePluginDocs,
 } from "./setup.js";
 
 // ── detectEnvironment ────────────────────────────────────────────────────────
@@ -246,6 +247,23 @@ describe("generateConfigFiles", () => {
     const files = generateConfigFiles([], {});
     const examples = files.filter((f) => f.relativePath.startsWith("example-templates/"));
     expect(examples.length).toBeGreaterThan(0);
+  });
+
+  it("generates plugin documentation files", () => {
+    const files = generateConfigFiles([], {});
+    const docs = files.filter((f) => f.relativePath.startsWith("docs/plugins/"));
+    // 5 adapter READMEs + 8 plugin docs = 13
+    expect(docs.length).toBe(13);
+  });
+
+  it("generates plugin docs for every adapter type", () => {
+    const files = generateConfigFiles([], {});
+    const docs = files.filter((f) => f.relativePath.startsWith("docs/plugins/"));
+    const types = ["trigger", "llm", "communication", "git-hosting", "tool"];
+    for (const type of types) {
+      const readme = docs.find((f) => f.relativePath === `docs/plugins/${type}/README.md`);
+      expect(readme, `missing README for ${type}`).toBeDefined();
+    }
   });
 
   it("creates fallback config for plugins without user config or template", () => {
@@ -530,6 +548,86 @@ describe("generateConfigFiles with people", () => {
     expect(peopleFile).toBeDefined();
     // Template has placeholder values
     expect(peopleFile!.content).toContain("your_telegram_username");
+  });
+});
+
+// ── writePluginDocs ─────────────────────────────────────────────────────────
+
+describe("writePluginDocs", () => {
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), "engineer-docs-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  it("writes all 13 plugin doc files", () => {
+    writePluginDocs(tmpHome);
+    const types = ["trigger", "llm", "communication", "git-hosting", "tool"];
+    for (const type of types) {
+      expect(existsSync(join(tmpHome, `docs/plugins/${type}/README.md`))).toBe(true);
+    }
+  });
+
+  it("writes per-plugin docs for every builtin plugin", () => {
+    writePluginDocs(tmpHome);
+    for (const plugin of BUILTIN_PLUGINS) {
+      const type = plugin.manifest.type.replace(/_/g, "-");
+      const docPath = join(tmpHome, `docs/plugins/${type}/${plugin.manifest.id}.md`);
+      expect(existsSync(docPath), `missing doc for ${plugin.manifest.id}`).toBe(true);
+    }
+  });
+
+  it("writes docs with 0o644 permissions (readable)", () => {
+    writePluginDocs(tmpHome);
+    const stat = statSync(join(tmpHome, "docs/plugins/trigger/README.md"));
+    expect(stat.mode & 0o777).toBe(0o644);
+  });
+
+  it("doc files contain markdown content", () => {
+    writePluginDocs(tmpHome);
+    const content = readFileSync(join(tmpHome, "docs/plugins/trigger/README.md"), "utf8");
+    expect(content).toContain("# ");
+    expect(content.length).toBeGreaterThan(100);
+  });
+});
+
+// ── pluginDocPath / adapterDocPath ──────────────────────────────────────────
+
+import { adapterDocPath, pluginDocPath } from "./prompts.js";
+
+describe("doc path conventions", () => {
+  it("pluginDocPath follows convention", () => {
+    expect(pluginDocPath("/home/.engineer", "trigger", "github-trigger")).toBe(
+      "/home/.engineer/docs/plugins/trigger/github-trigger.md",
+    );
+  });
+
+  it("adapterDocPath follows convention", () => {
+    expect(adapterDocPath("/home/.engineer", "llm")).toBe(
+      "/home/.engineer/docs/plugins/llm/README.md",
+    );
+  });
+
+  it("pluginDocPath normalizes git_hosting to git-hosting", () => {
+    expect(pluginDocPath("/home/.engineer", "git_hosting", "github-hosting")).toBe(
+      "/home/.engineer/docs/plugins/git-hosting/github-hosting.md",
+    );
+  });
+
+  it("every builtin plugin has a matching doc in ALL_PLUGIN_DOCS", async () => {
+    const { ALL_PLUGIN_DOCS } = await import("../plugin-docs.js");
+    for (const plugin of BUILTIN_PLUGINS) {
+      const type = plugin.manifest.type.replace(/_/g, "-");
+      const expectedPath = `docs/plugins/${type}/${plugin.manifest.id}.md`;
+      const doc = ALL_PLUGIN_DOCS.find(
+        (d: { relativePath: string }) => d.relativePath === expectedPath,
+      );
+      expect(doc, `missing bundled doc for ${plugin.manifest.id}`).toBeDefined();
+    }
   });
 });
 

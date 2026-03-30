@@ -7,7 +7,7 @@ Use this prompt with any LLM CLI to interactively set up an LLM plugin for The E
 ## Prompt
 
 ```
-Read the file at contribution-docs/how-tos/plugins/llm-adapter/README.md for full technical context on The Engineer's LLM adapter contract.
+Read the file at docs/plugins/llm/README.md for full technical context on The Engineer's LLM adapter contract.
 
 Then help me set up an LLM plugin by doing the following:
 

@@ -42,6 +42,28 @@ function formatPluginChoice(plugin: BuiltinPlugin, detected: boolean): string {
   return detected ? `${plugin.manifest.name} (detected)` : plugin.manifest.name;
 }
 
+/** Normalize adapter type to directory name (git_hosting → git-hosting). */
+function typeToDirName(type: string): string {
+  return type.replace(/_/g, "-");
+}
+
+/** Convention-derived doc path for a plugin. */
+export function pluginDocPath(engineerHome: string, type: string, id: string): string {
+  return `${engineerHome}/docs/plugins/${typeToDirName(type)}/${id}.md`;
+}
+
+/** Convention-derived doc path for an adapter type README. */
+export function adapterDocPath(engineerHome: string, type: string): string {
+  return `${engineerHome}/docs/plugins/${typeToDirName(type)}/README.md`;
+}
+
+/** Build the description shown below each choice: manifest description + both doc paths. */
+function buildChoiceDescription(plugin: BuiltinPlugin, engineerHome: string): string {
+  const adapterPath = adapterDocPath(engineerHome, plugin.manifest.type);
+  const pluginPath = pluginDocPath(engineerHome, plugin.manifest.type, plugin.manifest.id);
+  return `${plugin.manifest.description}\n  Adapter docs → ${adapterPath}\n  Plugin docs  → ${pluginPath}`;
+}
+
 // ── Detection Summary ────────────────────────────────────────────────────────
 
 function showDetectionSummary(detection: DetectionResult): void {
@@ -69,6 +91,7 @@ async function promptSingleSelect(
   typePlugins: readonly BuiltinPlugin[],
   detection: DetectionResult,
   alreadySelected: readonly string[],
+  engineerHome: string,
 ): Promise<string[]> {
   const choices = typePlugins.map((p) => {
     const detected = checkRequirementsMet(p.manifest, detection);
@@ -77,7 +100,7 @@ async function promptSingleSelect(
     if (combined) {
       name += " (recommended)";
     }
-    return { name, value: p.manifest.id };
+    return { name, value: p.manifest.id, description: buildChoiceDescription(p, engineerHome) };
   });
 
   // Pre-select: combined_with match first, then detected, then first
@@ -99,6 +122,7 @@ async function promptMultiSelect(
   typePlugins: readonly BuiltinPlugin[],
   detection: DetectionResult,
   alreadySelected: readonly string[],
+  engineerHome: string,
 ): Promise<string[]> {
   const choices = typePlugins.map((p) => {
     const detected = checkRequirementsMet(p.manifest, detection);
@@ -108,6 +132,7 @@ async function promptMultiSelect(
       name: formatPluginChoice(p, detected),
       value: p.manifest.id,
       checked: preChecked,
+      description: buildChoiceDescription(p, engineerHome),
     };
   });
 
@@ -125,11 +150,12 @@ function promptForAdapterType(
   typePlugins: readonly BuiltinPlugin[],
   detection: DetectionResult,
   alreadySelected: readonly string[],
+  engineerHome: string,
 ): Promise<string[]> {
   if (config.selectionMode === "single") {
-    return promptSingleSelect(config, typePlugins, detection, alreadySelected);
+    return promptSingleSelect(config, typePlugins, detection, alreadySelected, engineerHome);
   }
-  return promptMultiSelect(config, typePlugins, detection, alreadySelected);
+  return promptMultiSelect(config, typePlugins, detection, alreadySelected, engineerHome);
 }
 
 // ── Per-Plugin Config ────────────────────────────────────────────────────────
@@ -338,6 +364,7 @@ export async function runGuidedSetup(
   detection: DetectionResult,
   plugins: readonly BuiltinPlugin[],
   adapterConfigs: readonly AdapterTypeConfig[],
+  engineerHome: string,
 ): Promise<GuidedSetupResult | null> {
   const out = getOutput();
 
@@ -354,7 +381,13 @@ export async function runGuidedSetup(
         continue;
       }
 
-      const selected = await promptForAdapterType(config, typePlugins, detection, allSelected);
+      const selected = await promptForAdapterType(
+        config,
+        typePlugins,
+        detection,
+        allSelected,
+        engineerHome,
+      );
       allSelected.push(...selected);
     }
 

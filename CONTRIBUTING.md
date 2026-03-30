@@ -98,7 +98,7 @@ Keep commit messages concise. The subject line tells what changed; add detail af
 
 The Engineer's plugin system lets you add new triggers, communication channels, LLM providers, tools, and git hosting integrations.
 
-See [Plugin Development Guide](docs/plugin-development.md) for the full walkthrough.
+See [Plugin Documentation](docs/plugins/) — each adapter type has its own directory with contract, development guide, and per-plugin references.
 
 ## Reporting Bugs
 
@@ -121,4 +121,4 @@ Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md). E
 
 - **Questions:** Open a [GitHub Issue](https://github.com/FarzamMohammadi/the-engineer/issues) with the `question` label
 - **Architecture:** Browse `implementation-docs/` for detailed design documentation
-- **Plugin development:** See [docs/plugin-development.md](docs/plugin-development.md)
+- **Plugin development:** See [docs/plugins/](docs/plugins/) for adapter contracts and development guides

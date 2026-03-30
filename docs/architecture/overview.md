@@ -214,7 +214,7 @@ The SafetyLayer tracks cost across configurable time windows and can escalate to
 
 ## Further Reading
 
-- [Plugin Development Guide](plugin-development.md) — How to create custom plugins
+- [Plugin Documentation](../plugins/) — Adapter contracts, per-plugin references, development guides
 - [Philosophy](philosophy.md) — Core beliefs driving every decision
 - `implementation-docs/1-system/` — Detailed system design
 - `implementation-docs/2-components/` — Component-level architecture

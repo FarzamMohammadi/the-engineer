@@ -223,11 +223,12 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         ? sessionResult
         : (() => {
             if (sessionResult === "invalid") {
-              ctx.observer.error("session-result.json invalid — falling back to need_more_info", {
+              ctx.observer.warn("session-result.json invalid — advancing to next phase", {
                 phase,
                 taskId,
+                expectedNext,
               });
-              return { status: "need_more_info" as const, next_phase: expectedNext, summary: "" };
+              return { status: "ready" as const, next_phase: expectedNext, summary: "" };
             }
             ctx.observer.warn("session-result.json not found, using defaults", {
               phase,

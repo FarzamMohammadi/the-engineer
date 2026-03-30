@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import type { LlmCaller } from "./llm-caller.js";
@@ -27,6 +28,14 @@ export function createPhaseHandlers(
   llmCaller: LlmCaller,
   ctx: OrchestratorContext,
 ): Record<Phase, PhaseHandler> {
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  /** Resolve absolute thoughts dir for use in prompts (LLM sees these paths). */
+  function absThoughts(taskId: string, thoughtsDir: string): string {
+    const wt = ctx.workspaceManager.getWorktreePath(taskId);
+    return wt ? path.join(wt, thoughtsDir) : thoughtsDir;
+  }
+
   // ── CLI-native phases (RRPIR) ──────────────────────────────────────────
 
   function handleRequirementsGathering(
@@ -51,7 +60,7 @@ export function createPhaseHandlers(
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
         teamContacts,
-        thoughtsDir,
+        thoughtsDir: absThoughts(taskId, thoughtsDir),
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
         prNumber: dispatch.task.review?.pr_number ?? undefined,
         isRerun: state.requirementsLoopCount > 0 || state.returnToPhase !== null,
@@ -78,7 +87,7 @@ export function createPhaseHandlers(
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
-        thoughtsDir,
+        thoughtsDir: absThoughts(taskId, thoughtsDir),
       }),
       state,
       thoughtsDir,
@@ -103,7 +112,7 @@ export function createPhaseHandlers(
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
-        thoughtsDir,
+        thoughtsDir: absThoughts(taskId, thoughtsDir),
       }),
       state,
       thoughtsDir,
@@ -130,7 +139,7 @@ export function createPhaseHandlers(
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
-        thoughtsDir,
+        thoughtsDir: absThoughts(taskId, thoughtsDir),
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
       }),
       state,
@@ -167,7 +176,7 @@ export function createPhaseHandlers(
           repoContext: state.repoContext,
           repoKnowledge: dispatch.knowledge.repo,
           userKnowledge: dispatch.knowledge.user,
-          thoughtsDir,
+          thoughtsDir: absThoughts(taskId, thoughtsDir),
           reviewPhaseName,
           loopbackCount: state.loopbackCount,
         }),
@@ -187,7 +196,7 @@ export function createPhaseHandlers(
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
-        thoughtsDir,
+        thoughtsDir: absThoughts(taskId, thoughtsDir),
         reviewPhases,
         loopbackCount: state.loopbackCount,
       }),
@@ -231,7 +240,7 @@ export function createPhaseHandlers(
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
-        thoughtsDir,
+        thoughtsDir: absThoughts(taskId, thoughtsDir),
         reviewPhases,
       }),
       state,
@@ -261,7 +270,7 @@ export function createPhaseHandlers(
       buildIntegrationPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        thoughtsDir,
+        thoughtsDir: absThoughts(taskId, thoughtsDir),
         childSummaries,
       }),
       state,

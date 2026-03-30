@@ -147,6 +147,8 @@ export interface PluginLoadResult {
   loaded: string[];
   /** Plugin IDs that failed to load, with reasons. */
   failed: Array<{ id: string; reason: string }>;
+  /** Startup hints from loaded plugins. */
+  hints: Array<{ pluginName: string; message: string }>;
 }
 
 /**
@@ -161,13 +163,17 @@ export async function loadBuiltinPlugins(
   observer: IObserver,
 ): Promise<PluginLoadResult> {
   const plugins = discoverEnabledPlugins(pluginConfigDir);
-  const result: PluginLoadResult = { loaded: [], failed: [] };
+  const result: PluginLoadResult = { loaded: [], failed: [], hints: [] };
 
   for (const plugin of plugins) {
     // Critical plugin failures throw from loadSinglePlugin — let them propagate
     const loaded = await loadSinglePlugin(plugin, registry, pluginConfigDir, observer);
     if (loaded) {
       result.loaded.push(plugin.manifest.id);
+      // Collect startup hints from successfully loaded plugins
+      for (const hint of plugin.manifest.startup_hints) {
+        result.hints.push({ pluginName: plugin.manifest.name, message: hint });
+      }
     } else {
       result.failed.push({ id: plugin.manifest.id, reason: "initialization failed" });
     }

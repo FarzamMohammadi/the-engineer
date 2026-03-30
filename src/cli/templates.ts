@@ -259,9 +259,9 @@ github_token: "\${GITHUB_TOKEN}"           # <-- set env var
 
 export const TELEGRAM_COMM_TEMPLATE = `# Telegram communication plugin
 # Sends notifications and receives commands via Telegram bot
+# Chat IDs are resolved automatically via /start handshake — no TELEGRAM_CHAT_ID needed.
 
 bot_token: "\${TELEGRAM_BOT_TOKEN}"        # <-- set env var
-chat_id: "\${TELEGRAM_CHAT_ID}"            # <-- set env var
 
 # --- Optional settings ---
 # parse_mode: MarkdownV2                  # MarkdownV2 | Markdown | HTML
@@ -622,10 +622,12 @@ export const EXAMPLE_TELEGRAM_COMM = `# ┌────────────�
 # │  TELEGRAM COMMUNICATION PLUGIN — Full Reference                           │
 # │  Copy to ~/.engineer/config/plugins/telegram-comm.yaml and customize.     │
 # │  Sends notifications via Telegram bot.                                    │
+# │  Chat IDs resolved automatically via /start handshake.                    │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 bot_token: "\${TELEGRAM_BOT_TOKEN}"        # REQUIRED — Telegram bot token (env var)
-chat_id: "\${TELEGRAM_CHAT_ID}"            # REQUIRED — Telegram chat ID (env var)
+# No TELEGRAM_CHAT_ID needed — each user sends /start to the bot,
+# and the plugin captures the username → chat_id mapping automatically.
 
 # ── Optional Settings ────────────────────────────────────────────────────────
 parse_mode: MarkdownV2                    # MarkdownV2 | Markdown | HTML (default: MarkdownV2)

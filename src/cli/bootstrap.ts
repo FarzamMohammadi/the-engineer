@@ -31,6 +31,8 @@ export interface BootstrapResult {
   daemon: Daemon;
   observer: IObserver;
   cleanup: () => void;
+  /** Startup hints collected from loaded plugins. */
+  hints: Array<{ pluginName: string; message: string }>;
 }
 
 /** Progress callback for startup spinners. */
@@ -265,6 +267,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
         dbHandle?.close();
         loggerHandle.close();
       },
+      hints: pluginResult.hints,
     };
   } catch (error) {
     observer.error("Bootstrap failed", { err: sanitizeErrorMessage(error) });

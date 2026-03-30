@@ -36,6 +36,7 @@ export const PluginManifestSchema = z.object({
       hooks: z.array(z.string()).default([]),
     })
     .default({}),
+  startup_hints: z.array(z.string()).default([]),
 });
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 

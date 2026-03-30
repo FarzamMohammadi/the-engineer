@@ -172,6 +172,7 @@ async function runForeground(
   let daemon: BootstrapResult["daemon"];
   let cleanup: BootstrapResult["cleanup"];
   let observer: BootstrapResult["observer"] | undefined;
+  let startupHints: BootstrapResult["hints"] = [];
   try {
     const result = await bootstrap({
       engineerHome,
@@ -182,6 +183,7 @@ async function runForeground(
     daemon = result.daemon;
     cleanup = result.cleanup;
     observer = result.observer;
+    startupHints = result.hints;
 
     // Log pre-bootstrap steps that ran before the observer existed
     observer.debug("Configuration loaded", { configDir: dirs.config });
@@ -249,6 +251,14 @@ async function runForeground(
     observer.info("The Engineer is ready", { engineerHome, warRoomUrl });
     out.blank();
     out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
+
+    if (startupHints.length > 0) {
+      out.blank();
+      out.log("  Startup hints:");
+      for (const hint of startupHints) {
+        out.log(`    ${hint.pluginName}: ${hint.message}`);
+      }
+    }
   } catch (error) {
     if (error instanceof DaemonAlreadyRunningError) {
       const pidHint = error.existingPid != null ? ` (PID: ${String(error.existingPid)})` : "";

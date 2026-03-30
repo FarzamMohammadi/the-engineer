@@ -259,6 +259,11 @@ async function runForeground(
         out.log(`    ${hint.pluginName}: ${hint.message}`);
       }
     }
+
+    out.blank();
+    out.log("  ────────────────────────────────────────");
+    out.log("  Startup complete. Daemon running in foreground.");
+    out.blank();
   } catch (error) {
     if (error instanceof DaemonAlreadyRunningError) {
       const pidHint = error.existingPid != null ? ` (PID: ${String(error.existingPid)})` : "";

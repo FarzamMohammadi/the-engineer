@@ -171,34 +171,33 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
         .filter((issue) => !issue.pull_request)
         .map((issue) => mapIssueToEvent(owner, name, issue, this.manifest.id));
     } catch (error) {
-      // Handle 304 Not Modified (ETag cache hit — Octokit throws this)
-      if (error && typeof error === "object" && "status" in error) {
-        if ((error as { status: number }).status === 304) {
-          return [];
-        }
-      }
-
-      // Handle 429 with Retry-After
-      if (error && typeof error === "object" && "status" in error) {
-        const status = (error as { status: number }).status;
-        if (status === 429) {
-          const retryAfter = Number(
-            (error as { response?: { headers?: Record<string, string> } }).response?.headers?.[
-              "retry-after"
-            ] ?? 60,
-          );
-          this.retryAfterUntil = Date.now() + retryAfter * 1000;
-        }
-      }
-
-      throw new AdapterMethodError(
-        createAdapterError(
-          classifyGitHubError(error),
-          `Failed to poll ${owner}/${name}: ${error instanceof Error ? error.message : String(error)}`,
-          { retryable: isRetryable(error), severity: "error" },
-        ),
-      );
+      return this.handlePollError(error, owner, name);
     }
+  }
+
+  private handlePollError(error: unknown, owner: string, name: string): TriggerEvent[] {
+    // Handle 304 Not Modified (ETag cache hit — Octokit throws this)
+    if (getErrorStatus(error) === 304) {
+      return [];
+    }
+
+    // Handle 429 with Retry-After
+    if (getErrorStatus(error) === 429) {
+      const retryAfter = Number(
+        (error as { response?: { headers?: Record<string, string> } }).response?.headers?.[
+          "retry-after"
+        ] ?? 60,
+      );
+      this.retryAfterUntil = Date.now() + retryAfter * 1000;
+    }
+
+    throw new AdapterMethodError(
+      createAdapterError(
+        classifyGitHubError(error),
+        `Failed to poll ${owner}/${name}: ${error instanceof Error ? error.message : String(error)}`,
+        { retryable: isRetryable(error), severity: "error" },
+      ),
+    );
   }
 
   private updateWatermark(repoKey: string, events: TriggerEvent[]): void {
@@ -258,25 +257,30 @@ function mapIssueToEvent(
   };
 }
 
-function classifyGitHubError(error: unknown): string {
+function getErrorStatus(error: unknown): number | null {
   if (error && typeof error === "object" && "status" in error) {
-    const status = (error as { status: number }).status;
-    if (status === 401 || status === 403) {
-      return "auth_failed";
-    }
-    if (status === 404) {
-      return "not_found";
-    }
-    if (status === 429) {
-      return "rate_limited";
-    }
+    return (error as { status: number }).status;
+  }
+  return null;
+}
+
+function classifyGitHubError(error: unknown): string {
+  const status = getErrorStatus(error);
+  if (status === 401 || status === 403) {
+    return "auth_failed";
+  }
+  if (status === 404) {
+    return "not_found";
+  }
+  if (status === 429) {
+    return "rate_limited";
   }
   return "network_error";
 }
 
 function isRetryable(error: unknown): boolean {
-  if (error && typeof error === "object" && "status" in error) {
-    const status = (error as { status: number }).status;
+  const status = getErrorStatus(error);
+  if (status !== null) {
     return status === 429 || status >= 500;
   }
   return true;

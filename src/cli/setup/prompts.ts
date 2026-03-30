@@ -259,6 +259,8 @@ function showSelectionWarnings(
 
 // ── People Directory ────────────────────────────────────────────────────────
 
+const WHITESPACE_PATTERN = /\s+/;
+const IDENTIFIER_PATTERN = /^[a-z0-9_-]+$/;
 const PEOPLE_ROLES = ["reviewer", "stakeholder", "team_member"] as const;
 
 /**
@@ -288,12 +290,12 @@ async function promptForPerson(
     validate: (v: string) => v.trim().length > 0 || "Name cannot be empty",
   });
 
-  const defaultId = name.trim().toLowerCase().split(/\s+/)[0] ?? "user";
+  const defaultId = name.trim().toLowerCase().split(WHITESPACE_PATTERN)[0] ?? "user";
   const id = await input({
     message: "Identifier (used in configs):",
     default: defaultId,
     validate: (v: string) =>
-      /^[a-z0-9_-]+$/.test(v.trim()) || "Lowercase alphanumeric, hyphens, underscores only",
+      IDENTIFIER_PATTERN.test(v.trim()) || "Lowercase alphanumeric, hyphens, underscores only",
   });
 
   let roles: string[];

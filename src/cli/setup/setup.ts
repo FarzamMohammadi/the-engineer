@@ -107,6 +107,10 @@ export function checkRequirementsMet(
   return true;
 }
 
+const WHITESPACE_RE = /\s+/;
+const HTTPS_REMOTE_RE = /https?:\/\/[^/]+\/([^/]+)\/([^/]+?)(?:\.git)?$/;
+const SSH_REMOTE_RE = /:([^/]+)\/([^/]+?)(?:\.git)?$/;
+
 /**
  * Parse `git remote -v` output and extract the origin remote's owner/name.
  * Returns null if origin is not found or the URL is unparseable.
@@ -116,19 +120,23 @@ export function parseGitRemote(output: string): { owner: string; name: string } 
   const originLine = output
     .split("\n")
     .find((line) => line.startsWith("origin") && line.includes("(fetch)"));
-  if (!originLine) return null;
+  if (!originLine) {
+    return null;
+  }
 
-  const url = originLine.split(/\s+/)[1];
-  if (!url) return null;
+  const url = originLine.split(WHITESPACE_RE)[1];
+  if (!url) {
+    return null;
+  }
 
   // HTTPS: https://github.com/owner/repo.git
-  const httpsMatch = url.match(/https?:\/\/[^/]+\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  const httpsMatch = url.match(HTTPS_REMOTE_RE);
   if (httpsMatch?.[1] && httpsMatch[2]) {
     return { owner: httpsMatch[1], name: httpsMatch[2] };
   }
 
   // SSH: git@github.com:owner/repo.git
-  const sshMatch = url.match(/:([^/]+)\/([^/]+?)(?:\.git)?$/);
+  const sshMatch = url.match(SSH_REMOTE_RE);
   if (sshMatch?.[1] && sshMatch[2]) {
     return { owner: sshMatch[1], name: sshMatch[2] };
   }
@@ -191,6 +199,46 @@ export interface GeneratedFile {
   content: string;
 }
 
+type PeopleEntry = {
+  id: string;
+  name: string;
+  roles: string[];
+  contacts: Array<{ channel: string; handle: string }>;
+};
+
+/** Generate people.yaml content from wizard data. */
+function generatePeopleYaml(people: PeopleEntry[]): string {
+  const peopleConfig = {
+    people: people.map((p) => ({
+      id: p.id,
+      name: p.name,
+      roles: p.roles,
+      contacts: p.contacts,
+      preferences: { notification_level: "milestones", quiet_hours: null },
+    })),
+  };
+  return `# People configuration\n# Hot-reloadable — changes take effect without restart.\n\n${yamlStringify(peopleConfig)}`;
+}
+
+/** Generate a single plugin config file from user config and/or template. */
+function generatePluginConfigContent(
+  pluginId: string,
+  pluginConfigs: Record<string, Record<string, unknown>>,
+): string {
+  const userConfig = pluginConfigs[pluginId];
+  const template = ALL_TEMPLATES.find((t) => t.relativePath === `config/plugins/${pluginId}.yaml`);
+  const hasUserConfig = userConfig && Object.keys(userConfig).length > 0;
+
+  if (hasUserConfig && template) {
+    const templateData = (yamlParse(template.content) as Record<string, unknown>) ?? {};
+    return yamlStringify({ ...templateData, ...userConfig });
+  }
+  if (hasUserConfig) {
+    return yamlStringify(userConfig);
+  }
+  return template?.content ?? "# Using defaults\n";
+}
+
 /**
  * Generate config files for the given plugin selection. Pure function.
  * Returns core configs (conservative defaults) + plugin configs (env var refs for secrets).
@@ -198,12 +246,7 @@ export interface GeneratedFile {
 export function generateConfigFiles(
   selectedPlugins: string[],
   pluginConfigs: Record<string, Record<string, unknown>>,
-  people?: Array<{
-    id: string;
-    name: string;
-    roles: string[];
-    contacts: Array<{ channel: string; handle: string }>;
-  }>,
+  people?: PeopleEntry[],
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
 
@@ -212,54 +255,19 @@ export function generateConfigFiles(
     if (template.relativePath.startsWith("config/plugins/")) {
       continue; // Plugin configs handled below
     }
-    // If people data was provided from the wizard, generate people.yaml from it
     if (template.relativePath === "config/people.yaml" && people && people.length > 0) {
-      const peopleConfig = {
-        people: people.map((p) => ({
-          id: p.id,
-          name: p.name,
-          roles: p.roles,
-          contacts: p.contacts,
-          preferences: { notification_level: "milestones", quiet_hours: null },
-        })),
-      };
-      files.push({
-        relativePath: template.relativePath,
-        content: `# People configuration\n# Hot-reloadable — changes take effect without restart.\n\n${yamlStringify(peopleConfig)}`,
-      });
+      files.push({ relativePath: template.relativePath, content: generatePeopleYaml(people) });
       continue;
     }
     files.push({ relativePath: template.relativePath, content: template.content });
   }
 
-  // Plugin configs: user-provided values merge INTO templates (preserving ${VAR} refs)
+  // Plugin configs
   for (const pluginId of selectedPlugins) {
-    const userConfig = pluginConfigs[pluginId];
-    const template = ALL_TEMPLATES.find(
-      (t) => t.relativePath === `config/plugins/${pluginId}.yaml`,
-    );
-
-    if (userConfig && Object.keys(userConfig).length > 0 && template) {
-      // Merge: template provides ${VAR} refs and defaults, user config overlays
-      const templateData = (yamlParse(template.content) as Record<string, unknown>) ?? {};
-      const merged = { ...templateData, ...userConfig };
-      files.push({
-        relativePath: `config/plugins/${pluginId}.yaml`,
-        content: yamlStringify(merged),
-      });
-    } else if (userConfig && Object.keys(userConfig).length > 0) {
-      // No template — use user config as-is
-      files.push({
-        relativePath: `config/plugins/${pluginId}.yaml`,
-        content: yamlStringify(userConfig),
-      });
-    } else {
-      // No user config — use template or defaults comment
-      files.push({
-        relativePath: `config/plugins/${pluginId}.yaml`,
-        content: template?.content ?? "# Using defaults\n",
-      });
-    }
+    files.push({
+      relativePath: `config/plugins/${pluginId}.yaml`,
+      content: generatePluginConfigContent(pluginId, pluginConfigs),
+    });
   }
 
   // Example templates
@@ -295,36 +303,44 @@ export function writeConfigFiles(engineerHome: string, files: GeneratedFile[]): 
 
 const ENV_VAR_SCAN_RE = /\$\{([^}]+)\}/g;
 
+/** Recursively scan a directory for YAML files and call visitor with each ${VAR} name found. */
+function scanYamlEnvVars(dir: string, visitor: (varName: string) => void): void {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      scanYamlEnvVars(join(dir, entry.name), visitor);
+    } else if (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) {
+      const content = readFileSync(join(dir, entry.name), "utf8");
+      ENV_VAR_SCAN_RE.lastIndex = 0;
+      let match = ENV_VAR_SCAN_RE.exec(content);
+      while (match) {
+        if (match[1]) {
+          visitor(match[1]);
+        }
+        match = ENV_VAR_SCAN_RE.exec(content);
+      }
+    }
+  }
+}
+
 /**
  * Scan all YAML config files for ${VAR} references and return any that
  * are not set in process.env. Call AFTER loadEnvFile() so .env is loaded.
  */
 export function findUnresolvedEnvVars(configDir: string): string[] {
   const missing: string[] = [];
-  if (!existsSync(configDir)) return missing;
+  if (!existsSync(configDir)) {
+    return missing;
+  }
 
-  const scanDir = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        scanDir(join(dir, entry.name));
-      } else if (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) {
-        const content = readFileSync(join(dir, entry.name), "utf8");
-        ENV_VAR_SCAN_RE.lastIndex = 0;
-        let match = ENV_VAR_SCAN_RE.exec(content);
-        while (match) {
-          const varName = match[1];
-          if (varName && (process.env[varName] === undefined || process.env[varName] === "")) {
-            if (!missing.includes(varName)) {
-              missing.push(varName);
-            }
-          }
-          match = ENV_VAR_SCAN_RE.exec(content);
-        }
-      }
+  scanYamlEnvVars(configDir, (varName) => {
+    if (
+      (process.env[varName] === undefined || process.env[varName] === "") &&
+      !missing.includes(varName)
+    ) {
+      missing.push(varName);
     }
-  };
+  });
 
-  scanDir(configDir);
   return missing.sort();
 }
 
@@ -334,29 +350,17 @@ export function findUnresolvedEnvVars(configDir: string): string[] {
  */
 export function findResolvedEnvVars(configDir: string): Record<string, string> {
   const resolved: Record<string, string> = {};
-  if (!existsSync(configDir)) return resolved;
+  if (!existsSync(configDir)) {
+    return resolved;
+  }
 
-  const scanDir = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        scanDir(join(dir, entry.name));
-      } else if (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")) {
-        const content = readFileSync(join(dir, entry.name), "utf8");
-        ENV_VAR_SCAN_RE.lastIndex = 0;
-        let match = ENV_VAR_SCAN_RE.exec(content);
-        while (match) {
-          const varName = match[1];
-          const value = varName ? process.env[varName] : undefined;
-          if (varName && value != null && value.length > 0) {
-            resolved[varName] = value;
-          }
-          match = ENV_VAR_SCAN_RE.exec(content);
-        }
-      }
+  scanYamlEnvVars(configDir, (varName) => {
+    const value = process.env[varName];
+    if (value != null && value.length > 0) {
+      resolved[varName] = value;
     }
-  };
+  });
 
-  scanDir(configDir);
   return resolved;
 }
 
@@ -385,8 +389,12 @@ export function writePluginDocs(engineerHome: string): void {
  */
 export function needsSetup(engineerHome: string): boolean {
   const dirs = resolveDirectories(engineerHome);
-  if (!existsSync(dirs.config)) return true;
-  if (!existsSync(dirs.plugins)) return true;
+  if (!existsSync(dirs.config)) {
+    return true;
+  }
+  if (!existsSync(dirs.plugins)) {
+    return true;
+  }
   const yamlFiles = readdirSync(dirs.plugins).filter((f) => f.endsWith(".yaml"));
   return yamlFiles.length === 0;
 }
@@ -478,28 +486,94 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
 /** Known placeholder values that indicate people.yaml was never configured. */
 const PEOPLE_PLACEHOLDERS = ["your_telegram_username", "your-github-username", "Your Name"];
 
-function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: boolean): boolean {
+/** Ensure parent dir exists, then write file with restricted permissions. */
+function writeSecureFile(fullPath: string, content: string): void {
+  const dir = dirname(fullPath);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+  writeFileSync(fullPath, content, { encoding: "utf8", mode: 0o600 });
+}
+
+/** Copy seed plugin configs and write core/example configs. */
+function writeSeedFiles(engineerHome: string, seedPath: string, pluginFiles: string[]): void {
+  const pluginsDir = join(seedPath, "plugins");
+  const configsDir = join(seedPath, "configs");
+  const hasConfigs = existsSync(configsDir);
+  const dirs = resolveDirectories(engineerHome);
+
+  // Copy plugin configs
+  for (const file of pluginFiles) {
+    const content = readFileSync(join(pluginsDir, file), "utf8");
+    writeSecureFile(join(dirs.plugins, file), content);
+  }
+
+  // Write core configs: seed overrides or template defaults
+  const coreTemplates = ALL_TEMPLATES.filter((t) => !t.relativePath.startsWith("config/plugins/"));
+  for (const template of coreTemplates) {
+    const configName = template.relativePath.replace("config/", "");
+    const seedFile = join(configsDir, configName);
+    const fullPath = join(engineerHome, template.relativePath);
+    const content =
+      hasConfigs && existsSync(seedFile) ? readFileSync(seedFile, "utf8") : template.content;
+    writeSecureFile(fullPath, content);
+  }
+
+  // Write example templates
+  for (const template of ALL_EXAMPLE_TEMPLATES) {
+    writeSecureFile(join(engineerHome, template.relativePath), template.content);
+  }
+
+  writePluginDocs(engineerHome);
+}
+
+/** Validate seed directory structure, return plugin files or null on error. */
+function validateSeedPath(seedPath: string): { pluginFiles: string[]; pluginsDir: string } | null {
   const out = getOutput();
 
   if (!existsSync(seedPath)) {
     out.error(`Seed directory not found: ${seedPath}`);
-    return false;
+    return null;
   }
 
-  // Validate plugins/ subdirectory exists
   const pluginsDir = join(seedPath, "plugins");
   if (!existsSync(pluginsDir)) {
     out.error(`Seed directory must have a plugins/ subdirectory: ${pluginsDir}`);
-    return false;
+    return null;
   }
 
   const pluginFiles = readdirSync(pluginsDir).filter((f) => f.endsWith(".yaml"));
   if (pluginFiles.length === 0) {
     out.error(`No .yaml files found in ${pluginsDir}`);
-    return false;
+    return null;
   }
 
-  // Check for optional configs/ subdirectory
+  return { pluginFiles, pluginsDir };
+}
+
+/** Warn if people.yaml has placeholder values that need editing. */
+function checkPeoplePlaceholders(engineerHome: string): void {
+  const out = getOutput();
+  const peopleConfigPath = join(engineerHome, "config", "people.yaml");
+  if (!existsSync(peopleConfigPath)) {
+    return;
+  }
+  const content = readFileSync(peopleConfigPath, "utf8");
+  if (PEOPLE_PLACEHOLDERS.some((p) => content.includes(p))) {
+    out.warn(
+      "people.yaml contains placeholder values — edit ~/.engineer/config/people.yaml with real contact info.",
+    );
+  }
+}
+
+function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: boolean): boolean {
+  const out = getOutput();
+  const validated = validateSeedPath(seedPath);
+  if (!validated) {
+    return false;
+  }
+  const { pluginFiles } = validated;
+
   const configsDir = join(seedPath, "configs");
   const hasConfigs = existsSync(configsDir);
 
@@ -520,62 +594,11 @@ function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: 
     return true;
   }
 
-  // Copy plugin configs from seedPath/plugins/
+  writeSeedFiles(engineerHome, seedPath, pluginFiles);
+  checkPeoplePlaceholders(engineerHome);
+
+  // Post-setup validation
   const dirs = resolveDirectories(engineerHome);
-  for (const file of pluginFiles) {
-    const source = join(pluginsDir, file);
-    const dest = join(dirs.plugins, file);
-    const content = readFileSync(source, "utf8");
-    writeFileSync(dest, content, { encoding: "utf8", mode: 0o600 });
-  }
-
-  // Write core configs: use seedPath/configs/ if available, else template defaults
-  const coreTemplates = ALL_TEMPLATES.filter((t) => !t.relativePath.startsWith("config/plugins/"));
-  for (const template of coreTemplates) {
-    const configName = template.relativePath.replace("config/", "");
-    const seedFile = join(configsDir, configName);
-    const fullPath = join(engineerHome, template.relativePath);
-    const dir = dirname(fullPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-    }
-
-    if (hasConfigs && existsSync(seedFile)) {
-      // Use seed config (real values)
-      const content = readFileSync(seedFile, "utf8");
-      writeFileSync(fullPath, content, { encoding: "utf8", mode: 0o600 });
-    } else {
-      // Fall back to template defaults
-      writeFileSync(fullPath, template.content, { encoding: "utf8", mode: 0o600 });
-    }
-  }
-
-  // Write example templates
-  for (const template of ALL_EXAMPLE_TEMPLATES) {
-    const fullPath = join(engineerHome, template.relativePath);
-    const dir = dirname(fullPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-    }
-    writeFileSync(fullPath, template.content, { encoding: "utf8", mode: 0o600 });
-  }
-
-  // Write plugin documentation
-  writePluginDocs(engineerHome);
-
-  // Warn if people.yaml has placeholder values
-  const peopleConfigPath = join(engineerHome, "config", "people.yaml");
-  if (existsSync(peopleConfigPath)) {
-    const content = readFileSync(peopleConfigPath, "utf8");
-    const hasPlaceholders = PEOPLE_PLACEHOLDERS.some((p) => content.includes(p));
-    if (hasPlaceholders) {
-      out.warn(
-        "people.yaml contains placeholder values — edit ~/.engineer/config/people.yaml with real contact info.",
-      );
-    }
-  }
-
-  // Post-setup validation: verify all ${VAR} references have values
   loadEnvFile(engineerHome);
   const missingVars = findUnresolvedEnvVars(dirs.config);
   if (missingVars.length > 0) {

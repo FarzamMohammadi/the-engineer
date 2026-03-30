@@ -95,6 +95,26 @@ export function checkDataDirectory(engineerHome: string): DoctorCategory {
   return { category: "Data Directory", checks };
 }
 
+/** Check if people.yaml has an owner configured and push appropriate check result. */
+function checkPeopleOwner(config: unknown, filePath: string, checks: DoctorCheck[]): void {
+  const people = config as { people?: Array<{ role?: string }> };
+  const hasOwner = people.people?.some((p) => p.role === "owner") ?? false;
+  if (hasOwner) {
+    checks.push({
+      label: "People Directory — owner",
+      status: "pass",
+      message: "Owner configured",
+    });
+  } else {
+    checks.push({
+      label: "People Directory — owner",
+      status: "warn",
+      message: "No person with role 'owner' configured — outreach fallback will fail",
+      remedy: `Add a person with role: owner to ${filePath}`,
+    });
+  }
+}
+
 /** Category 3: Config file validation. */
 export function checkConfigFiles(configDir: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
@@ -123,22 +143,7 @@ export function checkConfigFiles(configDir: string): DoctorCategory {
 
       // Owner-must-exist check for people config
       if (name === "people.yaml" && result.config) {
-        const people = result.config as { people?: Array<{ role?: string }> };
-        const hasOwner = people.people?.some((p) => p.role === "owner") ?? false;
-        if (hasOwner) {
-          checks.push({
-            label: "People Directory — owner",
-            status: "pass",
-            message: "Owner configured",
-          });
-        } else {
-          checks.push({
-            label: "People Directory — owner",
-            status: "warn",
-            message: "No person with role 'owner' configured — outreach fallback will fail",
-            remedy: `Add a person with role: owner to ${filePath}`,
-          });
-        }
+        checkPeopleOwner(result.config, filePath, checks);
       }
     } else {
       checks.push({

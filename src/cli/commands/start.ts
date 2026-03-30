@@ -46,41 +46,73 @@ function ensureDirectories(dirs: EngineerDirectories): void {
   }
 }
 
+/** Handle first-run setup if needed. Returns exit code or null to continue. */
+async function handleFirstRunSetup(
+  engineerHome: string,
+  options: StartOptions,
+): Promise<number | null> {
+  const out = getOutput();
+
+  if (!needsSetup(engineerHome)) {
+    return null;
+  }
+
+  if (!(options.seedPath || process.stdin.isTTY)) {
+    out.error("First-run setup requires an interactive terminal.");
+    out.log("  Run 'engineer start' in a terminal first, or provide --seed <path>.");
+    return 1;
+  }
+
+  const setupOpts: Parameters<typeof runFirstTimeSetup>[0] = { engineerHome };
+  if (options.seedPath) {
+    setupOpts.seedPath = options.seedPath;
+  }
+  if (options.dryRun) {
+    setupOpts.dryRun = true;
+  }
+  const completed = await runFirstTimeSetup(setupOpts);
+  if (!completed) {
+    out.log("Setup cancelled. Run 'engineer start' to try again.");
+    return 0;
+  }
+  if (options.dryRun) {
+    return 0;
+  }
+
+  return null;
+}
+
+/** Load config bundle from disk. Returns bundle or exit code on failure. */
+function loadConfig(dirs: EngineerDirectories): { bundle: ConfigBundle } | { exitCode: number } {
+  const out = getOutput();
+  try {
+    const result = loadConfigDir(dirs.config);
+    for (const warning of result.warnings) {
+      out.warn(`${warning.file}: ${warning.message}`);
+    }
+    return { bundle: result.bundle };
+  } catch (error) {
+    out.error(`Config error: ${sanitizeErrorMessage(error)}`);
+    out.log("  Run 'engineer doctor' to diagnose.");
+    return { exitCode: 1 };
+  }
+}
+
 /** Boots the daemon. Returns exit code. */
 export async function runStart(engineerHome: string, options: StartOptions): Promise<number> {
   const out = getOutput();
   const dirs = resolveDirectories(engineerHome);
 
   // 0. First-run detection — TTY guard + setup BEFORE anything else
-  if (needsSetup(engineerHome)) {
-    if (!options.seedPath && !process.stdin.isTTY) {
-      out.error("First-run setup requires an interactive terminal.");
-      out.log("  Run 'engineer start' in a terminal first, or provide --seed <path>.");
-      return 1;
-    }
-
-    const setupOpts: Parameters<typeof runFirstTimeSetup>[0] = { engineerHome };
-    if (options.seedPath) {
-      setupOpts.seedPath = options.seedPath;
-    }
-    if (options.dryRun) {
-      setupOpts.dryRun = true;
-    }
-    const completed = await runFirstTimeSetup(setupOpts);
-    if (!completed) {
-      out.log("Setup cancelled. Run 'engineer start' to try again.");
-      return 0;
-    }
-    if (options.dryRun) {
-      return 0;
-    }
+  const setupResult = await handleFirstRunSetup(engineerHome, options);
+  if (setupResult !== null) {
+    return setupResult;
   }
 
   // 1. Load .env before config resolution (existing env vars take precedence)
   loadEnvFile(engineerHome);
 
   // 1b. Capture env vars from shell into .env so daemon always has them.
-  // Scans configs for ${VAR} refs, persists any found in process.env but missing from .env.
   captureEnvVarsToFile(engineerHome, dirs.config);
 
   // 2. Auto-create directories (idempotent — may already exist after setup)
@@ -92,18 +124,11 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   }
 
   // 3. Load config (AFTER setup has written config files)
-  let bundle: ConfigBundle;
-  try {
-    const result = loadConfigDir(dirs.config);
-    bundle = result.bundle;
-    for (const warning of result.warnings) {
-      out.warn(`${warning.file}: ${warning.message}`);
-    }
-  } catch (error) {
-    out.error(`Config error: ${sanitizeErrorMessage(error)}`);
-    out.log("  Run 'engineer doctor' to diagnose.");
-    return 1;
+  const configResult = loadConfig(dirs);
+  if ("exitCode" in configResult) {
+    return configResult.exitCode;
   }
+  const { bundle } = configResult;
 
   // 4. Run pre-flight checks
   let preFlightResults: ReturnType<typeof runPreFlightChecks>;

@@ -102,42 +102,52 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     handle: string;
   }
 
-  function resolveContacts(notification: Notification): ResolvedContact[] {
-    const recipients = recipientsForKind(notification.kind);
+  function flattenContacts(
+    people: Array<{ id: string; contacts: Array<{ channel: string; handle: string }> }>,
+  ): ResolvedContact[] {
     const contacts: ResolvedContact[] = [];
-
-    if (recipients === "person") {
-      // Person-targeted notifications (question, status_response)
-      const personId = "personId" in notification ? notification.personId : null;
-      if (!personId) return contacts;
-
-      const person = peopleDirectory.getPerson(personId) ?? peopleDirectory.getOwner();
-      if (!person) return contacts;
-
+    for (const person of people) {
       for (const c of person.contacts) {
         contacts.push({ personId: person.id, channel: c.channel, handle: c.handle });
       }
-    } else {
-      // Role-based: owner, reviewers, or both
-      const people: Array<{ id: string; contacts: Array<{ channel: string; handle: string }> }> =
-        [];
+    }
+    return contacts;
+  }
 
-      if (recipients === "owner" || recipients === "owner_and_reviewers") {
-        const owner = peopleDirectory.getOwner();
-        if (owner) people.push(owner);
-      }
-      if (recipients === "reviewers" || recipients === "owner_and_reviewers") {
-        people.push(...peopleDirectory.getReviewers());
-      }
+  function resolvePersonContacts(notification: Notification): ResolvedContact[] {
+    const personId = "personId" in notification ? notification.personId : null;
+    if (!personId) {
+      return [];
+    }
+    const person = peopleDirectory.getPerson(personId) ?? peopleDirectory.getOwner();
+    if (!person) {
+      return [];
+    }
+    return flattenContacts([person]);
+  }
 
-      for (const person of people) {
-        for (const c of person.contacts) {
-          contacts.push({ personId: person.id, channel: c.channel, handle: c.handle });
-        }
+  function resolveRoleContacts(recipients: string): ResolvedContact[] {
+    const people: Array<{ id: string; contacts: Array<{ channel: string; handle: string }> }> = [];
+
+    if (recipients === "owner" || recipients === "owner_and_reviewers") {
+      const owner = peopleDirectory.getOwner();
+      if (owner) {
+        people.push(owner);
       }
     }
+    if (recipients === "reviewers" || recipients === "owner_and_reviewers") {
+      people.push(...peopleDirectory.getReviewers());
+    }
 
-    return contacts;
+    return flattenContacts(people);
+  }
+
+  function resolveContacts(notification: Notification): ResolvedContact[] {
+    const recipients = recipientsForKind(notification.kind);
+    if (recipients === "person") {
+      return resolvePersonContacts(notification);
+    }
+    return resolveRoleContacts(recipients);
   }
 
   // ── Message Construction ───────────────────────────────────────────────
@@ -245,6 +255,58 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
   // ── Delivery with Fallback ──────────────────────────────────────────────
 
+  /** Attempt to deliver a message via a single plugin+contact. Returns true if delivered. */
+  async function tryDeliverToContact(
+    contact: ResolvedContact,
+    plugin: CommunicationAdapter,
+    safeContent: string,
+    messageType: MessageType,
+    notification: Notification,
+  ): Promise<boolean> {
+    try {
+      const formatted = plugin.formatMessage(safeContent, messageType);
+      const result = await plugin.sendMessage(
+        { user_id: contact.handle, channel: contact.channel },
+        { content: formatted, metadata: { task_id: notification.taskId, type: messageType } },
+      );
+
+      if (result.success) {
+        observer.debug("Notification delivered", {
+          kind: notification.kind,
+          personId: contact.personId,
+          channel: contact.channel,
+          pluginId: plugin.manifest.id,
+        });
+        eventBus.publish({
+          type: "comm.message_sent",
+          source: "notification-router",
+          task_id: notification.taskId,
+          payload: {
+            task_id: notification.taskId,
+            target: contact.personId,
+            message_type: messageType,
+            content_summary: safeContent,
+            channel: contact.channel,
+          },
+        } satisfies PublishInput<"comm.message_sent">);
+        return true;
+      }
+
+      observer.debug("Send failed, trying next contact", {
+        personId: contact.personId,
+        channel: contact.channel,
+        error: result.error?.message ?? "unknown",
+      });
+    } catch (err) {
+      observer.debug("Send error, trying next contact", {
+        personId: contact.personId,
+        channel: contact.channel,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return false;
+  }
+
   /**
    * Try contacts in order (first = preferred). Stop on first successful delivery.
    * If none reachable, log warning.
@@ -269,48 +331,15 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
           continue;
         }
 
-        try {
-          const formatted = plugin.formatMessage(safeContent, messageType);
-          const result = await plugin.sendMessage(
-            { user_id: contact.handle, channel: contact.channel },
-            { content: formatted, metadata: { task_id: notification.taskId, type: messageType } },
-          );
-
-          if (result.success) {
-            observer.debug("Notification delivered", {
-              kind: notification.kind,
-              personId,
-              channel: contact.channel,
-              pluginId: plugin.manifest.id,
-            });
-            eventBus.publish({
-              type: "comm.message_sent",
-              source: "notification-router",
-              task_id: notification.taskId,
-              payload: {
-                task_id: notification.taskId,
-                target: personId,
-                message_type: messageType,
-                content_summary: safeContent,
-                channel: contact.channel,
-              },
-            } satisfies PublishInput<"comm.message_sent">);
-            return; // Stop — delivered successfully
-          }
-
-          // Send returned failure — try next contact
-          observer.debug("Send failed, trying next contact", {
-            personId,
-            channel: contact.channel,
-            error: result.error?.message ?? "unknown",
-          });
-        } catch (err) {
-          // Plugin threw — try next contact
-          observer.debug("Send error, trying next contact", {
-            personId,
-            channel: contact.channel,
-            error: err instanceof Error ? err.message : String(err),
-          });
+        const delivered = await tryDeliverToContact(
+          contact,
+          plugin,
+          safeContent,
+          messageType,
+          notification,
+        );
+        if (delivered) {
+          return;
         }
       }
 
@@ -332,11 +361,15 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
   function handleTicketComment(taskId: string, message: string): void {
     const task = taskEngine.getTask(taskId);
-    if (!task?.external_ref) return;
+    if (!task?.external_ref) {
+      return;
+    }
 
     const commPlugins = getCommPlugins();
     const plugin = commPlugins.find((p) => p.hasCapability("ticket_management"));
-    if (!plugin) return;
+    if (!plugin) {
+      return;
+    }
 
     observer.debug("Commenting on task ticket", { taskId });
     plugin.commentOnTicket(task.external_ref, sanitizeSecrets(message)).catch((err) => {
@@ -352,7 +385,9 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   function syncStateToCommPlugin(payload: TaskStateChangedPayload): void {
     const commPlugins = getCommPlugins();
     for (const comm of commPlugins) {
-      if (!comm.hasCapability("sync")) continue;
+      if (!comm.hasCapability("sync")) {
+        continue;
+      }
       const task = taskEngine.getTask(payload.task_id);
 
       comm

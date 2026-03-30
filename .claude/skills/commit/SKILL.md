@@ -117,5 +117,6 @@ If multiple commits, repeat for each in the planned sequence.
 ## Rules
 
 - **Never add Co-Authored-By** or other attribution lines - only the user is credited
+- **Never use `--no-verify`** - hooks exist to catch errors before CI does
 - **Never ask questions** - analyze and commit
 - **Match project style** - check recent commits for conventions

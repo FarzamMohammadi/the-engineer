@@ -79,9 +79,10 @@ export function createResponsePoller(
   function getEffectivePollInterval(pluginId: string): number {
     const failures = pluginFailures.get(pluginId) ?? 0;
     if (failures === 0) {
-      return config.trigger_poll_interval_ms;
+      return config.response_poll_interval_ms;
     }
-    const backoff = config.trigger_poll_interval_ms * 2 ** Math.min(failures, MAX_BACKOFF_EXPONENT);
+    const backoff =
+      config.response_poll_interval_ms * 2 ** Math.min(failures, MAX_BACKOFF_EXPONENT);
     return Math.min(backoff, MAX_BACKOFF_MS);
   }
 

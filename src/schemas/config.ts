@@ -115,6 +115,14 @@ export const DaemonConfigSchema = z.object({
     .positive()
     .default(30_000)
     .describe("How often the daemon polls trigger adapters for new work. Default: 30 seconds."),
+  response_poll_interval_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(5_000)
+    .describe(
+      "How often the daemon polls communication adapters for responses and /start handshakes. Default: 5 seconds.",
+    ),
   seen_keys_ttl_ms: z
     .number()
     .int()

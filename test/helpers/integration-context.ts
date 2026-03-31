@@ -77,6 +77,7 @@ function defaultDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     ...base,
     tick_interval_ms: 0,
     trigger_poll_interval_ms: 0,
+    response_poll_interval_ms: 0,
     stuck_threshold_ms: 5_000,
     max_active_duration_ms: 30_000,
     preemption_timeout_ms: 10_000,

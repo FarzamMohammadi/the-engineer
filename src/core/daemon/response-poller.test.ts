@@ -9,6 +9,7 @@ function createMockContext(): ResponsePollerContext {
   return {
     config: {
       trigger_poll_interval_ms: 30_000,
+      response_poll_interval_ms: 5_000,
     },
     eventBus: {
       publish: vi.fn(),

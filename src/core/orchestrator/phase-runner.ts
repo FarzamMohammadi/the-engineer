@@ -90,6 +90,8 @@ export interface PhaseRunnerDeps {
   andonCord: AndonCord;
   /** Cooperative preemption state (Protocol P8). */
   preemption: PreemptionGate;
+  /** Cooperative shutdown gate — yields between phases when shutdown is requested. */
+  shutdown?: { isRequested(): boolean };
 }
 
 // ── Outreach Helpers ─────────────────────────────────────────────────────
@@ -697,6 +699,19 @@ async function handlePostPhaseActions(
     };
   }
 
+  // Check cooperative shutdown after phase completion
+  if (deps.shutdown?.isRequested() && nextPhase) {
+    return {
+      completion: {
+        kind: "exit",
+        result: handlePreemption(sessionId, taskId, nextPhase, ctx, "shutdown"),
+      },
+      loopbackCount,
+      requirementsLoopCount,
+      returnToPhase,
+    };
+  }
+
   return {
     completion: { kind: "continue", phases },
     loopbackCount,
@@ -798,6 +813,16 @@ export async function runPhasePipeline(
       const preemptPhase = phases[i]!;
       return endPipelineSpan(
         handlePreemption(sessionId, taskId, preemptPhase, ctx, preemptingId),
+        i - startIndex,
+      );
+    }
+
+    // Check cooperative shutdown before phase start (same checkpoint pattern as preemption)
+    if (deps.shutdown?.isRequested()) {
+      // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
+      const shutdownPhase = phases[i]!;
+      return endPipelineSpan(
+        handlePreemption(sessionId, taskId, shutdownPhase, ctx, "shutdown"),
         i - startIndex,
       );
     }

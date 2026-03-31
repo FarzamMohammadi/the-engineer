@@ -111,6 +111,7 @@ export class Orchestrator {
   private readonly decompositionHandler: DecompositionHandler;
   private readonly andonCord: AndonCord;
   private readonly preemption: WritablePreemptionGate;
+  private shutdownRequested = false;
 
   /** Phase handler dispatch map — one method per phase. */
   private readonly phaseHandlers: PhaseHandlerRegistry;
@@ -142,6 +143,11 @@ export class Orchestrator {
 
     // Build phase handler registry from extracted phase-handlers module
     this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.llmCaller, this.ctx));
+  }
+
+  /** Signal cooperative shutdown — phases will yield at the next boundary. */
+  requestShutdown(): void {
+    this.shutdownRequested = true;
   }
 
   /**
@@ -222,6 +228,7 @@ export class Orchestrator {
       decompositionHandler: this.decompositionHandler,
       andonCord: this.andonCord,
       preemption: this.preemption,
+      shutdown: { isRequested: () => this.shutdownRequested },
     });
   }
 

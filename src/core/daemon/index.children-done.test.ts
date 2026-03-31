@@ -299,4 +299,96 @@ describe("Daemon — Decomposition", () => {
       expect(summaries[0]?.["decisions_made"]).toEqual(["Use Zod"]);
     });
   });
+
+  describe("slot overrun", () => {
+    it("re-queues parent when all slots are full after children complete", async () => {
+      // max_concurrent=1 and we'll fill that slot with a slow task
+      handle = createTestDaemon({ max_concurrent: 1 });
+      await handle.daemon.start();
+
+      const parent = createMockTask({
+        id: "parent-1",
+        state: "active",
+        sub_state: "supervising",
+      });
+      const child = createMockTask({
+        id: "child-1",
+        parent_id: "parent-1",
+        state: "completed",
+      });
+
+      handle.taskEngine.getTask.mockImplementation((id: string) => {
+        if (id === "child-1") {
+          return child;
+        }
+        if (id === "parent-1") {
+          return parent;
+        }
+        return null;
+      });
+      handle.taskEngine.getChildren.mockReturnValue([child]);
+      handle.taskEngine.getTasksByState.mockReturnValue([]);
+      handle.taskEngine.getQueuedByPriority.mockReturnValue([]);
+
+      // Fill the slot: dispatch a task that resolves slowly
+      let resolveSlotTask!: (value: unknown) => void;
+      const slotPromise = new Promise((resolve) => {
+        resolveSlotTask = resolve;
+      });
+      handle.orchestrator.executeTask.mockReturnValue(slotPromise);
+
+      const otherTask = createMockTask({ id: "other-1", state: "queued", sub_state: null });
+      handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([otherTask]);
+      await handle.daemon.tick();
+
+      // Slot is now occupied by other-1. Fire children_all_done event.
+      const subscribeCall = handle.eventBus.subscribe.mock.calls.find(
+        (call: unknown[]) => call[1] === "task.children_all_done",
+      );
+      expect(subscribeCall).toBeDefined();
+
+      const handler = subscribeCall![2] as (e: unknown) => void;
+      handler({
+        id: "evt-1",
+        sequence: 1,
+        type: "task.children_all_done",
+        source: "daemon",
+        task_id: "parent-1",
+        payload: {
+          parent_task_id: "parent-1",
+          child_ids: ["child-1"],
+          all_succeeded: true,
+          failed_ids: [],
+        },
+        timestamp: new Date().toISOString(),
+      });
+
+      // Parent should have been re-queued (not dispatched to integrating)
+      const requeueCall = handle.taskEngine.requestTransition.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === "parent-1" &&
+          call[1] === "queued" &&
+          (call[3] as string).includes("slot_unavailable"),
+      );
+      expect(requeueCall).toBeDefined();
+
+      // child_summaries should still be populated
+      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith(
+        "parent-1",
+        "child_summaries",
+        expect.any(Array),
+      );
+
+      // Should NOT have transitioned to integrating
+      const integratingCall = handle.taskEngine.requestTransition.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === "parent-1" && call[1] === "active" && call[2] === "integrating",
+      );
+      expect(integratingCall).toBeUndefined();
+
+      // Clean up: resolve the hanging task so afterEach drain works
+      resolveSlotTask({ outcome: "completed", phaseOutputs: new Map() });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  });
 });

@@ -157,6 +157,16 @@ export function createPreemptionManager(
           reason: result.reason,
         });
       }
+      eventBus.publish({
+        type: EventTypes["preemption.completed"],
+        source: "daemon",
+        task_id: pendingPreemption.targetTaskId,
+        payload: {
+          target_task_id: pendingPreemption.targetTaskId,
+          preempting_task_id: pendingPreemption.replacementTaskId,
+          method: "forced",
+        },
+      } satisfies PublishInput<"preemption.completed">);
       removeActiveDispatch(pendingPreemption.targetTaskId);
       pendingPreemption = null;
     } else {
@@ -186,6 +196,18 @@ export function createPreemptionManager(
   }
 
   function clearPending(): void {
+    if (pendingPreemption) {
+      eventBus.publish({
+        type: EventTypes["preemption.completed"],
+        source: "daemon",
+        task_id: pendingPreemption.targetTaskId,
+        payload: {
+          target_task_id: pendingPreemption.targetTaskId,
+          preempting_task_id: pendingPreemption.replacementTaskId,
+          method: "cooperative",
+        },
+      } satisfies PublishInput<"preemption.completed">);
+    }
     observer.debug("Preemption cleared — cycle complete");
     pendingPreemption = null;
   }

@@ -38,6 +38,7 @@ export const EventTypeSchema = z.enum([
   "cost.quota_exhausted",
   "preemption.requested",
   "preemption.ready",
+  "preemption.completed",
   "timeout.reminder",
   "timeout.self_unblock_check",
   "timeout.alert",
@@ -179,6 +180,13 @@ export const PreemptionReadyPayloadSchema = z.object({
   atomic_op: z.string(),
 });
 export type PreemptionReadyPayload = z.infer<typeof PreemptionReadyPayloadSchema>;
+
+export const PreemptionCompletedPayloadSchema = z.object({
+  target_task_id: z.string(),
+  preempting_task_id: z.string(),
+  method: z.enum(["cooperative", "forced"]),
+});
+export type PreemptionCompletedPayload = z.infer<typeof PreemptionCompletedPayloadSchema>;
 
 // timeout.*
 
@@ -462,6 +470,7 @@ export type EventPayloads = {
   "cost.quota_exhausted": CostQuotaExhaustedPayload;
   "preemption.requested": PreemptionRequestedPayload;
   "preemption.ready": PreemptionReadyPayload;
+  "preemption.completed": PreemptionCompletedPayload;
   "timeout.reminder": TimeoutReminderPayload;
   "timeout.self_unblock_check": TimeoutSelfUnblockCheckPayload;
   "timeout.alert": TimeoutAlertPayload;
@@ -510,6 +519,7 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "cost.quota_exhausted": CostQuotaExhaustedPayloadSchema,
   "preemption.requested": PreemptionRequestedPayloadSchema,
   "preemption.ready": PreemptionReadyPayloadSchema,
+  "preemption.completed": PreemptionCompletedPayloadSchema,
   "timeout.reminder": TimeoutReminderPayloadSchema,
   "timeout.self_unblock_check": TimeoutSelfUnblockCheckPayloadSchema,
   "timeout.alert": TimeoutAlertPayloadSchema,

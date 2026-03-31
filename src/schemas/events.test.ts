@@ -95,8 +95,8 @@ describe("SubscriptionSchema", () => {
 // ── EventTypeSchema ────────────────────────────────────────────────────────────
 
 describe("EventTypeSchema", () => {
-  it("has exactly 36 event types", () => {
-    expect(EventTypeSchema.options).toHaveLength(36);
+  it("has exactly 37 event types", () => {
+    expect(EventTypeSchema.options).toHaveLength(37);
   });
 
   it("accepts all 33 valid event types", () => {
@@ -136,7 +136,7 @@ describe("TaskStateChangedPayloadSchema", () => {
   it("parses valid data with task state enums", () => {
     const valid = {
       task_id: "01TASK",
-      from_state: "intake",
+      from_state: "requirements_gathering",
       from_sub: null,
       to_state: "queued",
       to_sub: null,
@@ -616,8 +616,8 @@ describe("eventPayloadSchemas", () => {
     }
   });
 
-  it("has exactly 36 entries", () => {
-    expect(Object.keys(eventPayloadSchemas)).toHaveLength(36);
+  it("has exactly 37 entries", () => {
+    expect(Object.keys(eventPayloadSchemas)).toHaveLength(37);
   });
 
   it("every schema can validate an object", () => {

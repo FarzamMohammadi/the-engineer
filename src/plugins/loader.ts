@@ -92,6 +92,7 @@ async function loadSinglePlugin(
   registry: Registry,
   pluginConfigDir: string,
   observer: IObserver,
+  configOverrides?: Record<string, Record<string, unknown>>,
 ): Promise<boolean> {
   const pluginId = plugin.manifest.id;
 
@@ -117,6 +118,12 @@ async function loadSinglePlugin(
     observer.warn("Plugin config load failed, skipping", { pluginId });
     registry.deregister(pluginId);
     return false;
+  }
+
+  // Merge any config overrides (e.g. people data for comm plugins)
+  const overrides = configOverrides?.[pluginId];
+  if (overrides) {
+    Object.assign(pluginConfig, overrides);
   }
 
   const initializationResult = await registry.initializePlugin(pluginId, pluginConfig);
@@ -161,13 +168,20 @@ export async function loadBuiltinPlugins(
   registry: Registry,
   pluginConfigDir: string,
   observer: IObserver,
+  configOverrides?: Record<string, Record<string, unknown>>,
 ): Promise<PluginLoadResult> {
   const plugins = discoverEnabledPlugins(pluginConfigDir);
   const result: PluginLoadResult = { loaded: [], failed: [], hints: [] };
 
   for (const plugin of plugins) {
     // Critical plugin failures throw from loadSinglePlugin — let them propagate
-    const loaded = await loadSinglePlugin(plugin, registry, pluginConfigDir, observer);
+    const loaded = await loadSinglePlugin(
+      plugin,
+      registry,
+      pluginConfigDir,
+      observer,
+      configOverrides,
+    );
     if (loaded) {
       result.loaded.push(plugin.manifest.id);
       // Collect startup hints from successfully loaded plugins

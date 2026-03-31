@@ -96,7 +96,9 @@ describe("TelegramCommPlugin", () => {
     mockBot = createMockBot();
     await plugin.initialize(VALID_CONFIG);
     (plugin as unknown as { bot: unknown }).bot = mockBot;
-    // Pre-populate chat map for tests that need handle resolution
+    // Clear map (loadChatMap in init may load persisted state from disk)
+    // then add only the known entry tests expect
+    (plugin as unknown as { userChatMap: Map<string, string> }).userChatMap.clear();
     (plugin as unknown as { userChatMap: Map<string, string> }).userChatMap.set(
       "farzammohammadi",
       "-1001234567890",
@@ -359,14 +361,13 @@ describe("TelegramCommPlugin", () => {
       }
     });
 
-    it("captureHandshake skips disk write when mapping already exists", () => {
+    it("captureHandshake skips disk write when mapping already exists", async () => {
       const saveSpy = vi.spyOn(plugin as unknown as { saveChatMap: () => void }, "saveChatMap");
 
       // Call with same data that's already in the map
-      (plugin as unknown as { captureHandshake: (u: string, c: string) => void }).captureHandshake(
-        "FarzamMohammadi",
-        "-1001234567890",
-      );
+      await (
+        plugin as unknown as { captureHandshake: (u: string, c: string) => Promise<void> }
+      ).captureHandshake("FarzamMohammadi", "-1001234567890");
 
       expect(saveSpy).not.toHaveBeenCalled();
       saveSpy.mockRestore();
@@ -401,13 +402,140 @@ describe("TelegramCommPlugin", () => {
 
       // Directly call captureHandshake to test the mapping logic
       // (init already ran with the real bot which has no updates)
-      (p as unknown as { captureHandshake: (u: string, c: string) => void }).captureHandshake(
-        "NewUser",
-        "555666777",
-      );
+      await (
+        p as unknown as { captureHandshake: (u: string, c: string) => Promise<void> }
+      ).captureHandshake("NewUser", "555666777");
 
       const map = (p as unknown as { userChatMap: Map<string, string> }).userChatMap;
       expect(map.get("newuser")).toBe("555666777");
+    });
+
+    it("sends reply with People Directory name on /start", async () => {
+      // Re-init with people data
+      const p = new TelegramCommPlugin();
+      p.manifest = MANIFEST;
+      const mock = createMockBot();
+      (mock.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }).getUpdates = vi
+        .fn()
+        .mockResolvedValue([]);
+
+      await p.initialize({
+        ...VALID_CONFIG,
+        people: [
+          {
+            id: "farzam",
+            name: "Farzam",
+            roles: ["owner"],
+            contacts: [{ channel: "telegram", handle: "AnotherUser" }],
+          },
+        ],
+      });
+      (p as unknown as { bot: unknown }).bot = mock;
+
+      // Trigger /start via pollMessages
+      (
+        mock.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }
+      ).getUpdates.mockResolvedValue([
+        {
+          update_id: 200,
+          message: {
+            message_id: 60,
+            date: 1700000000,
+            chat: { id: 999888777 },
+            from: { id: 789, username: "AnotherUser" },
+            text: "/start",
+          },
+        },
+      ]);
+
+      await p.pollMessages([], "0");
+
+      expect(mock.api.sendMessage).toHaveBeenCalledWith(
+        "999888777",
+        "*Comms Ready*\n\nHi Farzam\\. Your telegram chat id has been stored\\.",
+        { parse_mode: "MarkdownV2" },
+      );
+    });
+
+    it("falls back to @username when no people match", async () => {
+      (mockBot.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }).getUpdates = vi
+        .fn()
+        .mockResolvedValue([
+          {
+            update_id: 300,
+            message: {
+              message_id: 70,
+              date: 1700000000,
+              chat: { id: 777888999 },
+              from: { id: 456, username: "UnknownUser" },
+              text: "/start",
+            },
+          },
+        ]);
+
+      await plugin.pollMessages([], "0");
+
+      expect(mockBot.api.sendMessage).toHaveBeenCalledWith(
+        "777888999",
+        "*Comms Ready*\n\nHi @UnknownUser\\. Your telegram chat id has been stored\\.",
+        { parse_mode: "MarkdownV2" },
+      );
+    });
+
+    it("reply failure is non-fatal — handshake still captured", async () => {
+      mockBot.api.sendMessage.mockRejectedValueOnce(new Error("Network error"));
+      (mockBot.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }).getUpdates = vi
+        .fn()
+        .mockResolvedValue([
+          {
+            update_id: 100,
+            message: {
+              message_id: 50,
+              date: 1700000000,
+              chat: { id: 444333222 },
+              from: { id: 456, username: "FailUser" },
+              text: "/start",
+            },
+          },
+        ]);
+
+      // Should not throw
+      await plugin.pollMessages([], "0");
+
+      const map = (plugin as unknown as { userChatMap: Map<string, string> }).userChatMap;
+      expect(map.get("failuser")).toBe("444333222");
+    });
+
+    it("re-/start with same chat_id skips reply and disk write", async () => {
+      const saveSpy = vi.spyOn(plugin as unknown as { saveChatMap: () => void }, "saveChatMap");
+
+      // Pre-populate with existing mapping
+      (plugin as unknown as { userChatMap: Map<string, string> }).userChatMap.set(
+        "existinguser",
+        "111222333",
+      );
+
+      (mockBot.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }).getUpdates = vi
+        .fn()
+        .mockResolvedValue([
+          {
+            update_id: 100,
+            message: {
+              message_id: 50,
+              date: 1700000000,
+              chat: { id: 111222333 },
+              from: { id: 456, username: "ExistingUser" },
+              text: "/start",
+            },
+          },
+        ]);
+
+      await plugin.pollMessages([], "0");
+
+      // Neither reply nor disk write — mapping unchanged
+      expect(mockBot.api.sendMessage).not.toHaveBeenCalled();
+      expect(saveSpy).not.toHaveBeenCalled();
+      saveSpy.mockRestore();
     });
 
     it("captures /start during pollMessages", async () => {

@@ -20,6 +20,9 @@ import { type TelegramCommConfig, TelegramCommConfigSchema } from "./config.js";
 /** Characters that must be escaped in Telegram MarkdownV2. */
 const MARKDOWNV2_SPECIAL = /([_*\[\]()~`>#+\-=|{}.!\\])/g;
 
+/** Strip leading @ from telegram handles. */
+const LEADING_AT = /^@/;
+
 /** Escape text for Telegram MarkdownV2 format. */
 export function escapeMarkdownV2(text: string): string {
   return text.replace(MARKDOWNV2_SPECIAL, "\\$1");
@@ -142,6 +145,9 @@ export class TelegramCommPlugin extends CommunicationAdapter {
   /** Persistent mapping: lowercase username → Telegram chat_id. */
   private userChatMap = new Map<string, string>();
 
+  /** Lightweight lookup: lowercase telegram handle → person name (from People Directory). */
+  private telegramNameMap = new Map<string, string>();
+
   override hasCapability(capability: string): boolean {
     return capability === "send" || capability === "receive";
   }
@@ -220,7 +226,7 @@ export class TelegramCommPlugin extends CommunicationAdapter {
 
       // Capture /start handshakes for username → chat_id mapping
       if (msg.text.startsWith("/start") && msg.from?.username) {
-        this.captureHandshake(msg.from.username, String(msg.chat.id));
+        await this.captureHandshake(msg.from.username, String(msg.chat.id));
         continue;
       }
 
@@ -249,6 +255,9 @@ export class TelegramCommPlugin extends CommunicationAdapter {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   protected async doInitialize(config: Record<string, unknown>): Promise<InitResult> {
+    // Extract people data before Zod strips unknown keys
+    this.buildNameMap(config["people"]);
+
     const parsed = TelegramCommConfigSchema.safeParse(config);
     if (!parsed.success) {
       return { success: false, message: `Invalid config: ${parsed.error.message}` };
@@ -272,7 +281,7 @@ export class TelegramCommPlugin extends CommunicationAdapter {
         // Capture /start handshakes from messages received while offline
         const msg = update.message;
         if (msg?.text?.startsWith("/start") && msg.from?.username) {
-          this.captureHandshake(msg.from.username, String(msg.chat.id));
+          await this.captureHandshake(msg.from.username, String(msg.chat.id));
         }
       }
     } catch {
@@ -312,14 +321,54 @@ export class TelegramCommPlugin extends CommunicationAdapter {
     return this.userChatMap.get(handle.toLowerCase());
   }
 
-  /** Record a /start handshake and persist immediately (crash-safe). */
-  private captureHandshake(username: string, chatId: string): void {
+  /** Record a /start handshake, persist immediately (crash-safe), and reply. */
+  private async captureHandshake(username: string, chatId: string): Promise<void> {
     const key = username.toLowerCase();
     if (this.userChatMap.get(key) === chatId) {
-      return; // Already known — skip disk write
+      return; // Already known — skip disk write and reply
     }
     this.userChatMap.set(key, chatId);
     this.saveChatMap();
+
+    const displayName = this.resolveNameByUsername(username);
+    const body = escapeMarkdownV2(`Hi ${displayName}. Your telegram chat id has been stored.`);
+    const greeting = `*Comms Ready*\n\n${body}`;
+    try {
+      await this.bot.api.sendMessage(chatId, greeting, {
+        parse_mode: this.config.parse_mode,
+      });
+    } catch {
+      // Non-fatal: handshake was captured, reply delivery is best-effort
+    }
+  }
+
+  /** Build telegram handle → person name lookup from people data. */
+  private buildNameMap(rawPeople: unknown): void {
+    if (!Array.isArray(rawPeople)) {
+      return;
+    }
+    for (const person of rawPeople) {
+      if (!person || typeof person !== "object") {
+        continue;
+      }
+      const name = (person as { name?: string }).name;
+      const contacts = (person as { contacts?: Array<{ channel: string; handle: string }> })
+        .contacts;
+      if (!(name && Array.isArray(contacts))) {
+        continue;
+      }
+      for (const contact of contacts) {
+        if (contact.channel === "telegram" && contact.handle) {
+          const handle = contact.handle.replace(LEADING_AT, "").toLowerCase();
+          this.telegramNameMap.set(handle, name);
+        }
+      }
+    }
+  }
+
+  /** Resolve telegram username to person name, falling back to @username. */
+  private resolveNameByUsername(username: string): string {
+    return this.telegramNameMap.get(username.toLowerCase()) ?? `@${username}`;
   }
 
   // ── Persistent chat map (same pattern as github-trigger watermarks) ───

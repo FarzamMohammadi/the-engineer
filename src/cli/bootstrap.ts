@@ -237,6 +237,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       registry,
       pluginConfigDir,
       observer.child("plugin-loader"),
+      { "telegram-comm": { people: config.people } },
     );
     milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");

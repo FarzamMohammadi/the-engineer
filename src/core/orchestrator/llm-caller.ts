@@ -266,7 +266,11 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       task_id: taskId,
       timestamp: new Date().toISOString(),
       data: {
-        deliverable_path: phaseSubDir ? `${thoughtsDir}/${phaseSubDir}` : "",
+        deliverable_path: phaseSubDir
+          ? phase === Phases.demo_prep
+            ? `${thoughtsDir}/${phaseSubDir}/pr-description.md`
+            : `${thoughtsDir}/${phaseSubDir}`
+          : "",
         status: finalResult.status,
         next_phase: finalResult.next_phase,
         summary: finalResult.summary,

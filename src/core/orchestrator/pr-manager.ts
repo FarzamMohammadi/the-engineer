@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
@@ -211,8 +211,12 @@ export function createPrManager(
         const deliverablePath = (demoPrepOutput.data as { deliverable_path?: string })
           .deliverable_path;
         if (deliverablePath) {
-          const absPath = path.join(worktreePath, deliverablePath);
-          if (existsSync(absPath)) {
+          let absPath = path.join(worktreePath, deliverablePath);
+          // deliverable_path may point to the phase directory — resolve to the actual file
+          if (existsSync(absPath) && statSync(absPath).isDirectory()) {
+            absPath = path.join(absPath, "pr-description.md");
+          }
+          if (existsSync(absPath) && !statSync(absPath).isDirectory()) {
             rawDescription = readFileSync(absPath, "utf-8").trim();
           }
         }

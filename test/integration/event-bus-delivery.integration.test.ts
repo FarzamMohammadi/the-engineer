@@ -72,7 +72,7 @@ describe("EventBus delivery (integration)", () => {
         task_id: "t1",
         payload: {
           task_id: "t1",
-          from_state: "intake",
+          from_state: "requirements_gathering",
           from_sub: null,
           to_state: "queued",
           to_sub: null,

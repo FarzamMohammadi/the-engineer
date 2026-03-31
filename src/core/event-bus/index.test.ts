@@ -684,7 +684,7 @@ describe("EventBus", () => {
         task_id: "task-1",
         payload: {
           task_id: "task-1",
-          from_state: "intake",
+          from_state: "requirements_gathering",
           from_sub: null,
           to_state: "queued",
           to_sub: null,

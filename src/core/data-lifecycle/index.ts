@@ -59,7 +59,14 @@ interface DataLifecycleManagerDeps {
 }
 
 // Active task states — never prune data belonging to these tasks
-const ACTIVE_STATES = ["intake", "queued", "active", "blocked", "review_pending", "supervising"];
+const ACTIVE_STATES = [
+  "requirements_gathering",
+  "queued",
+  "active",
+  "blocked",
+  "review_pending",
+  "supervising",
+];
 
 // ── Table Definitions ─────────────────────────────────────────────────────────
 

@@ -27,7 +27,7 @@ function insertTask(): string {
       id, state, cascade_policy, title, description, source_text,
       acceptance_criteria, children, team, related, decisions, child_summaries,
       priority, llm_tokens, llm_cost_usd, compute_time_ms, created_at, last_transition_at
-    ) VALUES (?, 'intake', 'pause_siblings', 'Test', '', '', '[]', '[]', '[]', '[]', '[]', '[]', 50, 0, 0.0, 0, ?, ?)`,
+    ) VALUES (?, 'requirements_gathering', 'pause_siblings', 'Test', '', '', '[]', '[]', '[]', '[]', '[]', '[]', 50, 0, 0.0, 0, ?, ?)`,
     )
     .run(id, now, now);
   return id;

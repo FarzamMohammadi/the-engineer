@@ -80,7 +80,7 @@ describe("Orchestrator — Decomposition", () => {
       return {
         id: `child-${String(childCounter).padStart(3, "0")}`,
         title: input["title"],
-        state: "intake",
+        state: "requirements_gathering",
         sub_state: null,
         parent_id: input["parent_id"],
         children: [],
@@ -137,7 +137,7 @@ describe("Orchestrator — Decomposition", () => {
       expect(call[0].cascade_policy).toBe("pause_siblings");
     }
 
-    // Verify each child was transitioned: intake → queued
+    // Verify each child was transitioned: requirements_gathering → queued
     const transitionCalls = h.taskEngine.requestTransition.mock.calls.filter(
       (call: unknown[]) => call[3] === "decomposition",
     );
@@ -205,7 +205,7 @@ describe("Orchestrator — Decomposition", () => {
       childCounter++;
       return {
         id: `child-${String(childCounter).padStart(3, "0")}`,
-        state: "intake",
+        state: "requirements_gathering",
         sub_state: null,
         parent_id: "task-001",
         children: [],
@@ -274,7 +274,7 @@ describe("Orchestrator — Decomposition", () => {
 
     h.taskEngine.createTask.mockImplementation((input: Record<string, unknown>) => ({
       id: "child-001",
-      state: "intake",
+      state: "requirements_gathering",
       sub_state: null,
       parent_id: input["parent_id"],
       children: [],

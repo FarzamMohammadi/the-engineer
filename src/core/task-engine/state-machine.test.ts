@@ -46,7 +46,7 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
   ).run(
     id,
     null,
-    (overrides["state"] as string) ?? TaskStates.intake,
+    (overrides["state"] as string) ?? TaskStates.requirements_gathering,
     (overrides["sub_state"] as string) ?? null,
     null,
     null,
@@ -105,7 +105,9 @@ describe("subStateMatches", () => {
 
 describe("isValidTransition", () => {
   it("allows intake → queued", () => {
-    expect(isValidTransition(TaskStates.intake, null, TaskStates.queued, null)).toBe(true);
+    expect(
+      isValidTransition(TaskStates.requirements_gathering, null, TaskStates.queued, null),
+    ).toBe(true);
   });
 
   it("allows queued → active.working", () => {
@@ -126,9 +128,14 @@ describe("isValidTransition", () => {
   });
 
   it("rejects intake → active", () => {
-    expect(isValidTransition(TaskStates.intake, null, TaskStates.active, SubStates.working)).toBe(
-      false,
-    );
+    expect(
+      isValidTransition(
+        TaskStates.requirements_gathering,
+        null,
+        TaskStates.active,
+        SubStates.working,
+      ),
+    ).toBe(false);
   });
 
   it("rejects queued → completed", () => {
@@ -228,7 +235,7 @@ describe("StateMachine", () => {
       .prepare("SELECT * FROM state_transitions WHERE task_id = ?")
       .all(id) as Array<{ from_state: string; to_state: string }>;
     expect(transitions).toHaveLength(1);
-    expect(transitions[0]?.from_state).toBe(TaskStates.intake);
+    expect(transitions[0]?.from_state).toBe(TaskStates.requirements_gathering);
     expect(transitions[0]?.to_state).toBe(TaskStates.queued);
   });
 
@@ -277,7 +284,7 @@ describe("StateMachine", () => {
       // Now manually revert the state back to intake but keep version=2
       dbHandle.db
         .prepare("UPDATE tasks SET state = ?, version = 999 WHERE id = ?")
-        .run(TaskStates.intake, id);
+        .run(TaskStates.requirements_gathering, id);
 
       // Second StateMachine reads version=999, tries UPDATE WHERE version=999
       // This should succeed (version matches what was read)

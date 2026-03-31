@@ -10,7 +10,7 @@ CREATE TABLE tasks (
   external_ref        TEXT,                       -- JSON: ExternalRef | null
 
   -- State
-  state               TEXT NOT NULL CHECK(state IN ('intake','queued','active','blocked','review_pending','completed','failed')),
+  state               TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
   sub_state           TEXT CHECK(sub_state IN ('working','supervising','integrating','demo','code')),
   phase               TEXT,                       -- Orchestrator phase: "research", "planning", etc.
 
@@ -68,8 +68,8 @@ CREATE INDEX idx_tasks_state_priority ON tasks(state, priority DESC);
 CREATE TABLE state_transitions (
   id                  TEXT PRIMARY KEY,           -- ULID
   task_id             TEXT NOT NULL REFERENCES tasks(id),
-  from_state          TEXT NOT NULL CHECK(from_state IN ('intake','queued','active','blocked','review_pending','completed','failed')),
-  to_state            TEXT NOT NULL CHECK(to_state IN ('intake','queued','active','blocked','review_pending','completed','failed')),
+  from_state          TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
+  to_state            TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
   from_sub            TEXT CHECK(from_sub IN ('working','supervising','integrating','demo','code')),
   to_sub              TEXT CHECK(to_sub IN ('working','supervising','integrating','demo','code')),
   reason              TEXT NOT NULL,

@@ -34,9 +34,9 @@ describe("Task lifecycle (integration)", () => {
         source: "test",
         description: "A test task",
       });
-      expect(task.state).toBe("intake");
+      expect(task.state).toBe("requirements_gathering");
 
-      // intake → queued
+      // requirements_gathering → queued
       const r1 = taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
       expect(r1.success).toBe(true);
       expect(taskEngine.getTask(task.id)?.state).toBe("queued");
@@ -55,7 +55,10 @@ describe("Task lifecycle (integration)", () => {
 
       // Verify events emitted for each transition
       expect(events).toHaveLength(3);
-      expect(events[0]?.payload).toMatchObject({ from_state: "intake", to_state: "queued" });
+      expect(events[0]?.payload).toMatchObject({
+        from_state: "requirements_gathering",
+        to_state: "queued",
+      });
       expect(events[1]?.payload).toMatchObject({ from_state: "queued", to_state: "active" });
       expect(events[2]?.payload).toMatchObject({ from_state: "active", to_state: "completed" });
     });
@@ -180,7 +183,10 @@ describe("Task lifecycle (integration)", () => {
 
       const history = taskEngine.getStateHistory(task.id);
       expect(history).toHaveLength(3);
-      expect(history[0]).toMatchObject({ from_state: "intake", to_state: "queued" });
+      expect(history[0]).toMatchObject({
+        from_state: "requirements_gathering",
+        to_state: "queued",
+      });
       expect(history[1]).toMatchObject({ from_state: "queued", to_state: "active" });
       expect(history[2]).toMatchObject({ from_state: "active", to_state: "completed" });
     });

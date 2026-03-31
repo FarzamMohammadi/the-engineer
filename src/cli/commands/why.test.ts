@@ -43,7 +43,7 @@ function insertTask(
   overrides: Record<string, unknown> = {},
 ): void {
   const defaults = {
-    state: "intake",
+    state: "requirements_gathering",
     sub_state: null as string | null,
     priority: 50,
     title: "Test task",
@@ -127,7 +127,7 @@ describe("runWhy", () => {
       .run(
         "tr-1",
         "task-002",
-        "intake",
+        "requirements_gathering",
         "queued",
         "auto-transition",
         "daemon",
@@ -140,7 +140,7 @@ describe("runWhy", () => {
     expect(code).toBe(0);
 
     const output = stdoutWrites.join("");
-    expect(output).toContain("intake");
+    expect(output).toContain("requirements_gathering");
     expect(output).toContain("queued");
     expect(output).toContain("auto-transition");
   });

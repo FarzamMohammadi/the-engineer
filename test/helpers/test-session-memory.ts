@@ -34,7 +34,7 @@ export function createTestSessionMemory(): TestSessionMemoryHandle {
       priority, llm_tokens, llm_cost_usd, compute_time_ms,
       created_at, last_transition_at
     ) VALUES (
-      ?, 'intake', 'pause_siblings', ?, '', '',
+      ?, 'requirements_gathering', 'pause_siblings', ?, '', '',
       '[]', '[]', '[]', '[]', '[]', '[]',
       50, 0, 0.0, 0,
       ?, ?

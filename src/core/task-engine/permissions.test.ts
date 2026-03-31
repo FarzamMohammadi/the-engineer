@@ -4,14 +4,14 @@ import { ActionClasses, SubStates, TaskStates } from "../../schemas/task.js";
 import { checkPermission } from "./permissions.js";
 
 describe("checkPermission (pure function)", () => {
-  describe("intake state", () => {
+  describe("requirements_gathering state", () => {
     it("allows read", () => {
-      const result = checkPermission(TaskStates.intake, null, ActionClasses.read);
+      const result = checkPermission(TaskStates.requirements_gathering, null, ActionClasses.read);
       expect(result).toEqual({ allowed: true });
     });
 
     it("denies write", () => {
-      const result = checkPermission(TaskStates.intake, null, ActionClasses.write);
+      const result = checkPermission(TaskStates.requirements_gathering, null, ActionClasses.write);
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain("not permitted");
     });

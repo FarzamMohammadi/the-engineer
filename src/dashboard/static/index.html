@@ -1143,11 +1143,11 @@ const EVENT_CAT_COLORS = {
 
 const PHASES = ['requirements_gathering', 'research', 'planning', 'execution', 'self_review', 'demo_prep', 'integration'];
 const PHASE_LABELS = { requirements_gathering: 'Requirements', research: 'Research', planning: 'Planning', execution: 'Exec', self_review: 'Review', demo_prep: 'Demo', integration: 'Integ' };
-const KANBAN_STATES = ['intake', 'queued', 'active', 'blocked', 'review_pending', 'completed', 'failed'];
-const STATE_LABELS = { intake: 'Intake', queued: 'Queued', active: 'Active', blocked: 'Blocked', review_pending: 'Review', completed: 'Done', failed: 'Failed' };
-const STATE_COLORS = { intake: 'var(--text-muted)', queued: 'var(--blue)', active: 'var(--cyan)', blocked: 'var(--red)', review_pending: 'var(--amber)', completed: 'var(--green)', failed: 'var(--red)' };
+const KANBAN_STATES = ['requirements_gathering', 'queued', 'active', 'blocked', 'review_pending', 'completed', 'failed'];
+const STATE_LABELS = { requirements_gathering: 'Req. Gathering', queued: 'Queued', active: 'Active', blocked: 'Blocked', review_pending: 'Review', completed: 'Done', failed: 'Failed' };
+const STATE_COLORS = { requirements_gathering: 'var(--text-muted)', queued: 'var(--blue)', active: 'var(--cyan)', blocked: 'var(--red)', review_pending: 'var(--amber)', completed: 'var(--green)', failed: 'var(--red)' };
 function stateBadge(state) {
-  const m = { intake: 'badge-dim', queued: 'badge-blue', active: 'badge-cyan', blocked: 'badge-red', review_pending: 'badge-amber', completed: 'badge-green', failed: 'badge-red' };
+  const m = { requirements_gathering: 'badge-dim', queued: 'badge-blue', active: 'badge-cyan', blocked: 'badge-red', review_pending: 'badge-amber', completed: 'badge-green', failed: 'badge-red' };
   return m[state] || 'badge-dim';
 }
 

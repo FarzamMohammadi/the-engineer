@@ -54,7 +54,7 @@ export function handleQuery(payload: CommMessageReceivedPayload, deps: QueryHand
 
 function formatStatusResponse(taskEngine: ITaskEngine): string {
   const states: TaskState[] = [
-    TaskStates.intake,
+    TaskStates.requirements_gathering,
     TaskStates.queued,
     TaskStates.active,
     TaskStates.blocked,

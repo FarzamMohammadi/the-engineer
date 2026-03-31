@@ -112,7 +112,7 @@ const manifests = [
     adapter_meta: { capabilities: ["send"], channel: "telegram" },
     contributes: { events: ["comm.message_sent"] },
     startup_hints: [
-      "Each person in People Directory must send /start to the Telegram bot before The Engineer can reach them.",
+      "Each person in People Directory must send /start to the Telegram bot before The Engineer can reach them via Telegram.",
     ],
   },
   {

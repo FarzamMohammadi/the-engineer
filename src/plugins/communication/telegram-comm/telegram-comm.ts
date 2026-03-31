@@ -268,6 +268,17 @@ export class TelegramCommPlugin extends CommunicationAdapter {
     // Load persisted username → chat_id mapping
     this.loadChatMap();
 
+    // Fetch bot identity and update startup hint with actual bot username
+    try {
+      const me = await this.bot.api.getMe();
+      const botHandle = me.username ? `@${me.username}` : `bot ${me.id}`;
+      this.manifest.startup_hints = [
+        `Each person in People Directory must send /start to ${botHandle} before The Engineer can reach them via Telegram.`,
+      ];
+    } catch {
+      // Non-fatal — hint stays as default, healthCheck will catch auth issues
+    }
+
     // Drain pending updates, capturing /start handshakes along the way.
     try {
       const pending = await this.bot.api.getUpdates({

@@ -7,7 +7,7 @@ people:
     roles: [owner]
     contacts:
       - channel: telegram
-        handle: "farzamoh"
+        handle: "farzammoh"
       - channel: github
         handle: "FarzamMohammadi"
     preferences:

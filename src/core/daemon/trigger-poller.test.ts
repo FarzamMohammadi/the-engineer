@@ -17,6 +17,7 @@ function makeDaemonConfig(): DaemonConfig {
     max_active_duration_ms: 28_800_000,
     shutdown_timeout_ms: 30_000,
     trigger_poll_interval_ms: 30_000,
+    response_poll_interval_ms: 5000,
     seen_keys_ttl_ms: 86_400_000,
     logging: {
       level: "info" as const,

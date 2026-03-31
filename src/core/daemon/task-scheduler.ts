@@ -17,29 +17,18 @@ export function isSlotConsuming(state: string, subState: string | null): boolean
   );
 }
 
-/**
- * Compute the aged priority for a queued task.
- * Returns the new priority or null if no change needed.
- */
-export function computeAgedPriority(
-  basePriority: number,
-  elapsedMs: number,
-  config: {
-    aging_threshold_ms: number;
-    aging_interval_ms: number;
-    aging_increment: number;
-    aging_cap: number;
-  },
-): number | null {
-  if (elapsedMs < config.aging_threshold_ms) {
-    return null;
-  }
+// ── Retry Backoff ────────────────────────────────────────────────────────────
 
-  const periods =
-    Math.floor((elapsedMs - config.aging_threshold_ms) / config.aging_interval_ms) + 1;
-  const aged = Math.min(basePriority + periods * config.aging_increment, config.aging_cap);
+/** Backoff schedule in minutes for crash retries: 1, 5, 15, 30, 30. */
+const BACKOFF_MINUTES = [1, 5, 15, 30, 30] as const;
 
-  return aged > basePriority ? aged : null;
+/** Maximum crash retries before transitioning to failed. */
+export const MAX_CRASH_RETRIES = BACKOFF_MINUTES.length;
+
+/** Compute backoff duration in milliseconds for a given crash count (1-based). */
+export function computeBackoffMs(crashCount: number): number {
+  const index = Math.min(crashCount - 1, BACKOFF_MINUTES.length - 1);
+  return (BACKOFF_MINUTES[index] ?? BACKOFF_MINUTES[BACKOFF_MINUTES.length - 1] ?? 30) * 60_000;
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -58,18 +47,10 @@ export interface TaskScheduler {
   scheduleNext(queuedTasks?: Task[]): void;
   /** Dispatch a specific task to the Orchestrator. */
   dispatchTask(task: Task): void;
-  /** Apply priority aging to queued tasks. Pre-fetched tasks avoid redundant DB query. */
-  applyPriorityAging(now: number, queuedTasks?: Task[]): void;
   /** Get currently active dispatch task IDs. */
   getActiveTaskIds(): string[];
   /** Get count of completed tasks. */
   getTasksCompleted(): number;
-  /** Track a base priority for aging. */
-  trackBasePriority(taskId: string, priority: number): void;
-  /** Initialize base priorities from existing tasks (for crash recovery). */
-  initializeBasePriorities(tasks: Array<{ id: string; priority: number }>): void;
-  /** Remove a tracked base priority (for cleanup when tasks leave scheduling). */
-  removeBasePriority(taskId: string): void;
   /** Remove an active dispatch (for preemption/shutdown). */
   removeActiveDispatch(taskId: string): void;
   /**
@@ -95,12 +76,11 @@ export function createTaskScheduler(
   notifications: NotificationRouter,
   callbacks: SchedulerCallbacks,
 ): TaskScheduler {
-  const { config, eventBus, taskEngine, orchestrator, observer } = ctx;
+  const { config, eventBus, taskEngine, orchestrator, clock, observer } = ctx;
   const { sessionMemory, workspaceManager } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
   const activeDispatches = new Map<string, Promise<ExecuteTaskResult>>();
-  const basePriorities = new Map<string, number>();
   let tasksCompleted = 0;
 
   // ── Scheduling ──────────────────────────────────────────────────────────
@@ -109,7 +89,16 @@ export function createTaskScheduler(
     return config.max_concurrent - activeDispatches.size;
   }
 
-  function isTaskEligible(task: { id: string; parent_id: string | null }): boolean {
+  function isTaskEligible(task: Task): boolean {
+    // Retry backoff gate: skip tasks whose not_before is in the future
+    if (task.not_before && new Date(task.not_before).getTime() > clock.now()) {
+      observer.debug("Task not eligible: not_before gate", {
+        taskId: task.id,
+        notBefore: task.not_before,
+      });
+      return false;
+    }
+
     if (!task.parent_id) {
       return true;
     }
@@ -246,19 +235,6 @@ export function createTaskScheduler(
 
   // ── Task Completion ─────────────────────────────────────────────────────
 
-  /** Whether a task outcome means it no longer needs base priority tracking. */
-  function shouldCleanupBasePriority(outcome: string): boolean {
-    // review_pending and decomposed tasks leave the scheduling queue.
-    // If they return (rework), dispatchTask re-tracks via trackBasePriority.
-    return (
-      outcome === Outcomes.completed ||
-      outcome === Outcomes.error ||
-      outcome === Outcomes.blocked ||
-      outcome === Outcomes.review_pending ||
-      outcome === Outcomes.decomposed
-    );
-  }
-
   function handleCompletedOutcome(taskId: string): void {
     const transition = taskEngine.requestTransition(
       taskId,
@@ -381,10 +357,9 @@ export function createTaskScheduler(
     activeDispatches.delete(taskId);
     tasksCompleted++;
 
-    // Clean up base priority when task leaves the scheduling queue
-    if (shouldCleanupBasePriority(result.outcome)) {
-      basePriorities.delete(taskId);
-    }
+    // Reset crash backoff on any non-crash completion
+    taskEngine.updateTaskField(taskId, "consecutive_crash_count", 0);
+    taskEngine.updateTaskField(taskId, "not_before", null);
 
     if (result.outcome === Outcomes.completed) {
       handleCompletedOutcome(taskId);
@@ -419,6 +394,12 @@ export function createTaskScheduler(
         error: sanitizeErrorMessage(error),
       });
 
+      // Increment crash count
+      const task = taskEngine.getTask(taskId);
+      const crashCount = (task?.consecutive_crash_count ?? 0) + 1;
+      taskEngine.updateTaskField(taskId, "consecutive_crash_count", crashCount);
+
+      // Emit health event
       eventBus.publish({
         type: EventTypes["health.stuck_detected"],
         source: "daemon",
@@ -432,11 +413,41 @@ export function createTaskScheduler(
         },
       } satisfies PublishInput<"health.stuck_detected">);
 
+      if (crashCount >= MAX_CRASH_RETRIES) {
+        // Max retries exceeded → failed
+        const transition = taskEngine.requestTransition(
+          taskId,
+          TaskStates.failed,
+          null,
+          `max_crash_retries_exceeded (${crashCount})`,
+          "daemon",
+        );
+        if (!transition.success) {
+          observer.warn("Failed to transition crashed task to failed", {
+            taskId,
+            reason: transition.reason,
+          });
+        }
+        observer.error("Task exceeded max crash retries — marking failed", { taskId, crashCount });
+        notifications.notify({
+          kind: "task_error",
+          taskId,
+          reason: `Task crashed ${crashCount} times — exceeded max retries`,
+        });
+        return;
+      }
+
+      // Set not_before for backoff
+      const backoffMs = computeBackoffMs(crashCount);
+      const notBefore = new Date(clock.now() + backoffMs).toISOString();
+      taskEngine.updateTaskField(taskId, "not_before", notBefore);
+
+      // Transition back to queued
       const transition = taskEngine.requestTransition(
         taskId,
         TaskStates.queued,
         null,
-        "crash_recovery",
+        "crash_recovery_with_backoff",
         "daemon",
       );
       if (!transition.success) {
@@ -445,6 +456,13 @@ export function createTaskScheduler(
           reason: transition.reason,
         });
       }
+
+      observer.info("Task crash — backoff retry scheduled", {
+        taskId,
+        crashCount,
+        backoffMs,
+        notBefore,
+      });
     } catch (innerError) {
       // Last-resort: if crash recovery itself fails, log and leave stuck detection to find it
       observer.error("Critical: handleTaskError recovery failed — task may be stuck", {
@@ -500,26 +518,6 @@ export function createTaskScheduler(
     });
   }
 
-  // ── Priority Aging ──────────────────────────────────────────────────────
-
-  function applyPriorityAging(now: number, prefetchedTasks?: Task[]): void {
-    const queuedTasks = prefetchedTasks ?? taskEngine.getTasksByState(TaskStates.queued);
-    for (const task of queuedTasks) {
-      const base = basePriorities.get(task.id) ?? task.priority;
-      const elapsed = now - Date.parse(task.created_at);
-      const newPriority = computeAgedPriority(base, elapsed, config);
-
-      if (newPriority !== null && newPriority > task.priority) {
-        taskEngine.updateTaskField(task.id, "priority", newPriority);
-        observer.debug("Task priority aged", {
-          taskId: task.id,
-          from: task.priority,
-          to: newPriority,
-        });
-      }
-    }
-  }
-
   // ── Accessors ───────────────────────────────────────────────────────────
 
   function getActiveTaskIds(): string[] {
@@ -528,20 +526,6 @@ export function createTaskScheduler(
 
   function getTasksCompleted(): number {
     return tasksCompleted;
-  }
-
-  function trackBasePriority(taskId: string, priority: number): void {
-    basePriorities.set(taskId, priority);
-  }
-
-  function initializeBasePriorities(tasks: Array<{ id: string; priority: number }>): void {
-    for (const task of tasks) {
-      basePriorities.set(task.id, task.priority);
-    }
-  }
-
-  function removeBasePriority(taskId: string): void {
-    basePriorities.delete(taskId);
   }
 
   function removeActiveDispatch(taskId: string): void {
@@ -621,12 +605,8 @@ export function createTaskScheduler(
   return {
     scheduleNext,
     dispatchTask,
-    applyPriorityAging,
     getActiveTaskIds,
     getTasksCompleted,
-    trackBasePriority,
-    initializeBasePriorities,
-    removeBasePriority,
     removeActiveDispatch,
     drainForShutdown,
     handleTaskCompletion,

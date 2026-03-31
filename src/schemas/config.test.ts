@@ -39,10 +39,6 @@ describe("DaemonConfigSchema", () => {
     expect(config.preemption_timeout_ms).toBe(60_000);
     expect(config.stuck_threshold_ms).toBe(1_800_000);
     expect(config.max_active_duration_ms).toBe(28_800_000);
-    expect(config.aging_threshold_ms).toBe(86_400_000);
-    expect(config.aging_increment).toBe(5);
-    expect(config.aging_interval_ms).toBe(86_400_000);
-    expect(config.aging_cap).toBe(75);
     expect(config.shutdown_timeout_ms).toBe(30_000);
     expect(config.trigger_poll_interval_ms).toBe(30_000);
     expect(config.seen_keys_ttl_ms).toBe(86_400_000);
@@ -75,11 +71,6 @@ describe("DaemonConfigSchema", () => {
   it("rejects non-positive durations", () => {
     expect(() => DaemonConfigSchema.parse({ tick_interval_ms: 0 })).toThrow();
     expect(() => DaemonConfigSchema.parse({ tick_interval_ms: -1 })).toThrow();
-  });
-
-  it("rejects aging_cap outside 1-100", () => {
-    expect(() => DaemonConfigSchema.parse({ aging_cap: 0 })).toThrow();
-    expect(() => DaemonConfigSchema.parse({ aging_cap: 101 })).toThrow();
   });
 
   it("accepts valid logging level", () => {

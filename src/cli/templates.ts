@@ -18,12 +18,6 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # stuck_threshold_ms: "30m"           # No progress for this long → flag as stuck (default: 30m)
 # max_active_duration_ms: "8h"        # Hard cap on total task runtime (default: 8h)
 
-# --- Priority aging (prevents low-priority tasks from waiting forever) ---
-# aging_threshold_ms: "1d"            # How long a queued task waits before aging starts (default: 1d)
-# aging_increment: 5                  # Priority points added each aging cycle (higher = sooner scheduled)
-# aging_interval_ms: "1d"             # How often aging bumps priority (default: 1d)
-# aging_cap: 75                       # Max priority via aging, 1-100 (leaves 76-100 for urgent tasks)
-
 # --- Shutdown ---
 # shutdown_timeout_ms: "30s"          # Time to drain active tasks on shutdown (default: 30s)
 
@@ -344,12 +338,6 @@ preemption_timeout_ms: "1m"               # Time to checkpoint before forced swa
 # ── Stuck/Runaway Detection ──────────────────────────────────────────────────
 stuck_threshold_ms: "30m"                 # Flag task as stuck (default: 30m)
 max_active_duration_ms: "8h"              # Kill task after this duration (default: 8h)
-
-# ── Priority Aging (starvation prevention) ───────────────────────────────────
-aging_threshold_ms: "1d"                  # Wait before aging starts (default: 1d)
-aging_increment: 5                        # Priority bump per aging cycle (default: 5)
-aging_interval_ms: "1d"                   # Aging cycle length (default: 1d)
-aging_cap: 75                             # Max priority via aging, 1-100 (leaves 76-100 for urgent tasks)
 
 # ── Shutdown ──────────────────────────────────────────────────────────────────
 shutdown_timeout_ms: "30s"                # Drain timeout on SIGTERM (default: 30s)

@@ -539,16 +539,6 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
     });
   }
 
-  // Priority aging overshoot
-  if (bundle.daemon.aging_cap <= bundle.daemon.aging_increment) {
-    checks.push({
-      label: "Priority aging",
-      status: "warn",
-      message: `aging_cap (${bundle.daemon.aging_cap}) <= aging_increment (${bundle.daemon.aging_increment}) — aging may overshoot the cap in a single step`,
-      remedy: "Set aging_cap higher than aging_increment",
-    });
-  }
-
   // Review reminder too aggressive
   const reminderAfterMs = bundle.safety.response_timeout.review_pending.reminder_after_ms;
   if (reminderAfterMs < 3_600_000) {

@@ -51,6 +51,8 @@ export interface TaskRow {
   started_at: string | null;
   completed_at: string | null;
   last_transition_at: string;
+  not_before: string | null;
+  consecutive_crash_count: number;
   session_id: string | null;
   /** Optimistic locking — incremented on every state transition. */
   version: number;
@@ -105,6 +107,8 @@ export function rowToTask(row: TaskRow): Task {
     started_at: row.started_at,
     completed_at: row.completed_at,
     last_transition_at: row.last_transition_at,
+    not_before: row.not_before,
+    consecutive_crash_count: row.consecutive_crash_count,
     session_id: row.session_id,
   };
 }

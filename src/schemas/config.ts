@@ -98,37 +98,6 @@ export const DaemonConfigSchema = z.object({
     .default(28_800_000)
     .describe("Hard cap on total wall-clock time a task can remain active. Default: 8 hours."),
 
-  // Priority aging (starvation prevention)
-  aging_threshold_ms: z
-    .number()
-    .int()
-    .positive()
-    .default(86_400_000)
-    .describe("How long a queued task waits before priority aging begins. Default: 1 day."),
-  aging_increment: z
-    .number()
-    .int()
-    .positive()
-    .default(5)
-    .describe(
-      "Priority points added each aging cycle. Higher values promote starved tasks faster. Default: 5.",
-    ),
-  aging_interval_ms: z
-    .number()
-    .int()
-    .positive()
-    .default(86_400_000)
-    .describe("Time between priority aging bumps after the threshold is reached. Default: 1 day."),
-  aging_cap: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .default(75)
-    .describe(
-      "Maximum priority reachable via aging (1-100). Leaves 76-100 for manually urgent tasks.",
-    ),
-
   // Shutdown
   shutdown_timeout_ms: z
     .number()

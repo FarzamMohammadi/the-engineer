@@ -64,7 +64,9 @@ export type UpdatableField =
   | "clone_url"
   | "return_to_phase"
   | "loopback_count"
-  | "requirements_loop_count";
+  | "requirements_loop_count"
+  | "not_before"
+  | "consecutive_crash_count";
 
 export interface ITaskEngine {
   createTask(input: CreateTaskInput): Task;

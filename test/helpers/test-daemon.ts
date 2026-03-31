@@ -63,6 +63,7 @@ export interface TestDaemonHandle {
   orchestrator: {
     executeTask: Mock;
     attemptSelfUnblock: Mock;
+    requestShutdown: Mock;
   };
   sessionMemory: {
     getLatestCheckpoint: Mock;
@@ -118,10 +119,6 @@ function defaultTestConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     preemption_timeout_ms: 60_000,
     stuck_threshold_ms: 1_800_000,
     max_active_duration_ms: 28_800_000,
-    aging_threshold_ms: 86_400_000,
-    aging_increment: 5,
-    aging_interval_ms: 86_400_000,
-    aging_cap: 75,
     shutdown_timeout_ms: 30_000,
     trigger_poll_interval_ms: 30_000,
     seen_keys_ttl_ms: 86_400_000,
@@ -205,7 +202,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
       return createMockTask({
         id: `task-${String(taskCounter).padStart(3, "0")}`,
         title: input.title,
-        state: "intake",
+        state: "requirements_gathering",
         sub_state: null,
         priority: input.priority ?? 50,
         created_at: new Date(clock.now()).toISOString(),
@@ -231,6 +228,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
       phaseOutputs: new Map(),
     } satisfies ExecuteTaskResult),
     attemptSelfUnblock: vi.fn().mockResolvedValue(false),
+    requestShutdown: vi.fn(),
   };
 
   // ── SessionMemory mock ────────────────────────────────────────────────

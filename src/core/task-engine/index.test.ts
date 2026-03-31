@@ -63,9 +63,9 @@ interface TransitionStep {
   reason: string;
 }
 
-/** Get the shortest path of transitions from intake to a target state. */
+/** Get the shortest path of transitions from requirements_gathering to a target state. */
 function getPathToState(state: TaskState, subState: SubState | null): TransitionStep[] {
-  if (state === "intake") {
+  if (state === "requirements_gathering") {
     return [];
   }
   if (state === "queued") {
@@ -134,12 +134,12 @@ function getPathToState(state: TaskState, subState: SubState | null): Transition
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe("isValidTransition", () => {
-  it("accepts intake to queued", () => {
-    expect(isValidTransition("intake", null, "queued", null)).toBe(true);
+  it("accepts requirements_gathering to queued", () => {
+    expect(isValidTransition("requirements_gathering", null, "queued", null)).toBe(true);
   });
 
-  it("accepts intake to failed", () => {
-    expect(isValidTransition("intake", null, "failed", null)).toBe(true);
+  it("accepts requirements_gathering to failed", () => {
+    expect(isValidTransition("requirements_gathering", null, "failed", null)).toBe(true);
   });
 
   it("accepts queued to active.working", () => {
@@ -150,8 +150,8 @@ describe("isValidTransition", () => {
     expect(isValidTransition("active", "working", "active", "supervising")).toBe(true);
   });
 
-  it("rejects intake to active (no such transition)", () => {
-    expect(isValidTransition("intake", null, "active", "working")).toBe(false);
+  it("rejects requirements_gathering to active (no such transition)", () => {
+    expect(isValidTransition("requirements_gathering", null, "active", "working")).toBe(false);
   });
 
   it("rejects active.integrating to active.supervising (not in table)", () => {
@@ -205,9 +205,9 @@ describe("TaskEngine", () => {
   // ── createTask ──────────────────────────────────────────────────────────────
 
   describe("createTask", () => {
-    it("creates a task in intake state", () => {
+    it("creates a task in requirements_gathering state", () => {
       const task = engine.createTask(makeInput());
-      expect(task.state).toBe("intake");
+      expect(task.state).toBe("requirements_gathering");
       expect(task.sub_state).toBeNull();
     });
 
@@ -308,7 +308,7 @@ describe("TaskEngine", () => {
   // ── requestTransition — valid transitions ─────────────────────────────────
 
   describe("requestTransition — valid transitions", () => {
-    it("transitions intake to queued", () => {
+    it("transitions requirements_gathering to queued", () => {
       const task = engine.createTask(makeInput());
       const result = engine.requestTransition(task.id, "queued", null, "validated", "daemon");
       expect(result).toEqual({ success: true });
@@ -372,7 +372,7 @@ describe("TaskEngine", () => {
       engine.requestTransition(task.id, "queued", null, "validated", "daemon");
       const history = engine.getStateHistory(task.id);
       expect(history).toHaveLength(1);
-      expect(history[0]!.from_state).toBe("intake");
+      expect(history[0]!.from_state).toBe("requirements_gathering");
       expect(history[0]!.to_state).toBe("queued");
       expect(history[0]!.from_sub).toBeNull();
       expect(history[0]!.to_sub).toBeNull();
@@ -387,7 +387,7 @@ describe("TaskEngine", () => {
         const p = payload as Record<string, unknown>;
         return (
           p["task_id"] === task.id &&
-          p["from_state"] === "intake" &&
+          p["from_state"] === "requirements_gathering" &&
           p["from_sub"] === null &&
           p["to_state"] === "queued" &&
           p["to_sub"] === null &&
@@ -433,7 +433,7 @@ describe("TaskEngine", () => {
       const result = engine.requestTransition(task.id, "active", "working", "invalid", "test");
       expect(result.success).toBe(false);
       expect(result.reason).toContain("Invalid transition");
-      expect(result.reason).toContain("intake");
+      expect(result.reason).toContain("requirements_gathering");
       expect(result.reason).toContain("active.working");
     });
 
@@ -473,7 +473,7 @@ describe("TaskEngine", () => {
       const task = engine.createTask(makeInput());
       engine.requestTransition(task.id, "active", "working", "invalid", "test");
       const unchanged = assertDefined(engine.getTask(task.id), "task");
-      expect(unchanged.state).toBe("intake");
+      expect(unchanged.state).toBe("requirements_gathering");
       expect(unchanged.sub_state).toBeNull();
     });
 
@@ -489,12 +489,12 @@ describe("TaskEngine", () => {
   // ── checkPermission ──────────────────────────────────────────────────────
 
   describe("checkPermission", () => {
-    it("allows read in intake", () => {
+    it("allows read in requirements_gathering", () => {
       const task = engine.createTask(makeInput());
       expect(engine.checkPermission(task.id, "read")).toEqual({ allowed: true });
     });
 
-    it("denies write in intake", () => {
+    it("denies write in requirements_gathering", () => {
       const task = engine.createTask(makeInput());
       const result = engine.checkPermission(task.id, "write");
       expect(result.allowed).toBe(false);
@@ -688,7 +688,7 @@ describe("TaskEngine", () => {
       engine.createTask(makeInput({ title: "Task 2" }));
       engine.requestTransition(t1.id, "queued", null, "validated", "test");
 
-      const intakeTasks = engine.getTasksByState("intake");
+      const intakeTasks = engine.getTasksByState("requirements_gathering");
       const queuedTasks = engine.getTasksByState("queued");
       expect(intakeTasks).toHaveLength(1);
       expect(intakeTasks[0]!.title).toBe("Task 2");
@@ -705,7 +705,7 @@ describe("TaskEngine", () => {
       engine.createTask(makeInput({ title: "High", priority: 90 }));
       engine.createTask(makeInput({ title: "Mid", priority: 50 }));
 
-      const tasks = engine.getTasksByState("intake");
+      const tasks = engine.getTasksByState("requirements_gathering");
       expect(tasks[0]!.title).toBe("High");
       expect(tasks[1]!.title).toBe("Mid");
       expect(tasks[2]!.title).toBe("Low");
@@ -715,7 +715,7 @@ describe("TaskEngine", () => {
       engine.createTask(makeInput({ title: "A" }));
       engine.createTask(makeInput({ title: "B" }));
       engine.createTask(makeInput({ title: "C" }));
-      expect(engine.getTasksByState("intake")).toHaveLength(3);
+      expect(engine.getTasksByState("requirements_gathering")).toHaveLength(3);
     });
   });
 
@@ -799,7 +799,7 @@ describe("TaskEngine", () => {
 
       const history = engine.getStateHistory(task.id);
       expect(history).toHaveLength(2);
-      expect(history[0]!.from_state).toBe("intake");
+      expect(history[0]!.from_state).toBe("requirements_gathering");
       expect(history[0]!.to_state).toBe("queued");
       expect(history[1]!.from_state).toBe("queued");
       expect(history[1]!.to_state).toBe("active");
@@ -876,7 +876,7 @@ describe("TaskEngine", () => {
       const updated = assertDefined(engine.getTask(task.id), "task");
       expect(updated.title).toBe("Original");
       expect(updated.priority).toBe(75);
-      expect(updated.state).toBe("intake");
+      expect(updated.state).toBe("requirements_gathering");
     });
 
     it("warns on non-existent task", () => {

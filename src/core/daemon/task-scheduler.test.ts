@@ -6,7 +6,11 @@ import { EventTypes } from "../../schemas/events.js";
 import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { ExecuteTaskResult } from "../orchestrator/index.js";
 import type { NotificationRouter } from "./notification-router.js";
-import { type SchedulerCallbacks, createTaskScheduler } from "./task-scheduler.js";
+import {
+  type SchedulerCallbacks,
+  computeBackoffMs,
+  createTaskScheduler,
+} from "./task-scheduler.js";
 import type { TaskSchedulerContext } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -19,10 +23,6 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     preemption_timeout_ms: 30_000,
     stuck_threshold_ms: 600_000,
     max_active_duration_ms: 3_600_000,
-    aging_threshold_ms: 86_400_000,
-    aging_increment: 5,
-    aging_interval_ms: 86_400_000,
-    aging_cap: 75,
     shutdown_timeout_ms: 10_000,
     trigger_poll_interval_ms: 60_000,
     seen_keys_ttl_ms: 3_600_000,
@@ -73,6 +73,8 @@ function makeMockTask(overrides?: Record<string, unknown>): Task {
     description: "A test task",
     children: [],
     external_ref: null,
+    not_before: null,
+    consecutive_crash_count: 0,
     ...overrides,
   } as unknown as Task;
 }
@@ -346,11 +348,16 @@ describe("TaskScheduler", () => {
     );
   });
 
-  // 8. handleTaskError emits stuck event and transitions to queued
-  it("handleTaskError emits stuck event and transitions to queued", () => {
-    const { ctx, taskEngine, eventBus } = makeContext();
+  // 8. handleTaskError increments crash count, sets backoff, transitions to queued
+  it("handleTaskError increments crash count and schedules backoff retry", () => {
+    const { ctx, taskEngine, eventBus, clock } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
+    const now = 1_700_000_000_000;
+    clock.now.mockReturnValue(now);
+
+    // Return a task with 0 crash count
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", consecutive_crash_count: 0 }));
 
     const scheduler = createTaskScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
@@ -358,26 +365,62 @@ describe("TaskScheduler", () => {
 
     scheduler.handleTaskError("t1", new Error("Orchestrator crashed"));
 
+    // Should increment crash count to 1
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_crash_count", 1);
+    // Should set not_before with 1-minute backoff
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "not_before",
+      new Date(now + 60_000).toISOString(),
+    );
+    // Should emit stuck event
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         type: EventTypes["health.stuck_detected"],
-        source: "daemon",
         task_id: "t1",
-        payload: expect.objectContaining({
-          task_id: "t1",
-          condition: "orchestrator_crash",
-        }),
       }),
     );
+    // Should transition to queued with backoff reason
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
       "t1",
       TaskStates.queued,
       null,
-      "crash_recovery",
+      "crash_recovery_with_backoff",
       "daemon",
     );
     // Should be removed from active dispatches
     expect(scheduler.getActiveTaskIds()).not.toContain("t1");
+  });
+
+  // 8b. handleTaskError transitions to failed after max retries
+  it("handleTaskError transitions to failed after max crash retries", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    // Return a task at max retries (consecutive_crash_count = 4, will become 5)
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", consecutive_crash_count: 4 }));
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task);
+
+    scheduler.handleTaskError("t1", new Error("Orchestrator crashed"));
+
+    // Should increment crash count to 5
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_crash_count", 5);
+    // Should transition to failed, NOT queued
+    expect(taskEngine.requestTransition).toHaveBeenCalledWith(
+      "t1",
+      TaskStates.failed,
+      null,
+      expect.stringContaining("max_crash_retries_exceeded"),
+      "daemon",
+    );
+    // Should notify about failure
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "task_error", taskId: "t1" }),
+    );
   });
 
   // 9. isTaskEligible: top-level tasks always eligible
@@ -455,30 +498,6 @@ describe("TaskScheduler", () => {
 
     // Only the first child should be dispatched; second blocked by pause_siblings
     expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
-  });
-
-  // 12. applyPriorityAging ages queued tasks based on elapsed time
-  it("applyPriorityAging updates priority for old queued tasks", () => {
-    const { ctx, taskEngine } = makeContext({
-      aging_threshold_ms: 10_000,
-      aging_interval_ms: 5_000,
-      aging_increment: 3,
-      aging_cap: 100,
-    });
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const createdAt = new Date(0).toISOString(); // epoch
-    const now = 20_000; // 20 seconds elapsed → threshold 10k, then 2 intervals of 5k → periods = 3
-
-    const task = makeMockTask({ id: "t1", priority: 50, created_at: createdAt });
-    taskEngine.getTasksByState.mockReturnValue([task]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.applyPriorityAging(now);
-
-    // aged = min(50 + 3*3, 100) = 59
-    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "priority", 59);
   });
 
   // 13. checkAndEmitChildrenAllDone emits when all siblings terminal
@@ -576,33 +595,6 @@ describe("TaskScheduler", () => {
 
     scheduler.removeActiveDispatch("t1");
     expect(scheduler.getActiveTaskIds()).not.toContain("t1");
-  });
-
-  // 18. initializeBasePriorities sets base priorities for aging
-  it("initializeBasePriorities sets base priorities used by aging", () => {
-    const { ctx, taskEngine } = makeContext({
-      aging_threshold_ms: 1_000,
-      aging_interval_ms: 1_000,
-      aging_increment: 10,
-      aging_cap: 100,
-    });
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const createdAt = new Date(0).toISOString();
-    const task = makeMockTask({ id: "t1", priority: 70, created_at: createdAt });
-    taskEngine.getTasksByState.mockReturnValue([task]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-
-    // Set base priority to 40 — aging should compute from base 40, not current 70
-    scheduler.initializeBasePriorities([{ id: "t1", priority: 40 }]);
-
-    // now = 5000 → elapsed = 5000, threshold = 1000, intervals = (5000-1000)/1000 = 4 periods → periods = 5
-    // aged = min(40 + 5*10, 100) = min(90, 100) = 90
-    scheduler.applyPriorityAging(5_000);
-
-    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "priority", 90);
   });
 
   // 19. handleTaskCompletion on "decomposed" outcome logs but does not transition
@@ -990,5 +982,100 @@ describe("TaskScheduler", () => {
 
     // Should flush without unhandled rejection
     await expect(flush()).resolves.toBeUndefined();
+  });
+});
+
+// ── computeBackoffMs ─────────────────────────────────────────────────────────
+
+describe("computeBackoffMs", () => {
+  it("returns correct backoff for each crash count", () => {
+    expect(computeBackoffMs(1)).toBe(1 * 60_000);
+    expect(computeBackoffMs(2)).toBe(5 * 60_000);
+    expect(computeBackoffMs(3)).toBe(15 * 60_000);
+    expect(computeBackoffMs(4)).toBe(30 * 60_000);
+    expect(computeBackoffMs(5)).toBe(30 * 60_000);
+  });
+
+  it("clamps to last value for crash counts beyond schedule length", () => {
+    expect(computeBackoffMs(6)).toBe(30 * 60_000);
+    expect(computeBackoffMs(100)).toBe(30 * 60_000);
+  });
+});
+
+// ── not_before eligibility ───────────────────────────────────────────────────
+
+describe("isTaskEligible not_before gate", () => {
+  it("skips task when not_before is in the future", () => {
+    const now = 1_700_000_000_000;
+    const { ctx, taskEngine, orchestrator, clock } = makeContext({ max_concurrent: 1 });
+    clock.now.mockReturnValue(now);
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const future = new Date(now + 60_000).toISOString();
+    const task = makeMockTask({ id: "t1", parent_id: null, not_before: future });
+    taskEngine.getQueuedByPriority.mockReturnValue([task]);
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    scheduler.scheduleNext();
+
+    // Task should NOT be dispatched
+    expect(orchestrator.executeTask).not.toHaveBeenCalled();
+  });
+
+  it("dispatches task when not_before is in the past", () => {
+    const now = 1_700_000_000_000;
+    const { ctx, taskEngine, orchestrator, clock } = makeContext({ max_concurrent: 1 });
+    clock.now.mockReturnValue(now);
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const past = new Date(now - 60_000).toISOString();
+    const task = makeMockTask({ id: "t1", parent_id: null, not_before: past });
+    taskEngine.getQueuedByPriority.mockReturnValue([task]);
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    scheduler.scheduleNext();
+
+    expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispatches task when not_before is null", () => {
+    const { ctx, taskEngine, orchestrator } = makeContext({ max_concurrent: 1 });
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const task = makeMockTask({ id: "t1", parent_id: null, not_before: null });
+    taskEngine.getQueuedByPriority.mockReturnValue([task]);
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    scheduler.scheduleNext();
+
+    expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── handleTaskCompletion resets crash backoff ────────────────────────────────
+
+describe("handleTaskCompletion crash reset", () => {
+  it("resets crash count and not_before on successful completion", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({
+      id: "t1",
+      consecutive_crash_count: 3,
+      not_before: "2026-01-01T00:00:00.000Z",
+    });
+    scheduler.dispatchTask(task);
+
+    // Simulate successful completion callback
+    const completedResult: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
+    scheduler.handleTaskCompletion("t1", completedResult);
+
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_crash_count", 0);
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "not_before", null);
   });
 });

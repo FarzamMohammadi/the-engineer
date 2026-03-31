@@ -91,6 +91,8 @@ const UPDATABLE_FIELDS: readonly UpdatableField[] = [
   "return_to_phase",
   "loopback_count",
   "requirements_loop_count",
+  "not_before",
+  "consecutive_crash_count",
 ];
 
 const JSON_FIELDS: ReadonlySet<UpdatableField> = new Set([
@@ -147,6 +149,7 @@ export class TaskEngine implements ITaskEngine {
         return_to_phase,
         priority, llm_tokens, llm_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
+        not_before, consecutive_crash_count,
         session_id, version
       ) VALUES (
         ?, ?, ?, ?, ?,
@@ -157,6 +160,7 @@ export class TaskEngine implements ITaskEngine {
         ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
+        ?, ?,
         ?, ?
       )
     `);
@@ -196,7 +200,7 @@ export class TaskEngine implements ITaskEngine {
     this.insertTaskStmt.run(
       id,
       externalRefJson,
-      TaskStates.intake,
+      TaskStates.requirements_gathering,
       null, // sub_state
       null, // phase
       parentId,
@@ -225,6 +229,8 @@ export class TaskEngine implements ITaskEngine {
       null, // started_at
       null, // completed_at
       now, // last_transition_at
+      null, // not_before
+      0, // consecutive_crash_count
       null, // session_id
       1, // version
     );
@@ -247,7 +253,7 @@ export class TaskEngine implements ITaskEngine {
     const task: Task = {
       id,
       external_ref: externalRef,
-      state: TaskStates.intake,
+      state: TaskStates.requirements_gathering,
       sub_state: null,
       phase: null,
       parent_id: parentId,
@@ -278,6 +284,8 @@ export class TaskEngine implements ITaskEngine {
       started_at: null,
       completed_at: null,
       last_transition_at: now,
+      not_before: null,
+      consecutive_crash_count: 0,
       session_id: null,
     };
 

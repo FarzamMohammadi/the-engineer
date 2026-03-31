@@ -47,6 +47,7 @@ export type TaskSchedulerContext = Pick<
   | "orchestrator"
   | "sessionMemory"
   | "workspaceManager"
+  | "clock"
   | "observer"
 >;
 

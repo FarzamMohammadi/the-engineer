@@ -81,8 +81,6 @@ function defaultDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     max_active_duration_ms: 30_000,
     preemption_timeout_ms: 10_000,
     shutdown_timeout_ms: 5_000,
-    aging_threshold_ms: 10_000,
-    aging_interval_ms: 5_000,
     seen_keys_ttl_ms: 60_000,
     logging: { ...base.logging, level: "error", console: false },
     plugins: {

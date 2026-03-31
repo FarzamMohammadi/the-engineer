@@ -15,10 +15,6 @@ function makeDaemonConfig(): DaemonConfig {
     preemption_timeout_ms: 60_000,
     stuck_threshold_ms: 1_800_000,
     max_active_duration_ms: 28_800_000,
-    aging_threshold_ms: 86_400_000,
-    aging_increment: 5,
-    aging_interval_ms: 86_400_000,
-    aging_cap: 75,
     shutdown_timeout_ms: 30_000,
     trigger_poll_interval_ms: 30_000,
     seen_keys_ttl_ms: 86_400_000,
@@ -362,17 +358,6 @@ describe("TriggerPoller", () => {
     // Clean up after TTL (100_000 + 86_400_000 = 86_500_000)
     poller.cleanupExpiredKeys(100_000 + 86_400_000 + 1);
     expect(poller.getSeenKeyCount()).toBe(0);
-  });
-
-  it("tracks base priorities for new tasks", async () => {
-    const trigger = makeTriggerPlugin([makeTriggerEvent("prio-key")]);
-    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
-
-    const poller = createTriggerPoller(ctx);
-    await poller.poll(100_000);
-
-    const priorities = poller.drainNewBasePriorities();
-    expect(priorities.get("task-001")).toBe(50);
   });
 
   it("emits trigger.new_event on EventBus for each new trigger event", async () => {

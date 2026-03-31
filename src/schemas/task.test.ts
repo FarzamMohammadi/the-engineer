@@ -24,7 +24,7 @@ import {
 
 describe("TaskStateSchema", () => {
   const validStates = [
-    "intake",
+    "requirements_gathering",
     "queued",
     "active",
     "blocked",
@@ -301,7 +301,7 @@ describe("TaskSchema", () => {
   const minimalTask = {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     external_ref: null,
-    state: "intake",
+    state: "requirements_gathering",
     sub_state: null,
     phase: null,
     parent_id: null,
@@ -332,6 +332,8 @@ describe("TaskSchema", () => {
     last_transition_at: "2026-03-10T12:00:00.000Z",
     clone_url: null,
     thoughts_id: null,
+    not_before: null,
+    consecutive_crash_count: 0,
     session_id: null,
   };
 
@@ -360,7 +362,7 @@ describe("StateTransitionSchema", () => {
     const valid = {
       id: "01ABC",
       task_id: "01XYZ",
-      from_state: "intake",
+      from_state: "requirements_gathering",
       to_state: "queued",
       from_sub: null,
       to_sub: null,
@@ -391,8 +393,8 @@ describe("StateTransitionSchema", () => {
 // ── ValidTransitions ───────────────────────────────────────────────────────────
 
 describe("ValidTransitions", () => {
-  it("has exactly 28 entries", () => {
-    expect(ValidTransitions).toHaveLength(28);
+  it("has exactly 29 entries", () => {
+    expect(ValidTransitions).toHaveLength(29);
   });
 
   it("has no duplicate entries", () => {
@@ -412,7 +414,7 @@ describe("ValidTransitions", () => {
 
   it("intake is never a 'to' state", () => {
     const toStates = new Set<string>(ValidTransitions.map((t) => t.to));
-    expect(toStates.has("intake")).toBe(false);
+    expect(toStates.has("requirements_gathering")).toBe(false);
   });
 
   it("active 'from' entries always have from_sub specified", () => {
@@ -439,7 +441,7 @@ describe("PermissionTable", () => {
 
   it("covers all valid (state, sub_state) pairs", () => {
     const expectedPairs = [
-      ["intake", null],
+      ["requirements_gathering", null],
       ["queued", null],
       ["active", "working"],
       ["active", "supervising"],

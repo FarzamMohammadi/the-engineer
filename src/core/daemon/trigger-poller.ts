@@ -19,10 +19,6 @@ export interface TriggerPoller {
   getTriggerFailures(): Record<string, number>;
   /** Clean up expired seen keys. */
   cleanupExpiredKeys(now: number): void;
-  /** Drain base priorities added since last drain (for tick-loop sync). */
-  drainNewBasePriorities(): Map<string, number>;
-  /** Remove a base priority entry when a task reaches terminal state. */
-  removeBasePriority(taskId: string): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -42,7 +38,6 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   const triggerLastPoll = new Map<string, number>();
   const triggerFailures = new Map<string, number>();
   const seenTriggerKeys = new Map<string, number>();
-  const basePriorities = new Map<string, number>();
 
   // ── Adaptive Polling ────────────────────────────────────────────────────
 
@@ -146,7 +141,6 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     });
 
     taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");
-    basePriorities.set(task.id, task.priority);
     observer.info("Task created from trigger event", { taskId: task.id, title: event.title });
   }
 
@@ -191,21 +185,10 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     return failures;
   }
 
-  /** Return all base priorities — the map is small (at most max_concurrent entries). */
-  function drainNewBasePriorities(): Map<string, number> {
-    return basePriorities;
-  }
-
-  function removeBasePriority(taskId: string): void {
-    basePriorities.delete(taskId);
-  }
-
   return {
     poll,
     getSeenKeyCount,
     getTriggerFailures,
     cleanupExpiredKeys,
-    drainNewBasePriorities,
-    removeBasePriority,
   };
 }

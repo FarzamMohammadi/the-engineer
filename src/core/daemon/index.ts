@@ -7,6 +7,7 @@ import {
   EventTypes,
   HealthStuckDetectedPayloadSchema,
   HealthTriggerFailurePayloadSchema,
+  PreemptionCompletedPayloadSchema,
   PreemptionRequestedPayloadSchema,
   ReviewPollCompletedPayloadSchema,
   type TaskChildrenAllDonePayload,
@@ -70,6 +71,14 @@ export const EVENTS: EventDeclaration[] = [
     subscribers: [],
   },
   {
+    type: "preemption.completed",
+    description:
+      "Emitted when a preemption cycle completes (cooperative yield or forced transition)",
+    payloadSchema: PreemptionCompletedPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
     type: "task.feedback_received",
     description: "Emitted when PR review feedback is processed",
     payloadSchema: TaskFeedbackReceivedPayloadSchema,
@@ -98,6 +107,7 @@ export interface DaemonState {
   tasksCompleted: number;
   seenKeyCount: number;
   triggerFailures: Record<string, number>;
+  slotUtilization: { active: number; max: number };
 }
 
 /** The Daemon public API. */
@@ -111,7 +121,7 @@ export interface Daemon {
 // ── Pure Function Re-exports ──────────────────────────────────────────────────
 // Each function lives in its subsystem file — re-exported here for backward compatibility.
 
-export { isSlotConsuming, computeAgedPriority } from "./task-scheduler.js";
+export { isSlotConsuming } from "./task-scheduler.js";
 export { shouldPreempt } from "./preemption-manager.js";
 export { deriveAggregateReviewState } from "./review-handler.js";
 export { evaluateTaskStuckness } from "./health-monitor.js";
@@ -122,7 +132,7 @@ export { evaluateTaskStuckness } from "./health-monitor.js";
  * Create a Daemon instance (Decision #124: factory function, not class).
  *
  * The Daemon is the always-running heartbeat — polls triggers, creates tasks,
- * dispatches to the Orchestrator, manages preemption/aging/health, handles
+ * dispatches to the Orchestrator, manages preemption/health, handles
  * signals, and coordinates graceful startup (P1) and shutdown (P15).
  */
 export function createDaemon(ctx: DaemonContext): Daemon {
@@ -172,16 +182,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     onTaskCompletionFinalized: (taskId) => scheduler.checkAndEmitChildrenAllDone(taskId),
   });
 
-  const healthMonitor = createDaemonHealthMonitor(
-    ctx,
-    notifications,
-    () => scheduler.getActiveTaskIds(),
-    {
-      onTaskEscalated: (taskId) => {
-        scheduler.removeBasePriority(taskId);
-        triggerPoller.removeBasePriority(taskId);
-      },
-    },
+  const healthMonitor = createDaemonHealthMonitor(ctx, notifications, () =>
+    scheduler.getActiveTaskIds(),
   );
 
   const costLimitQueue = createCostLimitQueue(taskEngine, notifications, observer);
@@ -190,16 +192,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
     scheduler.handleTaskCompletion(taskId, result);
-
-    // Clean up triggerPoller base priority when task leaves the scheduling queue
-    if (
-      result.outcome === Outcomes.completed ||
-      result.outcome === Outcomes.error ||
-      result.outcome === Outcomes.review_pending ||
-      result.outcome === Outcomes.decomposed
-    ) {
-      triggerPoller.removeBasePriority(taskId);
-    }
 
     // Clear pending preemption on preempted outcome
     if (result.outcome === Outcomes.preempted) {
@@ -231,23 +223,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       return;
     }
 
-    const transition = taskEngine.requestTransition(
-      parent.id,
-      TaskStates.active,
-      SubStates.integrating,
-      "children_all_done",
-      "daemon",
-    );
-
-    if (!transition.success) {
-      observer.error("Failed to transition parent to integrating", {
-        parentTaskId: parent.id,
-        reason: transition.reason,
-      });
-      return;
-    }
-
-    // Populate child_summaries on parent before re-dispatch
+    // Populate child_summaries on parent before any dispatch
     const children = taskEngine.getChildren(parent.id);
     const summaries = children.map((child) => ({
       child_id: child.id,
@@ -265,6 +241,47 @@ export function createDaemon(ctx: DaemonContext): Daemon {
         | "no_tests",
     }));
     taskEngine.updateTaskField(parent.id, "child_summaries", summaries);
+
+    // Slot overrun check: if all slots are full, transition parent to queued
+    // for normal scheduling instead of bypassing the slot check.
+    const availableSlots = config.max_concurrent - scheduler.getActiveTaskIds().length;
+    if (availableSlots <= 0) {
+      const requeue = taskEngine.requestTransition(
+        parent.id,
+        TaskStates.queued,
+        null,
+        "slot_unavailable_after_children_done",
+        "daemon",
+      );
+      if (requeue.success) {
+        observer.info("Parent task queued (slot unavailable after children done)", {
+          parentTaskId: parent.id,
+        });
+      } else {
+        observer.error("Failed to requeue parent after slot overrun", {
+          parentTaskId: parent.id,
+          reason: requeue.reason,
+        });
+      }
+      return;
+    }
+
+    // Slots available — transition to active.integrating and dispatch
+    const transition = taskEngine.requestTransition(
+      parent.id,
+      TaskStates.active,
+      SubStates.integrating,
+      "children_all_done",
+      "daemon",
+    );
+
+    if (!transition.success) {
+      observer.error("Failed to transition parent to integrating", {
+        parentTaskId: parent.id,
+        reason: transition.reason,
+      });
+      return;
+    }
 
     // Re-fetch parent with updated child_summaries for dispatch
     const updatedParent = taskEngine.getTask(parent.id);
@@ -410,16 +427,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       orphansRecovered: recovered,
       recoveryFailures: failed,
     });
-
-    // Initialize base priorities for queued tasks (aging)
-    const queuedTasks = taskEngine.getTasksByState(TaskStates.queued);
-    scheduler.initializeBasePriorities(queuedTasks);
-
-    // Copy trigger poller's base priorities (drain all pending from startup)
-    const triggerBasePriorities = triggerPoller.drainNewBasePriorities();
-    for (const [taskId, priority] of triggerBasePriorities) {
-      scheduler.trackBasePriority(taskId, priority);
-    }
   }
 
   // ── Tick Loop ─────────────────────────────────────────────────────────
@@ -440,17 +447,10 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Step 2b: Poll for communication responses (GitHub comments, dashboard, etc.)
     await responsePoller.poll(now);
 
-    // Sync only newly added base priorities from trigger poller to scheduler
-    const newBasePriorities = triggerPoller.drainNewBasePriorities();
-    for (const [taskId, priority] of newBasePriorities) {
-      scheduler.trackBasePriority(taskId, priority);
-    }
-
-    // Step 3+4+5: Preemption + schedule + aging (single DB query for all three)
+    // Step 3+4: Preemption + schedule (single DB query for both)
     const queuedTasks = taskEngine.getQueuedByPriority();
     preemption.evaluate(now, queuedTasks);
     scheduler.scheduleNext(queuedTasks);
-    scheduler.applyPriorityAging(now, queuedTasks);
 
     // Step 6: Stuck detection + blocked escalation + review reminders
     healthMonitor.checkStuckTasks(now);
@@ -540,6 +540,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Stop data lifecycle manager
     dataLifecycleManager?.stop();
 
+    // Signal orchestrator to yield between phases
+    ctx.orchestrator.requestShutdown();
+
     // Drain active dispatches with shutdown timeout
     await scheduler.drainForShutdown(config.shutdown_timeout_ms);
 
@@ -572,6 +575,10 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       tasksCompleted: scheduler.getTasksCompleted(),
       seenKeyCount: triggerPoller.getSeenKeyCount(),
       triggerFailures: triggerPoller.getTriggerFailures(),
+      slotUtilization: {
+        active: scheduler.getActiveTaskIds().length,
+        max: config.max_concurrent,
+      },
     };
   }
 

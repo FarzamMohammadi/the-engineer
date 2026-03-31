@@ -4,7 +4,7 @@ import { PhaseSchema } from "./orchestrator.js";
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
 export const TaskStateSchema = z.enum([
-  "intake",
+  "requirements_gathering",
   "queued",
   "active",
   "blocked",
@@ -229,6 +229,10 @@ export const TaskSchema = z.object({
   completed_at: z.string().datetime().nullable(),
   last_transition_at: z.string().datetime(),
 
+  // Scheduling
+  not_before: z.string().datetime().nullable().default(null),
+  consecutive_crash_count: z.number().int().default(0),
+
   // Session link
   session_id: z.string().nullable(),
 });
@@ -252,8 +256,8 @@ export type StateTransition = z.infer<typeof StateTransitionSchema>;
 // ── Valid Transitions (const data) ─────────────────────────────────────────────
 
 export const ValidTransitions = [
-  { from: "intake", to: "queued" },
-  { from: "intake", to: "failed" },
+  { from: "requirements_gathering", to: "queued" },
+  { from: "requirements_gathering", to: "failed" },
   { from: "queued", to: "active", to_sub: "working" },
   { from: "active", from_sub: "working", to: "blocked" },
   { from: "active", from_sub: "working", to: "review_pending", to_sub: "demo" },
@@ -270,6 +274,7 @@ export const ValidTransitions = [
   { from: "active", from_sub: "integrating", to: "review_pending", to_sub: "code" },
   { from: "active", from_sub: "integrating", to: "completed" },
   { from: "active", from_sub: "integrating", to: "failed" },
+  { from: "active", from_sub: "integrating", to: "queued" },
   { from: "blocked", to: "active", to_sub: "working" },
   { from: "blocked", to: "active", to_sub: "supervising" },
   { from: "blocked", to: "failed" },
@@ -299,7 +304,7 @@ export type PermissionEntry = {
 };
 
 export const PermissionTable: readonly PermissionEntry[] = [
-  { state: "intake", sub_state: null, allowed: ["read"] },
+  { state: "requirements_gathering", sub_state: null, allowed: ["read"] },
   { state: "queued", sub_state: null, allowed: ["read"] },
   {
     state: "active",

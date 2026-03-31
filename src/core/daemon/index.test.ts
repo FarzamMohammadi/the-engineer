@@ -9,12 +9,7 @@ import {
 } from "../../../test/helpers/test-daemon.js";
 import { createMockTask } from "../../../test/helpers/test-orchestrator.js";
 import type { ExecuteTaskResult } from "../orchestrator/index.js";
-import {
-  computeAgedPriority,
-  deriveAggregateReviewState,
-  isSlotConsuming,
-  shouldPreempt,
-} from "./index.js";
+import { deriveAggregateReviewState, isSlotConsuming, shouldPreempt } from "./index.js";
 
 // ── Pure Function Tests ───────────────────────────────────────────────────────
 
@@ -47,31 +42,6 @@ describe("shouldPreempt", () => {
 
   it("returns true when delta exactly equals threshold", () => {
     expect(shouldPreempt(50, 70, 20)).toBe(true);
-  });
-});
-
-describe("computeAgedPriority", () => {
-  const agingConfig = {
-    aging_threshold_ms: 86_400_000, // 24h
-    aging_interval_ms: 86_400_000,
-    aging_increment: 5,
-    aging_cap: 75,
-  };
-
-  it("returns null below threshold", () => {
-    expect(computeAgedPriority(50, 43_200_000, agingConfig)).toBeNull(); // 12h
-  });
-
-  it("returns aged priority after threshold", () => {
-    expect(computeAgedPriority(50, 86_400_000, agingConfig)).toBe(55); // exactly 24h = 1 period
-  });
-
-  it("caps at aging_cap", () => {
-    expect(computeAgedPriority(50, 864_000_000, agingConfig)).toBe(75); // 10 days
-  });
-
-  it("returns null when base already at cap", () => {
-    expect(computeAgedPriority(75, 172_800_000, agingConfig)).toBeNull();
   });
 });
 
@@ -289,7 +259,7 @@ describe("Daemon", () => {
       expect(handle.getState().activeTaskIds).toEqual([]);
     });
 
-    it("handles orchestrator crash with recovery", async () => {
+    it("handles orchestrator crash with recovery and backoff", async () => {
       handle = createTestDaemon();
       const task = createMockTask({ id: "task-crash", state: "queued", sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
@@ -298,7 +268,7 @@ describe("Daemon", () => {
       await handle.daemon.tick();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      // Should emit health.stuck_detected and transition to queued
+      // Should emit health.stuck_detected and transition to queued with backoff
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "health.stuck_detected",
@@ -311,76 +281,8 @@ describe("Daemon", () => {
         "task-crash",
         "queued",
         null,
-        "crash_recovery",
+        "crash_recovery_with_backoff",
         "daemon",
-      );
-    });
-  });
-
-  // ── Priority Aging ────────────────────────────────────────────────────
-
-  describe("priority aging", () => {
-    it("does not age tasks below threshold", async () => {
-      handle = createTestDaemon({ aging_threshold_ms: 86_400_000 });
-      const task = createMockTask({
-        id: "task-young",
-        state: "queued",
-        sub_state: null,
-        priority: 50,
-        created_at: new Date(handle.clock.now()).toISOString(),
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
-
-      await handle.daemon.tick();
-
-      expect(handle.taskEngine.updateTaskField).not.toHaveBeenCalled();
-    });
-
-    it("ages task after threshold reached", async () => {
-      handle = createTestDaemon({
-        aging_threshold_ms: 86_400_000,
-        aging_increment: 5,
-        aging_interval_ms: 86_400_000,
-        aging_cap: 75,
-      });
-      const task = createMockTask({
-        id: "task-old",
-        state: "queued",
-        sub_state: null,
-        priority: 50,
-        created_at: new Date(handle.clock.now()).toISOString(),
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
-
-      handle.clock.advance(86_400_001); // Just past 24h
-      await handle.daemon.tick();
-
-      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith("task-old", "priority", 55);
-    });
-
-    it("aging caps at aging_cap", async () => {
-      handle = createTestDaemon({
-        aging_threshold_ms: 86_400_000,
-        aging_increment: 5,
-        aging_interval_ms: 86_400_000,
-        aging_cap: 75,
-      });
-      const task = createMockTask({
-        id: "task-ancient",
-        state: "queued",
-        sub_state: null,
-        priority: 50,
-        created_at: new Date(handle.clock.now()).toISOString(),
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
-
-      handle.clock.advance(864_000_000); // 10 days — would be 50 + 50 = 100, but capped at 75
-      await handle.daemon.tick();
-
-      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith(
-        "task-ancient",
-        "priority",
-        75,
       );
     });
   });

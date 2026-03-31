@@ -234,15 +234,6 @@ describe("checkRiskyConfig", () => {
     expect(warn?.status).toBe("warn");
   });
 
-  it("warns when aging_cap <= aging_increment", () => {
-    const bundle = makeSafeBundle();
-    bundle.daemon.aging_cap = 5;
-    bundle.daemon.aging_increment = 5;
-    const result = checkRiskyConfig(bundle);
-    const warn = result.checks.find((c) => c.label === "Priority aging");
-    expect(warn?.status).toBe("warn");
-  });
-
   it("does not warn about scheduling with safe defaults", () => {
     const bundle = makeSafeBundle();
     const result = checkRiskyConfig(bundle);
@@ -505,10 +496,6 @@ function makeSafeBundle() {
       preemption_timeout_ms: 60000,
       stuck_threshold_ms: 1800000,
       max_active_duration_ms: 28800000,
-      aging_threshold_ms: 86400000,
-      aging_increment: 5,
-      aging_interval_ms: 86400000,
-      aging_cap: 75,
       shutdown_timeout_ms: 30000,
       trigger_poll_interval_ms: 30000,
       seen_keys_ttl_ms: 86400000,

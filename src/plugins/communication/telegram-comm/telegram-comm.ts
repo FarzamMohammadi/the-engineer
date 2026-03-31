@@ -325,7 +325,18 @@ export class TelegramCommPlugin extends CommunicationAdapter {
   private async captureHandshake(username: string, chatId: string): Promise<void> {
     const key = username.toLowerCase();
     if (this.userChatMap.get(key) === chatId) {
-      return; // Already known — skip disk write and reply
+      // Already known — skip disk write but confirm to user
+      const displayName = this.resolveNameByUsername(username);
+      const body = escapeMarkdownV2(`Hi ${displayName}. You're already connected.`);
+      const greeting = `*Comms Ready*\n\n${body}`;
+      try {
+        await this.bot.api.sendMessage(chatId, greeting, {
+          parse_mode: this.config.parse_mode,
+        });
+      } catch {
+        // Non-fatal
+      }
+      return;
     }
     this.userChatMap.set(key, chatId);
     this.saveChatMap();

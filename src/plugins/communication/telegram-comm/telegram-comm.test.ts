@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCommunicationContractSuite } from "../../../../test/helpers/contract-suites/communication-contract.js";
 import type { FormattedMessage, PluginManifest, Target } from "../../../schemas/adapters.js";
 import { TelegramCommPlugin } from "./telegram-comm.js";
@@ -325,40 +325,45 @@ describe("TelegramCommPlugin", () => {
     });
   });
   describe("chat map persistence", () => {
+    const savedHome = process.env["ENGINEER_HOME"];
+    let tmpDir: string;
+
+    afterEach(() => {
+      if (tmpDir) {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+      if (savedHome === undefined) {
+        delete process.env["ENGINEER_HOME"];
+      } else {
+        process.env["ENGINEER_HOME"] = savedHome;
+      }
+    });
+
     it("saveChatMap + loadChatMap round-trips the mapping", () => {
-      const tmpDir = join(process.cwd(), `tmp-test-state-${Date.now()}`);
+      tmpDir = join(process.cwd(), `tmp-test-state-${Date.now()}`);
       process.env["ENGINEER_HOME"] = tmpDir;
 
-      try {
-        // Save current map (pre-populated in beforeEach)
-        (plugin as unknown as { saveChatMap: () => void }).saveChatMap();
+      // Save current map (pre-populated in beforeEach)
+      (plugin as unknown as { saveChatMap: () => void }).saveChatMap();
 
-        // Create a fresh plugin and load
-        const p2 = new TelegramCommPlugin();
-        p2.manifest = MANIFEST;
-        (p2 as unknown as { loadChatMap: () => void }).loadChatMap();
+      // Create a fresh plugin and load
+      const p2 = new TelegramCommPlugin();
+      p2.manifest = MANIFEST;
+      (p2 as unknown as { loadChatMap: () => void }).loadChatMap();
 
-        const map = (p2 as unknown as { userChatMap: Map<string, string> }).userChatMap;
-        expect(map.get("farzammohammadi")).toBe("-1001234567890");
-      } finally {
-        // Cleanup
-        rmSync(tmpDir, { recursive: true, force: true });
-        delete process.env["ENGINEER_HOME"];
-      }
+      const map = (p2 as unknown as { userChatMap: Map<string, string> }).userChatMap;
+      expect(map.get("farzammohammadi")).toBe("-1001234567890");
     });
 
     it("loadChatMap handles missing file gracefully", () => {
       process.env["ENGINEER_HOME"] = `/tmp/nonexistent-engineer-${Date.now()}`;
-      try {
-        const p = new TelegramCommPlugin();
-        p.manifest = MANIFEST;
-        // Should not throw
-        (p as unknown as { loadChatMap: () => void }).loadChatMap();
-        const map = (p as unknown as { userChatMap: Map<string, string> }).userChatMap;
-        expect(map.size).toBe(0);
-      } finally {
-        delete process.env["ENGINEER_HOME"];
-      }
+
+      const p = new TelegramCommPlugin();
+      p.manifest = MANIFEST;
+      // Should not throw
+      (p as unknown as { loadChatMap: () => void }).loadChatMap();
+      const map = (p as unknown as { userChatMap: Map<string, string> }).userChatMap;
+      expect(map.size).toBe(0);
     });
 
     it("captureHandshake skips disk write when mapping already exists", async () => {
@@ -506,7 +511,7 @@ describe("TelegramCommPlugin", () => {
       expect(map.get("failuser")).toBe("444333222");
     });
 
-    it("re-/start with same chat_id skips reply and disk write", async () => {
+    it("re-/start with same chat_id skips disk write but still replies", async () => {
       const saveSpy = vi.spyOn(plugin as unknown as { saveChatMap: () => void }, "saveChatMap");
 
       // Pre-populate with existing mapping
@@ -532,8 +537,13 @@ describe("TelegramCommPlugin", () => {
 
       await plugin.pollMessages([], "0");
 
-      // Neither reply nor disk write — mapping unchanged
-      expect(mockBot.api.sendMessage).not.toHaveBeenCalled();
+      // Reply sent but no disk write — mapping unchanged
+      expect(mockBot.api.sendMessage).toHaveBeenCalled();
+      expect(mockBot.api.sendMessage).toHaveBeenCalledWith(
+        "111222333",
+        expect.stringContaining("already connected"),
+        expect.any(Object),
+      );
       expect(saveSpy).not.toHaveBeenCalled();
       saveSpy.mockRestore();
     });

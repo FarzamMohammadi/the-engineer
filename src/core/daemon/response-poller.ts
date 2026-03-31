@@ -97,11 +97,9 @@ export function createResponsePoller(
   }
 
   async function pollCommPlugins(now: number): Promise<void> {
-    // Skip entirely if nothing is blocked
+    // Always poll — comm plugins capture /start handshakes and general
+    // messages even when no tasks are blocked.
     const blockedTasks = taskEngine.getTasksByState(TaskStates.blocked);
-    if (blockedTasks.length === 0) {
-      return;
-    }
 
     // Build channel list from blocked tasks' external_ref (may be empty for Telegram-only tasks)
     const channels: string[] = [];

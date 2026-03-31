@@ -120,14 +120,16 @@ describe("ResponsePoller", () => {
     resolver = createMockResolver();
   });
 
-  it("skips polling when no blocked tasks exist", async () => {
+  it("polls even when no blocked tasks exist (captures /start handshakes)", async () => {
     const plugin = makeCommPlugin("github-comm");
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([plugin]);
 
     const poller = createResponsePoller(ctx, resolver);
     await poller.poll(100_000);
 
-    expect(plugin.pollMessages).not.toHaveBeenCalled();
+    expect(plugin.pollMessages).toHaveBeenCalled();
+    // No unblock attempts since no blocked tasks
+    expect(resolver.tryUnblock).not.toHaveBeenCalled();
   });
 
   it("polls receive-capable plugins with channels from blocked tasks", async () => {

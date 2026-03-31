@@ -8,9 +8,53 @@ import { ObservationType } from "../../schemas/observer.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../schemas/session-memory.js";
+import type { ExternalRef } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { OrchestratorContext } from "./types.js";
+
+// ── PR Body Helpers ────────────────────────────────────────────────────────
+
+/** Input shape for trigger reference formatting. */
+interface TriggerRefInput {
+  external_ref?: ExternalRef | null;
+}
+
+/**
+ * Build a plugin-blind trigger reference line.
+ *
+ * Never inspects `external_ref.type` — works for any git hosting platform.
+ * Returns a markdown blockquote when a reference exists, or `null` otherwise.
+ */
+export function formatTriggerReference(task: TriggerRefInput): string | null {
+  const ref = task.external_ref;
+  if (!ref) {
+    return null;
+  }
+
+  const label = `${ref.repo}#${ref.id}`;
+  return ref.url ? `> Triggered by [${label}](${ref.url})` : `> Triggered by ${label}`;
+}
+
+/**
+ * Compose the final PR body: trigger header + description + branding footer.
+ *
+ * Deterministic — the CLI agent writes the narrative, this function wraps it
+ * with structural elements that must always be present.
+ */
+export function composePrBody(description: string, task: TriggerRefInput): string {
+  const parts: string[] = [];
+
+  const triggerRef = formatTriggerReference(task);
+  if (triggerRef) {
+    parts.push(triggerRef);
+  }
+
+  parts.push(description);
+  parts.push("---\n*Crafted by The Engineer*");
+
+  return parts.join("\n\n");
+}
 
 // ── PrManager Interface ────────────────────────────────────────────────────
 
@@ -111,8 +155,8 @@ export function createPrManager(
 
       if (hasStagedChanges) {
         const commitMessage = isRework
-          ? "fix: address review feedback\n\nAutomated by The Engineer"
-          : `feat: ${sanitizeSecrets(dispatch.task.title)}\n\nAutomated by The Engineer`;
+          ? "fix: address review feedback\n\nCrafted by The Engineer"
+          : `feat: ${sanitizeSecrets(dispatch.task.title)}\n\nCrafted by The Engineer`;
         execFileSync("git", ["commit", "-m", commitMessage], {
           cwd: worktreePath,
           encoding: "utf-8",
@@ -221,17 +265,20 @@ export function createPrManager(
           }
         }
       }
-      rawDescription = rawDescription || `Automated PR for: ${dispatch.task.title}`;
+      rawDescription = rawDescription || `PR for: ${dispatch.task.title}`;
 
       // Sanitize PR description to prevent secret leakage (D154)
       const prDescription = sanitizeSecrets(rawDescription);
+
+      // Wrap with trigger reference header and branding footer
+      const prBody = composePrBody(prDescription, dispatch.task);
 
       const prResult = await gitHosting.createPR({
         repo: record.repo,
         branch: record.branch,
         base: record.baseBranch,
         title: sanitizeSecrets(dispatch.task.title),
-        body: prDescription,
+        body: prBody,
         draft: true,
         labels: null,
         reviewers: null,

@@ -5,7 +5,7 @@ import type { Dispatch } from "../../schemas/ephemeral.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
-import { createPrManager } from "./pr-manager.js";
+import { composePrBody, createPrManager, formatTriggerReference } from "./pr-manager.js";
 import type { OrchestratorContext } from "./types.js";
 
 // Mock child_process — must be before imports that use it
@@ -307,6 +307,7 @@ describe("PrManager", () => {
     const commitMsg = (commitCall![1] as string[])[2]!;
     expect(commitMsg).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     expect(commitMsg).toContain("[REDACTED:github_token]");
+    expect(commitMsg).toContain("Crafted by The Engineer");
 
     // Verify PR title has sanitized title
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
@@ -412,6 +413,9 @@ describe("PrManager", () => {
         body: expect.stringContaining("Description read from deliverable file"),
       }),
     );
+    // Verify branding footer is present
+    const prArgs = fakeGitHosting.createPR.mock.calls[0]![0];
+    expect(prArgs.body).toContain("Crafted by The Engineer");
   });
 
   it("resolves pr-description.md when deliverable_path is a directory", async () => {
@@ -466,5 +470,143 @@ describe("PrManager", () => {
         body: expect.stringContaining("PR from directory fallback"),
       }),
     );
+    // Verify branding footer is present
+    const prArgs2 = fakeGitHosting.createPR.mock.calls[0]![0];
+    expect(prArgs2.body).toContain("Crafted by The Engineer");
+  });
+
+  it("includes trigger reference when external_ref has URL", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 55, url: "https://github.com/pr/55" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { pr_description: "Added feature X" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+    const dispatch = createDispatch({
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        url: "https://github.com/owner/repo/issues/42",
+      },
+    } as unknown as Partial<Task>);
+
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    const prArgs = fakeGitHosting.createPR.mock.calls[0]![0];
+    expect(prArgs.body).toContain(
+      "> Triggered by [owner/repo#42](https://github.com/owner/repo/issues/42)",
+    );
+    expect(prArgs.body).toContain("Added feature X");
+    expect(prArgs.body).toContain("Crafted by The Engineer");
+  });
+});
+
+// ── Helper Function Tests ──────────────────────────────────────────────────
+
+describe("formatTriggerReference", () => {
+  it("returns markdown link when URL is available", () => {
+    const result = formatTriggerReference({
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        url: "https://github.com/owner/repo/issues/42",
+      },
+    });
+    expect(result).toBe("> Triggered by [owner/repo#42](https://github.com/owner/repo/issues/42)");
+  });
+
+  it("returns plain text when no URL", () => {
+    const result = formatTriggerReference({
+      external_ref: { type: "gitlab_issue", repo: "group/project", id: "7" },
+    });
+    expect(result).toBe("> Triggered by group/project#7");
+  });
+
+  it("returns null when external_ref is null", () => {
+    expect(formatTriggerReference({ external_ref: null })).toBeNull();
+  });
+
+  it("returns null when external_ref is undefined", () => {
+    expect(formatTriggerReference({})).toBeNull();
+  });
+
+  it("never inspects external_ref.type (plugin-blind)", () => {
+    const result = formatTriggerReference({
+      external_ref: {
+        type: "azure_devops_work_item",
+        repo: "org/project",
+        id: "999",
+        url: "https://dev.azure.com/org/project/_workitems/edit/999",
+      },
+    });
+    expect(result).toBe(
+      "> Triggered by [org/project#999](https://dev.azure.com/org/project/_workitems/edit/999)",
+    );
+  });
+});
+
+describe("composePrBody", () => {
+  it("includes trigger reference, description, and branding", () => {
+    const body = composePrBody("Feature description", {
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        url: "https://github.com/owner/repo/issues/42",
+      },
+    });
+    expect(body).toContain("> Triggered by [owner/repo#42]");
+    expect(body).toContain("Feature description");
+    expect(body).toContain("*Crafted by The Engineer*");
+  });
+
+  it("omits trigger reference when no external_ref", () => {
+    const body = composePrBody("Feature description", { external_ref: null });
+    expect(body).not.toContain("Triggered by");
+    expect(body).toContain("Feature description");
+    expect(body).toContain("*Crafted by The Engineer*");
+  });
+
+  it("works with empty description", () => {
+    const body = composePrBody("", { external_ref: null });
+    expect(body).toContain("*Crafted by The Engineer*");
+  });
+
+  it("separates sections with blank lines", () => {
+    const body = composePrBody("Desc", {
+      external_ref: { type: "x", repo: "a/b", id: "1", url: "https://example.com" },
+    });
+    const lines = body.split("\n");
+    // trigger ref, blank, desc, blank, hr + footer
+    expect(lines[0]).toMatch(/^> Triggered by/);
+    expect(lines[1]).toBe("");
+    expect(lines[2]).toBe("Desc");
+    expect(lines[3]).toBe("");
+    expect(lines[4]).toBe("---");
   });
 });

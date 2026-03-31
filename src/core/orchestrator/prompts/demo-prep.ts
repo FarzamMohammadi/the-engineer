@@ -10,6 +10,7 @@ export interface DemoPrepPromptContext {
   task: {
     title: string;
     description: string | null;
+    external_ref?: { type: string; repo: string; id: string; url?: string | undefined } | null;
   };
   repoContext: RepoContext | null;
   repoKnowledge: KnowledgeEntry[];

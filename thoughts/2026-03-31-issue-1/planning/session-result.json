@@ -1,0 +1,5 @@
+{
+  "status": "ready",
+  "next_phase": "execution",
+  "summary": "Add missing response_poll_interval_ms property to 6 test files + 1 template"
+}

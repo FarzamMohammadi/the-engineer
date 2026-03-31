@@ -4,8 +4,9 @@
 
 **Layer 8 — Refinement v2.** Two co-founders sharpening every edge. Evaluate, refine, and manually test each runtime phase until the engineer is something we love and use daily. Absorbs Phase 6.8 (Hardening) and 6.10 (War Room v2). See [`8-refinement-v2/`](8-refinement-v2/) for overview, roadmap, and live status.
 
-**Current phase:** Runtime Phase Refinement — Scheduling & Dispatch (Session 081). Brainstorm + expert panel review COMPLETE. Ideation and research finalized in `8-refinement-v2/roadmap-ideas/scheduling/`. Next: planning session to build implementation plan from ideation + research files.
+**Current phase:** Runtime Phase Refinement — next section TBD. Scheduling & Dispatch (Sessions 081–082) COMPLETE. See `8-refinement-v2/roadmap-ideas/scheduling/` for ideation, research, and plan.
 
+Previous: Scheduling & Dispatch (Sessions 081–082) — COMPLETE.
 Previous: Trigger & Requirements Flow (Sessions 079–080) — COMPLETE.
 Previous: Startup & Configuration (Sessions 077–078) — COMPLETE.
 
@@ -85,7 +86,7 @@ Everything else in the repo will be for The Engineer (the agent) — created as 
 
 ## Status
 
-**Layer 8 — Refinement v2: IN PROGRESS.** Session 081 DONE. Scheduling & Dispatch brainstorm + expert panel review COMPLETE. 7 decisions: delete priority aging entirely (single-user system), fix slot overrun bug (slot check before parent dispatch, add `active.integrating → queued` transition), retry backoff (`not_before` + `consecutive_crash_count` columns, max 5 retries), cooperative shutdown (pull-based flag, same pattern as preemption), state rename (`intake` → `requirements_gathering`, separate migration), observability (info dispatch logging, `preemption.completed` event, slot utilization), error routing confirmed (crashes → queued with backoff, deliberate → blocked). Ideation and research in `8-refinement-v2/roadmap-ideas/scheduling/`. Next: planning session. 2,283 tests.
+**Layer 8 — Refinement v2: IN PROGRESS.** Session 082 DONE. Scheduling & Dispatch implementation COMPLETE. 7 phases executed: delete priority aging (net code deletion), retry backoff (1/5/15/30/30 min, max 5 retries → failed), slot overrun fix (check before parent dispatch), cooperative shutdown (pull-based flag), `preemption.completed` event + slot utilization, state rename `intake` → `requirements_gathering`. 2 migrations (011 scheduling fields, 012 state rename). All code in `8-refinement-v2/roadmap-ideas/scheduling/plan.md`. Next: pick next Runtime Phase Refinement section. 2,305 tests.
 
 **Architecture & Implementation: ALL COMPLETE.** Layers 0-7, 175 decisions, 2,248 tests (100 files).
 

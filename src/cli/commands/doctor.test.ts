@@ -498,6 +498,7 @@ function makeSafeBundle() {
       max_active_duration_ms: 28800000,
       shutdown_timeout_ms: 30000,
       trigger_poll_interval_ms: 30000,
+      response_poll_interval_ms: 5000,
       seen_keys_ttl_ms: 86400000,
       logging: {
         level: "info" as const,

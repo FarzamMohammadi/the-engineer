@@ -23,6 +23,7 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 
 # --- Trigger polling ---
 # trigger_poll_interval_ms: "30s"     # How often to poll triggers (default: 30s)
+# response_poll_interval_ms: "5s"     # How often to poll responses (default: 5s)
 # seen_keys_ttl_ms: "1d"              # How long to remember trigger events for dedup (default: 1d)
 
 # --- Logging ---
@@ -344,6 +345,7 @@ shutdown_timeout_ms: "30s"                # Drain timeout on SIGTERM (default: 3
 
 # ── Trigger Polling ──────────────────────────────────────────────────────────
 trigger_poll_interval_ms: "30s"           # How often to poll triggers (default: 30s)
+response_poll_interval_ms: "5s"           # How often to poll responses (default: 5s)
 seen_keys_ttl_ms: "1d"                    # Dedup key TTL (default: 1d)
 
 # ── Logging ──────────────────────────────────────────────────────────────────

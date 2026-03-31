@@ -17,6 +17,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     max_active_duration_ms: 3_600_000,
     shutdown_timeout_ms: 10_000,
     trigger_poll_interval_ms: 60_000,
+    response_poll_interval_ms: 5000,
     seen_keys_ttl_ms: 3_600_000,
     logging: {
       level: "error",

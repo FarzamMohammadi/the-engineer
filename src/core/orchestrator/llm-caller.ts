@@ -1,4 +1,5 @@
 import path from "node:path";
+import { AdapterMethodError } from "../../adapters/index.js";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
@@ -34,7 +35,15 @@ export function isRetryableError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
-  const msg = error.message.toLowerCase();
+
+  // Structured adapter errors — use the explicit retryable flag set by the plugin
+  if (error instanceof AdapterMethodError) {
+    return error.adapterError.retryable;
+  }
+
+  // Unstructured errors — match only against a bounded prefix (first 500 chars)
+  // to prevent false positives from CLI output containing words like "timeout"
+  const msg = error.message.slice(0, 500).toLowerCase();
   return (
     msg.includes("timeout") ||
     msg.includes("rate limit") ||
@@ -117,6 +126,13 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       } catch (error) {
         lastError = error;
         if (!isRetryableError(error)) {
+          ctx.observer.warn("LLM call failed (non-retryable) — not retrying", {
+            taskId,
+            attempt: attempt + 1,
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+            error:
+              error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+          });
           throw error;
         }
         if (attempt < MAX_LLM_RETRIES - 1) {
@@ -126,7 +142,9 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
             attempt: attempt + 1,
             maxRetries: MAX_LLM_RETRIES,
             delayMs: delay,
-            error: error instanceof Error ? error.message : String(error),
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+            error:
+              error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
           });
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
@@ -203,8 +221,41 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
           )
         : null;
 
-    // ── Single CLI call ──────────────────────────────────────────────────
-    const result = await callLlm(prompt, taskId, systemPrompt);
+    // ── Single CLI call (with error-path recovery) ────────────────────────
+    let result: InferenceResult;
+    let recoveredFromError = false;
+
+    try {
+      result = await callLlm(prompt, taskId, systemPrompt);
+    } catch (error) {
+      // CLI failed — but may have written session-result.json before dying.
+      // This is the safety net for SIGTERM / timeout kills where work was done.
+      const recoveryResult = phaseDir ? readSessionResult(phaseDir) : null;
+
+      if (recoveryResult && recoveryResult !== "invalid") {
+        ctx.observer.warn("CLI error but session-result.json found — recovering partial success", {
+          taskId,
+          phase,
+          sessionResultStatus: recoveryResult.status,
+          error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+        });
+        result = {
+          content: recoveryResult.summary || "",
+          cost_usd: null,
+          duration_ms: 0,
+          usage: null,
+        };
+        recoveredFromError = true;
+      } else {
+        ctx.observer.error("CLI error and no session-result.json — phase failed", {
+          taskId,
+          phase,
+          sessionResultExists: recoveryResult !== null,
+          error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+        });
+        throw error;
+      }
+    }
 
     // ── Read session-result.json ─────────────────────────────────────────
     const sessionResult = phaseDir ? readSessionResult(phaseDir) : null;
@@ -238,8 +289,10 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
             return { status: "ready" as const, next_phase: expectedNext, summary: "" };
           })();
 
-    // ── Cost + tracking ──────────────────────────────────────────────────
-    emitCostIncurred(taskId, result);
+    // ── Cost + tracking (skip cost emission on recovery — no cost data) ──
+    if (!recoveredFromError) {
+      emitCostIncurred(taskId, result);
+    }
     ctx.taskEngine.updateTracking(
       taskId,
       result.usage?.tokens.total_tokens ?? 0,

@@ -33,6 +33,39 @@ exit 1
 );
 chmodSync(mockCliErrorPath, 0o755);
 
+// Mock CLI that produces valid NDJSON output but exits with code 1
+const mockCliExitOneWithOutputPath = join(mockCliDir, "claude-exit1-output");
+writeFileSync(
+  mockCliExitOneWithOutputPath,
+  `#!/bin/bash
+echo '{"type":"result","subtype":"success","cost_usd":0.01,"result":{"type":"text","text":"Salvaged output"}}'
+exit 1
+`,
+);
+chmodSync(mockCliExitOneWithOutputPath, 0o755);
+
+// Mock CLI that exits with code 1 and produces no valid output (only stderr)
+const mockCliExitOneNoOutputPath = join(mockCliDir, "claude-exit1-nooutput");
+writeFileSync(
+  mockCliExitOneNoOutputPath,
+  `#!/bin/bash
+echo "some error" >&2
+exit 1
+`,
+);
+chmodSync(mockCliExitOneNoOutputPath, 0o755);
+
+// Mock CLI that produces huge stderr and exits with code 1
+const mockCliHugeStderrPath = join(mockCliDir, "claude-huge-stderr");
+writeFileSync(
+  mockCliHugeStderrPath,
+  `#!/bin/bash
+python3 -c "print('x' * 50000)" >&2
+exit 1
+`,
+);
+chmodSync(mockCliHugeStderrPath, 0o755);
+
 const mockCliVersionPath = join(mockCliDir, "claude-version");
 writeFileSync(
   mockCliVersionPath,
@@ -176,6 +209,47 @@ describe("ClaudeCodeLLMPlugin", () => {
       cwd: null,
     });
     expect(result.content).not.toContain("--system-prompt");
+  });
+
+  // ── Output Salvage Tests ──────────────────────────────────────────────────
+
+  it("salvages valid output when CLI exits with non-zero code", async () => {
+    const plugin = new ClaudeCodeLLMPlugin();
+    plugin.manifest = manifest;
+    await plugin.initialize({ cli_path: mockCliExitOneWithOutputPath });
+    const result = await plugin.infer(createMockInferenceRequest());
+    expect(result.content).toBe("Salvaged output");
+    expect(result.cost_usd).toBe(0.01);
+  });
+
+  it("rejects with retryable=true when CLI exits 1 with no valid output", async () => {
+    const plugin = new ClaudeCodeLLMPlugin();
+    plugin.manifest = manifest;
+    await plugin.initialize({ cli_path: mockCliExitOneNoOutputPath });
+    try {
+      await plugin.infer(createMockInferenceRequest());
+      expect.fail("Expected AdapterMethodError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AdapterMethodError);
+      const adapterErr = err as AdapterMethodError;
+      expect(adapterErr.adapterError.code).toBe("cli_error");
+      expect(adapterErr.adapterError.retryable).toBe(true);
+    }
+  });
+
+  it("truncates error message to 2000 chars when stderr is huge", async () => {
+    const plugin = new ClaudeCodeLLMPlugin();
+    plugin.manifest = manifest;
+    await plugin.initialize({ cli_path: mockCliHugeStderrPath });
+    try {
+      await plugin.infer(createMockInferenceRequest());
+      expect.fail("Expected AdapterMethodError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AdapterMethodError);
+      const adapterErr = err as AdapterMethodError;
+      // Error message should be bounded — code prefix + truncated stderr ≤ ~2050 chars
+      expect(adapterErr.adapterError.message.length).toBeLessThan(2100);
+    }
   });
 });
 

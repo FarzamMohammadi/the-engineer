@@ -223,6 +223,9 @@ function recordPhaseTransition(
   }
 }
 
+/** Maximum error message length stored in journal entries and propagated as reason. */
+const MAX_ERROR_MESSAGE_LENGTH = 2000;
+
 /** Log error and build error result for a failed phase. Closes the session. */
 function handlePhaseError(
   sessionId: string,
@@ -231,8 +234,24 @@ function handlePhaseError(
   error: unknown,
   ctx: OrchestratorContext,
 ): ExecuteTaskResult {
-  const message = error instanceof Error ? error.message : String(error);
+  const rawMessage = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? (error.stack ?? null) : null;
+
+  // Truncate to prevent megabyte-sized error messages from flowing through
+  // journal entries, daemon notifications, and GitHub comments.
+  const message =
+    rawMessage.length > MAX_ERROR_MESSAGE_LENGTH
+      ? `${rawMessage.slice(0, MAX_ERROR_MESSAGE_LENGTH)}\n... [truncated from ${String(rawMessage.length)} chars]`
+      : rawMessage;
+
+  if (rawMessage.length > MAX_ERROR_MESSAGE_LENGTH) {
+    ctx.observer.warn("Phase error message truncated", {
+      taskId,
+      phase,
+      originalLength: rawMessage.length,
+      truncatedTo: MAX_ERROR_MESSAGE_LENGTH,
+    });
+  }
 
   // Ensure the task record reflects the phase where failure occurred,
   // even if it happened during post-phase processing.
@@ -849,6 +868,12 @@ export async function runPhasePipeline(
       const handler = handlers.get(phase);
       output = await handler(taskId, dispatch, priorOutputs, currentState);
     } catch (error: unknown) {
+      ctx.observer.error("Phase handler threw", {
+        taskId,
+        phase,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+      });
       return endPipelineSpan(
         handlePhaseError(sessionId, taskId, phase, error, ctx),
         i - startIndex,

@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import { AdapterMethodError, createAdapterError } from "../../adapters/index.js";
 import type { InferenceResult } from "../../schemas/adapters.js";
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
+import type { SessionResult } from "../../schemas/orchestrator.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
+import { readSessionResult } from "./session-result.js";
+
+// Mock session-result reader — allows tests to control what readSessionResult returns
+vi.mock("./session-result.js", () => ({
+  readSessionResult: vi.fn().mockReturnValue(null),
+}));
 import type { OrchestratorContext } from "./types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -198,6 +206,32 @@ describe("LlmCaller", () => {
     it("returns false for authentication errors", () => {
       expect(isRetryableError(new Error("401 unauthorized"))).toBe(false);
     });
+
+    it("returns true for AdapterMethodError with retryable: true", () => {
+      const err = new AdapterMethodError(
+        createAdapterError("cli_error", "some transient failure", { retryable: true }),
+      );
+      expect(isRetryableError(err)).toBe(true);
+    });
+
+    it("returns false for AdapterMethodError with retryable: false", () => {
+      const err = new AdapterMethodError(
+        createAdapterError("cli_error", "CLI exited with code 143: killed", { retryable: false }),
+      );
+      expect(isRetryableError(err)).toBe(false);
+    });
+
+    it("does not false-positive on long message containing 'timeout' deep in body", () => {
+      // Simulate a CLI error where "timeout" appears far into the output (beyond 500 chars)
+      const padding = "x".repeat(600);
+      const err = new Error(`CLI error: ${padding} timeout occurred in user code`);
+      expect(isRetryableError(err)).toBe(false);
+    });
+
+    it("matches 'timeout' when it appears in the first 500 chars", () => {
+      const err = new Error("request timeout after 30s");
+      expect(isRetryableError(err)).toBe(true);
+    });
   });
 
   describe("emitCostIncurred", () => {
@@ -218,6 +252,141 @@ describe("LlmCaller", () => {
           }),
         }),
       );
+    });
+  });
+
+  describe("runPhaseWithCli error recovery", () => {
+    const readSessionResultMock = vi.mocked(readSessionResult);
+
+    function setupForRunPhaseWithCli() {
+      readSessionResultMock.mockReset().mockReturnValue(null);
+
+      const fakeLlm = {
+        infer: vi.fn(),
+        getCapabilities: vi
+          .fn()
+          .mockReturnValue({ model_id: "test-model", context_window: 100000 }),
+        hasCapability: vi.fn().mockReturnValue(true),
+        manifest: { id: "test-llm", type: "llm" as const },
+      };
+
+      const ctx = createMockContext();
+      (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeLlm);
+      return { ctx, fakeLlm };
+    }
+
+    it("recovers when callLlm throws but session-result.json exists with status ready", async () => {
+      const { ctx, fakeLlm } = setupForRunPhaseWithCli();
+      fakeLlm.infer.mockRejectedValue(new Error("CLI exited with code 143"));
+
+      const sessionResult: SessionResult = {
+        status: "ready",
+        next_phase: "self_review",
+        summary: "Implementation complete",
+      };
+      readSessionResultMock.mockReturnValue(sessionResult);
+
+      const caller = createLlmCaller(ctx);
+      const output = await caller.runPhaseWithCli(
+        "execution",
+        "task-001",
+        "system prompt",
+        "do work",
+        { traceId: null, sessionId: null },
+        "thoughts/2026-03-31-issue-5",
+      );
+
+      expect(output.data.status).toBe("ready");
+      expect(output.data.next_phase).toBe("self_review");
+      expect(output.data.summary).toBe("Implementation complete");
+    });
+
+    it("recovers when session-result.json has status need_more_info", async () => {
+      const { ctx, fakeLlm } = setupForRunPhaseWithCli();
+      fakeLlm.infer.mockRejectedValue(new Error("CLI exited with code 143"));
+
+      const sessionResult: SessionResult = {
+        status: "need_more_info",
+        next_phase: "requirements_gathering",
+        summary: "Need clarification on scope",
+      };
+      readSessionResultMock.mockReturnValue(sessionResult);
+
+      const caller = createLlmCaller(ctx);
+      const output = await caller.runPhaseWithCli(
+        "execution",
+        "task-001",
+        "system prompt",
+        "do work",
+        { traceId: null, sessionId: null },
+        "thoughts/2026-03-31-issue-5",
+      );
+
+      expect(output.data.status).toBe("need_more_info");
+    });
+
+    it("rethrows when callLlm throws and no session-result.json found", async () => {
+      const { ctx, fakeLlm } = setupForRunPhaseWithCli();
+      fakeLlm.infer.mockRejectedValue(new Error("CLI crashed hard"));
+      readSessionResultMock.mockReturnValue(null);
+
+      const caller = createLlmCaller(ctx);
+      await expect(
+        caller.runPhaseWithCli(
+          "execution",
+          "task-001",
+          "system prompt",
+          "do work",
+          { traceId: null, sessionId: null },
+          "thoughts/2026-03-31-issue-5",
+        ),
+      ).rejects.toThrow("CLI crashed hard");
+    });
+
+    it("rethrows when callLlm throws and session-result.json is invalid", async () => {
+      const { ctx, fakeLlm } = setupForRunPhaseWithCli();
+      fakeLlm.infer.mockRejectedValue(new Error("CLI crashed hard"));
+      readSessionResultMock.mockReturnValue("invalid");
+
+      const caller = createLlmCaller(ctx);
+      await expect(
+        caller.runPhaseWithCli(
+          "execution",
+          "task-001",
+          "system prompt",
+          "do work",
+          { traceId: null, sessionId: null },
+          "thoughts/2026-03-31-issue-5",
+        ),
+      ).rejects.toThrow("CLI crashed hard");
+    });
+
+    it("skips cost emission on recovery path", async () => {
+      const { ctx, fakeLlm } = setupForRunPhaseWithCli();
+      fakeLlm.infer.mockRejectedValue(new Error("CLI exited with code 143"));
+
+      const sessionResult: SessionResult = {
+        status: "ready",
+        next_phase: "self_review",
+        summary: "Done",
+      };
+      readSessionResultMock.mockReturnValue(sessionResult);
+
+      const caller = createLlmCaller(ctx);
+      await caller.runPhaseWithCli(
+        "execution",
+        "task-001",
+        "system prompt",
+        "do work",
+        { traceId: null, sessionId: null },
+        "thoughts/2026-03-31-issue-5",
+      );
+
+      // cost.incurred event should NOT be published on recovery path
+      const costCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (call: unknown[]) => (call[0] as { type: string }).type === "cost.incurred",
+      );
+      expect(costCalls).toHaveLength(0);
     });
   });
 });

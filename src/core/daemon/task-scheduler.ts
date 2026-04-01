@@ -276,7 +276,7 @@ export function createTaskScheduler(
   function handleErrorOutcome(taskId: string, result: ExecuteTaskResult): void {
     const reason = "reason" in result ? (result.reason as string) : "unknown";
     const phase = "phase" in result ? result.phase : undefined;
-    observer.error("Task error", { taskId, phase, reason });
+    observer.error("Task error", { taskId, phase, reason: reason.slice(0, 500) });
     const transition = taskEngine.requestTransition(
       taskId,
       TaskStates.blocked,
@@ -292,11 +292,14 @@ export function createTaskScheduler(
       return;
     }
     checkAndEmitChildrenAllDone(taskId);
-    notifications.notify({ kind: "task_error", taskId, reason });
+    // Truncate reason for notifications — full error details are in logs and journal entries
+    const notifyReason =
+      reason.length > 2000 ? `${reason.slice(0, 2000)}... [see logs for full details]` : reason;
+    notifications.notify({ kind: "task_error", taskId, reason: notifyReason });
     notifications.notify({
       kind: "ticket_comment",
       taskId,
-      message: `Task encountered an error: ${reason}`,
+      message: `Task encountered an error: ${notifyReason}`,
     });
   }
 

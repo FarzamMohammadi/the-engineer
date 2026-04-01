@@ -349,6 +349,34 @@ describe("TaskScheduler", () => {
     );
   });
 
+  it("handleTaskCompletion on error truncates long reasons in notifications", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Task with huge error" }));
+
+    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task);
+
+    const hugeReason = "x".repeat(5000);
+    const result: ExecuteTaskResult = {
+      outcome: "error",
+      phase: "execution",
+      reason: hugeReason,
+    };
+    scheduler.handleTaskCompletion("t1", result);
+
+    // task_error notification reason should be truncated
+    const errorNotifyCall = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) => (c[0] as { kind: string }).kind === "task_error",
+    );
+    const notifiedReason = (errorNotifyCall?.[0] as { reason: string }).reason;
+    expect(notifiedReason.length).toBeLessThan(2200);
+    expect(notifiedReason).toContain("see logs for full details");
+  });
+
   // 8. handleTaskError increments crash count, sets backoff, transitions to queued
   it("handleTaskError increments crash count and schedules backoff retry", () => {
     const { ctx, taskEngine, eventBus, clock } = makeContext();

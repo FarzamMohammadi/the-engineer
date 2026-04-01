@@ -226,7 +226,6 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
       const child = spawn(this.config.cli_path, args, {
         stdio: ["pipe", "pipe", "pipe"],
-        timeout: this.config.command_timeout_ms,
         env: this.cleanEnv(),
         cwd,
       });
@@ -240,19 +239,54 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         stderrChunks.push(chunk);
       });
 
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: output salvage + error classification requires branching on exit code, parse success, and signal type
       child.on("close", (code) => {
         this.activeProcess = null;
         const raw = Buffer.concat(chunks).toString("utf-8");
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
         const durationMs = Date.now() - startMs;
 
+        // ── Instrumentation: log CLI completion telemetry ──
         if (code !== 0) {
+          const durationMin = (durationMs / 60_000).toFixed(1);
+          console.error(
+            `[claude-code-llm] CLI exited code=${String(code)} after ${durationMin}min ` +
+              `(stdout=${Buffer.byteLength(raw)}B, stderr=${Buffer.byteLength(stderr)}B)`,
+          );
+        }
+
+        if (code !== 0) {
+          // ── Attempt to salvage valid output despite non-zero exit ──
+          // The CLI may have completed its work but been killed externally (e.g. SIGTERM).
+          try {
+            const parsed = parseCliOutput(raw);
+            this.lastRateLimits = parsed.rateLimits;
+            console.error(
+              `[claude-code-llm] CLI exited code=${String(code)} but produced valid output — salvaging result`,
+            );
+            resolve({
+              content: parsed.content,
+              cost_usd: parsed.cost_usd,
+              duration_ms: durationMs,
+              usage: parsed.usage,
+            });
+            return;
+          } catch {
+            // No valid output — genuine failure, continue to reject
+          }
+
+          // Signal kills (137=SIGKILL, 143=SIGTERM) indicate external termination.
+          // Work may have been done but not flushed to stdout. Don't retry —
+          // the orchestrator's session-result.json recovery handles this case.
+          const isSignalKill = code === 137 || code === 143;
+          const truncatedError = (stderr || raw).slice(0, 2000);
+
           reject(
             new AdapterMethodError(
               createAdapterError(
                 "cli_error",
-                `claude CLI exited with code ${String(code)}: ${stderr || raw}`,
-                { retryable: true, severity: "error" },
+                `claude CLI exited with code ${String(code)}: ${truncatedError}`,
+                { retryable: !isSignalKill, severity: "error" },
               ),
             ),
           );

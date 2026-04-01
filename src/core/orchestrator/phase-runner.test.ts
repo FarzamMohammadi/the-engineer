@@ -459,6 +459,38 @@ describe("PhaseRunner", () => {
       expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-xyz", "crashed");
     });
 
+    it("truncates long error messages in journal entry and reason", async () => {
+      const ctx = createMockContext();
+      const hugeError = "x".repeat(5000);
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          vi.fn(() => {
+            if (phase === Phases.requirements_gathering) {
+              return Promise.reject(new Error(hugeError));
+            }
+            return Promise.resolve(makeOutput(phase));
+          }),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("error");
+      if (result.outcome === "error") {
+        // Reason should be truncated with indicator
+        expect(result.reason.length).toBeLessThan(2200);
+        expect(result.reason).toContain("[truncated from 5000 chars]");
+      }
+      // Journal entry summary should also be truncated
+      const journalCall = (ctx.sessionMemory.addJournalEntry as ReturnType<typeof vi.fn>).mock
+        .calls[0]?.[0] as { summary: string } | undefined;
+      expect(journalCall).toBeDefined();
+      expect(journalCall!.summary.length).toBeLessThan(2300);
+    });
+
     it("exits with decomposed when decomposition handler returns result", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();

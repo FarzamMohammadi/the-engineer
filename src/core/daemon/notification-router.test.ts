@@ -611,4 +611,46 @@ describe("NotificationRouter", () => {
     expect(telegramPlugin.sendMessage).toHaveBeenCalledOnce();
     expect(githubPlugin.sendMessage).not.toHaveBeenCalled();
   });
+
+  // ── Ticket Comment Truncation ──────────────────────────────────────────
+
+  it("ticket_comment truncates messages exceeding 65,000 chars", async () => {
+    const commPlugin = createMockCommPlugin({
+      capabilities: ["send", "ticket_management"],
+      channel: "github",
+    });
+    const ctx = createMockContext([commPlugin]);
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+      external_ref: { type: "test_issue", repo: "acme/widgets", id: "99" },
+    });
+
+    const router = createNotificationRouter(ctx);
+    const hugeMessage = "x".repeat(100_000);
+    router.notify({ kind: "ticket_comment", taskId: "task-trunc", message: hugeMessage });
+    await flush();
+
+    const commentArg = (commPlugin.commentOnTicket as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as string;
+    expect(commentArg.length).toBeLessThanOrEqual(65_000);
+    expect(commentArg).toContain("truncated to fit platform comment limits");
+  });
+
+  it("ticket_comment preserves short messages unchanged", async () => {
+    const commPlugin = createMockCommPlugin({
+      capabilities: ["send", "ticket_management"],
+      channel: "github",
+    });
+    const ctx = createMockContext([commPlugin]);
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+      external_ref: { type: "test_issue", repo: "acme/widgets", id: "99" },
+    });
+
+    const router = createNotificationRouter(ctx);
+    router.notify({ kind: "ticket_comment", taskId: "task-short", message: "Short message" });
+    await flush();
+
+    const commentArg = (commPlugin.commentOnTicket as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as string;
+    expect(commentArg).toBe("Short message");
+  });
 });

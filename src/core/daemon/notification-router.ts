@@ -359,6 +359,9 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
   // ── Ticket Comments ────────────────────────────────────────────────────
 
+  /** Leave margin below GitHub's hard 65,536 char limit. */
+  const TICKET_COMMENT_MAX = 65_000;
+
   function handleTicketComment(taskId: string, message: string): void {
     const task = taskEngine.getTask(taskId);
     if (!task?.external_ref) {
@@ -371,8 +374,21 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
       return;
     }
 
+    let safeMessage = sanitizeSecrets(message);
+
+    // Guard against platform comment size limits (GitHub: 65,536 chars)
+    if (safeMessage.length > TICKET_COMMENT_MAX) {
+      const notice = "\n\n---\n*Message truncated to fit platform comment limits.*";
+      safeMessage = safeMessage.slice(0, TICKET_COMMENT_MAX - notice.length) + notice;
+      observer.warn("Ticket comment truncated to fit platform limits", {
+        taskId,
+        originalLength: message.length,
+        truncatedTo: TICKET_COMMENT_MAX,
+      });
+    }
+
     observer.debug("Commenting on task ticket", { taskId });
-    plugin.commentOnTicket(task.external_ref, sanitizeSecrets(message)).catch((err) => {
+    plugin.commentOnTicket(task.external_ref, safeMessage).catch((err) => {
       observer.error("Failed to comment on task ticket", {
         error: sanitizeErrorMessage(err),
         taskId,

@@ -1,5 +1,5 @@
 import { type ChildProcess, execSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { createWriteStream, existsSync, readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import {
@@ -80,12 +80,79 @@ interface RateLimitInfo {
   resetsAt: number | null;
 }
 
+// ── Streaming NDJSON line processor ──────────────────────────────────────────
+
+/** Result of processing a single NDJSON line from Claude CLI output. */
+export type NdjsonLineResult =
+  | { type: "result"; event: Record<string, unknown> }
+  | { type: "rate_limit"; info: RateLimitInfo }
+  | { type: "skip" };
+
+/**
+ * Process a single NDJSON line from Claude CLI stream-json output.
+ *
+ * Pure function — independently testable. Extracts only the events we need:
+ * - `type: "result"` → the final result with content, cost, usage
+ * - `type: "rate_limit_event"` → quota window status
+ * - everything else → skip (discarded from memory immediately)
+ */
+export function processNdjsonLine(line: string): NdjsonLineResult {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) {
+    return { type: "skip" };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+
+    if (parsed["type"] === "result") {
+      return { type: "result", event: parsed };
+    }
+
+    if (parsed["type"] === "rate_limit_event") {
+      const info = parsed["rate_limit_info"] as Record<string, unknown> | undefined;
+      if (info) {
+        return {
+          type: "rate_limit",
+          info: {
+            rateLimitType:
+              typeof info["rateLimitType"] === "string" ? info["rateLimitType"] : "unknown",
+            status: typeof info["status"] === "string" ? info["status"] : "unknown",
+            resetsAt: typeof info["resetsAt"] === "number" ? info["resetsAt"] : null,
+          },
+        };
+      }
+    }
+
+    return { type: "skip" };
+  } catch {
+    return { type: "skip" };
+  }
+}
+
+// ── Stderr ring buffer ───────────────────────────────────────────────────────
+
+/** Maximum bytes to retain from stderr. Only used in error messages. */
+const MAX_STDERR_BYTES = 10_240;
+
+/**
+ * Append to a capped stderr buffer. Returns the (possibly truncated) new buffer.
+ * When the buffer exceeds MAX_STDERR_BYTES, keeps only the tail.
+ */
+export function appendStderr(current: string, chunk: string): string {
+  const combined = current + chunk;
+  if (combined.length <= MAX_STDERR_BYTES) {
+    return combined;
+  }
+  return combined.slice(combined.length - MAX_STDERR_BYTES);
+}
+
 /**
  * ClaudeCodeLLMPlugin — the Engineer's thinking engine.
  *
  * Invokes the Claude Code CLI (`claude --print --output-format stream-json --verbose`)
- * as a child process, parses NDJSON output for result + rate limit events,
- * and extracts content, usage data, and quota status.
+ * as a child process. Uses streaming NDJSON parsing to avoid buffering the entire
+ * output in memory. Optionally writes raw CLI output to a trace file for debugging.
  */
 export class ClaudeCodeLLMPlugin extends LLMAdapter {
   private config!: ClaudeCodeLLMConfig;
@@ -122,7 +189,12 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
     // Prompt is piped via stdin (not as a CLI arg) to avoid OS argument length limits.
     // The claude CLI reads from stdin when no positional prompt argument is given.
-    return this.spawnAndParse(args, request.prompt, request.cwd ?? undefined);
+    return this.spawnAndParse(
+      args,
+      request.prompt,
+      request.cwd ?? undefined,
+      request.trace_output_path ?? undefined,
+    );
   }
 
   getCapabilities(): LLMCapabilities {
@@ -214,15 +286,43 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
     return buildLlmEnv(process.env);
   }
 
+  /**
+   * Spawn Claude CLI and stream-parse its NDJSON output.
+   *
+   * Memory-safe: processes each line as it arrives, keeping only the final
+   * result event and rate limit info. Optionally writes raw output to a trace
+   * file on disk for debugging/observability.
+   */
   private spawnAndParse(
     args: string[],
     stdinContent?: string,
     cwd?: string,
+    traceOutputPath?: string,
   ): Promise<InferenceResult> {
     const startMs = Date.now();
     return new Promise<InferenceResult>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
+      // ── Streaming state ──────────────────────────────────────────────
+      let remainder = "";
+      let resultEvent: Record<string, unknown> | null = null;
+      const rateLimits: RateLimitInfo[] = [];
+      let stderrBuf = "";
+      let totalStdoutBytes = 0;
+
+      // ── Trace file stream (optional — piped directly to disk) ──────
+      let traceStream: ReturnType<typeof createWriteStream> | null = null;
+      if (traceOutputPath) {
+        try {
+          traceStream = createWriteStream(traceOutputPath, { flags: "w", mode: 0o600 });
+          // Suppress write errors — trace is best-effort, never blocks inference
+          traceStream.on("error", () => {
+            traceStream?.destroy();
+            traceStream = null;
+          });
+        } catch {
+          // If we can't open the trace file, proceed without tracing
+          traceStream = null;
+        }
+      }
 
       const child = spawn(this.config.cli_path, args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -233,54 +333,90 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
       this.activeProcess = child;
 
+      // ── Streaming stdout handler ───────────────────────────────────
       child.stdout?.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
+        totalStdoutBytes += chunk.length;
+
+        // Output size safety valve — kill process if stdout exceeds configured limit
+        if (totalStdoutBytes > this.config.max_cli_output_bytes) {
+          console.error(
+            `[claude-code-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
+          );
+          child.kill("SIGTERM");
+          return;
+        }
+
+        // Pipe raw bytes to trace file (direct disk write, no memory copy)
+        if (traceStream) {
+          traceStream.write(chunk);
+        }
+
+        // Stream-parse: split into lines, process complete ones, keep remainder
+        const text = remainder + chunk.toString("utf-8");
+        const lines = text.split("\n");
+        // Last element is either "" (chunk ended with \n) or an incomplete line
+        remainder = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const lineResult = processNdjsonLine(line);
+          if (lineResult.type === "result") {
+            resultEvent = lineResult.event;
+          } else if (lineResult.type === "rate_limit") {
+            rateLimits.push(lineResult.info);
+          }
+          // "skip" — discarded immediately, never stored in memory
+        }
       });
+
+      // ── Capped stderr handler ──────────────────────────────────────
       child.stderr?.on("data", (chunk: Buffer) => {
-        stderrChunks.push(chunk);
+        stderrBuf = appendStderr(stderrBuf, chunk.toString("utf-8"));
       });
 
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: output salvage + error classification requires branching on exit code, parse success, and signal type
       child.on("close", (code) => {
         this.activeProcess = null;
-        const raw = Buffer.concat(chunks).toString("utf-8");
-        const stderr = Buffer.concat(stderrChunks).toString("utf-8");
         const durationMs = Date.now() - startMs;
+
+        // Close trace stream
+        if (traceStream) {
+          traceStream.end();
+        }
+
+        // Process any final incomplete line
+        if (remainder.trim().length > 0) {
+          const lineResult = processNdjsonLine(remainder);
+          if (lineResult.type === "result") {
+            resultEvent = lineResult.event;
+          } else if (lineResult.type === "rate_limit") {
+            rateLimits.push(lineResult.info);
+          }
+        }
 
         // ── Instrumentation: log CLI completion telemetry ──
         if (code !== 0) {
           const durationMin = (durationMs / 60_000).toFixed(1);
           console.error(
             `[claude-code-llm] CLI exited code=${String(code)} after ${durationMin}min ` +
-              `(stdout=${Buffer.byteLength(raw)}B, stderr=${Buffer.byteLength(stderr)}B)`,
+              `(stdout=${String(totalStdoutBytes)}B, stderr=${String(stderrBuf.length)}B)`,
           );
         }
 
         if (code !== 0) {
-          // ── Attempt to salvage valid output despite non-zero exit ──
-          // The CLI may have completed its work but been killed externally (e.g. SIGTERM).
-          try {
-            const parsed = parseCliOutput(raw);
-            this.lastRateLimits = parsed.rateLimits;
+          // ── Attempt to salvage from streaming state ──
+          // If we captured a result event during streaming, use it despite non-zero exit
+          if (resultEvent && resultEvent["subtype"] !== "error") {
+            this.lastRateLimits = rateLimits;
             console.error(
-              `[claude-code-llm] CLI exited code=${String(code)} but produced valid output — salvaging result`,
+              `[claude-code-llm] CLI exited code=${String(code)} but captured result event — salvaging`,
             );
-            resolve({
-              content: parsed.content,
-              cost_usd: parsed.cost_usd,
-              duration_ms: durationMs,
-              usage: parsed.usage,
-            });
+            resolve(buildInferenceResult(resultEvent, rateLimits, durationMs));
             return;
-          } catch {
-            // No valid output — genuine failure, continue to reject
           }
 
           // Signal kills (137=SIGKILL, 143=SIGTERM) indicate external termination.
-          // Work may have been done but not flushed to stdout. Don't retry —
-          // the orchestrator's session-result.json recovery handles this case.
           const isSignalKill = code === 137 || code === 143;
-          const truncatedError = (stderr || raw).slice(0, 2000);
+          const truncatedError = stderrBuf.slice(0, 2000);
 
           reject(
             new AdapterMethodError(
@@ -294,29 +430,37 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
           return;
         }
 
-        try {
-          const parsed = parseCliOutput(raw);
-          this.lastRateLimits = parsed.rateLimits;
-          resolve({
-            content: parsed.content,
-            cost_usd: parsed.cost_usd,
-            duration_ms: durationMs,
-            usage: parsed.usage,
-          });
-        } catch (err) {
+        // ── Happy path: use streamed result ──
+        if (!resultEvent) {
+          reject(
+            new AdapterMethodError(
+              createAdapterError("internal_error", "No result event found in CLI output"),
+            ),
+          );
+          return;
+        }
+
+        if (resultEvent["subtype"] === "error") {
           reject(
             new AdapterMethodError(
               createAdapterError(
-                "parse_error",
-                `Failed to parse CLI output: ${err instanceof Error ? err.message : String(err)}`,
+                "internal_error",
+                `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`,
               ),
             ),
           );
+          return;
         }
+
+        this.lastRateLimits = rateLimits;
+        resolve(buildInferenceResult(resultEvent, rateLimits, durationMs));
       });
 
       child.on("error", (err) => {
         this.activeProcess = null;
+        if (traceStream) {
+          traceStream.end();
+        }
         reject(
           new AdapterMethodError(
             createAdapterError("spawn_error", `Failed to spawn claude CLI: ${err.message}`),
@@ -382,6 +526,24 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
 // ── Module-level helpers ─────────────────────────────────────────────────
 
+/** Build an InferenceResult from a parsed result event. */
+function buildInferenceResult(
+  resultEvent: Record<string, unknown>,
+  _rateLimits: RateLimitInfo[],
+  durationMs: number,
+): InferenceResult {
+  const content = extractContent(resultEvent);
+  const costUsd =
+    typeof resultEvent["total_cost_usd"] === "number"
+      ? resultEvent["total_cost_usd"]
+      : typeof resultEvent["cost_usd"] === "number"
+        ? resultEvent["cost_usd"]
+        : null;
+  const usage = extractUsage(resultEvent);
+
+  return { content, cost_usd: costUsd, duration_ms: durationMs, usage };
+}
+
 /** Parsed output from the Claude CLI stream-json format. */
 export interface ParsedCliOutput {
   content: string;
@@ -399,6 +561,9 @@ export interface ParsedCliOutput {
  *
  * Returns content, cost, usage details, and rate limit info.
  * duration_ms is measured by the caller (spawnAndParse).
+ *
+ * NOTE: This function is retained for backward compatibility and testing.
+ * The live streaming path uses processNdjsonLine() instead.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON parser handling multiple event types and result formats
 export function parseCliOutput(raw: string): ParsedCliOutput {

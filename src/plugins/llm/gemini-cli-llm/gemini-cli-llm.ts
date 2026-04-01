@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import {
   AdapterMethodError,
   type HealthStatus,
@@ -11,6 +12,7 @@ import {
   type QuotaStatus,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { appendStderr } from "../claude-code-llm/claude-code-llm.js";
 import { type GeminiCliLLMConfig, GeminiCliLLMConfigSchema } from "./config.js";
 
 // ── LLM subprocess env isolation ─────────────────────────────────────────────
@@ -61,7 +63,95 @@ export function buildLlmEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 const RATE_LIMIT_STDERR_RE = /exhausted your capacity|rate.?limit|quota/i;
 const RATE_LIMIT_STDOUT_RE = /exhausted.*capacity|quota|rate.?limit/i;
 
-// ── Output parsing ───────────────────────────────────────────────────────────
+// ── Streaming NDJSON line processor ──────────────────────────────────────────
+
+/** Result of processing a single NDJSON line from Gemini CLI output. */
+export type GeminiNdjsonLineResult =
+  | { type: "init"; modelId: string | null }
+  | { type: "content"; text: string }
+  | {
+      type: "result";
+      usage: InferenceUsage | null;
+      rateLimited: boolean;
+      rateLimitMessage: string | null;
+    }
+  | { type: "skip" };
+
+/**
+ * Process a single NDJSON line from Gemini CLI stream-json output.
+ * Pure function — independently testable.
+ */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON line processing with multiple event types and nested field extraction
+export function processGeminiNdjsonLine(
+  line: string,
+  currentModelId: string | null,
+): GeminiNdjsonLineResult {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) {
+    return { type: "skip" };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+
+    if (parsed["type"] === "init") {
+      const modelId = typeof parsed["model"] === "string" ? parsed["model"] : null;
+      return { type: "init", modelId };
+    }
+
+    if (parsed["type"] === "message" && parsed["role"] === "assistant") {
+      const content = parsed["content"];
+      if (typeof content === "string") {
+        return { type: "content", text: content };
+      }
+      return { type: "skip" };
+    }
+
+    if (parsed["type"] === "result") {
+      let rateLimited = false;
+      let rateLimitMessage: string | null = null;
+
+      if (parsed["status"] === "error") {
+        const err = parsed["error"] as Record<string, unknown> | undefined;
+        const msg = typeof err?.["message"] === "string" ? err["message"] : "";
+        if (RATE_LIMIT_STDOUT_RE.test(msg)) {
+          rateLimited = true;
+          rateLimitMessage = msg;
+        }
+      }
+
+      let usage: InferenceUsage | null = null;
+      const stats = parsed["stats"] as Record<string, unknown> | undefined;
+      if (stats) {
+        const inputTokens = typeof stats["input_tokens"] === "number" ? stats["input_tokens"] : 0;
+        const outputTokens =
+          typeof stats["output_tokens"] === "number" ? stats["output_tokens"] : 0;
+        const totalTokens = typeof stats["total_tokens"] === "number" ? stats["total_tokens"] : 0;
+        const cached = typeof stats["cached"] === "number" ? stats["cached"] : 0;
+
+        usage = {
+          tokens: {
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            cache_read_tokens: cached,
+            cache_creation_tokens: 0,
+            total_tokens: totalTokens,
+          },
+          model_id: currentModelId,
+          service_tier: null,
+        };
+      }
+
+      return { type: "result", usage, rateLimited, rateLimitMessage };
+    }
+
+    return { type: "skip" };
+  } catch {
+    return { type: "skip" };
+  }
+}
+
+// ── Output parsing (retained for backward compatibility + tests) ────────────
 
 /** Parsed output from Gemini CLI's stream-json format (NDJSON). */
 export interface ParsedGeminiCliOutput {
@@ -74,10 +164,8 @@ export interface ParsedGeminiCliOutput {
 /**
  * Parse NDJSON output from `gemini -p <prompt> -o stream-json`.
  *
- * Output is newline-delimited JSON events:
- * - `type: "init"` — session info with model
- * - `type: "message", role: "assistant"` — response content
- * - `type: "result"` — token stats (no cost — Gemini CLI doesn't report cost)
+ * NOTE: Retained for backward compatibility and testing.
+ * The live streaming path uses processGeminiNdjsonLine() instead.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON parser handling multiple event types
 export function parseGeminiCliOutput(raw: string): ParsedGeminiCliOutput {
@@ -157,11 +245,8 @@ export function parseGeminiCliOutput(raw: string): ParsedGeminiCliOutput {
 /**
  * GeminiCliLLMPlugin — LLM inference via Google's Gemini CLI (free tier).
  *
- * Designed for Gemini CLI's free tier — no cost reporting (cost_usd always null),
- * no billing API. Rate limits detected from stdout error results and stderr retry messages.
- *
- * Invokes `gemini -p "" -o stream-json --yolo` with prompt piped via stdin.
- * Parses NDJSON output for content and token usage.
+ * Uses streaming NDJSON parsing to avoid buffering the entire output in memory.
+ * Optionally writes raw CLI output to a trace file for debugging.
  */
 export class GeminiCliLLMPlugin extends LLMAdapter {
   private config!: GeminiCliLLMConfig;
@@ -186,7 +271,12 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
       "--yolo", // auto-approve tool calls (required for non-interactive)
     ];
 
-    return this.spawnAndParse(args, request.cwd ?? undefined, prompt);
+    return this.spawnAndParse(
+      args,
+      request.cwd ?? undefined,
+      prompt,
+      request.trace_output_path ?? undefined,
+    );
   }
 
   getCapabilities(): LLMCapabilities {
@@ -262,15 +352,40 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
 
   // ── Private Helpers ──────────────────────────────────────────────────
 
+  /**
+   * Spawn Gemini CLI and stream-parse its NDJSON output.
+   * Memory-safe: processes each line as it arrives. Optionally traces to disk.
+   */
   private spawnAndParse(
     args: string[],
     cwd?: string,
     stdinContent?: string,
+    traceOutputPath?: string,
   ): Promise<InferenceResult> {
     const startMs = Date.now();
     return new Promise<InferenceResult>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
+      // ── Streaming state ──
+      let remainder = "";
+      const contentParts: string[] = [];
+      let usage: InferenceUsage | null = null;
+      let modelId: string | null = null;
+      let streamRateLimited = false;
+      let streamRateLimitMessage: string | null = null;
+      let stderrBuf = "";
+
+      // ── Trace file stream ──
+      let traceStream: ReturnType<typeof createWriteStream> | null = null;
+      if (traceOutputPath) {
+        try {
+          traceStream = createWriteStream(traceOutputPath, { flags: "w", mode: 0o600 });
+          traceStream.on("error", () => {
+            traceStream?.destroy();
+            traceStream = null;
+          });
+        } catch {
+          traceStream = null;
+        }
+      }
 
       const child = spawn(this.config.cli_path, args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -282,13 +397,47 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
       this.activeProcess = child;
       let killedForRateLimit = false;
 
+      let totalStdoutBytes = 0;
+
+      // ── Streaming stdout ──
       child.stdout?.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
+        totalStdoutBytes += chunk.length;
+
+        // Output size safety valve
+        if (totalStdoutBytes > this.config.max_cli_output_bytes) {
+          console.error(
+            `[gemini-cli-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
+          );
+          child.kill("SIGTERM");
+          return;
+        }
+
+        if (traceStream) {
+          traceStream.write(chunk);
+        }
+
+        const text = remainder + chunk.toString("utf-8");
+        const lines = text.split("\n");
+        remainder = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const result = processGeminiNdjsonLine(line, modelId);
+          if (result.type === "init") {
+            modelId = result.modelId;
+          } else if (result.type === "content") {
+            contentParts.push(result.text);
+          } else if (result.type === "result") {
+            usage = result.usage;
+            streamRateLimited = result.rateLimited;
+            streamRateLimitMessage = result.rateLimitMessage;
+          }
+        }
       });
+
+      // ── Capped stderr with rate limit detection ──
       child.stderr?.on("data", (chunk: Buffer) => {
-        stderrChunks.push(chunk);
-        // Gemini CLI retries infinitely on rate limits. Detect and kill immediately.
         const text = chunk.toString("utf-8");
+        stderrBuf = appendStderr(stderrBuf, text);
         if (!killedForRateLimit && RATE_LIMIT_STDERR_RE.test(text)) {
           killedForRateLimit = true;
           child.kill("SIGTERM");
@@ -297,30 +446,49 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
 
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI process lifecycle with rate limit + error + parse paths
       child.on("close", (code) => {
+        this.activeProcess = null;
+        if (traceStream) {
+          traceStream.end();
+        }
+
+        // Process final incomplete line
+        if (remainder.trim().length > 0) {
+          const result = processGeminiNdjsonLine(remainder, modelId);
+          if (result.type === "init") {
+            modelId = result.modelId;
+          } else if (result.type === "content") {
+            contentParts.push(result.text);
+          } else if (result.type === "result") {
+            usage = result.usage;
+            streamRateLimited = result.rateLimited;
+            streamRateLimitMessage = result.rateLimitMessage;
+          }
+        }
+
+        const durationMs = Date.now() - startMs;
+
         if (killedForRateLimit) {
-          this.activeProcess = null;
-          const stderr = Buffer.concat(stderrChunks).toString("utf-8");
           reject(
             new AdapterMethodError(
-              createAdapterError("cli_error", `gemini CLI rate limited: ${stderr.slice(0, 200)}`, {
-                retryable: true,
-                severity: "error",
-              }),
+              createAdapterError(
+                "cli_error",
+                `gemini CLI rate limited: ${stderrBuf.slice(0, 200)}`,
+                {
+                  retryable: true,
+                  severity: "error",
+                },
+              ),
             ),
           );
           return;
         }
-        this.activeProcess = null;
-        const raw = Buffer.concat(chunks).toString("utf-8");
-        const stderr = Buffer.concat(stderrChunks).toString("utf-8");
-        const durationMs = Date.now() - startMs;
 
         if (code !== 0) {
           reject(
             new AdapterMethodError(
               createAdapterError(
                 "cli_error",
-                `gemini CLI exited with code ${String(code)}: ${stderr || raw}`,
+                `gemini CLI exited with code ${String(code)}: ${stderrBuf || contentParts.join("")}`,
                 { retryable: true, severity: "error" },
               ),
             ),
@@ -328,45 +496,48 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
           return;
         }
 
-        try {
-          const parsed = parseGeminiCliOutput(raw);
+        // Update rate limit state for getQuotaStatus()
+        this.rateLimited = streamRateLimited;
 
-          // Update rate limit state for getQuotaStatus()
-          this.rateLimited = parsed.rateLimited;
-
-          if (parsed.rateLimited) {
-            reject(
-              new AdapterMethodError(
-                createAdapterError(
-                  "cli_error",
-                  `gemini CLI rate limited: ${parsed.rateLimitMessage ?? "quota exhausted"}`,
-                  { retryable: true, severity: "error" },
-                ),
-              ),
-            );
-            return;
-          }
-
-          resolve({
-            content: parsed.content,
-            cost_usd: null, // Gemini CLI does not report cost
-            duration_ms: durationMs,
-            usage: parsed.usage,
-          });
-        } catch (err) {
+        if (streamRateLimited) {
           reject(
             new AdapterMethodError(
               createAdapterError(
-                "parse_error",
-                `Failed to parse Gemini CLI output: ${err instanceof Error ? err.message : String(err)}`,
+                "cli_error",
+                `gemini CLI rate limited: ${streamRateLimitMessage ?? "quota exhausted"}`,
+                { retryable: true, severity: "error" },
               ),
             ),
           );
+          return;
         }
+
+        const content = contentParts.join("");
+        if (content.length === 0 && usage === null) {
+          reject(
+            new AdapterMethodError(
+              createAdapterError(
+                "internal_error",
+                "No assistant message or result event found in Gemini CLI output",
+              ),
+            ),
+          );
+          return;
+        }
+
+        resolve({
+          content,
+          cost_usd: null, // Gemini CLI does not report cost
+          duration_ms: durationMs,
+          usage,
+        });
       });
 
       child.on("error", (err) => {
         this.activeProcess = null;
+        if (traceStream) {
+          traceStream.end();
+        }
         reject(
           new AdapterMethodError(
             createAdapterError("spawn_error", `Failed to spawn gemini CLI: ${err.message}`),

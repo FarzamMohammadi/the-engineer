@@ -183,6 +183,7 @@ export function createPhaseHandlers(
         state,
         thoughtsDir,
         "review",
+        reviewPhaseName.replace(/_/g, "-"),
       );
     }
 
@@ -203,6 +204,7 @@ export function createPhaseHandlers(
       state,
       thoughtsDir,
       "review",
+      "refinement",
     );
 
     // Step 3: Map next_phase → quality_assessment for checkSelfReviewLoopback compatibility

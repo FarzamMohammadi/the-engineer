@@ -861,8 +861,13 @@ export async function runPhasePipeline(
     }
 
     // Execute the phase handler
+    currentState = { ...currentState, phaseSequence: currentState.phaseSequence + 1 };
     let output: PhaseOutput;
-    ctx.observer.info("Phase starting", { taskId, phase });
+    ctx.observer.info("Phase starting", {
+      taskId,
+      phase,
+      phaseSequence: currentState.phaseSequence,
+    });
     const phaseStart = Date.now();
     try {
       const handler = handlers.get(phase);
@@ -941,6 +946,12 @@ export async function runPhasePipeline(
       case "exit":
         return endPipelineSpan(completion.result, i - startIndex + 1);
       case "loopback": {
+        // Clear phase outputs that will be re-generated — prevents unbounded memory growth
+        // across loopback cycles (self-review → execution → self-review → ...)
+        for (let j = completion.targetIndex; j < completion.phases.length; j++) {
+          // biome-ignore lint/style/noNonNullAssertion: j is within bounds of completion.phases
+          priorOutputs.delete(completion.phases[j]!);
+        }
         phases = completion.phases;
         i = completion.targetIndex;
         continue;

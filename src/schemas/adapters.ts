@@ -203,6 +203,10 @@ export const InferenceRequestSchema = z.object({
   /** Working directory for the CLI process. Plugins use this as CWD
    *  so the CLI loads the target repo's project context, not the daemon's. */
   cwd: z.string().nullable().default(null),
+  /** Optional file path where the plugin should write raw CLI output for tracing.
+   *  Plugins that support tracing stream stdout to this path during execution.
+   *  Plugins that don't support it ignore this field. Core generates the path. */
+  trace_output_path: z.string().nullable().default(null),
 });
 export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
 

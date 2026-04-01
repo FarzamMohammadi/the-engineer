@@ -1,3 +1,4 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { AdapterMethodError } from "../../adapters/index.js";
 import type { LLMAdapter } from "../../adapters/llm.js";
@@ -22,11 +23,171 @@ const PHASE_DIR_MAP: Record<Phase, string> = {
   [Phases.integration]: "integration",
 };
 
+/** Map phase → human-readable directory name for session traces. */
+const PHASE_TRACE_DIR_MAP: Record<Phase, string> = {
+  [Phases.requirements_gathering]: "requirements-gathering",
+  [Phases.research]: "research",
+  [Phases.planning]: "planning",
+  [Phases.execution]: "execution",
+  [Phases.self_review]: "self-review",
+  [Phases.demo_prep]: "demo-prep",
+  [Phases.integration]: "integration",
+};
+
 /** Maximum LLM retry attempts for transient failures. */
 const MAX_LLM_RETRIES = 3;
 
 /** Base delay in ms for exponential backoff. */
 const LLM_RETRY_BASE_MS = 1000;
+
+// ── Trace Path Generation ──────────────────────────────────────────────────
+
+/** Per-task step counter for trace file naming within a phase directory. */
+const taskStepCounters = new Map<string, number>();
+
+/**
+ * Generate a structured trace output path for a CLI invocation.
+ *
+ * Path format: {tracesDir}/sessions/{taskId}/{seq}-{phase}/{stepSeq}-{stepName}.ndjson
+ *
+ * Returns null if tracing is disabled (tracesDir is null).
+ */
+export function generateTracePath(
+  tracesDir: string | null,
+  taskId: string,
+  phaseSequence: number,
+  phase: Phase,
+  stepName: string,
+): string | null {
+  if (!tracesDir) {
+    return null;
+  }
+
+  const seqStr = String(phaseSequence).padStart(2, "0");
+  const phaseDirName = PHASE_TRACE_DIR_MAP[phase];
+  const phaseDir = path.join(tracesDir, "sessions", taskId, `${seqStr}-${phaseDirName}`);
+
+  // Get and increment step counter for this task+phase combo
+  const counterKey = `${taskId}:${seqStr}-${phaseDirName}`;
+  const stepSeq = (taskStepCounters.get(counterKey) ?? 0) + 1;
+  taskStepCounters.set(counterKey, stepSeq);
+
+  const stepSeqStr = String(stepSeq).padStart(3, "0");
+  const fileName = `${stepSeqStr}-${stepName}.ndjson`;
+
+  const tracePath = path.join(phaseDir, fileName);
+
+  // Ensure directory exists
+  try {
+    mkdirSync(phaseDir, { recursive: true, mode: 0o700 });
+  } catch {
+    // If mkdir fails, return null — tracing is best-effort
+    return null;
+  }
+
+  return tracePath;
+}
+
+/** Reset the step counter for a task (call on task completion/cleanup). */
+export function resetTraceStepCounters(taskId: string): void {
+  for (const key of taskStepCounters.keys()) {
+    if (key.startsWith(`${taskId}:`)) {
+      taskStepCounters.delete(key);
+    }
+  }
+}
+
+// ── Session Trace Manifest ─────────────────────────────────────────────────
+
+interface ManifestStep {
+  file: string;
+  step_name: string;
+  started_at: string;
+  duration_ms: number;
+  cost_usd: number | null;
+}
+
+interface ManifestPhase {
+  sequence: number;
+  phase: string;
+  dir: string;
+  steps: ManifestStep[];
+}
+
+interface SessionManifest {
+  task_id: string;
+  created_at: string;
+  phases: ManifestPhase[];
+  total_cost_usd: number;
+  total_duration_ms: number;
+}
+
+/**
+ * Update the session trace manifest.json with a completed step.
+ * Creates the manifest if it doesn't exist. Best-effort — never throws.
+ */
+function updateManifest(
+  tracesDir: string,
+  taskId: string,
+  phaseSequence: number,
+  phase: Phase,
+  stepName: string,
+  traceFileName: string,
+  startedAt: string,
+  durationMs: number,
+  costUsd: number | null,
+): void {
+  try {
+    const manifestPath = path.join(tracesDir, "sessions", taskId, "manifest.json");
+    let manifest: SessionManifest;
+
+    try {
+      const raw = readFileSync(manifestPath, "utf-8");
+      manifest = JSON.parse(raw) as SessionManifest;
+    } catch {
+      manifest = {
+        task_id: taskId,
+        created_at: new Date().toISOString(),
+        phases: [],
+        total_cost_usd: 0,
+        total_duration_ms: 0,
+      };
+    }
+
+    const seqStr = String(phaseSequence).padStart(2, "0");
+    const phaseDirName = `${seqStr}-${PHASE_TRACE_DIR_MAP[phase]}`;
+
+    // Find or create phase entry
+    let phaseEntry = manifest.phases.find((p) => p.dir === phaseDirName);
+    if (!phaseEntry) {
+      phaseEntry = {
+        sequence: phaseSequence,
+        phase,
+        dir: phaseDirName,
+        steps: [],
+      };
+      manifest.phases.push(phaseEntry);
+    }
+
+    phaseEntry.steps.push({
+      file: traceFileName,
+      step_name: stepName,
+      started_at: startedAt,
+      duration_ms: durationMs,
+      cost_usd: costUsd,
+    });
+
+    manifest.total_cost_usd += costUsd ?? 0;
+    manifest.total_duration_ms += durationMs;
+
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+  } catch {
+    // Best-effort — manifest write failure never blocks inference
+  }
+}
 
 // ── Retry Logic ─────────────────────────────────────────────────────────────
 
@@ -69,6 +230,7 @@ export interface LlmCaller {
     state: PipelineState,
     thoughtsDir: string,
     overridePhaseDir?: string,
+    stepName?: string,
   ): Promise<PhaseOutput>;
   /** Emit cost.incurred event from inference result. */
   emitCostIncurred(taskId: string, result: InferenceResult): void;
@@ -83,6 +245,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     prompt: string,
     taskId: string,
     systemPrompt?: string | null,
+    traceOutputPath?: string | null,
   ): Promise<InferenceResult> {
     const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
     if (!llm) {
@@ -101,6 +264,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
           prompt,
           system_prompt: systemPrompt ?? null,
           cwd: worktreePath ?? null,
+          trace_output_path: traceOutputPath ?? null,
         }),
     });
 
@@ -118,11 +282,12 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     prompt: string,
     taskId: string,
     systemPrompt?: string | null,
+    traceOutputPath?: string | null,
   ): Promise<InferenceResult> {
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_LLM_RETRIES; attempt++) {
       try {
-        return await callLlmOnce(prompt, taskId, systemPrompt);
+        return await callLlmOnce(prompt, taskId, systemPrompt, traceOutputPath);
       } catch (error) {
         lastError = error;
         if (!isRetryableError(error)) {
@@ -184,6 +349,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
    * Run a phase via CLI-native invocation (RRPIR).
    *
    * Single CLI call → read session-result.json → validate → continue-retry if needed.
+   * Generates a structured trace path and updates manifest.json after completion.
    */
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: phase lifecycle with observability, cost tracking, continue-retry, and fallback
   async function runPhaseWithCli(
@@ -194,6 +360,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     state: PipelineState,
     thoughtsDir: string,
     overridePhaseDir?: string,
+    stepName?: string,
   ): Promise<PhaseOutput> {
     if (!thoughtsDir) {
       throw new WorkspaceNotReadyError(
@@ -209,6 +376,17 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const phaseSubDir = overridePhaseDir ?? PHASE_DIR_MAP[phase];
     const phaseDir = phaseSubDir ? path.join(worktreePath, thoughtsDir, phaseSubDir) : null;
     const { traceId, sessionId } = state;
+
+    // ── Generate trace path ──────────────────────────────────────────────
+    const resolvedStepName = stepName ?? "initial";
+    const tracePath = generateTracePath(
+      ctx.tracesDir,
+      taskId,
+      state.phaseSequence,
+      phase,
+      resolvedStepName,
+    );
+    const startedAt = new Date().toISOString();
 
     // ── Observability span ────────────────────────────────────────────────
     const phaseSpan =
@@ -226,7 +404,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     let recoveredFromError = false;
 
     try {
-      result = await callLlm(prompt, taskId, systemPrompt);
+      result = await callLlm(prompt, taskId, systemPrompt, tracePath);
     } catch (error) {
       // CLI failed — but may have written session-result.json before dying.
       // This is the safety net for SIGTERM / timeout kills where work was done.
@@ -299,6 +477,22 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       result.cost_usd ?? 0,
       result.duration_ms,
     );
+
+    // ── Update session trace manifest ────────────────────────────────────
+    if (ctx.tracesDir && tracePath) {
+      const traceFileName = path.basename(tracePath);
+      updateManifest(
+        ctx.tracesDir,
+        taskId,
+        state.phaseSequence,
+        phase,
+        resolvedStepName,
+        traceFileName,
+        startedAt,
+        result.duration_ms,
+        result.cost_usd,
+      );
+    }
 
     // ── End span ─────────────────────────────────────────────────────────
     if (phaseSpan) {

@@ -165,6 +165,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       observationStore,
       observer: observer.child("orchestrator"),
       notifications,
+      tracesDir,
     });
 
     // 9. Data Lifecycle Manager

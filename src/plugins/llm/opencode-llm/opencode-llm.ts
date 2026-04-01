@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import {
   AdapterMethodError,
   type HealthStatus,
@@ -10,6 +11,7 @@ import {
   type LLMCapabilities,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { appendStderr } from "../claude-code-llm/claude-code-llm.js";
 import { type OpenCodeLLMConfig, OpenCodeLLMConfigSchema } from "./config.js";
 
 // ── LLM subprocess env isolation ─────────────────────────────────────────────
@@ -59,7 +61,75 @@ export function buildLlmEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 /** Rate limit pattern for stderr detection — hoisted for performance. */
 const RATE_LIMIT_STDERR_RE = /exhausted your capacity|rate.?limit|quota/i;
 
-// ── Output parsing ───────────────────────────────────────────────────────────
+// ── Streaming NDJSON line processor ──────────────────────────────────────────
+
+/** Result of processing a single NDJSON line from OpenCode CLI output. */
+export type OpenCodeNdjsonLineResult =
+  | { type: "text"; text: string }
+  | { type: "step_finish"; costUsd: number | null; usage: InferenceUsage | null }
+  | { type: "skip" };
+
+/**
+ * Process a single NDJSON line from OpenCode CLI output.
+ * Pure function — independently testable.
+ */
+export function processOpenCodeNdjsonLine(line: string): OpenCodeNdjsonLineResult {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) {
+    return { type: "skip" };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const part = parsed["part"] as Record<string, unknown> | undefined;
+    if (!part) {
+      return { type: "skip" };
+    }
+
+    if (parsed["type"] === "text") {
+      const text = part["text"];
+      if (typeof text === "string") {
+        return { type: "text", text };
+      }
+      return { type: "skip" };
+    }
+
+    if (parsed["type"] === "step_finish") {
+      const costUsd = typeof part["cost"] === "number" ? part["cost"] : null;
+      let usage: InferenceUsage | null = null;
+
+      const tokens = part["tokens"] as Record<string, unknown> | undefined;
+      if (tokens) {
+        const inputTokens = typeof tokens["input"] === "number" ? tokens["input"] : 0;
+        const outputTokens = typeof tokens["output"] === "number" ? tokens["output"] : 0;
+        const totalTokens = typeof tokens["total"] === "number" ? tokens["total"] : 0;
+        const cache = tokens["cache"] as Record<string, unknown> | undefined;
+        const cacheRead = typeof cache?.["read"] === "number" ? cache["read"] : 0;
+        const cacheWrite = typeof cache?.["write"] === "number" ? cache["write"] : 0;
+
+        usage = {
+          tokens: {
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            cache_read_tokens: cacheRead,
+            cache_creation_tokens: cacheWrite,
+            total_tokens: totalTokens,
+          },
+          model_id: null,
+          service_tier: null,
+        };
+      }
+
+      return { type: "step_finish", costUsd, usage };
+    }
+
+    return { type: "skip" };
+  } catch {
+    return { type: "skip" };
+  }
+}
+
+// ── Output parsing (retained for backward compatibility + tests) ────────────
 
 /** Parsed output from OpenCode CLI's JSON format (NDJSON). */
 export interface ParsedOpenCodeOutput {
@@ -71,9 +141,8 @@ export interface ParsedOpenCodeOutput {
 /**
  * Parse NDJSON output from `opencode run --format json`.
  *
- * Output is newline-delimited JSON events:
- * - `type: "text"` — content fragments in `part.text`
- * - `type: "step_finish"` — cost and token breakdown in `part`
+ * NOTE: Retained for backward compatibility and testing.
+ * The live streaming path uses processOpenCodeNdjsonLine() instead.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON parser handling multiple event types
 export function parseOpenCodeOutput(raw: string): ParsedOpenCodeOutput {
@@ -143,8 +212,8 @@ export function parseOpenCodeOutput(raw: string): ParsedOpenCodeOutput {
 /**
  * OpenCodeLLMPlugin — multi-provider LLM inference via OpenCode CLI.
  *
- * Invokes `opencode run --format json` as a child process,
- * parses NDJSON output for text content, cost, and token usage.
+ * Uses streaming NDJSON parsing to avoid buffering the entire output in memory.
+ * Optionally writes raw CLI output to a trace file for debugging.
  */
 export class OpenCodeLLMPlugin extends LLMAdapter {
   private config!: OpenCodeLLMConfig;
@@ -164,7 +233,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
 
     // Pipe prompt via stdin — avoids OS argument length limits on large orchestrator prompts.
     // OpenCode reads from stdin when no positional message args are given.
-    return this.spawnAndParse(args, prompt);
+    return this.spawnAndParse(args, prompt, request.trace_output_path ?? undefined);
   }
 
   getCapabilities(): LLMCapabilities {
@@ -222,11 +291,37 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
 
   // ── Private Helpers ──────────────────────────────────────────────────
 
-  private spawnAndParse(args: string[], stdinContent?: string): Promise<InferenceResult> {
+  /**
+   * Spawn OpenCode CLI and stream-parse its NDJSON output.
+   * Memory-safe: processes each line as it arrives. Optionally traces to disk.
+   */
+  private spawnAndParse(
+    args: string[],
+    stdinContent?: string,
+    traceOutputPath?: string,
+  ): Promise<InferenceResult> {
     const startMs = Date.now();
     return new Promise<InferenceResult>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
+      // ── Streaming state ──
+      let remainder = "";
+      const textParts: string[] = [];
+      let costUsd: number | null = null;
+      let usage: InferenceUsage | null = null;
+      let stderrBuf = "";
+
+      // ── Trace file stream ──
+      let traceStream: ReturnType<typeof createWriteStream> | null = null;
+      if (traceOutputPath) {
+        try {
+          traceStream = createWriteStream(traceOutputPath, { flags: "w", mode: 0o600 });
+          traceStream.on("error", () => {
+            traceStream?.destroy();
+            traceStream = null;
+          });
+        } catch {
+          traceStream = null;
+        }
+      }
 
       const child = spawn(this.config.cli_path, args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -237,13 +332,44 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
       this.activeProcess = child;
       let killedForRateLimit = false;
 
+      let totalStdoutBytes = 0;
+
+      // ── Streaming stdout ──
       child.stdout?.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
+        totalStdoutBytes += chunk.length;
+
+        // Output size safety valve
+        if (totalStdoutBytes > this.config.max_cli_output_bytes) {
+          console.error(
+            `[opencode-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
+          );
+          child.kill("SIGTERM");
+          return;
+        }
+
+        if (traceStream) {
+          traceStream.write(chunk);
+        }
+
+        const text = remainder + chunk.toString("utf-8");
+        const lines = text.split("\n");
+        remainder = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const result = processOpenCodeNdjsonLine(line);
+          if (result.type === "text") {
+            textParts.push(result.text);
+          } else if (result.type === "step_finish") {
+            costUsd = result.costUsd;
+            usage = result.usage;
+          }
+        }
       });
+
+      // ── Capped stderr with rate limit detection ──
       child.stderr?.on("data", (chunk: Buffer) => {
-        stderrChunks.push(chunk);
-        // Detect rate limiting from stderr and kill immediately to avoid infinite CLI retries.
         const text = chunk.toString("utf-8");
+        stderrBuf = appendStderr(stderrBuf, text);
         if (!killedForRateLimit && RATE_LIMIT_STDERR_RE.test(text)) {
           killedForRateLimit = true;
           child.kill("SIGTERM");
@@ -251,31 +377,43 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
       });
 
       child.on("close", (code) => {
+        this.activeProcess = null;
+        if (traceStream) {
+          traceStream.end();
+        }
+
+        // Process final incomplete line
+        if (remainder.trim().length > 0) {
+          const result = processOpenCodeNdjsonLine(remainder);
+          if (result.type === "text") {
+            textParts.push(result.text);
+          } else if (result.type === "step_finish") {
+            costUsd = result.costUsd;
+            usage = result.usage;
+          }
+        }
+
+        const durationMs = Date.now() - startMs;
+
         if (killedForRateLimit) {
-          this.activeProcess = null;
-          const stderr = Buffer.concat(stderrChunks).toString("utf-8");
           reject(
             new AdapterMethodError(
               createAdapterError(
                 "cli_error",
-                `opencode CLI rate limited: ${stderr.slice(0, 200)}`,
+                `opencode CLI rate limited: ${stderrBuf.slice(0, 200)}`,
                 { retryable: true, severity: "error" },
               ),
             ),
           );
           return;
         }
-        this.activeProcess = null;
-        const raw = Buffer.concat(chunks).toString("utf-8");
-        const stderr = Buffer.concat(stderrChunks).toString("utf-8");
-        const durationMs = Date.now() - startMs;
 
         if (code !== 0) {
           reject(
             new AdapterMethodError(
               createAdapterError(
                 "cli_error",
-                `opencode CLI exited with code ${String(code)}: ${stderr || raw}`,
+                `opencode CLI exited with code ${String(code)}: ${stderrBuf || textParts.join("")}`,
                 { retryable: true, severity: "error" },
               ),
             ),
@@ -283,28 +421,32 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
           return;
         }
 
-        try {
-          const parsed = parseOpenCodeOutput(raw);
-          resolve({
-            content: parsed.content,
-            cost_usd: parsed.cost_usd,
-            duration_ms: durationMs,
-            usage: parsed.usage,
-          });
-        } catch (err) {
+        const content = textParts.join("");
+        if (content.length === 0 && costUsd === null) {
           reject(
             new AdapterMethodError(
               createAdapterError(
-                "parse_error",
-                `Failed to parse OpenCode output: ${err instanceof Error ? err.message : String(err)}`,
+                "internal_error",
+                "No text or step_finish event found in OpenCode output",
               ),
             ),
           );
+          return;
         }
+
+        resolve({
+          content,
+          cost_usd: costUsd,
+          duration_ms: durationMs,
+          usage,
+        });
       });
 
       child.on("error", (err) => {
         this.activeProcess = null;
+        if (traceStream) {
+          traceStream.end();
+        }
         reject(
           new AdapterMethodError(
             createAdapterError("spawn_error", `Failed to spawn opencode CLI: ${err.message}`),

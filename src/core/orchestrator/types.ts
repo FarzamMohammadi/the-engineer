@@ -30,6 +30,9 @@ export interface OrchestratorContext {
   observationStore: IObservationStore | null;
   observer: IObserver;
   notifications: INotificationRouter;
+  /** Absolute path to the traces directory (~/.engineer/traces/).
+   *  Used by llm-caller to write structured session trace files. Null disables tracing. */
+  tracesDir: string | null;
 }
 
 // ── Preemption Gate ──────────────────────────────────────────────────────
@@ -65,6 +68,9 @@ export interface PipelineState {
   repoContext: RepoContext | null;
   /** Phase that invoked requirements_gathering fallback — return here after requirements complete. */
   returnToPhase: Phase | null;
+  /** Monotonically increasing counter for phase execution order (including loopbacks).
+   *  Used to generate structured session trace directory names (e.g. "01-requirements-gathering/"). */
+  phaseSequence: number;
 }
 
 // ── Phase Completion Outcome ──────────────────────────────────────────────

@@ -218,6 +218,7 @@ export class Orchestrator {
       thoughtsDir,
       repoContext,
       returnToPhase: null,
+      phaseSequence: 0,
     };
 
     // ── Run phase pipeline ─────────────────────────────────────────────────
@@ -283,6 +284,7 @@ export class Orchestrator {
             prompt,
             system_prompt: null,
             cwd: null,
+            trace_output_path: null,
           }),
       });
 

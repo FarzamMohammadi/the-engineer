@@ -152,6 +152,14 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   let shuttingDown = false;
   let startedAt: string | null = null;
   let tickInterval: ReturnType<typeof setInterval> | null = null;
+  let tickCount = 0;
+
+  /** Memory warning threshold in bytes (2 GB). */
+  const MEMORY_WARNING_BYTES = 2 * 1024 * 1024 * 1024;
+  /** Memory critical threshold in bytes (4 GB). */
+  const MEMORY_CRITICAL_BYTES = 4 * 1024 * 1024 * 1024;
+  /** Log RSS every N ticks. */
+  const MEMORY_LOG_INTERVAL = 10;
   // Note: Signal handling is the CLI's responsibility (src/cli/commands/start.ts).
   // When using the daemon programmatically, the caller must call daemon.stop() on shutdown signals.
 
@@ -467,6 +475,30 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     // Step 9: Cleanup expired seen keys
     triggerPoller.cleanupExpiredKeys(now);
+
+    // Step 10: Memory instrumentation
+    tickCount++;
+    if (tickCount % MEMORY_LOG_INTERVAL === 0) {
+      const rss = process.memoryUsage().rss;
+      const rssMb = (rss / (1024 * 1024)).toFixed(1);
+      observer.debug("Memory usage", { rss_bytes: rss, rss_mb: rssMb, tick: tickCount });
+
+      if (rss > MEMORY_CRITICAL_BYTES) {
+        observer.error("Memory critical — RSS exceeds 4 GB", { rss_bytes: rss, rss_mb: rssMb });
+        eventBus.publish({
+          type: "system.health_changed",
+          source: "daemon",
+          task_id: null,
+          payload: {
+            component: "daemon",
+            status: "unhealthy",
+            message: `RSS ${rssMb} MB exceeds critical threshold`,
+          },
+        });
+      } else if (rss > MEMORY_WARNING_BYTES) {
+        observer.warn("Memory warning — RSS exceeds 2 GB", { rss_bytes: rss, rss_mb: rssMb });
+      }
+    }
   }
 
   // ── Start (P1) ────────────────────────────────────────────────────────

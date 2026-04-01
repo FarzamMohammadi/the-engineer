@@ -226,6 +226,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
       const child = spawn(this.config.cli_path, args, {
         stdio: ["pipe", "pipe", "pipe"],
+        timeout: this.config.command_timeout_ms,
         env: this.cleanEnv(),
         cwd,
       });

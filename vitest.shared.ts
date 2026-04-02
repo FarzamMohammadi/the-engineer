@@ -13,10 +13,11 @@ const baseConfig: UserConfig = {
     unstubGlobals: true,
     setupFiles: ["test/setup.ts"],
 
-    // Worker scaling: aggressive locally, conservative in CI
+    // Worker scaling: capped to avoid OOM (each fork can use 4GB+).
+    // 14 cores × 4GB = 56GB — exceeds 48GB RAM. Cap at 4 everywhere.
     maxWorkers: isCi
       ? Math.min(2, Math.max(1, Math.floor(os.cpus().length * 0.25)))
-      : Math.max(4, Math.min(16, os.cpus().length)),
+      : Math.min(4, os.cpus().length),
 
     // Coverage (v8, enforced via pnpm test:coverage only)
     coverage: {

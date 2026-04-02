@@ -28,9 +28,10 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
       const repo = dispatch.task.repo;
       const cloneUrl = dispatch.task.clone_url;
       if (repo && cloneUrl) {
-        // Rework dispatch: workspace already exists (preserved during review_pending)
-        const existingWorktree = ctx.workspaceManager.getWorktreePath(taskId);
-        if (existingWorktree && dispatch.task.workspace) {
+        // Rework dispatch: workspace already exists (preserved during review_pending).
+        // Check task.workspace (DB-persisted) — not getWorktreePath() which is in-memory
+        // and empty after daemon restart.
+        if (dispatch.task.workspace) {
           ctx.observer.debug("Workspace setup: re-registering existing workspace (rework)", {
             taskId,
             repo,

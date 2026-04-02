@@ -138,9 +138,8 @@ describe("WorkspaceLifecycle", () => {
 
     it("re-registers existing workspace on rework", () => {
       const ctx = createMockContext();
-      (ctx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(
-        "/tmp/worktree/task-001",
-      );
+      // No need to mock getWorktreePath — rework detection uses task.workspace (DB-persisted),
+      // not in-memory map, so it works after daemon restart.
       const wl = createWorkspaceLifecycle(ctx);
       const dispatch = createDispatch({
         workspace: { repo: "owner/repo", branch: "engineer/task-001", worktree_path: "/tmp/wt" },

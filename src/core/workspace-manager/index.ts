@@ -559,10 +559,11 @@ export class WorkspaceManager implements IWorkspaceManager {
   // ── Thoughts Cleanup ────────────────────────────────────────────────────
 
   /**
-   * Remove thoughts/ directory from the worktree, commit, and push.
-   * Called before merge to keep thoughts out of the target branch while
-   * preserving them in PR history for reviewer context.
-   * Returns true if a cleanup commit was made, false if no thoughts dir found.
+   * Remove thoughts files **introduced by this branch** from the worktree, commit, and push.
+   * Only removes files added relative to the base branch — pre-existing thoughts/ content
+   * in the repo is never touched. Called before merge to keep engineering artifacts out of
+   * the target branch while preserving them in PR history for reviewer context.
+   * Returns true if a cleanup commit was made, false if nothing to remove.
    */
   removeThoughtsAndPush(taskId: string): boolean {
     const record = this.workspaces.get(taskId);
@@ -570,28 +571,32 @@ export class WorkspaceManager implements IWorkspaceManager {
       throw new WorkspaceNotFoundError(taskId);
     }
 
-    // Use the specific thoughts dir from workspace record, or fall back to "thoughts"
-    const thoughtsRelative = record.thoughtsDir ?? "thoughts";
-    const thoughtsAbsolute = path.join(record.worktreePath, thoughtsRelative);
+    // Find thoughts files added by this branch (not present on base branch)
+    const baseRef = `origin/${record.baseBranch}`;
+    const addedFiles = this.gitExec(
+      ["diff", "--name-only", "--diff-filter=A", baseRef, "--", "thoughts/"],
+      record.worktreePath,
+    );
 
-    if (!existsSync(thoughtsAbsolute)) {
-      this.observer.debug("No thoughts directory to remove", { taskId, path: thoughtsRelative });
+    if (!addedFiles.trim()) {
+      this.observer.debug("No branch-introduced thoughts files to remove", { taskId });
       return false;
     }
 
-    this.observer.info("Removing thoughts directory before merge", {
+    const files = addedFiles.trim().split("\n");
+    this.observer.info("Removing branch-introduced thoughts files before merge", {
       taskId,
-      path: thoughtsRelative,
+      fileCount: files.length,
     });
 
-    this.gitExec(["rm", "-r", thoughtsRelative], record.worktreePath);
+    this.gitExec(["rm", ...files], record.worktreePath);
     this.gitExec(
       ["commit", "-m", "chore: remove engineering thoughts before merge"],
       record.worktreePath,
     );
     this.pushBranch(taskId);
 
-    this.observer.info("Thoughts directory removed and pushed", { taskId });
+    this.observer.info("Thoughts files removed and pushed", { taskId, fileCount: files.length });
     return true;
   }
 

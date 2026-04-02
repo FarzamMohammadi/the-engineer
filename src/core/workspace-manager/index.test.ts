@@ -383,7 +383,7 @@ describe("createWorkspace branch rollback on worktree failure (F13)", () => {
 // ── removeThoughtsAndPush ──────────────────────────────────────────────────
 
 describe("removeThoughtsAndPush", () => {
-  it("removes thoughts directory, commits, and pushes", () => {
+  it("removes only branch-introduced thoughts files, commits, and pushes", () => {
     const h = setup();
     const record = h.workspaceManager.createWorkspace("task-1", h.repoName, {
       title: "Test",
@@ -394,7 +394,7 @@ describe("removeThoughtsAndPush", () => {
     const thoughtsDir = join(record.worktreePath, record.thoughtsDir!);
     expect(existsSync(thoughtsDir)).toBe(true);
 
-    // Commit the thoughts dir so git rm has something to remove
+    // Commit the thoughts dir so git diff sees it as branch-added
     execSync("git add -A && git commit -m 'add thoughts'", {
       cwd: record.worktreePath,
       encoding: "utf-8",
@@ -407,11 +407,11 @@ describe("removeThoughtsAndPush", () => {
     expect(existsSync(thoughtsDir)).toBe(false);
   });
 
-  it("returns false when thoughts directory does not exist", () => {
+  it("returns false when branch has no thoughts files added", () => {
     const h = setup();
     h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "No Thoughts" });
 
-    // No thoughtsId → no thoughts directory created
+    // No thoughtsId → no thoughts directory, nothing added to branch
     const result = h.workspaceManager.removeThoughtsAndPush("task-1");
 
     expect(result).toBe(false);

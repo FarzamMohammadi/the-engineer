@@ -76,6 +76,7 @@ export type ReviewHandlerContext = Pick<
   | "taskEngine"
   | "safetyLayer"
   | "workspaceManager"
+  | "peopleDirectory"
   | "clock"
   | "observer"
 >;

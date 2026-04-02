@@ -556,6 +556,45 @@ export class WorkspaceManager implements IWorkspaceManager {
     });
   }
 
+  // ── Thoughts Cleanup ────────────────────────────────────────────────────
+
+  /**
+   * Remove thoughts/ directory from the worktree, commit, and push.
+   * Called before merge to keep thoughts out of the target branch while
+   * preserving them in PR history for reviewer context.
+   * Returns true if a cleanup commit was made, false if no thoughts dir found.
+   */
+  removeThoughtsAndPush(taskId: string): boolean {
+    const record = this.workspaces.get(taskId);
+    if (!record) {
+      throw new WorkspaceNotFoundError(taskId);
+    }
+
+    // Use the specific thoughts dir from workspace record, or fall back to "thoughts"
+    const thoughtsRelative = record.thoughtsDir ?? "thoughts";
+    const thoughtsAbsolute = path.join(record.worktreePath, thoughtsRelative);
+
+    if (!existsSync(thoughtsAbsolute)) {
+      this.observer.debug("No thoughts directory to remove", { taskId, path: thoughtsRelative });
+      return false;
+    }
+
+    this.observer.info("Removing thoughts directory before merge", {
+      taskId,
+      path: thoughtsRelative,
+    });
+
+    this.gitExec(["rm", "-r", thoughtsRelative], record.worktreePath);
+    this.gitExec(
+      ["commit", "-m", "chore: remove engineering thoughts before merge"],
+      record.worktreePath,
+    );
+    this.pushBranch(taskId);
+
+    this.observer.info("Thoughts directory removed and pushed", { taskId });
+    return true;
+  }
+
   // ── Queries ──────────────────────────────────────────────────────────────
 
   /** Get the worktree filesystem path for a task, or null if unknown. */

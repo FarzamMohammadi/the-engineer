@@ -57,4 +57,7 @@ export interface IWorkspaceManager {
 
   /** Get the full workspace record for a task, or null if unknown. */
   getWorkspaceRecord(taskId: string): WorkspaceRecord | null;
+
+  /** Remove thoughts/ directory from worktree, commit, and push. Returns true if a cleanup commit was made. */
+  removeThoughtsAndPush(taskId: string): boolean;
 }

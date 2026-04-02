@@ -31,6 +31,29 @@ export function deriveAggregateReviewState(reviewStatus: {
   return null;
 }
 
+/** Regex matching /approve or /approved as a standalone comment command. */
+const APPROVE_COMMAND_REGEX = /^\/(approve|approved)\s*$/i;
+
+/**
+ * Detect if any PR comment contains an /approve command.
+ * Comments are formatted as "@author: body" by fetchPRCommentStrings().
+ * Returns the author of the first matching command, or null.
+ */
+export function detectCommentApproval(prComments: string[]): { author: string } | null {
+  for (const comment of prComments) {
+    const colonIndex = comment.indexOf(": ");
+    if (colonIndex === -1) {
+      continue;
+    }
+    const author = comment.slice(1, colonIndex); // strip leading "@"
+    const body = comment.slice(colonIndex + 2).trim();
+    if (APPROVE_COMMAND_REGEX.test(body)) {
+      return { author };
+    }
+  }
+  return null;
+}
+
 // ── ReviewHandler Interface ──────────────────────────────────────────────────
 
 /** Handles review feedback detection, merge detection, and approval/rework flows. */
@@ -73,7 +96,15 @@ export function createReviewHandler(
   notifications: NotificationRouter,
   callbacks: ReviewHandlerCallbacks,
 ): ReviewHandler {
-  const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, observer } = ctx;
+  const {
+    eventBus,
+    registry,
+    taskEngine,
+    safetyLayer,
+    workspaceManager,
+    peopleDirectory,
+    observer,
+  } = ctx;
 
   // Circuit breaker thresholds — configurable for operators with slow/self-hosted git hosting
   const failureWindowMs = ctx.config.review_polling.failure_window_ms;
@@ -222,13 +253,38 @@ export function createReviewHandler(
     comments?: string[];
   };
 
+  /** Check if a GitHub username is authorized to approve via comment command. */
+  function isAuthorizedApprover(author: string): boolean {
+    const owners = peopleDirectory.getByRole("owner");
+    const reviewers = peopleDirectory.getByRole("reviewer");
+    const authorizedPeople = [...owners, ...reviewers];
+    // If no people configured, allow anyone (solo dev without people.yaml)
+    if (authorizedPeople.length === 0) {
+      return true;
+    }
+    return authorizedPeople.some((p) =>
+      p.contacts.some(
+        (c) => c.channel === "github" && c.handle.toLowerCase() === author.toLowerCase(),
+      ),
+    );
+  }
+
   function resolveAggregateStateWithComments(
     reviewStatus: ReviewPollResult,
     prComments: string[],
   ): AggregateState | null {
+    // Formal reviews always take precedence
     const state = deriveAggregateReviewState(reviewStatus);
     if (state) {
       return state;
+    }
+    // Comment-based approval: /approve or /approved from authorized users
+    if (safetyLayer.isCommentApprovalEnabled()) {
+      const approval = detectCommentApproval(prComments);
+      if (approval && isAuthorizedApprover(approval.author)) {
+        observer.info("Comment-based approval detected", { author: approval.author });
+        return "approved";
+      }
     }
     return prComments.length > 0 ? "comment" : null;
   }
@@ -596,6 +652,22 @@ export function createReviewHandler(
     payload: TaskFeedbackReceivedPayload,
   ): void {
     try {
+      // Remove thoughts/ from branch before merge if configured.
+      // Re-register workspace first in case daemon restarted (in-memory map empty).
+      if (safetyLayer.shouldExcludeThoughtsOnMerge()) {
+        try {
+          if (!workspaceManager.getWorktreePath(payload.task_id) && task.workspace) {
+            workspaceManager.registerExistingWorkspace(payload.task_id, task.workspace);
+          }
+          workspaceManager.removeThoughtsAndPush(payload.task_id);
+        } catch (err) {
+          observer.warn("Failed to remove thoughts directory before merge — proceeding", {
+            taskId: payload.task_id,
+            error: sanitizeErrorMessage(err),
+          });
+        }
+      }
+
       const repo = task.repo;
       const prNumber = task.review?.pr_number;
       const autoMergeAllowed = repo ? safetyLayer.checkAutoMergeAllowed(repo) : false;

@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -376,5 +377,48 @@ describe("createWorkspace branch rollback on worktree failure (F13)", () => {
       encoding: "utf-8",
     });
     expect(branches).not.toContain("task-fail");
+  });
+});
+
+// ── removeThoughtsAndPush ──────────────────────────────────────────────────
+
+describe("removeThoughtsAndPush", () => {
+  it("removes thoughts directory, commits, and pushes", () => {
+    const h = setup();
+    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, {
+      title: "Test",
+      thoughtsId: "issue-1",
+    });
+
+    // Verify thoughts dir exists
+    const thoughtsDir = join(record.worktreePath, record.thoughtsDir!);
+    expect(existsSync(thoughtsDir)).toBe(true);
+
+    // Commit the thoughts dir so git rm has something to remove
+    execSync("git add -A && git commit -m 'add thoughts'", {
+      cwd: record.worktreePath,
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
+
+    const result = h.workspaceManager.removeThoughtsAndPush("task-1");
+
+    expect(result).toBe(true);
+    expect(existsSync(thoughtsDir)).toBe(false);
+  });
+
+  it("returns false when thoughts directory does not exist", () => {
+    const h = setup();
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "No Thoughts" });
+
+    // No thoughtsId → no thoughts directory created
+    const result = h.workspaceManager.removeThoughtsAndPush("task-1");
+
+    expect(result).toBe(false);
+  });
+
+  it("throws WorkspaceNotFoundError for unknown task", () => {
+    setup();
+    expect(() => h.workspaceManager.removeThoughtsAndPush("unknown-task")).toThrow();
   });
 });

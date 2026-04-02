@@ -7,6 +7,7 @@ import {
   type ReviewHandler,
   type ReviewHandlerCallbacks,
   createReviewHandler,
+  detectCommentApproval,
 } from "./review-handler.js";
 import type { ReviewHandlerContext } from "./types.js";
 
@@ -158,11 +159,21 @@ function buildContext(
     } as unknown as ReviewHandlerContext["taskEngine"],
     safetyLayer: {
       checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
+      isCommentApprovalEnabled: vi.fn().mockReturnValue(false),
+      shouldExcludeThoughtsOnMerge: vi.fn().mockReturnValue(false),
       flushCostSnapshot: vi.fn(),
     } as unknown as ReviewHandlerContext["safetyLayer"],
     workspaceManager: {
       cleanupWorkspace: vi.fn(),
+      getWorktreePath: vi.fn().mockReturnValue(null),
+      registerExistingWorkspace: vi.fn(),
+      removeThoughtsAndPush: vi.fn().mockReturnValue(true),
     } as unknown as ReviewHandlerContext["workspaceManager"],
+    peopleDirectory: {
+      getByRole: vi.fn().mockReturnValue([]),
+      getOwner: vi.fn().mockReturnValue(null),
+      getReviewers: vi.fn().mockReturnValue([]),
+    } as unknown as ReviewHandlerContext["peopleDirectory"],
     clock: { now: () => clockNow },
     observer: createTestObserverFacade("daemon"),
   } as unknown as ReviewHandlerContext;
@@ -796,6 +807,269 @@ describe("ReviewHandler", () => {
       };
       const allComments = reviewArg.feedback_rounds[0]!.comments.join(" ");
       expect(allComments).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    });
+  });
+
+  // ── Comment-Based Approval ──────────────────────────────────────────────
+
+  describe("detectCommentApproval (pure function)", () => {
+    it("detects /approve command", () => {
+      const result = detectCommentApproval(["@alice: /approve"]);
+      expect(result).toEqual({ author: "alice" });
+    });
+
+    it("detects /approved command", () => {
+      const result = detectCommentApproval(["@bob: /approved"]);
+      expect(result).toEqual({ author: "bob" });
+    });
+
+    it("is case insensitive", () => {
+      const result = detectCommentApproval(["@Alice: /APPROVE"]);
+      expect(result).toEqual({ author: "Alice" });
+    });
+
+    it("ignores trailing whitespace", () => {
+      const result = detectCommentApproval(["@alice: /approve  "]);
+      expect(result).toEqual({ author: "alice" });
+    });
+
+    it("returns null for regular comments", () => {
+      expect(detectCommentApproval(["@alice: looks good!"])).toBeNull();
+    });
+
+    it("returns null for /approve embedded in longer text", () => {
+      expect(detectCommentApproval(["@alice: I /approve this change"])).toBeNull();
+    });
+
+    it("returns null for empty array", () => {
+      expect(detectCommentApproval([])).toBeNull();
+    });
+
+    it("returns first match when multiple approvals exist", () => {
+      const result = detectCommentApproval(["@alice: /approve", "@bob: /approved"]);
+      expect(result).toEqual({ author: "alice" });
+    });
+  });
+
+  describe("comment-based approval flow", () => {
+    it("ignores /approve when enable_comment_approval is false", async () => {
+      const task = createReviewTask({ sub_state: "demo" });
+      buildContext([task]);
+
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "1", author: "FarzamMohammadi", body: "/approve", created_at: "2026-01-01" },
+      ]);
+
+      await handler.checkFeedback();
+      await flush();
+
+      // Should emit "comment" feedback, not "approved"
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      if (feedbackCalls.length > 0) {
+        const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
+        expect(payload.feedback_type).toBe("comment");
+      }
+    });
+
+    it("treats /approve as approval when enabled and author is authorized", async () => {
+      const task = createReviewTask({ sub_state: "demo" });
+      buildContext([task]);
+
+      // Enable comment approval
+      const sl = ctx.safetyLayer as unknown as {
+        isCommentApprovalEnabled: ReturnType<typeof vi.fn>;
+      };
+      sl.isCommentApprovalEnabled.mockReturnValue(true);
+
+      // Authorize via people directory (empty = allow anyone)
+      const pd = ctx.peopleDirectory as unknown as { getByRole: ReturnType<typeof vi.fn> };
+      pd.getByRole.mockReturnValue([]);
+
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "1", author: "FarzamMohammadi", body: "/approve", created_at: "2026-01-01" },
+      ]);
+
+      await handler.checkFeedback();
+      await flush();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      expect(feedbackCalls.length).toBeGreaterThan(0);
+      const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
+      expect(payload.feedback_type).toBe("approved");
+    });
+
+    it("rejects /approve from unauthorized author when people are configured", async () => {
+      const task = createReviewTask({ sub_state: "demo" });
+      buildContext([task]);
+
+      const sl = ctx.safetyLayer as unknown as {
+        isCommentApprovalEnabled: ReturnType<typeof vi.fn>;
+      };
+      sl.isCommentApprovalEnabled.mockReturnValue(true);
+
+      // Configure authorized people — the commenter is NOT in the list
+      const pd = ctx.peopleDirectory as unknown as { getByRole: ReturnType<typeof vi.fn> };
+      pd.getByRole.mockImplementation((role: string) => {
+        if (role === "owner") {
+          return [{ id: "farzam", contacts: [{ channel: "github", handle: "FarzamMohammadi" }] }];
+        }
+        return [];
+      });
+
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "1", author: "random-user", body: "/approve", created_at: "2026-01-01" },
+      ]);
+
+      await handler.checkFeedback();
+      await flush();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      // Should be "comment" not "approved"
+      if (feedbackCalls.length > 0) {
+        const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
+        expect(payload.feedback_type).not.toBe("approved");
+      }
+    });
+
+    it("formal changes_requested takes precedence over /approve comment", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+
+      const sl = ctx.safetyLayer as unknown as {
+        isCommentApprovalEnabled: ReturnType<typeof vi.fn>;
+      };
+      sl.isCommentApprovalEnabled.mockReturnValue(true);
+
+      hostingPlugin.getReviewStatus.mockResolvedValue({
+        changes_requested: true,
+        approved: false,
+        reviewers: [{ username: "reviewer1", state: "changes_requested" }],
+        comments: [],
+      });
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "1", author: "FarzamMohammadi", body: "/approve", created_at: "2026-01-01" },
+      ]);
+      hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
+
+      await handler.checkFeedback();
+      await flush();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      expect(feedbackCalls.length).toBeGreaterThan(0);
+      const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
+      expect(payload.feedback_type).toBe("changes_requested");
+    });
+  });
+
+  // ── Thoughts Cleanup on Merge ─────────────────────────────────────────
+
+  describe("thoughts cleanup on code approval", () => {
+    it("calls removeThoughtsAndPush before merge when config enabled", async () => {
+      const task = createReviewTask({
+        sub_state: "code",
+        workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
+        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+      });
+      buildContext([task]);
+
+      const sl = ctx.safetyLayer as unknown as {
+        shouldExcludeThoughtsOnMerge: ReturnType<typeof vi.fn>;
+      };
+      sl.shouldExcludeThoughtsOnMerge.mockReturnValue(true);
+
+      const payload: TaskFeedbackReceivedPayload = {
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "reviewer1",
+        content: null,
+        pr_number: 42,
+      };
+      handler.handleFeedbackEvent(payload);
+      await flush();
+
+      const wm = ctx.workspaceManager as unknown as {
+        removeThoughtsAndPush: ReturnType<typeof vi.fn>;
+      };
+      expect(wm.removeThoughtsAndPush).toHaveBeenCalledWith("task-1");
+    });
+
+    it("does not call removeThoughtsAndPush when config disabled", async () => {
+      const task = createReviewTask({
+        sub_state: "code",
+        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+      });
+      buildContext([task]);
+
+      const payload: TaskFeedbackReceivedPayload = {
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "reviewer1",
+        content: null,
+        pr_number: 42,
+      };
+      handler.handleFeedbackEvent(payload);
+      await flush();
+
+      const wm = ctx.workspaceManager as unknown as {
+        removeThoughtsAndPush: ReturnType<typeof vi.fn>;
+      };
+      expect(wm.removeThoughtsAndPush).not.toHaveBeenCalled();
+    });
+
+    it("proceeds with approval even when removeThoughtsAndPush throws", async () => {
+      const task = createReviewTask({
+        sub_state: "code",
+        workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
+        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+      });
+      buildContext([task]);
+
+      const sl = ctx.safetyLayer as unknown as {
+        shouldExcludeThoughtsOnMerge: ReturnType<typeof vi.fn>;
+      };
+      sl.shouldExcludeThoughtsOnMerge.mockReturnValue(true);
+
+      const wm = ctx.workspaceManager as unknown as {
+        removeThoughtsAndPush: ReturnType<typeof vi.fn>;
+      };
+      wm.removeThoughtsAndPush.mockImplementation(() => {
+        throw new Error("git rm failed");
+      });
+
+      const payload: TaskFeedbackReceivedPayload = {
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "reviewer1",
+        content: null,
+        pr_number: 42,
+      };
+      handler.handleFeedbackEvent(payload);
+      await flush();
+
+      // Task should still complete despite cleanup failure
+      const te = ctx.taskEngine as unknown as { requestTransition: ReturnType<typeof vi.fn> };
+      expect(te.requestTransition).toHaveBeenCalledWith(
+        "task-1",
+        "completed",
+        null,
+        expect.any(String),
+        "daemon",
+      );
     });
   });
 });

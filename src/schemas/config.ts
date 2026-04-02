@@ -577,6 +577,18 @@ export const MergePolicySchema = z.object({
       repos: z.record(z.boolean()).default({}),
     })
     .default({}),
+  enable_comment_approval: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Allow /approve or /approved PR comments as approval signals. Useful for solo developers who cannot formally approve their own PRs on GitHub.",
+    ),
+  exclude_thoughts_on_merge: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Remove the thoughts/ directory from the PR branch before merge. Thoughts remain in the PR for review context but do not land in the target branch.",
+    ),
 });
 export type MergePolicy = z.infer<typeof MergePolicySchema>;
 

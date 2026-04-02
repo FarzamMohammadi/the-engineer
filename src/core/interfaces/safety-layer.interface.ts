@@ -41,6 +41,10 @@ export interface ISafetyLayer {
   getTimeoutPolicy(): ResponseTimeout;
   updateConfig(newConfig: SafetyConfig): void;
   checkAutoMergeAllowed(repo: string): boolean;
+  /** Whether /approve PR comments are treated as approval signals (solo-dev workflow). */
+  isCommentApprovalEnabled(): boolean;
+  /** Whether thoughts/ directory should be removed from the branch before merge. */
+  shouldExcludeThoughtsOnMerge(): boolean;
   /** Flush pending cost tracker snapshot to DB. Call during graceful shutdown. */
   flushCostSnapshot(): void;
 }

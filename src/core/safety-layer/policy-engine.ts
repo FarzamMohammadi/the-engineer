@@ -282,6 +282,16 @@ export class PolicyEngine {
     return repoSetting ?? mergeConfig.default;
   }
 
+  /** Whether /approve PR comments are treated as approval signals (solo-dev workflow). */
+  isCommentApprovalEnabled(): boolean {
+    return this.config.merge.enable_comment_approval;
+  }
+
+  /** Whether thoughts/ directory should be removed from the branch before merge. */
+  shouldExcludeThoughtsOnMerge(): boolean {
+    return this.config.merge.exclude_thoughts_on_merge;
+  }
+
   /** Get response timeout policy. */
   getTimeoutPolicy(): ResponseTimeout {
     return this.config.response_timeout;

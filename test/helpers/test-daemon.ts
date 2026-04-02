@@ -86,6 +86,8 @@ export interface TestDaemonHandle {
     getCostStatus: Mock;
     updateConfig: Mock;
     checkAutoMergeAllowed: Mock;
+    isCommentApprovalEnabled: Mock;
+    shouldExcludeThoughtsOnMerge: Mock;
     flushCostSnapshot: Mock;
   };
   workspaceManager: {
@@ -93,6 +95,8 @@ export interface TestDaemonHandle {
     verifyWorkspace: Mock;
     getWorktreePath: Mock;
     cleanupWorkspace: Mock;
+    registerExistingWorkspace: Mock;
+    removeThoughtsAndPush: Mock;
   };
   peopleDirectory: {
     getPerson: Mock;
@@ -288,6 +292,8 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     getCostStatus: vi.fn().mockReturnValue({}),
     updateConfig: vi.fn(),
     checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
+    isCommentApprovalEnabled: vi.fn().mockReturnValue(false),
+    shouldExcludeThoughtsOnMerge: vi.fn().mockReturnValue(false),
     flushCostSnapshot: vi.fn(),
   };
 
@@ -297,6 +303,8 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     verifyWorkspace: vi.fn(),
     getWorktreePath: vi.fn().mockReturnValue(null),
     cleanupWorkspace: vi.fn(),
+    registerExistingWorkspace: vi.fn(),
+    removeThoughtsAndPush: vi.fn().mockReturnValue(false),
   };
 
   // ── PeopleDirectory mock ──────────────────────────────────────────────

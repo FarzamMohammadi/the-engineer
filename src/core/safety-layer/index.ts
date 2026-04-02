@@ -205,11 +205,18 @@ export class SafetyLayer implements ISafetyLayer {
     this.costTracker.flush();
   }
 
-  // ── Auto-Merge ─────────────────────────────────────────────────────────────
+  // ── Merge Policy ───────────────────────────────────────────────────────────
 
-  /** Simple boolean check: is auto-merge allowed for this repo? */
   checkAutoMergeAllowed(repo: string): boolean {
     return this.policyEngine.checkAutoMergeAllowed(repo);
+  }
+
+  isCommentApprovalEnabled(): boolean {
+    return this.policyEngine.isCommentApprovalEnabled();
+  }
+
+  shouldExcludeThoughtsOnMerge(): boolean {
+    return this.policyEngine.shouldExcludeThoughtsOnMerge();
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

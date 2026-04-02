@@ -154,6 +154,32 @@ describe("PolicyEngine — checkAutoMergeAllowed", () => {
   });
 });
 
+// ── PolicyEngine — Comment Approval & Thoughts Exclusion ────────────────────
+
+describe("PolicyEngine — isCommentApprovalEnabled", () => {
+  it("returns false by default", () => {
+    const engine = createEngine({});
+    expect(engine.isCommentApprovalEnabled()).toBe(false);
+  });
+
+  it("returns true when enabled", () => {
+    const engine = createEngine({ merge: { enable_comment_approval: true } });
+    expect(engine.isCommentApprovalEnabled()).toBe(true);
+  });
+});
+
+describe("PolicyEngine — shouldExcludeThoughtsOnMerge", () => {
+  it("returns false by default", () => {
+    const engine = createEngine({});
+    expect(engine.shouldExcludeThoughtsOnMerge()).toBe(false);
+  });
+
+  it("returns true when enabled", () => {
+    const engine = createEngine({ merge: { exclude_thoughts_on_merge: true } });
+    expect(engine.shouldExcludeThoughtsOnMerge()).toBe(true);
+  });
+});
+
 // ── PolicyEngine — Autonomy ──────────────────────────────────────────────────
 
 describe("PolicyEngine — evaluateAutonomy", () => {

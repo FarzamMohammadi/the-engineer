@@ -186,6 +186,8 @@ cost_limits:
 #   auto_merge_after_approval:
 #     default: false                  # Don't auto-merge by default
 #     repos: {}                       # Per-repo overrides: { "owner/repo": true }
+#   enable_comment_approval: false    # Allow /approve PR comments as approval (solo-dev workflow)
+#   exclude_thoughts_on_merge: false  # Remove thoughts/ from branch before merge
 `;
 
 export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
@@ -521,6 +523,8 @@ merge:
     repos: {}                             # Per-repo overrides, e.g.:
     # repos:
     #   owner/internal-docs: true         # Auto-merge for low-risk repos
+  enable_comment_approval: false          # Allow /approve PR comments as approval (solo-dev workflow)
+  exclude_thoughts_on_merge: false        # Remove thoughts/ from branch before merge
 `;
 
 export const EXAMPLE_WORKSPACE = `# ┌─────────────────────────────────────────────────────────────────────────────┐

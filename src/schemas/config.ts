@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { PersonSchema } from "./adapters.js";
+import { RetryConfigSchema } from "./retry.js";
 
 // ── Config Version ──────────────────────────────────────────────────────────────
 
@@ -193,6 +194,9 @@ export const DaemonConfigSchema = z.object({
         ),
     })
     .default({}),
+
+  // Outreach retry configuration
+  retry: RetryConfigSchema.default({}),
 });
 export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 

@@ -1,0 +1,5 @@
+{
+  "status": "<ready | need_more_info | error>",
+  "next_phase": "<requirements_gathering | research | planning | execution | self_review | demo_prep | integration>",
+  "summary": "<one-line summary of what you accomplished>"
+}

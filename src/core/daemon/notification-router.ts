@@ -21,6 +21,7 @@ export interface NotificationRouterContext {
   peopleDirectory: IPeopleDirectory;
   eventBus: IEventBus;
   observer: IObserver;
+  retryManager: RetryManager;
 }
 
 // ── Notification Templates ───────────────────────────────────────────────────
@@ -64,6 +65,7 @@ const NOTIFICATION_TEMPLATES: Partial<Record<Notification["kind"], TemplateEntry
 };
 
 import type { INotificationRouter } from "../interfaces/notification-router.interface.js";
+import type { RetryManager } from "./retry-manager.js";
 
 // Re-export the interface for consumers that import from here
 export type { INotificationRouter as NotificationRouter } from "../interfaces/notification-router.interface.js";
@@ -71,7 +73,7 @@ export type { INotificationRouter as NotificationRouter } from "../interfaces/no
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createNotificationRouter(ctx: NotificationRouterContext): INotificationRouter {
-  const { registry, taskEngine, peopleDirectory, eventBus, observer } = ctx;
+  const { registry, taskEngine, peopleDirectory, eventBus, observer, retryManager } = ctx;
 
   // ── Plugin Lookup ──────────────────────────────────────────────────────
 
@@ -255,14 +257,22 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
   // ── Delivery with Fallback ──────────────────────────────────────────────
 
-  /** Attempt to deliver a message via a single plugin+contact. Returns true if delivered. */
+  /** Result of attempting to deliver a message to a contact. */
+  interface DeliveryAttemptResult {
+    delivered: boolean;
+    error_message?: string;
+    retryable?: boolean;
+    retry_after_ms?: number;
+  }
+
+  /** Attempt to deliver a message via a single plugin+contact. Returns delivery result. */
   async function tryDeliverToContact(
     contact: ResolvedContact,
     plugin: CommunicationAdapter,
     safeContent: string,
     messageType: MessageType,
     notification: Notification,
-  ): Promise<boolean> {
+  ): Promise<DeliveryAttemptResult> {
     try {
       const formatted = plugin.formatMessage(safeContent, messageType);
       const result = await plugin.sendMessage(
@@ -289,27 +299,45 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
             channel: contact.channel,
           },
         } satisfies PublishInput<"comm.message_sent">);
-        return true;
+        return { delivered: true };
       }
 
+      // Send failed - capture retry information from AdapterError
+      const error = result.error;
       observer.debug("Send failed, trying next contact", {
         personId: contact.personId,
         channel: contact.channel,
-        error: result.error?.message ?? "unknown",
+        error: error?.message ?? "unknown",
+        retryable: error?.retryable,
+        retry_after_ms: error?.retry_after,
       });
+
+      return {
+        delivered: false,
+        error_message: error?.message ?? "unknown send failure",
+        retryable: error?.retryable,
+        retry_after_ms: error?.retry_after ?? undefined,
+      };
     } catch (err) {
+      // Unexpected error - treat as retryable
+      const errorMessage = err instanceof Error ? err.message : String(err);
       observer.debug("Send error, trying next contact", {
         personId: contact.personId,
         channel: contact.channel,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage,
       });
+
+      return {
+        delivered: false,
+        error_message: errorMessage,
+        retryable: true, // Unexpected errors are generally retryable
+      };
     }
-    return false;
   }
 
   /**
    * Try contacts in order (first = preferred). Stop on first successful delivery.
-   * If none reachable, log warning.
+   * If none reachable, schedule retries for retryable contacts.
    */
   function sendToFirstReachable(
     personId: string,
@@ -321,6 +349,12 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   ): void {
     // Fire-and-forget async chain — try contacts sequentially
     (async () => {
+      const failedContacts: Array<{
+        contact: ResolvedContact;
+        error_message: string;
+        retryable: boolean;
+      }> = [];
+
       for (const contact of personContacts) {
         const plugin = findPluginForChannel(contact.channel, commPlugins);
         if (!plugin) {
@@ -331,24 +365,62 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
           continue;
         }
 
-        const delivered = await tryDeliverToContact(
+        const result = await tryDeliverToContact(
           contact,
           plugin,
           safeContent,
           messageType,
           notification,
         );
-        if (delivered) {
-          return;
+
+        if (result.delivered) {
+          return; // Success - stop trying other contacts
         }
+
+        // Track failed attempt for potential retry
+        failedContacts.push({
+          contact,
+          error_message: result.error_message ?? "unknown",
+          retryable: result.retryable ?? true, // Default to retryable
+        });
       }
 
-      // None succeeded
-      observer.warn("Notification not delivered — no reachable channel for person", {
-        kind: notification.kind,
-        personId,
-        triedChannels: personContacts.map((c) => c.channel),
-      });
+      // All contacts failed - schedule retries for retryable contacts
+      const retryableContacts = failedContacts.filter((fc) => fc.retryable);
+
+      if (retryableContacts.length > 0) {
+        observer.debug("Scheduling retries for failed outreach", {
+          kind: notification.kind,
+          personId,
+          retryableContacts: retryableContacts.length,
+          totalContacts: failedContacts.length,
+        });
+
+        // Schedule retry for the first retryable contact (preferred contact gets retry priority)
+        const firstRetryable = retryableContacts[0];
+        retryManager.scheduleRetry({
+          task_id: notification.taskId,
+          contact: {
+            person_id: firstRetryable.contact.personId,
+            channel: firstRetryable.contact.channel,
+            handle: firstRetryable.contact.handle,
+          },
+          notification: {
+            kind: notification.kind,
+            content: safeContent,
+            message_type: messageType,
+          },
+          initial_failure_reason: firstRetryable.error_message,
+        });
+      } else {
+        // No retryable contacts - log warning (original behavior for non-retryable failures)
+        observer.warn("Notification not delivered — no retryable channel for person", {
+          kind: notification.kind,
+          personId,
+          triedChannels: personContacts.map((c) => c.channel),
+          nonRetryableErrors: failedContacts.map((fc) => fc.error_message),
+        });
+      }
     })().catch((err) => {
       observer.warn("Unexpected error in delivery chain", {
         personId,

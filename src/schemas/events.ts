@@ -63,6 +63,9 @@ export const EventTypeSchema = z.enum([
   "health.plugin_recovered",
   "comm.message_received",
   "comm.message_sent",
+  "outreach.retry_scheduled",
+  "outreach.retry_succeeded",
+  "outreach.retry_abandoned",
   "review.poll_completed",
   "system.cleanup_completed",
 ]);
@@ -426,6 +429,34 @@ export const CommMessageSentPayloadSchema = z.object({
 });
 export type CommMessageSentPayload = z.infer<typeof CommMessageSentPayloadSchema>;
 
+// outreach.*
+
+export const OutreachRetryScheduledPayloadSchema = z.object({
+  task_id: z.string(),
+  person_id: z.string(),
+  channel: z.string(),
+  next_retry_at: z.string(),
+  initial_failure: z.string(),
+});
+export type OutreachRetryScheduledPayload = z.infer<typeof OutreachRetryScheduledPayloadSchema>;
+
+export const OutreachRetrySucceededPayloadSchema = z.object({
+  task_id: z.string(),
+  person_id: z.string(),
+  channel: z.string(),
+  attempt_count: z.number().int().positive(),
+});
+export type OutreachRetrySucceededPayload = z.infer<typeof OutreachRetrySucceededPayloadSchema>;
+
+export const OutreachRetryAbandonedPayloadSchema = z.object({
+  task_id: z.string(),
+  person_id: z.string(),
+  channel: z.string(),
+  attempt_count: z.number().int().positive(),
+  reason: z.string(),
+});
+export type OutreachRetryAbandonedPayload = z.infer<typeof OutreachRetryAbandonedPayloadSchema>;
+
 // review.*
 
 export const ReviewPollCompletedPayloadSchema = z.object({
@@ -495,6 +526,9 @@ export type EventPayloads = {
   "health.plugin_recovered": HealthPluginRecoveredPayload;
   "comm.message_received": CommMessageReceivedPayload;
   "comm.message_sent": CommMessageSentPayload;
+  "outreach.retry_scheduled": OutreachRetryScheduledPayload;
+  "outreach.retry_succeeded": OutreachRetrySucceededPayload;
+  "outreach.retry_abandoned": OutreachRetryAbandonedPayload;
   "review.poll_completed": ReviewPollCompletedPayload;
   "system.cleanup_completed": SystemCleanupCompletedPayload;
 };
@@ -544,6 +578,9 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "health.plugin_recovered": HealthPluginRecoveredPayloadSchema,
   "comm.message_received": CommMessageReceivedPayloadSchema,
   "comm.message_sent": CommMessageSentPayloadSchema,
+  "outreach.retry_scheduled": OutreachRetryScheduledPayloadSchema,
+  "outreach.retry_succeeded": OutreachRetrySucceededPayloadSchema,
+  "outreach.retry_abandoned": OutreachRetryAbandonedPayloadSchema,
   "review.poll_completed": ReviewPollCompletedPayloadSchema,
   "system.cleanup_completed": SystemCleanupCompletedPayloadSchema,
 };

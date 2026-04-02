@@ -97,6 +97,31 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     return wrapAsync(() => this.doGetDefaultBranch(repo));
   }
 
+  // ── Health Monitoring ─────────────────────────────────────────────────────
+
+  /** Check API connectivity and authentication. Returns detailed health info. */
+  async checkHealth(): Promise<{
+    healthy: boolean;
+    authenticated: boolean;
+    rateLimit?: {
+      remaining: number;
+      limit: number;
+      resetTime?: Date;
+    };
+    error?: string;
+  }> {
+    return wrapAsync(() => this.doCheckHealth());
+  }
+
+  /** Get current rate limiting status for monitoring. */
+  async getRateLimitStatus(): Promise<{
+    remaining: number;
+    limit: number;
+    resetTime?: Date;
+  } | null> {
+    return wrapAsync(() => this.doGetRateLimitStatus());
+  }
+
   // ── Protected Abstract (plugin authors implement) ──────────────────────────
 
   protected abstract doCreatePR(options: PROptions): Promise<PRResult>;
@@ -118,4 +143,19 @@ export abstract class GitHostingAdapter extends BaseAdapter {
   protected abstract doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]>;
   protected abstract doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection>;
   protected abstract doGetDefaultBranch(repo: string): Promise<string>;
+  protected abstract doCheckHealth(): Promise<{
+    healthy: boolean;
+    authenticated: boolean;
+    rateLimit?: {
+      remaining: number;
+      limit: number;
+      resetTime?: Date;
+    };
+    error?: string;
+  }>;
+  protected abstract doGetRateLimitStatus(): Promise<{
+    remaining: number;
+    limit: number;
+    resetTime?: Date;
+  } | null>;
 }

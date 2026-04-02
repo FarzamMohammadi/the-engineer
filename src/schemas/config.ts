@@ -191,6 +191,12 @@ export const DaemonConfigSchema = z.object({
         .describe(
           "Number of review API failures within the failure window before pausing polling. Default: 3.",
         ),
+      debug_merge_detection: z
+        .boolean()
+        .default(false)
+        .describe(
+          "Enable verbose logging for merge detection debugging. Can also be set via DEBUG_MERGE_DETECTION=true env var.",
+        ),
     })
     .default({}),
 });

@@ -637,6 +637,103 @@ function checkCliArtifacts(): DoctorCategory {
   return { category: "CLI Artifacts", checks };
 }
 
+/** Category 10: Merge detection system health. */
+export function checkMergeDetection(engineerHome: string, bundle?: ConfigBundle): DoctorCategory {
+  const checks: DoctorCheck[] = [];
+
+  // Check if daemon is running (required for merge detection)
+  const pidFile = join(engineerHome, "daemon.pid");
+  const isRunning = existsSync(pidFile);
+
+  if (isRunning) {
+    checks.push({
+      label: "Daemon status",
+      status: "pass",
+      message: "Daemon is running",
+    });
+  } else {
+    checks.push({
+      label: "Daemon status",
+      status: "warn",
+      message: "Daemon not running — merge detection unavailable",
+      remedy: "Start the daemon with: engineer start",
+    });
+  }
+
+  // Check merge detection configuration
+  const config = bundle?.config || bundle; // Handle both {config: ...} and direct config structures
+  if (config && config.daemon) {
+    const pollingConfig = config.daemon.review_polling;
+
+    checks.push({
+      label: "Circuit breaker config",
+      status: "pass",
+      message: `${pollingConfig.max_failures_before_pause} failures in ${Math.round(pollingConfig.failure_window_ms / 1000)}s window`,
+    });
+
+    if (pollingConfig.debug_merge_detection) {
+      checks.push({
+        label: "Debug mode",
+        status: "warn",
+        message: "Debug merge detection is enabled — verbose logging active",
+        remedy: "Disable via config: review_polling.debug_merge_detection = false",
+      });
+    } else {
+      checks.push({
+        label: "Debug mode",
+        status: "pass",
+        message: "Debug merge detection disabled (production mode)",
+      });
+    }
+  }
+
+  // Check for review_pending tasks that might need attention
+  const dbPath = join(engineerHome, "data", "engineer.db");
+  if (existsSync(dbPath)) {
+    try {
+      const BetterSqlite3 = require("better-sqlite3");
+      const db = new BetterSqlite3(dbPath, { readonly: true });
+      const result = db
+        .prepare("SELECT COUNT(*) as count FROM tasks WHERE state = 'review_pending'")
+        .get() as { count: number };
+      db.close();
+
+      if (result.count === 0) {
+        checks.push({
+          label: "Tasks in review",
+          status: "pass",
+          message: "No tasks currently pending merge detection",
+        });
+      } else {
+        checks.push({
+          label: "Tasks in review",
+          status: "pass",
+          message: `${result.count} tasks awaiting merge detection`,
+        });
+      }
+    } catch (error) {
+      checks.push({
+        label: "Database access",
+        status: "fail",
+        message: "Cannot query database for task status",
+        remedy: "Check database permissions and integrity",
+      });
+    }
+  }
+
+  // Check environment variable override
+  if (process.env["DEBUG_MERGE_DETECTION"] === "true") {
+    checks.push({
+      label: "Environment override",
+      status: "warn",
+      message: "DEBUG_MERGE_DETECTION=true environment variable active",
+      remedy: "Unset DEBUG_MERGE_DETECTION environment variable for production",
+    });
+  }
+
+  return { category: "Merge Detection", checks };
+}
+
 export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
   const dirs = resolveDirectories(engineerHome);
   const categories: DoctorCategory[] = [
@@ -649,6 +746,7 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
     checkWorkspace(engineerHome),
     checkExternalDependencies(),
     checkCliArtifacts(),
+    checkMergeDetection(engineerHome, bundle),
   ];
 
   // Category 11 requires loaded config — if available

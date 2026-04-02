@@ -105,8 +105,19 @@ export class StateMachine {
     reason: string,
     triggeredBy: string,
   ): TransitionResult {
+    const startTime = Date.now();
+
     const row = this.getTaskStmt.get(taskId) as TaskRow | undefined;
     if (!row) {
+      this.logTransitionAttempt({
+        taskId,
+        success: false,
+        reason: "Task not found",
+        toState,
+        toSub,
+        triggeredBy,
+        elapsed_ms: Date.now() - startTime,
+      });
       return { success: false, reason: "Task not found" };
     }
 
@@ -114,12 +125,39 @@ export class StateMachine {
     const fromSub = row.sub_state as SubState | null;
     const currentVersion = row.version;
 
+    this.logTransitionAttempt({
+      taskId,
+      fromState,
+      fromSub,
+      toState,
+      toSub,
+      reason,
+      triggeredBy,
+      currentVersion,
+      attempt: true,
+    });
+
     if (!isValidTransition(fromState, fromSub, toState, toSub)) {
       const fromLabel = fromSub ? `${fromState}.${fromSub}` : fromState;
       const toLabel = toSub ? `${toState}.${toSub}` : toState;
+      const errorReason = `Invalid transition from ${fromLabel} to ${toLabel}`;
+
+      this.logTransitionAttempt({
+        taskId,
+        fromState,
+        fromSub,
+        toState,
+        toSub,
+        success: false,
+        reason: errorReason,
+        triggeredBy,
+        elapsed_ms: Date.now() - startTime,
+        invalidTransition: true,
+      });
+
       return {
         success: false,
-        reason: `Invalid transition from ${fromLabel} to ${toLabel}`,
+        reason: errorReason,
       };
     }
 
@@ -156,14 +194,53 @@ export class StateMachine {
     try {
       executeTransition();
     } catch (err) {
+      const elapsed = Date.now() - startTime;
       if (err instanceof VersionConflictError) {
+        const errorReason = `Version conflict: task "${taskId}" was modified concurrently`;
+        this.logTransitionAttempt({
+          taskId,
+          fromState,
+          fromSub,
+          toState,
+          toSub,
+          success: false,
+          reason: errorReason,
+          triggeredBy,
+          elapsed_ms: elapsed,
+          versionConflict: true,
+        });
         return {
           success: false,
-          reason: `Version conflict: task "${taskId}" was modified concurrently`,
+          reason: errorReason,
         };
       }
+      this.logTransitionAttempt({
+        taskId,
+        fromState,
+        fromSub,
+        toState,
+        toSub,
+        success: false,
+        reason: err instanceof Error ? err.message : String(err),
+        triggeredBy,
+        elapsed_ms: elapsed,
+        error: true,
+      });
       throw err;
     }
+
+    const elapsed = Date.now() - startTime;
+    this.logTransitionAttempt({
+      taskId,
+      fromState,
+      fromSub,
+      toState,
+      toSub,
+      success: true,
+      reason,
+      triggeredBy,
+      elapsed_ms: elapsed,
+    });
 
     this.eventBus.publish({
       type: EventTypes["task.state_changed"],
@@ -181,5 +258,84 @@ export class StateMachine {
     } satisfies PublishInput<"task.state_changed">);
 
     return { success: true };
+  }
+
+  private logTransitionAttempt(params: {
+    taskId: string;
+    fromState?: TaskState;
+    fromSub?: SubState | null;
+    toState: TaskState;
+    toSub: SubState | null;
+    success?: boolean;
+    reason: string;
+    triggeredBy: string;
+    elapsed_ms?: number;
+    currentVersion?: number;
+    attempt?: boolean;
+    invalidTransition?: boolean;
+    versionConflict?: boolean;
+    error?: boolean;
+  }): void {
+    const {
+      taskId,
+      fromState,
+      fromSub,
+      toState,
+      toSub,
+      success,
+      reason,
+      triggeredBy,
+      elapsed_ms,
+      currentVersion,
+      attempt,
+      invalidTransition,
+      versionConflict,
+      error,
+    } = params;
+
+    const fromLabel = fromState && fromSub ? `${fromState}.${fromSub}` : fromState || "unknown";
+    const toLabel = toSub ? `${toState}.${toSub}` : toState;
+
+    const metadata: any = {
+      taskId,
+      from: fromLabel,
+      to: toLabel,
+      reason,
+      triggeredBy,
+    };
+
+    if (elapsed_ms !== undefined) metadata.elapsed_ms = elapsed_ms;
+    if (currentVersion !== undefined) metadata.version = currentVersion;
+    if (invalidTransition) metadata.invalidTransition = true;
+    if (versionConflict) metadata.versionConflict = true;
+    if (error) metadata.error = true;
+
+    // Note: This logging uses console.log since we don't have access to an observer here.
+    // In a real implementation, we'd inject an observer into the StateMachine constructor.
+    if (attempt) {
+      console.log(
+        JSON.stringify({
+          level: "debug",
+          message: "State transition attempt",
+          ...metadata,
+        }),
+      );
+    } else if (success === false) {
+      console.log(
+        JSON.stringify({
+          level: "warn",
+          message: "State transition failed",
+          ...metadata,
+        }),
+      );
+    } else if (success === true) {
+      console.log(
+        JSON.stringify({
+          level: "info",
+          message: "State transition succeeded",
+          ...metadata,
+        }),
+      );
+    }
   }
 }

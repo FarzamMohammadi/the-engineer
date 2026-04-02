@@ -470,8 +470,21 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     // Step 7+8: Check merges and feedback (shared PR status cache avoids duplicate API calls)
     reviewHandler.clearTickCache();
+
+    const mergeCheckStart = Date.now();
     await reviewHandler.checkMerges(reviewPendingTasks);
+    const mergeCheckEnd = Date.now();
+
+    const feedbackCheckStart = Date.now();
     await reviewHandler.checkFeedback(reviewPendingTasks);
+    const feedbackCheckEnd = Date.now();
+
+    observer.debug("Daemon tick: review processing completed", {
+      tick: tickCount + 1,
+      reviewPendingCount: reviewPendingTasks.length,
+      mergeCheck_ms: mergeCheckEnd - mergeCheckStart,
+      feedbackCheck_ms: feedbackCheckEnd - feedbackCheckStart,
+    });
 
     // Step 9: Cleanup expired seen keys
     triggerPoller.cleanupExpiredKeys(now);

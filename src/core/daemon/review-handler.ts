@@ -31,6 +31,25 @@ export function deriveAggregateReviewState(reviewStatus: {
   return null;
 }
 
+/**
+ * Validate that a task has the required metadata for merge detection.
+ * Returns array of missing field names, empty if valid.
+ */
+export function validateTaskMetadata(task: {
+  id: string;
+  repo: string | null;
+  review: { pr_number: number | null } | null;
+}): string[] {
+  const missing: string[] = [];
+  if (!task.repo) {
+    missing.push("repo");
+  }
+  if (!task.review?.pr_number) {
+    missing.push("pr_number");
+  }
+  return missing;
+}
+
 // ── ReviewHandler Interface ──────────────────────────────────────────────────
 
 /** Handles review feedback detection, merge detection, and approval/rework flows. */
@@ -43,6 +62,15 @@ export interface ReviewHandler {
   handleFeedbackEvent(payload: TaskFeedbackReceivedPayload): void;
   /** Clear per-tick PR status cache. Call at start of each tick to avoid stale data. */
   clearTickCache(): void;
+  /** Get circuit breaker status for monitoring and debugging. */
+  getCircuitBreakerStatus(): {
+    active: boolean;
+    recentFailures: number;
+    maxFailures: number;
+    windowMs: number;
+    backoffMs: number;
+    nextRetryIn: number;
+  };
 }
 
 /** Callbacks for cross-subsystem coordination. */
@@ -79,6 +107,11 @@ export function createReviewHandler(
   const failureWindowMs = ctx.config.review_polling.failure_window_ms;
   const maxFailuresBeforePause = ctx.config.review_polling.max_failures_before_pause;
 
+  // Debug mode can be enabled via config or environment variable
+  const debugMergeDetection =
+    ctx.config.review_polling.debug_merge_detection ||
+    process.env["DEBUG_MERGE_DETECTION"] === "true";
+
   // ── Internal State ──────────────────────────────────────────────────────
   const emittedFeedbackKeys = new Map<string, string>();
 
@@ -86,7 +119,9 @@ export function createReviewHandler(
   const prStatusCache = new Map<string, Awaited<ReturnType<GitHostingAdapter["getPRStatus"]>>>();
 
   // Time-windowed failure counting for review API
-  const reviewApiFailures: Array<{ timestamp: number }> = [];
+  // Time-windowed failure counting for review API with backoff state
+  const reviewApiFailures: Array<{ timestamp: number; errorType: string }> = [];
+  let lastBackoffDelay = 1000; // Start with 1 second
 
   function shouldSkipReviewPolling(now: number): boolean {
     // Clean up old failures outside the window
@@ -94,11 +129,84 @@ export function createReviewHandler(
     while (reviewApiFailures.length > 0 && (reviewApiFailures[0]?.timestamp ?? 0) < windowStart) {
       reviewApiFailures.shift();
     }
-    return reviewApiFailures.length >= maxFailuresBeforePause;
+    const shouldSkip = reviewApiFailures.length >= maxFailuresBeforePause;
+
+    if (shouldSkip) {
+      observer.warn("Circuit breaker activated - skipping review polling", {
+        recentFailures: reviewApiFailures.length,
+        maxFailures: maxFailuresBeforePause,
+        windowMs: failureWindowMs,
+        nextRetryIn: Math.max(0, (reviewApiFailures[0]?.timestamp ?? 0) + failureWindowMs - now),
+      });
+    }
+
+    return shouldSkip;
   }
 
-  function recordReviewApiFailure(now: number): void {
-    reviewApiFailures.push({ timestamp: now });
+  function recordReviewApiFailure(now: number, error: unknown, isTransient = true): void {
+    const errorType = classifyApiError(error);
+    reviewApiFailures.push({ timestamp: now, errorType });
+
+    // Apply exponential backoff for transient errors
+    if (isTransient) {
+      lastBackoffDelay = Math.min(lastBackoffDelay * 2, 30000); // Cap at 30 seconds
+    } else {
+      lastBackoffDelay = 1000; // Reset backoff for persistent errors
+    }
+
+    observer.warn("API failure recorded", {
+      failureCount: reviewApiFailures.length,
+      maxAllowed: maxFailuresBeforePause,
+      errorType,
+      isTransient,
+      backoffDelay: lastBackoffDelay,
+      error: sanitizeErrorMessage(error),
+      willTriggerCircuitBreaker: reviewApiFailures.length >= maxFailuresBeforePause,
+    });
+  }
+
+  function shouldBackoff(now: number): number {
+    if (reviewApiFailures.length === 0) {
+      return 0;
+    }
+
+    const lastFailure = reviewApiFailures[reviewApiFailures.length - 1];
+    const timeSinceLastFailure = now - lastFailure.timestamp;
+
+    if (timeSinceLastFailure < lastBackoffDelay) {
+      return lastBackoffDelay - timeSinceLastFailure;
+    }
+
+    return 0;
+  }
+
+  function classifyApiError(
+    error: unknown,
+  ): "network" | "auth" | "rate_limit" | "api_error" | "unknown" {
+    const message =
+      error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+    if (
+      message.includes("network") ||
+      message.includes("timeout") ||
+      message.includes("econnreset")
+    ) {
+      return "network";
+    }
+    if (
+      message.includes("401") ||
+      message.includes("unauthorized") ||
+      message.includes("forbidden")
+    ) {
+      return "auth";
+    }
+    if (message.includes("rate limit") || message.includes("429")) {
+      return "rate_limit";
+    }
+    if (message.includes("api") || message.includes("400") || message.includes("500")) {
+      return "api_error";
+    }
+    return "unknown";
   }
 
   async function getCachedPRStatus(
@@ -109,10 +217,38 @@ export function createReviewHandler(
     const cacheKey = `${repo}#${String(prNumber)}`;
     const cached = prStatusCache.get(cacheKey);
     if (cached) {
+      if (debugMergeDetection) {
+        observer.debug("PR status cache hit", {
+          repo,
+          prNumber,
+          cacheKey,
+          state: cached.state,
+        });
+      }
       return cached;
     }
+
+    if (debugMergeDetection) {
+      observer.debug("PR status cache miss - querying API", {
+        repo,
+        prNumber,
+        cacheKey,
+      });
+    }
+
     const status = await hosting.getPRStatus(repo, prNumber);
     prStatusCache.set(cacheKey, status);
+
+    if (debugMergeDetection) {
+      observer.debug("PR status API response cached", {
+        repo,
+        prNumber,
+        cacheKey,
+        state: status.state,
+        draft: status.draft,
+      });
+    }
+
     return status;
   }
 
@@ -127,8 +263,18 @@ export function createReviewHandler(
     sub_state: string | null;
     review: { pr_number: number | null } | null;
   }): void {
+    observer.info("Completing task on PR merge", {
+      taskId: task.id,
+      currentSubState: task.sub_state,
+      prNumber: task.review?.pr_number,
+      needsDemoToCodeTransition: task.sub_state === SubStates.demo,
+    });
+
     // If task is in demo sub-state, transition demo→code first
     if (task.sub_state === SubStates.demo) {
+      observer.debug("Transitioning demo -> code before completion", {
+        taskId: task.id,
+      });
       const demoTransition = taskEngine.requestTransition(
         task.id,
         TaskStates.review_pending,
@@ -137,14 +283,21 @@ export function createReviewHandler(
         "daemon",
       );
       if (!demoTransition.success) {
-        observer.warn("Failed to transition task from demo to code before merge completion", {
+        observer.error("Failed to transition task from demo to code before merge completion", {
           taskId: task.id,
           reason: demoTransition.reason,
+          prNumber: task.review?.pr_number,
         });
         return;
       }
+      observer.info("Successfully transitioned demo -> code", {
+        taskId: task.id,
+      });
     }
 
+    observer.debug("Transitioning to completed state", {
+      taskId: task.id,
+    });
     const completionTransition = taskEngine.requestTransition(
       task.id,
       TaskStates.completed,
@@ -152,10 +305,15 @@ export function createReviewHandler(
       "pr_merged",
       "daemon",
     );
-    if (!completionTransition.success) {
-      observer.warn("Failed to transition task to completed after PR merge", {
+    if (completionTransition.success) {
+      observer.info("Successfully transitioned to completed state", {
+        taskId: task.id,
+      });
+    } else {
+      observer.error("Failed to transition task to completed after PR merge", {
         taskId: task.id,
         reason: completionTransition.reason,
+        prNumber: task.review?.pr_number,
       });
       // PR is merged — still clean up workspace and notify, even if transition failed
     }
@@ -171,27 +329,108 @@ export function createReviewHandler(
     task: ReturnType<typeof taskEngine.getTasksByState>[number],
     hosting: GitHostingAdapter,
   ): Promise<void> {
-    if (!(task.review?.pr_number && task.repo)) {
+    const missingFields = validateTaskMetadata(task);
+    if (missingFields.length > 0) {
+      observer.warn("Task missing required merge detection metadata", {
+        taskId: task.id,
+        missingFields,
+        hasPrNumber: !!task.review?.pr_number,
+        hasRepo: !!task.repo,
+        taskState: task.state,
+        taskSubState: task.sub_state,
+        createdAt: new Date(task.created_at).toISOString(),
+      });
       return;
     }
 
+    // Check for rapid merge scenario (merge before first poll)
+    const prCreatedAt = task.review?.pr_created_at;
+    const timeSincePrCreation = prCreatedAt ? ctx.clock.now() - prCreatedAt : null;
+
+    const startTime = ctx.clock.now();
     let status: Awaited<ReturnType<GitHostingAdapter["getPRStatus"]>>;
     try {
       status = await getCachedPRStatus(hosting, task.repo, task.review.pr_number);
+      const elapsed = ctx.clock.now() - startTime;
+
+      observer.debug("PR status check completed", {
+        taskId: task.id,
+        repo: task.repo,
+        prNumber: task.review.pr_number,
+        state: status.state,
+        merged: status.state === "merged",
+        elapsed_ms: elapsed,
+        draft: status.draft,
+        timeSincePrCreation_ms: timeSincePrCreation,
+        possibleRapidMerge: timeSincePrCreation && timeSincePrCreation < 30000, // < 30 seconds
+      });
+
+      // Detect edge case: PR closed without merge
+      if (status.state === "closed") {
+        observer.info("PR closed without merge - not completing task", {
+          taskId: task.id,
+          repo: task.repo,
+          prNumber: task.review.pr_number,
+          timeSincePrCreation_ms: timeSincePrCreation,
+        });
+        // Task remains in review_pending state - could be reopened
+        return;
+      }
+
+      // Detect edge case: rapid merge scenario
+      if (status.state === "merged" && timeSincePrCreation && timeSincePrCreation < 10000) {
+        observer.warn("Rapid merge detected - PR merged very quickly after creation", {
+          taskId: task.id,
+          repo: task.repo,
+          prNumber: task.review.pr_number,
+          timeSincePrCreation_ms: timeSincePrCreation,
+        });
+      }
     } catch (err) {
+      const elapsed = ctx.clock.now() - startTime;
       observer.warn("Failed to check PR status", {
         taskId: task.id,
+        repo: task.repo,
+        prNumber: task.review?.pr_number,
+        elapsed_ms: elapsed,
+        timeSincePrCreation_ms: timeSincePrCreation,
         error: sanitizeErrorMessage(err),
       });
       return;
     }
 
     if (status.state === "merged") {
+      observer.info("PR merge detected - initiating task completion", {
+        taskId: task.id,
+        repo: task.repo,
+        prNumber: task.review.pr_number,
+        currentSubState: task.sub_state,
+        timeSincePrCreation_ms: timeSincePrCreation,
+      });
+
+      // Emit merge detection event for monitoring and dashboard integration
+      eventBus.publish({
+        type: "merge.detected" as any, // Custom event type for monitoring
+        source: "daemon",
+        task_id: task.id,
+        payload: {
+          task_id: task.id,
+          repo: task.repo,
+          pr_number: task.review.pr_number,
+          sub_state: task.sub_state,
+          time_since_pr_creation_ms: timeSincePrCreation,
+          merge_detection_elapsed_ms: ctx.clock.now() - startTime,
+          rapid_merge: timeSincePrCreation ? timeSincePrCreation < 10000 : false,
+        },
+      });
+
       try {
         completeTaskOnMerge(task);
       } catch (err) {
         observer.error("Failed to complete task after PR merge detected", {
           taskId: task.id,
+          repo: task.repo,
+          prNumber: task.review.pr_number,
           error: sanitizeErrorMessage(err),
         });
       }
@@ -201,15 +440,79 @@ export function createReviewHandler(
   async function checkMerges(reviewPendingTasks?: Task[]): Promise<void> {
     const reviewTasks = reviewPendingTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
     if (reviewTasks.length === 0) {
+      observer.debug("Merge detection: no review_pending tasks to check");
       return;
     }
 
     const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!hosting) {
+      observer.warn("Merge detection: no git hosting adapter available", {
+        taskCount: reviewTasks.length,
+        taskIds: reviewTasks.map((t) => t.id),
+      });
       return;
     }
 
-    await Promise.allSettled(reviewTasks.map((task) => checkSingleTaskMerge(task, hosting)));
+    const startTime = ctx.clock.now();
+    const tasksWithPR = reviewTasks.filter((t) => t.review?.pr_number && t.repo);
+
+    // Track timing for race condition detection
+    const mergePollStart = ctx.clock.now();
+
+    // Detect potential race condition: tasks with very recent PR creation
+    const recentlyCreatedPRs = tasksWithPR.filter((t) => {
+      const prCreated = t.review?.pr_created_at;
+      return prCreated && ctx.clock.now() - prCreated < 60000; // < 1 minute
+    });
+
+    observer.info("Starting merge detection", {
+      totalTasks: reviewTasks.length,
+      tasksWithPR: tasksWithPR.length,
+      taskIds: reviewTasks.map((t) => t.id),
+      tasksWithPRIds: tasksWithPR.map((t) => t.id),
+      recentlyCreatedPRs: recentlyCreatedPRs.length,
+      recentPRIds: recentlyCreatedPRs.map((t) => t.id),
+      mergePollStartTime: mergePollStart,
+    });
+
+    // Store initial task states to detect concurrent changes
+    const initialTaskStates = new Map(reviewTasks.map((t) => [t.id, t.state]));
+
+    const results = await Promise.allSettled(
+      reviewTasks.map((task) => checkSingleTaskMerge(task, hosting)),
+    );
+
+    const elapsed = ctx.clock.now() - startTime;
+    const failedChecks = results.filter((r) => r.status === "rejected").length;
+
+    // Check for tasks that changed state during merge polling (race condition)
+    const currentTaskStates = taskEngine.getTasksByState(TaskStates.review_pending);
+    const currentTaskIds = new Set(currentTaskStates.map((t) => t.id));
+    const disappearedTasks = reviewTasks.filter((t) => !currentTaskIds.has(t.id));
+
+    if (disappearedTasks.length > 0) {
+      observer.warn("Race condition detected: tasks left review_pending during merge polling", {
+        disappearedTasks: disappearedTasks.length,
+        taskIds: disappearedTasks.map((t) => t.id),
+        mergePollElapsed_ms: elapsed,
+      });
+    }
+
+    observer.info("Merge detection completed", {
+      totalTasks: reviewTasks.length,
+      tasksWithPR: tasksWithPR.length,
+      failedChecks,
+      elapsed_ms: elapsed,
+      disappearedTasks: disappearedTasks.length,
+      concurrentStateChanges: disappearedTasks.length > 0,
+    });
+
+    if (failedChecks > 0) {
+      observer.warn("Some merge detection checks failed", {
+        failedChecks,
+        totalTasks: reviewTasks.length,
+      });
+    }
   }
 
   // ── Feedback Detection ──────────────────────────────────────────────────
@@ -381,10 +684,20 @@ export function createReviewHandler(
           prNumber,
         });
       }
+
+      // Reset backoff on success
+      lastBackoffDelay = 1000;
     } catch (err) {
-      recordReviewApiFailure(now);
+      const errorType = classifyApiError(err);
+      const isTransient = errorType === "network" || errorType === "rate_limit";
+      recordReviewApiFailure(now, err, isTransient);
+
       observer.warn("Failed to check PR review feedback", {
         taskId: task.id,
+        repo,
+        prNumber,
+        errorType,
+        isTransient,
         error: sanitizeErrorMessage(err),
       });
     }
@@ -403,6 +716,17 @@ export function createReviewHandler(
       observer.warn("Skipping review feedback polling — too many recent API failures", {
         recentFailures: reviewApiFailures.length,
         windowMs: failureWindowMs,
+      });
+      return;
+    }
+
+    // Exponential backoff check
+    const backoffRemaining = shouldBackoff(now);
+    if (backoffRemaining > 0) {
+      observer.debug("Skipping review polling due to exponential backoff", {
+        remainingMs: backoffRemaining,
+        lastBackoffDelay,
+        recentFailures: reviewApiFailures.length,
       });
       return;
     }
@@ -726,10 +1050,34 @@ export function createReviewHandler(
     }
   }
 
+  function getCircuitBreakerStatus() {
+    const now = ctx.clock.now();
+    const isActive = shouldSkipReviewPolling(now);
+    const backoffRemaining = shouldBackoff(now);
+
+    let nextRetryIn = 0;
+    if (isActive && reviewApiFailures.length > 0) {
+      const oldestFailure = reviewApiFailures[0]?.timestamp ?? 0;
+      nextRetryIn = Math.max(0, oldestFailure + failureWindowMs - now);
+    } else if (backoffRemaining > 0) {
+      nextRetryIn = backoffRemaining;
+    }
+
+    return {
+      active: isActive,
+      recentFailures: reviewApiFailures.length,
+      maxFailures: maxFailuresBeforePause,
+      windowMs: failureWindowMs,
+      backoffMs: lastBackoffDelay,
+      nextRetryIn,
+    };
+  }
+
   return {
     checkMerges,
     checkFeedback,
     handleFeedbackEvent,
     clearTickCache,
+    getCircuitBreakerStatus,
   };
 }

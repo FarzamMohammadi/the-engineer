@@ -291,6 +291,65 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     return data.default_branch;
   }
 
+  protected async doCheckHealth(): Promise<{
+    healthy: boolean;
+    authenticated: boolean;
+    rateLimit?: {
+      remaining: number;
+      limit: number;
+      resetTime?: Date;
+    };
+    error?: string;
+  }> {
+    try {
+      // Test authentication by fetching user info
+      const [userResponse, rateLimitResponse] = await Promise.all([
+        this.octokit.users.getAuthenticated(),
+        this.octokit.rateLimit.get(),
+      ]);
+
+      const rateLimit = rateLimitResponse.data.rate;
+
+      return {
+        healthy: true,
+        authenticated: true,
+        rateLimit: {
+          remaining: rateLimit.remaining,
+          limit: rateLimit.limit,
+          resetTime: new Date(rateLimit.reset * 1000),
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const is401 = message.includes("401") || message.includes("Unauthorized");
+
+      return {
+        healthy: false,
+        authenticated: !is401,
+        error: message,
+      };
+    }
+  }
+
+  protected async doGetRateLimitStatus(): Promise<{
+    remaining: number;
+    limit: number;
+    resetTime?: Date;
+  } | null> {
+    try {
+      const { data } = await this.octokit.rateLimit.get();
+      const rateLimit = data.rate;
+
+      return {
+        remaining: rateLimit.remaining,
+        limit: rateLimit.limit,
+        resetTime: new Date(rateLimit.reset * 1000),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {
     const parsed = GitHubHostingConfigSchema.safeParse(config);
     if (!parsed.success) {
@@ -347,13 +406,28 @@ function splitRepo(repo: string): [string, string] {
 }
 
 function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged" {
-  if (merged) {
-    return "merged";
+  const result = merged ? "merged" : state === "closed" ? "closed" : "open";
+
+  // Enhanced logging for merge detection debugging
+  const debugMergeDetection = process.env["DEBUG_MERGE_DETECTION"] === "true";
+  if (debugMergeDetection) {
+    console.log(
+      JSON.stringify({
+        level: "debug",
+        source: "github-hosting",
+        message: "PR state mapping",
+        githubState: state,
+        githubMerged: merged,
+        mappedState: result,
+        isStateConsistent:
+          (state === "closed" && merged && result === "merged") ||
+          (state === "closed" && !merged && result === "closed") ||
+          (state === "open" && !merged && result === "open"),
+      }),
+    );
   }
-  if (state === "closed") {
-    return "closed";
-  }
-  return "open";
+
+  return result;
 }
 
 async function getChecksPassing(

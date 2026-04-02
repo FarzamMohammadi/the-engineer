@@ -3,8 +3,10 @@ import ms from "ms";
 
 import { loadEnvFile } from "../config/env.js";
 import { loadConfigDir } from "../config/loader.js";
+import { runDebugMerges } from "./commands/debug-merges.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
+import { runRepairTasks } from "./commands/repair-tasks.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
 import { runStop } from "./commands/stop.js";
@@ -170,6 +172,37 @@ program
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runWhy(home, taskId);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── debug-merges ─────────────────────────────────────────────────────────────
+
+program
+  .command("debug-merges")
+  .description("Debug merge detection for review-pending tasks")
+  .option("--task-id <id>", "Show details for a specific task")
+  .option("--follow", "Real-time streaming mode (coming soon)")
+  .action((options: { taskId?: string; follow?: boolean }) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runDebugMerges(home, options);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── repair-tasks ─────────────────────────────────────────────────────────────
+
+program
+  .command("repair-tasks")
+  .description("Repair tasks with incomplete PR metadata")
+  .option("--dry-run", "Show what would be repaired without making changes")
+  .action(async (options: { dryRun?: boolean }) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = await runRepairTasks(home, options);
     if (code !== 0) {
       process.exitCode = code;
     }

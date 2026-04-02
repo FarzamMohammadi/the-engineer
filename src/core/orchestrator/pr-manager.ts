@@ -72,6 +72,12 @@ export interface PrManager {
     demoPrepOutput: PhaseOutput,
     dispatch: Dispatch,
   ): Promise<boolean>;
+
+  /**
+   * Attempt to recover missing PR metadata for tasks with incomplete review data.
+   * Queries git hosting API to find PRs created from task branches.
+   */
+  recoverTaskPRMetadata(taskId: string): Promise<{ recovered: boolean; details?: string }>;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -323,5 +329,105 @@ export function createPrManager(
     }
   }
 
-  return { commitPushAndCreatePR };
+  // ── Task State Recovery ─────────────────────────────────────────────────────
+
+  async function recoverTaskPRMetadata(
+    taskId: string,
+  ): Promise<{ recovered: boolean; details?: string }> {
+    const task = ctx.taskEngine.getTask(taskId);
+    if (!task) {
+      return { recovered: false, details: "Task not found" };
+    }
+
+    // Skip if task already has complete metadata
+    if (task.review?.pr_number && task.repo) {
+      return { recovered: false, details: "Task already has complete PR metadata" };
+    }
+
+    const gitHosting = ctx.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
+    if (!gitHosting) {
+      return { recovered: false, details: "No git hosting plugin available" };
+    }
+
+    try {
+      // Try to get workspace record to find the branch
+      const wsRecord = ctx.workspaceManager.getWorkspaceRecord(taskId);
+      if (!wsRecord) {
+        return { recovered: false, details: "No workspace record found" };
+      }
+
+      if (!wsRecord.repo) {
+        return { recovered: false, details: "Workspace record missing repository" };
+      }
+
+      observer.info("Attempting PR metadata recovery", {
+        taskId,
+        repo: wsRecord.repo,
+        branch: wsRecord.branch,
+      });
+
+      // Search for PRs from this branch using git hosting adapter
+      // Note: This is a plugin-blind approach - we don't know if the hosting adapter
+      // has a "search PRs by branch" method, so we'll try a different approach
+
+      // Alternative: Try to get the PR number from git remote tracking
+      try {
+        const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
+        const gitOutput = execFileSync("git", ["ls-remote", "--heads", "origin", wsRecord.branch], {
+          cwd: worktreePath,
+          encoding: "utf-8",
+          timeout: 10000,
+        });
+
+        if (gitOutput.trim()) {
+          // Branch exists on remote, but we can't directly get PR number without platform-specific APIs
+          // For now, we'll just update the repo field if it's missing
+          const currentReview = task.review ?? {
+            pr_number: null,
+            pr_state: "draft",
+            demo_artifacts: [],
+            feedback_rounds: [],
+          };
+
+          let updated = false;
+          if (!task.repo && wsRecord.repo) {
+            ctx.taskEngine.updateTaskField(taskId, "repo", wsRecord.repo);
+            updated = true;
+            observer.info("Recovered repository metadata", {
+              taskId,
+              repo: wsRecord.repo,
+            });
+          }
+
+          if (updated) {
+            return {
+              recovered: true,
+              details: "Recovered repository field from workspace record",
+            };
+          }
+        }
+      } catch (gitError) {
+        observer.debug("Git remote check failed during recovery", {
+          taskId,
+          error: sanitizeErrorMessage(gitError),
+        });
+      }
+
+      return {
+        recovered: false,
+        details: "Could not recover PR metadata - may need manual intervention",
+      };
+    } catch (error) {
+      observer.error("PR metadata recovery failed", {
+        taskId,
+        error: sanitizeErrorMessage(error),
+      });
+      return {
+        recovered: false,
+        details: `Recovery failed: ${sanitizeErrorMessage(error)}`,
+      };
+    }
+  }
+
+  return { commitPushAndCreatePR, recoverTaskPRMetadata };
 }

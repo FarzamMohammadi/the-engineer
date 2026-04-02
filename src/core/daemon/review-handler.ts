@@ -647,26 +647,32 @@ export function createReviewHandler(
     callbacks.onTaskCompletionFinalized(taskId);
   }
 
+  /** Remove thoughts/ from the branch before merge if configured. Non-fatal. */
+  function tryRemoveThoughtsBeforeMerge(
+    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+  ): void {
+    if (!safetyLayer.shouldExcludeThoughtsOnMerge()) {
+      return;
+    }
+    try {
+      if (!workspaceManager.getWorktreePath(task.id) && task.workspace) {
+        workspaceManager.registerExistingWorkspace(task.id, task.workspace);
+      }
+      workspaceManager.removeThoughtsAndPush(task.id);
+    } catch (err) {
+      observer.warn("Failed to remove thoughts directory before merge — proceeding", {
+        taskId: task.id,
+        error: sanitizeErrorMessage(err),
+      });
+    }
+  }
+
   function handleCodeApproval(
     task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
     payload: TaskFeedbackReceivedPayload,
   ): void {
     try {
-      // Remove thoughts/ from branch before merge if configured.
-      // Re-register workspace first in case daemon restarted (in-memory map empty).
-      if (safetyLayer.shouldExcludeThoughtsOnMerge()) {
-        try {
-          if (!workspaceManager.getWorktreePath(payload.task_id) && task.workspace) {
-            workspaceManager.registerExistingWorkspace(payload.task_id, task.workspace);
-          }
-          workspaceManager.removeThoughtsAndPush(payload.task_id);
-        } catch (err) {
-          observer.warn("Failed to remove thoughts directory before merge — proceeding", {
-            taskId: payload.task_id,
-            error: sanitizeErrorMessage(err),
-          });
-        }
-      }
+      tryRemoveThoughtsBeforeMerge(task);
 
       const repo = task.repo;
       const prNumber = task.review?.pr_number;

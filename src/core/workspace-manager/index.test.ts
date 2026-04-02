@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -418,7 +418,7 @@ describe("removeThoughtsAndPush", () => {
   });
 
   it("throws WorkspaceNotFoundError for unknown task", () => {
-    setup();
+    const h = setup();
     expect(() => h.workspaceManager.removeThoughtsAndPush("unknown-task")).toThrow();
   });
 });

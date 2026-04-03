@@ -1,6 +1,6 @@
 {
   "status": "ready",
-  "next_phase": "research",
-  "summary": "Single line config change: update seed-example Claude model from sonnet to opus",
+  "next_phase": "implementation",
+  "summary": "CI failure: TypeScript type errors in test configs - add trace_output_path and merge policy properties",
   "complexity": "trivial"
 }

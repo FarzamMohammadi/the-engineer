@@ -71,7 +71,12 @@ describe("GeminiCliLLMPlugin", () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: mockCliPath });
-    const result = await plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null });
+    const result = await plugin.infer({
+      prompt: "Hello",
+      system_prompt: null,
+      cwd: null,
+      trace_output_path: null,
+    });
     expect(result.content).toBe("Mock Gemini response");
     expect(result.cost_usd).toBeNull(); // Gemini CLI never reports cost
     expect(result.duration_ms).toBeGreaterThan(0);
@@ -87,18 +92,18 @@ describe("GeminiCliLLMPlugin", () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: mockCliErrorPath });
-    await expect(plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null })).rejects.toThrow(
-      AdapterMethodError,
-    );
+    await expect(
+      plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null, trace_output_path: null }),
+    ).rejects.toThrow(AdapterMethodError);
   });
 
   it("throws AdapterMethodError when CLI not found", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
     await plugin.initialize({ cli_path: "/nonexistent/gemini" });
-    await expect(plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null })).rejects.toThrow(
-      AdapterMethodError,
-    );
+    await expect(
+      plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null, trace_output_path: null }),
+    ).rejects.toThrow(AdapterMethodError);
   });
 
   it("healthCheck succeeds with mock version", async () => {

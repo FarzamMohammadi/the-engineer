@@ -1,6 +1,5 @@
 {
   "status": "ready",
   "next_phase": "execution",
-  "summary": "Single line change: update seed-example claude model from sonnet to opus",
-  "complexity": "trivial"
+  "summary": "Fix CI failures: add missing test object properties to enable PR #13 merge"
 }

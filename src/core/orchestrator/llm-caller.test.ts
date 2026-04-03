@@ -76,6 +76,7 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
       notify: vi.fn(),
       syncStateToCommPlugin: vi.fn(),
     } as unknown as OrchestratorContext["notifications"],
+    tracesDir: null,
     ...overrides,
   };
 }
@@ -283,6 +284,7 @@ describe("LlmCaller", () => {
         status: "ready",
         next_phase: "self_review",
         summary: "Implementation complete",
+        complexity: "trivial",
       };
       readSessionResultMock.mockReturnValue(sessionResult);
 
@@ -292,13 +294,22 @@ describe("LlmCaller", () => {
         "task-001",
         "system prompt",
         "do work",
-        { traceId: null, sessionId: null },
+        {
+          traceId: "trace-001",
+          sessionId: "session-001",
+          loopbackCount: 0,
+          requirementsLoopCount: 0,
+          thoughtsDir: null,
+          repoContext: null,
+          returnToPhase: null,
+          phaseSequence: 1,
+        },
         "thoughts/2026-03-31-issue-5",
       );
 
-      expect(output.data.status).toBe("ready");
-      expect(output.data.next_phase).toBe("self_review");
-      expect(output.data.summary).toBe("Implementation complete");
+      expect(output.data["status"]).toBe("ready");
+      expect(output.data["next_phase"]).toBe("self_review");
+      expect(output.data["summary"]).toBe("Implementation complete");
     });
 
     it("recovers when session-result.json has status need_more_info", async () => {
@@ -309,6 +320,7 @@ describe("LlmCaller", () => {
         status: "need_more_info",
         next_phase: "requirements_gathering",
         summary: "Need clarification on scope",
+        complexity: "moderate",
       };
       readSessionResultMock.mockReturnValue(sessionResult);
 
@@ -318,11 +330,20 @@ describe("LlmCaller", () => {
         "task-001",
         "system prompt",
         "do work",
-        { traceId: null, sessionId: null },
+        {
+          traceId: "trace-001",
+          sessionId: "session-001",
+          loopbackCount: 0,
+          requirementsLoopCount: 0,
+          thoughtsDir: null,
+          repoContext: null,
+          returnToPhase: null,
+          phaseSequence: 1,
+        },
         "thoughts/2026-03-31-issue-5",
       );
 
-      expect(output.data.status).toBe("need_more_info");
+      expect(output.data["status"]).toBe("need_more_info");
     });
 
     it("rethrows when callLlm throws and no session-result.json found", async () => {
@@ -337,7 +358,16 @@ describe("LlmCaller", () => {
           "task-001",
           "system prompt",
           "do work",
-          { traceId: null, sessionId: null },
+          {
+            traceId: "trace-001",
+            sessionId: "session-001",
+            loopbackCount: 0,
+            requirementsLoopCount: 0,
+            thoughtsDir: null,
+            repoContext: null,
+            returnToPhase: null,
+            phaseSequence: 1,
+          },
           "thoughts/2026-03-31-issue-5",
         ),
       ).rejects.toThrow("CLI crashed hard");
@@ -355,7 +385,16 @@ describe("LlmCaller", () => {
           "task-001",
           "system prompt",
           "do work",
-          { traceId: null, sessionId: null },
+          {
+            traceId: "trace-001",
+            sessionId: "session-001",
+            loopbackCount: 0,
+            requirementsLoopCount: 0,
+            thoughtsDir: null,
+            repoContext: null,
+            returnToPhase: null,
+            phaseSequence: 1,
+          },
           "thoughts/2026-03-31-issue-5",
         ),
       ).rejects.toThrow("CLI crashed hard");
@@ -369,6 +408,7 @@ describe("LlmCaller", () => {
         status: "ready",
         next_phase: "self_review",
         summary: "Done",
+        complexity: "trivial",
       };
       readSessionResultMock.mockReturnValue(sessionResult);
 
@@ -378,7 +418,16 @@ describe("LlmCaller", () => {
         "task-001",
         "system prompt",
         "do work",
-        { traceId: null, sessionId: null },
+        {
+          traceId: "trace-001",
+          sessionId: "session-001",
+          loopbackCount: 0,
+          requirementsLoopCount: 0,
+          thoughtsDir: null,
+          repoContext: null,
+          returnToPhase: null,
+          phaseSequence: 1,
+        },
         "thoughts/2026-03-31-issue-5",
       );
 

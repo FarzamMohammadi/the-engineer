@@ -173,6 +173,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
     notifications,
+    tracesDir: null,
   });
 
   // 11. Daemon

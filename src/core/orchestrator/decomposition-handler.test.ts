@@ -44,6 +44,7 @@ function createMockContext(): OrchestratorContext {
       notify: vi.fn(),
       syncStateToCommPlugin: vi.fn(),
     } as unknown as OrchestratorContext["notifications"],
+    tracesDir: null,
   };
 }
 

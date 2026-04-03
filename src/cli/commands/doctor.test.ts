@@ -559,7 +559,11 @@ function makeSafeBundle() {
         },
         review_pending: { reminder_after_ms: 86400000, repeat_interval_ms: 86400000 },
       },
-      merge: { auto_merge_after_approval: { default: false, repos: {} } },
+      merge: {
+        auto_merge_after_approval: { default: false, repos: {} },
+        enable_comment_approval: false,
+        exclude_thoughts_on_merge: false,
+      },
     },
     people: [],
   };

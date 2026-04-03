@@ -92,6 +92,7 @@ describe("createTestRegistry", () => {
       prompt: "test",
       system_prompt: null,
       cwd: null,
+      trace_output_path: null,
     });
     expect(result.content).toBe("Fake LLM response");
     expect(result.cost_usd).toBe(0.01);

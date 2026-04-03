@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "implementation",
-  "summary": "CI failure: TypeScript type errors in test configs - add trace_output_path and merge policy properties",
-  "complexity": "trivial"
-}

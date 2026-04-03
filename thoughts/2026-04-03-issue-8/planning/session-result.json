@@ -1,5 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "execution",
-  "summary": "Fix CI failures: add missing test object properties to enable PR #13 merge"
-}

@@ -1,0 +1,6 @@
+{
+  "status": "ready",
+  "next_phase": "execution",
+  "summary": "Single line change: update seed-example claude model from sonnet to opus",
+  "complexity": "trivial"
+}

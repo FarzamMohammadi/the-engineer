@@ -4,6 +4,8 @@ import type Database from "better-sqlite3";
  */
 import { Hono } from "hono";
 
+import { fromSqliteJson } from "../../db/serialize.js";
+
 export interface EventRoutesDeps {
   db: Database.Database;
 }
@@ -44,7 +46,7 @@ export function eventRoutes(deps: EventRoutesDeps): Hono {
       source: row["source"],
       task_id: row["task_id"],
       timestamp: row["timestamp"],
-      payload: JSON.parse((row["payload"] as string) || "{}"),
+      payload: fromSqliteJson(row["payload"] as string | null) ?? {},
     }));
 
     return c.json({ events, count: events.length });

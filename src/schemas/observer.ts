@@ -5,6 +5,7 @@
  * Follows the same pattern as events.ts and observability.ts.
  */
 import { z } from "zod";
+import { fromSqliteJson } from "../db/serialize.js";
 
 // ── Observation Type Enum ─────────────────────────────────────────────────────
 
@@ -122,17 +123,6 @@ interface ObservationRow {
   error_message: string | null;
 }
 
-function parseJsonColumn(value: string | null): Record<string, unknown> | null {
-  if (value === null) {
-    return null;
-  }
-  try {
-    return JSON.parse(value) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 /** Map a raw SQLite row to an Observation. */
 export function rowToObservation(row: ObservationRow): Observation {
   return {
@@ -147,9 +137,9 @@ export function rowToObservation(row: ObservationRow): Observation {
     start_time: row.start_time,
     end_time: row.end_time,
     duration_ms: row.duration_ms,
-    input: parseJsonColumn(row.input),
-    output: parseJsonColumn(row.output),
-    metadata: parseJsonColumn(row.metadata),
+    input: fromSqliteJson<Record<string, unknown>>(row.input),
+    output: fromSqliteJson<Record<string, unknown>>(row.output),
+    metadata: fromSqliteJson<Record<string, unknown>>(row.metadata),
     level: row.level as ObservationLevel,
     status: row.status as ObservationStatus,
     error_message: row.error_message,

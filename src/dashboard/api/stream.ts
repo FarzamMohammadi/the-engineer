@@ -9,6 +9,8 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 
+import { fromSqliteJson } from "../../db/serialize.js";
+
 import { rowToObservation } from "../../schemas/observer.js";
 
 export interface StreamRoutesDeps {
@@ -157,7 +159,7 @@ async function emitEvents(
         source: row.source,
         task_id: row.task_id,
         timestamp: row.timestamp,
-        payload: JSON.parse(row.payload || "{}"),
+        payload: fromSqliteJson(row.payload) ?? {},
       }),
       id: `evt:${String(row.sequence)}`,
     });

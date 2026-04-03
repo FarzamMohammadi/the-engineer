@@ -1,3 +1,4 @@
+import { fromSqliteJson } from "../../db/serialize.js";
 import type {
   Checkpoint,
   CheckpointReason,
@@ -105,7 +106,7 @@ export function rowToJournalEntry(row: JournalEntryRow): JournalEntry {
     decision_key: row.decision_key,
     error_detail: row.error_detail,
     comm_target: row.comm_target,
-    tags: JSON.parse(row.tags) as string[],
+    tags: fromSqliteJson<string[]>(row.tags) ?? [],
   };
 }
 
@@ -118,13 +119,11 @@ export function rowToCheckpoint(row: CheckpointRow): Checkpoint {
     phase: row.phase,
     phase_progress: row.phase_progress,
     context_summary: row.context_summary,
-    key_findings: JSON.parse(row.key_findings) as string[],
-    open_questions: JSON.parse(row.open_questions) as string[],
+    key_findings: fromSqliteJson<string[]>(row.key_findings) ?? [],
+    open_questions: fromSqliteJson<string[]>(row.open_questions) ?? [],
     next_action: row.next_action,
     last_event_id: row.last_event_id,
-    workspace_ref: row.workspace_ref
-      ? (JSON.parse(row.workspace_ref) as { branch: string; last_commit: string })
-      : null,
+    workspace_ref: fromSqliteJson<{ branch: string; last_commit: string }>(row.workspace_ref),
     reason: row.reason as CheckpointReason,
     timestamp: row.timestamp,
     journal_offset: row.journal_offset,
@@ -141,7 +140,7 @@ export function rowToKnowledgeEntry(row: KnowledgeEntryRow): KnowledgeEntry {
     key: row.key,
     body: row.body,
     confidence: row.confidence as KnowledgeConfidence,
-    evidence: JSON.parse(row.evidence) as KnowledgeEvidence[],
+    evidence: fromSqliteJson<KnowledgeEvidence[]>(row.evidence) ?? [],
     created_at: row.created_at,
     last_confirmed: row.last_confirmed,
     superseded_by: row.superseded_by,

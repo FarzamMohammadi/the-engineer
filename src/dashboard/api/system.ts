@@ -8,6 +8,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
+import { fromSqliteJson } from "../../db/serialize.js";
 
 export interface SystemRoutesDeps {
   db: Database.Database;
@@ -101,7 +102,7 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       source: row["source"],
       task_id: row["task_id"],
       timestamp: row["timestamp"],
-      payload: JSON.parse((row["payload"] as string) || "{}"),
+      payload: fromSqliteJson(row["payload"] as string | null) ?? {},
     }));
 
     return c.json({ events });

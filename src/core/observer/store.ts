@@ -6,6 +6,7 @@
  */
 import type Database from "better-sqlite3";
 import type { Statement } from "better-sqlite3";
+import { toSqliteJson } from "../../db/serialize.js";
 
 import type { Observation, ObservationQuery } from "../../schemas/observer.js";
 import { rowToObservation } from "../../schemas/observer.js";
@@ -53,9 +54,9 @@ export class ObserverStore {
       obs.start_time,
       obs.end_time,
       obs.duration_ms,
-      obs.input !== null ? JSON.stringify(obs.input) : null,
-      obs.output !== null ? JSON.stringify(obs.output) : null,
-      obs.metadata !== null ? JSON.stringify(obs.metadata) : null,
+      toSqliteJson(obs.input),
+      toSqliteJson(obs.output),
+      toSqliteJson(obs.metadata),
       obs.level,
       obs.status,
       obs.error_message,
@@ -71,14 +72,7 @@ export class ObserverStore {
     status: string,
     errorMessage: string | null,
   ): void {
-    this.stmtUpdateEnd.run(
-      endTime,
-      durationMs,
-      output !== null ? JSON.stringify(output) : null,
-      status,
-      errorMessage,
-      id,
-    );
+    this.stmtUpdateEnd.run(endTime, durationMs, toSqliteJson(output), status, errorMessage, id);
   }
 
   /** Query observations with dynamic filters. */

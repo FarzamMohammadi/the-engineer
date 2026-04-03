@@ -879,6 +879,18 @@ describe("TaskEngine", () => {
       expect(updated.state).toBe("requirements_gathering");
     });
 
+    it("coerces boolean values to integers for SQLite", () => {
+      const task = engine.createTask(makeInput());
+      // better-sqlite3 rejects JS booleans — updateTaskField must coerce to 0/1
+      engine.updateTaskField(task.id, "skip_research", true);
+      const updated = assertDefined(engine.getTask(task.id), "task");
+      expect(updated.skip_research).toBe(true); // rowToTask converts INTEGER back to boolean
+
+      engine.updateTaskField(task.id, "skip_research", false);
+      const updated2 = assertDefined(engine.getTask(task.id), "task");
+      expect(updated2.skip_research).toBe(false);
+    });
+
     it("warns on non-existent task", () => {
       const observer = createTestObserverFacade("task-engine");
       const warnSpy = vi.spyOn(observer, "warn");

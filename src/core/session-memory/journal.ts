@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
+import { toSqliteJson } from "../../db/serialize.js";
 import type { JournalEntry } from "../../schemas/session-memory.js";
 import { sanitizeSecrets } from "../../utils/sanitize.js";
 import type {
@@ -59,7 +60,7 @@ export class JournalStore {
       input.decisionKey ?? null,
       errorDetail,
       input.commTarget ?? null,
-      JSON.stringify(tags),
+      toSqliteJson(tags),
     );
 
     return {

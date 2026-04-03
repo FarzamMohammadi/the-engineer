@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 
+import { toSqliteJson } from "../../db/serialize.js";
 import type { KnowledgeEntry, KnowledgeScope } from "../../schemas/session-memory.js";
 import { knowledgeId } from "../../schemas/session-memory.js";
 import type { StoreKnowledgeInput } from "../interfaces/session-memory.interface.js";
@@ -63,7 +64,7 @@ export class KnowledgeStore {
       input.key,
       input.body,
       input.confidence,
-      JSON.stringify(input.evidence),
+      toSqliteJson(input.evidence),
       now,
       now,
       null,

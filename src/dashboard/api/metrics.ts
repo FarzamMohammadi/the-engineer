@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
+import { fromSqliteJson } from "../../db/serialize.js";
 
 export interface MetricsRoutesDeps {
   db: Database.Database;
@@ -176,7 +177,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
           .all() as { payload: string; timestamp: string }[];
 
         exhaustionEvents = rows.map((row) => {
-          const p = JSON.parse(row.payload) as Record<string, unknown>;
+          const p = fromSqliteJson<Record<string, unknown>>(row.payload) ?? {};
           return { ...p, observed_at: row.timestamp };
         });
       } catch {

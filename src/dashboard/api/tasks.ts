@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
+import { fromSqliteJson } from "../../db/serialize.js";
 
 export interface TaskRoutesDeps {
   db: Database.Database;
@@ -38,18 +39,14 @@ interface TaskListRow {
 function mapListRow(row: TaskListRow) {
   let childrenCount = 0;
   try {
-    childrenCount = (JSON.parse(row.children) as unknown[]).length;
+    childrenCount = (fromSqliteJson<unknown[]>(row.children) ?? []).length;
   } catch {
     /* empty */
   }
   let worktreePath: string | null = null;
   if (row.workspace) {
-    try {
-      const ws = JSON.parse(row.workspace) as Record<string, unknown>;
-      worktreePath = (ws["worktree_path"] as string) ?? null;
-    } catch {
-      /* empty */
-    }
+    const ws = fromSqliteJson<Record<string, unknown>>(row.workspace);
+    worktreePath = (ws?.["worktree_path"] as string) ?? null;
   }
   return {
     id: row.id,
@@ -88,11 +85,7 @@ function mapFullTask(row: Record<string, unknown>) {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     if (jsonFields.includes(key) && typeof value === "string") {
-      try {
-        result[key] = JSON.parse(value);
-      } catch {
-        result[key] = value;
-      }
+      result[key] = fromSqliteJson(value) ?? value;
     } else {
       result[key] = value;
     }
@@ -252,7 +245,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
           id: e["id"],
           type: e["type"],
           source: e["source"],
-          payload: JSON.parse((e["payload"] as string) || "{}"),
+          payload: fromSqliteJson(e["payload"] as string | null) ?? {},
         },
       });
     }

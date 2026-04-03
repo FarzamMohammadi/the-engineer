@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
+import { type SqliteColumnType, toSqlite, toSqliteJson } from "../../db/serialize.js";
 
 import {
   EventTypes,
@@ -68,46 +69,54 @@ export const EVENTS: EventDeclaration[] = [
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** All fields updatable via updateTaskField(). Single source of truth — type derived from this. */
-const UPDATABLE_FIELDS: readonly UpdatableField[] = [
-  "phase",
-  "cascade_policy",
-  "session_id",
-  "description",
-  "source_text",
-  "external_ref",
-  "workspace",
-  "review",
-  "blocked",
-  "children",
-  "team",
-  "related",
-  "decisions",
-  "child_summaries",
-  "acceptance_criteria",
-  "priority",
-  "repo",
-  "clone_url",
-  "return_to_phase",
-  "loopback_count",
-  "requirements_loop_count",
-  "skip_research",
-  "not_before",
-  "consecutive_crash_count",
-];
+/**
+ * Column type classification for updateTaskField serialization.
+ *
+ * - "text": stored as-is (string | null). SQLite TEXT columns.
+ * - "integer": coerced to number (booleans → 0/1). SQLite INTEGER columns.
+ * - "real": stored as-is (number | null). SQLite REAL columns.
+ * - "json": JSON.stringify'd before storage. SQLite TEXT columns holding JSON.
+ *
+ * Single source of truth — UPDATABLE_FIELDS and JSON_FIELDS are derived from this.
+ * Adding a new field? Add it here with the correct type.
+ */
+const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
+  // TEXT columns
+  phase: "text",
+  cascade_policy: "text",
+  session_id: "text",
+  description: "text",
+  source_text: "text",
+  repo: "text",
+  clone_url: "text",
+  return_to_phase: "text",
+  not_before: "text",
 
-const JSON_FIELDS: ReadonlySet<UpdatableField> = new Set([
-  "external_ref",
-  "workspace",
-  "review",
-  "blocked",
-  "children",
-  "team",
-  "related",
-  "decisions",
-  "child_summaries",
-  "acceptance_criteria",
-]);
+  // INTEGER columns (includes boolean-as-integer)
+  priority: "integer",
+  loopback_count: "integer",
+  requirements_loop_count: "integer",
+  skip_research: "boolean",
+  consecutive_crash_count: "integer",
+
+  // REAL columns
+  // (none currently — cost fields are updated via updateTracking, not updateTaskField)
+
+  // JSON columns (TEXT holding JSON.stringify'd objects/arrays)
+  external_ref: "json",
+  workspace: "json",
+  review: "json",
+  blocked: "json",
+  children: "json",
+  team: "json",
+  related: "json",
+  decisions: "json",
+  child_summaries: "json",
+  acceptance_criteria: "json",
+};
+
+/** All fields updatable via updateTaskField(). Derived from FIELD_TYPES. */
+const UPDATABLE_FIELDS: readonly UpdatableField[] = Object.keys(FIELD_TYPES) as UpdatableField[];
 
 // ── TaskEngine ──────────────────────────────────────────────────────────────
 
@@ -196,11 +205,9 @@ export class TaskEngine implements ITaskEngine {
     const sourceText = input.source_text ?? "";
     const acceptanceCriteria = input.acceptance_criteria ?? [];
     const externalRef = input.external_ref ?? null;
-    const externalRefJson = externalRef ? JSON.stringify(externalRef) : null;
-
     this.insertTaskStmt.run(
       id,
-      externalRefJson,
+      toSqliteJson(externalRef),
       TaskStates.requirements_gathering,
       null, // sub_state
       null, // phase
@@ -210,7 +217,7 @@ export class TaskEngine implements ITaskEngine {
       input.title,
       description,
       sourceText,
-      JSON.stringify(acceptanceCriteria),
+      toSqliteJson(acceptanceCriteria),
       "[]", // team
       "[]", // related
       "[]", // decisions
@@ -373,11 +380,7 @@ export class TaskEngine implements ITaskEngine {
       throw new UnknownFieldError(field);
     }
 
-    const serialized = JSON_FIELDS.has(field)
-      ? value === null
-        ? null
-        : JSON.stringify(value)
-      : value;
+    const serialized = toSqlite(FIELD_TYPES[field], value);
     const result = stmt.run(serialized, taskId);
 
     if (result.changes === 0) {

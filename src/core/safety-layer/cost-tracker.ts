@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 
+import { fromSqliteJson, toSqliteJson } from "../../db/serialize.js";
 import type { CostLimits } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { CostIncurredPayload, Event, TaskStateChangedPayload } from "../../schemas/events.js";
@@ -444,7 +445,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       snapshot_at: new Date().toISOString(),
     };
     try {
-      saveSnapshotStmt.run(META_KEY, JSON.stringify(snapshot));
+      saveSnapshotStmt.run(META_KEY, toSqliteJson(snapshot));
       snapshotDirty = false;
       lastSnapshotAt = Date.now();
     } catch {
@@ -461,7 +462,10 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
 
     try {
-      const snapshot = JSON.parse(row.value) as AccumulatorSnapshot;
+      const snapshot = fromSqliteJson<AccumulatorSnapshot>(row.value);
+      if (!snapshot) {
+        return;
+      }
       const nowDate = new Date();
 
       // Only restore if windows are still current

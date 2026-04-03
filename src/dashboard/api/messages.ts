@@ -7,6 +7,7 @@ import { Hono } from "hono";
  * The Daemon polls for these events and calls the UnblockResolver.
  */
 import { ulid } from "ulid";
+import { toSqliteJson } from "../../db/serialize.js";
 
 export interface MessagesRoutesDeps {
   /** Writable DB connection (separate from the read-only main connection). */
@@ -33,7 +34,7 @@ export function messagesRoutes(deps: MessagesRoutesDeps): Hono {
 
     const eventId = ulid();
     const now = new Date().toISOString();
-    const payload = JSON.stringify({
+    const payload = toSqliteJson({
       source: "dashboard",
       sender: "owner",
       content: content.trim(),

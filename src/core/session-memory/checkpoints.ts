@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
+import { toSqliteJson } from "../../db/serialize.js";
 import type { Checkpoint } from "../../schemas/session-memory.js";
 import type { CreateCheckpointInput } from "../interfaces/session-memory.interface.js";
 import { type CheckpointRow, rowToCheckpoint } from "./row-mappers.js";
@@ -38,11 +39,11 @@ export class CheckpointStore {
       input.phase,
       input.phaseProgress,
       input.contextSummary,
-      JSON.stringify(input.keyFindings),
-      JSON.stringify(input.openQuestions),
+      toSqliteJson(input.keyFindings),
+      toSqliteJson(input.openQuestions),
       input.nextAction,
       input.lastEventId,
-      input.workspaceRef ? JSON.stringify(input.workspaceRef) : null,
+      toSqliteJson(input.workspaceRef),
       input.reason,
       now,
       input.journalOffset,

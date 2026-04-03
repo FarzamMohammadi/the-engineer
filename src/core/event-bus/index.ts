@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
+import { toSqliteJson } from "../../db/serialize.js";
 import type { Event, EventType } from "../../schemas/events.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type {
@@ -145,7 +146,7 @@ export class EventBus implements IEventBus {
     // SECURITY: Payloads are persisted to SQLite as-is. Publishers MUST sanitize
     // any error messages or user-controlled data before including them in payloads.
     // The EventBus does not sanitize payloads to avoid corrupting legitimate data.
-    const payloadJson = JSON.stringify(input.payload);
+    const payloadJson = toSqliteJson(input.payload);
 
     const result = this.insertStmt.run(
       id,

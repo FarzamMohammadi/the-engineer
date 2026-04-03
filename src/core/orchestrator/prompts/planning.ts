@@ -20,6 +20,8 @@ export interface PlanningPromptContext {
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
+  /** True when research was skipped for a trivial task. */
+  skipResearch?: boolean;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -36,7 +38,7 @@ export function buildPlanningPrompt(ctx: PlanningPromptContext): string {
   parts.push(buildRRPIROverview("Planning", ctx.thoughtsDir));
 
   // 2. What Happened Before You
-  parts.push(buildPriorPhasesSection(ctx.thoughtsDir));
+  parts.push(buildPriorPhasesSection(ctx.thoughtsDir, ctx.skipResearch));
 
   // 3. What YOU Need To Do
   parts.push(buildInstructions(ctx.thoughtsDir));
@@ -52,7 +54,20 @@ export function buildPlanningPrompt(ctx: PlanningPromptContext): string {
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
-function buildPriorPhasesSection(thoughtsDir: string): string {
+function buildPriorPhasesSection(thoughtsDir: string, skipResearch?: boolean): string {
+  if (skipResearch) {
+    return section(
+      "What Happened Before You",
+      [
+        "Requirements were gathered. Research was skipped for this trivial task.",
+        "",
+        `1. **Requirements:** \`${thoughtsDir}/requirements/requirements.md\` — task context, gathered requirements, assessment.`,
+        "",
+        "Read requirements.md for full context. Do brief targeted codebase exploration during planning to identify relevant files and conventions before creating your plan.",
+      ].join("\n"),
+    );
+  }
+
   return section(
     "What Happened Before You",
     [

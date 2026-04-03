@@ -65,6 +65,7 @@ export type UpdatableField =
   | "return_to_phase"
   | "loopback_count"
   | "requirements_loop_count"
+  | "skip_research"
   | "not_before"
   | "consecutive_crash_count";
 

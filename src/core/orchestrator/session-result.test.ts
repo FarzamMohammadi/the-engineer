@@ -29,7 +29,12 @@ describe("readSessionResult", () => {
       JSON.stringify({ status: "ready", next_phase: "research", summary: "done" }),
     );
     const result = readSessionResult(dir);
-    expect(result).toEqual({ status: "ready", next_phase: "research", summary: "done" });
+    expect(result).toEqual({
+      status: "ready",
+      next_phase: "research",
+      summary: "done",
+      complexity: "moderate",
+    });
   });
 
   it('returns "invalid" for malformed JSON', () => {
@@ -65,6 +70,7 @@ describe("readSessionResult", () => {
       status: "need_more_info",
       next_phase: "requirements_gathering",
       summary: "need clarification",
+      complexity: "moderate",
     });
   });
 });

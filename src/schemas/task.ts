@@ -217,6 +217,9 @@ export const TaskSchema = z.object({
   loopback_count: z.number().int().default(0),
   requirements_loop_count: z.number().int().default(0),
 
+  // Complexity-based research skip (persisted for crash recovery)
+  skip_research: z.boolean().default(false),
+
   // Tracking
   priority: z.number().int(),
   llm_tokens: z.number().int(),

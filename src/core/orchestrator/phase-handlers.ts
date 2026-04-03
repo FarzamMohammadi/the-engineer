@@ -103,6 +103,7 @@ export function createPhaseHandlers(
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
+    const task = ctx.taskEngine.getTask(taskId);
     return llmCaller.runPhaseWithCli(
       Phases.planning,
       taskId,
@@ -113,6 +114,7 @@ export function createPhaseHandlers(
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
+        skipResearch: task?.skip_research ?? false,
       }),
       state,
       thoughtsDir,
@@ -126,6 +128,7 @@ export function createPhaseHandlers(
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
+    const task = ctx.taskEngine.getTask(taskId);
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
       (r) => !r.applied,
     );
@@ -141,6 +144,7 @@ export function createPhaseHandlers(
         userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
+        skipResearch: task?.skip_research ?? false,
       }),
       state,
       thoughtsDir,

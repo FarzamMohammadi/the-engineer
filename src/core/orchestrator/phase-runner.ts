@@ -1,7 +1,8 @@
 import path from "node:path";
+import type { OrchestratorConfig } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
-import { Phases } from "../../schemas/orchestrator.js";
+import { ComplexitySchema, Phases } from "../../schemas/orchestrator.js";
 import {
   CheckpointReasons,
   JournalEntryTypes,
@@ -18,9 +19,9 @@ import { gatherRepoContextSafe } from "./prompts/index.js";
 import {
   type ExecuteTaskResult,
   type OrchestratorContext,
-  PHASE_SEQUENCE,
   type PipelineState,
   type PreemptionGate,
+  buildPhaseSequence,
 } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -104,6 +105,16 @@ type PhaseCompletionResult =
 
 // ── Pure Helpers ────────────────────────────────────────────────────────────
 
+/** Determine if research should be skipped based on complexity assessment. */
+export function shouldSkipResearch(output: PhaseOutput, config: OrchestratorConfig): boolean {
+  if (config.phases.force_full_pipeline) {
+    return false;
+  }
+  const data = output.data as { complexity?: string };
+  const parsed = ComplexitySchema.safeParse(data.complexity);
+  return parsed.success && parsed.data === "trivial";
+}
+
 /** Determine start index and phase sequence (Protocol P9 resume). */
 function resolveStartState(
   dispatch: Dispatch,
@@ -111,7 +122,8 @@ function resolveStartState(
   taskId: string,
   ctx: OrchestratorContext,
 ): { phases: Phase[]; startIndex: number } {
-  const phases = [...PHASE_SEQUENCE];
+  const task = ctx.taskEngine.getTask(taskId);
+  const phases = buildPhaseSequence(task?.skip_research ?? false);
 
   if (!dispatch.resume_from) {
     return { phases, startIndex: 0 };
@@ -599,6 +611,21 @@ async function handlePostPhaseActions(
       // targetIndex - 1 because the for loop's i++ will increment to the target
       return {
         completion: { kind: "loopback", phases, targetIndex: returnIndex - 1 },
+        loopbackCount,
+        requirementsLoopCount,
+        returnToPhase,
+      };
+    }
+  }
+
+  // Complexity-based research skip: trivial tasks go straight to planning
+  if (phase === Phases.requirements_gathering && !returnToPhase) {
+    if (shouldSkipResearch(output, ctx.config)) {
+      const newPhases = buildPhaseSequence(true);
+      ctx.taskEngine.updateTaskField(taskId, "skip_research", true);
+      ctx.observer.info("Trivial task — skipping research phase", { taskId });
+      return {
+        completion: { kind: "continue", phases: newPhases },
         loopbackCount,
         requirementsLoopCount,
         returnToPhase,

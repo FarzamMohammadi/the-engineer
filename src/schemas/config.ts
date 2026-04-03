@@ -267,6 +267,7 @@ export const PhasesConfigSchema = z.object({
   checkpoint_on_transition: z.boolean().default(true),
   periodic_checkpoint_interval_ms: z.number().int().positive().default(900_000),
   max_loopbacks_before_alert: z.number().int().positive().default(3),
+  force_full_pipeline: z.boolean().default(false),
 });
 export type PhasesConfig = z.infer<typeof PhasesConfigSchema>;
 

@@ -16,6 +16,11 @@ export type Phase = z.infer<typeof PhaseSchema>;
 /** Constant enum values for Phase. Use instead of raw strings. */
 export const Phases = PhaseSchema.enum;
 
+// ── Complexity Enum ────────────────────────────────────────────────────────────────
+
+export const ComplexitySchema = z.enum(["trivial", "moderate", "complex"]);
+export type Complexity = z.infer<typeof ComplexitySchema>;
+
 // ── Phase Directory Constants ────────────────────────────────────────────────────
 
 /**
@@ -51,6 +56,7 @@ export const SessionResultSchema = z.object({
   status: z.enum(["ready", "need_more_info", "error"]),
   next_phase: PhaseSchema,
   summary: z.string(),
+  complexity: ComplexitySchema.default("moderate"),
 });
 export type SessionResult = z.infer<typeof SessionResultSchema>;
 

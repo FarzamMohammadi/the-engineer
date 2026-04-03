@@ -24,6 +24,8 @@ export interface ExecutionPromptContext {
   thoughtsDir: string;
   /** Unapplied feedback rounds from PR review (rework mode). */
   feedbackRounds?: FeedbackRound[] | undefined;
+  /** True when research was skipped for a trivial task. */
+  skipResearch?: boolean;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -40,7 +42,7 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
   parts.push(buildRRPIROverview("Implementation", ctx.thoughtsDir));
 
   // 2. What Happened Before You
-  parts.push(buildPriorPhasesSection(ctx.thoughtsDir));
+  parts.push(buildPriorPhasesSection(ctx.thoughtsDir, ctx.skipResearch));
 
   // 3. What YOU Need To Do
   parts.push(buildInstructions());
@@ -56,7 +58,21 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
-function buildPriorPhasesSection(thoughtsDir: string): string {
+function buildPriorPhasesSection(thoughtsDir: string, skipResearch?: boolean): string {
+  if (skipResearch) {
+    return section(
+      "What Happened Before You",
+      [
+        "Two phases have completed (research was skipped for this trivial task):",
+        "",
+        `1. **Plan (your primary guide):** \`${thoughtsDir}/planning/plan.md\` — the implementation plan with phases, checkboxes, risks, and test strategy.`,
+        `2. **Requirements:** \`${thoughtsDir}/requirements/requirements.md\` — full task context and gathered requirements.`,
+        "",
+        "Read plan.md first — it is your implementation guide. Read requirements.md for full context if needed.",
+      ].join("\n"),
+    );
+  }
+
   return section(
     "What Happened Before You",
     [

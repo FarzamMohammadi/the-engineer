@@ -34,6 +34,7 @@ export function writeSessionResultTemplate(phaseDir: string): void {
     next_phase:
       "<requirements_gathering | research | planning | execution | self_review | demo_prep | integration>",
     summary: "<one-line summary of what you accomplished>",
+    complexity: "<trivial | moderate | complex>",
   };
   writeFileSync(
     path.join(phaseDir, "session-result.json"),

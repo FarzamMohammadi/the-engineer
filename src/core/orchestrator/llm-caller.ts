@@ -8,7 +8,7 @@ import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import { LlmCallRejectedError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
 import { readSessionResult } from "./session-result.js";
-import { type OrchestratorContext, PHASE_SEQUENCE, type PipelineState } from "./types.js";
+import { type OrchestratorContext, type PipelineState, buildPhaseSequence } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -441,10 +441,13 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     // ── Resolve final session result ────────────────────────────────────
     // If the CLI wrote session-result.json, use it. Otherwise default to "ready"
     // with the next phase in sequence — no retry burn.
-    const nextPhaseIndex = PHASE_SEQUENCE.indexOf(phase);
+    // Use the active phase sequence (may be shortened if research was skipped).
+    const task = ctx.taskEngine.getTask(taskId);
+    const activePhases = buildPhaseSequence(task?.skip_research ?? false);
+    const nextPhaseIndex = activePhases.indexOf(phase);
     const expectedNext: Phase =
-      (nextPhaseIndex >= 0 && nextPhaseIndex < PHASE_SEQUENCE.length - 1
-        ? PHASE_SEQUENCE[nextPhaseIndex + 1]
+      (nextPhaseIndex >= 0 && nextPhaseIndex < activePhases.length - 1
+        ? activePhases[nextPhaseIndex + 1]
         : undefined) ?? phase;
 
     const finalResult =
@@ -457,14 +460,24 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
                 taskId,
                 expectedNext,
               });
-              return { status: "ready" as const, next_phase: expectedNext, summary: "" };
+              return {
+                status: "ready" as const,
+                next_phase: expectedNext,
+                summary: "",
+                complexity: "moderate" as const,
+              };
             }
             ctx.observer.warn("session-result.json not found, using defaults", {
               phase,
               taskId,
               expectedNext,
             });
-            return { status: "ready" as const, next_phase: expectedNext, summary: "" };
+            return {
+              status: "ready" as const,
+              next_phase: expectedNext,
+              summary: "",
+              complexity: "moderate" as const,
+            };
           })();
 
     // ── Cost + tracking (skip cost emission on recovery — no cost data) ──
@@ -521,6 +534,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         status: finalResult.status,
         next_phase: finalResult.next_phase,
         summary: finalResult.summary,
+        complexity: finalResult.complexity,
       },
       confidence: finalResult.status === "ready" ? ("high" as const) : ("medium" as const),
       open_questions: finalResult.status === "need_more_info" ? [finalResult.summary] : [],

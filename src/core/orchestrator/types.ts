@@ -112,3 +112,8 @@ export const PHASE_SEQUENCE: Phase[] = [
   Phases.demo_prep,
   Phases.integration,
 ];
+
+/** Build the phase sequence, optionally skipping research for trivial tasks. */
+export function buildPhaseSequence(skipResearch: boolean): Phase[] {
+  return skipResearch ? PHASE_SEQUENCE.filter((p) => p !== Phases.research) : [...PHASE_SEQUENCE];
+}

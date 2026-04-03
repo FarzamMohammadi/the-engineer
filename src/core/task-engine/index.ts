@@ -91,6 +91,7 @@ const UPDATABLE_FIELDS: readonly UpdatableField[] = [
   "return_to_phase",
   "loopback_count",
   "requirements_loop_count",
+  "skip_research",
   "not_before",
   "consecutive_crash_count",
 ];
@@ -276,6 +277,7 @@ export class TaskEngine implements ITaskEngine {
       return_to_phase: null,
       loopback_count: 0,
       requirements_loop_count: 0,
+      skip_research: false,
       priority,
       llm_tokens: 0,
       llm_cost_usd: 0,

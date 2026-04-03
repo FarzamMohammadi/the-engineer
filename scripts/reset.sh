@@ -33,13 +33,14 @@ echo "Linking globally..."
 pnpm link --global
 
 if [ "$PERSIST_DATA" = true ]; then
-  echo "Cleaning ephemeral state (preserving DB, config, workspaces, .env)..."
+  echo "Cleaning ephemeral state (preserving DB, workspaces, .env)..."
   rm -rf ~/.engineer/logs
   rm -rf ~/.engineer/run
   rm -rf ~/.engineer/state
   rm -rf ~/.engineer/traces
   rm -rf ~/.engineer/docs
   rm -rf ~/.engineer/example-templates
+  rm -rf ~/.engineer/config
 else
   echo "Wiping ~/.engineer..."
   rm -rf ~/.engineer

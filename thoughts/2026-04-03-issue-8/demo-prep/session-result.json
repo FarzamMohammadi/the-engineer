@@ -1,6 +1,5 @@
 {
-  "status": "<ready | need_more_info | error>",
-  "next_phase": "<requirements_gathering | research | planning | execution | self_review | demo_prep | integration>",
-  "summary": "<one-line summary of what you accomplished>",
-  "complexity": "<trivial | moderate | complex>"
+  "status": "ready",
+  "next_phase": "demo_prep",
+  "summary": "PR description created: Update seed-example Claude Code model from Sonnet to Opus across 8 files"
 }

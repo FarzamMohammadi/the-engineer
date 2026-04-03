@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "demo_prep",
-  "summary": "PR description completed: Comprehensive documentation of Claude Code model update from Sonnet 4 to Opus 4.6 across 8 files including seed configuration, defaults, templates, and documentation",
-  "complexity": "trivial"
-}

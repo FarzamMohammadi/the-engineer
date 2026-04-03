@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "execution",
-  "summary": "Update Claude Code model to claude-opus-4-6 across seed config, defaults, and templates",
-  "complexity": "trivial"
-}

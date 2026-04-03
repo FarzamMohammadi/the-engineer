@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "research",
-  "summary": "Update claude-code-llm.yaml model from sonnet to latest opus (claude-opus-4-6)",
-  "complexity": "trivial"
-}

@@ -651,6 +651,8 @@ export function createReviewHandler(
         error: sanitizeErrorMessage(mergeErr),
         taskId,
       });
+      // Clear dedup key so next poll re-detects approval and retries
+      emittedFeedbackKeys.delete(taskId);
       notifications.notify({
         kind: "ticket_comment",
         taskId,
@@ -686,6 +688,8 @@ export function createReviewHandler(
         error: result.error?.message,
         code: result.error?.code,
       });
+      // Clear dedup key so next poll re-detects approval and retries
+      emittedFeedbackKeys.delete(taskId);
       notifications.notify({
         kind: "ticket_comment",
         taskId,

@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "demo_prep",
-  "summary": "PR description prepared: Update seed-example config Claude Code model to Opus",
-  "complexity": "trivial"
-}

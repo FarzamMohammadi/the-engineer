@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "execution",
-  "summary": "Single-line config change: update seed Claude model from Sonnet to Opus",
-  "complexity": "trivial"
-}

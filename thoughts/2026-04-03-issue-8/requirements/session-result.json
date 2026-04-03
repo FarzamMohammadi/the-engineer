@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "research",
-  "summary": "Clear config update task - change Claude model from sonnet to opus in seed-example",
-  "complexity": "trivial"
-}

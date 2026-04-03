@@ -788,6 +788,11 @@ export function createReviewHandler(
 
     if (checks_state === "passing" || checks_state === "none") {
       approvedAwaitingCI.delete(taskId);
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId,
+        message: "CI pipeline passed — proceeding with merge.",
+      });
       const task = taskEngine.getTask(taskId);
       if (task) {
         await attemptMerge(taskId, task, repo, prNumber, hosting);

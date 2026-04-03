@@ -348,7 +348,7 @@ export const PRStatusSchema = z.object({
   state: z.enum(["open", "closed", "merged"]),
   draft: z.boolean(),
   mergeable: z.boolean(),
-  checks_passing: z.boolean(),
+  checks_state: z.enum(["passing", "failing", "pending", "none"]),
   url: z.string(),
 });
 export type PRStatus = z.infer<typeof PRStatusSchema>;

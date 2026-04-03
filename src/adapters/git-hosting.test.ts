@@ -54,7 +54,7 @@ class TestGitHostingAdapter extends GitHostingAdapter {
       state: "open",
       draft: false,
       mergeable: true,
-      checks_passing: true,
+      checks_state: "passing",
       url: "https://github.com/test/repo/pull/42",
     });
   }

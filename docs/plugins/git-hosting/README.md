@@ -18,7 +18,7 @@ The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors imp
 | `updatePR` | `(repo: string, prNumber: number, updates: PRUpdates) => Promise<void>` | -- |
 | `mergePR` | `(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>` | `{ merge_sha, success, error }` |
 | `closePR` | `(repo: string, prNumber: number) => Promise<void>` | -- |
-| `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ number, state, draft, mergeable, checks_passing, url }` |
+| `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ number, state, draft, mergeable, checks_state, url }` |
 | `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ approved, approvals, changes_requested, reviewers, comments }` |
 | `getPRComments` | `(repo: string, prNumber: number) => Promise<PRComment[]>` | Array of `{ id, author, body, created_at }` |
 | `commentOnPR` | `(repo: string, prNumber: number, comment: string, replyTo?: string) => Promise<CommentResult>` | `{ comment_id, url }` |
@@ -76,7 +76,7 @@ type PRStatus = {
   state: "open" | "closed" | "merged";
   draft: boolean;
   mergeable: boolean;
-  checks_passing: boolean;
+  checks_state: "passing" | "failing" | "pending" | "none";
   url: string;
 };
 

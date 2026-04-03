@@ -62,6 +62,8 @@ export interface ReviewHandler {
   checkMerges(reviewPendingTasks?: Task[]): Promise<void>;
   /** Check for PR review feedback on review-pending tasks. Pre-fetched tasks avoid redundant DB queries. */
   checkFeedback(reviewPendingTasks?: Task[]): Promise<void>;
+  /** Check CI status for approved tasks awaiting pipeline completion, then merge or re-queue. */
+  checkApprovedCI(): Promise<void>;
   /** Handle a feedback event (called from EventBus subscription). */
   handleFeedbackEvent(payload: TaskFeedbackReceivedPayload): void;
   /** Clear per-tick PR status cache. Call at start of each tick to avoid stale data. */
@@ -86,6 +88,9 @@ const SELF_COMMENT_PREFIXES = [
   "Code review approved",
   "Pushed rework",
   "Task picked up",
+  "CI pipeline failing",
+  "Auto-merge rejected",
+  "Auto-merge API call failed",
 ];
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -109,6 +114,9 @@ export function createReviewHandler(
   const failureWindowMs = ctx.config.review_polling.failure_window_ms;
   const maxFailuresBeforePause = ctx.config.review_polling.max_failures_before_pause;
 
+  /** Max pipeline_fix rework cycles before giving up and asking human to merge manually. */
+  const MAX_PIPELINE_FIX_RETRIES = 3;
+
   // ── Internal State ──────────────────────────────────────────────────────
   const emittedFeedbackKeys = new Map<string, string>();
 
@@ -117,6 +125,9 @@ export function createReviewHandler(
 
   // Time-windowed failure counting for review API
   const reviewApiFailures: Array<{ timestamp: number }> = [];
+
+  // Tasks approved but waiting for CI pipelines to pass before merge
+  const approvedAwaitingCI = new Map<string, { repo: string; prNumber: number }>();
 
   function shouldSkipReviewPolling(now: number): boolean {
     // Clean up old failures outside the window
@@ -528,7 +539,12 @@ export function createReviewHandler(
     task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
     payload: TaskFeedbackReceivedPayload,
   ): void {
-    handleCodeApproval(task, payload);
+    handleCodeApproval(task, payload).catch((err) => {
+      observer.error("Unhandled error in handleCodeApproval", {
+        error: sanitizeErrorMessage(err),
+        taskId: payload.task_id,
+      });
+    });
   }
 
   /** Finalize task completion: workspace cleanup, notification, issue comment, child-done check. */
@@ -568,80 +584,127 @@ export function createReviewHandler(
     }
   }
 
-  function handleCodeApproval(
+  /** Count how many pipeline_fix rework cycles this task has been through (DB-persisted). */
+  function countPipelineFixAttempts(taskId: string): number {
+    const history = taskEngine.getStateHistory(taskId);
+    return history.filter((t) => t.reason === "pipeline_fix").length;
+  }
+
+  /** Re-queue a task to fix failing CI pipelines. */
+  function handlePipelineFailure(taskId: string): void {
+    const fixCount = countPipelineFixAttempts(taskId);
+    if (fixCount >= MAX_PIPELINE_FIX_RETRIES) {
+      observer.warn("Pipeline fix retry limit reached — completing with manual merge request", {
+        taskId,
+        attempts: fixCount,
+      });
+      taskEngine.requestTransition(taskId, TaskStates.completed, null, "code_approved", "daemon");
+      finalizeTaskCompletion(
+        taskId,
+        `Code approved — CI pipeline failed after ${String(fixCount)} fix attempts. Please fix CI and merge manually.`,
+      );
+      return;
+    }
+
+    const transition = taskEngine.requestTransition(
+      taskId,
+      TaskStates.queued,
+      null,
+      "pipeline_fix",
+      "daemon",
+    );
+    if (!transition.success) {
+      observer.warn("Failed to re-queue task for pipeline fix", {
+        taskId,
+        reason: transition.reason,
+      });
+      return;
+    }
+    // Clear stale dedup key so re-polling after fix doesn't suppress events
+    emittedFeedbackKeys.delete(taskId);
+    approvedAwaitingCI.delete(taskId);
+    notifications.notify({
+      kind: "ticket_comment",
+      taskId,
+      message: `CI pipeline failing — reworking to fix (attempt ${String(fixCount + 1)}/${String(MAX_PIPELINE_FIX_RETRIES)}).`,
+    });
+    observer.info("Task re-queued for pipeline fix", { taskId, attempt: fixCount + 1 });
+  }
+
+  /** Attempt merge and handle the result. Only call when CI has passed. */
+  async function attemptMerge(
+    taskId: string,
+    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
+    repo: string,
+    prNumber: number,
+    hosting: GitHostingAdapter,
+  ): Promise<void> {
+    tryRemoveThoughtsBeforeMerge(task);
+
+    observer.info("Attempting auto-merge", { taskId, prNumber, repo });
+    let result: Awaited<ReturnType<GitHostingAdapter["mergePR"]>>;
+    try {
+      result = await hosting.mergePR(repo, prNumber, "squash");
+    } catch (mergeErr) {
+      // Unexpected API-level exception — leave task in review_pending for retry next tick
+      observer.warn("Auto-merge API call failed — will retry next tick", {
+        error: sanitizeErrorMessage(mergeErr),
+        taskId,
+      });
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId,
+        message: "Auto-merge API call failed — will retry.",
+      });
+      return;
+    }
+
+    if (result.success) {
+      taskEngine.updateTaskField(taskId, "review", {
+        ...(task.review ?? {
+          pr_number: prNumber,
+          pr_state: "ready" as const,
+          demo_artifacts: [],
+          feedback_rounds: [],
+        }),
+        pr_state: "merged",
+      });
+      taskEngine.requestTransition(
+        taskId,
+        TaskStates.completed,
+        null,
+        "code_approved_merged",
+        "daemon",
+      );
+      finalizeTaskCompletion(taskId, `Code approved — PR #${String(prNumber)} auto-merged.`);
+      observer.info("PR auto-merged successfully", { taskId, prNumber });
+    } else {
+      // Merge rejected by GitHub (branch protection, merge conflict, etc.)
+      // Do NOT complete the task — leave in review_pending for next tick to re-evaluate
+      observer.warn("Auto-merge rejected by GitHub — leaving task in review_pending", {
+        taskId,
+        error: result.error?.message,
+        code: result.error?.code,
+      });
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId,
+        message: `Auto-merge rejected: ${result.error?.message ?? "unknown reason"}. Will retry.`,
+      });
+    }
+  }
+
+  async function handleCodeApproval(
     task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
     payload: TaskFeedbackReceivedPayload,
-  ): void {
+  ): Promise<void> {
     try {
-      tryRemoveThoughtsBeforeMerge(task);
-
       const repo = task.repo;
       const prNumber = task.review?.pr_number;
       const autoMergeAllowed = repo ? safetyLayer.checkAutoMergeAllowed(repo) : false;
 
       const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
-      if (autoMergeAllowed && prNumber && repo && hosting) {
-        observer.info("Attempting auto-merge", { taskId: payload.task_id, prNumber, repo });
-        hosting
-          .mergePR(repo, prNumber, "squash")
-          .then((result) => {
-            try {
-              const mergeComment = result.success
-                ? `Code approved — PR #${String(prNumber)} auto-merged.`
-                : undefined;
-              if (result.success) {
-                taskEngine.updateTaskField(payload.task_id, "review", {
-                  ...(task.review ?? {
-                    pr_number: prNumber,
-                    pr_state: "ready" as const,
-                    demo_artifacts: [],
-                    feedback_rounds: [],
-                  }),
-                  pr_state: "merged",
-                });
-              }
-              taskEngine.requestTransition(
-                payload.task_id,
-                TaskStates.completed,
-                null,
-                "code_approved_merged",
-                "daemon",
-              );
-              finalizeTaskCompletion(payload.task_id, mergeComment);
-            } catch (postMergeErr) {
-              // Merge succeeded but post-processing failed — still complete the task
-              observer.error("Auto-merge succeeded but post-processing failed", {
-                error: sanitizeErrorMessage(postMergeErr),
-                taskId: payload.task_id,
-              });
-              taskEngine.requestTransition(
-                payload.task_id,
-                TaskStates.completed,
-                null,
-                "code_approved_merged",
-                "daemon",
-              );
-              finalizeTaskCompletion(payload.task_id);
-            }
-          })
-          .catch((mergeErr) => {
-            observer.warn("Auto-merge API call failed", {
-              error: sanitizeErrorMessage(mergeErr),
-              taskId: payload.task_id,
-            });
-            taskEngine.requestTransition(
-              payload.task_id,
-              TaskStates.completed,
-              null,
-              "code_approved",
-              "daemon",
-            );
-            finalizeTaskCompletion(
-              payload.task_id,
-              "Code approved — auto-merge failed, please merge manually.",
-            );
-          });
-      } else {
+      if (!(autoMergeAllowed && prNumber && repo && hosting)) {
         taskEngine.requestTransition(
           payload.task_id,
           TaskStates.completed,
@@ -650,16 +713,107 @@ export function createReviewHandler(
           "daemon",
         );
         finalizeTaskCompletion(payload.task_id, "Code review approved — ready to merge.");
+        observer.info("Code approved — auto-merge not enabled", {
+          taskId: payload.task_id,
+          autoMergeAllowed,
+        });
+        return;
       }
-      observer.info("Code approved — task completing", {
-        taskId: payload.task_id,
-        autoMergeAllowed,
-      });
+
+      // Gate: check CI pipeline status before attempting merge
+      const prStatus = await getCachedPRStatus(hosting, repo, prNumber);
+      const { checks_state } = prStatus;
+
+      if (checks_state === "passing" || checks_state === "none") {
+        // CI passed or no CI configured — proceed with merge
+        await attemptMerge(payload.task_id, task, repo, prNumber, hosting);
+      } else if (checks_state === "pending") {
+        // CI still running — defer merge to checkApprovedCI() on next tick
+        approvedAwaitingCI.set(payload.task_id, { repo, prNumber });
+        observer.info("CI checks pending — deferring merge", {
+          taskId: payload.task_id,
+          prNumber,
+        });
+        notifications.notify({
+          kind: "ticket_comment",
+          taskId: payload.task_id,
+          message: "Code approved — waiting for CI pipeline to complete before merging.",
+        });
+      } else {
+        // CI failed — re-queue task for pipeline fix
+        observer.info("CI checks failing — triggering pipeline fix", {
+          taskId: payload.task_id,
+          prNumber,
+        });
+        handlePipelineFailure(payload.task_id);
+      }
     } catch (err) {
       observer.error("Failed to handle code approval", {
         error: sanitizeErrorMessage(err),
         taskId: payload.task_id,
       });
+    }
+  }
+
+  // ── CI Awaiting Check (called from daemon tick) ────────────────────────
+
+  async function checkSingleTaskCI(
+    taskId: string,
+    repo: string,
+    prNumber: number,
+    hosting: GitHostingAdapter,
+  ): Promise<void> {
+    const prStatus = await hosting.getPRStatus(repo, prNumber);
+    const { checks_state } = prStatus;
+
+    if (checks_state === "passing" || checks_state === "none") {
+      approvedAwaitingCI.delete(taskId);
+      const task = taskEngine.getTask(taskId);
+      if (task) {
+        await attemptMerge(taskId, task, repo, prNumber, hosting);
+      }
+    } else if (checks_state === "failing") {
+      approvedAwaitingCI.delete(taskId);
+      observer.info("CI checks failed for approved task — triggering pipeline fix", {
+        taskId,
+        prNumber,
+      });
+      handlePipelineFailure(taskId);
+    } else {
+      // Still waiting — keep in map, check again next tick
+      observer.debug("CI checks still pending", { taskId, prNumber });
+    }
+  }
+
+  async function checkApprovedCI(): Promise<void> {
+    if (approvedAwaitingCI.size === 0) {
+      return;
+    }
+
+    const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
+    if (!hosting) {
+      return;
+    }
+
+    // Prune entries for tasks no longer in review_pending
+    const reviewTasks = new Set(
+      taskEngine.getTasksByState(TaskStates.review_pending).map((t) => t.id),
+    );
+    for (const taskId of approvedAwaitingCI.keys()) {
+      if (!reviewTasks.has(taskId)) {
+        approvedAwaitingCI.delete(taskId);
+      }
+    }
+
+    for (const [taskId, { repo, prNumber }] of approvedAwaitingCI) {
+      try {
+        await checkSingleTaskCI(taskId, repo, prNumber, hosting);
+      } catch (err) {
+        observer.warn("Failed to check CI status for approved task", {
+          taskId,
+          error: sanitizeErrorMessage(err),
+        });
+      }
     }
   }
 
@@ -708,6 +862,7 @@ export function createReviewHandler(
   return {
     checkMerges,
     checkFeedback,
+    checkApprovedCI,
     handleFeedbackEvent,
     clearTickCache,
   };

@@ -468,10 +468,11 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     const reviewPendingTasks = taskEngine.getTasksByState(TaskStates.review_pending);
     healthMonitor.checkReviewPendingReminders(now, reviewPendingTasks);
 
-    // Step 7+8: Check merges and feedback (shared PR status cache avoids duplicate API calls)
+    // Step 7+8+8b: Check merges, feedback, and CI for approved tasks
     reviewHandler.clearTickCache();
     await reviewHandler.checkMerges(reviewPendingTasks);
     await reviewHandler.checkFeedback(reviewPendingTasks);
+    await reviewHandler.checkApprovedCI();
 
     // Step 9: Cleanup expired seen keys
     triggerPoller.cleanupExpiredKeys(now);

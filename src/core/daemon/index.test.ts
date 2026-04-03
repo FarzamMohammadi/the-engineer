@@ -1252,7 +1252,7 @@ describe("Daemon", () => {
           state: "merged",
           draft: false,
           mergeable: false,
-          checks_passing: true,
+          checks_state: "passing",
         }),
       };
       handle.registry.getPluginsByType.mockImplementation((type: string) => {
@@ -1299,7 +1299,7 @@ describe("Daemon", () => {
           state: "open",
           draft: false,
           mergeable: true,
-          checks_passing: true,
+          checks_state: "passing",
         }),
         getReviewStatus: vi.fn().mockResolvedValue({
           approved: false,
@@ -1357,7 +1357,7 @@ describe("Daemon", () => {
           state: "open",
           draft: false,
           mergeable: true,
-          checks_passing: true,
+          checks_state: "passing",
           url: "https://github.com/owner/repo/pull/10",
           ...prStatus,
         }),
@@ -1599,13 +1599,15 @@ describe("Daemon", () => {
       });
 
       // Should transition directly to completed (human merges)
-      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
-        "task-code-approve",
-        "completed",
-        null,
-        "code_approved",
-        "daemon",
-      );
+      await vi.waitFor(() => {
+        expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+          "task-code-approve",
+          "completed",
+          null,
+          "code_approved",
+          "daemon",
+        );
+      });
     });
 
     it("auto-merges PR on code approval when allowed", async () => {
@@ -1623,6 +1625,14 @@ describe("Daemon", () => {
 
       const fakeHosting = {
         mergePR: vi.fn().mockResolvedValue({ success: true, merge_sha: "abc123" }),
+        getPRStatus: vi.fn().mockResolvedValue({
+          number: 10,
+          state: "open",
+          draft: false,
+          mergeable: true,
+          checks_state: "passing",
+          url: "https://github.com/owner/repo/pull/10",
+        }),
         hasCapability: vi.fn().mockReturnValue(false),
       };
       handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
@@ -1665,7 +1675,7 @@ describe("Daemon", () => {
       );
     });
 
-    it("completes task even when auto-merge fails", async () => {
+    it("does not complete task when auto-merge API fails", async () => {
       handle = createTestDaemon();
       await handle.daemon.start();
       const task = createMockTask({
@@ -1680,6 +1690,14 @@ describe("Daemon", () => {
 
       const fakeHosting = {
         mergePR: vi.fn().mockRejectedValue(new Error("Conflict")),
+        getPRStatus: vi.fn().mockResolvedValue({
+          number: 10,
+          state: "open",
+          draft: false,
+          mergeable: true,
+          checks_state: "passing",
+          url: "https://github.com/owner/repo/pull/10",
+        }),
         hasCapability: vi.fn().mockReturnValue(false),
       };
       handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
@@ -1708,14 +1726,14 @@ describe("Daemon", () => {
         expect(fakeHosting.mergePR).toHaveBeenCalled();
       });
 
-      // Should still complete the task despite merge failure
+      // Should NOT complete the task — leave in review_pending for retry
       await vi.waitFor(() => {
-        expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
           "task-merge-fail",
           "completed",
           null,
-          "code_approved",
-          "daemon",
+          expect.any(String),
+          expect.any(String),
         );
       });
     });

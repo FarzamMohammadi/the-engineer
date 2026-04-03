@@ -1588,7 +1588,7 @@ The abstract class \`GitHostingAdapter\` extends \`BaseAdapter\`. Plugin authors
 | \`updatePR\` | \`(repo: string, prNumber: number, updates: PRUpdates) => Promise<void>\` | -- |
 | \`mergePR\` | \`(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>\` | \`{ merge_sha, success, error }\` |
 | \`closePR\` | \`(repo: string, prNumber: number) => Promise<void>\` | -- |
-| \`getPRStatus\` | \`(repo: string, prNumber: number) => Promise<PRStatus>\` | \`{ number, state, draft, mergeable, checks_passing, url }\` |
+| \`getPRStatus\` | \`(repo: string, prNumber: number) => Promise<PRStatus>\` | \`{ number, state, draft, mergeable, checks_state, url }\` |
 | \`getReviewStatus\` | \`(repo: string, prNumber: number) => Promise<ReviewStatus>\` | \`{ approved, approvals, changes_requested, reviewers, comments }\` |
 | \`getPRComments\` | \`(repo: string, prNumber: number) => Promise<PRComment[]>\` | Array of \`{ id, author, body, created_at }\` |
 | \`commentOnPR\` | \`(repo: string, prNumber: number, comment: string, replyTo?: string) => Promise<CommentResult>\` | \`{ comment_id, url }\` |
@@ -1646,7 +1646,7 @@ type PRStatus = {
   state: "open" | "closed" | "merged";
   draft: boolean;
   mergeable: boolean;
-  checks_passing: boolean;
+  checks_state: "passing" | "failing" | "pending" | "none";
   url: string;
 };
 
@@ -1898,7 +1898,7 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 **Merging.** Calls \`pulls.merge\` with the configured merge strategy (\`squash\`, \`merge\`, or \`rebase\`). The plugin never force-merges. If branch protection requirements are not satisfied (required reviews, status checks), the merge returns an error with \`pr_not_mergeable\` or \`merge_conflict\` -- it does not bypass protections.
 
-**PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified \`open | closed | merged\` enum. CI check status is determined by the combined status API (\`repos.getCombinedStatusForRef\`).
+**PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified \`open | closed | merged\` enum. CI check state is a tri-state (\`passing | failing | pending | none\`) determined by the combined status API (\`repos.getCombinedStatusForRef\`).
 
 **Review aggregation.** Fetches all reviews chronologically and tracks the latest meaningful state per reviewer (\`APPROVED\`, \`CHANGES_REQUESTED\`, \`COMMENTED\`). A PR is considered approved only when at least one reviewer approved AND no reviewer has \`changes_requested\` as their latest state. Review body text is collected as feedback comments.
 

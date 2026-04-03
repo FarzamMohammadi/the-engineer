@@ -676,7 +676,7 @@ describe("PRStatusSchema", () => {
       state: "open",
       draft: true,
       mergeable: false,
-      checks_passing: true,
+      checks_state: "passing",
       url: "https://github.com/...",
     });
     expect(status.state).toBe("open");
@@ -690,7 +690,7 @@ describe("PRStatusSchema", () => {
           state,
           draft: false,
           mergeable: true,
-          checks_passing: true,
+          checks_state: "passing",
           url: "x",
         }).state,
       ).toBe(state);

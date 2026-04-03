@@ -159,14 +159,14 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       pull_number: prNumber,
     });
 
-    const checksPassing = await getChecksPassing(this.octokit, owner, repoName, pr.head.sha);
+    const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha);
 
     return {
       number: pr.number,
       state: mapPRState(pr.state, pr.merged),
       draft: pr.draft ?? false,
       mergeable: pr.mergeable ?? false,
-      checks_passing: checksPassing,
+      checks_state: checksState,
       url: pr.html_url,
     };
   }
@@ -356,21 +356,33 @@ function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged
   return "open";
 }
 
-async function getChecksPassing(
+type ChecksState = "passing" | "failing" | "pending" | "none";
+
+async function getChecksState(
   octokit: Octokit,
   owner: string,
   repo: string,
   sha: string,
-): Promise<boolean> {
+): Promise<ChecksState> {
   try {
     const { data } = await octokit.repos.getCombinedStatusForRef({
       owner,
       repo,
       ref: sha,
     });
-    return data.state === "success";
+    if (data.total_count === 0) {
+      return "none";
+    }
+    switch (data.state) {
+      case "success":
+        return "passing";
+      case "pending":
+        return "pending";
+      default:
+        return "failing";
+    }
   } catch {
-    return false;
+    return "failing";
   }
 }
 

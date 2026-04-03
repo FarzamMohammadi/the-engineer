@@ -82,7 +82,7 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
         state: "open",
         draft: options.draft,
         mergeable: true,
-        checks_passing: true,
+        checks_state: "passing",
         url: `https://fake.git/${options.repo}/pull/${String(prNumber)}`,
       },
       reviews: {

@@ -1898,7 +1898,7 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 **Merging.** Calls \`pulls.merge\` with the configured merge strategy (\`squash\`, \`merge\`, or \`rebase\`). The plugin never force-merges. If branch protection requirements are not satisfied (required reviews, status checks), the merge returns an error with \`pr_not_mergeable\` or \`merge_conflict\` -- it does not bypass protections.
 
-**PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified \`open | closed | merged\` enum. CI check state is a tri-state (\`passing | failing | pending | none\`) determined by the combined status API (\`repos.getCombinedStatusForRef\`).
+**PR status.** Fetches the PR and resolves CI state by querying both the Status API (\`repos.getCombinedStatusForRef\`) and the Checks API (\`checks.listForRef\`). Worst state wins across both sources. Maps GitHub's state to a simplified \`open | closed | merged\` enum. CI check state is a tri-state (\`passing | failing | pending | none\`).
 
 **Review aggregation.** Fetches all reviews chronologically and tracks the latest meaningful state per reviewer (\`APPROVED\`, \`CHANGES_REQUESTED\`, \`COMMENTED\`). A PR is considered approved only when at least one reviewer approved AND no reviewer has \`changes_requested\` as their latest state. Review body text is collected as feedback comments.
 

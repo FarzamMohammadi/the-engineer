@@ -145,12 +145,21 @@ The map is pruned each tick — tasks no longer in `review_pending` are removed.
 
 `checks_state` in `PRStatus` schema is an enum: `"passing" | "failing" | "pending" | "none"`.
 
-GitHub's combined status API returns `"success" | "failure" | "error" | "pending"`. Mapping:
+Resolved by querying **both** GitHub APIs in parallel (repos with GitHub Actions use the Checks API, while some use the legacy Status API — or both):
+
+**Status API** (`repos.getCombinedStatusForRef`) — legacy commit statuses:
 - `"success"` + total_count > 0 → `"passing"`
 - `"pending"` + total_count > 0 → `"pending"`
 - `"failure"` / `"error"` → `"failing"`
-- total_count = 0 → `"none"` (no CI configured)
-- API exception → `"failing"` (fail-safe)
+- total_count = 0 → `"none"`
+
+**Checks API** (`checks.listForRef`) — GitHub Actions and third-party check runs:
+- All completed with `success`/`skipped`/`neutral` → `"passing"`
+- Any `in_progress`/`queued` → `"pending"`
+- Any completed with `failure`/`cancelled`/`timed_out`/`action_required` → `"failing"`
+- No check runs → `"none"`
+
+**Combining:** worst state wins (`failing` > `pending` > `passing` > `none`). Both `"none"` = `"none"` (no CI configured). API exception → `"failing"` (fail-safe).
 
 ---
 

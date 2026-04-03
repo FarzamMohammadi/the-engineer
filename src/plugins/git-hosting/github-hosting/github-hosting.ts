@@ -453,6 +453,13 @@ function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged
 
 type ChecksState = "passing" | "failing" | "pending" | "none";
 
+/**
+ * Resolve CI status by querying BOTH the Status API (legacy commit statuses)
+ * and the Checks API (GitHub Actions, third-party check runs). Either source
+ * can report CI results depending on the repo's setup.
+ *
+ * Combining logic: worst state wins (failing > pending > passing > none).
+ */
 async function getChecksState(
   octokit: Octokit,
   owner: string,
@@ -460,25 +467,78 @@ async function getChecksState(
   sha: string,
 ): Promise<ChecksState> {
   try {
-    const { data } = await octokit.repos.getCombinedStatusForRef({
-      owner,
-      repo,
-      ref: sha,
-    });
-    if (data.total_count === 0) {
-      return "none";
-    }
-    switch (data.state) {
-      case "success":
-        return "passing";
-      case "pending":
-        return "pending";
-      default:
-        return "failing";
-    }
+    const [statusResult, checksResult] = await Promise.all([
+      octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha }),
+      octokit.checks.listForRef({ owner, repo, ref: sha }),
+    ]);
+
+    // Status API (legacy): "success" | "failure" | "error" | "pending"
+    const statusState = resolveStatusApiState(
+      statusResult.data.state,
+      statusResult.data.total_count,
+    );
+
+    // Checks API (GitHub Actions): each run has status + conclusion
+    const checksState = resolveChecksApiState(checksResult.data.check_runs);
+
+    return combineCheckStates(statusState, checksState);
   } catch {
     return "failing";
   }
+}
+
+function resolveStatusApiState(state: string, totalCount: number): ChecksState {
+  if (totalCount === 0) {
+    return "none";
+  }
+  switch (state) {
+    case "success":
+      return "passing";
+    case "pending":
+      return "pending";
+    default:
+      return "failing";
+  }
+}
+
+function resolveChecksApiState(
+  checkRuns: Array<{ status: string; conclusion: string | null }>,
+): ChecksState {
+  if (checkRuns.length === 0) {
+    return "none";
+  }
+
+  let hasFailure = false;
+  let hasPending = false;
+
+  for (const run of checkRuns) {
+    if (run.status !== "completed") {
+      hasPending = true;
+      continue;
+    }
+    // completed: check conclusion
+    if (
+      run.conclusion !== "success" &&
+      run.conclusion !== "skipped" &&
+      run.conclusion !== "neutral"
+    ) {
+      hasFailure = true;
+    }
+  }
+
+  if (hasFailure) {
+    return "failing";
+  }
+  if (hasPending) {
+    return "pending";
+  }
+  return "passing";
+}
+
+/** Worst state wins: failing > pending > passing > none. */
+function combineCheckStates(a: ChecksState, b: ChecksState): ChecksState {
+  const priority: Record<ChecksState, number> = { failing: 3, pending: 2, passing: 1, none: 0 };
+  return priority[a] >= priority[b] ? a : b;
 }
 
 interface GitHubReview {

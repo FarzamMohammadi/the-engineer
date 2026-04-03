@@ -56,6 +56,11 @@ function createMockOctokit() {
         data: { state: "success", total_count: 1 },
       }),
     },
+    checks: {
+      listForRef: vi.fn().mockResolvedValue({
+        data: { check_runs: [] },
+      }),
+    },
     rateLimit: {
       get: vi.fn().mockResolvedValue({
         data: { resources: { core: { remaining: 4500, limit: 5000 } } },
@@ -267,7 +272,9 @@ describe("GitHubHostingPlugin", () => {
       expect(status.state).toBe("merged");
     });
 
-    it("reports failing checks", async () => {
+    // ── Status API (legacy commit statuses) ──
+
+    it("reports failing from status API", async () => {
       mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
         data: { state: "failure", total_count: 2 },
       });
@@ -275,7 +282,7 @@ describe("GitHubHostingPlugin", () => {
       expect(status.checks_state).toBe("failing");
     });
 
-    it("reports pending checks", async () => {
+    it("reports pending from status API", async () => {
       mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
         data: { state: "pending", total_count: 1 },
       });
@@ -283,12 +290,100 @@ describe("GitHubHostingPlugin", () => {
       expect(status.checks_state).toBe("pending");
     });
 
-    it("reports none when no checks configured", async () => {
+    it("reports none when neither API has checks", async () => {
       mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
         data: { state: "pending", total_count: 0 },
       });
+      mockOctokit.checks.listForRef.mockResolvedValueOnce({
+        data: { check_runs: [] },
+      });
       const status = await plugin.getPRStatus("acme/webapp", 51);
       expect(status.checks_state).toBe("none");
+    });
+
+    // ── Checks API (GitHub Actions) ──
+
+    it("reports passing from GitHub Actions check runs", async () => {
+      mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
+        data: { state: "pending", total_count: 0 },
+      });
+      mockOctokit.checks.listForRef.mockResolvedValueOnce({
+        data: {
+          check_runs: [{ status: "completed", conclusion: "success" }],
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("passing");
+    });
+
+    it("reports pending from in-progress GitHub Actions", async () => {
+      mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
+        data: { state: "pending", total_count: 0 },
+      });
+      mockOctokit.checks.listForRef.mockResolvedValueOnce({
+        data: {
+          check_runs: [{ status: "in_progress", conclusion: null }],
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("pending");
+    });
+
+    it("reports failing from failed GitHub Actions", async () => {
+      mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
+        data: { state: "pending", total_count: 0 },
+      });
+      mockOctokit.checks.listForRef.mockResolvedValueOnce({
+        data: {
+          check_runs: [{ status: "completed", conclusion: "failure" }],
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("failing");
+    });
+
+    // ── Combined: worst state wins ──
+
+    it("failing from checks API overrides passing from status API", async () => {
+      mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
+        data: { state: "success", total_count: 1 },
+      });
+      mockOctokit.checks.listForRef.mockResolvedValueOnce({
+        data: {
+          check_runs: [{ status: "completed", conclusion: "failure" }],
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("failing");
+    });
+
+    it("pending from checks API overrides passing from status API", async () => {
+      mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
+        data: { state: "success", total_count: 1 },
+      });
+      mockOctokit.checks.listForRef.mockResolvedValueOnce({
+        data: {
+          check_runs: [{ status: "queued", conclusion: null }],
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("pending");
+    });
+
+    it("treats skipped and neutral conclusions as passing", async () => {
+      mockOctokit.repos.getCombinedStatusForRef.mockResolvedValueOnce({
+        data: { state: "pending", total_count: 0 },
+      });
+      mockOctokit.checks.listForRef.mockResolvedValueOnce({
+        data: {
+          check_runs: [
+            { status: "completed", conclusion: "skipped" },
+            { status: "completed", conclusion: "neutral" },
+          ],
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("passing");
     });
   });
 

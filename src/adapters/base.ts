@@ -7,8 +7,10 @@ import type { HealthStatus, InitResult, PluginManifest } from "../schemas/adapte
  * adapters need. Defined locally to avoid tier import violations (adapters
  * cannot import core). The Registry injects the real IObserver instance.
  */
-interface AdapterObserver {
+export interface AdapterObserver {
+  debug(msg: string, data?: Record<string, unknown>): void;
   info(msg: string, data?: Record<string, unknown>): void;
+  warn(msg: string, data?: Record<string, unknown>): void;
   error(msg: string, data?: Record<string, unknown>): void;
 }
 

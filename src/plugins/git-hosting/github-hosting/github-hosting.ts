@@ -1,6 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { AdapterMethodError } from "../../../adapters/errors.js";
 import {
+  type AdapterObserver,
   type BranchProtection,
   type CommentResult,
   GitHostingAdapter,
@@ -18,6 +19,22 @@ import {
 } from "../../../adapters/index.js";
 import { type GitHubHostingConfig, GitHubHostingConfigSchema } from "./config.js";
 
+/** No-op observer for when the real observer is not injected. */
+const SILENT: AdapterObserver = {
+  debug() {
+    /* no-op */
+  },
+  info() {
+    /* no-op */
+  },
+  warn() {
+    /* no-op */
+  },
+  error() {
+    /* no-op */
+  },
+};
+
 /**
  * GitHubHostingPlugin — PR lifecycle management via GitHub API.
  *
@@ -28,8 +45,20 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
   private config!: GitHubHostingConfig;
   protected octokit!: Octokit;
 
+  /** Typed observer accessor — safe even when observer is not injected. */
+  private get obs(): AdapterObserver {
+    return (this.observer as AdapterObserver | undefined) ?? SILENT;
+  }
+
   protected async doCreatePR(options: PROptions): Promise<PRResult> {
     const [owner, repo] = splitRepo(options.repo);
+    this.obs.info("Creating PR", {
+      repo: options.repo,
+      branch: options.branch,
+      base: options.base,
+      draft: options.draft,
+    });
+
     const { data } = await this.octokit.pulls.create({
       owner,
       repo,
@@ -60,11 +89,28 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       });
     }
 
+    this.obs.info("PR created", {
+      repo: options.repo,
+      prNumber: data.number,
+      url: data.html_url,
+      draft: options.draft,
+      labels: options.labels?.length ?? 0,
+      reviewers: options.reviewers?.length ?? 0,
+    });
     return { pr_number: data.number, url: data.html_url };
   }
 
   protected async doUpdatePR(repo: string, prNumber: number, updates: PRUpdates): Promise<void> {
     const [owner, repoName] = splitRepo(repo);
+    this.obs.info("Updating PR", {
+      repo,
+      prNumber,
+      hasTitle: updates.title !== null,
+      hasDraft: updates.draft !== null,
+      labelsAdd: updates.labels_add?.length ?? 0,
+      labelsRemove: updates.labels_remove?.length ?? 0,
+    });
+
     const params: Record<string, unknown> = {
       owner,
       repo: repoName,
@@ -115,6 +161,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     strategy: MergeStrategy,
   ): Promise<MergeResult> {
     const [owner, repoName] = splitRepo(repo);
+    this.obs.info("Merging PR", { repo, prNumber, strategy });
 
     try {
       const { data } = await this.octokit.pulls.merge({
@@ -123,32 +170,40 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         pull_number: prNumber,
         merge_method: strategy,
       });
+      this.obs.info("PR merged", { repo, prNumber, sha: data.sha });
       return {
         merge_sha: data.sha,
         success: true,
         error: null,
       };
     } catch (error) {
+      const code = classifyMergeError(error);
+      this.obs.warn("PR merge failed", {
+        repo,
+        prNumber,
+        errorCode: code,
+        message: error instanceof Error ? error.message : String(error),
+      });
       return {
         merge_sha: "",
         success: false,
-        error: createAdapterError(
-          classifyMergeError(error),
-          error instanceof Error ? error.message : String(error),
-          { retryable: false },
-        ),
+        error: createAdapterError(code, error instanceof Error ? error.message : String(error), {
+          retryable: false,
+        }),
       };
     }
   }
 
   protected async doClosePR(repo: string, prNumber: number): Promise<void> {
     const [owner, repoName] = splitRepo(repo);
+    this.obs.info("Closing PR", { repo, prNumber });
     await this.octokit.pulls.update({
       owner,
       repo: repoName,
       pull_number: prNumber,
       state: "closed",
     });
+    this.obs.info("PR closed", { repo, prNumber });
   }
 
   protected async doGetPRStatus(repo: string, prNumber: number): Promise<PRStatus> {
@@ -160,10 +215,20 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     });
 
     const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha);
+    const state = mapPRState(pr.state, pr.merged);
+
+    this.obs.debug("PR status fetched", {
+      repo,
+      prNumber,
+      state,
+      checksState,
+      mergeable: pr.mergeable ?? false,
+      draft: pr.draft ?? false,
+    });
 
     return {
       number: pr.number,
-      state: mapPRState(pr.state, pr.merged),
+      state,
       draft: pr.draft ?? false,
       mergeable: pr.mergeable ?? false,
       checks_state: checksState,
@@ -179,7 +244,16 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       pull_number: prNumber,
     });
 
-    return aggregateReviews(reviews);
+    const status = aggregateReviews(reviews);
+    this.obs.debug("Review status fetched", {
+      repo,
+      prNumber,
+      approved: status.approved,
+      approvals: status.approvals,
+      changesRequested: status.changes_requested,
+      reviewerCount: status.reviewers.length,
+    });
+    return status;
   }
 
   protected async doCommentOnPR(
@@ -189,8 +263,9 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     replyTo: string | undefined,
   ): Promise<CommentResult> {
     const [owner, repoName] = splitRepo(repo);
+    const isReply = replyTo !== undefined;
 
-    if (replyTo) {
+    if (isReply) {
       const { data } = await this.octokit.pulls.createReplyForReviewComment({
         owner,
         repo: repoName,
@@ -198,6 +273,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         comment_id: Number.parseInt(replyTo, 10),
         body: comment,
       });
+      this.obs.debug("Review reply posted", { repo, prNumber, commentId: data.id, replyTo });
       return { comment_id: String(data.id), url: data.html_url };
     }
 
@@ -208,6 +284,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       issue_number: prNumber,
       body: comment,
     });
+    this.obs.debug("PR comment posted", { repo, prNumber, commentId: data.id });
     return { comment_id: String(data.id), url: data.html_url };
   }
 
@@ -246,6 +323,14 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         created_at: c.created_at,
       }));
 
+    const total = conversation.length + inline.length;
+    this.obs.debug("PR comments fetched", {
+      repo,
+      prNumber,
+      conversation: conversation.length,
+      inline: inline.length,
+      total,
+    });
     return [...conversation, ...inline];
   }
 
@@ -258,7 +343,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         repo: repoName,
         branch,
       });
-      return {
+      const protection: BranchProtection = {
         protected: true,
         required_reviews: data.required_pull_request_reviews?.required_approving_review_count ?? 0,
         required_checks: data.required_status_checks?.contexts ?? [],
@@ -266,6 +351,14 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
           ? { users: data.restrictions.users, teams: data.restrictions.teams }
           : null,
       };
+      this.obs.debug("Branch protection fetched", {
+        repo,
+        branch,
+        isProtected: true,
+        requiredReviews: protection.required_reviews,
+        requiredChecks: protection.required_checks.length,
+      });
+      return protection;
     } catch (error) {
       // 404 means no protection rules set
       if (
@@ -274,6 +367,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         "status" in error &&
         (error as { status: number }).status === 404
       ) {
+        this.obs.debug("Branch protection fetched", { repo, branch, isProtected: false });
         return {
           protected: false,
           required_reviews: 0,
@@ -288,6 +382,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
   protected async doGetDefaultBranch(repo: string): Promise<string> {
     const [owner, repoName] = splitRepo(repo);
     const { data } = await this.octokit.repos.get({ owner, repo: repoName });
+    this.obs.debug("Default branch resolved", { repo, branch: data.default_branch });
     return data.default_branch;
   }
 

@@ -126,6 +126,26 @@ describe("ExternalRefSchema", () => {
     ).toBeDefined();
     expect(ExternalRefSchema.parse({ type: "manual", repo: "a/b", id: "1" })).toBeDefined();
   });
+
+  it("accepts optional pr_prefix for PR title linking", () => {
+    const withPrefix = ExternalRefSchema.parse({
+      type: "github_issue",
+      repo: "owner/repo",
+      id: "42",
+      url: "https://github.com/owner/repo/issues/42",
+      pr_prefix: "#42",
+    });
+    expect(withPrefix.pr_prefix).toBe("#42");
+  });
+
+  it("parses without pr_prefix (backward compatible)", () => {
+    const withoutPrefix = ExternalRefSchema.parse({
+      type: "github_issue",
+      repo: "owner/repo",
+      id: "42",
+    });
+    expect(withoutPrefix.pr_prefix).toBeUndefined();
+  });
 });
 
 describe("ChildEntrySchema", () => {

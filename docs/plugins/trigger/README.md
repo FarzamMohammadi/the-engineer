@@ -26,7 +26,7 @@ Defined in `src/schemas/adapters.ts` (`TriggerEventSchema`).
 | `idempotency_key` | `string` | Stable key for deduplication (e.g. `github:issue:owner/repo:42`). Must be deterministic -- same event must produce the same key across polls. |
 | `source` | `string` | Plugin ID that produced this event. |
 | `event_type` | `string` | Classification (e.g. `issue_assigned`, `pr_review_requested`). |
-| `external_ref` | `ExternalRef \| null` | Link back to the external system (type, repo, id, url). |
+| `external_ref` | `ExternalRef \| null` | Link back to the external system (type, repo, id, url, pr_prefix). Plugins should set `pr_prefix` to the platform-formatted ticket reference (e.g. `#42` for GitHub, `JIRA-123` for Jira) — Core uses it to prefix PR titles for platform-native linking. |
 | `title` | `string` | Human-readable title for the task. |
 | `body` | `string \| null` | Full description/body text. |
 | `repo` | `string` | Repository identifier (`owner/name`). |

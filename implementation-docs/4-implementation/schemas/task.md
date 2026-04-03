@@ -84,12 +84,16 @@ Links a task to its external source (GitHub issue, Jira ticket, etc.).
 const ExternalRefSchema = z.object({
   type: z.string(),                    // "github_issue", "jira_ticket", "manual"
   repo: z.string(),                    // "owner/repo"
-  number: z.number().int().positive(), // issue/ticket number
+  id: z.string(),                      // issue/ticket identifier (e.g., "42", "VE-123")
+  url: z.string().optional(),          // link back to the external item
+  pr_prefix: z.string().optional(),    // platform-formatted ticket ref for PR titles (e.g., "#42", "JIRA-123")
 });
 type ExternalRef = z.infer<typeof ExternalRefSchema>;
 ```
 
 **Note:** `type` is an open string, not a fixed enum. New trigger sources can define their own types without schema changes.
+
+**`pr_prefix`:** Set by trigger plugins to provide the platform-native ticket reference for PR title prefixing. Core prepends it to the PR title as an opaque string (e.g., `#42: Fix auth bug`). This enables platforms like GitHub to auto-link PRs to their originating issues. Plugin-blind — Core never inspects the prefix format.
 
 ---
 

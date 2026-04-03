@@ -1279,3 +1279,13 @@ See `6-refinement/decisions.md` for full entries. Summary:
 - **D163:** SSE for real-time dashboard updates — `GET /api/stream` endpoint. Polling as fallback. No WebSocket (unidirectional data).
 - **D164:** Ecosystem-first — premade components over custom. Only build custom for domain-unique visualizations (agent loop, phase pipeline, decomposition tree).
 - **D165:** War Room is two-sided — deep backend instrumentation (agent loop visibility, LLM detail, decision points, decomposition) + modern frontend. Observability depth is the differentiator.
+
+---
+
+## 2026-04-03 — PR-to-ticket linking via `pr_prefix` on ExternalRef (D176)
+
+**Decision:** Add optional `pr_prefix: string` field to `ExternalRefSchema`. Trigger plugins set it to the platform-formatted ticket reference (GitHub: `"#42"`, Jira: `"JIRA-123"`). Core prefixes the PR title with `pr_prefix` as an opaque string — never inspects its format.
+
+**Rationale:** Git platforms (GitHub, GitLab, Azure DevOps) use keyword/prefix parsing as their primary PR-to-issue linking mechanism — no universal "link PR to issue" API exists. By having trigger plugins provide the platform-native prefix, Core can enable automatic linking while maintaining plugin blindness. The prefix in the title creates a platform-recognized reference without auto-closing behavior (closing keywords like `Resolves` would need to be in the PR body).
+
+**Alternatives rejected:** (1) `linkPRToSource()` adapter method — over-engineered for what amounts to a string prefix. (2) Closing keywords in Core (`Resolves #42`) — plugin blindness violation, Core encoding platform semantics. (3) Deferral — immediate value for same-platform scenarios with minimal scope.

@@ -61,6 +61,8 @@ This is a deliberate divergence, not an inconsistency. Document it in both funct
 
 Core reads `url` when it needs a link. If `url` is absent, Core omits the link — it does NOT attempt to construct one.
 
+**Note (D176):** `pr_prefix` was added alongside `url` as another optional field on ExternalRef. Same principle — trigger plugin provides the platform-formatted ticket reference for PR title prefixing (e.g., `"#42"` for GitHub, `"JIRA-123"` for Jira). Core uses it as an opaque string.
+
 ---
 
 ## Plugin Blindness — Purge All Type-String Checks from Core

@@ -523,6 +523,145 @@ describe("PrManager", () => {
     expect(prArgs.body).toContain("Added feature X");
     expect(prArgs.body).toContain("Crafted by The Engineer");
   });
+
+  it("prefixes PR title with pr_prefix when present", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 60, url: "https://github.com/pr/60" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { pr_description: "Added feature X" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+    const dispatch = createDispatch({
+      title: "Fix authentication bug",
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        url: "https://github.com/owner/repo/issues/42",
+        pr_prefix: "#42",
+      },
+    } as unknown as Partial<Task>);
+
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "#42: Fix authentication bug",
+      }),
+    );
+  });
+
+  it("does not prefix PR title when pr_prefix is absent", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 61, url: "https://github.com/pr/61" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { pr_description: "Clean description" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+    const dispatch = createDispatch({
+      title: "Fix authentication bug",
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+      },
+    } as unknown as Partial<Task>);
+
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Fix authentication bug",
+      }),
+    );
+  });
+
+  it("does not prefix PR title when external_ref is null", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 62, url: "https://github.com/pr/62" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { pr_description: "Clean description" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+    const dispatch = createDispatch();
+
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Test task",
+      }),
+    );
+  });
 });
 
 // ── Helper Function Tests ──────────────────────────────────────────────────

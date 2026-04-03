@@ -53,6 +53,8 @@ export const ExternalRefSchema = z.object({
   repo: z.string(),
   id: z.string(),
   url: z.string().optional(),
+  /** Platform-formatted ticket reference for PR title prefixing (e.g., "#42", "JIRA-123"). Set by trigger plugins. */
+  pr_prefix: z.string().optional(),
 });
 export type ExternalRef = z.infer<typeof ExternalRefSchema>;
 

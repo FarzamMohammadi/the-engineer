@@ -273,11 +273,17 @@ export function createPrManager(
       // Wrap with trigger reference header and branding footer
       const prBody = composePrBody(prDescription, dispatch.task);
 
+      // Prefix PR title with ticket reference when available (plugin-blind: Core treats pr_prefix as opaque)
+      const rawTitle = sanitizeSecrets(dispatch.task.title);
+      const prTitle = dispatch.task.external_ref?.pr_prefix
+        ? `${dispatch.task.external_ref.pr_prefix}: ${rawTitle}`
+        : rawTitle;
+
       const prResult = await gitHosting.createPR({
         repo: record.repo,
         branch: record.branch,
         base: record.baseBranch,
-        title: sanitizeSecrets(dispatch.task.title),
+        title: prTitle,
         body: prBody,
         draft: false,
         labels: null,

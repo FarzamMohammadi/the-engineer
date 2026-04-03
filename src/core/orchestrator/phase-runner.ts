@@ -14,6 +14,7 @@ import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
 import { PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
 import { sendOutreach } from "./outreach-sender.js";
+import { PhaseNavigator } from "./phase-navigator.js";
 import type { PrManager } from "./pr-manager.js";
 import { gatherRepoContextSafe } from "./prompts/index.js";
 import {
@@ -100,7 +101,7 @@ export interface PhaseRunnerDeps {
 /** Discriminated union of post-phase processing outcomes (internal to the pipeline runner). */
 type PhaseCompletionResult =
   | { kind: "continue"; phases: Phase[] }
-  | { kind: "loopback"; phases: Phase[]; targetIndex: number }
+  | { kind: "loopback"; phases: Phase[]; targetPhase: Phase }
   | { kind: "exit"; result: ExecuteTaskResult };
 
 // ── Pure Helpers ────────────────────────────────────────────────────────────
@@ -343,7 +344,7 @@ function checkSelfReviewLoopback(
   phases: Phase[],
   state: PipelineState,
   ctx: OrchestratorContext,
-): { targetIndex: number; loopbackCount: number } | null {
+): { targetPhase: Phase; loopbackCount: number } | null {
   const reviewData = output.data as { quality_assessment?: string; next_phase?: string };
 
   // Primary: quality_assessment from handler (CLI-native maps next_phase → quality_assessment).
@@ -382,11 +383,10 @@ function checkSelfReviewLoopback(
     tags: ["loopback", assessment],
   });
 
-  const executionIndex = phases.indexOf(Phases.execution);
-  if (executionIndex < 0) {
+  if (!phases.includes(Phases.execution)) {
     return null;
   }
-  return { targetIndex: executionIndex, loopbackCount: newLoopbackCount };
+  return { targetPhase: Phases.execution, loopbackCount: newLoopbackCount };
 }
 
 /** Alert human that loopbacks have exceeded the safety threshold. */
@@ -458,7 +458,6 @@ async function handlePostPhaseActions(
   phase: Phase,
   output: PhaseOutput,
   currentPhases: Phase[],
-  currentIndex: number,
   priorOutputs: Map<Phase, PhaseOutput>,
   dispatch: Dispatch,
   state: PipelineState,
@@ -490,11 +489,9 @@ async function handlePostPhaseActions(
         });
         requirementsLoopCount = newLoopCount;
         returnToPhase = phase;
-        // targetIndex - 1 because the for loop's i++ will increment to the target
-        const reqIndex = phases.indexOf(Phases.requirements_gathering);
-        if (reqIndex >= 0) {
+        if (phases.includes(Phases.requirements_gathering)) {
           return {
-            completion: { kind: "loopback", phases, targetIndex: reqIndex - 1 },
+            completion: { kind: "loopback", phases, targetPhase: Phases.requirements_gathering },
             loopbackCount,
             requirementsLoopCount,
             returnToPhase,
@@ -555,9 +552,12 @@ async function handlePostPhaseActions(
         };
       }
 
-      // Always persist return_to_phase when blocking — defaults to the current phase.
-      // On resume, the pipeline reads this and routes back here after requirements_gathering.
-      ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase ?? phase);
+      // Persist return_to_phase only when blocking from a fallback (another phase routed here).
+      // When returnToPhase is null, requirements_gathering blocked on its own — no return
+      // target needed; on resume the pipeline runs requirements_gathering then advances normally.
+      if (returnToPhase) {
+        ctx.taskEngine.updateTaskField(taskId, "return_to_phase", returnToPhase);
+      }
 
       ctx.taskEngine.requestTransition(
         taskId,
@@ -602,15 +602,13 @@ async function handlePostPhaseActions(
   if (phase === Phases.requirements_gathering && returnToPhase) {
     const returnPhase = returnToPhase;
     returnToPhase = null;
-    const returnIndex = phases.indexOf(returnPhase);
-    if (returnIndex >= 0) {
+    if (phases.includes(returnPhase)) {
       ctx.observer.info("Requirements complete, returning to calling phase", {
         taskId,
         returnToPhase: returnPhase,
       });
-      // targetIndex - 1 because the for loop's i++ will increment to the target
       return {
-        completion: { kind: "loopback", phases, targetIndex: returnIndex - 1 },
+        completion: { kind: "loopback", phases, targetPhase: returnPhase },
         loopbackCount,
         requirementsLoopCount,
         returnToPhase,
@@ -671,7 +669,7 @@ async function handlePostPhaseActions(
 
       ctx.taskEngine.updateTaskField(taskId, "phase", Phases.execution);
       return {
-        completion: { kind: "loopback", phases, targetIndex: loopbackResult.targetIndex - 1 },
+        completion: { kind: "loopback", phases, targetPhase: loopbackResult.targetPhase },
         loopbackCount,
         requirementsLoopCount,
         returnToPhase,
@@ -697,6 +695,7 @@ async function handlePostPhaseActions(
   }
 
   // Protocol P4: Phase transition
+  const currentIndex = phases.indexOf(phase);
   const isLastPhase = currentIndex === phases.length - 1;
 
   ctx.observer.debug("Phase completion processing", {
@@ -788,11 +787,11 @@ export async function runPhasePipeline(
 
   // ── Determine phase sequence ───────────────────────────────────────────
   const { phases: initialPhases, startIndex } = resolveStartState(dispatch, sessionId, taskId, ctx);
-  let phases = initialPhases;
+  const navigator = new PhaseNavigator(initialPhases, startIndex);
   ctx.observer.info("Phase pipeline starting", {
     taskId,
     startIndex,
-    phases,
+    phases: navigator.getPhases(),
     resumeFrom: dispatch.resume_from?.phase ?? "none",
   });
 
@@ -818,9 +817,7 @@ export async function runPhasePipeline(
   }
 
   // Set initial task.phase
-  // biome-ignore lint/style/noNonNullAssertion: startIndex is within bounds
-  const initialPhase = phases[startIndex]!;
-  ctx.taskEngine.updateTaskField(taskId, "phase", initialPhase);
+  ctx.taskEngine.updateTaskField(taskId, "phase", navigator.current());
 
   // ── Restore persisted pipeline state from task record ────────────────
   const task = ctx.taskEngine.getTask(taskId);
@@ -850,40 +847,39 @@ export async function runPhasePipeline(
   // ── Phase loop ─────────────────────────────────────────────────────────
   const priorOutputs = new Map<Phase, PhaseOutput>();
 
-  for (let i = startIndex; i < phases.length; i++) {
+  while (navigator.hasMore()) {
+    const phase = navigator.current();
+
     // Check preemption before phase start
     if (deps.preemption.isRequested(taskId)) {
       const preemptingId = deps.preemption.getPayload(taskId)?.preempting_task_id ?? "unknown";
       deps.preemption.reset(taskId);
-      // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
-      const preemptPhase = phases[i]!;
       return endPipelineSpan(
-        handlePreemption(sessionId, taskId, preemptPhase, ctx, preemptingId),
-        i - startIndex,
+        handlePreemption(sessionId, taskId, phase, ctx, preemptingId),
+        navigator.phasesRun(),
       );
     }
 
     // Check cooperative shutdown before phase start (same checkpoint pattern as preemption)
     if (deps.shutdown?.isRequested()) {
-      // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
-      const shutdownPhase = phases[i]!;
       return endPipelineSpan(
-        handlePreemption(sessionId, taskId, shutdownPhase, ctx, "shutdown"),
-        i - startIndex,
+        handlePreemption(sessionId, taskId, phase, ctx, "shutdown"),
+        navigator.phasesRun(),
       );
     }
 
-    // biome-ignore lint/style/noNonNullAssertion: phases[i] is guaranteed valid within loop bounds
-    const phase = phases[i]!;
-
-    ctx.observer.debug("Phase loop iteration", { index: i, phase, phaseCount: phases.length });
+    ctx.observer.debug("Phase loop iteration", {
+      index: navigator.currentIndex(),
+      phase,
+      phaseCount: navigator.getPhases().length,
+    });
 
     // Check AndonCord
     if (deps.andonCord.isPulled()) {
       const reason = deps.andonCord.getReason() ?? "unknown";
       return endPipelineSpan(
         handlePhaseError(sessionId, taskId, phase, new Error(`AndonCord pulled: ${reason}`), ctx),
-        i - startIndex,
+        navigator.phasesRun(),
       );
     }
 
@@ -908,7 +904,7 @@ export async function runPhasePipeline(
       });
       return endPipelineSpan(
         handlePhaseError(sessionId, taskId, phase, error, ctx),
-        i - startIndex,
+        navigator.phasesRun(),
       );
     }
     ctx.observer.info("Phase completed", { taskId, phase, durationMs: Date.now() - phaseStart });
@@ -935,8 +931,7 @@ export async function runPhasePipeline(
         taskId,
         phase,
         output,
-        phases,
-        i,
+        navigator.getPhases(),
         priorOutputs,
         dispatch,
         currentState,
@@ -965,27 +960,28 @@ export async function runPhasePipeline(
     } catch (completionError) {
       return endPipelineSpan(
         handlePhaseError(sessionId, taskId, phase, completionError, ctx),
-        i - startIndex + 1,
+        navigator.phasesRun() + 1,
       );
     }
 
     switch (completion.kind) {
       case "exit":
-        return endPipelineSpan(completion.result, i - startIndex + 1);
+        return endPipelineSpan(completion.result, navigator.phasesRun() + 1);
       case "loopback": {
         // Clear phase outputs that will be re-generated — prevents unbounded memory growth
         // across loopback cycles (self-review → execution → self-review → ...)
-        for (let j = completion.targetIndex; j < completion.phases.length; j++) {
-          // biome-ignore lint/style/noNonNullAssertion: j is within bounds of completion.phases
-          priorOutputs.delete(completion.phases[j]!);
+        for (const p of navigator.phasesFromCursor()) {
+          priorOutputs.delete(p);
         }
-        phases = completion.phases;
-        i = completion.targetIndex;
+        navigator.replaceSequence(completion.phases);
+        navigator.jumpTo(completion.targetPhase);
         continue;
       }
-      case "continue":
-        phases = completion.phases;
-        break;
+      case "continue": {
+        navigator.replaceSequence(completion.phases);
+        navigator.advance();
+        continue;
+      }
       default: {
         const Exhaustive: never = completion;
         throw new Error(`Unexpected completion kind: ${JSON.stringify(Exhaustive)}`);
@@ -1012,11 +1008,11 @@ export async function runPhasePipeline(
   ctx.observer.info("Phase pipeline completed", {
     taskId,
     sessionId,
-    phasesRun: phases.length - startIndex,
+    phasesRun: navigator.phasesRun(),
     outcome: "completed",
   });
   return endPipelineSpan(
     { outcome: "completed", phaseOutputs: priorOutputs },
-    phases.length - startIndex,
+    navigator.phasesRun(),
   );
 }

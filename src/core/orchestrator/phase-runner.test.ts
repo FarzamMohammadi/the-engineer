@@ -853,6 +853,97 @@ describe("PhaseRunner", () => {
         null,
       );
     });
+
+    it("does NOT persist return_to_phase when requirements_gathering blocks on its own", async () => {
+      const ctx = createMockContext();
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      // Requirements gathering signals need_more_info with no prior returnToPhase
+      outputs.set(
+        Phases.requirements_gathering,
+        makeOutput(Phases.requirements_gathering, { status: "need_more_info" }),
+      );
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("blocked");
+      // return_to_phase should NOT be persisted (no calling phase to return to)
+      const updateCalls = (ctx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock.calls;
+      const returnToPhaseWrites = updateCalls.filter(
+        (c: unknown[]) => c[1] === "return_to_phase" && c[2] !== null,
+      );
+      expect(returnToPhaseWrites).toHaveLength(0);
+    });
+
+    it("resumes after unblock and advances to research (no self-loop)", async () => {
+      const ctx = createMockContext();
+      // Simulate a re-dispatch after unblock: no checkpoint, no return_to_phase
+      // (the bug was that return_to_phase was "requirements_gathering", causing a self-loop)
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "task-001",
+        return_to_phase: null, // correctly null after the fix
+        loopback_count: 0,
+        requirements_loop_count: 0,
+      });
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      // All 7 phases should run — requirements_gathering runs once, then advances normally
+      const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
+        .calls;
+      expect(checkpointCalls.length).toBe(7);
+    });
+
+    it("self-review loopback lands on execution, not planning", async () => {
+      const ctx = createMockContext();
+      const phaseExecutionOrder: Phase[] = [];
+      let selfReviewCalls = 0;
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+
+      const handlerFns = Object.fromEntries(
+        PHASE_SEQUENCE.map((phase) => [
+          phase,
+          vi.fn(() => {
+            phaseExecutionOrder.push(phase);
+            if (phase === Phases.self_review) {
+              selfReviewCalls++;
+              if (selfReviewCalls === 1) {
+                return Promise.resolve(
+                  makeOutput(Phases.self_review, {
+                    findings: ["issue"],
+                    refactoring_applied: [],
+                    quality_assessment: "needs_work",
+                  }),
+                );
+              }
+            }
+            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
+          }),
+        ]),
+      ) as Record<Phase, ReturnType<typeof vi.fn>>;
+      const handlers = createPhaseHandlerRegistry(handlerFns);
+      const deps = createDeps(ctx, handlers);
+
+      await runPhasePipeline(createDispatch(), createState(), deps);
+
+      // After self_review(needs_work), the next phase should be execution, NOT planning
+      const selfReviewIdx = phaseExecutionOrder.indexOf(Phases.self_review);
+      expect(phaseExecutionOrder[selfReviewIdx + 1]).toBe(Phases.execution);
+    });
   });
 
   describe("PhaseHandlerRegistry", () => {

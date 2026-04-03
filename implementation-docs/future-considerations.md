@@ -300,3 +300,39 @@ Each adapter type needs a "How to build a plugin" guide so contributors can add 
 **Migration path:** The schema-driven prompt infrastructure built for first-run setup is reusable. The main complexity is diffing current config against desired state and handling partial changes without breaking running state. Requires careful handling of plugin lifecycle (shutdown old plugin before removing config, initialize new plugin after writing config).
 
 ---
+
+## Sandboxed Task Execution
+
+**Current state (v1):** Claude CLI runs as a direct child process of the Daemon, sharing the host filesystem and network. It has full access to `~/.engineer`, the `engineer` CLI, and any system command.
+
+**Observed incident:** Task "Update seed-example config claude code model to opus" was assigned to work on The Engineer's own repo. Claude CLI's planning phase wrote a plan that included `Run scripts/reset.sh` as a test step. During execution, it ran the script — which calls `engineer stop`, killing its own parent daemon. The daemon restarted via crash recovery, resumed the task, and Claude ran the same plan again — killing itself a second time. Repeated 3 times before manual intervention.
+
+**Why sandboxing is needed:**
+1. **Self-harm:** Tasks on The Engineer's own repo can kill the parent daemon (`engineer stop`, `scripts/reset.sh`, PID file manipulation).
+2. **Cross-task interference:** Concurrent tasks sharing the host filesystem can collide — one task modifying files, installing packages, or killing processes that another task depends on. Without isolation, concurrent execution is inherently unsafe.
+3. **Untrusted input:** Task descriptions come from GitHub issues (external input). A malicious issue could craft instructions that manipulate the host system.
+4. **Unbounded access:** The CLI can read `~/.engineer/config/`, access API keys in `.env`, modify the database, or interact with any host service.
+
+**What it enables:** Full process isolation via OS-agnostic containerization (Docker). Each CLI invocation runs inside a container with:
+1. The worktree mounted as a volume (read-write)
+2. Git credentials injected via env vars (not host SSH agent)
+3. Claude CLI binary + API key available inside the container
+4. No access to `~/.engineer`, PID files, or the host daemon process
+5. `--dangerously-skip-permissions` enabled (safe because the container IS the sandbox)
+6. Network access scoped to git push/pull and LLM API calls
+
+**Architecture:**
+- Base Docker image: Node.js + Claude CLI + git (built/pulled once, cached)
+- The Engineer's WorkspaceManager creates the worktree on the host, then mounts it into the container
+- Container runs the Claude CLI command, streams NDJSON output back to the host via stdout
+- Container is ephemeral — destroyed after each CLI invocation
+- Fallback to direct spawn if Docker is unavailable (with a warning)
+
+**Migration path:**
+1. Abstract CLI spawning behind a `SpawnStrategy` interface (direct vs. containerized)
+2. Build a `DockerSpawnStrategy` that wraps the existing `spawnAndParse()` logic
+3. Add `sandbox.enabled` and `sandbox.image` to config
+4. `doctor` checks Docker availability when sandbox is enabled
+5. Existing `ClaudeCodeLLMPlugin.spawnAndParse()` delegates to the active strategy
+
+---

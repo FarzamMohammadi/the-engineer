@@ -14,21 +14,21 @@ Fix TypeScript compilation errors in test configurations to enable merge of PR #
 ## Phases
 
 ### Phase 1: Fix LLM Test Configuration
-- [ ] Edit `src/adapters/llm.test.ts` line 73-77
-- [ ] Add missing `trace_output_path: null` property to `testRequest` object
-- **Verify:** TypeScript compilation passes for the test request object
+- [x] Edit `src/adapters/llm.test.ts` line 73-77
+- [x] Add missing `trace_output_path: null` property to `testRequest` object
+- **Verify:** ✅ TypeScript compilation passes for the test request object
 
 ### Phase 2: Fix Doctor Test Configuration  
-- [ ] Edit `src/cli/commands/doctor.test.ts` line 562
-- [ ] Add missing properties to `makeSafeBundle()` function's merge configuration:
-  - [ ] `enable_comment_approval: false`
-  - [ ] `exclude_thoughts_on_merge: false`
-- **Verify:** TypeScript compilation passes for all `makeSafeBundle()` usages (lines 200, 209, 216, 224, 232, 239, 248, 256)
+- [x] Edit `src/cli/commands/doctor.test.ts` line 562
+- [x] Add missing properties to `makeSafeBundle()` function's merge configuration:
+  - [x] `enable_comment_approval: false`
+  - [x] `exclude_thoughts_on_merge: false`
+- **Verify:** ✅ TypeScript compilation passes for all `makeSafeBundle()` usages (lines 200, 209, 216, 224, 232, 239, 248, 256)
 
 ### Phase 3: Validate CI Fix
-- [ ] Run `pnpm lint` locally to verify TypeScript compilation passes
-- [ ] Push changes to the existing branch to trigger CI
-- **Verify:** CI pipeline passes completely, enabling merge of PR #13
+- [x] Run `pnpm lint` locally to verify TypeScript compilation passes
+- [x] Push changes to the existing branch to trigger CI
+- **Verify:** ✅ CI pipeline passes completely, enabling merge of PR #13
 
 ## Risks & Mitigations
 - **Risk:** Changes might break existing test behavior → **Mitigation:** Using schema-defined defaults (both properties default to `false`, trace_output_path defaults to `null`) ensures no behavioral changes
@@ -41,10 +41,10 @@ Fix TypeScript compilation errors in test configurations to enable merge of PR #
 - No new tests needed - this aligns existing tests with current schema definitions
 
 ## Success Criteria
-- [ ] TypeScript compilation passes locally (`pnpm lint` succeeds)
-- [ ] CI pipeline passes for PR #13
-- [ ] PR #13 becomes mergeable, allowing the opus model configuration to deploy
-- [ ] No existing test behaviors change (using schema defaults maintains current behavior)
+- [x] TypeScript compilation passes locally (`pnpm lint` succeeds)
+- [x] CI pipeline passes for PR #13
+- [x] PR #13 becomes mergeable, allowing the opus model configuration to deploy
+- [x] No existing test behaviors change (using schema defaults maintains current behavior)
 
 ## Original Task Completion (Reference)
 ✅ **Phase 1:** Update Seed Configuration

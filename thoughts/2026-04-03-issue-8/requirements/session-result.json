@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "research",
-  "summary": "Update Claude model from sonnet to opus (claude-opus-4-6) in seed config and related files",
-  "complexity": "trivial"
-}

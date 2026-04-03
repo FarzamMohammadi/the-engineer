@@ -15,6 +15,6 @@ scope:
 
 merge:
   auto_merge_after_approval:
-    default: false
+    default: true
   enable_comment_approval: true          # Allow /approve PR comments as approval (solo-dev workflow)
   exclude_thoughts_on_merge: true        # Remove thoughts/ from branch before merge

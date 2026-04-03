@@ -166,6 +166,8 @@ export function createTaskScheduler(
 
     // Rework dispatches (unapplied feedback) must restart from intake so the LLM
     // sees the reviewer's comments — NOT resume from the old checkpoint.
+    // Pipeline fix also adds a synthetic unapplied feedback round, so this
+    // naturally covers CI failure rework too.
     const hasUnappliedFeedback = task.review?.feedback_rounds?.some((r) => !r.applied) ?? false;
     const checkpoint = hasUnappliedFeedback ? null : rawCheckpoint;
 

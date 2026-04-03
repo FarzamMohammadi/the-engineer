@@ -606,6 +606,26 @@ export function createReviewHandler(
       return;
     }
 
+    // Add a synthetic unapplied feedback round so the orchestrator's
+    // requirements-gathering phase receives CI failure context and knows
+    // exactly what to fix (reuses the existing rework prompt pipeline).
+    const task = taskEngine.getTask(taskId);
+    if (task?.review) {
+      const ciRound = {
+        stage: "code" as const,
+        comments: [
+          `CI pipeline is failing (attempt ${String(fixCount + 1)}/${String(MAX_PIPELINE_FIX_RETRIES)}).`,
+          "The PR has been approved but cannot be merged until CI passes.",
+          "Investigate the CI failure, fix the root cause, and push the fix to the existing branch.",
+        ],
+        applied: false,
+      };
+      taskEngine.updateTaskField(taskId, "review", {
+        ...task.review,
+        feedback_rounds: [...task.review.feedback_rounds, ciRound],
+      });
+    }
+
     const transition = taskEngine.requestTransition(
       taskId,
       TaskStates.queued,

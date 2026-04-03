@@ -69,6 +69,7 @@ function createMockContext(): OrchestratorContext {
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
     notifications: { notify: vi.fn(), syncStateToCommPlugin: vi.fn() },
+    tracesDir: null,
   };
 }
 

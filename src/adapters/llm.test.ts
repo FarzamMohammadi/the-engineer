@@ -74,6 +74,7 @@ const testRequest: InferenceRequest = {
   prompt: "Hello, world",
   system_prompt: null,
   cwd: null,
+  trace_output_path: null,
 };
 
 describe("LLMAdapter", () => {

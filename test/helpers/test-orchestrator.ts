@@ -458,6 +458,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     notifications,
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
+    tracesDir: null,
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────

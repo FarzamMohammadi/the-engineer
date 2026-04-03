@@ -62,6 +62,7 @@ function createMockContext(
     } as unknown as OrchestratorContext["notifications"],
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
+    tracesDir: null,
   };
 }
 
@@ -131,6 +132,7 @@ function createState(overrides?: Partial<PipelineState>): PipelineState {
     thoughtsDir: null,
     repoContext: null,
     returnToPhase: null,
+    phaseSequence: 1,
     ...overrides,
   };
 }

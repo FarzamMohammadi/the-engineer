@@ -75,10 +75,10 @@ describe("Task lifecycle (integration)", () => {
 
       taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
       taskEngine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
-      taskEngine.requestTransition(task.id, "review_pending", "demo", "demo_ready", "orchestrator");
+      taskEngine.requestTransition(task.id, "review_pending", "code", "demo_ready", "orchestrator");
 
       expect(taskEngine.getTask(task.id)?.state).toBe("review_pending");
-      expect(taskEngine.getTask(task.id)?.sub_state).toBe("demo");
+      expect(taskEngine.getTask(task.id)?.sub_state).toBe("code");
 
       taskEngine.requestTransition(task.id, "review_pending", "code", "demo_approved", "reviewer");
       expect(taskEngine.getTask(task.id)?.sub_state).toBe("code");

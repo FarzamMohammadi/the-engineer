@@ -134,6 +134,9 @@ export function createMockInferenceRequest(
 ): InferenceRequest {
   return InferenceRequestSchema.parse({
     prompt: "Mock prompt",
+    system_prompt: null,
+    cwd: null,
+    trace_output_path: null,
     ...overrides,
   });
 }

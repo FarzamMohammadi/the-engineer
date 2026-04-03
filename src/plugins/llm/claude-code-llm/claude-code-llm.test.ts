@@ -193,6 +193,7 @@ describe("ClaudeCodeLLMPlugin", () => {
       prompt: "test prompt",
       system_prompt: "You are a helpful assistant.",
       cwd: null,
+      trace_output_path: null,
     });
     // The mock CLI echoes all args as the result text
     expect(result.content).toContain("--system-prompt");
@@ -207,6 +208,7 @@ describe("ClaudeCodeLLMPlugin", () => {
       prompt: "test prompt",
       system_prompt: null,
       cwd: null,
+      trace_output_path: null,
     });
     expect(result.content).not.toContain("--system-prompt");
   });

@@ -1,0 +1,5 @@
+{
+  "status": "ready",
+  "next_phase": "execution",
+  "summary": "Replace claude-sonnet-4-20250514 with claude-opus-4-6 in seed config and 8 related files"
+}

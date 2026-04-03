@@ -199,7 +199,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
   getCapabilities(): LLMCapabilities {
     return {
-      model_id: this.config?.model ?? "claude-sonnet-4-20250514",
+      model_id: this.config?.model ?? "claude-opus-4-6",
       supports_usage_reporting: true,
       supports_quota_reporting: true,
       context_window: 200_000,

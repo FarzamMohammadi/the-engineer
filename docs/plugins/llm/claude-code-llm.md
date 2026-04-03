@@ -33,7 +33,7 @@ Config file: `~/.engineer/config/plugins/claude-code-llm.yaml`
 
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
-| `model` | `string` | `claude-sonnet-4-20250514` | No | Model identifier passed to `--model`. |
+| `model` | `string` | `claude-opus-4-6` | No | Model identifier passed to `--model`. |
 | `max_tokens` | `number` | `16384` | No | Maximum output tokens per completion. |
 | `cli_path` | `string` | `claude` | No | Path to the Claude CLI binary. Change if it is not on your PATH. |
 | `command_timeout_ms` | `number` | `7200000` | No | Maximum time per CLI invocation (default 2 hours). Lower if you want a hard cap on phase duration. |
@@ -50,7 +50,7 @@ All fields have defaults. An empty config file works:
 ### Full config
 
 ```yaml
-model: claude-sonnet-4-20250514
+model: claude-opus-4-6
 max_tokens: 16384
 cli_path: claude
 command_timeout_ms: 7200000

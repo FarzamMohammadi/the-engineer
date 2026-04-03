@@ -90,7 +90,7 @@ observer.observe("phase_transition", "execution_started", {
 
 // Span (has duration — wraps an operation)
 const span = observer.startSpan("llm_call", "planning_completion", {
-  model: "claude-sonnet-4-20250514", promptLength: 4200,
+  model: "claude-opus-4-6", promptLength: 4200,
 }, { task_id: taskId, trace_id: traceId, phase: "planning" });
 
 try {

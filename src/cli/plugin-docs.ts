@@ -723,7 +723,7 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 
 | Plugin | CLI Tool | Default Model | Cost | Usage | Quota | System Prompt | Key Flags |
 |--------|----------|---------------|------|-------|-------|---------------|-----------|
-| **Claude Code** (default) | \`claude\` | \`claude-sonnet-4-20250514\` | Yes (USD) | Yes (full tokens + cache + model + service tier) | Yes (API + rate_limit_event fallback) | \`--system-prompt\` flag | \`--print --output-format stream-json --verbose --setting-sources user --dangerously-skip-permissions\` |
+| **Claude Code** (default) | \`claude\` | \`claude-opus-4-6\` | Yes (USD) | Yes (full tokens + cache + model + service tier) | Yes (API + rate_limit_event fallback) | \`--system-prompt\` flag | \`--print --output-format stream-json --verbose --setting-sources user --dangerously-skip-permissions\` |
 | **OpenCode** (opt-in) | \`opencode\` | \`opencode/gemini-3.1-pro\` | Yes (USD) | Yes (tokens + cache) | No | Prepend to prompt | \`run --format json\` |
 | **Gemini CLI** (opt-in) | \`gemini\` | \`gemini-2.5-pro\` | No (free tier) | Yes (tokens + cache) | Yes (rate limit detection only) | Prepend to prompt | \`-p "" -o stream-json --yolo\` |
 
@@ -794,7 +794,7 @@ Config file: \`~/.engineer/config/plugins/claude-code-llm.yaml\`
 
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
-| \`model\` | \`string\` | \`claude-sonnet-4-20250514\` | No | Model identifier passed to \`--model\`. |
+| \`model\` | \`string\` | \`claude-opus-4-6\` | No | Model identifier passed to \`--model\`. |
 | \`max_tokens\` | \`number\` | \`16384\` | No | Maximum output tokens per completion. |
 | \`cli_path\` | \`string\` | \`claude\` | No | Path to the Claude CLI binary. Change if it is not on your PATH. |
 | \`command_timeout_ms\` | \`number\` | \`7200000\` | No | Maximum time per CLI invocation (default 2 hours). |
@@ -811,7 +811,7 @@ All fields have defaults. An empty config file works:
 ### Full config
 
 \`\`\`yaml
-model: claude-sonnet-4-20250514
+model: claude-opus-4-6
 max_tokens: 16384
 cli_path: claude
 command_timeout_ms: 7200000

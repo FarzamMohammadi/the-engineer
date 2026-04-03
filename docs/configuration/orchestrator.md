@@ -71,6 +71,7 @@ Controls the RRPIR pipeline (Requirements, Research, Planning, Implementation, R
 | `phases.checkpoint_on_transition` | boolean | `true` | Create a checkpoint at every phase transition for resume support. |
 | `phases.periodic_checkpoint_interval_ms` | integer (ms) | `900000` (15m) | Create periodic checkpoints during long-running phases. |
 | `phases.max_loopbacks_before_alert` | integer | `3` | Alert the owner if self-review loopbacks exceed this count. |
+| `phases.force_full_pipeline` | boolean | `false` | Force all tasks through the full 7-phase pipeline, disabling complexity-based research skipping. Safety net if trivial-mode causes quality regressions. |
 
 ## Journal
 
@@ -86,6 +87,9 @@ rrpir:
   include_thoughts_in_pr: true
   review_phases: [requirements_check]
   max_review_loopbacks: 3
+
+phases:
+  force_full_pipeline: false  # Set to true to disable research skipping for trivial tasks
 
 notification:
   milestone_based: true

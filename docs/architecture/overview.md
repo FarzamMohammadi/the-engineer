@@ -101,12 +101,13 @@ graph LR
 
 ## Task Lifecycle
 
-Each task flows through a seven-phase pipeline inside the Orchestrator:
+Each task flows through a seven-phase pipeline inside the Orchestrator. Trivial tasks (assessed during requirements gathering) skip the research phase — planning always runs.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> intake_analysis
-    intake_analysis --> research : Requirements clear
+    [*] --> requirements_gathering
+    requirements_gathering --> research : Moderate/Complex
+    requirements_gathering --> planning : Trivial (skip research)
     research --> planning : Codebase understood
     planning --> execution : Plan approved
     execution --> self_review : Changes complete

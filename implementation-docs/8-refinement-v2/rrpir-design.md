@@ -45,9 +45,11 @@ Any phase can invoke Requirements Gathering when it gets stuck and needs human i
 
 ### Intake Analysis → Requirements Gathering
 
-**Revises the fast-path decision** (D141, Layer 6). D141 established phase tool restrictions and fast-path routing where trivial tasks skipped research/planning. In practice, fast-path consistently reduced PR quality. This decision removes fast-path entirely. Every task gets full RRPIR. Quality over speed.
+**Revises the fast-path decision** (D141, Layer 6). D141 established phase tool restrictions and fast-path routing where trivial tasks skipped research/planning. In practice, fast-path consistently reduced PR quality — primarily because planning was skipped.
 
-The `intake_analysis` phase is renamed to `requirements_gathering` and elevated to its original design intent: gather all information needed, identify gaps, reach out to people. Research can signal "lightweight planning is fine" but never skip it.
+**Layer 8 refinement:** Re-introduces controlled research skipping for trivial tasks only. Requirements gathering now outputs a `complexity` field (`trivial` / `moderate` / `complex`) in session-result.json. When complexity is `trivial`, the research phase is skipped — planning always runs. This preserves the D141 lesson (planning must never be skipped) while eliminating unnecessary research for obvious changes like typo fixes, config values, and simple renames. A `force_full_pipeline` config flag is available as a kill switch.
+
+The `intake_analysis` phase is renamed to `requirements_gathering` and elevated to its original design intent: gather all information needed, identify gaps, reach out to people, and assess complexity.
 
 ### Multi-Phase Configurable Review Pipeline
 
@@ -69,7 +71,7 @@ Requirements Gathering (universal fallback — any phase can invoke)
   (loop back if research needs more info)
 ```
 
-Every task gets the full pipeline. No fast-path. Research can signal "lightweight planning is fine" but never skip it.
+Every task gets the full pipeline by default. Trivial tasks (complexity: "trivial") skip research — planning always runs. Research can signal "lightweight planning is fine" but is never skipped for moderate or complex tasks.
 
 ### How Phases Call CLI Tools
 

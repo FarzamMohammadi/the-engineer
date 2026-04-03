@@ -828,9 +828,9 @@ describe("Orchestrator", () => {
         task: {
           review: {
             pr_number: 42,
-            pr_state: "draft",
+            pr_state: "ready",
             demo_artifacts: [],
-            feedback_rounds: [{ stage: "demo", comments: ["Fix naming"], applied: false }],
+            feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
           },
         },
       });
@@ -863,9 +863,9 @@ describe("Orchestrator", () => {
         workspace,
         review: {
           pr_number: 42,
-          pr_state: "draft",
+          pr_state: "ready",
           demo_artifacts: [],
-          feedback_rounds: [{ stage: "demo", comments: ["Fix naming"], applied: false }],
+          feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
         },
       });
 
@@ -903,9 +903,9 @@ describe("Orchestrator", () => {
         },
         review: {
           pr_number: 42,
-          pr_state: "draft",
+          pr_state: "ready",
           demo_artifacts: [],
-          feedback_rounds: [{ stage: "demo", comments: ["Fix naming"], applied: false }],
+          feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
         },
       });
       handle.taskEngine.getTask.mockReturnValue(task);

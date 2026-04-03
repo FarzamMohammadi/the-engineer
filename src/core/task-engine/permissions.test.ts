@@ -93,22 +93,6 @@ describe("checkPermission (pure function)", () => {
     });
   });
 
-  describe("review_pending.demo state", () => {
-    it("allows read", () => {
-      const result = checkPermission(TaskStates.review_pending, SubStates.demo, ActionClasses.read);
-      expect(result).toEqual({ allowed: true });
-    });
-
-    it("allows communicate", () => {
-      const result = checkPermission(
-        TaskStates.review_pending,
-        SubStates.demo,
-        ActionClasses.communicate,
-      );
-      expect(result).toEqual({ allowed: true });
-    });
-  });
-
   describe("review_pending.code state — conditional merge", () => {
     it("allows read", () => {
       const result = checkPermission(TaskStates.review_pending, SubStates.code, ActionClasses.read);

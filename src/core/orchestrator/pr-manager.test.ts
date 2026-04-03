@@ -230,7 +230,7 @@ describe("PrManager", () => {
     const dispatch = createDispatch({
       review: {
         pr_number: 42,
-        pr_state: "draft",
+        pr_state: "ready",
         demo_artifacts: [],
         feedback_rounds: [{ round: 1, applied: false, comments: [] }],
       },

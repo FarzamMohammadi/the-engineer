@@ -107,7 +107,7 @@ export type TaskChildrenAllDonePayload = z.infer<typeof TaskChildrenAllDonePaylo
 
 export const TaskFeedbackReceivedPayloadSchema = z.object({
   task_id: z.string(),
-  stage: z.enum(["demo", "code"]),
+  stage: z.literal("code"),
   feedback_type: z.enum(["approved", "changes_requested", "comment"]),
   reviewer: z.string(),
   content: z.string().nullable(),
@@ -236,7 +236,7 @@ export const TriggerPrReviewPayloadSchema = z.object({
   pr_number: z.number().int().positive(),
   repo: z.string(),
   review_type: z.enum(["approved", "changes_requested", "comment"]),
-  pr_state: z.enum(["draft", "ready"]),
+  pr_state: z.literal("ready"),
   reviewer: z.string(),
   comment: z.string().nullable(),
 });

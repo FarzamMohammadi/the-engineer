@@ -89,13 +89,13 @@ function createReviewTask(overrides?: Record<string, unknown>) {
     id: "task-1",
     title: "Fix the bug",
     state: "review_pending",
-    sub_state: "demo",
+    sub_state: "code",
     repo: "owner/repo",
     external_ref: "issue:1",
     workspace: "/tmp/ws/task-1",
     review: {
       pr_number: 42,
-      pr_state: "draft",
+      pr_state: "ready",
       demo_artifacts: [],
       feedback_rounds: [],
     },
@@ -202,14 +202,7 @@ describe("ReviewHandler", () => {
       const te = ctx.taskEngine as unknown as {
         requestTransition: ReturnType<typeof vi.fn>;
       };
-      // Demo sub_state means it transitions demo->code first, then to completed
-      expect(te.requestTransition).toHaveBeenCalledWith(
-        "task-1",
-        "review_pending",
-        "code",
-        "pr_merged",
-        "daemon",
-      );
+      // Task is already in code sub_state, so it transitions directly to completed
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
         "completed",
@@ -531,50 +524,6 @@ describe("ReviewHandler", () => {
       );
     });
 
-    it("on approved/demo: marks PR ready and transitions demo->code", async () => {
-      const task = createReviewTask({ sub_state: "demo" });
-      buildContext([task]);
-      hostingPlugin.updatePR.mockResolvedValue(undefined);
-
-      handler.handleFeedbackEvent({
-        task_id: "task-1",
-        stage: "demo",
-        feedback_type: "approved",
-        reviewer: "bob",
-        content: null,
-        pr_number: 42,
-      });
-
-      // updatePR is async fire-and-forget, flush microtasks
-      await flush();
-
-      expect(hostingPlugin.updatePR).toHaveBeenCalledWith("owner/repo", 42, {
-        title: null,
-        body: null,
-        draft: false,
-        labels_add: null,
-        labels_remove: null,
-      });
-
-      const te = ctx.taskEngine as unknown as {
-        requestTransition: ReturnType<typeof vi.fn>;
-        updateTaskField: ReturnType<typeof vi.fn>;
-      };
-      expect(te.requestTransition).toHaveBeenCalledWith(
-        "task-1",
-        "review_pending",
-        "code",
-        "demo_approved",
-        "daemon",
-      );
-      // PR state updated to "ready"
-      expect(te.updateTaskField).toHaveBeenCalledWith(
-        "task-1",
-        "review",
-        expect.objectContaining({ pr_state: "ready" }),
-      );
-    });
-
     it("on approved/code without auto-merge: transitions to completed with cleanup", () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
@@ -853,7 +802,7 @@ describe("ReviewHandler", () => {
 
   describe("comment-based approval flow", () => {
     it("ignores /approve when enable_comment_approval is false", async () => {
-      const task = createReviewTask({ sub_state: "demo" });
+      const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
 
       hostingPlugin.getPRComments.mockResolvedValue([
@@ -875,7 +824,7 @@ describe("ReviewHandler", () => {
     });
 
     it("treats /approve as approval when enabled and author is authorized", async () => {
-      const task = createReviewTask({ sub_state: "demo" });
+      const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
 
       // Enable comment approval
@@ -905,7 +854,7 @@ describe("ReviewHandler", () => {
     });
 
     it("rejects /approve from unauthorized author when people are configured", async () => {
-      const task = createReviewTask({ sub_state: "demo" });
+      const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
 
       const sl = ctx.safetyLayer as unknown as {

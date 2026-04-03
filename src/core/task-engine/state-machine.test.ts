@@ -95,7 +95,7 @@ describe("subStateMatches", () => {
   });
 
   it("rejects mismatched sub-state", () => {
-    expect(subStateMatches(SubStates.working, SubStates.demo)).toBe(false);
+    expect(subStateMatches(SubStates.working, SubStates.code)).toBe(false);
   });
 
   it("rejects defined entry with null actual", () => {
@@ -116,13 +116,13 @@ describe("isValidTransition", () => {
     );
   });
 
-  it("allows active.working → review_pending.demo", () => {
+  it("allows active.working → review_pending.code", () => {
     expect(
       isValidTransition(
         TaskStates.active,
         SubStates.working,
         TaskStates.review_pending,
-        SubStates.demo,
+        SubStates.code,
       ),
     ).toBe(true);
   });
@@ -143,7 +143,7 @@ describe("isValidTransition", () => {
   });
 
   it("rejects transition with wrong sub-state", () => {
-    expect(isValidTransition(TaskStates.queued, null, TaskStates.active, SubStates.demo)).toBe(
+    expect(isValidTransition(TaskStates.queued, null, TaskStates.active, SubStates.code)).toBe(
       false,
     );
   });
@@ -217,7 +217,6 @@ describe("StateMachine", () => {
     const id = insertTask(dbHandle.db);
     stateMachine.requestTransition(id, TaskStates.queued, null, "ready", "test");
     stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "go", "test");
-    stateMachine.requestTransition(id, TaskStates.review_pending, SubStates.demo, "demo", "test");
     stateMachine.requestTransition(id, TaskStates.review_pending, SubStates.code, "code", "test");
     stateMachine.requestTransition(id, TaskStates.completed, null, "done", "test");
 

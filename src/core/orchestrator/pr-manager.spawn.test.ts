@@ -164,7 +164,7 @@ describe("commitPushAndCreatePR", () => {
     expect(fakeGitHosting.createPR).not.toHaveBeenCalled();
   });
 
-  it("commits, pushes, and creates draft PR when staged changes exist", async () => {
+  it("commits, pushes, and creates ready PR when staged changes exist", async () => {
     setupGitMocks({ hasStagedChanges: true });
 
     const dispatch = dispatchWithWorkspace();
@@ -183,7 +183,7 @@ describe("commitPushAndCreatePR", () => {
         repo: "org/repo",
         branch: "engineer/task-001-test-task",
         base: "main",
-        draft: true,
+        draft: false,
       }),
     );
   });
@@ -306,7 +306,7 @@ describe("commitPushAndCreatePR", () => {
     expect(lastReviewUpdate?.[2]).toEqual(
       expect.objectContaining({
         pr_number: 42,
-        pr_state: "draft",
+        pr_state: "ready",
       }),
     );
   });

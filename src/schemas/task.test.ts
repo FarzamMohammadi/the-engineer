@@ -51,16 +51,16 @@ describe("TaskStateSchema", () => {
 });
 
 describe("SubStateSchema", () => {
-  const validSubStates = ["working", "supervising", "integrating", "demo", "code"];
+  const validSubStates = ["working", "supervising", "integrating", "code"];
 
-  it("accepts all 5 valid sub-states", () => {
+  it("accepts all 4 valid sub-states", () => {
     for (const sub of validSubStates) {
       expect(SubStateSchema.parse(sub)).toBe(sub);
     }
   });
 
-  it("has exactly 5 values", () => {
-    expect(SubStateSchema.options).toHaveLength(5);
+  it("has exactly 4 values", () => {
+    expect(SubStateSchema.options).toHaveLength(4);
   });
 
   it("rejects invalid values", () => {
@@ -262,11 +262,11 @@ describe("ReviewStateSchema", () => {
   it("parses valid data", () => {
     const valid = {
       pr_number: 42,
-      pr_state: "draft" as const,
+      pr_state: "ready" as const,
       demo_artifacts: [
         { type: "screenshot" as const, location: "/tmp/demo.png", permanent: false },
       ],
-      feedback_rounds: [{ stage: "demo" as const, comments: ["looks good"], applied: true }],
+      feedback_rounds: [{ stage: "code" as const, comments: ["looks good"], applied: true }],
     };
     expect(ReviewStateSchema.parse(valid)).toEqual(valid);
   });
@@ -394,8 +394,8 @@ describe("StateTransitionSchema", () => {
 // ── ValidTransitions ───────────────────────────────────────────────────────────
 
 describe("ValidTransitions", () => {
-  it("has exactly 29 entries", () => {
-    expect(ValidTransitions).toHaveLength(29);
+  it("has exactly 24 entries", () => {
+    expect(ValidTransitions).toHaveLength(24);
   });
 
   it("has no duplicate entries", () => {
@@ -436,8 +436,8 @@ describe("ValidTransitions", () => {
 // ── PermissionTable ────────────────────────────────────────────────────────────
 
 describe("PermissionTable", () => {
-  it("has exactly 10 entries", () => {
-    expect(PermissionTable).toHaveLength(10);
+  it("has exactly 9 entries", () => {
+    expect(PermissionTable).toHaveLength(9);
   });
 
   it("covers all valid (state, sub_state) pairs", () => {
@@ -447,7 +447,6 @@ describe("PermissionTable", () => {
       ["active", "working"],
       ["active", "supervising"],
       ["active", "integrating"],
-      ["review_pending", "demo"],
       ["review_pending", "code"],
       ["blocked", null],
       ["completed", null],

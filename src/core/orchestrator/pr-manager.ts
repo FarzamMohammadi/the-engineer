@@ -61,7 +61,7 @@ export function composePrBody(description: string, task: TriggerRefInput): strin
 /** Commit, push, and PR creation workflow. */
 export interface PrManager {
   /**
-   * Commit all changes, push branch, and create a draft PR (D149, D150, D151).
+   * Commit all changes, push branch, and create a PR (D149, D150, D151).
    *
    * For rework dispatches (PR already exists): commits, pushes to existing
    * branch, marks feedback as applied, and returns true (no new PR).
@@ -247,7 +247,7 @@ export function createPrManager(
       return false;
     }
 
-    observer.info("Creating draft PR", { taskId, repo: record.repo });
+    observer.info("Creating PR", { taskId, repo: record.repo });
     try {
       // CLI-native: read PR description from deliverable file when not in PhaseOutput.data
       let rawDescription = (demoPrepOutput.data as { pr_description?: string }).pr_description;
@@ -279,20 +279,20 @@ export function createPrManager(
         base: record.baseBranch,
         title: sanitizeSecrets(dispatch.task.title),
         body: prBody,
-        draft: true,
+        draft: false,
         labels: null,
         reviewers: null,
       });
 
       ctx.taskEngine.updateTaskField(taskId, "review", {
         pr_number: prResult.pr_number,
-        pr_state: "draft",
+        pr_state: "ready",
         demo_artifacts: [],
         feedback_rounds: [],
       });
 
       const elapsedMs = Date.now() - prStart;
-      observer.info("Draft PR created", {
+      observer.info("PR created", {
         taskId,
         prNumber: prResult.pr_number,
         url: prResult.url,
@@ -302,12 +302,12 @@ export function createPrManager(
       notifications.notify({
         kind: "milestone",
         taskId: dispatch.task.id,
-        message: `Draft PR created: ${prResult.url}`,
+        message: `PR created: ${prResult.url}`,
       });
       notifications.notify({
         kind: "ticket_comment",
         taskId: dispatch.task.id,
-        message: `Draft PR created: ${prResult.url}`,
+        message: `PR created: ${prResult.url}`,
       });
       span.end({ step: "pr_create", success: true, prNumber: prResult.pr_number, elapsedMs });
       return true;

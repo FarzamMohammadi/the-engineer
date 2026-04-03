@@ -1,7 +1,7 @@
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
-import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -82,7 +82,6 @@ const SELF_COMMENT_PREFIXES = [
   "Pull request created",
   "Task encountered an error",
   "PR merged",
-  "Demo approved",
   "Code approved",
   "Code review approved",
   "Pushed rework",
@@ -158,24 +157,6 @@ export function createReviewHandler(
     sub_state: string | null;
     review: { pr_number: number | null } | null;
   }): void {
-    // If task is in demo sub-state, transition demo→code first
-    if (task.sub_state === SubStates.demo) {
-      const demoTransition = taskEngine.requestTransition(
-        task.id,
-        TaskStates.review_pending,
-        SubStates.code,
-        "pr_merged",
-        "daemon",
-      );
-      if (!demoTransition.success) {
-        observer.warn("Failed to transition task from demo to code before merge completion", {
-          taskId: task.id,
-          reason: demoTransition.reason,
-        });
-        return;
-      }
-    }
-
     const completionTransition = taskEngine.requestTransition(
       task.id,
       TaskStates.completed,
@@ -321,7 +302,6 @@ export function createReviewHandler(
     aggregateState: AggregateState,
     allComments: string[],
     reviewStatus: ReviewPollResult,
-    isDraft: boolean,
   ): boolean {
     const dedupKey = `${aggregateState}:${String(allComments.length)}`;
     if (emittedFeedbackKeys.get(taskId) === dedupKey) {
@@ -329,7 +309,7 @@ export function createReviewHandler(
     }
     emittedFeedbackKeys.set(taskId, dedupKey);
 
-    const stage = isDraft ? "demo" : "code";
+    const stage = "code" as const;
     const primaryReviewer =
       reviewStatus.reviewers.find((r) => r.state === aggregateState) ?? reviewStatus.reviewers[0];
 
@@ -421,7 +401,6 @@ export function createReviewHandler(
         aggregateState,
         allComments,
         reviewStatus,
-        prStatus.draft,
       );
       if (emitted) {
         observer.info("Review feedback detected", {
@@ -520,7 +499,7 @@ export function createReviewHandler(
     }
     const currentReview = task.review ?? {
       pr_number: payload.pr_number,
-      pr_state: payload.stage === "demo" ? "draft" : "ready",
+      pr_state: "ready" as const,
       demo_artifacts: [],
       feedback_rounds: [],
     };
@@ -549,85 +528,7 @@ export function createReviewHandler(
     task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
     payload: TaskFeedbackReceivedPayload,
   ): void {
-    if (payload.stage === "demo") {
-      handleDemoApproval(task, payload);
-    } else {
-      handleCodeApproval(task, payload);
-    }
-  }
-
-  function handleDemoApproval(
-    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
-    payload: TaskFeedbackReceivedPayload,
-  ): void {
-    const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
-    if (!(hosting && task.repo && task.review?.pr_number)) {
-      observer.warn("Cannot process demo approval — missing hosting plugin, repo, or PR number", {
-        taskId: payload.task_id,
-        hasHosting: !!hosting,
-        hasRepo: !!task.repo,
-        hasPrNumber: !!task.review?.pr_number,
-      });
-      return;
-    }
-
-    hosting
-      .updatePR(task.repo, task.review.pr_number, {
-        title: null,
-        body: null,
-        draft: false,
-        labels_add: null,
-        labels_remove: null,
-      })
-      .then(() => {
-        try {
-          const currentReview = task.review ?? {
-            pr_number: payload.pr_number,
-            pr_state: "draft" as const,
-            demo_artifacts: [],
-            feedback_rounds: [],
-          };
-          taskEngine.updateTaskField(payload.task_id, "review", {
-            ...currentReview,
-            pr_state: "ready",
-          });
-
-          const transition = taskEngine.requestTransition(
-            payload.task_id,
-            TaskStates.review_pending,
-            SubStates.code,
-            "demo_approved",
-            "daemon",
-          );
-          if (!transition.success) {
-            observer.warn("Demo approval: PR marked ready on GitHub but state transition failed", {
-              taskId: payload.task_id,
-              reason: transition.reason,
-            });
-            return;
-          }
-
-          notifications.notify({
-            kind: "ticket_comment",
-            taskId: payload.task_id,
-            message: "Demo approved — PR marked ready for code review.",
-          });
-          observer.info("Demo approved — PR marked ready for code review", {
-            taskId: payload.task_id,
-          });
-        } catch (err) {
-          observer.error("Demo approval: PR marked ready on GitHub but post-processing failed", {
-            error: sanitizeErrorMessage(err),
-            taskId: payload.task_id,
-          });
-        }
-      })
-      .catch((err) => {
-        observer.error("Failed to update PR draft status after demo approval", {
-          error: sanitizeErrorMessage(err),
-          taskId: payload.task_id,
-        });
-      });
+    handleCodeApproval(task, payload);
   }
 
   /** Finalize task completion: workspace cleanup, notification, issue comment, child-done check. */

@@ -242,7 +242,7 @@ describe("Daemon — Decomposition", () => {
           worktree_path: null,
           thoughts_dir: null,
         },
-        review: { pr_number: 5, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+        review: { pr_number: 5, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
         decisions: [
           {
             what: "Use Zod",

@@ -937,7 +937,7 @@ describe("Daemon", () => {
       const reviewTask = createMockTask({
         id: "review-1",
         state: "review_pending",
-        sub_state: "demo",
+        sub_state: "code",
         title: "Needs review",
         last_transition_at: oneDayAgo,
       });
@@ -986,7 +986,7 @@ describe("Daemon", () => {
       const reviewTask = createMockTask({
         id: "review-2",
         state: "review_pending",
-        sub_state: "demo",
+        sub_state: "code",
         title: "Too early",
         last_transition_at: recentTime,
       });
@@ -1020,7 +1020,7 @@ describe("Daemon", () => {
       const reviewTask = createMockTask({
         id: "review-3",
         state: "review_pending",
-        sub_state: "demo",
+        sub_state: "code",
         title: "Repeat check",
         last_transition_at: oneDayAgo,
       });
@@ -1181,7 +1181,7 @@ describe("Daemon", () => {
   // ── Review Pending ──────────────────────────────────────────────────
 
   describe("review pending", () => {
-    it("transitions task to review_pending.demo on review_pending outcome", async () => {
+    it("transitions task to review_pending.code on review_pending outcome", async () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-pr",
@@ -1202,7 +1202,7 @@ describe("Daemon", () => {
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-pr",
         "review_pending",
-        "demo",
+        "code",
         "pr_created",
         "daemon",
       );
@@ -1233,10 +1233,10 @@ describe("Daemon", () => {
       const task = createMockTask({
         id: "task-merged",
         state: "review_pending",
-        sub_state: "demo",
+        sub_state: "code",
         title: "Merged task",
         repo: "org/repo",
-        review: { pr_number: 42, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
         if (state === "review_pending") {
@@ -1267,14 +1267,7 @@ describe("Daemon", () => {
 
       await handle.daemon.tick();
 
-      // Should transition demo → code → completed
-      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
-        "task-merged",
-        "review_pending",
-        "code",
-        "pr_merged",
-        "daemon",
-      );
+      // Should transition directly to completed
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-merged",
         "completed",
@@ -1290,8 +1283,8 @@ describe("Daemon", () => {
       const task = createMockTask({
         id: "task-open",
         state: "review_pending",
-        sub_state: "demo",
-        review: { pr_number: 42, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+        sub_state: "code",
+        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
         if (state === "review_pending") {
@@ -1304,7 +1297,7 @@ describe("Daemon", () => {
         getPRStatus: vi.fn().mockResolvedValue({
           number: 42,
           state: "open",
-          draft: true,
+          draft: false,
           mergeable: true,
           checks_passing: true,
         }),
@@ -1346,9 +1339,9 @@ describe("Daemon", () => {
       const task = createMockTask({
         id: "task-review",
         state: "review_pending",
-        sub_state: "demo",
+        sub_state: "code",
         repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
         ...overrides,
       });
       return task;
@@ -1362,7 +1355,7 @@ describe("Daemon", () => {
         getPRStatus: vi.fn().mockResolvedValue({
           number: 10,
           state: "open",
-          draft: true,
+          draft: false,
           mergeable: true,
           checks_passing: true,
           url: "https://github.com/owner/repo/pull/10",
@@ -1408,7 +1401,7 @@ describe("Daemon", () => {
           type: "task.feedback_received",
           payload: expect.objectContaining({
             task_id: "task-review",
-            stage: "demo",
+            stage: "code",
             feedback_type: "changes_requested",
             reviewer: "reviewer1",
           }),
@@ -1528,9 +1521,9 @@ describe("Daemon", () => {
       const task = createMockTask({
         id: "task-fb",
         state: "review_pending",
-        sub_state: "demo",
+        sub_state: "code",
         repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
+        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
 
@@ -1545,7 +1538,7 @@ describe("Daemon", () => {
         task_id: "task-fb",
         payload: {
           task_id: "task-fb",
-          stage: "demo",
+          stage: "code",
           feedback_type: "changes_requested",
           reviewer: "reviewer1",
           content: "Please fix the naming",
@@ -1560,7 +1553,7 @@ describe("Daemon", () => {
         "task-fb",
         "review",
         expect.objectContaining({
-          feedback_rounds: [expect.objectContaining({ stage: "demo", applied: false })],
+          feedback_rounds: [expect.objectContaining({ stage: "code", applied: false })],
         }),
       );
 
@@ -1570,61 +1563,6 @@ describe("Daemon", () => {
         "queued",
         null,
         "feedback_rework:changes_requested",
-        "daemon",
-      );
-    });
-
-    it("transitions demo → code on demo approval and marks PR ready", async () => {
-      handle = createTestDaemon();
-      await handle.daemon.start();
-      const task = createMockTask({
-        id: "task-demo-approve",
-        state: "review_pending",
-        sub_state: "demo",
-        repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "draft", demo_artifacts: [], feedback_rounds: [] },
-      });
-      handle.taskEngine.getTask.mockReturnValue(task);
-
-      const fakeHosting = {
-        updatePR: vi.fn().mockResolvedValue(undefined),
-        hasCapability: vi.fn().mockReturnValue(false),
-      };
-      handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
-      handle.registry.getPrimaryPlugin.mockReturnValue(fakeHosting);
-
-      const callback = handle.getSubscriptionCallback("task.feedback_received");
-      callback?.({
-        id: "evt-2",
-        type: "task.feedback_received",
-        source: "daemon",
-        task_id: "task-demo-approve",
-        payload: {
-          task_id: "task-demo-approve",
-          stage: "demo",
-          feedback_type: "approved",
-          reviewer: "reviewer1",
-          content: null,
-          pr_number: 10,
-        },
-        sequence: 2,
-        timestamp: new Date().toISOString(),
-      });
-
-      // Wait for async updatePR call
-      await vi.waitFor(() => {
-        expect(fakeHosting.updatePR).toHaveBeenCalledWith(
-          "owner/repo",
-          10,
-          expect.objectContaining({ draft: false }),
-        );
-      });
-
-      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
-        "task-demo-approve",
-        "review_pending",
-        "code",
-        "demo_approved",
         "daemon",
       );
     });
@@ -1800,7 +1738,7 @@ describe("Daemon", () => {
         task_id: "task-active",
         payload: {
           task_id: "task-active",
-          stage: "demo",
+          stage: "code",
           feedback_type: "changes_requested",
           reviewer: "reviewer1",
           content: null,

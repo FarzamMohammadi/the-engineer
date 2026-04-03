@@ -307,7 +307,7 @@ export function createTaskScheduler(
     const reviewTransition = taskEngine.requestTransition(
       taskId,
       TaskStates.review_pending,
-      SubStates.demo,
+      SubStates.code,
       "pr_created",
       "daemon",
     );

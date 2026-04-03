@@ -191,7 +191,7 @@ describe("TaskFeedbackReceivedPayloadSchema", () => {
   it("parses valid data", () => {
     const valid = {
       task_id: "01TASK",
-      stage: "demo",
+      stage: "code",
       feedback_type: "approved",
       reviewer: "farzam",
       content: null,
@@ -357,7 +357,7 @@ describe("TriggerPrReviewPayloadSchema", () => {
       pr_number: 42,
       repo: "owner/repo",
       review_type: "changes_requested",
-      pr_state: "draft",
+      pr_state: "ready",
       reviewer: "farzam",
       comment: "Please add error handling",
     };

@@ -11,7 +11,7 @@ CREATE TABLE tasks_new (
 
   -- State
   state               TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
-  sub_state           TEXT CHECK(sub_state IN ('working','supervising','integrating','demo','code')),
+  sub_state           TEXT CHECK(sub_state IN ('working','supervising','integrating','code')),
   phase               TEXT,
 
   -- Hierarchy
@@ -89,8 +89,8 @@ CREATE TABLE state_transitions_new (
   task_id             TEXT NOT NULL REFERENCES tasks(id),
   from_state          TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
   to_state            TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
-  from_sub            TEXT CHECK(from_sub IN ('working','supervising','integrating','demo','code')),
-  to_sub              TEXT CHECK(to_sub IN ('working','supervising','integrating','demo','code')),
+  from_sub            TEXT CHECK(from_sub IN ('working','supervising','integrating','code')),
+  to_sub              TEXT CHECK(to_sub IN ('working','supervising','integrating','code')),
   reason              TEXT NOT NULL,
   timestamp           TEXT NOT NULL,
   triggered_by        TEXT NOT NULL

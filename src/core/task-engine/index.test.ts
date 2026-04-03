@@ -99,13 +99,6 @@ function getPathToState(state: TaskState, subState: SubState | null): Transition
       { state: "blocked", sub: null, reason: "needs human input" },
     ];
   }
-  if (state === "review_pending" && subState === "demo") {
-    return [
-      ...base,
-      { state: "active", sub: "working", reason: "scheduled" },
-      { state: "review_pending", sub: "demo", reason: "draft PR opened" },
-    ];
-  }
   if (state === "review_pending" && subState === "code") {
     return [
       ...base,
@@ -159,8 +152,8 @@ describe("isValidTransition", () => {
   });
 
   it("rejects when from_sub is wrong", () => {
-    // active.supervising -> review_pending.demo is NOT valid (only active.working can)
-    expect(isValidTransition("active", "supervising", "review_pending", "demo")).toBe(false);
+    // active.supervising -> review_pending.code is NOT valid (only active.working can)
+    expect(isValidTransition("active", "supervising", "review_pending", "code")).toBe(false);
   });
 
   it("rejects when to_sub is wrong", () => {
@@ -450,9 +443,9 @@ describe("TaskEngine", () => {
     });
 
     it("rejects wrong from_sub", () => {
-      // active.supervising → review_pending.demo is NOT valid
+      // active.supervising → review_pending.code is NOT valid
       const task = createTaskInState(engine, "active", "supervising");
-      const result = engine.requestTransition(task.id, "review_pending", "demo", "test", "test");
+      const result = engine.requestTransition(task.id, "review_pending", "code", "test", "test");
       expect(result.success).toBe(false);
     });
 
@@ -556,14 +549,6 @@ describe("TaskEngine", () => {
       expect(engine.checkPermission(task.id, "merge").allowed).toBe(false);
       expect(engine.checkPermission(task.id, "deploy").allowed).toBe(false);
       expect(engine.checkPermission(task.id, "task_manage").allowed).toBe(false);
-    });
-
-    it("allows only read and communicate in review_pending.demo", () => {
-      const task = createTaskInState(engine, "review_pending", "demo");
-      expect(engine.checkPermission(task.id, "read").allowed).toBe(true);
-      expect(engine.checkPermission(task.id, "communicate").allowed).toBe(true);
-      expect(engine.checkPermission(task.id, "write").allowed).toBe(false);
-      expect(engine.checkPermission(task.id, "ask_human").allowed).toBe(false);
     });
 
     it("returns conditional for merge in review_pending.code", () => {
@@ -847,7 +832,7 @@ describe("TaskEngine", () => {
       const task = engine.createTask(makeInput());
       const review = {
         pr_number: 42,
-        pr_state: "draft" as const,
+        pr_state: "ready" as const,
         demo_artifacts: [],
         feedback_rounds: [],
       };

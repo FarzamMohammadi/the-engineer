@@ -17,7 +17,7 @@ export type TaskState = z.infer<typeof TaskStateSchema>;
 /** Constant enum values for TaskState. Use instead of raw strings. */
 export const TaskStates = TaskStateSchema.enum;
 
-export const SubStateSchema = z.enum(["working", "supervising", "integrating", "demo", "code"]);
+export const SubStateSchema = z.enum(["working", "supervising", "integrating", "code"]);
 export type SubState = z.infer<typeof SubStateSchema>;
 
 /** Constant enum values for SubState. Use instead of raw strings. */
@@ -141,7 +141,7 @@ export const DemoArtifactSchema = z.object({
 export type DemoArtifact = z.infer<typeof DemoArtifactSchema>;
 
 export const FeedbackRoundSchema = z.object({
-  stage: z.enum(["demo", "code"]),
+  stage: z.literal("code"),
   comments: z.array(z.string()),
   applied: z.boolean(),
 });
@@ -149,7 +149,7 @@ export type FeedbackRound = z.infer<typeof FeedbackRoundSchema>;
 
 export const ReviewStateSchema = z.object({
   pr_number: z.number().int().positive().nullable(),
-  pr_state: z.enum(["draft", "ready", "merged"]).nullable(),
+  pr_state: z.enum(["ready", "merged"]).nullable(),
   demo_artifacts: z.array(DemoArtifactSchema),
   feedback_rounds: z.array(FeedbackRoundSchema),
 });
@@ -263,7 +263,6 @@ export const ValidTransitions = [
   { from: "requirements_gathering", to: "failed" },
   { from: "queued", to: "active", to_sub: "working" },
   { from: "active", from_sub: "working", to: "blocked" },
-  { from: "active", from_sub: "working", to: "review_pending", to_sub: "demo" },
   { from: "active", from_sub: "working", to: "review_pending", to_sub: "code" },
   { from: "active", from_sub: "working", to: "completed" },
   { from: "active", from_sub: "working", to: "failed" },
@@ -273,7 +272,6 @@ export const ValidTransitions = [
   { from: "active", from_sub: "supervising", to: "blocked" },
   { from: "active", from_sub: "supervising", to: "active", to_sub: "integrating" },
   { from: "active", from_sub: "supervising", to: "failed" },
-  { from: "active", from_sub: "integrating", to: "review_pending", to_sub: "demo" },
   { from: "active", from_sub: "integrating", to: "review_pending", to_sub: "code" },
   { from: "active", from_sub: "integrating", to: "completed" },
   { from: "active", from_sub: "integrating", to: "failed" },
@@ -282,9 +280,6 @@ export const ValidTransitions = [
   { from: "blocked", to: "active", to_sub: "supervising" },
   { from: "blocked", to: "failed" },
   { from: "blocked", to: "queued" },
-  { from: "review_pending", from_sub: "demo", to: "active", to_sub: "working" },
-  { from: "review_pending", from_sub: "demo", to: "review_pending", to_sub: "code" },
-  { from: "review_pending", from_sub: "demo", to: "queued" },
   { from: "review_pending", from_sub: "code", to: "active", to_sub: "working" },
   { from: "review_pending", from_sub: "code", to: "completed" },
   { from: "review_pending", from_sub: "code", to: "queued" },
@@ -333,7 +328,6 @@ export const PermissionTable: readonly PermissionEntry[] = [
     sub_state: "integrating",
     allowed: ["read", "write", "test", "git_local", "git_remote", "communicate", "ask_human"],
   },
-  { state: "review_pending", sub_state: "demo", allowed: ["read", "communicate"] },
   {
     state: "review_pending",
     sub_state: "code",

@@ -274,7 +274,7 @@ describe("TaskScheduler", () => {
   });
 
   // 6. handleTaskCompletion on "review_pending" outcome
-  it("handleTaskCompletion on review_pending outcome transitions to review_pending.demo", () => {
+  it("handleTaskCompletion on review_pending outcome transitions to review_pending.code", () => {
     const { ctx, taskEngine } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
@@ -295,7 +295,7 @@ describe("TaskScheduler", () => {
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
       "t1",
       TaskStates.review_pending,
-      SubStates.demo,
+      SubStates.code,
       "pr_created",
       "daemon",
     );

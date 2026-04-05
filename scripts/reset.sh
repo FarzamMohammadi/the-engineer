@@ -2,8 +2,8 @@
 # Reset: rebuild CLI, relink, optionally preserve data.
 #
 # Usage:
-#   ./scripts/reset.sh              # Full wipe (default)
-#   ./scripts/reset.sh --persist-data    # Keep DB, config, workspaces, .env
+#   ./scripts/reset.sh                    # Full wipe (default)
+#   ./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env; re-seed config & plugins
 
 set -euo pipefail
 
@@ -33,7 +33,7 @@ echo "Linking globally..."
 pnpm link --global
 
 if [ "$PERSIST_DATA" = true ]; then
-  echo "Cleaning ephemeral state (preserving DB, workspaces, .env)..."
+  echo "Cleaning ephemeral state (preserving DB, workspaces, .env; re-seeding config)..."
   rm -rf ~/.engineer/logs
   rm -rf ~/.engineer/run
   rm -rf ~/.engineer/state
@@ -46,21 +46,21 @@ else
   rm -rf ~/.engineer
 fi
 
-echo ""
-echo "Done. Run 'engineer start' to set up and start."
-read -p "Shall we start up the engineer? [Y/n] " answer
-answer="${answer:-Y}"
-if [[ "$answer" =~ ^[Yy]$ ]]; then
-  if [ "$PERSIST_DATA" = true ]; then
-    engineer start
-  else
-    engineer start --seed "$(dirname "$0")/../seed-example/"
-  fi
+SEED_PATH="$(cd "$(dirname "$0")/.." && pwd)/seed-example/"
+
+if [ "$PERSIST_DATA" = true ]; then
+  echo ""
+  echo "Re-seeding from $SEED_PATH and starting..."
+  engineer start --seed "$SEED_PATH"
 else
-  echo "Ready to run:"
-  if [ "$PERSIST_DATA" = true ]; then
-    echo "  engineer start"
+  echo ""
+  echo "Done. Run 'engineer start' to set up and start."
+  read -p "Shall we start up the engineer? [Y/n] " answer
+  answer="${answer:-Y}"
+  if [[ "$answer" =~ ^[Yy]$ ]]; then
+    engineer start --seed "$SEED_PATH"
   else
+    echo "Ready to run:"
     echo "  engineer start --seed ./seed-example/"
   fi
 fi

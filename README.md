@@ -61,6 +61,17 @@ The daemon tick loop: poll triggers → create tasks → schedule by priority �
 
 Architecture guide: [docs/architecture/overview.md](docs/architecture/overview.md) | Three-tier model: [docs/architecture/three-tier-model.md](docs/architecture/three-tier-model.md)
 
+## Quick Reset
+
+The [`seed-example/`](seed-example/) directory contains default startup configs and plugins. Each contributor can fork it into their own seed directory with custom configs and plugins, making resets fast and repeatable.
+
+```bash
+./scripts/reset.sh                    # Full wipe — rebuild, re-seed, start fresh
+./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — re-seed config & plugins
+```
+
+`--persist-data` preserves your task history and database while rebuilding everything else from the seed, without prompting.
+
 ## Development
 
 ```bash

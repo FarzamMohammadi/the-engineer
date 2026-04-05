@@ -203,6 +203,7 @@ export const ReviewPhaseNameSchema = z.enum([
   "requirements_check",
   "security_review",
   "code_quality",
+  "architecture_review",
 ]);
 export type ReviewPhaseName = z.infer<typeof ReviewPhaseNameSchema>;
 

@@ -142,7 +142,14 @@ function buildRequirementsInstructions(ctx: RequirementsGatheringPromptContext):
       "",
       "   Signal ready when you know what to build — through explicit statement, research, or reasonable inference. Signal need_more_info only when you've exhausted investigation and the remaining unknowns require human judgment. The Engineer will read your outreach files and deliver them to each person via their preferred channel (Telegram, GitHub, etc.).",
       "",
-      "8. **Update session-result.json** with your routing decision (see deliverable section below for the format).",
+      "8. **Edge-case sweep** — before declaring ready, pressure-test the requirements:",
+      "   - What happens on process restart mid-operation?",
+      "   - What happens under sustained failure of an external dependency?",
+      "   - What if the feature's preconditions aren't met (e.g., a flag isn't set, a plugin isn't configured)?",
+      "   - What state is created, and what cleans it up?",
+      "   These often surface requirements the task description didn't mention. If they do, add them to your requirements doc.",
+      "",
+      "9. **Update session-result.json** with your routing decision (see deliverable section below for the format).",
     ].join("\n"),
   );
 }

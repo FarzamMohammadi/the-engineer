@@ -183,6 +183,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     eventTopology.registerPublisher("daemon", DAEMON_EVENTS);
     const daemon = createDaemon({
       config: config.daemon,
+      workspaceConfig: config.workspace,
       eventBus,
       registry,
       taskEngine,

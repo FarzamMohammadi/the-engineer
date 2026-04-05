@@ -6,7 +6,11 @@ import type { Daemon } from "../../src/core/daemon/index.js";
 import { createDaemon } from "../../src/core/daemon/index.js";
 import { createNotificationRouter } from "../../src/core/daemon/notification-router.js";
 import type { InferenceResult } from "../../src/schemas/adapters.js";
-import { type DaemonConfig, DaemonConfigSchema } from "../../src/schemas/config.js";
+import {
+  type DaemonConfig,
+  DaemonConfigSchema,
+  WorkspaceConfigSchema,
+} from "../../src/schemas/config.js";
 import {
   type IntegrationContext,
   createIntegrationContext,
@@ -144,6 +148,7 @@ function createSecondDaemon(ctx: IntegrationContext): Daemon {
 
   return createDaemon({
     config,
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
     eventBus: ctx.eventBus,
     registry: ctx.registry,
     taskEngine: ctx.taskEngine,

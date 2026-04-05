@@ -708,6 +708,25 @@ payload {
 
 ---
 
+#### `git.branch_deleted`
+
+Emitted when the daemon deletes a task's remote branch after merge. Completes the `git.branch_created` → `git.branch_deleted` lifecycle. Absence of this event for a completed task indicates branch cleanup failed or was disabled.
+
+```
+payload {
+  task_id:         string          // Task whose branch was deleted
+  repo:            string
+  branch:          string          // Branch name deleted from remote
+}
+```
+
+**Subscribers:**
+| Subscriber | Why |
+|-----------|-----|
+| (none currently) | Audit trail — queryable for stale branch detection |
+
+---
+
 ### `health.*` — System Health Events
 
 **Owner:** Daemon

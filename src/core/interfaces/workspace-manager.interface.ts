@@ -49,6 +49,9 @@ export interface IWorkspaceManager {
   /** Push the task's branch to remote. */
   pushBranch(taskId: string): void;
 
+  /** Delete the task's branch from the remote. Best-effort — callers should catch errors. */
+  deleteRemoteBranch(taskId: string): void;
+
   /** Re-register a workspace from persisted task state (for daemon restart). */
   registerExistingWorkspace(taskId: string, workspace: TaskWorkspace): void;
 

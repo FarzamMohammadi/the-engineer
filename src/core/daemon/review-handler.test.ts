@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import type { DaemonConfig } from "../../schemas/config.js";
+import { type DaemonConfig, WorkspaceConfigSchema } from "../../schemas/config.js";
 import type { TaskFeedbackReceivedPayload } from "../../schemas/events.js";
 import type { NotificationRouter } from "./notification-router.js";
 import {
@@ -164,8 +164,10 @@ function buildContext(
       shouldExcludeThoughtsOnMerge: vi.fn().mockReturnValue(false),
       flushCostSnapshot: vi.fn(),
     } as unknown as ReviewHandlerContext["safetyLayer"],
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
     workspaceManager: {
       cleanupWorkspace: vi.fn(),
+      deleteRemoteBranch: vi.fn(),
       getWorktreePath: vi.fn().mockReturnValue(null),
       registerExistingWorkspace: vi.fn(),
       removeThoughtsAndPush: vi.fn().mockReturnValue(true),

@@ -17,7 +17,7 @@ import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
-import type { DaemonConfig } from "../../src/schemas/config.js";
+import { type DaemonConfig, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import { FakeClock } from "./fake-clock.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
 import { createMockTask } from "./test-orchestrator.js";
@@ -332,6 +332,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
 
   const daemon = createDaemon({
     config,
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
     eventBus: eventBus as unknown as EventBus,
     registry: registry as unknown as Registry,
     taskEngine: taskEngine as unknown as ITaskEngine,

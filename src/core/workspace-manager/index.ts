@@ -528,6 +528,32 @@ export class WorkspaceManager implements IWorkspaceManager {
     });
   }
 
+  deleteRemoteBranch(taskId: string): void {
+    const record = this.workspaces.get(taskId);
+    if (!record) {
+      throw new WorkspaceNotFoundError(taskId);
+    }
+
+    this.observer.info("Deleting branch from remote", { taskId, branch: record.branch });
+    const deleteStart = Date.now();
+
+    const token = this.resolveToken();
+    const repoCloneDir = path.join(this.config.workspace_root, record.repo);
+
+    // Get the unauthenticated remote URL
+    const remoteUrl = this.gitExec(["remote", "get-url", "origin"], repoCloneDir);
+
+    // Delete with transient auth — explicit URL, not remote name
+    const authUrl = injectAuth(remoteUrl, token);
+    this.gitExec(["push", authUrl, "--delete", record.branch], repoCloneDir);
+
+    this.observer.info("Branch deleted from remote", {
+      taskId,
+      branch: record.branch,
+      elapsedMs: Date.now() - deleteStart,
+    });
+  }
+
   /**
    * Re-register a workspace from persisted task state (for daemon restart).
    *

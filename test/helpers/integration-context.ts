@@ -181,6 +181,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
 
   const daemon = createDaemon({
     config: daemonConfig,
+    workspaceConfig,
     eventBus,
     registry,
     taskEngine,

@@ -55,6 +55,7 @@ export const EventTypeSchema = z.enum([
   "git.pr_updated",
   "git.pr_merged",
   "git.merge_completed",
+  "git.branch_deleted",
   "health.stuck_detected",
   "health.trigger_failure",
   "health.config_reload_failed",
@@ -348,6 +349,13 @@ export const GitMergeCompletedPayloadSchema = z.object({
 });
 export type GitMergeCompletedPayload = z.infer<typeof GitMergeCompletedPayloadSchema>;
 
+export const GitBranchDeletedPayloadSchema = z.object({
+  task_id: z.string(),
+  repo: z.string(),
+  branch: z.string(),
+});
+export type GitBranchDeletedPayload = z.infer<typeof GitBranchDeletedPayloadSchema>;
+
 // health.*
 
 export const HealthStuckDetectedPayloadSchema = z.object({
@@ -487,6 +495,7 @@ export type EventPayloads = {
   "git.pr_updated": GitPrUpdatedPayload;
   "git.pr_merged": GitPrMergedPayload;
   "git.merge_completed": GitMergeCompletedPayload;
+  "git.branch_deleted": GitBranchDeletedPayload;
   "health.stuck_detected": HealthStuckDetectedPayload;
   "health.trigger_failure": HealthTriggerFailurePayload;
   "health.config_reload_failed": HealthConfigReloadFailedPayload;
@@ -536,6 +545,7 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "git.pr_updated": GitPrUpdatedPayloadSchema,
   "git.pr_merged": GitPrMergedPayloadSchema,
   "git.merge_completed": GitMergeCompletedPayloadSchema,
+  "git.branch_deleted": GitBranchDeletedPayloadSchema,
   "health.stuck_detected": HealthStuckDetectedPayloadSchema,
   "health.trigger_failure": HealthTriggerFailurePayloadSchema,
   "health.config_reload_failed": HealthConfigReloadFailedPayloadSchema,

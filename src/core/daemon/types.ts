@@ -1,4 +1,4 @@
-import type { DaemonConfig } from "../../schemas/config.js";
+import type { DaemonConfig, WorkspaceConfig } from "../../schemas/config.js";
 import type { Clock } from "../../utils/clock.js";
 import type { DataLifecycleManager } from "../data-lifecycle/index.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
@@ -17,6 +17,7 @@ import type { Registry } from "../registry/index.js";
 /** Shared dependencies available to all Daemon subsystems. */
 export interface DaemonContext {
   config: DaemonConfig;
+  workspaceConfig: WorkspaceConfig;
   eventBus: IEventBus;
   registry: Registry;
   taskEngine: ITaskEngine;
@@ -71,6 +72,7 @@ export type PreemptionManagerContext = Pick<
 export type ReviewHandlerContext = Pick<
   DaemonContext,
   | "config"
+  | "workspaceConfig"
   | "eventBus"
   | "registry"
   | "taskEngine"

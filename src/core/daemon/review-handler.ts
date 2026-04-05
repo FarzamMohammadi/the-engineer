@@ -109,6 +109,7 @@ export function createReviewHandler(
     taskEngine,
     safetyLayer,
     workspaceManager,
+    workspaceConfig,
     peopleDirectory,
     observer,
   } = ctx;
@@ -547,8 +548,33 @@ export function createReviewHandler(
     });
   }
 
-  /** Finalize task completion: workspace cleanup, notification, issue comment, child-done check. */
+  /** Finalize task completion: remote branch deletion, workspace cleanup, notification, issue comment, child-done check. */
   function finalizeTaskCompletion(taskId: string, commentMessage?: string): void {
+    // Delete remote branch if configured (best-effort — never blocks completion)
+    if (workspaceConfig.pr.delete_branch_after_merge) {
+      const task = taskEngine.getTask(taskId);
+      const repo = task?.repo;
+      const branch = task?.workspace?.branch;
+      if (repo && branch) {
+        try {
+          workspaceManager.deleteRemoteBranch(taskId);
+          eventBus.publish({
+            type: EventTypes["git.branch_deleted"],
+            source: "daemon",
+            task_id: taskId,
+            payload: { task_id: taskId, repo, branch },
+          } satisfies PublishInput<"git.branch_deleted">);
+        } catch (err) {
+          observer.warn("Remote branch deletion failed after merge", {
+            taskId,
+            repo,
+            branch,
+            error: sanitizeErrorMessage(err),
+          });
+        }
+      }
+    }
+
     try {
       workspaceManager.cleanupWorkspace(taskId, true);
     } catch (err) {
@@ -680,7 +706,7 @@ export function createReviewHandler(
 
     let result: Awaited<ReturnType<GitHostingAdapter["mergePR"]>>;
     try {
-      result = await hosting.mergePR(repo, prNumber, "squash");
+      result = await hosting.mergePR(repo, prNumber, workspaceConfig.pr.default_merge_strategy);
     } catch (mergeErr) {
       observer.warn("Auto-merge API call failed — will retry next tick", {
         taskId,

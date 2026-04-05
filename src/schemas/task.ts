@@ -48,13 +48,25 @@ export const ActionClasses = ActionClassSchema.enum;
 
 // ── Sub-schemas ────────────────────────────────────────────────────────────────
 
+export const PrDecorationsSchema = z.object({
+  /** Prepended before the AI-generated PR title. Plugin owns delimiter (e.g., "#42:", "[JIRA-123]"). */
+  title_prefix: z.string().optional(),
+  /** Appended after the AI-generated PR title. */
+  title_suffix: z.string().optional(),
+  /** Inserted at the start of the PR description, before the trigger reference. */
+  description_prefix: z.string().optional(),
+  /** Inserted after the AI-generated PR description, before the branding footer (e.g., "Closes #42"). */
+  description_suffix: z.string().optional(),
+});
+export type PrDecorations = z.infer<typeof PrDecorationsSchema>;
+
 export const ExternalRefSchema = z.object({
   type: z.string(),
   repo: z.string(),
   id: z.string(),
   url: z.string().optional(),
-  /** Platform-formatted ticket reference for PR title prefixing (e.g., "#42", "JIRA-123"). Set by trigger plugins. */
-  pr_prefix: z.string().optional(),
+  /** Plugin-provided PR decoration strings. Core treats all values as opaque. */
+  pr_decorations: PrDecorationsSchema.optional(),
 });
 export type ExternalRef = z.infer<typeof ExternalRefSchema>;
 

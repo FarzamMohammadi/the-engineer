@@ -202,7 +202,7 @@ TriggerEvent {
   idempotency_key: string          // Stable, unique dedup key: "github:issue:owner/repo:47"
   source:          string          // This plugin's ID
   event_type:      string          // "issue_opened", "issue_assigned", "manual_create"
-  external_ref:    ExternalRef?    // Structured reference to the originating ticket/issue
+  external_ref:    ExternalRef?    // Structured reference to the originating ticket/issue (includes optional pr_decorations for title/description decoration)
   title:           string          // Task title derived from trigger
   body:            string?         // Description/body from external source
   repo:            string          // Target repo

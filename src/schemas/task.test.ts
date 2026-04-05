@@ -127,24 +127,66 @@ describe("ExternalRefSchema", () => {
     expect(ExternalRefSchema.parse({ type: "manual", repo: "a/b", id: "1" })).toBeDefined();
   });
 
-  it("accepts optional pr_prefix for PR title linking", () => {
-    const withPrefix = ExternalRefSchema.parse({
+  it("accepts pr_decorations with all 4 fields", () => {
+    const result = ExternalRefSchema.parse({
       type: "github_issue",
       repo: "owner/repo",
       id: "42",
       url: "https://github.com/owner/repo/issues/42",
-      pr_prefix: "#42",
+      pr_decorations: {
+        title_prefix: "#42:",
+        title_suffix: "[urgent]",
+        description_prefix: "Context: sprint-12",
+        description_suffix: "Closes #42",
+      },
     });
-    expect(withPrefix.pr_prefix).toBe("#42");
+    expect(result.pr_decorations?.title_prefix).toBe("#42:");
+    expect(result.pr_decorations?.title_suffix).toBe("[urgent]");
+    expect(result.pr_decorations?.description_prefix).toBe("Context: sprint-12");
+    expect(result.pr_decorations?.description_suffix).toBe("Closes #42");
   });
 
-  it("parses without pr_prefix (backward compatible)", () => {
-    const withoutPrefix = ExternalRefSchema.parse({
+  it("parses without pr_decorations (backward compatible)", () => {
+    const result = ExternalRefSchema.parse({
       type: "github_issue",
       repo: "owner/repo",
       id: "42",
     });
-    expect(withoutPrefix.pr_prefix).toBeUndefined();
+    expect(result.pr_decorations).toBeUndefined();
+  });
+
+  it("accepts partial pr_decorations (only title_prefix)", () => {
+    const result = ExternalRefSchema.parse({
+      type: "github_issue",
+      repo: "owner/repo",
+      id: "42",
+      pr_decorations: { title_prefix: "#42:" },
+    });
+    expect(result.pr_decorations?.title_prefix).toBe("#42:");
+    expect(result.pr_decorations?.title_suffix).toBeUndefined();
+    expect(result.pr_decorations?.description_suffix).toBeUndefined();
+  });
+
+  it("accepts empty pr_decorations object", () => {
+    const result = ExternalRefSchema.parse({
+      type: "github_issue",
+      repo: "owner/repo",
+      id: "42",
+      pr_decorations: {},
+    });
+    expect(result.pr_decorations).toBeDefined();
+    expect(result.pr_decorations?.title_prefix).toBeUndefined();
+  });
+
+  it("accepts empty string in decoration field (schema allows, application treats as absent)", () => {
+    const result = ExternalRefSchema.parse({
+      type: "github_issue",
+      repo: "owner/repo",
+      id: "42",
+      pr_decorations: { title_prefix: "", description_suffix: "" },
+    });
+    expect(result.pr_decorations?.title_prefix).toBe("");
+    expect(result.pr_decorations?.description_suffix).toBe("");
   });
 });
 

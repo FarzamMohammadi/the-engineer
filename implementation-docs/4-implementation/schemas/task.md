@@ -81,19 +81,26 @@ type ActionClass = z.infer<typeof ActionClassSchema>;
 Links a task to its external source (GitHub issue, Jira ticket, etc.).
 
 ```typescript
+const PrDecorationsSchema = z.object({
+  title_prefix: z.string().optional(),       // prepended before AI title (e.g., "#42:")
+  title_suffix: z.string().optional(),       // appended after AI title
+  description_prefix: z.string().optional(), // inserted before trigger reference
+  description_suffix: z.string().optional(), // inserted after AI description (e.g., "Closes #42")
+});
+
 const ExternalRefSchema = z.object({
-  type: z.string(),                    // "github_issue", "jira_ticket", "manual"
-  repo: z.string(),                    // "owner/repo"
-  id: z.string(),                      // issue/ticket identifier (e.g., "42", "VE-123")
-  url: z.string().optional(),          // link back to the external item
-  pr_prefix: z.string().optional(),    // platform-formatted ticket ref for PR titles (e.g., "#42", "JIRA-123")
+  type: z.string(),                          // "github_issue", "jira_ticket", "manual"
+  repo: z.string(),                          // "owner/repo"
+  id: z.string(),                            // issue/ticket identifier (e.g., "42", "VE-123")
+  url: z.string().optional(),                // link back to the external item
+  pr_decorations: PrDecorationsSchema.optional(), // plugin-provided PR decoration strings
 });
 type ExternalRef = z.infer<typeof ExternalRefSchema>;
 ```
 
 **Note:** `type` is an open string, not a fixed enum. New trigger sources can define their own types without schema changes.
 
-**`pr_prefix`:** Set by trigger plugins to provide the platform-native ticket reference for PR title prefixing. Core prepends it to the PR title as an opaque string (e.g., `#42: Fix auth bug`). This enables platforms like GitHub to auto-link PRs to their originating issues. Plugin-blind — Core never inspects the prefix format.
+**`pr_decorations`:** Optional nested object set by trigger plugins. Provides platform-native strings for PR title and description decoration. All four fields are independently optional. Core treats every value as an opaque string — never inspects format. Plugin owns all delimiter formatting (e.g., `title_prefix: "#42:"` includes the colon, Core space-joins title parts). Enables platform-native linking (GitHub auto-close via `description_suffix: "Closes #42"`, Jira via `title_prefix: "JIRA-123:"`). See D177.
 
 ---
 

@@ -121,7 +121,10 @@ describe("GitHubTriggerPlugin", () => {
         repo: "acme/webapp",
         id: "42",
         url: "https://github.com/acme/webapp/issues/42",
-        pr_prefix: "#42",
+        pr_decorations: {
+          title_prefix: "#42:",
+          description_suffix: "Closes #42",
+        },
       });
     });
 

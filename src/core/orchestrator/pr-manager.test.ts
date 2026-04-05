@@ -525,7 +525,7 @@ describe("PrManager", () => {
     expect(prArgs.body).toContain("Crafted by The Engineer");
   });
 
-  it("prefixes PR title with pr_prefix when present", async () => {
+  it("applies title_prefix from pr_decorations", async () => {
     const ctx = createMockContext();
     const fakeGitHosting = {
       createPR: vi.fn().mockResolvedValue({ pr_number: 60, url: "https://github.com/pr/60" }),
@@ -562,7 +562,7 @@ describe("PrManager", () => {
         repo: "owner/repo",
         id: "42",
         url: "https://github.com/owner/repo/issues/42",
-        pr_prefix: "#42",
+        pr_decorations: { title_prefix: "#42:" },
       },
     } as unknown as Partial<Task>);
 
@@ -575,7 +575,105 @@ describe("PrManager", () => {
     );
   });
 
-  it("does not prefix PR title when pr_prefix is absent", async () => {
+  it("applies title_suffix from pr_decorations", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 63, url: "https://github.com/pr/63" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { pr_description: "Added feature X" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+    const dispatch = createDispatch({
+      title: "Fix bug",
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        pr_decorations: { title_suffix: "[urgent]" },
+      },
+    } as unknown as Partial<Task>);
+
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Fix bug [urgent]",
+      }),
+    );
+  });
+
+  it("applies both title_prefix and title_suffix", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 64, url: "https://github.com/pr/64" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => {
+        if (type === "git_hosting") {
+          return fakeGitHosting;
+        }
+        return null;
+      },
+    );
+
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: { pr_description: "Added feature X" },
+      confidence: "high" as const,
+      open_questions: [],
+    };
+    const dispatch = createDispatch({
+      title: "Fix bug",
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        pr_decorations: { title_prefix: "#42:", title_suffix: "[urgent]" },
+      },
+    } as unknown as Partial<Task>);
+
+    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "#42: Fix bug [urgent]",
+      }),
+    );
+  });
+
+  it("does not decorate PR title when pr_decorations is absent", async () => {
     const ctx = createMockContext();
     const fakeGitHosting = {
       createPR: vi.fn().mockResolvedValue({ pr_number: 61, url: "https://github.com/pr/61" }),
@@ -623,7 +721,7 @@ describe("PrManager", () => {
     );
   });
 
-  it("does not prefix PR title when external_ref is null", async () => {
+  it("does not decorate PR title when external_ref is null", async () => {
     const ctx = createMockContext();
     const fakeGitHosting = {
       createPR: vi.fn().mockResolvedValue({ pr_number: 62, url: "https://github.com/pr/62" }),
@@ -748,5 +846,80 @@ describe("composePrBody", () => {
     expect(lines[2]).toBe("Desc");
     expect(lines[3]).toBe("");
     expect(lines[4]).toBe("---");
+  });
+
+  it("inserts description_prefix before trigger reference", () => {
+    const body = composePrBody("Feature description", {
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        url: "https://github.com/owner/repo/issues/42",
+        pr_decorations: { description_prefix: "Sprint: 12" },
+      },
+    });
+    const prefixIdx = body.indexOf("Sprint: 12");
+    const triggerIdx = body.indexOf("> Triggered by");
+    const descIdx = body.indexOf("Feature description");
+    expect(prefixIdx).toBeGreaterThanOrEqual(0);
+    expect(prefixIdx).toBeLessThan(triggerIdx);
+    expect(triggerIdx).toBeLessThan(descIdx);
+  });
+
+  it("inserts description_suffix after description and before branding footer", () => {
+    const body = composePrBody("Feature description", {
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        pr_decorations: { description_suffix: "Closes #42" },
+      },
+    });
+    const descIdx = body.indexOf("Feature description");
+    const suffixIdx = body.indexOf("Closes #42");
+    const brandIdx = body.indexOf("Crafted by The Engineer");
+    expect(suffixIdx).toBeGreaterThan(descIdx);
+    expect(suffixIdx).toBeLessThan(brandIdx);
+    // No extra --- before suffix
+    expect(body).not.toContain("---\nCloses #42");
+  });
+
+  it("applies all 4 description decorations together", () => {
+    const body = composePrBody("Main content", {
+      external_ref: {
+        type: "github_issue",
+        repo: "owner/repo",
+        id: "42",
+        url: "https://github.com/owner/repo/issues/42",
+        pr_decorations: {
+          description_prefix: "Context: sprint-12",
+          description_suffix: "Closes #42",
+        },
+      },
+    });
+    const prefixIdx = body.indexOf("Context: sprint-12");
+    const triggerIdx = body.indexOf("> Triggered by");
+    const contentIdx = body.indexOf("Main content");
+    const suffixIdx = body.indexOf("Closes #42");
+    const brandIdx = body.indexOf("Crafted by The Engineer");
+    expect(prefixIdx).toBeLessThan(triggerIdx);
+    expect(triggerIdx).toBeLessThan(contentIdx);
+    expect(contentIdx).toBeLessThan(suffixIdx);
+    expect(suffixIdx).toBeLessThan(brandIdx);
+  });
+
+  it("treats empty string decorations as absent (no extra whitespace)", () => {
+    const bodyWithEmpty = composePrBody("Desc", {
+      external_ref: {
+        type: "x",
+        repo: "a/b",
+        id: "1",
+        pr_decorations: { description_prefix: "", description_suffix: "" },
+      },
+    });
+    const bodyWithout = composePrBody("Desc", {
+      external_ref: { type: "x", repo: "a/b", id: "1" },
+    });
+    expect(bodyWithEmpty).toBe(bodyWithout);
   });
 });

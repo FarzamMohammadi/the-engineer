@@ -46,7 +46,9 @@ commitPushAndCreatePR(dispatch, demoPrepOutput)
   |
   +-- Resolve PR description (demoPrepOutput > deliverable file > default)
   +-- Sanitize secrets from description
-  +-- Prefix title with pr_prefix if present (e.g., "#42: Fix auth bug")
+  +-- Apply pr_decorations if present (plugin-blind, all values opaque):
+  |     +-- title: [title_prefix] <AI title> [title_suffix]  (space-joined)
+  |     +-- description: [description_prefix] > trigger ref > AI description > [description_suffix] > --- > branding
   +-- gitHosting.createPR({ repo, branch, base, title, body, draft: false })
   +-- Update task: review = { pr_number, pr_state: "ready", ... }
   +-- Notify: "PR created: {url}" (milestone + ticket comment)

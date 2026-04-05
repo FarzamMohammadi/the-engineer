@@ -1289,3 +1289,17 @@ See `6-refinement/decisions.md` for full entries. Summary:
 **Rationale:** Git platforms (GitHub, GitLab, Azure DevOps) use keyword/prefix parsing as their primary PR-to-issue linking mechanism — no universal "link PR to issue" API exists. By having trigger plugins provide the platform-native prefix, Core can enable automatic linking while maintaining plugin blindness. The prefix in the title creates a platform-recognized reference without auto-closing behavior (closing keywords like `Resolves` would need to be in the PR body).
 
 **Alternatives rejected:** (1) `linkPRToSource()` adapter method — over-engineered for what amounts to a string prefix. (2) Closing keywords in Core (`Resolves #42`) — plugin blindness violation, Core encoding platform semantics. (3) Deferral — immediate value for same-platform scenarios with minimal scope.
+
+**Superseded by D177** — `pr_prefix` replaced by `pr_decorations` nested object.
+
+---
+
+## 2026-04-05 — PR decorations: 4-slot title/description decoration via `pr_decorations` (D177)
+
+**Decision:** Replace `pr_prefix: string` on `ExternalRefSchema` with `pr_decorations: PrDecorationsSchema` — a nested optional object with four independently optional fields: `title_prefix`, `title_suffix`, `description_prefix`, `description_suffix`. All values are opaque strings set by trigger plugins and applied by Core's PR Manager. Plugin owns all delimiter formatting (Core space-joins title parts, no hardcoded `: `).
+
+**Rationale:** D176 covered only PR title prefixing. Platforms like GitHub also support auto-close linking via description keywords (`Closes #42`). Expanding to 4 decoration slots enables full title + description customization while maintaining plugin blindness — Core never inspects what the strings contain. A nested object groups related concerns and signals "this is a coherent decoration set" to future developers.
+
+**Expert panel review:** 5-panelist review (Torvalds, Hipp, Pike, Engineer, Architect) recommended 2 flat fields (YAGNI). Decision: keep 4-field nested design for completeness — adding fields later has zero migration cost (JSON TEXT storage), but the symmetrical design better communicates the intent. Key panel refinements adopted: (1) plugin owns delimiter formatting, (2) single separator before branding footer, (3) edge case tests for empty strings and empty objects.
+
+**Alternatives rejected:** (1) Two flat fields (`pr_prefix` + `pr_body_suffix`) — simpler but less expressive, loses grouping signal. (2) Template strings with placeholders — parser complexity, injection surface, breaks plugin blindness. (3) Keeping `pr_prefix` and adding `pr_body_suffix` — avoids rename churn but inconsistent naming between old flat field and new flat field.

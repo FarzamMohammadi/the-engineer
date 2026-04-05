@@ -37,13 +37,19 @@ export function formatTriggerReference(task: TriggerRefInput): string | null {
 }
 
 /**
- * Compose the final PR body: trigger header + description + branding footer.
+ * Compose the final PR description: optional decorations + trigger header + description + branding footer.
  *
  * Deterministic — the CLI agent writes the narrative, this function wraps it
- * with structural elements that must always be present.
+ * with structural elements that must always be present. Decoration strings are
+ * plugin-provided and treated as opaque by Core.
  */
 export function composePrBody(description: string, task: TriggerRefInput): string {
   const parts: string[] = [];
+  const decorations = task.external_ref?.pr_decorations;
+
+  if (decorations?.description_prefix) {
+    parts.push(decorations.description_prefix);
+  }
 
   const triggerRef = formatTriggerReference(task);
   if (triggerRef) {
@@ -51,6 +57,11 @@ export function composePrBody(description: string, task: TriggerRefInput): strin
   }
 
   parts.push(description);
+
+  if (decorations?.description_suffix) {
+    parts.push(decorations.description_suffix);
+  }
+
   parts.push("---\n*Crafted by The Engineer*");
 
   return parts.join("\n\n");
@@ -273,11 +284,18 @@ export function createPrManager(
       // Wrap with trigger reference header and branding footer
       const prBody = composePrBody(prDescription, dispatch.task);
 
-      // Prefix PR title with ticket reference when available (plugin-blind: Core treats pr_prefix as opaque)
+      // Apply PR title decorations when available (plugin-blind: Core treats all values as opaque)
       const rawTitle = sanitizeSecrets(dispatch.task.title);
-      const prTitle = dispatch.task.external_ref?.pr_prefix
-        ? `${dispatch.task.external_ref.pr_prefix}: ${rawTitle}`
-        : rawTitle;
+      const decorations = dispatch.task.external_ref?.pr_decorations;
+      const titleParts: string[] = [];
+      if (decorations?.title_prefix) {
+        titleParts.push(decorations.title_prefix);
+      }
+      titleParts.push(rawTitle);
+      if (decorations?.title_suffix) {
+        titleParts.push(decorations.title_suffix);
+      }
+      const prTitle = titleParts.join(" ");
 
       const prResult = await gitHosting.createPR({
         repo: record.repo,

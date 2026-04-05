@@ -242,7 +242,10 @@ function mapIssueToEvent(
       repo: `${owner}/${repo}`,
       id: String(issue.number),
       url: issue.html_url,
-      pr_prefix: `#${String(issue.number)}`,
+      pr_decorations: {
+        title_prefix: `#${String(issue.number)}:`,
+        description_suffix: `Closes #${String(issue.number)}`,
+      },
     },
     title: issue.title,
     body: issue.body ?? null,

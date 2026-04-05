@@ -8,23 +8,25 @@ Receives tasks, gathers requirements, researches codebases, plans, executes, sel
 
 **Prerequisites:** Node.js 22+, pnpm
 
+**First time only:**
+
 ```bash
 git clone https://github.com/user/the-engineer.git && cd the-engineer
 pnpm install
-
-# Build and link the CLI globally
-pnpm run build
 pnpm setup                               # Configure PNPM_HOME (first time only)
 source ~/.zshrc                           # Reload shell (or restart terminal)
-pnpm link --global
-
-# Start — that's it
-engineer start
 ```
 
-First run detects your environment, walks you through plugin selection, writes configs, and starts the daemon. No separate setup step.
+**Start (and restart):**
 
-For CI/automation: `engineer start --seed ./seed-example/` skips prompts entirely (seeds both plugin and core configs).
+```bash
+./scripts/reset.sh                    # Full wipe — rebuild, re-seed, start fresh
+./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — re-seed config & plugins
+```
+
+The reset script builds, links the CLI globally, seeds configs/plugins from [`seed-example/`](seed-example/), and starts the daemon. `--persist-data` preserves your task history and database while rebuilding everything else.
+
+`seed-example/` ships with default configs and plugins. Fork it into your own seed directory with custom settings to make resets fast and repeatable.
 
 > **Dev mode (without global install):** Use `npx tsx src/index.ts` in place of `engineer` for any command.
 
@@ -60,17 +62,6 @@ Three tiers: **Core** (task engine, orchestrator, safety layer, event bus, daemo
 The daemon tick loop: poll triggers → create tasks → schedule by priority → dispatch to orchestrator → 7-phase pipeline → ship PR.
 
 Architecture guide: [docs/architecture/overview.md](docs/architecture/overview.md) | Three-tier model: [docs/architecture/three-tier-model.md](docs/architecture/three-tier-model.md)
-
-## Quick Reset
-
-The [`seed-example/`](seed-example/) directory contains default startup configs and plugins. Each contributor can fork it into their own seed directory with custom configs and plugins, making resets fast and repeatable.
-
-```bash
-./scripts/reset.sh                    # Full wipe — rebuild, re-seed, start fresh
-./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — re-seed config & plugins
-```
-
-`--persist-data` preserves your task history and database while rebuilding everything else from the seed, without prompting.
 
 ## Development
 

@@ -64,6 +64,9 @@ export const EventTypeSchema = z.enum([
   "health.plugin_recovered",
   "comm.message_received",
   "comm.message_sent",
+  "comm.send_failed",
+  "comm.retry_succeeded",
+  "comm.retry_exhausted",
   "review.poll_completed",
   "system.cleanup_completed",
 ]);
@@ -434,6 +437,33 @@ export const CommMessageSentPayloadSchema = z.object({
 });
 export type CommMessageSentPayload = z.infer<typeof CommMessageSentPayloadSchema>;
 
+export const CommSendFailedPayloadSchema = z.object({
+  task_id: z.string(),
+  person_id: z.string(),
+  kind: z.string(),
+  channels_tried: z.array(z.string()),
+  retryable: z.boolean(),
+});
+export type CommSendFailedPayload = z.infer<typeof CommSendFailedPayloadSchema>;
+
+export const CommRetrySucceededPayloadSchema = z.object({
+  task_id: z.string(),
+  person_id: z.string(),
+  kind: z.string(),
+  channel: z.string(),
+  attempt: z.number().int(),
+});
+export type CommRetrySucceededPayload = z.infer<typeof CommRetrySucceededPayloadSchema>;
+
+export const CommRetryExhaustedPayloadSchema = z.object({
+  task_id: z.string(),
+  person_id: z.string(),
+  kind: z.string(),
+  attempts: z.number().int(),
+  reason: z.string(),
+});
+export type CommRetryExhaustedPayload = z.infer<typeof CommRetryExhaustedPayloadSchema>;
+
 // review.*
 
 export const ReviewPollCompletedPayloadSchema = z.object({
@@ -504,6 +534,9 @@ export type EventPayloads = {
   "health.plugin_recovered": HealthPluginRecoveredPayload;
   "comm.message_received": CommMessageReceivedPayload;
   "comm.message_sent": CommMessageSentPayload;
+  "comm.send_failed": CommSendFailedPayload;
+  "comm.retry_succeeded": CommRetrySucceededPayload;
+  "comm.retry_exhausted": CommRetryExhaustedPayload;
   "review.poll_completed": ReviewPollCompletedPayload;
   "system.cleanup_completed": SystemCleanupCompletedPayload;
 };
@@ -554,6 +587,9 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "health.plugin_recovered": HealthPluginRecoveredPayloadSchema,
   "comm.message_received": CommMessageReceivedPayloadSchema,
   "comm.message_sent": CommMessageSentPayloadSchema,
+  "comm.send_failed": CommSendFailedPayloadSchema,
+  "comm.retry_succeeded": CommRetrySucceededPayloadSchema,
+  "comm.retry_exhausted": CommRetryExhaustedPayloadSchema,
   "review.poll_completed": ReviewPollCompletedPayloadSchema,
   "system.cleanup_completed": SystemCleanupCompletedPayloadSchema,
 };

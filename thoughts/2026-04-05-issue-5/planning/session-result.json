@@ -1,0 +1,6 @@
+{
+  "status": "ready",
+  "next_phase": "execution",
+  "summary": "Add in-memory retry queue to NotificationRouter with tick-driven processRetries(), update Telegram to mark not_found as retryable, add 3 event types + config section, integrate into daemon tick loop",
+  "complexity": "moderate"
+}

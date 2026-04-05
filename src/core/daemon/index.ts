@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { join } from "node:path";
 
 import {
+  CommRetryExhaustedPayloadSchema,
+  CommRetrySucceededPayloadSchema,
+  CommSendFailedPayloadSchema,
   type Event,
   type EventPayloads,
   EventTypes,
@@ -91,6 +94,28 @@ export const EVENTS: EventDeclaration[] = [
     description: "Emitted after polling PR review status",
     payloadSchema: ReviewPollCompletedPayloadSchema,
     publishers: ["daemon"],
+    subscribers: [],
+  },
+  {
+    type: "comm.send_failed",
+    description: "Emitted when a notification could not be delivered to any channel for a person",
+    payloadSchema: CommSendFailedPayloadSchema,
+    publishers: ["notification-router"],
+    subscribers: [],
+  },
+  {
+    type: "comm.retry_succeeded",
+    description: "Emitted when a previously failed notification is successfully delivered on retry",
+    payloadSchema: CommRetrySucceededPayloadSchema,
+    publishers: ["notification-router"],
+    subscribers: [],
+  },
+  {
+    type: "comm.retry_exhausted",
+    description:
+      "Emitted when notification retries are abandoned (max attempts, max age, or task terminal)",
+    payloadSchema: CommRetryExhaustedPayloadSchema,
+    publishers: ["notification-router"],
     subscribers: [],
   },
   {
@@ -462,6 +487,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     // Step 2b: Poll for communication responses (GitHub comments, dashboard, etc.)
     await responsePoller.poll(now);
+
+    // Step 2c: Process pending notification retries
+    notifications.processRetries?.(now);
 
     // Step 3+4: Preemption + schedule (single DB query for both)
     const queuedTasks = taskEngine.getQueuedByPriority();

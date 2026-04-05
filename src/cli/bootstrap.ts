@@ -148,6 +148,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       peopleDirectory,
       eventBus,
       observer: observer.child("notifications"),
+      config: { notification_retry: config.daemon.notification_retry },
+      clock: new RealClock(),
     });
 
     // 8. Orchestrator

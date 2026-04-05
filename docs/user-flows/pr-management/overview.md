@@ -95,7 +95,7 @@ Every feedback emission is deduped by `"${aggregateState}:${commentCount}"` per 
 
 ### Merge Detection
 
-`checkMerges()` — also called every tick. If PR state is `"merged"` (someone merged manually on GitHub), complete the task immediately with reason `"pr_merged"`.
+`checkMerges()` — also called every tick. If PR state is `"merged"` (someone merged manually on GitHub), complete the task immediately with reason `"pr_merged"`. Both auto-merge and manual merge paths converge through `finalizeTaskCompletion()`, which handles remote branch deletion (if `delete_branch_after_merge` is enabled), workspace cleanup, notifications, and children-done checks.
 
 ---
 
@@ -200,7 +200,9 @@ hosting.mergePR(repo, prNumber, "squash")
   +-- result.success = true:
         update review.pr_state = "merged"
         transition to completed (reason: "code_approved_merged")
-        finalizeTaskCompletion: workspace cleanup + notify + children-done check
+        finalizeTaskCompletion:
+          delete remote branch (if delete_branch_after_merge, best-effort)
+          workspace cleanup + notify + children-done check
 ```
 
 ### `allowApprovalRetry()`

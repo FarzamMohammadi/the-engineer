@@ -4,15 +4,15 @@ pre-commit:
     biome-check:
       glob: "*.{ts,json,jsonc}"
       run: pnpm biome check --staged --no-errors-on-unmatched
+
+pre-push:
+  parallel: true
+  commands:
     type-check:
       run: pnpm tsc --noEmit
     check-exports:
       run: pnpm check:exports
     check-circular:
       run: pnpm check:circular
-
-pre-push:
-  parallel: true
-  commands:
     test:
       run: pnpm vitest run --no-cache

@@ -69,11 +69,22 @@ The Engineer is built for everyone. This demands:
 
 ## Documentation as Product
 
-The reader's time is sacred. Every doc earns its existence by saving time or preventing a mistake. This applies to The Engineer's own output just as much — when the agent ships a feature, it updates the relevant docs. A PR without documentation is incomplete work.
+The reader's time is sacred. Every doc earns its existence by saving time or preventing a mistake. A PR without documentation is incomplete work.
 
 - **Structure and referencing over embedding.** Information lives in one place and is referenced everywhere else. Inline only when it genuinely improves speed. When in doubt, link.
 - **Automation over prose.** A copy-pasteable command that works on first try beats a paragraph explaining what to do. A `--help` flag that stays in sync with code beats a manually maintained table.
 - **Docs ship with features.** Every change to user-facing behavior updates docs in the same step — not "later."
+
+## Docs as System Blueprint
+
+Code is ground truth. Docs in `docs/` are the system's blueprint — one abstraction level above code, one level below a project summary. Anyone who never reads a line of source can fully understand how The Engineer works, what it does, and why, purely from these docs.
+
+This project will be read by humans of every background and language proficiency, and by every AI agent that encounters it. Clarity is not a style preference — it is the accessibility layer.
+
+- **Always in sync.** Code changes and doc changes are the same unit of work. A code change without a corresponding doc update is unfinished work — the same as a function without its contract.
+- **Build, consolidate, never abandon.** Docs grow with the system. When sections overlap, consolidate. When sections rot, rewrite or delete. Stale docs are worse than no docs — they teach the wrong thing with authority.
+- **Intent over mechanics.** Explain *why* a system exists and *what* it guarantees before explaining *how* it works. A reader who understands intent can navigate code. A reader who only knows mechanics cannot adapt when the code changes.
+- **Universal audience.** Write for the non-native English speaker, the screen reader, the AI agent parsing structure, the contributor who arrived five minutes ago. Formatting, headings, and structure are not decoration — they are the interface.
 
 ## Agent-Assisted Everything
 
@@ -116,6 +127,20 @@ Don't invent from scratch. Study how proven systems solved the same class of pro
 CPU scheduling → task management. OS process isolation → workspace design. CI/CD pipelines → developer lifecycle. Message queues → communication patterns. Journaling filesystems → session persistence.
 
 Standing on the shoulders of decades of engineering. The patterns that survived are the ones that work.
+
+## Radical Observability — The Owner Is Never in the Dark
+
+The Engineer operates autonomously across long-running tasks. Autonomy without observability is a black box. Every action, decision, and state change must be visible to the people who need to know — without requiring them to read logs or dig through code.
+
+This does not mean verbose output about every internal step. It means every code path is conscious about whether it requires the Observer for tracing, the communication layer for notifications, or session persistence for replay. Signal, not noise.
+
+Before any code is considered complete, it must pass three tests:
+
+1. **Debuggability.** If a bug occurs here, can it be diagnosed from the instrumentation already in place — without adding temporary logging, without reproducing the issue, without guessing?
+2. **Owner sync.** Is the owner watching the dashboard fully synchronized with past actions, current execution, and planned next steps? Can they guide or change course at any moment based on what they see?
+3. **External reach.** Are milestones, blocks, and alerts reaching the right people through the right channels — not just the dashboard, but comms to stakeholders who need to know?
+
+If the answer to any of these is "no," the code is incomplete.
 
 ## Isolation as Survival
 

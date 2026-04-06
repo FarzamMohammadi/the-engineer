@@ -177,7 +177,7 @@ export class WorkspaceManager implements IWorkspaceManager {
    * Create an isolated workspace for a task.
    *
    * If the repo is not yet cloned locally, clones it first using the provided
-   * cloneUrl. Fetches from remote (if configured), creates a named branch
+   * cloneUrl. Always fetches latest from remote, creates a named branch
    * from the base, and sets up a git worktree. Emits `workspace.created`.
    */
   createWorkspace(taskId: string, repo: string, options?: CreateWorkspaceOptions): WorkspaceRecord {
@@ -211,11 +211,9 @@ export class WorkspaceManager implements IWorkspaceManager {
       this.ensureClone(repo, cloneUrl);
     }
 
-    // Fetch latest from remote
-    if (this.config.fetch_before_create) {
-      this.observer.debug("Fetching latest from remote", { taskId, repo });
-      this.gitExecWithAuth(["fetch", "origin"], repoCloneDir);
-    }
+    // Always fetch latest from remote before branching — stale base = silent divergence
+    this.observer.debug("Fetching latest from remote", { taskId, repo });
+    this.gitExecWithAuth(["fetch", "origin"], repoCloneDir);
 
     // Determine the ref to branch from
     const fromRef = parentBranch ?? `origin/${resolvedBase}`;

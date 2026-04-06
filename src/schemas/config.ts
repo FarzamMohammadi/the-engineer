@@ -359,12 +359,6 @@ export const WorkspaceConfigSchema = z.object({
     .positive()
     .default(30)
     .describe("Maximum character length for the task slug portion of branch names. Default: 30."),
-  fetch_before_create: z
-    .boolean()
-    .default(true)
-    .describe(
-      "Fetch from remote before creating a worktree, ensuring the base branch is up to date. Default: true.",
-    ),
   default_base_branch: z
     .string()
     .default("main")

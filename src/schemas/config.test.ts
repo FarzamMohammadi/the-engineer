@@ -235,7 +235,6 @@ describe("WorkspaceConfigSchema", () => {
     expect(config.workspace_root).toBe("~/.engineer/workspaces/");
     expect(config.branch_prefix).toBe("engineer/");
     expect(config.slug_max_length).toBe(30);
-    expect(config.fetch_before_create).toBe(true);
     expect(config.default_base_branch).toBe("main");
     expect(config.pr.default_merge_strategy).toBe("squash");
     expect(config.cleanup.preserve_branch_on_failure).toBe(true);

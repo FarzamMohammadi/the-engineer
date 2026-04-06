@@ -4,6 +4,7 @@ import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
+import { MAX_LLM_UNAVAILABLE_RETRIES } from "../orchestrator/phase-runner.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { TaskSchedulerContext } from "./types.js";
 
@@ -358,6 +359,53 @@ export function createTaskScheduler(
     );
   }
 
+  /** Handle blocked tasks with llm_unavailable reason: re-queue or final alert. */
+  function handleLlmUnavailableBlocked(taskId: string): void {
+    const blockedTask = taskEngine.getTask(taskId);
+    const retryCount = blockedTask?.consecutive_crash_count ?? 0;
+
+    if (retryCount >= MAX_LLM_UNAVAILABLE_RETRIES) {
+      // Exhausted all retry cycles — stay blocked until owner explicitly unblocks
+      observer.error(
+        "LLM unavailability retries exhausted — task stays blocked until manual unblock",
+        { taskId, retryCount },
+      );
+      notifications.notify({
+        kind: "alert",
+        taskId,
+        message: `LLM adapter unavailable after ${String(retryCount)} retry cycles (~47 minutes). Task blocked until you respond to unblock.`,
+      });
+      notifications.notify({
+        kind: "ticket_comment",
+        taskId,
+        message:
+          "LLM adapter has been unavailable for ~47 minutes. Task is blocked. Reply to this issue or use any communication channel to retry when the issue is resolved.",
+      });
+    } else {
+      // Re-queue for retry — not_before already set by phase-runner
+      const requeue = taskEngine.requestTransition(
+        taskId,
+        TaskStates.queued,
+        null,
+        "llm_unavailable_retry",
+        "daemon",
+      );
+      if (requeue.success) {
+        observer.info("Task re-queued for LLM unavailability retry", {
+          taskId,
+          retryCount,
+          notBefore: blockedTask?.not_before,
+        });
+      } else {
+        observer.warn("Failed to re-queue task for LLM retry", {
+          taskId,
+          reason: requeue.reason,
+        });
+      }
+    }
+  }
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: discriminated union routing over 7 outcome types — extraction would fragment related state handling
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
     activeDispatches.delete(taskId);
     tasksCompleted++;
@@ -378,12 +426,20 @@ export function createTaskScheduler(
     } else if (result.outcome === Outcomes.preempted) {
       handlePreemptedOutcome(taskId, result.lastPhase);
     } else if (result.outcome === Outcomes.blocked) {
-      // Task already transitioned to blocked by the phase-runner. No re-transition needed.
-      observer.info("Task blocked awaiting human input", {
-        taskId,
-        phase: result.phase,
-        reason: result.reason,
-      });
+      // Task already transitioned to blocked by the phase-runner.
+      const blockedTask = taskEngine.getTask(taskId);
+      const blockedReason = blockedTask?.blocked?.reason;
+
+      if (blockedReason === "llm_unavailable") {
+        handleLlmUnavailableBlocked(taskId);
+      } else {
+        // Human-blocked tasks stay blocked — no re-transition needed
+        observer.info("Task blocked awaiting human input", {
+          taskId,
+          phase: "phase" in result ? result.phase : undefined,
+          reason: "reason" in result ? result.reason : undefined,
+        });
+      }
     } else if (result.outcome === Outcomes.error) {
       handleErrorOutcome(taskId, result);
     } else {

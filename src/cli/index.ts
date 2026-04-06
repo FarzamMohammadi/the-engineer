@@ -5,6 +5,7 @@ import { loadEnvFile } from "../config/env.js";
 import { loadConfigDir } from "../config/loader.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
+import { runRetry } from "./commands/retry.js";
 import { runStart } from "./commands/start.js";
 import { runStatus } from "./commands/status.js";
 import { runStop } from "./commands/stop.js";
@@ -170,6 +171,20 @@ program
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runWhy(home, taskId);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── retry ─────────────────────────────────────────────────────────────────────
+
+program
+  .command("retry <task-id>")
+  .description("Retry a blocked task (transitions blocked → queued)")
+  .action((taskId: string) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runRetry(home, taskId);
     if (code !== 0) {
       process.exitCode = code;
     }

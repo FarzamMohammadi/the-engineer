@@ -65,6 +65,20 @@ export class WorkspaceNotReadyError extends OrchestratorError {
   }
 }
 
+/** All LLM retry attempts exhausted due to transient errors (API down, rate limits). */
+export class LlmUnavailableError extends OrchestratorError {
+  readonly tag = "LlmUnavailable" as const;
+  readonly attempts: number;
+  readonly lastError: string;
+
+  constructor(attempts: number, lastError: string) {
+    super(`LLM adapter unavailable after ${attempts} attempts: ${lastError}`);
+    this.name = "LlmUnavailableError";
+    this.attempts = attempts;
+    this.lastError = lastError;
+  }
+}
+
 /** Workspace verification failed during checkpoint resume. */
 export class WorkspaceVerificationError extends OrchestratorError {
   readonly tag = "WorkspaceVerification" as const;

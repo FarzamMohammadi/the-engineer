@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { type Mock, vi } from "vitest";
 
 import type {
@@ -28,6 +30,47 @@ import type { Phase } from "../../src/schemas/orchestrator.js";
 import type { Checkpoint, Session } from "../../src/schemas/session-memory.js";
 import type { Task } from "../../src/schemas/task.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
+
+// ── Phase Directory Map (mirrors PHASE_DIR_MAP in llm-caller.ts) ─────────────
+
+const PHASE_DIR_MAP: Record<Phase, string> = {
+  requirements_gathering: "requirements",
+  research: "research",
+  planning: "planning",
+  execution: "implementation",
+  self_review: "review",
+  demo_prep: "demo-prep",
+  integration: "integration",
+};
+
+/** Write valid session-result.json files to all phase directories under a worktree. */
+function writeSessionResultFiles(
+  worktreePath: string,
+  thoughtsDir: string,
+  phases: readonly Phase[] = [
+    "requirements_gathering",
+    "research",
+    "planning",
+    "execution",
+    "self_review",
+    "demo_prep",
+    "integration",
+  ],
+): void {
+  for (const phase of phases) {
+    const phaseDir = path.join(worktreePath, thoughtsDir, PHASE_DIR_MAP[phase]);
+    mkdirSync(phaseDir, { recursive: true });
+    writeFileSync(
+      path.join(phaseDir, "session-result.json"),
+      JSON.stringify({
+        status: "ready",
+        next_phase: phase === "integration" ? "integration" : "research",
+        summary: `Mock ${phase} complete`,
+        complexity: "moderate",
+      }),
+    );
+  }
+}
 
 // ── Valid Phase Data Fixtures ─────────────────────────────────────────────────
 
@@ -273,10 +316,16 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
 
   // ── Registry mock ──────────────────────────────────────────────────────
   // Returns a fake LLM that uses llmResponses array
+  const worktreePath = "/tmp/worktree/task-001";
+  const thoughtsDir = "thoughts/2026-03-22-issue-1";
+
   const fakeLlm = {
     infer: vi.fn(() => {
       const response = llmResponses[llmCallIndex] ?? createLlmResponse({});
       llmCallIndex++;
+      // Write session-result.json to all phase directories so runPhaseWithCli
+      // finds valid output after the CLI call. In production, the CLI writes this.
+      writeSessionResultFiles(worktreePath, thoughtsDir);
       return Promise.resolve(response);
     }),
     getCapabilities: vi.fn().mockReturnValue({
@@ -418,15 +467,15 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       currentCommit: "abc123",
       recoveryAction: null,
     } satisfies WorkspaceVerification),
-    getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree/task-001"),
+    getWorktreePath: vi.fn().mockReturnValue(worktreePath),
     getWorkspaceRecord: vi.fn().mockReturnValue({
       taskId: "task-001",
       repo: "test/repo",
       branch: "engineer/task-001-test",
-      worktreePath: "/tmp/worktree/task-001",
+      worktreePath,
       baseBranch: "main",
       baseCommit: "abc123",
-      thoughtsDir: "thoughts/2026-03-22-issue-1",
+      thoughtsDir,
     }),
     registerExistingWorkspace: vi.fn(),
     pushBranch: vi.fn(),

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { type SessionResult, SessionResultSchema } from "../../schemas/orchestrator.js";
@@ -24,6 +24,35 @@ export function readSessionResult(phaseDir: string): SessionResult | null | "inv
     return result.success ? result.data : "invalid";
   } catch {
     return "invalid";
+  }
+}
+
+/**
+ * Backup existing session-result.json with ISO timestamp before a new CLI call.
+ *
+ * Preserves old files for debugging (sequentially timestamped, never collide,
+ * easy to trace across 10+ retries) while ensuring no stale file exists when
+ * the CLI runs. This prevents files from prior runs masking failures.
+ */
+export function backupSessionResult(phaseDir: string): void {
+  const filePath = path.join(phaseDir, "session-result.json");
+  if (!existsSync(filePath)) {
+    return;
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = path.join(phaseDir, `session-result.${timestamp}.json.bak`);
+  try {
+    renameSync(filePath, backupPath);
+  } catch {
+    // If rename fails (permissions, cross-device, etc.), try unlinkSync as fallback.
+    // Removing the stale file is more important than preserving the backup.
+    try {
+      unlinkSync(filePath);
+    } catch {
+      // Best effort — if both fail, the stale file remains but the warn log
+      // from readSessionResult will surface the issue.
+    }
   }
 }
 

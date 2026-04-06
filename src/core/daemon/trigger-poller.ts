@@ -44,9 +44,11 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   /** Compute effective poll interval with exponential backoff on failures. */
   function getEffectivePollInterval(pluginId: string): number {
     const failures = triggerFailures.get(pluginId) ?? 0;
+
     if (failures === 0) {
       return config.trigger_poll_interval_ms;
     }
+
     const backoff = config.trigger_poll_interval_ms * 2 ** Math.min(failures, MAX_BACKOFF_EXPONENT);
     return Math.min(backoff, MAX_BACKOFF_MS);
   }

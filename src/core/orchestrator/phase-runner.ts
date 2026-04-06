@@ -12,7 +12,11 @@ import { TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
-import { PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
+import {
+  LlmUnavailableError,
+  PhaseHandlerMissingError,
+  WorkspaceVerificationError,
+} from "./errors.js";
 import { sendOutreach } from "./outreach-sender.js";
 import { PhaseNavigator } from "./phase-navigator.js";
 import type { PrManager } from "./pr-manager.js";
@@ -29,6 +33,18 @@ import {
 
 // Re-export for backward compatibility (tests import from here).
 export { PHASE_SEQUENCE } from "./types.js";
+
+/** Backoff schedule in minutes for LLM unavailability retries. */
+const LLM_RETRY_BACKOFF_MINUTES = [2, 5, 10, 15, 15] as const;
+
+/** Maximum LLM unavailability retry cycles before task stays permanently blocked. */
+export const MAX_LLM_UNAVAILABLE_RETRIES = LLM_RETRY_BACKOFF_MINUTES.length;
+
+/** Compute backoff delay in ms for a given LLM unavailability retry count (1-based). */
+export function computeLlmRetryBackoffMs(retryCount: number): number {
+  const index = Math.min(retryCount - 1, LLM_RETRY_BACKOFF_MINUTES.length - 1);
+  return (LLM_RETRY_BACKOFF_MINUTES[index] ?? 15) * 60_000;
+}
 
 // ── Phase Handler Registry ─────────────────────────────────────────────────
 
@@ -896,6 +912,59 @@ export async function runPhasePipeline(
       const handler = handlers.get(phase);
       output = await handler(taskId, dispatch, priorOutputs, currentState);
     } catch (error: unknown) {
+      // LLM unavailable: block with retry metadata instead of generic error.
+      // The task re-queues after a backoff period, retrying up to MAX_LLM_UNAVAILABLE_RETRIES
+      // times before staying permanently blocked until the owner responds.
+      if (error instanceof LlmUnavailableError) {
+        const currentTask = ctx.taskEngine.getTask(taskId);
+        const retryCount = (currentTask?.consecutive_crash_count ?? 0) + 1;
+
+        ctx.observer.error("LLM adapter unavailable — blocking task for retry", {
+          taskId,
+          phase,
+          attempts: error.attempts,
+          retryCount,
+          lastError: error.lastError,
+        });
+
+        ctx.taskEngine.requestTransition(
+          taskId,
+          TaskStates.blocked,
+          null,
+          `LLM adapter unavailable: ${error.lastError}`,
+          "orchestrator",
+        );
+        ctx.taskEngine.updateTaskField(taskId, "blocked", {
+          reason: "llm_unavailable",
+          efforts_made: [`${String(error.attempts)} retry attempts with exponential backoff`],
+          contacted: [],
+          needed: "LLM adapter to become available",
+          waiting_for: "llm_adapter",
+        });
+        ctx.taskEngine.updateTaskField(taskId, "consecutive_crash_count", retryCount);
+
+        const backoffMs = computeLlmRetryBackoffMs(retryCount);
+        const notBefore = new Date(Date.now() + backoffMs).toISOString();
+        ctx.taskEngine.updateTaskField(taskId, "not_before", notBefore);
+
+        ctx.notifications.notify({
+          kind: "alert",
+          taskId,
+          message: `LLM adapter unavailable — task blocked, will retry in ${String(Math.round(backoffMs / 60_000))} minutes. Respond to unblock manually.`,
+        });
+
+        ctx.sessionMemory.endSession(sessionId, SessionEndReasons.blocked);
+
+        return endPipelineSpan(
+          {
+            outcome: "blocked" as const,
+            phase,
+            reason: `LLM adapter unavailable: ${error.lastError}`,
+          },
+          navigator.phasesRun(),
+        );
+      }
+
       ctx.observer.error("Phase handler threw", {
         taskId,
         phase,

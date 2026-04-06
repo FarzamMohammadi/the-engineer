@@ -10,6 +10,7 @@ import { readSessionResult } from "./session-result.js";
 // Mock session-result reader — allows tests to control what readSessionResult returns
 vi.mock("./session-result.js", () => ({
   readSessionResult: vi.fn().mockReturnValue(null),
+  backupSessionResult: vi.fn(),
 }));
 import type { OrchestratorContext } from "./types.js";
 

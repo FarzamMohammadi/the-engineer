@@ -334,17 +334,16 @@ describe("Orchestrator", () => {
   // ── safeParse Failure Handling ─────────────────────────────────────────────
 
   describe("safeParse failure handling", () => {
-    it("handles invalid JSON gracefully with fallback output", async () => {
-      // Requirements gathering, research, planning, execution use CLI-native (file-based, content ignored).
-      // Self-review (LLM calls 5+) uses agent loop — override ALL its iterations to return non-JSON.
-      // The agent loop exhausts max_iterations and returns empty phaseData → fallback output.
+    it("errors when CLI completes but session-result.json is missing (Fail Loud)", async () => {
+      // When the LLM returns garbage and doesn't write session-result.json,
+      // the phase must fail instead of silently advancing (Fail Loud principle).
       handle.setAllPhaseResponses();
       let llmCallCount = 0;
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           if (input.details?.operation === "llm_infer") {
             llmCallCount++;
-            // LLM calls 5+ = self_review phase and beyond
+            // LLM calls 5+ = self_review phase: return non-JSON without writing session-result
             if (llmCallCount >= 5 && llmCallCount <= 14) {
               return {
                 outcome: "executed",
@@ -365,18 +364,13 @@ describe("Orchestrator", () => {
       const dispatch = createMockDispatch();
       const result = await handle.orchestrator.executeTask(dispatch);
 
-      // Pipeline should continue despite parse failure
-      expect(result.outcome).toBe("completed");
-      if (result.outcome === "completed") {
-        // Self-review (CLI-native) falls back to ready status with high confidence
-        const selfReviewOutput = result.phaseOutputs.get("self_review");
-        expect(selfReviewOutput?.confidence).toBe("high");
-      }
+      // Phase should error — no silent fallback
+      expect(result.outcome).toBe("error");
     });
 
-    it("agent loop recovers from unparseable first response via retry", async () => {
-      // First LLM call returns invalid JSON (no "action" field) — agent loop retries
-      // and the second call returns valid data, so the phase succeeds with high confidence
+    it("errors when first CLI call fails to write session-result.json", async () => {
+      // First LLM call returns garbage without writing session-result.json — phase must fail.
+      // No silent recovery from unparseable content.
       let callCount = 0;
       handle.setAllPhaseResponses();
       handle.actionPipeline.execute.mockImplementation(
@@ -401,12 +395,8 @@ describe("Orchestrator", () => {
       const dispatch = createMockDispatch();
       const result = await handle.orchestrator.executeTask(dispatch);
 
-      expect(result.outcome).toBe("completed");
-      if (result.outcome === "completed") {
-        const intakeOutput = result.phaseOutputs.get("requirements_gathering");
-        // Agent loop retries successfully, so confidence is high
-        expect(intakeOutput?.confidence).toBe("high");
-      }
+      // Phase should error — session-result.json not written by failed CLI call
+      expect(result.outcome).toBe("error");
     });
 
     it("fallback output when all LLM responses are unparseable", async () => {

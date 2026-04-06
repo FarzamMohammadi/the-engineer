@@ -6,9 +6,14 @@ import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
-import { LlmCallRejectedError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
-import { readSessionResult } from "./session-result.js";
-import { type OrchestratorContext, type PipelineState, buildPhaseSequence } from "./types.js";
+import {
+  LlmCallRejectedError,
+  LlmUnavailableError,
+  NoLlmPluginError,
+  WorkspaceNotReadyError,
+} from "./errors.js";
+import { backupSessionResult, readSessionResult } from "./session-result.js";
+import type { OrchestratorContext, PipelineState } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -320,6 +325,12 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       attempts: MAX_LLM_RETRIES,
       error: lastError instanceof Error ? lastError.message : String(lastError),
     });
+    if (isRetryableError(lastError)) {
+      throw new LlmUnavailableError(
+        MAX_LLM_RETRIES,
+        lastError instanceof Error ? lastError.message : String(lastError),
+      );
+    }
     throw lastError;
   }
 
@@ -399,6 +410,12 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
           )
         : null;
 
+    // ── Backup stale session-result.json before CLI call ──────────────────
+    // Prevents files from prior runs masking failures. Backup preserved for debugging.
+    if (phaseDir) {
+      backupSessionResult(phaseDir);
+    }
+
     // ── Single CLI call (with error-path recovery) ────────────────────────
     let result: InferenceResult;
     let recoveredFromError = false;
@@ -439,45 +456,22 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     const sessionResult = phaseDir ? readSessionResult(phaseDir) : null;
 
     // ── Resolve final session result ────────────────────────────────────
-    // If the CLI wrote session-result.json, use it. Otherwise default to "ready"
-    // with the next phase in sequence — no retry burn.
-    // Use the active phase sequence (may be shortened if research was skipped).
-    const task = ctx.taskEngine.getTask(taskId);
-    const activePhases = buildPhaseSequence(task?.skip_research ?? false);
-    const nextPhaseIndex = activePhases.indexOf(phase);
-    const expectedNext: Phase =
-      (nextPhaseIndex >= 0 && nextPhaseIndex < activePhases.length - 1
-        ? activePhases[nextPhaseIndex + 1]
-        : undefined) ?? phase;
-
+    // If the CLI wrote session-result.json, use it. If not, the phase failed —
+    // the CLI must produce its routing output or it's a failure (Fail Loud).
     const finalResult =
       sessionResult && sessionResult !== "invalid"
         ? sessionResult
         : (() => {
-            if (sessionResult === "invalid") {
-              ctx.observer.warn("session-result.json invalid — advancing to next phase", {
-                phase,
-                taskId,
-                expectedNext,
-              });
-              return {
-                status: "ready" as const,
-                next_phase: expectedNext,
-                summary: "",
-                complexity: "moderate" as const,
-              };
-            }
-            ctx.observer.warn("session-result.json not found, using defaults", {
-              phase,
+            const detail =
+              sessionResult === "invalid"
+                ? "session-result.json exists but contains invalid data"
+                : "session-result.json was not created by the CLI";
+            ctx.observer.error("Phase failed: CLI completed but no valid session-result.json", {
               taskId,
-              expectedNext,
+              phase,
+              detail,
             });
-            return {
-              status: "ready" as const,
-              next_phase: expectedNext,
-              summary: "",
-              complexity: "moderate" as const,
-            };
+            throw new Error(`Phase ${phase} failed: ${detail}`);
           })();
 
     // ── Cost + tracking (skip cost emission on recovery — no cost data) ──

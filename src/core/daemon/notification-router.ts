@@ -418,7 +418,10 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   function processRetries(now: number): void {
     // Iterate backwards for safe splice
     for (let i = retryQueue.length - 1; i >= 0; i--) {
-      const entry = retryQueue[i]!;
+      const entry = retryQueue[i];
+      if (!entry) {
+        continue;
+      }
 
       // Skip in-flight entries
       if (entry.inFlight) {

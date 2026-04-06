@@ -1,5 +1,5 @@
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
-import { AdapterTypes } from "../../schemas/adapters.js";
+import { AdapterTypes, type PRComment } from "../../schemas/adapters.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
 import { type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
@@ -282,22 +282,20 @@ export function createReviewHandler(
     return prComments.length > 0 ? "comment" : null;
   }
 
-  async function fetchPRCommentStrings(
+  async function fetchFilteredPRComments(
     hosting: GitHostingAdapter,
     repo: string,
     prNumber: number,
-  ): Promise<string[]> {
+  ): Promise<PRComment[]> {
     try {
       const comments = await hosting.getPRComments(repo, prNumber);
-      return comments
-        .filter((c) => {
-          const body = c.body.trim();
-          if (body.length === 0) {
-            return false;
-          }
-          return !SELF_COMMENT_PREFIXES.some((marker) => body.startsWith(marker));
-        })
-        .map((c) => `@${c.author}: ${c.body.trim()}`);
+      return comments.filter((c) => {
+        const body = c.body.trim();
+        if (body.length === 0) {
+          return false;
+        }
+        return !SELF_COMMENT_PREFIXES.some((marker) => body.startsWith(marker));
+      });
     } catch (err) {
       observer.debug("Failed to fetch PR comments — proceeding with review data only", {
         repo,
@@ -306,6 +304,10 @@ export function createReviewHandler(
       });
       return [];
     }
+  }
+
+  function formatPRCommentStrings(comments: PRComment[]): string[] {
+    return comments.map((c) => `@${c.author}: ${c.body.trim()}`);
   }
 
   function emitFeedbackIfNew(
@@ -344,6 +346,80 @@ export function createReviewHandler(
     return true;
   }
 
+  /** Check if PR feedback has genuinely new content vs already-accommodated feedback. */
+  function hasUnaccommodatedFeedback(
+    task: {
+      id: string;
+      review?: {
+        accommodated_comment_ids?: string[];
+        accommodated_review_state?: string | null;
+      } | null;
+    },
+    currentCommentIds: string[],
+    aggregateState: AggregateState | null,
+  ): boolean {
+    const accommodatedIds = new Set(task.review?.accommodated_comment_ids ?? []);
+    const accommodatedState = task.review?.accommodated_review_state ?? null;
+
+    const hasNewComments = currentCommentIds.some((id) => !accommodatedIds.has(id));
+    const hasStateChange = aggregateState !== null && aggregateState !== accommodatedState;
+
+    return hasNewComments || hasStateChange;
+  }
+
+  /** Emit review.poll_completed and task.feedback_received events when appropriate. */
+  function emitPollAndFeedbackEvents(
+    taskId: string,
+    prNumber: number,
+    repo: string,
+    aggregateState: AggregateState | null,
+    allComments: string[],
+    reviewStatus: ReviewPollResult,
+    approvalCount: number,
+    changesCount: number,
+    prDraft: boolean,
+  ): void {
+    const dedupKey = aggregateState ? `${aggregateState}:${String(allComments.length)}` : "none:0";
+    const isAlreadyProcessed = emittedFeedbackKeys.get(taskId) === dedupKey;
+
+    if (!isAlreadyProcessed) {
+      eventBus.publish({
+        type: EventTypes["review.poll_completed"],
+        source: "daemon",
+        task_id: taskId,
+        payload: {
+          task_id: taskId,
+          pr_number: prNumber,
+          repo,
+          aggregate_state: aggregateState ?? "none",
+          approvals: approvalCount,
+          changes_requested_count: changesCount,
+          comment_count: allComments.length,
+          reviewer_count: reviewStatus.reviewers.length,
+          pr_draft: prDraft,
+          dedup_skipped: false,
+        },
+      } satisfies PublishInput<"review.poll_completed">);
+    }
+
+    if (!aggregateState) {
+      observer.debug("No actionable review activity", { taskId, prNumber });
+      return;
+    }
+
+    const emitted = emitFeedbackIfNew(taskId, prNumber, aggregateState, allComments, reviewStatus);
+    if (emitted) {
+      observer.info("Review feedback detected", {
+        taskId,
+        aggregateState,
+        prNumber,
+        approvals: approvalCount,
+      });
+    } else {
+      observer.debug("Review poll: no new feedback (dedup)", { taskId, aggregateState, prNumber });
+    }
+  }
+
   async function checkSingleTaskReviewFeedback(
     task: ReturnType<typeof taskEngine.getTasksByState>[number],
     hosting: GitHostingAdapter,
@@ -357,14 +433,27 @@ export function createReviewHandler(
     const repo = task.repo;
 
     try {
-      const [reviewStatus, prStatus, prComments] = await Promise.all([
+      const [reviewStatus, prStatus, filteredPRComments] = await Promise.all([
         hosting.getReviewStatus(repo, prNumber),
         getCachedPRStatus(hosting, repo, prNumber),
-        fetchPRCommentStrings(hosting, repo, prNumber),
+        fetchFilteredPRComments(hosting, repo, prNumber),
       ]);
-      const allComments = [...(reviewStatus.comments ?? []), ...prComments];
+      const prCommentStrings = formatPRCommentStrings(filteredPRComments);
+      const allComments = [...(reviewStatus.comments ?? []), ...prCommentStrings];
 
-      const aggregateState = resolveAggregateStateWithComments(reviewStatus, prComments);
+      const aggregateState = resolveAggregateStateWithComments(reviewStatus, prCommentStrings);
+
+      // ── Accommodation gate: skip if all feedback was already processed ──
+      const currentCommentIds = filteredPRComments.map((c) => c.id);
+      if (!hasUnaccommodatedFeedback(task, currentCommentIds, aggregateState)) {
+        observer.debug("No new feedback — all comments accommodated, state unchanged", {
+          taskId: task.id,
+          prNumber,
+          aggregateState,
+          currentCount: currentCommentIds.length,
+        });
+        return;
+      }
 
       // Count review states for observability
       const approvalCount = reviewStatus.reviewers.filter((r) => r.state === "approved").length;
@@ -372,62 +461,26 @@ export function createReviewHandler(
         (r) => r.state === "changes_requested",
       ).length;
 
-      // Emit poll event only when review state actually changed (avoids ~60K no-op events/week)
-      const dedupKey = aggregateState
-        ? `${aggregateState}:${String(allComments.length)}`
-        : "none:0";
-      const isAlreadyProcessed = emittedFeedbackKeys.get(task.id) === dedupKey;
-
-      if (!isAlreadyProcessed) {
-        eventBus.publish({
-          type: EventTypes["review.poll_completed"],
-          source: "daemon",
-          task_id: task.id,
-          payload: {
-            task_id: task.id,
-            pr_number: prNumber,
-            repo,
-            aggregate_state: aggregateState ?? "none",
-            approvals: approvalCount,
-            changes_requested_count: changesCount,
-            comment_count: allComments.length,
-            reviewer_count: reviewStatus.reviewers.length,
-            pr_draft: prStatus.draft,
-            dedup_skipped: false,
-          },
-        } satisfies PublishInput<"review.poll_completed">);
-      }
-
-      if (!aggregateState) {
-        observer.debug("No actionable review activity", {
-          taskId: task.id,
-          prNumber,
-          reviewerCount: reviewStatus.reviewers.length,
+      // Update accommodation state — records what we've seen and are about to process
+      if (task.review) {
+        taskEngine.updateTaskField(task.id, "review", {
+          ...task.review,
+          accommodated_comment_ids: currentCommentIds,
+          accommodated_review_state: aggregateState,
         });
-        return;
       }
 
-      const emitted = emitFeedbackIfNew(
+      emitPollAndFeedbackEvents(
         task.id,
         prNumber,
+        repo,
         aggregateState,
         allComments,
         reviewStatus,
+        approvalCount,
+        changesCount,
+        prStatus.draft,
       );
-      if (emitted) {
-        observer.info("Review feedback detected", {
-          taskId: task.id,
-          aggregateState,
-          prNumber,
-          approvals: approvalCount,
-        });
-      } else {
-        observer.debug("Review poll: no new feedback (dedup)", {
-          taskId: task.id,
-          aggregateState,
-          prNumber,
-        });
-      }
     } catch (err) {
       recordReviewApiFailure(now);
       observer.warn("Failed to check PR review feedback", {

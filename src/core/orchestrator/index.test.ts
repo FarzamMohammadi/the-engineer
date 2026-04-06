@@ -831,6 +831,8 @@ describe("Orchestrator", () => {
             pr_state: "ready",
             demo_artifacts: [],
             feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
+            accommodated_comment_ids: [],
+            accommodated_review_state: null,
           },
         },
       });
@@ -866,6 +868,8 @@ describe("Orchestrator", () => {
           pr_state: "ready",
           demo_artifacts: [],
           feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
         },
       });
 
@@ -906,6 +910,8 @@ describe("Orchestrator", () => {
           pr_state: "ready",
           demo_artifacts: [],
           feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
         },
       });
       handle.taskEngine.getTask.mockReturnValue(task);

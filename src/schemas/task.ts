@@ -166,6 +166,10 @@ export const ReviewStateSchema = z.object({
   pr_state: z.enum(["ready", "merged"]).nullable(),
   demo_artifacts: z.array(DemoArtifactSchema),
   feedback_rounds: z.array(FeedbackRoundSchema),
+  /** PR comment IDs already accommodated (queued for rework). Prevents re-processing same feedback. */
+  accommodated_comment_ids: z.array(z.string()).default([]),
+  /** Last aggregate review state that was accommodated. Detects formal review state changes. */
+  accommodated_review_state: z.string().nullable().default(null),
 });
 export type ReviewState = z.infer<typeof ReviewStateSchema>;
 

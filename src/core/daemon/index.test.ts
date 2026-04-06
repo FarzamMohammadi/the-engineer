@@ -1236,7 +1236,14 @@ describe("Daemon", () => {
         sub_state: "code",
         title: "Merged task",
         repo: "org/repo",
-        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
         if (state === "review_pending") {
@@ -1284,7 +1291,14 @@ describe("Daemon", () => {
         id: "task-open",
         state: "review_pending",
         sub_state: "code",
-        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
         if (state === "review_pending") {
@@ -1341,7 +1355,14 @@ describe("Daemon", () => {
         state: "review_pending",
         sub_state: "code",
         repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 10,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
         ...overrides,
       });
       return task;
@@ -1523,7 +1544,14 @@ describe("Daemon", () => {
         state: "review_pending",
         sub_state: "code",
         repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 10,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
 
@@ -1575,7 +1603,14 @@ describe("Daemon", () => {
         state: "review_pending",
         sub_state: "code",
         repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 10,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(false);
@@ -1618,7 +1653,14 @@ describe("Daemon", () => {
         state: "review_pending",
         sub_state: "code",
         repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 10,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(true);
@@ -1683,7 +1725,14 @@ describe("Daemon", () => {
         state: "review_pending",
         sub_state: "code",
         repo: "owner/repo",
-        review: { pr_number: 10, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 10,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(true);

@@ -322,7 +322,7 @@ describe("TaskWorkspaceSchema", () => {
 
 describe("ReviewStateSchema", () => {
   it("parses valid data", () => {
-    const valid = {
+    const input = {
       pr_number: 42,
       pr_state: "ready" as const,
       demo_artifacts: [
@@ -330,17 +330,37 @@ describe("ReviewStateSchema", () => {
       ],
       feedback_rounds: [{ stage: "code" as const, comments: ["looks good"], applied: true }],
     };
-    expect(ReviewStateSchema.parse(valid)).toEqual(valid);
+    expect(ReviewStateSchema.parse(input)).toEqual({
+      ...input,
+      accommodated_comment_ids: [],
+      accommodated_review_state: null,
+    });
   });
 
   it("accepts null pr fields", () => {
-    const valid = {
+    const input = {
       pr_number: null,
       pr_state: null,
       demo_artifacts: [],
       feedback_rounds: [],
     };
-    expect(ReviewStateSchema.parse(valid)).toEqual(valid);
+    expect(ReviewStateSchema.parse(input)).toEqual({
+      ...input,
+      accommodated_comment_ids: [],
+      accommodated_review_state: null,
+    });
+  });
+
+  it("preserves accommodated fields when provided", () => {
+    const input = {
+      pr_number: 42,
+      pr_state: "ready" as const,
+      demo_artifacts: [],
+      feedback_rounds: [],
+      accommodated_comment_ids: ["comment-1", "comment-2"],
+      accommodated_review_state: "changes_requested",
+    };
+    expect(ReviewStateSchema.parse(input)).toEqual(input);
   });
 });
 

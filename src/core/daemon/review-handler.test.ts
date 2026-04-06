@@ -98,6 +98,8 @@ function createReviewTask(overrides?: Record<string, unknown>) {
       pr_state: "ready",
       demo_artifacts: [],
       feedback_rounds: [],
+      accommodated_comment_ids: [],
+      accommodated_review_state: null,
     },
     ...overrides,
   };
@@ -1306,7 +1308,14 @@ describe("ReviewHandler", () => {
       const task = createReviewTask({
         sub_state: "code",
         workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
-        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       buildContext([task]);
 
@@ -1347,7 +1356,14 @@ describe("ReviewHandler", () => {
     it("does not call removeThoughtsAndPush when config disabled", async () => {
       const task = createReviewTask({
         sub_state: "code",
-        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       buildContext([task]);
 
@@ -1385,7 +1401,14 @@ describe("ReviewHandler", () => {
       const task = createReviewTask({
         sub_state: "code",
         workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
-        review: { pr_number: 42, pr_state: "ready", demo_artifacts: [], feedback_rounds: [] },
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        },
       });
       buildContext([task]);
 
@@ -1434,6 +1457,169 @@ describe("ReviewHandler", () => {
         "code_approved_merged",
         "daemon",
       );
+    });
+  });
+
+  // ── Feedback Accommodation Tracking ──────────────────────────────────
+
+  describe("feedback accommodation tracking", () => {
+    it("suppresses re-trigger when same comments exist after rework", async () => {
+      const task = createReviewTask({
+        sub_state: "code",
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: ["comment-1"],
+          accommodated_review_state: "comment",
+        },
+      });
+      buildContext([task]);
+      hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
+      hostingPlugin.getReviewStatus.mockResolvedValue({
+        changes_requested: false,
+        approved: false,
+        reviewers: [],
+        comments: [],
+      });
+      // Same comment ID that was already accommodated
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "comment-1", author: "alice", body: "Please fix this", created_at: "2026-01-01" },
+      ]);
+
+      await handler.checkFeedback();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      // No feedback event — same comments, same state
+      expect(feedbackCalls).toHaveLength(0);
+    });
+
+    it("triggers rework when new comment appears after accommodation", async () => {
+      const task = createReviewTask({
+        sub_state: "code",
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: ["comment-1"],
+          accommodated_review_state: "comment",
+        },
+      });
+      buildContext([task]);
+      hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
+      hostingPlugin.getReviewStatus.mockResolvedValue({
+        changes_requested: false,
+        approved: false,
+        reviewers: [],
+        comments: [],
+      });
+      // Old comment + NEW comment
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "comment-1", author: "alice", body: "Please fix this", created_at: "2026-01-01" },
+        { id: "comment-2", author: "alice", body: "Also fix that", created_at: "2026-01-02" },
+      ]);
+
+      await handler.checkFeedback();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      // Should emit feedback — new comment ID detected
+      expect(feedbackCalls).toHaveLength(1);
+    });
+
+    it("triggers rework when review state changes from accommodated state", async () => {
+      const task = createReviewTask({
+        sub_state: "code",
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: "comment",
+        },
+      });
+      buildContext([task]);
+      hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
+      // State changed from "comment" to "changes_requested"
+      hostingPlugin.getReviewStatus.mockResolvedValue({
+        changes_requested: true,
+        approved: false,
+        reviewers: [{ state: "changes_requested", username: "alice" }],
+        comments: [],
+      });
+
+      await handler.checkFeedback();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      expect(feedbackCalls).toHaveLength(1);
+      const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
+      expect(payload.feedback_type).toBe("changes_requested");
+    });
+
+    it("fresh task (no accommodated state) treats all feedback as new", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
+      hostingPlugin.getReviewStatus.mockResolvedValue({
+        changes_requested: false,
+        approved: false,
+        reviewers: [],
+        comments: [],
+      });
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "comment-1", author: "alice", body: "Feedback here", created_at: "2026-01-01" },
+      ]);
+
+      await handler.checkFeedback();
+
+      const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
+      const feedbackCalls = eb.publish.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+      );
+      // Fresh task — all comments are new
+      expect(feedbackCalls).toHaveLength(1);
+    });
+
+    it("updates accommodated state when new feedback is detected", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
+      hostingPlugin.getReviewStatus.mockResolvedValue({
+        changes_requested: true,
+        approved: false,
+        reviewers: [{ state: "changes_requested", username: "alice" }],
+        comments: [],
+      });
+      hostingPlugin.getPRComments.mockResolvedValue([
+        { id: "c-1", author: "alice", body: "Fix it", created_at: "2026-01-01" },
+      ]);
+
+      await handler.checkFeedback();
+
+      const te = ctx.taskEngine as unknown as {
+        updateTaskField: ReturnType<typeof vi.fn>;
+      };
+      // Should have updated accommodated state
+      const reviewUpdates = te.updateTaskField.mock.calls.filter(
+        (c: unknown[]) => c[1] === "review",
+      );
+      const lastUpdate = reviewUpdates[reviewUpdates.length - 1]![2] as {
+        accommodated_comment_ids: string[];
+        accommodated_review_state: string;
+      };
+      expect(lastUpdate.accommodated_comment_ids).toEqual(["c-1"]);
+      expect(lastUpdate.accommodated_review_state).toBe("changes_requested");
     });
   });
 });

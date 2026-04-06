@@ -7,3 +7,4 @@ These files are loaded into agent context at runtime to enhance capabilities dur
 ## Structure
 
 - `docs/` — Behavioral and operational guides embedded into phase prompts
+- `skills/` — Reusable skill instructions loaded per-phase (each skill is a directory with `SKILL.md` + optional supporting files)

@@ -613,7 +613,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       fileCount: files.length,
     });
 
-    this.gitExec(["rm", ...files], record.worktreePath);
+    this.gitExec(["rm", "-f", ...files], record.worktreePath);
     this.gitExec(
       ["commit", "-m", "chore: remove engineering thoughts before merge"],
       record.worktreePath,

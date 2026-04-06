@@ -1,6 +1,6 @@
 # Contributing to The Engineer
 
-Welcome! Whether you're fixing a typo, reporting a bug, or building a new plugin, every contribution matters. Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+Welcome! Whether you're fixing a typo, reporting a bug, or building a new plugin, every contribution matters. Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and [Philosophy](docs/philosophy.md) before participating — the philosophy governs how we work, make decisions, and collaborate on this project.
 
 ## Development Setup
 
@@ -10,11 +10,18 @@ Welcome! Whether you're fixing a typo, reporting a bug, or building a new plugin
 git clone https://github.com/FarzamMohammadi/the-engineer.git
 cd the-engineer
 pnpm install
-pnpm run build
-pnpm test
 ```
 
-Run in development mode (no build step):
+**Start (and restart):**
+
+```bash
+./scripts/reset.sh                    # Full wipe — rebuild, re-seed, start fresh
+./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — re-seed config & plugins
+```
+
+The reset script builds, links the CLI globally, seeds configs/plugins from [`seed-example/`](seed-example/), and starts the daemon.
+
+**Dev mode (without global install):**
 
 ```bash
 npx tsx src/index.ts
@@ -35,12 +42,14 @@ src/
   utils/        # Shared utilities
 test/
   helpers/      # Mock factories, fake plugins, contract suites, test utilities
+  fixtures/     # Test fixture data
   integration/  # Cross-component integration tests
   e2e/          # Full daemon lifecycle tests
   boundary/     # Architecture tier enforcement tests
+  setup.ts      # Global test setup
 ```
 
-For deep architecture details, see `implementation-docs/`.
+Architecture details: [docs/architecture/overview.md](docs/architecture/overview.md) | Three-tier model: [docs/architecture/three-tier-model.md](docs/architecture/three-tier-model.md)
 
 ## Running Tests
 
@@ -65,7 +74,7 @@ pnpm test:watch       # Watch mode for development
 We use [Biome](https://biomejs.dev/) for linting and formatting. No ESLint or Prettier.
 
 ```bash
-pnpm run lint         # Check and auto-fix
+pnpm run lint         # Biome + TypeScript strict + knip (unused exports) + madge (circular deps)
 pnpm run typecheck    # TypeScript strict mode (tsc --noEmit)
 ```
 
@@ -76,15 +85,20 @@ Biome uses the `all` preset with specific exceptions documented in `biome.json`.
 
 ## Commit Conventions
 
-We use imperative mood, capitalized subjects, with optional colon-separated details:
+Every commit has a **title** and a **description**:
+
+- **Title:** One sentence, imperative mood, capitalized, max 72 characters. Captures all changes at the highest level.
+- **Description:** Bullet points that go one level deeper — enough to fully understand without viewing files.
 
 ```
-Add plugin discovery: implement five-phase loading
-Fix type consistency: use ITaskEngine in CoreComponents
-Update phase-plan.md: mark Wave 3 as MERGED
+Add observability and blueprint principles to philosophy
+
+- Add "Radical Observability — The Owner Is Never in the Dark" with three litmus tests
+- Add "Docs as System Blueprint" establishing docs as middle-level architectural representation
+- Trim "Documentation as Product" opening to remove sentence absorbed by new section
 ```
 
-Keep commit messages concise. The subject line tells what changed; add detail after a colon if needed.
+When changes span multiple concerns, split into separate commits — one logical change per commit.
 
 ## Pull Request Process
 
@@ -98,7 +112,7 @@ Keep commit messages concise. The subject line tells what changed; add detail af
 
 The Engineer's plugin system lets you add new triggers, communication channels, LLM providers, tools, and git hosting integrations.
 
-See [Plugin Documentation](docs/plugins/) — each adapter type has its own directory with contract, development guide, and per-plugin references.
+See [Plugin Documentation](docs/plugins/) — each adapter type has its own directory with contract and per-plugin references. For guided plugin development, see the [contribution how-tos](docs/contribution-docs/) — these are agent-executable prompts that walk you through the process interactively.
 
 ## Reporting Bugs
 
@@ -120,5 +134,5 @@ Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md). E
 ## Getting Help
 
 - **Questions:** Open a [GitHub Issue](https://github.com/FarzamMohammadi/the-engineer/issues) with the `question` label
-- **Architecture:** Browse `implementation-docs/` for detailed design documentation
-- **Plugin development:** See [docs/plugins/](docs/plugins/) for adapter contracts and development guides
+- **Architecture:** See [docs/architecture/](docs/architecture/) for system design
+- **Plugin development:** See [docs/plugins/](docs/plugins/) for adapter contracts and [docs/contribution-docs/](docs/contribution-docs/) for guided how-tos

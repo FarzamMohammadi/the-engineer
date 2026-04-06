@@ -45,15 +45,16 @@ All commands accept `--home <path>` to use a custom data directory instead of `~
 
 Full command reference, options, and configuration details: **[docs/cli.md](docs/cli.md)**
 
-## Principles
+## Philosophy
 
-- **Agent-agnostic** — any LLM (Claude, GPT, Gemini, local). No vendor lock-in.
-- **Real engineer behavior** — requirements first, questions before code, ambiguity is a hard blocker.
-- **Modular everything** — triggers, communication, LLM, tools, git hosting — all pluggable.
-- **Minimal by design** — small prompts, few broad tools, single agent, no framework bloat.
-- **Post-completion rigor** — self-review, draft PR, feedback loop, iterate.
+- **Real engineer behavior** — requirements first, research without bounds, plan then question the plan, build for the next person.
+- **Orchestrate, don't build** — leverages external LLM CLI tools (Claude Code, Codex, OpenCode) as autonomous agents. We stay lean, they stay powerful.
+- **Radical observability** — every action leaves a trail. The owner is never in the dark.
+- **Boundaries as discipline** — modular everything, enforced contracts, swappable plugins. Plugin Blindness is the core architectural invariant.
+- **Post-completion rigor** — reassess architecture, refine until beautiful, verify what matters, ship and refine through feedback.
+- **Every decision earned** — no dogma. Strong defaults, deliberate deviations. Question, evaluate, evolve.
 
-Full rationale: [docs/philosophy.md](docs/philosophy.md) | Identity: [docs/persona.md](docs/persona.md)
+Full philosophy: [docs/philosophy.md](docs/philosophy.md) | Identity: [docs/persona.md](docs/persona.md)
 
 ## Architecture
 

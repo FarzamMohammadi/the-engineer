@@ -34,15 +34,23 @@ The work isn't done when the code compiles. Make it work, then make it incredibl
 
 **Refine until it's beautiful.** This is the footwork — less glamorous, more impactful. Variable names that say exactly what they do. Conditions extracted into named variables. Functions broken down until each one does one thing. Patterns chosen to minimize mental load — for both humans and AI agents. The simpler the code, the less room for mistakes. Simplicity doesn't just prevent bugs — it makes them visible when they exist.
 
-**Verify what matters.** Cover the important edge cases and write the tests that validate real requirements and behavior — not tests for the sake of coverage. Then review the docs: should anything be added, modified, consolidated, or updated? Only when architecture, code quality, and documentation are all sound is the work ready to ship.
+**Verify what matters.** Cover the important edge cases and write the tests that validate real requirements and behavior — not tests for the sake of coverage. Only when architecture, code quality, and documentation are all sound is the work ready to ship.
 
 **Ship and refine through feedback.** Once the work passes your own bar, push the PR in a ready state and request reviews. When feedback arrives, assess each piece on its merits — not all feedback is applicable. Challenge it, ego-free, and understand whether it's relevant. Some feedback gets applied as-is. Some gets rejected with a clear explanation. Some becomes inspiration to do something different and even better than what was proposed. Every response serves the project's best interest, never pride. Iterate until approval — always doing the best possible effort and work.
 
-### "Done" Is Machine-Verifiable
+### Definition of Done
 
-A task is not done because the agent says it is done. It is done when machine-checkable criteria pass: type checks clean, tests pass, linter clean, build succeeds. The definition of "done" for every phase must be expressible as a command that returns zero or non-zero — never a subjective judgment call by the agent that produced the work.
+A task is not done because the agent says it is done. Work is complete when **every** item in this checklist passes. Not most. All.
 
-Thoroughness and judgment matter — but they are not a substitute for a hard gate. A phase transition without a mechanical verification step is a confidence assertion, and unverified confidence compounds errors instead of catching them.
+1. **Type checks clean.** `tsc --noEmit` returns zero.
+2. **Tests pass.** All existing tests pass. New behavior has tests. Edge cases are covered.
+3. **Linter clean.** No warnings, no errors, no suppressions added to bypass the check.
+4. **Docs updated.** Every changed contract, behavior, or flow has its corresponding doc update in the same unit of work — not "later," not "in a follow-up." A code change without its doc update is unfinished work, the same as a function without tests. This includes: adapter contract docs when methods change, plugin docs when implementations change, user flow docs when behavior changes, and configuration docs when options change. See [Docs as System Blueprint](#docs-as-system-blueprint) for what the docs must cover.
+5. **Observability verified.** The three tests from [Radical Observability](#radical-observability--the-owner-is-never-in-the-dark) pass: debuggability, owner sync, external reach.
+
+Every item must be expressible as a command that returns zero or non-zero, or as a concrete question with a verifiable answer — never a subjective judgment call by the agent that produced the work. Thoroughness and judgment matter, but they are not a substitute for a hard gate. Skipping any item is a confidence assertion, and unverified confidence compounds errors instead of catching them.
+
+**This checklist is the single source of truth for "done."** If a requirement for completion exists elsewhere in this document but is not reflected here, it is this section that must be updated — not the other section that should be consulted separately. Every contributor and every agent checks this list before considering work complete.
 
 ### Radical Observability — The Owner Is Never in the Dark
 
@@ -56,7 +64,7 @@ Before any work is considered complete, it must pass three tests:
 2. **Owner sync.** Is the owner fully synchronized with past actions, current execution, and planned next steps? Can they guide or change course at any moment based on what they see?
 3. **External reach.** Are milestones, blocks, and alerts reaching the right people through the right channels — not just the dashboard, but comms to stakeholders who need to know?
 
-If the answer to any of these is "no," the work is incomplete.
+If the answer to any of these is "no," the work is incomplete. These three tests are enforced through the [Definition of Done](#definition-of-done) — item 5.
 
 ### Documentation as Product
 
@@ -69,7 +77,7 @@ The reader's time is sacred. Every doc earns its existence by saving time or pre
 
 Code is ground truth. Docs in `docs/` are the system's blueprint — one abstraction level above code, one level below a project summary. Anyone who never reads a line of source can fully understand how The Engineer works, what it does, and why, purely from these docs.
 
-- **Always in sync.** Code changes and doc changes are the same unit of work. A code change without a corresponding doc update is unfinished work — the same as a function without its contract. Every change to user-facing behavior updates docs in the same step — not "later."
+- **Always in sync.** Code changes and doc changes are the same unit of work. Every change to user-facing behavior updates docs in the same step. This is enforced through the [Definition of Done](#definition-of-done) — item 4 is not optional.
 - **Build, consolidate, never abandon.** Docs grow with the system. When sections overlap, consolidate. When sections rot, rewrite or delete. Stale docs are worse than no docs — they teach the wrong thing with authority.
 - **Intent over mechanics.** Explain *why* a system exists and *what* it guarantees before explaining *how* it works. A reader who understands intent can navigate code. A reader who only knows mechanics cannot adapt when the code changes.
 

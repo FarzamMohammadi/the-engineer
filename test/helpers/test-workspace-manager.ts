@@ -88,7 +88,6 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
     workspace_root: workspaceRoot,
     branch_prefix: "engineer/",
     slug_max_length: 30,
-    fetch_before_create: true,
     default_base_branch: "main",
     pr: {
       default_merge_strategy: "squash",

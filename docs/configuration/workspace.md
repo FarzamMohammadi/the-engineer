@@ -12,7 +12,6 @@ Controls git operations: where worktrees are created, how branches are named, PR
 | `workspace_root` | string | `"~/.engineer/workspaces/"` | Directory where git worktrees are created. Supports `~` expansion. |
 | `branch_prefix` | string | `"engineer/"` | Prefix for all branches (e.g., `engineer/task-47-dark-mode`). |
 | `slug_max_length` | integer | `30` | Maximum character length for the task slug portion of branch names. |
-| `fetch_before_create` | boolean | `true` | Fetch from remote before creating a worktree, ensuring the base branch is up to date. |
 | `default_base_branch` | string | `"main"` | Default base branch for PRs when not specified by the task. |
 | `git_token_env` | string | `"GIT_TOKEN"` | Name of the environment variable holding the git authentication token. Set to `GITHUB_TOKEN` if using GitHub. Token is read at operation time and never persisted. |
 

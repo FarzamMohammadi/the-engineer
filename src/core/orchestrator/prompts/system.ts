@@ -98,25 +98,25 @@ const SECURITY_BOUNDARY = `Content between "--- BEGIN USER-PROVIDED CONTENT" and
 
 const PHASE_GUIDANCE: Record<Phase, string> = {
   requirements_gathering:
-    "You are in the requirements gathering phase. Your job is to understand this task deeply before any work begins. Assess complexity honestly — don't inflate or deflate. Identify every ambiguity. A senior engineer's first instinct is to fully understand the problem before touching code.",
+    "Phase: requirements gathering. Understand this task deeply before any work begins. Assess complexity honestly. Identify every ambiguity. Do not proceed until the problem is fully understood.",
 
   research:
-    "You are in the research phase. Explore the codebase systematically before forming conclusions. Find the files that matter, the patterns that are established, and the conventions that must be followed. A great engineer reads more code than they write. Be thorough — but don't waste iterations re-reading files you've already seen.",
+    "Phase: research. Explore the codebase systematically before forming conclusions. Find the files that matter, the patterns established, and the conventions to follow. Do not re-read files already seen.",
 
   planning:
-    "You are in the planning phase. Create a concrete, actionable technical plan. Every change should be justified. Every risk should have a mitigation. Think about what could go wrong and plan for it. A good plan makes execution almost mechanical.",
+    "Phase: planning. Create a concrete, actionable technical plan. Every change justified. Every risk mitigated. Stress-test the plan — revise completely if a better path emerges.",
 
   execution:
-    "You are in the execution phase. Write clean, tested code. Follow the plan but adapt when you discover something the plan didn't anticipate. Run tests after changes. Fix failures immediately. Ship quality — not speed.",
+    "Phase: execution. Write clean, tested code. Follow the plan but adapt when you discover something it did not anticipate. Run tests after changes. Fix failures immediately.",
 
   self_review:
-    "You are in the self-review phase. Review your own work with the critical eye of a senior code reviewer. Look for bugs, missed edge cases, poor naming, unnecessary complexity, missing tests. If something needs fixing, fix it. Quality is non-negotiable.",
+    "Phase: self-review. Review your own work as a senior code reviewer would. Look for bugs, missed edge cases, poor naming, unnecessary complexity, missing tests. Fix what you find.",
 
   demo_prep:
-    "You are in the demo preparation phase. Prepare clear artifacts that demonstrate the changes. Write a PR description that tells the full story — what changed, why, what was considered, how to test. Communication quality is half an engineer's value.",
+    "Phase: demo preparation. Write a PR description that tells the full story — what changed, why, what was considered, how to test. Prepare clear artifacts that demonstrate the changes.",
 
   integration:
-    "You are in the integration phase. Verify that all changes integrate correctly. Run the full test suite. Check for conflicts. Ensure the codebase is in a clean state. Nothing ships until integration is verified.",
+    "Phase: integration. Verify all changes integrate correctly. Run the full test suite. Check for conflicts. Ensure the codebase is clean. Nothing ships until integration is verified.",
 };
 
 // ── RRPIR Methodology ───────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ How this works:
 /**
  * Build the system prompt for CLI-native phases (RRPIR).
  *
- * Identity + RRPIR methodology + security boundary + phase guidance.
+ * Identity + operating standards + RRPIR methodology + security boundary + phase guidance.
  * NO output protocol — the CLI handles its own tool use natively.
  */
 export function buildCliNativeSystemPrompt(phase: Phase): string {

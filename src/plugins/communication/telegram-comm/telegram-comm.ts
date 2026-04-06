@@ -166,6 +166,7 @@ export class TelegramCommPlugin extends CommunicationAdapter {
         error: createAdapterError(
           "not_found",
           `No chat_id for user "${target.user_id}" — they need to /start the bot first`,
+          { retryable: true },
         ),
       };
     }

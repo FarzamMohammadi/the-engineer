@@ -7,4 +7,6 @@ export interface INotificationRouter {
   notify(notification: Notification): void;
   /** Sync task state change to communication plugins with sync capability. */
   syncStateToCommPlugin(payload: TaskStateChangedPayload): void;
+  /** Process pending notification retries. Called from daemon tick loop. */
+  processRetries?(now: number): void;
 }

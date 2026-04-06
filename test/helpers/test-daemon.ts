@@ -152,6 +152,7 @@ function defaultTestConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
       },
     },
     database: { cache_size_mb: 64 },
+    notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
     ...overrides,
   };
@@ -328,6 +329,8 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
     eventBus: eventBus as unknown as EventBus,
     observer,
+    config: { notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 } },
+    clock: { now: vi.fn().mockReturnValue(Date.now()) },
   });
 
   const daemon = createDaemon({

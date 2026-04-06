@@ -157,6 +157,8 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     peopleDirectory,
     eventBus,
     observer: createTestObserverFacade("notifications"),
+    config: { notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 } },
+    clock: { now: () => Date.now() },
   });
 
   // 10. Orchestrator

@@ -1,12 +1,15 @@
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes, MessageTypes } from "../../schemas/adapters.js";
 import type { MessageType } from "../../schemas/adapters.js";
+import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
 import {
   type Notification,
   NotificationKinds,
   recipientsForKind,
 } from "../../schemas/notifications.js";
+import { TaskStates } from "../../schemas/task.js";
+import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
@@ -21,6 +24,8 @@ export interface NotificationRouterContext {
   peopleDirectory: IPeopleDirectory;
   eventBus: IEventBus;
   observer: IObserver;
+  config: Pick<DaemonConfig, "notification_retry">;
+  clock: Clock;
 }
 
 // ── Notification Templates ───────────────────────────────────────────────────
@@ -71,7 +76,20 @@ export type { INotificationRouter as NotificationRouter } from "../interfaces/no
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createNotificationRouter(ctx: NotificationRouterContext): INotificationRouter {
-  const { registry, taskEngine, peopleDirectory, eventBus, observer } = ctx;
+  const { registry, taskEngine, peopleDirectory, eventBus, observer, config, clock } = ctx;
+  const retryConfig = config.notification_retry;
+
+  // ── Retry Queue ─────────────────────────────────────────────────────
+  interface RetryEntry {
+    notification: Notification;
+    personId: string;
+    enqueuedAt: number;
+    attempts: number;
+    lastAttemptAt: number;
+    inFlight: boolean;
+  }
+
+  const retryQueue: RetryEntry[] = [];
 
   // ── Plugin Lookup ──────────────────────────────────────────────────────
 
@@ -255,14 +273,14 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
   // ── Delivery with Fallback ──────────────────────────────────────────────
 
-  /** Attempt to deliver a message via a single plugin+contact. Returns true if delivered. */
+  /** Attempt to deliver a message via a single plugin+contact. Returns delivery and retryability status. */
   async function tryDeliverToContact(
     contact: ResolvedContact,
     plugin: CommunicationAdapter,
     safeContent: string,
     messageType: MessageType,
     notification: Notification,
-  ): Promise<boolean> {
+  ): Promise<{ delivered: boolean; retryable: boolean }> {
     try {
       const formatted = plugin.formatMessage(safeContent, messageType);
       const result = await plugin.sendMessage(
@@ -289,7 +307,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
             channel: contact.channel,
           },
         } satisfies PublishInput<"comm.message_sent">);
-        return true;
+        return { delivered: true, retryable: false };
       }
 
       observer.debug("Send failed, trying next contact", {
@@ -297,6 +315,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         channel: contact.channel,
         error: result.error?.message ?? "unknown",
       });
+      return { delivered: false, retryable: result.error?.retryable === true };
     } catch (err) {
       observer.debug("Send error, trying next contact", {
         personId: contact.personId,
@@ -304,12 +323,12 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    return false;
+    return { delivered: false, retryable: false };
   }
 
   /**
    * Try contacts in order (first = preferred). Stop on first successful delivery.
-   * If none reachable, log warning.
+   * If none reachable, emit comm.send_failed and enqueue for retry if retryable.
    */
   function sendToFirstReachable(
     personId: string,
@@ -321,6 +340,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   ): void {
     // Fire-and-forget async chain — try contacts sequentially
     (async () => {
+      let anyRetryable = false;
       for (const contact of personContacts) {
         const plugin = findPluginForChannel(contact.channel, commPlugins);
         if (!plugin) {
@@ -331,7 +351,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
           continue;
         }
 
-        const delivered = await tryDeliverToContact(
+        const { delivered, retryable } = await tryDeliverToContact(
           contact,
           plugin,
           safeContent,
@@ -341,20 +361,224 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         if (delivered) {
           return;
         }
+        if (retryable) {
+          anyRetryable = true;
+        }
       }
 
       // None succeeded
+      const channelsTried = personContacts.map((c) => c.channel);
       observer.warn("Notification not delivered — no reachable channel for person", {
         kind: notification.kind,
         personId,
-        triedChannels: personContacts.map((c) => c.channel),
+        triedChannels: channelsTried,
+        retryable: anyRetryable,
       });
+
+      const taskId = notification.taskId ?? "";
+      eventBus.publish({
+        type: "comm.send_failed",
+        source: "notification-router",
+        task_id: taskId,
+        payload: {
+          task_id: taskId,
+          person_id: personId,
+          kind: notification.kind,
+          channels_tried: channelsTried,
+          retryable: anyRetryable,
+        },
+      } satisfies PublishInput<"comm.send_failed">);
+
+      if (anyRetryable && notification.taskId) {
+        const enqueueTime = clock.now();
+        retryQueue.push({
+          notification,
+          personId,
+          enqueuedAt: enqueueTime,
+          attempts: 0,
+          lastAttemptAt: enqueueTime,
+          inFlight: false,
+        });
+        observer.debug("Notification enqueued for retry", {
+          kind: notification.kind,
+          personId,
+          taskId: notification.taskId,
+        });
+      }
     })().catch((err) => {
       observer.warn("Unexpected error in delivery chain", {
         personId,
         error: err instanceof Error ? err.message : String(err),
       });
     });
+  }
+
+  // ── Retry Processing ──────────────────────────────────────────────────
+
+  function processRetries(now: number): void {
+    // Iterate backwards for safe splice
+    for (let i = retryQueue.length - 1; i >= 0; i--) {
+      const entry = retryQueue[i];
+      if (!entry) {
+        continue;
+      }
+
+      // Skip in-flight entries
+      if (entry.inFlight) {
+        continue;
+      }
+
+      // taskId is guaranteed non-null — we only enqueue when notification.taskId is truthy
+      const entryTaskId = entry.notification.taskId as string;
+
+      // Check task terminal state
+      const task = taskEngine.getTask(entryTaskId);
+      if (!task || task.state === TaskStates.completed || task.state === TaskStates.failed) {
+        retryQueue.splice(i, 1);
+        eventBus.publish({
+          type: "comm.retry_exhausted",
+          source: "notification-router",
+          task_id: entryTaskId,
+          payload: {
+            task_id: entryTaskId,
+            person_id: entry.personId,
+            kind: entry.notification.kind,
+            attempts: entry.attempts,
+            reason: "task_terminal",
+          },
+        } satisfies PublishInput<"comm.retry_exhausted">);
+        observer.debug("Retry entry removed — task terminal", {
+          taskId: entryTaskId,
+          personId: entry.personId,
+          state: task?.state ?? "not_found",
+        });
+        continue;
+      }
+
+      // Check max age
+      if (now - entry.enqueuedAt > retryConfig.max_age_ms) {
+        retryQueue.splice(i, 1);
+        eventBus.publish({
+          type: "comm.retry_exhausted",
+          source: "notification-router",
+          task_id: entryTaskId,
+          payload: {
+            task_id: entryTaskId,
+            person_id: entry.personId,
+            kind: entry.notification.kind,
+            attempts: entry.attempts,
+            reason: "max_age",
+          },
+        } satisfies PublishInput<"comm.retry_exhausted">);
+        observer.debug("Retry entry removed — max age exceeded", {
+          taskId: entryTaskId,
+          personId: entry.personId,
+        });
+        continue;
+      }
+
+      // Check max attempts
+      if (entry.attempts >= retryConfig.max_attempts) {
+        retryQueue.splice(i, 1);
+        eventBus.publish({
+          type: "comm.retry_exhausted",
+          source: "notification-router",
+          task_id: entryTaskId,
+          payload: {
+            task_id: entryTaskId,
+            person_id: entry.personId,
+            kind: entry.notification.kind,
+            attempts: entry.attempts,
+            reason: "max_attempts",
+          },
+        } satisfies PublishInput<"comm.retry_exhausted">);
+        observer.debug("Retry entry removed — max attempts exhausted", {
+          taskId: entryTaskId,
+          personId: entry.personId,
+          attempts: entry.attempts,
+        });
+        continue;
+      }
+
+      // Check interval
+      if (now - entry.lastAttemptAt < retryConfig.interval_ms) {
+        continue;
+      }
+
+      // Attempt retry — re-resolve contacts, re-attempt delivery
+      entry.inFlight = true;
+      entry.attempts++;
+      entry.lastAttemptAt = now;
+
+      const attemptNumber = entry.attempts;
+      const notification = entry.notification;
+      const personId = entry.personId;
+
+      (async () => {
+        const contacts = resolveContacts(notification);
+        const personContacts = contacts.filter((c) => c.personId === personId);
+
+        if (personContacts.length === 0) {
+          entry.inFlight = false;
+          return;
+        }
+
+        const { content, messageType } = resolveMessage(notification);
+        const safeContent = sanitizeSecrets(content);
+        const commPlugins = getCommPlugins();
+
+        for (const contact of personContacts) {
+          const plugin = findPluginForChannel(contact.channel, commPlugins);
+          if (!plugin) {
+            continue;
+          }
+
+          const { delivered } = await tryDeliverToContact(
+            contact,
+            plugin,
+            safeContent,
+            messageType,
+            notification,
+          );
+
+          if (delivered) {
+            // Remove from queue
+            const idx = retryQueue.indexOf(entry);
+            if (idx >= 0) {
+              retryQueue.splice(idx, 1);
+            }
+            eventBus.publish({
+              type: "comm.retry_succeeded",
+              source: "notification-router",
+              task_id: entryTaskId,
+              payload: {
+                task_id: entryTaskId,
+                person_id: personId,
+                kind: notification.kind,
+                channel: contact.channel,
+                attempt: attemptNumber,
+              },
+            } satisfies PublishInput<"comm.retry_succeeded">);
+            observer.info("Notification retry succeeded", {
+              kind: notification.kind,
+              personId,
+              channel: contact.channel,
+              attempt: attemptNumber,
+            });
+            return;
+          }
+        }
+
+        // Still failed — stays in queue for next tick
+        entry.inFlight = false;
+      })().catch((err) => {
+        entry.inFlight = false;
+        observer.warn("Unexpected error in retry delivery", {
+          personId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
   }
 
   // ── Ticket Comments ────────────────────────────────────────────────────
@@ -423,5 +647,5 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     }
   }
 
-  return { notify, syncStateToCommPlugin };
+  return { notify, syncStateToCommPlugin, processRetries };
 }

@@ -210,6 +210,7 @@ describe("TelegramCommPlugin", () => {
       expect(result.error?.code).toBe("not_found");
       expect(result.error?.message).toContain("unknown_user");
       expect(result.error?.message).toContain("/start");
+      expect(result.error?.retryable).toBe(true);
       expect(mockBot.api.sendMessage).not.toHaveBeenCalled();
     });
 

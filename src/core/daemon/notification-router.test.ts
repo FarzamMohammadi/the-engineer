@@ -44,6 +44,8 @@ function createMockContext(pluginOverrides?: ReturnType<typeof createMockCommPlu
       publish: vi.fn(),
     } as unknown as NotificationRouterContext["eventBus"],
     observer: createTestObserverFacade("daemon"),
+    config: { notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 } },
+    clock: { now: vi.fn().mockReturnValue(1_000_000) },
   } as unknown as NotificationRouterContext;
 }
 
@@ -652,5 +654,384 @@ describe("NotificationRouter", () => {
     const commentArg = (commPlugin.commentOnTicket as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[1] as string;
     expect(commentArg).toBe("Short message");
+  });
+
+  // ── Retry Queue Tests ──────────────────────────────────────────────────
+
+  describe("retry queue", () => {
+    it("enqueues retryable failure and emits comm.send_failed with retryable: true", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: {
+          code: "not_found",
+          message: "No chat_id",
+          retryable: true,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      });
+      const ctx = createMockContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Fix bug" });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-retry-1" });
+      await flush();
+
+      // Should emit comm.send_failed with retryable: true
+      const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const sendFailed = publishCalls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === "comm.send_failed",
+      );
+      expect(sendFailed).toBeDefined();
+      expect((sendFailed![0] as { payload: { retryable: boolean } }).payload.retryable).toBe(true);
+    });
+
+    it("non-retryable failure emits comm.send_failed with retryable: false and does not enqueue", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: {
+          code: "auth_failed",
+          message: "Unauthorized",
+          retryable: false,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      });
+      const ctx = createMockContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "active",
+      });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-no-retry" });
+      await flush();
+
+      const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const sendFailed = publishCalls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === "comm.send_failed",
+      );
+      expect(sendFailed).toBeDefined();
+      expect((sendFailed![0] as { payload: { retryable: boolean } }).payload.retryable).toBe(false);
+
+      // processRetries should have nothing to do
+      router.processRetries!(2_000_000);
+      await flush();
+
+      // No retry events should be emitted
+      const retryEvents = publishCalls.filter(
+        (c: unknown[]) =>
+          (c[0] as { type: string }).type === "comm.retry_succeeded" ||
+          (c[0] as { type: string }).type === "comm.retry_exhausted",
+      );
+      expect(retryEvents).toHaveLength(0);
+    });
+
+    it("processRetries delivers on retry and emits comm.retry_succeeded", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      let callCount = 0;
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            success: false,
+            message_id: null,
+            error: {
+              code: "not_found",
+              message: "No chat_id",
+              retryable: true,
+              retry_after_ms: null,
+              severity: "error",
+            },
+          });
+        }
+        return Promise.resolve({ success: true, message_id: "msg-42", error: null });
+      });
+      const ctx = createMockContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "active",
+      });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-retry-success" });
+      await flush();
+
+      // First send failed, now trigger retry after interval
+      router.processRetries!(1_000_000 + 200); // past interval_ms (100)
+      await flush();
+
+      // Should have been called twice (initial + retry)
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(2);
+
+      const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const retrySucceeded = publishCalls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_succeeded",
+      );
+      expect(retrySucceeded).toBeDefined();
+      expect((retrySucceeded![0] as { payload: { attempt: number } }).payload.attempt).toBe(1);
+    });
+
+    it("processRetries skips if interval not elapsed", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: {
+          code: "not_found",
+          message: "No chat_id",
+          retryable: true,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      });
+      const ctx = createMockContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "active",
+      });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-interval" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
+
+      // Call processRetries with time that's within the interval
+      router.processRetries!(1_000_000 + 50); // interval_ms is 100, so too early
+      await flush();
+
+      // Should NOT have retried
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("processRetries stops on terminal task state (completed)", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: {
+          code: "not_found",
+          message: "No chat_id",
+          retryable: true,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      });
+      const ctx = createMockContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      // Initially active, then completed
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "active",
+      });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-terminal" });
+      await flush();
+
+      // Now task is completed
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "completed",
+      });
+      router.processRetries!(1_000_000 + 200);
+      await flush();
+
+      const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const exhausted = publishCalls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_exhausted",
+      );
+      expect(exhausted).toBeDefined();
+      expect((exhausted![0] as { payload: { reason: string } }).payload.reason).toBe(
+        "task_terminal",
+      );
+
+      // Should NOT retry
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("processRetries stops on max attempts", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: {
+          code: "not_found",
+          message: "No chat_id",
+          retryable: true,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      });
+      const ctx = createMockContext([commPlugin]);
+      // max_attempts is 3 in test config
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "active",
+      });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-max" });
+      await flush();
+
+      // Retry 3 times (max_attempts = 3)
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        router.processRetries!(1_000_000 + attempt * 200);
+        await flush();
+      }
+
+      // 4th processRetries should emit exhausted
+      router.processRetries!(1_000_000 + 4 * 200);
+      await flush();
+
+      const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const exhausted = publishCalls.filter(
+        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_exhausted",
+      );
+      expect(exhausted.length).toBeGreaterThanOrEqual(1);
+      const lastExhausted = exhausted[exhausted.length - 1]!;
+      expect((lastExhausted[0] as { payload: { reason: string } }).payload.reason).toBe(
+        "max_attempts",
+      );
+    });
+
+    it("processRetries stops on max age", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: {
+          code: "not_found",
+          message: "No chat_id",
+          retryable: true,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      });
+      const ctx = createMockContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "active",
+      });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-age" });
+      await flush();
+
+      // max_age_ms is 10_000 in test config — advance time past that
+      router.processRetries!(1_000_000 + 20_000);
+      await flush();
+
+      const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const exhausted = publishCalls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_exhausted",
+      );
+      expect(exhausted).toBeDefined();
+      expect((exhausted![0] as { payload: { reason: string } }).payload.reason).toBe("max_age");
+    });
+
+    it("retry re-runs full contact chain and succeeds on first contact", async () => {
+      const telegramPlugin = createMockCommPlugin({ id: "telegram-comm", channel: "telegram" });
+      const githubPlugin = createMockCommPlugin({ id: "github-comm", channel: "github" });
+      let telegramCallCount = 0;
+      (telegramPlugin.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        telegramCallCount++;
+        if (telegramCallCount === 1) {
+          return Promise.resolve({
+            success: false,
+            message_id: null,
+            error: {
+              code: "not_found",
+              message: "No chat_id",
+              retryable: true,
+              retry_after_ms: null,
+              severity: "error",
+            },
+          });
+        }
+        return Promise.resolve({ success: true, message_id: "msg-tg", error: null });
+      });
+      (githubPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: {
+          code: "not_found",
+          message: "No thread",
+          retryable: true,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      });
+
+      const ctx = createMockContext([telegramPlugin, githubPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [
+          { channel: "telegram", handle: "@owner" },
+          { channel: "github", handle: "owner" },
+        ],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
+        title: "Fix bug",
+        state: "active",
+      });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: "completion", taskId: "task-chain" });
+      await flush();
+
+      // First attempt: telegram fails, github fails → both tried
+      expect(telegramPlugin.sendMessage).toHaveBeenCalledTimes(1);
+      expect(githubPlugin.sendMessage).toHaveBeenCalledTimes(1);
+
+      // Retry: telegram succeeds → github not tried
+      router.processRetries!(1_000_000 + 200);
+      await flush();
+
+      expect(telegramPlugin.sendMessage).toHaveBeenCalledTimes(2);
+      // Github should not be called again since telegram succeeded
+      expect(githubPlugin.sendMessage).toHaveBeenCalledTimes(1);
+
+      const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const retrySucceeded = publishCalls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_succeeded",
+      );
+      expect(retrySucceeded).toBeDefined();
+      expect((retrySucceeded![0] as { payload: { channel: string } }).payload.channel).toBe(
+        "telegram",
+      );
+    });
   });
 });

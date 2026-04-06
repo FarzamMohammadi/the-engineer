@@ -172,6 +172,32 @@ export const DaemonConfigSchema = z.object({
     .default(50)
     .describe("Warn if an EventBus subscriber callback exceeds this duration (ms). 0 = disabled."),
 
+  // Notification retry (Issue #5)
+  notification_retry: z
+    .object({
+      interval_ms: z
+        .number()
+        .int()
+        .positive()
+        .default(30_000)
+        .describe("How often to retry failed notification sends. Default: 30 seconds."),
+      max_attempts: z
+        .number()
+        .int()
+        .positive()
+        .default(120)
+        .describe(
+          "Maximum retry attempts per notification. Default: 120 (~1 hour at 30s intervals).",
+        ),
+      max_age_ms: z
+        .number()
+        .int()
+        .positive()
+        .default(3_600_000)
+        .describe("Maximum age of a retry entry before it is discarded. Default: 1 hour."),
+    })
+    .default({}),
+
   // Review polling circuit breaker (Lens H)
   review_polling: z
     .object({

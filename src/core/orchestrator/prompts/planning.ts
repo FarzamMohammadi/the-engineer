@@ -87,7 +87,7 @@ function buildInstructions(thoughtsDir: string): string {
     [
       "1. **Read requirements.md and research.md first.** Understand the full context before planning.",
       "",
-      "2. **Create a precise implementation plan.** Do NOT write implementation code. Your plan should make execution almost mechanical — every step concrete, every file path specified, every risk considered.",
+      "2. **Create a precise implementation plan.** Do NOT write implementation code. Your plan should make execution almost mechanical — every step concrete, every file path specified, every risk considered. Your design must align with the architectural patterns documented in research.md — if the target files extract evaluation logic as pure functions, centralize decision-making in single locations, or follow specific structural conventions, your plan must do the same. New code that works but ignores the architecture around it is not good enough.",
       "",
       '3. **If you need more information to plan properly,** set `next_phase` to `"requirements_gathering"` in session-result.json. Specify what information you need and why in your summary.',
       "",

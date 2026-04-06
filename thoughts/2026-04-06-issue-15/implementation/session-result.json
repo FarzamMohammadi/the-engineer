@@ -1,5 +1,5 @@
 {
   "status": "ready",
   "next_phase": "self_review",
-  "summary": "Implemented grouped post-approval failure handling: merge conflict detection alongside CI checks, unified handlePostApprovalFailures() replacing handlePipelineFailure(), merge_conflict error handling in attemptMerge(), mergeability checks in checkSingleTaskCI(), backward-compatible retry counting, and 10 new tests (57 total passing)"
+  "summary": "Extracted evaluatePostApprovalChecks pure function, refactored all 3 call sites to use it, exported PostApprovalIssue type, added 8 unit tests — 2453 tests passing, typecheck clean"
 }

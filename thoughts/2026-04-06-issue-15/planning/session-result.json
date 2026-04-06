@@ -1,6 +1,5 @@
 {
   "status": "ready",
   "next_phase": "execution",
-  "summary": "Plan to refactor post-approval flow: group CI failures + merge conflicts into single re-queue cycle, fix infinite retry loop in attemptMerge(), update all three entry points",
-  "complexity": "moderate"
+  "summary": "Extract evaluatePostApprovalChecks pure function from 3 duplicated call sites in review-handler.ts, add 8 direct unit tests"
 }

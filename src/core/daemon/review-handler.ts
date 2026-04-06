@@ -79,7 +79,22 @@ export interface ReviewHandlerCallbacks {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** Types of issues that can occur after PR approval, before merge. */
-type PostApprovalIssue = "ci_failure" | "merge_conflict";
+export type PostApprovalIssue = "ci_failure" | "merge_conflict";
+
+/** Evaluate PR state and return all post-approval issues found. Pure — no side effects. */
+export function evaluatePostApprovalChecks(
+  checksState: "passing" | "failing" | "pending" | "none",
+  mergeable: boolean,
+): PostApprovalIssue[] {
+  const issues: PostApprovalIssue[] = [];
+  if (checksState === "failing") {
+    issues.push("ci_failure");
+  }
+  if (mergeable === false) {
+    issues.push("merge_conflict");
+  }
+  return issues;
+}
 
 /** Max post-approval fix rework cycles before giving up and asking human to merge manually. */
 const MAX_POST_APPROVAL_FIX_RETRIES = 3;
@@ -755,7 +770,8 @@ export function createReviewHandler(
           taskId,
           error: result.error.message,
         });
-        handlePostApprovalFailures(taskId, ["merge_conflict"]);
+        // CI already passed before merge attempt; merge failed → only merge_conflict
+        handlePostApprovalFailures(taskId, evaluatePostApprovalChecks("passing", false));
         return;
       }
 
@@ -832,19 +848,13 @@ export function createReviewHandler(
           taskId,
           message: "Code approved — waiting for CI pipeline to complete before merging.",
         });
-      } else if (checks_state === "passing" || checks_state === "none") {
-        if (mergeable === false) {
-          handlePostApprovalFailures(taskId, ["merge_conflict"]);
+      } else {
+        const issues = evaluatePostApprovalChecks(checks_state, mergeable);
+        if (issues.length > 0) {
+          handlePostApprovalFailures(taskId, issues);
         } else {
           await attemptMerge(taskId, task, repo, prNumber, hosting);
         }
-      } else {
-        // CI failing — check if merge conflicts also present
-        const issues: PostApprovalIssue[] = ["ci_failure"];
-        if (mergeable === false) {
-          issues.push("merge_conflict");
-        }
-        handlePostApprovalFailures(taskId, issues);
       }
     } catch (err) {
       observer.error("Failed to handle code approval", {
@@ -870,11 +880,13 @@ export function createReviewHandler(
       mergeable,
     });
 
-    if (checks_state === "passing" || checks_state === "none") {
+    if (checks_state === "pending") {
+      observer.debug("CI checks still pending — will check again next tick", { taskId, prNumber });
+    } else {
       approvedAwaitingCI.delete(taskId);
-      // CI passed — also check mergeability before attempting merge
-      if (mergeable === false) {
-        handlePostApprovalFailures(taskId, ["merge_conflict"]);
+      const issues = evaluatePostApprovalChecks(checks_state, mergeable);
+      if (issues.length > 0) {
+        handlePostApprovalFailures(taskId, issues);
       } else {
         notifications.notify({
           kind: "ticket_comment",
@@ -886,16 +898,6 @@ export function createReviewHandler(
           await attemptMerge(taskId, task, repo, prNumber, hosting);
         }
       }
-    } else if (checks_state === "failing") {
-      approvedAwaitingCI.delete(taskId);
-      // CI failing — also check if merge conflicts coexist
-      const issues: PostApprovalIssue[] = ["ci_failure"];
-      if (mergeable === false) {
-        issues.push("merge_conflict");
-      }
-      handlePostApprovalFailures(taskId, issues);
-    } else {
-      observer.debug("CI checks still pending — will check again next tick", { taskId, prNumber });
     }
   }
 

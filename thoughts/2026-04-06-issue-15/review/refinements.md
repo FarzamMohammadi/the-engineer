@@ -4,31 +4,46 @@
 
 **Verdict: PR-ready. No issues found that require code changes.**
 
-The requirements check passed all 11 acceptance criteria. The self-review below covers code quality, correctness, edge cases, and scope.
+All 2453 tests pass. TypeScript strict mode clean. Lint clean.
 
-## Findings
+## Consolidated Review Findings
 
-### Code Quality: No Issues
+### Requirements Check (requirements_check.md): ALL MET
 
-- **Naming:** `PostApprovalIssue`, `handlePostApprovalFailures`, `countPostApprovalFixAttempts`, `MAX_POST_APPROVAL_FIX_RETRIES` — all accurately describe what they do. The union type is extensible.
-- **DRY:** Issue-to-label mapping (`ci_failure` -> `"CI pipeline failing"`, `merge_conflict` -> `"merge conflicts"`) appears in two places: the retry-limit completion message and the notification prefix. Both are in `handlePostApprovalFailures`, within ~30 lines of each other. Extracting a shared map would add indirection without meaningful benefit — acceptable duplication.
-- **Complexity:** The `handleCodeApproval` routing logic (lines 826-848) is clear: pending -> defer, passing/none -> check mergeable, failing -> build issues array. Each branch is 2-4 lines. No unnecessary nesting.
-- **Backward compat:** `countPostApprovalFixAttempts` counts both `"pipeline_fix"` and `"post_approval_fix"` — correct for in-progress tasks.
+All 11 acceptance criteria from the original issue #15 and the PR #16 Round 2 refinement (extract pure function) are fully satisfied:
 
-### Edge Cases: All Handled
+- `evaluatePostApprovalChecks` pure function extracted, exported, with correct signature
+- All 3 call sites refactored (handleCodeApproval, checkSingleTaskCI, attemptMerge)
+- `PostApprovalIssue` type exported
+- 8 unit tests covering all `checks_state × mergeable` combinations
+- Zero behavioral changes to existing tests
+- typecheck and lint clean
+- Merge conflict detection, grouping, extensibility, backward compat all verified
+- Edge cases (stale mergeable, CI pending, 405 vs 409, network errors) all handled
 
-- **Stale `mergeable` at pre-check time:** `attemptMerge()` catches 409 `merge_conflict` from the merge API and re-queues — double safety net.
-- **CI pending + mergeable false:** Defers entirely (doesn't evaluate mergeable), avoiding premature conflict detection when GitHub hasn't finished computing.
-- **`pr_not_mergeable` (405) vs `merge_conflict` (409):** Only 409 triggers re-queue. 405 retries — correct since branch protection issues aren't agent-fixable.
-- **Empty issues array:** Cannot occur — all call sites pass at least one issue. No defensive guard needed.
+### Self-Review: Code Quality — No Issues
 
-### Scope Note: `fetch_before_create` Removal
+- **Naming:** All new identifiers (`PostApprovalIssue`, `handlePostApprovalFailures`, `countPostApprovalFixAttempts`, `MAX_POST_APPROVAL_FIX_RETRIES`, `evaluatePostApprovalChecks`) are clear, consistent, and accurately describe their purpose.
+- **DRY:** Issue-to-label mapping (`ci_failure` → `"CI pipeline failing"`, `merge_conflict` → `"merge conflicts"`) appears twice in `handlePostApprovalFailures` — once for the retry-limit completion message, once for the notification prefix. Both within ~30 lines. Different output formats make extraction not worthwhile.
+- **Complexity:** The `handleCodeApproval` routing is clean: pending → defer, else → evaluate. No unnecessary nesting. The `checkSingleTaskCI` mirrors the same pattern.
+- **Backward compat:** `countPostApprovalFixAttempts` correctly counts both `"pipeline_fix"` and `"post_approval_fix"` reasons for in-flight tasks.
+- **attemptMerge synthetic call:** `evaluatePostApprovalChecks("passing", false)` has a clear inline comment explaining why CI is assumed passing. This is the reactive fallback (merge already failed with 409).
 
-The latest commit (`1201295`) removes the `fetch_before_create` config option, making remote fetch unconditional before worktree creation. This is **unrelated to issue #15** (merge resolution in post-approval processes). It's a reasonable standalone improvement (eliminates a footgun — skipping fetch leads to stale base branches), but it widens the PR scope. The reviewer should be aware this is bundled.
+### Self-Review: Edge Cases — All Handled
 
-### Test Coverage: Comprehensive
+| Edge Case | Handling |
+|-----------|----------|
+| Stale `mergeable` (true at pre-check, 409 at merge) | `attemptMerge()` catches `merge_conflict` error code as reactive fallback |
+| `mergeable: null` → `false` coercion from GitHub | Deferred when CI pending; treated as signal when CI resolved |
+| `pr_not_mergeable` (405) vs `merge_conflict` (409) | Only 409 triggers re-queue; 405 retries (not agent-fixable) |
+| Network error during merge | Retries next tick, not re-queued |
+| Empty issues array | Impossible at call sites — leads to `attemptMerge()` path |
 
-10 new tests covering all four `handleCodeApproval` scenarios (CI passing/failing x mergeable true/false), CI pending edge case, `attemptMerge` conflict vs network error distinction, `checkSingleTaskCI` both paths, backward compat, and retry limit with grouped issues. All 2445 tests pass. TypeScript strict mode passes. Lint warnings are all pre-existing.
+### Self-Review: Test Coverage — Comprehensive
+
+18 new tests total:
+- 8 unit tests for `evaluatePostApprovalChecks` (all state combinations)
+- 10 integration tests covering merge conflict scenarios, grouped issues, backward compat, retry limits
 
 ## What Was Fixed
 
@@ -36,4 +51,8 @@ Nothing. No issues required code changes.
 
 ## What Remains
 
-Nothing actionable. The implementation is complete and correct.
+Nothing actionable. The implementation is complete, correct, and well-tested.
+
+## Scope Note
+
+The branch includes changes beyond issue #15 (PR decorations, `fetch_before_create` removal, `deleteRemoteBranch`, `architecture_review` in ReviewPhaseNameSchema). These are related improvements bundled into the same branch. The reviewer should be aware of the broader scope.

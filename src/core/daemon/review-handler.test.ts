@@ -8,6 +8,7 @@ import {
   type ReviewHandlerCallbacks,
   createReviewHandler,
   detectCommentApproval,
+  evaluatePostApprovalChecks,
 } from "./review-handler.js";
 import type { ReviewHandlerContext } from "./types.js";
 
@@ -1899,5 +1900,41 @@ describe("ReviewHandler", () => {
         "daemon",
       );
     });
+  });
+});
+
+// ── evaluatePostApprovalChecks (pure function) ─────────────────────────────
+
+describe("evaluatePostApprovalChecks", () => {
+  it("returns [] for passing + mergeable", () => {
+    expect(evaluatePostApprovalChecks("passing", true)).toEqual([]);
+  });
+
+  it('returns ["merge_conflict"] for passing + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("passing", false)).toEqual(["merge_conflict"]);
+  });
+
+  it('returns ["ci_failure"] for failing + mergeable', () => {
+    expect(evaluatePostApprovalChecks("failing", true)).toEqual(["ci_failure"]);
+  });
+
+  it('returns ["ci_failure", "merge_conflict"] for failing + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("failing", false)).toEqual(["ci_failure", "merge_conflict"]);
+  });
+
+  it("returns [] for none + mergeable", () => {
+    expect(evaluatePostApprovalChecks("none", true)).toEqual([]);
+  });
+
+  it('returns ["merge_conflict"] for none + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("none", false)).toEqual(["merge_conflict"]);
+  });
+
+  it("returns [] for pending + mergeable", () => {
+    expect(evaluatePostApprovalChecks("pending", true)).toEqual([]);
+  });
+
+  it('returns ["merge_conflict"] for pending + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("pending", false)).toEqual(["merge_conflict"]);
   });
 });

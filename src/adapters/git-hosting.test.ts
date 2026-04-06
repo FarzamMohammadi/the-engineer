@@ -98,6 +98,11 @@ class TestGitHostingAdapter extends GitHostingAdapter {
     return Promise.resolve([]);
   }
 
+  protected doDismissApprovals(_repo: string, _prNumber: number, _message: string): Promise<void> {
+    this.maybeThrow("dismissApprovals");
+    return Promise.resolve();
+  }
+
   protected doGetDefaultBranch(_repo: string): Promise<string> {
     this.maybeThrow("getDefaultBranch");
     return Promise.resolve("main");

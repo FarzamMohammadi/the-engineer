@@ -72,7 +72,7 @@ commitPushAndCreatePR(dispatch, demoPrepOutput)
 For each task, three API calls in parallel:
 1. `hosting.getReviewStatus()` — formal GitHub reviews
 2. `getCachedPRStatus()` — PR state, CI status (cached per tick)
-3. `fetchPRCommentStrings()` — PR comments (self-authored filtered out)
+3. `fetchFilteredPRComments()` — PR comments as `PRComment[]` with IDs (self-authored filtered out)
 
 **Precedence:**
 ```
@@ -87,11 +87,23 @@ When `enable_comment_approval: true` in safety config:
 - If no people configured, anyone can approve (solo dev mode)
 - Formal reviews always take precedence over comment commands
 
-### Dedup Logic
+### Feedback Accommodation Tracking
 
-Every feedback emission is deduped by `"${aggregateState}:${commentCount}"` per task. Same state + same comment count = no re-emission. This prevents ~60K no-op events/week on active repos.
+Two-tier dedup prevents both per-tick redundancy and cross-rework-cycle infinite loops:
 
-**Critical:** the dedup key must be cleared when merge fails (via `allowApprovalRetry()`) or the task gets stuck in a loop where approval is detected but never re-processed.
+**Tier 1 — Persistent accommodation (survives restarts and rework cycles):**
+- `task.review.accommodated_comment_ids` — PR comment IDs already queued for rework
+- `task.review.accommodated_review_state` — last aggregate state that was processed
+- `hasUnaccommodatedFeedback()` checks: are there new comment IDs not in the set? Has the aggregate state changed? If neither → skip emission entirely.
+- Updated when new feedback is detected, before event emission.
+
+**Tier 2 — In-memory dedup (within a single review_pending stay):**
+- `emittedFeedbackKeys` map: `"${aggregateState}:${commentCount}"` per task
+- Same state + same comment count = no re-emission within the same cycle
+- Cleared on rework (`handleFeedbackRework`) and merge failure (`allowApprovalRetry()`)
+- Pruned each tick for tasks no longer in `review_pending`
+
+Tier 1 is the primary gate — it prevents the infinite rework loop where persistent PR comments are re-detected as "new" after rework completes. Tier 2 is a cheap optimization that prevents redundant event emission within a single polling cycle.
 
 ### Merge Detection
 
@@ -113,16 +125,19 @@ PR Approved
   |     +-- NO:  complete task, notify "Code review approved — ready to merge."
   |     +-- YES: continue
   |
-  +-- Fetch PR status (cached)
+  +-- Fetch PR status (cached) — checks_state AND mergeable
   +-- checks_state?
-        |
-        +-- "passing" or "none":  attemptMerge() immediately
         |
         +-- "pending":  add to approvedAwaitingCI map
         |               notify "Code approved — waiting for CI pipeline to complete before merging."
-        |               (checkApprovedCI() polls on subsequent ticks)
+        |               (checkApprovedCI() polls on subsequent ticks — evaluates ALL checks when CI resolves)
         |
-        +-- "failing":  handlePipelineFailure()
+        +-- CI resolved (passing/failing/none):
+              evaluatePostApprovalChecks(checks_state, mergeable)
+              |
+              +-- No failures:  attemptMerge() immediately
+              +-- Failures found:  handlePostApprovalFailures(taskId, failures)
+                                   (groups CI failure + merge conflict into ONE rework cycle)
 ```
 
 ### CI Polling Loop (`checkApprovedCI`)
@@ -130,14 +145,17 @@ PR Approved
 Called every tick after `checkFeedback()`. For each task in the `approvedAwaitingCI` map:
 
 ```
-Poll PR status
-  |
-  +-- "passing" or "none":  notify "CI pipeline passed — proceeding with merge."
-  |                         attemptMerge()
-  |
-  +-- "failing":  handlePipelineFailure()
+Poll PR status (checks_state + mergeable)
   |
   +-- "pending":  keep in map, check again next tick
+  |
+  +-- CI resolved:  evaluatePostApprovalChecks(checks_state, mergeable)
+        |
+        +-- No failures:  notify "CI pipeline passed — proceeding with merge."
+        |                 attemptMerge()
+        |
+        +-- Failures:     handlePostApprovalFailures()
+                          (e.g., CI failing + merge conflicts → ONE grouped rework)
 ```
 
 The map is pruned each tick — tasks no longer in `review_pending` are removed.
@@ -193,9 +211,8 @@ hosting.mergePR(repo, prNumber, "squash")
   |     (leave in review_pending, next tick retries)
   |
   +-- result.success = false:
-  |     warn + allowApprovalRetry() + notify "rejected: {reason}. Will retry."
-  |     (leave in review_pending, next tick retries)
-  |     Common reasons: "pr_not_mergeable" (405), "merge_conflict" (409)
+  |     +-- "merge_conflict" (409):  handlePostApprovalFailures() — re-queue for resolution
+  |     +-- "pr_not_mergeable" (405) / "network_error":  allowApprovalRetry() + notify, retry next tick
   |
   +-- result.success = true:
         update review.pr_state = "merged"
@@ -211,39 +228,49 @@ On any merge failure, deletes the dedup key for this task. Without this, the nex
 
 ---
 
-## 5. Pipeline Fix
+## 5. Post-Approval Fix
 
-**Entry point:** `handlePipelineFailure()` — called when CI is failing after approval.
+**Entry point:** `handlePostApprovalFailures()` — called when post-approval checks detect issues (CI failure, merge conflicts, or both).
+
+**Evaluation:** `evaluatePostApprovalChecks(checksState, mergeable)` — pure function that returns an array of `PostApprovalCheckFailure` objects. Extensible: adding a future check = adding one `if` block.
 
 ### Retry Counting
 
-Counts `pipeline_fix` transitions in the task's state history (DB-persisted). Survives daemon restarts.
+Counts `post_approval_fix` transitions in the task's state history (DB-persisted, survives restarts). Also counts legacy `pipeline_fix` for backward compatibility with in-flight tasks.
 
-- Max retries: **3** (`MAX_PIPELINE_FIX_RETRIES`)
-- After 3 failures: complete task, notify "Please fix CI and merge manually."
+- Max retries: **3** (`MAX_POST_APPROVAL_FIX_RETRIES`)
+- After 3 failures: complete task, notify listing all unresolved issues + "Please fix and merge manually."
 
 ### Rework Flow
 
 ```
-Count pipeline_fix attempts in state history
+evaluatePostApprovalChecks(checks_state, mergeable)
   |
+  +-- Returns failure array (e.g., ["ci_pipeline", "merge_conflict"])
+  |
+  v
+handlePostApprovalFailures(taskId, failures)
+  |
+  +-- Count post_approval_fix + pipeline_fix attempts in state history
   +-- attempt > 3?  complete task, give up
   |
-  +-- Add synthetic unapplied feedback round:
+  +-- Build ONE synthetic unapplied feedback round with ALL failure instructions:
   |     {
   |       stage: "code",
   |       applied: false,
   |       comments: [
-  |         "CI pipeline is failing (attempt N/3).",
-  |         "The PR has been approved but cannot be merged until CI passes.",
-  |         "Investigate the CI failure, fix the root cause, and push the fix."
+  |         "Post-approval fix attempt N/3 — M issue(s) to resolve:",
+  |         ...CI failure instructions (if applicable),
+  |         ...merge conflict instructions (if applicable)
   |       ]
   |     }
   |
-  +-- Transition: review_pending -> queued (reason: "pipeline_fix")
+  +-- Transition: review_pending -> queued (reason: "post_approval_fix")
   +-- Clear dedup key + approvedAwaitingCI entry
-  +-- Notify: "CI pipeline failing — reworking to fix (attempt N/3)."
+  +-- Notify: "Post-approval issues: {list} — reworking (attempt N/3)."
 ```
+
+**Key design:** Multiple issues are grouped into a single RRPIR cycle. This is critical for cost — each cycle consumes significant tokens. Without grouping, CI failure and merge conflicts would trigger separate cycles.
 
 ### How the Orchestrator Handles It
 
@@ -301,8 +328,8 @@ Every notification the owner receives during PR lifecycle:
 | Approved, no auto-merge | completion + ticket | "Code review approved — ready to merge." |
 | Approved, CI pending | ticket | "Code approved — waiting for CI pipeline to complete before merging." |
 | CI passed (after wait) | ticket | "CI pipeline passed — proceeding with merge." |
-| CI failing | ticket | "CI pipeline failing — reworking to fix (attempt N/3)." |
-| Fix retry limit hit | completion + ticket | "CI pipeline failed after N fix attempts. Please fix CI and merge manually." |
+| Post-approval issues | ticket | "Post-approval issues: {list} — reworking (attempt N/3)." |
+| Fix retry limit hit | completion + ticket | "Post-approval issues ({list}) unresolved after N fix attempts. Please fix and merge manually." |
 | Merge succeeded | completion + ticket | "Code approved — PR #X auto-merged." |
 | Merge rejected | ticket | "Auto-merge rejected: {reason}. Will retry." |
 | Merge API failed | ticket | "Auto-merge API call failed — will retry." |
@@ -331,11 +358,11 @@ Every notification the owner receives during PR lifecycle:
           +--------------+--------------+
           |              |              |
      PR approved    PR approved    changes_requested
-     CI passing     CI failing     or comment feedback
+     all clear    CI/merge issues   or comment feedback
           |              |              |
           v              v              v
-    attemptMerge   pipeline_fix    feedback_rework
-          |              |              |
+    attemptMerge   post_approval   feedback_rework
+          |           _fix              |
      +----+----+    +----+----+    +----+----+
      |         |    |         |    |         |
   success   failure queued    give up  queued
@@ -357,16 +384,16 @@ Every notification the owner receives during PR lifecycle:
 - Next tick: `checkFeedback()` re-detects approval, `handleCodeApproval()` re-evaluates CI
 - Flow is naturally idempotent
 
-### "Head branch out of date" merge failure
-- GitHub returns 409 (`merge_conflict`)
-- `allowApprovalRetry()` clears dedup key
-- Next tick: approval re-detected, CI re-checked, merge re-attempted
-- If base branch keeps advancing, retry continues each tick
-- Consider: future enhancement to rebase/merge base into branch
+### Merge conflicts after approval
+- Detected pre-merge via `PRStatus.mergeable === false` (from adapter contract, not GitHub-specific)
+- Detected mid-merge via HTTP 409 (`merge_conflict`) as a safety net
+- Both routes trigger `handlePostApprovalFailures()` — the agent resolves conflicts, rebases, and pushes
+- If CI is also failing, both issues are grouped into one rework cycle
 
 ### Concurrent reviewers
-- Dedup key: `"approved:{commentCount}"` — only first approval triggers merge flow
-- If reviewer B adds a comment after A approves, key changes, re-emits — but aggregate state is still `approved`
+- Accommodation tracking uses comment IDs — only genuinely new comments trigger rework
+- If reviewer B adds a comment after A approves, new comment ID detected → rework triggered
+- Same comments after rework → suppressed by accommodation check
 
 ### Manual merge on GitHub
 - `checkMerges()` detects `state === "merged"` before feedback polling

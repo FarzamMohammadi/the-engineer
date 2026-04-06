@@ -228,6 +228,27 @@ export function createPrManager(
 
     // Rework path: PR already exists — just push, mark feedback applied, notify
     if (isRework) {
+      // Dismiss stale approvals — old approval was for different code
+      const gitHosting = ctx.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
+      if (gitHosting && dispatch.task.review?.pr_number) {
+        try {
+          await gitHosting.dismissApprovals(
+            record.repo,
+            dispatch.task.review.pr_number,
+            "New commits pushed — previous approval is for outdated code. Re-review required.",
+          );
+          observer.info("Stale approvals dismissed after rework push", {
+            taskId,
+            prNumber: dispatch.task.review.pr_number,
+          });
+        } catch (error) {
+          observer.warn("Failed to dismiss stale approvals — proceeding", {
+            taskId,
+            error: sanitizeErrorMessage(error),
+          });
+        }
+      }
+
       const task = ctx.taskEngine.getTask(taskId);
       if (task?.review) {
         const updatedRounds = task.review.feedback_rounds.map((r) => ({ ...r, applied: true }));

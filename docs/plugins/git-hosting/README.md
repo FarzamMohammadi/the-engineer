@@ -4,7 +4,7 @@ Git Hosting adapters manage the PR lifecycle on remote code hosting platforms. T
 
 This adapter type is fully separate from Communication adapters. PRs are code artifacts, not messages. GitHub needs three plugins (Trigger, Communication, Hosting) because each operates in a different capability domain.
 
-All 10 methods are required. There are no optional or capability-gated methods. Every implementation must handle the full PR lifecycle: create, update, merge, close, query status, query reviews, comment, fetch comments, check branch protection, and resolve default branch.
+All 11 methods are required. There are no optional or capability-gated methods. Every implementation must handle the full PR lifecycle: create, update, merge, close, query status, query reviews, dismiss stale approvals, comment, fetch comments, check branch protection, and resolve default branch.
 
 A core safety invariant: never force-merge. If branch protection rules are not satisfied, return an error in `MergeResult` rather than bypassing them.
 
@@ -22,6 +22,7 @@ The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors imp
 | `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ approved, approvals, changes_requested, reviewers, comments }` |
 | `getPRComments` | `(repo: string, prNumber: number) => Promise<PRComment[]>` | Array of `{ id, author, body, created_at }` |
 | `commentOnPR` | `(repo: string, prNumber: number, comment: string, replyTo?: string) => Promise<CommentResult>` | `{ comment_id, url }` |
+| `dismissApprovals` | `(repo: string, prNumber: number, message: string) => Promise<void>` | -- |
 | `getBranchProtection` | `(repo: string, branch: string) => Promise<BranchProtection>` | `{ protected, required_reviews, required_checks, restrictions }` |
 | `getDefaultBranch` | `(repo: string) => Promise<string>` | Branch name (e.g. `"main"`) |
 
@@ -147,6 +148,9 @@ export class YourHostingPlugin extends GitHostingAdapter {
   // ── PR Comments ─────────────────────────────────────
   protected async doCommentOnPR(repo: string, prNumber: number, comment: string, replyTo: string | undefined): Promise<CommentResult> { /* ... */ }
 
+  // ── Review Actions ─────────────────────────────────
+  protected async doDismissApprovals(repo: string, prNumber: number, message: string): Promise<void> { /* ... */ }
+
   // ── Branch Queries ──────────────────────────────────
   protected async doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection> { /* ... */ }
   protected async doGetDefaultBranch(repo: string): Promise<string> { /* ... */ }
@@ -251,7 +255,7 @@ describe("YourHostingPlugin", () => {
 });
 ```
 
-The contract suite validates: lifecycle (init, health, shutdown), PR lifecycle (create, status, review, comments, comment, merge), and branch queries (default branch, protection).
+The contract suite validates: lifecycle (init, health, shutdown), PR lifecycle (create, status, review, comments, comment, merge, dismiss approvals), and branch queries (default branch, protection).
 
 ## Built-in Plugins
 
@@ -265,7 +269,7 @@ The GitHub implementation uses Octokit for all API calls. It parses `"owner/repo
 
 | File | Description |
 |---|---|
-| `src/adapters/git-hosting.ts` | Abstract class with 10 public methods + 10 protected abstract `do*` methods |
+| `src/adapters/git-hosting.ts` | Abstract class with 11 public methods + 11 protected abstract `do*` methods |
 | `src/adapters/base.ts` | `BaseAdapter` -- lifecycle template methods, manifest, `hasCapability()` |
 | `src/adapters/errors.ts` | `AdapterMethodError` and `createAdapterError()` |
 | `src/schemas/adapters.ts` | All Zod schemas: `PROptionsSchema`, `PRResultSchema`, `MergeResultSchema`, etc. |

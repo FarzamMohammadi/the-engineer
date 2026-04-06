@@ -1,6 +1,6 @@
 # GitHub Hosting
 
-Manages the full pull request lifecycle on GitHub via the Octokit REST API. Creates PRs, updates metadata, merges, closes, checks review status, reads comments, and queries branch protection. All 9 `GitHostingAdapter` methods are implemented.
+Manages the full pull request lifecycle on GitHub via the Octokit REST API. Creates PRs, updates metadata, merges, closes, checks review status, dismisses stale approvals, reads comments, and queries branch protection. All 10 `GitHostingAdapter` methods are implemented.
 
 Use this plugin whenever the Engineer needs to open PRs, respond to review feedback, or merge completed work.
 
@@ -14,7 +14,7 @@ The token needs sufficient permissions for the target repositories: create/updat
 
 ## Capabilities
 
-All 9 adapter methods are implemented:
+All 10 adapter methods are implemented:
 
 | Method | Description |
 |--------|-------------|
@@ -24,6 +24,7 @@ All 9 adapter methods are implemented:
 | `closePR` | Closes a PR without merging |
 | `getPRStatus` | Returns PR state (open/closed/merged), draft flag, mergeability, CI check status, and URL |
 | `getReviewStatus` | Aggregates review state per reviewer (approved/changes_requested/commented/pending) |
+| `dismissApprovals` | Dismisses all current approvals on a PR with a message explaining why |
 | `commentOnPR` | Posts a conversation comment or replies to an inline review comment |
 | `getPRComments` | Fetches both conversation-level and inline review comments (filters out bot comments) |
 | `getBranchProtection` | Returns protection rules: required reviews, required checks, push restrictions |
@@ -54,6 +55,8 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 **PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified `open | closed | merged` enum. CI check status is determined by the combined status API (`repos.getCombinedStatusForRef`).
 
 **Review aggregation.** Fetches all reviews chronologically and tracks the latest meaningful state per reviewer (`APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`). A PR is considered approved only when at least one reviewer approved AND no reviewer has `changes_requested` as their latest state. Review body text is collected as feedback comments.
+
+**Approval dismissal.** `dismissApprovals` lists all reviews on the PR via `pulls.listReviews`, filters for those with state `APPROVED`, and calls `pulls.dismissReview` for each one with the provided message. No-ops when no approvals exist. Called by the PR manager after rework pushes new code — the old approval was for different code and must not authorize the changed PR.
 
 **Comments.** `commentOnPR` handles two cases: if `replyTo` is provided, it creates a reply to an inline review comment; otherwise, it posts a regular issue comment (PRs are issues in the GitHub API). `getPRComments` fetches both conversation-level (`issues.listComments`) and inline review comments (`pulls.listReviewComments`) in parallel, filtering out `github-actions[bot]`.
 

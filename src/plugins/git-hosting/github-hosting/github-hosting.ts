@@ -334,6 +334,42 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     return [...conversation, ...inline];
   }
 
+  protected async doDismissApprovals(
+    repo: string,
+    prNumber: number,
+    message: string,
+  ): Promise<void> {
+    const [owner, repoName] = splitRepo(repo);
+    const { data: reviews } = await this.octokit.pulls.listReviews({
+      owner,
+      repo: repoName,
+      pull_number: prNumber,
+    });
+
+    const approvedReviews = reviews.filter((r) => r.state.toUpperCase() === "APPROVED");
+
+    if (approvedReviews.length === 0) {
+      this.obs.debug("No approvals to dismiss", { repo, prNumber });
+      return;
+    }
+
+    for (const review of approvedReviews) {
+      await this.octokit.pulls.dismissReview({
+        owner,
+        repo: repoName,
+        pull_number: prNumber,
+        review_id: review.id,
+        message,
+      });
+    }
+
+    this.obs.info("Stale approvals dismissed", {
+      repo,
+      prNumber,
+      dismissed: approvedReviews.length,
+    });
+  }
+
   protected async doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection> {
     const [owner, repoName] = splitRepo(repo);
 

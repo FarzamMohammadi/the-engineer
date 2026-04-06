@@ -130,6 +130,14 @@ export function runGitHostingContractSuite(
         const parsed = MergeResultSchema.safeParse(result);
         expect(parsed.success).toBe(true);
       });
+
+      it("dismissApprovals() resolves without throwing", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const pr = await adapter.createPR(fixtures.prOptions);
+        await expect(
+          adapter.dismissApprovals(fixtures.prOptions.repo, pr.pr_number, "test dismiss"),
+        ).resolves.toBeUndefined();
+      });
     });
 
     // ── Branch Queries ───────────────────────────────────────────────────

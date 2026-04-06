@@ -840,6 +840,55 @@ describe("ReviewHandler", () => {
       );
     });
 
+    it("post-approval fix resets accommodated_review_state and accommodated_comment_ids", async () => {
+      const task = createReviewTask({
+        sub_state: "code",
+        review: {
+          pr_number: 42,
+          pr_state: "ready",
+          demo_artifacts: [],
+          feedback_rounds: [],
+          accommodated_comment_ids: ["c1", "c2"],
+          accommodated_review_state: "approved",
+        },
+      });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: true,
+        checks_state: "failing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+
+      await flush();
+
+      const te = ctx.taskEngine as unknown as { updateTaskField: ReturnType<typeof vi.fn> };
+      // Find the updateTaskField call that includes the synthetic feedback round
+      const reviewUpdate = te.updateTaskField.mock.calls.find(
+        (call: unknown[]) =>
+          call[1] === "review" &&
+          (call[2] as { accommodated_review_state?: unknown }).accommodated_review_state === null,
+      );
+      expect(reviewUpdate).toBeDefined();
+      expect(
+        (reviewUpdate![2] as { accommodated_comment_ids: unknown[] }).accommodated_comment_ids,
+      ).toEqual([]);
+    });
+
     it("post-approval fix retry limit: completes with manual merge message", async () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);

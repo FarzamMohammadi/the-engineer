@@ -19,6 +19,7 @@ interface StoredPR {
   status: PRStatus;
   reviews: ReviewStatus;
   comments: CommentResult[];
+  dismissed_approvals: Array<{ message: string }>;
 }
 
 /**
@@ -54,6 +55,10 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
 
   wasShutdownCalled(): boolean {
     return this.shutdownCalled;
+  }
+
+  getDismissedApprovals(repo: string, prNumber: number): Array<{ message: string }> {
+    return [...this.getPR(repo, prNumber).dismissed_approvals];
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -93,6 +98,7 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
         comments: [],
       },
       comments: [],
+      dismissed_approvals: [],
     });
     return Promise.resolve({
       pr_number: prNumber,
@@ -160,6 +166,20 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
 
   protected doGetPRComments(_repo: string, _prNumber: number): Promise<PRComment[]> {
     return Promise.resolve([]);
+  }
+
+  protected doDismissApprovals(repo: string, prNumber: number, message: string): Promise<void> {
+    const pr = this.getPR(repo, prNumber);
+    pr.dismissed_approvals.push({ message });
+    pr.reviews = {
+      ...pr.reviews,
+      approved: false,
+      approvals: 0,
+      reviewers: pr.reviews.reviewers.map((r) =>
+        r.state === "approved" ? { ...r, state: "commented" as const } : r,
+      ),
+    };
+    return Promise.resolve();
   }
 
   protected doGetBranchProtection(_repo: string, _branch: string): Promise<BranchProtection> {

@@ -262,6 +262,121 @@ describe("PrManager", () => {
     );
   });
 
+  it("dismisses stale approvals after rework push", async () => {
+    const ctx = createMockContext();
+    const task = {
+      id: "task-001",
+      review: {
+        pr_number: 42,
+        feedback_rounds: [{ round: 1, applied: false, comments: [] }],
+      },
+    };
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
+
+    const fakeHosting = { dismissApprovals: vi.fn().mockResolvedValue(undefined) };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeHosting);
+
+    // Simulate staged changes exist
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const dispatch = createDispatch({
+      review: {
+        pr_number: 42,
+        pr_state: "ready",
+        demo_artifacts: [],
+        feedback_rounds: [{ round: 1, applied: false, comments: [] }],
+      },
+    } as unknown as Partial<Task>);
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: {},
+      confidence: "high" as const,
+      open_questions: [],
+    };
+
+    const result = await pm.commitPushAndCreatePR(
+      "session-001",
+      "task-001",
+      demoPrepOutput,
+      dispatch,
+    );
+
+    expect(result).toBe(true);
+    expect(fakeHosting.dismissApprovals).toHaveBeenCalledWith(
+      "owner/repo",
+      42,
+      expect.stringContaining("Re-review required"),
+    );
+  });
+
+  it("rework succeeds even if dismissApprovals fails", async () => {
+    const ctx = createMockContext();
+    const task = {
+      id: "task-001",
+      review: {
+        pr_number: 42,
+        feedback_rounds: [{ round: 1, applied: false, comments: [] }],
+      },
+    };
+    (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
+
+    const fakeHosting = {
+      dismissApprovals: vi.fn().mockRejectedValue(new Error("403 Forbidden")),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeHosting);
+
+    // Simulate staged changes exist
+    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+        throw new Error("has changes");
+      }
+      return "";
+    });
+
+    const pm = createPrManager(ctx, createMockNotifier());
+    const dispatch = createDispatch({
+      review: {
+        pr_number: 42,
+        pr_state: "ready",
+        demo_artifacts: [],
+        feedback_rounds: [{ round: 1, applied: false, comments: [] }],
+      },
+    } as unknown as Partial<Task>);
+    const demoPrepOutput = {
+      phase: Phases.demo_prep,
+      task_id: "task-001",
+      timestamp: new Date().toISOString(),
+      data: {},
+      confidence: "high" as const,
+      open_questions: [],
+    };
+
+    const result = await pm.commitPushAndCreatePR(
+      "session-001",
+      "task-001",
+      demoPrepOutput,
+      dispatch,
+    );
+
+    // Should still succeed despite dismissApprovals failing
+    expect(result).toBe(true);
+    expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
+      "task-001",
+      "review",
+      expect.objectContaining({
+        feedback_rounds: [expect.objectContaining({ applied: true })],
+      }),
+    );
+  });
+
   // SECURITY: PR title is sanitized before sending to GitHub API
   it("sanitizes task title in PR title and commit message", async () => {
     const ctx = createMockContext();

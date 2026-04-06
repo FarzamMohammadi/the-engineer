@@ -744,6 +744,8 @@ export function createReviewHandler(
             comments,
           },
         ],
+        accommodated_review_state: null,
+        accommodated_comment_ids: [],
       });
     }
 

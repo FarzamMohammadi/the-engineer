@@ -41,7 +41,9 @@ commitPushAndCreatePR(dispatch, demoPrepOutput)
   |
   +-- Is rework? (task.review.pr_number exists?)
   |     |
-  |     +-- YES: mark all feedback_rounds as applied, notify "Pushed rework", return
+  |     +-- YES: dismiss stale approvals (gitHosting.dismissApprovals)
+  |     |        mark all feedback_rounds as applied
+  |     |        notify "Pushed rework", return
   |     +-- NO:  continue to PR creation
   |
   +-- Resolve PR description (demoPrepOutput > deliverable file > default)
@@ -265,6 +267,11 @@ handlePostApprovalFailures(taskId, failures)
   |       ]
   |     }
   |
+  +-- Reset accommodation state:
+  |     accommodated_review_state = null
+  |     accommodated_comment_ids = []
+  |     (ensures fresh approval is detectable after rework)
+  |
   +-- Transition: review_pending -> queued (reason: "post_approval_fix")
   +-- Clear dedup key + approvedAwaitingCI entry
   +-- Notify: "Post-approval issues: {list} — reworking (attempt N/3)."
@@ -280,9 +287,11 @@ The synthetic unapplied feedback round triggers the existing rework path in the 
 2. Orchestrator starts from **requirements_gathering** (full reflection)
 3. The LLM sees the CI failure context in the feedback round
 4. It investigates, fixes, pushes to the same branch
-5. Returns to `review_pending` → next tick detects existing approval → CI gate re-evaluates
+5. PR manager dismisses stale approvals on GitHub (the old approval was for different code)
+6. Returns to `review_pending` → accommodation state is reset → awaits fresh approval
+7. Reviewer re-reviews the updated PR → new approval detected → CI gate re-evaluates
 
-This reuses the same code path as reviewer feedback rework — no special-casing needed.
+The old approval is explicitly invalidated — changed code must not ride on a stale approval. This reuses the same code path as reviewer feedback rework, with the addition of approval dismissal on push.
 
 ---
 
@@ -325,6 +334,7 @@ Every notification the owner receives during PR lifecycle:
 |---|---|---|
 | PR created | milestone + ticket | "PR created: {url}" |
 | Rework pushed | ticket | "Pushed rework addressing review feedback." |
+| Stale approvals dismissed | (logged, not notified) | Dismissed via GitHub API with "Re-review required" message |
 | Approved, no auto-merge | completion + ticket | "Code review approved — ready to merge." |
 | Approved, CI pending | ticket | "Code approved — waiting for CI pipeline to complete before merging." |
 | CI passed (after wait) | ticket | "CI pipeline passed — proceeding with merge." |
@@ -394,6 +404,13 @@ Every notification the owner receives during PR lifecycle:
 - Accommodation tracking uses comment IDs — only genuinely new comments trigger rework
 - If reviewer B adds a comment after A approves, new comment ID detected → rework triggered
 - Same comments after rework → suppressed by accommodation check
+
+### Stale approval after post-approval rework
+- When post-approval fixes push new code, the PR content has changed
+- The old approval is dismissed on GitHub via `dismissApprovals()` (graceful degradation if API fails)
+- Accommodation state is reset (`accommodated_review_state = null`) so the system can detect a fresh approval
+- The reviewer sees the dismissal message on GitHub and knows re-review is needed
+- Without these two mechanisms, the task would be stuck forever in `review_pending` (accommodation gate blocks re-detection of the same "approved" state)
 
 ### Manual merge on GitHub
 - `checkMerges()` detects `state === "merged"` before feedback polling

@@ -87,6 +87,13 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     return wrapAsync(() => this.doCommentOnPR(repo, prNumber, comment, replyTo));
   }
 
+  // ── Review Actions ────────────────────────────────────────────────────────
+
+  /** Dismiss all current approvals on a PR. No-op if none exist. */
+  async dismissApprovals(repo: string, prNumber: number, message: string): Promise<void> {
+    return wrapAsync(() => this.doDismissApprovals(repo, prNumber, message));
+  }
+
   // ── Branch Queries ────────────────────────────────────────────────────────
 
   async getBranchProtection(repo: string, branch: string): Promise<BranchProtection> {
@@ -116,6 +123,11 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     replyTo: string | undefined,
   ): Promise<CommentResult>;
   protected abstract doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]>;
+  protected abstract doDismissApprovals(
+    repo: string,
+    prNumber: number,
+    message: string,
+  ): Promise<void>;
   protected abstract doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection>;
   protected abstract doGetDefaultBranch(repo: string): Promise<string>;
 }

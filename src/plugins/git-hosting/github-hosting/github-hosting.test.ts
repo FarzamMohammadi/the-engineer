@@ -34,6 +34,7 @@ function createMockOctokit() {
         data: { id: 789, html_url: "https://github.com/acme/webapp/pull/51#discussion_r789" },
       }),
       listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
+      dismissReview: vi.fn().mockResolvedValue({}),
     },
     issues: {
       addLabels: vi.fn().mockResolvedValue({}),
@@ -457,6 +458,46 @@ describe("GitHubHostingPlugin", () => {
     it("returns the default branch", async () => {
       const branch = await plugin.getDefaultBranch("acme/webapp");
       expect(branch).toBe("main");
+    });
+  });
+
+  describe("dismissApprovals()", () => {
+    it("dismisses all approved reviews", async () => {
+      mockOctokit.pulls.listReviews.mockResolvedValue({
+        data: [
+          { id: 100, user: { login: "alice" }, state: "APPROVED" },
+          { id: 200, user: { login: "bob" }, state: "CHANGES_REQUESTED" },
+          { id: 300, user: { login: "carol" }, state: "APPROVED" },
+        ],
+      });
+
+      await plugin.dismissApprovals("acme/webapp", 51, "Stale approval");
+
+      expect(mockOctokit.pulls.dismissReview).toHaveBeenCalledTimes(2);
+      expect(mockOctokit.pulls.dismissReview).toHaveBeenCalledWith(
+        expect.objectContaining({
+          owner: "acme",
+          repo: "webapp",
+          pull_number: 51,
+          review_id: 100,
+          message: "Stale approval",
+        }),
+      );
+      expect(mockOctokit.pulls.dismissReview).toHaveBeenCalledWith(
+        expect.objectContaining({
+          review_id: 300,
+        }),
+      );
+    });
+
+    it("no-ops when no approvals exist", async () => {
+      mockOctokit.pulls.listReviews.mockResolvedValue({
+        data: [{ id: 200, user: { login: "bob" }, state: "CHANGES_REQUESTED" }],
+      });
+
+      await plugin.dismissApprovals("acme/webapp", 51, "Stale approval");
+
+      expect(mockOctokit.pulls.dismissReview).not.toHaveBeenCalled();
     });
   });
 

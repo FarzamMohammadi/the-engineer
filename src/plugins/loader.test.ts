@@ -215,6 +215,47 @@ describe("loadBuiltinPlugins", () => {
     const pluginInfo = registry.getPlugin("trigger", "no-config");
     expect(pluginInfo).toBeNull();
   });
+
+  it("merges type-based config overrides into plugin config", async () => {
+    const manifest = makeManifest({ id: "comm-plugin", type: "communication", critical: false });
+    const instance = new FakeTriggerPlugin(); // reuse — only init config capture matters
+    const plugin: BuiltinPlugin = {
+      manifest,
+      create: () => instance,
+    };
+    setTestPlugins([plugin]);
+
+    writeFileSync(join(tmpDir, "comm-plugin.yaml"), "bot_token: abc123");
+
+    await loadBuiltinPlugins(registry, tmpDir, observer, {
+      communication: { people: [{ name: "Alice" }] },
+    });
+
+    const config = instance.getInitConfig();
+    expect(config).not.toBeNull();
+    expect(config!["bot_token"]).toBe("abc123");
+    expect(config!["people"]).toEqual([{ name: "Alice" }]);
+  });
+
+  it("does not apply type overrides to plugins of a different type", async () => {
+    const manifest = makeManifest({ id: "trigger-plugin", type: "trigger", critical: false });
+    const instance = new FakeTriggerPlugin();
+    const plugin: BuiltinPlugin = {
+      manifest,
+      create: () => instance,
+    };
+    setTestPlugins([plugin]);
+
+    writeFileSync(join(tmpDir, "trigger-plugin.yaml"), "poll_interval: 10s");
+
+    await loadBuiltinPlugins(registry, tmpDir, observer, {
+      communication: { people: [{ name: "Alice" }] },
+    });
+
+    const config = instance.getInitConfig();
+    expect(config).not.toBeNull();
+    expect(config!["people"]).toBeUndefined();
+  });
 });
 
 describe("discoverEnabledPlugins", () => {

@@ -21,6 +21,7 @@ import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
 import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/index.js";
 import { loadBuiltinPlugins } from "../plugins/loader.js";
+import { AdapterTypes } from "../schemas/adapters.js";
 import { RealClock } from "../utils/clock.js";
 import { sanitizeErrorMessage } from "../utils/sanitize.js";
 
@@ -239,7 +240,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       registry,
       pluginConfigDir,
       observer.child("plugin-loader"),
-      { "telegram-comm": { people: config.people } },
+      { [AdapterTypes.communication]: { people: config.people } },
     );
     milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");

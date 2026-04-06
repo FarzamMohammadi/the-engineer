@@ -1,0 +1,6 @@
+{
+  "status": "ready",
+  "next_phase": "research",
+  "summary": "Merge conflict resolution post-approval with grouped post-approval issue handling — clear pattern from existing CI fix, moderate complexity",
+  "complexity": "moderate"
+}

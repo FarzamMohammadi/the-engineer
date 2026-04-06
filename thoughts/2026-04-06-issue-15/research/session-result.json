@@ -1,0 +1,5 @@
+{
+  "status": "ready",
+  "next_phase": "planning",
+  "summary": "All infrastructure exists (mergeable field, classifyMergeError, synthetic feedback rounds) — primary changes in review-handler.ts across 3 entry points, plus tests"
+}

@@ -464,7 +464,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         : (() => {
             const detail =
               sessionResult === "invalid"
-                ? "session-result.json exists but contains invalid data"
+                ? "session-result.json was not updated by the CLI (still contains template placeholders or invalid data)"
                 : "session-result.json was not created by the CLI";
             ctx.observer.error("Phase failed: CLI completed but no valid session-result.json", {
               taskId,

@@ -54,6 +54,11 @@ export function backupSessionResult(phaseDir: string): void {
       // from readSessionResult will surface the issue.
     }
   }
+
+  // Re-write fresh template so the CLI always has a file to read and update.
+  // Template placeholders return "invalid" from readSessionResult(), so unchanged
+  // templates are still caught by the Fail Loud check.
+  writeSessionResultTemplate(phaseDir);
 }
 
 /** Write a session-result.json template with placeholder options to a phase directory. */

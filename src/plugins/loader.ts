@@ -92,7 +92,7 @@ async function loadSinglePlugin(
   registry: Registry,
   pluginConfigDir: string,
   observer: IObserver,
-  typeOverrides?: Record<string, Record<string, unknown>>,
+  sharedConfigByType?: Record<string, Record<string, unknown>>,
 ): Promise<boolean> {
   const pluginId = plugin.manifest.id;
 
@@ -121,9 +121,9 @@ async function loadSinglePlugin(
   }
 
   // Merge shared config for this adapter type (e.g. people data for communication plugins)
-  const overrides = typeOverrides?.[plugin.manifest.type];
-  if (overrides) {
-    Object.assign(pluginConfig, overrides);
+  const shared = sharedConfigByType?.[plugin.manifest.type];
+  if (shared) {
+    Object.assign(pluginConfig, shared);
   }
 
   const initializationResult = await registry.initializePlugin(pluginId, pluginConfig);
@@ -164,7 +164,7 @@ export interface PluginLoadResult {
  * Uses {@link discoverEnabledPlugins} for discovery, then registers,
  * configures, and initializes each plugin via the Registry.
  *
- * @param typeOverrides — Shared config keyed by adapter type (e.g. `{ communication: { people } }`).
+ * @param sharedConfigByType — Shared config keyed by adapter type (e.g. `{ communication: { people } }`).
  *   Merged into every plugin whose `manifest.type` matches the key. Avoids hardcoding plugin IDs
  *   in Core (Plugin Blindness).
  */
@@ -172,7 +172,7 @@ export async function loadBuiltinPlugins(
   registry: Registry,
   pluginConfigDir: string,
   observer: IObserver,
-  typeOverrides?: Record<string, Record<string, unknown>>,
+  sharedConfigByType?: Record<string, Record<string, unknown>>,
 ): Promise<PluginLoadResult> {
   const plugins = discoverEnabledPlugins(pluginConfigDir);
   const result: PluginLoadResult = { loaded: [], failed: [], hints: [] };
@@ -184,7 +184,7 @@ export async function loadBuiltinPlugins(
       registry,
       pluginConfigDir,
       observer,
-      typeOverrides,
+      sharedConfigByType,
     );
     if (loaded) {
       result.loaded.push(plugin.manifest.id);

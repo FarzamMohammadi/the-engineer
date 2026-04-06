@@ -216,7 +216,7 @@ describe("loadBuiltinPlugins", () => {
     expect(pluginInfo).toBeNull();
   });
 
-  it("merges type-based config overrides into plugin config", async () => {
+  it("merges shared config by adapter type into plugin config", async () => {
     const manifest = makeManifest({ id: "comm-plugin", type: "communication", critical: false });
     const instance = new FakeTriggerPlugin(); // reuse — only init config capture matters
     const plugin: BuiltinPlugin = {
@@ -237,7 +237,7 @@ describe("loadBuiltinPlugins", () => {
     expect(config!["people"]).toEqual([{ name: "Alice" }]);
   });
 
-  it("does not apply type overrides to plugins of a different type", async () => {
+  it("does not apply shared config to plugins of a different type", async () => {
     const manifest = makeManifest({ id: "trigger-plugin", type: "trigger", critical: false });
     const instance = new FakeTriggerPlugin();
     const plugin: BuiltinPlugin = {

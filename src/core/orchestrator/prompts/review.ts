@@ -50,6 +50,7 @@ const REVIEW_LENS: Record<ReviewPhaseName, { title: string; instructions: string
       "3. For each criterion, verify it is implemented correctly.",
       "4. Check edge cases mentioned in requirements.",
       "5. Verify tests cover the acceptance criteria.",
+      "6. Check if the codebase has documentation covering the behavior that changed. If relevant docs exist and were not updated, flag as NOT MET — a code change without a doc update is unfinished work.",
       "",
       "Rate each requirement: MET, PARTIALLY MET (explain gap), or NOT MET (explain what's missing).",
     ].join("\n"),

@@ -106,7 +106,9 @@ function buildInstructions(): string {
       "",
       '5. **If you get stuck and need input,** set `next_phase` to `"requirements_gathering"` in session-result.json. Specify what information you need and why in your summary.',
       "",
-      "6. **Commit at meaningful checkpoints.** Each commit should represent a logical unit of work with passing tests.",
+      "6. **Update documentation.** A code change without a corresponding doc update is unfinished work. If the codebase has documentation that covers the behavior you changed, update it in the same step — not later.",
+      "",
+      "7. **Commit at meaningful checkpoints.** Each commit should represent a logical unit of work with passing tests.",
     ].join("\n"),
   );
 }

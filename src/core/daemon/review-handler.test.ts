@@ -8,6 +8,7 @@ import {
   type ReviewHandlerCallbacks,
   createReviewHandler,
   detectCommentApproval,
+  evaluatePostApprovalChecks,
 } from "./review-handler.js";
 import type { ReviewHandlerContext } from "./types.js";
 
@@ -671,7 +672,7 @@ describe("ReviewHandler", () => {
       );
     });
 
-    it("on approved/code with auto-merge + CI failing: re-queues for pipeline fix", async () => {
+    it("on approved/code with auto-merge + CI failing: re-queues for post-approval fix", async () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
       (
@@ -707,7 +708,7 @@ describe("ReviewHandler", () => {
         "task-1",
         "queued",
         null,
-        "pipeline_fix",
+        "post_approval_fix",
         "daemon",
       );
       expect(notifications.notify).toHaveBeenCalledWith(
@@ -839,7 +840,7 @@ describe("ReviewHandler", () => {
       );
     });
 
-    it("pipeline fix retry limit: completes with manual merge message", async () => {
+    it("post-approval fix retry limit: completes with manual merge message", async () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
       (
@@ -853,13 +854,13 @@ describe("ReviewHandler", () => {
         number: 42,
         url: "https://github.com/owner/repo/pull/42",
       });
-      // Simulate 3 previous pipeline_fix attempts in state history
+      // Simulate 3 previous post_approval_fix attempts in state history
       (
         ctx.taskEngine as unknown as { getStateHistory: ReturnType<typeof vi.fn> }
       ).getStateHistory.mockReturnValue([
-        { reason: "pipeline_fix" },
-        { reason: "pipeline_fix" },
-        { reason: "pipeline_fix" },
+        { reason: "post_approval_fix" },
+        { reason: "post_approval_fix" },
+        { reason: "post_approval_fix" },
       ]);
 
       handler.handleFeedbackEvent({
@@ -887,7 +888,7 @@ describe("ReviewHandler", () => {
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: "ticket_comment",
-          message: expect.stringContaining("Please fix CI and merge manually"),
+          message: expect.stringContaining("Please fix and merge manually"),
         }),
       );
     });
@@ -1036,7 +1037,7 @@ describe("ReviewHandler", () => {
       expect(hostingPlugin.mergePR).toHaveBeenCalledWith("owner/repo", 42, "squash");
     });
 
-    it("re-queues for pipeline fix when pending CI becomes failing", async () => {
+    it("re-queues for post-approval fix when pending CI becomes failing", async () => {
       const task = createReviewTask({ sub_state: "code" });
       buildContext([task]);
       (
@@ -1082,7 +1083,7 @@ describe("ReviewHandler", () => {
         "task-1",
         "queued",
         null,
-        "pipeline_fix",
+        "post_approval_fix",
         "daemon",
       );
     });
@@ -1135,6 +1136,470 @@ describe("ReviewHandler", () => {
       await handler.checkApprovedCI();
 
       expect(hostingPlugin.getPRStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Post-Approval: Merge Conflict Detection ─────────────────────────────
+
+  describe("post-approval merge conflict detection", () => {
+    it("handleCodeApproval: CI passing + mergeable false → re-queues with merge_conflict", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: false,
+        checks_state: "passing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      expect(hostingPlugin.mergePR).not.toHaveBeenCalled();
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+        updateTaskField: ReturnType<typeof vi.fn>;
+      };
+      expect(te.requestTransition).toHaveBeenCalledWith(
+        "task-1",
+        "queued",
+        null,
+        "post_approval_fix",
+        "daemon",
+      );
+      // Verify feedback round mentions merge conflicts
+      const reviewCalls = te.updateTaskField.mock.calls.filter((c: unknown[]) => c[1] === "review");
+      const lastReviewArg = reviewCalls[reviewCalls.length - 1]![2] as {
+        feedback_rounds: Array<{ comments: string[] }>;
+      };
+      const allComments = lastReviewArg.feedback_rounds.flatMap((r) => r.comments).join(" ");
+      expect(allComments).toContain("Merge conflicts detected");
+      expect(allComments).not.toContain("CI pipeline is failing");
+    });
+
+    it("handleCodeApproval: CI failing + mergeable false → grouped feedback with BOTH issues", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: false,
+        checks_state: "failing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      expect(hostingPlugin.mergePR).not.toHaveBeenCalled();
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+        updateTaskField: ReturnType<typeof vi.fn>;
+      };
+      // ONE re-queue, not two
+      const queuedCalls = te.requestTransition.mock.calls.filter(
+        (c: unknown[]) => c[1] === "queued",
+      );
+      expect(queuedCalls).toHaveLength(1);
+      expect(queuedCalls[0]).toEqual(["task-1", "queued", null, "post_approval_fix", "daemon"]);
+      // Verify feedback round mentions BOTH issues
+      const reviewCalls = te.updateTaskField.mock.calls.filter((c: unknown[]) => c[1] === "review");
+      const lastReviewArg = reviewCalls[reviewCalls.length - 1]![2] as {
+        feedback_rounds: Array<{ comments: string[] }>;
+      };
+      const allComments = lastReviewArg.feedback_rounds.flatMap((r) => r.comments).join(" ");
+      expect(allComments).toContain("CI pipeline is failing");
+      expect(allComments).toContain("Merge conflicts detected");
+      // Verify notification mentions both
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          message: expect.stringContaining("Post-approval issues"),
+        }),
+      );
+    });
+
+    it("handleCodeApproval: CI failing + mergeable true → only CI failure in feedback", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: true,
+        checks_state: "failing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      const te = ctx.taskEngine as unknown as {
+        updateTaskField: ReturnType<typeof vi.fn>;
+      };
+      const reviewCalls = te.updateTaskField.mock.calls.filter((c: unknown[]) => c[1] === "review");
+      const lastReviewArg = reviewCalls[reviewCalls.length - 1]![2] as {
+        feedback_rounds: Array<{ comments: string[] }>;
+      };
+      const allComments = lastReviewArg.feedback_rounds.flatMap((r) => r.comments).join(" ");
+      expect(allComments).toContain("CI pipeline is failing");
+      expect(allComments).not.toContain("Merge conflicts detected");
+    });
+
+    it("handleCodeApproval: CI pending → defers to approvedAwaitingCI (ignores mergeable)", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: false,
+        checks_state: "pending",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      // Should NOT re-queue or attempt merge — just defer
+      expect(hostingPlugin.mergePR).not.toHaveBeenCalled();
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+      };
+      expect(te.requestTransition).not.toHaveBeenCalledWith(
+        "task-1",
+        "queued",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Code approved — waiting for CI pipeline to complete before merging.",
+        }),
+      );
+    });
+
+    it("attemptMerge: merge_conflict error → re-queues for resolution (no retry)", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: true,
+        checks_state: "passing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+      hostingPlugin.mergePR.mockResolvedValue({
+        success: false,
+        merge_sha: "",
+        error: { code: "merge_conflict", message: "Merge conflict", retryable: false },
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+      };
+      // Should re-queue for post-approval fix, NOT just notify and retry
+      expect(te.requestTransition).toHaveBeenCalledWith(
+        "task-1",
+        "queued",
+        null,
+        "post_approval_fix",
+        "daemon",
+      );
+    });
+
+    it("attemptMerge: network_error → retries next tick (existing behavior preserved)", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: true,
+        checks_state: "passing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+      hostingPlugin.mergePR.mockResolvedValue({
+        success: false,
+        merge_sha: "",
+        error: { code: "network_error", message: "Connection reset", retryable: true },
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+      };
+      // Should NOT re-queue — just allow retry
+      expect(te.requestTransition).not.toHaveBeenCalledWith(
+        "task-1",
+        "queued",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          message: expect.stringContaining("Auto-merge rejected"),
+        }),
+      );
+    });
+
+    it("checkSingleTaskCI: CI passing + mergeable false → re-queues for merge conflict", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+
+      // First: CI pending → defer
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: true,
+        checks_state: "pending",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      // Second: CI passing but mergeable false
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: false,
+        checks_state: "passing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      await handler.checkApprovedCI();
+
+      expect(hostingPlugin.mergePR).not.toHaveBeenCalled();
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+      };
+      expect(te.requestTransition).toHaveBeenCalledWith(
+        "task-1",
+        "queued",
+        null,
+        "post_approval_fix",
+        "daemon",
+      );
+    });
+
+    it("checkSingleTaskCI: CI passing + mergeable true → calls attemptMerge (happy path)", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+
+      // First: CI pending → defer
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: true,
+        checks_state: "pending",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      // Second: CI passing + mergeable
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: true,
+        checks_state: "passing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+      hostingPlugin.mergePR.mockResolvedValue({ success: true });
+
+      await handler.checkApprovedCI();
+
+      expect(hostingPlugin.mergePR).toHaveBeenCalledWith("owner/repo", 42, "squash");
+    });
+
+    it("backward compat: pipeline_fix history entries counted by retry counter", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: false,
+        checks_state: "failing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+      // Mix of old and new reasons — all should count
+      (
+        ctx.taskEngine as unknown as { getStateHistory: ReturnType<typeof vi.fn> }
+      ).getStateHistory.mockReturnValue([
+        { reason: "pipeline_fix" },
+        { reason: "post_approval_fix" },
+        { reason: "pipeline_fix" },
+      ]);
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      const te = ctx.taskEngine as unknown as {
+        requestTransition: ReturnType<typeof vi.fn>;
+      };
+      // 3 previous attempts → next would be attempt 4 > limit of 3 → completes with manual merge
+      expect(te.requestTransition).toHaveBeenCalledWith(
+        "task-1",
+        "completed",
+        null,
+        "code_approved",
+        "daemon",
+      );
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          message: expect.stringContaining("Please fix and merge manually"),
+        }),
+      );
+    });
+
+    it("retry limit with grouped issues → completes with message listing all issues", async () => {
+      const task = createReviewTask({ sub_state: "code" });
+      buildContext([task]);
+      (
+        ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
+      ).checkAutoMergeAllowed.mockReturnValue(true);
+      hostingPlugin.getPRStatus.mockResolvedValue({
+        state: "open",
+        draft: false,
+        mergeable: false,
+        checks_state: "failing",
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+      (
+        ctx.taskEngine as unknown as { getStateHistory: ReturnType<typeof vi.fn> }
+      ).getStateHistory.mockReturnValue([
+        { reason: "post_approval_fix" },
+        { reason: "post_approval_fix" },
+        { reason: "post_approval_fix" },
+      ]);
+
+      handler.handleFeedbackEvent({
+        task_id: "task-1",
+        stage: "code",
+        feedback_type: "approved",
+        reviewer: "bob",
+        content: null,
+        pr_number: 42,
+      });
+      await flush();
+
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "ticket_comment",
+          message: expect.stringContaining("CI pipeline failing, merge conflicts"),
+        }),
+      );
     });
   });
 
@@ -1621,5 +2086,41 @@ describe("ReviewHandler", () => {
       expect(lastUpdate.accommodated_comment_ids).toEqual(["c-1"]);
       expect(lastUpdate.accommodated_review_state).toBe("changes_requested");
     });
+  });
+});
+
+// ── evaluatePostApprovalChecks (pure function) ─────────────────────────────
+
+describe("evaluatePostApprovalChecks", () => {
+  it("returns [] for passing + mergeable", () => {
+    expect(evaluatePostApprovalChecks("passing", true)).toEqual([]);
+  });
+
+  it('returns ["merge_conflict"] for passing + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("passing", false)).toEqual(["merge_conflict"]);
+  });
+
+  it('returns ["ci_failure"] for failing + mergeable', () => {
+    expect(evaluatePostApprovalChecks("failing", true)).toEqual(["ci_failure"]);
+  });
+
+  it('returns ["ci_failure", "merge_conflict"] for failing + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("failing", false)).toEqual(["ci_failure", "merge_conflict"]);
+  });
+
+  it("returns [] for none + mergeable", () => {
+    expect(evaluatePostApprovalChecks("none", true)).toEqual([]);
+  });
+
+  it('returns ["merge_conflict"] for none + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("none", false)).toEqual(["merge_conflict"]);
+  });
+
+  it("returns [] for pending + mergeable", () => {
+    expect(evaluatePostApprovalChecks("pending", true)).toEqual([]);
+  });
+
+  it('returns ["merge_conflict"] for pending + not mergeable', () => {
+    expect(evaluatePostApprovalChecks("pending", false)).toEqual(["merge_conflict"]);
   });
 });

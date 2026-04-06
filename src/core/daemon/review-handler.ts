@@ -78,8 +78,26 @@ export interface ReviewHandlerCallbacks {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** Max pipeline_fix rework cycles before giving up and asking human to merge manually. */
-const MAX_PIPELINE_FIX_RETRIES = 3;
+/** Types of issues that can occur after PR approval, before merge. */
+export type PostApprovalIssue = "ci_failure" | "merge_conflict";
+
+/** Evaluate PR state and return all post-approval issues found. Pure — no side effects. */
+export function evaluatePostApprovalChecks(
+  checksState: "passing" | "failing" | "pending" | "none",
+  mergeable: boolean,
+): PostApprovalIssue[] {
+  const issues: PostApprovalIssue[] = [];
+  if (checksState === "failing") {
+    issues.push("ci_failure");
+  }
+  if (mergeable === false) {
+    issues.push("merge_conflict");
+  }
+  return issues;
+}
+
+/** Max post-approval fix rework cycles before giving up and asking human to merge manually. */
+const MAX_POST_APPROVAL_FIX_RETRIES = 3;
 
 /** Prefixes on daemon-posted comments, used to filter out self-authored comments during review polling. */
 const SELF_COMMENT_PREFIXES = [
@@ -94,6 +112,8 @@ const SELF_COMMENT_PREFIXES = [
   "CI pipeline failing",
   "Auto-merge rejected",
   "Auto-merge API call failed",
+  "Post-approval issues",
+  "Merge conflicts detected",
 ];
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -663,35 +683,55 @@ export function createReviewHandler(
     }
   }
 
-  /** Count how many pipeline_fix rework cycles this task has been through (DB-persisted). */
-  function countPipelineFixAttempts(taskId: string): number {
+  /** Count how many post-approval fix rework cycles this task has been through (DB-persisted). Backward compat: counts both old "pipeline_fix" and new "post_approval_fix" reasons. */
+  function countPostApprovalFixAttempts(taskId: string): number {
     const history = taskEngine.getStateHistory(taskId);
-    return history.filter((t) => t.reason === "pipeline_fix").length;
+    return history.filter((t) => t.reason === "post_approval_fix" || t.reason === "pipeline_fix")
+      .length;
   }
 
   /**
-   * Re-queue a task to fix failing CI pipelines.
+   * Re-queue a task to fix post-approval issues (CI failure, merge conflicts, or both).
    *
-   * Adds a synthetic unapplied feedback round with CI failure context so the
-   * orchestrator restarts from requirements_gathering (the standard rework path)
-   * and the LLM knows exactly what to investigate.
+   * Adds a synthetic unapplied feedback round with context for ALL detected issues
+   * so the orchestrator restarts from requirements_gathering (the standard rework path)
+   * and the LLM knows exactly what to investigate. Groups issues into a single cycle.
    */
-  function handlePipelineFailure(taskId: string): void {
-    const attempt = countPipelineFixAttempts(taskId) + 1;
+  function handlePostApprovalFailures(taskId: string, issues: PostApprovalIssue[]): void {
+    const attempt = countPostApprovalFixAttempts(taskId) + 1;
 
     // Bail out after too many failed attempts — human intervention needed
-    if (attempt > MAX_PIPELINE_FIX_RETRIES) {
-      observer.warn("Pipeline fix retry limit reached", { taskId, attempts: attempt - 1 });
+    if (attempt > MAX_POST_APPROVAL_FIX_RETRIES) {
+      observer.warn("Post-approval fix retry limit reached", { taskId, attempts: attempt - 1 });
       taskEngine.requestTransition(taskId, TaskStates.completed, null, "code_approved", "daemon");
+      const issueDescriptions = issues.map((i) =>
+        i === "ci_failure" ? "CI pipeline failing" : "merge conflicts",
+      );
       finalizeTaskCompletion(
         taskId,
-        `Code approved — CI pipeline failed after ${String(attempt - 1)} fix attempts. Please fix CI and merge manually.`,
+        `Code approved — unresolved issues after ${String(attempt - 1)} fix attempts: ${issueDescriptions.join(", ")}. Please fix and merge manually.`,
       );
       return;
     }
 
-    // Embed CI failure context as an unapplied feedback round so the
-    // orchestrator's rework prompt pipeline picks it up naturally.
+    // Build feedback comments describing ALL detected issues
+    const comments: string[] = [];
+    if (issues.includes("ci_failure")) {
+      comments.push(
+        `CI pipeline is failing (attempt ${String(attempt)}/${String(MAX_POST_APPROVAL_FIX_RETRIES)}).`,
+        "The PR has been approved but cannot be merged until CI passes.",
+        "Investigate the CI failure, fix the root cause, and push the fix to the existing branch.",
+      );
+    }
+    if (issues.includes("merge_conflict")) {
+      comments.push(
+        `Merge conflicts detected (attempt ${String(attempt)}/${String(MAX_POST_APPROVAL_FIX_RETRIES)}).`,
+        "The PR has merge conflicts with the base branch that must be resolved before merging.",
+        "Rebase or merge the base branch into the feature branch, resolve all conflicts, and push.",
+      );
+    }
+
+    // Embed as an unapplied feedback round so the orchestrator's rework prompt pipeline picks it up naturally.
     const task = taskEngine.getTask(taskId);
     if (task?.review) {
       taskEngine.updateTaskField(taskId, "review", {
@@ -701,11 +741,7 @@ export function createReviewHandler(
           {
             stage: "code" as const,
             applied: false,
-            comments: [
-              `CI pipeline is failing (attempt ${String(attempt)}/${String(MAX_PIPELINE_FIX_RETRIES)}).`,
-              "The PR has been approved but cannot be merged until CI passes.",
-              "Investigate the CI failure, fix the root cause, and push the fix to the existing branch.",
-            ],
+            comments,
           },
         ],
       });
@@ -717,11 +753,11 @@ export function createReviewHandler(
       taskId,
       TaskStates.queued,
       null,
-      "pipeline_fix",
+      "post_approval_fix",
       "daemon",
     );
     if (!transition.success) {
-      observer.warn("Failed to re-queue task for pipeline fix", {
+      observer.warn("Failed to re-queue task for post-approval fix", {
         taskId,
         reason: transition.reason,
       });
@@ -730,12 +766,18 @@ export function createReviewHandler(
 
     emittedFeedbackKeys.delete(taskId);
     approvedAwaitingCI.delete(taskId);
+
+    const issueLabels = issues.map((i) =>
+      i === "ci_failure" ? "CI pipeline failing" : "merge conflicts",
+    );
+    const notificationPrefix =
+      issues.length > 1 ? "Post-approval issues" : (issueLabels[0] ?? "Post-approval issue");
     notifications.notify({
       kind: "ticket_comment",
       taskId,
-      message: `CI pipeline failing — reworking to fix (attempt ${String(attempt)}/${String(MAX_PIPELINE_FIX_RETRIES)}).`,
+      message: `${notificationPrefix} — reworking to fix (attempt ${String(attempt)}/${String(MAX_POST_APPROVAL_FIX_RETRIES)}).`,
     });
-    observer.info("Task re-queued for pipeline fix", { taskId, attempt });
+    observer.info("Task re-queued for post-approval fix", { taskId, attempt, issues });
   }
 
   /**
@@ -775,6 +817,18 @@ export function createReviewHandler(
     }
 
     if (!result.success) {
+      // Merge conflicts are not transient — re-queue for resolution instead of retrying
+      if (result.error?.code === "merge_conflict") {
+        observer.warn("Merge conflict detected during merge attempt — re-queuing for resolution", {
+          taskId,
+          error: result.error.message,
+        });
+        // CI already passed before merge attempt; merge failed → only merge_conflict
+        handlePostApprovalFailures(taskId, evaluatePostApprovalChecks("passing", false));
+        return;
+      }
+
+      // Other failures (pr_not_mergeable, network_error) may be transient — retry next tick
       observer.warn("Auto-merge rejected by GitHub — will retry next tick", {
         taskId,
         error: result.error?.message,
@@ -829,13 +883,17 @@ export function createReviewHandler(
         return;
       }
 
-      // Gate: check CI pipeline status before attempting merge
-      const { checks_state } = await getCachedPRStatus(hosting, repo, prNumber);
-      observer.info("CI gate evaluation", { taskId, prNumber, checksState: checks_state });
+      // Gate: check CI pipeline status AND mergeability before attempting merge
+      const { checks_state, mergeable } = await getCachedPRStatus(hosting, repo, prNumber);
+      observer.info("Post-approval gate evaluation", {
+        taskId,
+        prNumber,
+        checksState: checks_state,
+        mergeable,
+      });
 
-      if (checks_state === "passing" || checks_state === "none") {
-        await attemptMerge(taskId, task, repo, prNumber, hosting);
-      } else if (checks_state === "pending") {
+      if (checks_state === "pending") {
+        // CI still running — don't evaluate mergeable yet (GitHub may still be computing)
         approvedAwaitingCI.set(taskId, { repo, prNumber });
         observer.info("CI checks pending — deferring merge to next tick", { taskId, prNumber });
         notifications.notify({
@@ -844,7 +902,12 @@ export function createReviewHandler(
           message: "Code approved — waiting for CI pipeline to complete before merging.",
         });
       } else {
-        handlePipelineFailure(taskId);
+        const issues = evaluatePostApprovalChecks(checks_state, mergeable);
+        if (issues.length > 0) {
+          handlePostApprovalFailures(taskId, issues);
+        } else {
+          await attemptMerge(taskId, task, repo, prNumber, hosting);
+        }
       }
     } catch (err) {
       observer.error("Failed to handle code approval", {
@@ -862,25 +925,32 @@ export function createReviewHandler(
     prNumber: number,
     hosting: GitHostingAdapter,
   ): Promise<void> {
-    const { checks_state } = await hosting.getPRStatus(repo, prNumber);
-    observer.debug("CI poll for approved task", { taskId, prNumber, checksState: checks_state });
+    const { checks_state, mergeable } = await hosting.getPRStatus(repo, prNumber);
+    observer.debug("CI poll for approved task", {
+      taskId,
+      prNumber,
+      checksState: checks_state,
+      mergeable,
+    });
 
-    if (checks_state === "passing" || checks_state === "none") {
-      approvedAwaitingCI.delete(taskId);
-      notifications.notify({
-        kind: "ticket_comment",
-        taskId,
-        message: "CI pipeline passed — proceeding with merge.",
-      });
-      const task = taskEngine.getTask(taskId);
-      if (task) {
-        await attemptMerge(taskId, task, repo, prNumber, hosting);
-      }
-    } else if (checks_state === "failing") {
-      approvedAwaitingCI.delete(taskId);
-      handlePipelineFailure(taskId);
-    } else {
+    if (checks_state === "pending") {
       observer.debug("CI checks still pending — will check again next tick", { taskId, prNumber });
+    } else {
+      approvedAwaitingCI.delete(taskId);
+      const issues = evaluatePostApprovalChecks(checks_state, mergeable);
+      if (issues.length > 0) {
+        handlePostApprovalFailures(taskId, issues);
+      } else {
+        notifications.notify({
+          kind: "ticket_comment",
+          taskId,
+          message: "CI pipeline passed — proceeding with merge.",
+        });
+        const task = taskEngine.getTask(taskId);
+        if (task) {
+          await attemptMerge(taskId, task, repo, prNumber, hosting);
+        }
+      }
     }
   }
 

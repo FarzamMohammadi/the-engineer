@@ -1,0 +1,6 @@
+{
+  "status": "ready",
+  "next_phase": "research",
+  "summary": "Skills system requires: skill loader from resources/skills/, phase-to-skill mapping, prompt injection into phase prompts, tests. Architecture is clear — orchestrator already controls CLIs via prompts.",
+  "complexity": "complex"
+}

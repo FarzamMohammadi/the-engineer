@@ -1,0 +1,5 @@
+{
+  "status": "ready",
+  "next_phase": "demo_prep",
+  "summary": "PR description written for cross-CLI portable skills system (issue #17): skill loader module, phase prompt injection for execution/self_review/integration, 17 new tests, all acceptance criteria met"
+}

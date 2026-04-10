@@ -9,6 +9,7 @@ import {
   section,
   wrapUntrustedContent,
 } from "./format.js";
+import { buildSkillsSection } from "./skills.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,12 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
 
   // 5. The Task Context
   parts.push(buildTaskContext(ctx));
+
+  // 6. Skills
+  const skills = buildSkillsSection("execution");
+  if (skills) {
+    parts.push(skills);
+  }
 
   return parts.join("\n\n");
 }

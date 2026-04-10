@@ -2,6 +2,7 @@ import type { ReviewPhaseName } from "../../../schemas/config.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import { buildKnowledgeSection, buildRRPIROverview, buildTaskBrief, section } from "./format.js";
+import { buildSkillsSection } from "./skills.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -166,6 +167,12 @@ export function buildReviewSubPhasePrompt(ctx: ReviewSubPhaseContext): string {
   // 5. The Task Context
   parts.push(buildTaskContext(ctx));
 
+  // 6. Skills
+  const skills = buildSkillsSection("self_review");
+  if (skills) {
+    parts.push(skills);
+  }
+
   return parts.join("\n\n");
 }
 
@@ -192,6 +199,12 @@ export function buildRefinementPrompt(ctx: RefinementPromptContext): string {
 
   // 5. The Task Context
   parts.push(buildTaskContext(ctx));
+
+  // 6. Skills
+  const skills = buildSkillsSection("self_review");
+  if (skills) {
+    parts.push(skills);
+  }
 
   return parts.join("\n\n");
 }

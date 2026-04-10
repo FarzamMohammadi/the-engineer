@@ -1,0 +1,6 @@
+{
+  "status": "ready",
+  "next_phase": "self_review",
+  "summary": "Implement cross-CLI portable skills system: skill loader reads from resources/skills/, injects skill content as embedded text into phase prompts for execution/self_review/integration phases",
+  "complexity": "moderate"
+}

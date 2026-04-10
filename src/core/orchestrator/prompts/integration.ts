@@ -1,5 +1,6 @@
 import type { RepoContext } from "./context.js";
 import { buildRRPIROverview, buildTaskBrief, section } from "./format.js";
+import { buildSkillsSection } from "./skills.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,12 @@ export function buildIntegrationPrompt(ctx: IntegrationPromptContext): string {
 
   // 5. The Task Context
   parts.push(buildTaskContext(ctx));
+
+  // 6. Skills
+  const skills = buildSkillsSection("integration");
+  if (skills) {
+    parts.push(skills);
+  }
 
   return parts.join("\n\n");
 }

@@ -27,6 +27,9 @@ export {
   type RefinementPromptContext,
 } from "./review.js";
 
+// Skills
+export { buildSkillsSection } from "./skills.js";
+
 // Formatting utilities
 export {
   section,

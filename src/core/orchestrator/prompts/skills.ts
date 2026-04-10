@@ -33,7 +33,7 @@ const SKILL_PHASE_MAP: Record<Phase, SkillName[]> = {
  * skill files on demand from these paths — content is never inlined.
  *
  * @param phase - The RRPIR phase to build skills for.
- * @param skillsDir - Absolute path to the `resources/skills/` directory.
+ * @param skillsDir - Absolute path to the skills directory (e.g., `{workspace_root}/skills/`).
  */
 export function buildSkillsSection(phase: Phase, skillsDir: string): string | null {
   const skillNames = SKILL_PHASE_MAP[phase];

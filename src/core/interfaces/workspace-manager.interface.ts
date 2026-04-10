@@ -63,4 +63,10 @@ export interface IWorkspaceManager {
 
   /** Remove thoughts/ directory from worktree, commit, and push. Returns true if a cleanup commit was made. */
   removeThoughtsAndPush(taskId: string): boolean;
+
+  /** Absolute path to {workspace_root}/skills/ — the runtime location for portable skills. */
+  getSkillsDir(): string;
+
+  /** Copy skills from the source tree (resources/skills/) to {workspace_root}/skills/. Idempotent. */
+  syncSkills(): void;
 }

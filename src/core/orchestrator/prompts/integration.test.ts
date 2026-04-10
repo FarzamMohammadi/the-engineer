@@ -1,25 +1,6 @@
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { resolveSkillsDir } from "../../../../test/helpers/test-skills-dir.js";
 import { buildIntegrationPrompt } from "./integration.js";
-
-function resolveSkillsDir(): string {
-  const thisDir = dirname(fileURLToPath(import.meta.url));
-  let current = thisDir;
-  const root = resolve("/");
-
-  while (current !== root) {
-    try {
-      readFileSync(join(current, "package.json"), "utf-8");
-      return join(current, "resources", "skills");
-    } catch {
-      current = dirname(current);
-    }
-  }
-
-  return join(resolve(thisDir, "../../../.."), "resources", "skills");
-}
 
 describe("buildIntegrationPrompt", () => {
   const minimalCtx = {

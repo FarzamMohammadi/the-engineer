@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { z } from "zod";
 
@@ -634,6 +635,35 @@ export class WorkspaceManager implements IWorkspaceManager {
   /** Get the full workspace record for a task, or null if unknown. */
   getWorkspaceRecord(taskId: string): WorkspaceRecord | null {
     return this.workspaces.get(taskId) ?? null;
+  }
+
+  // ── Skills ─────────────────────────────────────────────────────────────────
+
+  /** Absolute path to {workspace_root}/skills/ — the runtime location for portable skills. */
+  getSkillsDir(): string {
+    return path.join(this.config.workspace_root, "skills");
+  }
+
+  /**
+   * Copy skills from the source tree (resources/skills/) to {workspace_root}/skills/.
+   *
+   * Source is resolved relative to this module's location — works in both src/ (tsx)
+   * and dist/ (compiled) because both mirror the same directory structure with
+   * resources/ at the repo root.
+   */
+  syncSkills(): void {
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    const source = path.resolve(thisDir, "../../../resources/skills");
+
+    if (!existsSync(source)) {
+      this.observer.warn("Skills source directory not found — skipping sync", { source });
+      return;
+    }
+
+    const target = this.getSkillsDir();
+    mkdirSync(target, { recursive: true });
+    cpSync(source, target, { recursive: true });
+    this.observer.info("Skills synced", { source, target });
   }
 
   // ── Private Helpers ────────────────────────────────────────────────────────

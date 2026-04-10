@@ -11,9 +11,9 @@ These files enhance agent capabilities during task phases. They are not compiled
 
 ## Skills
 
-Skills in `resources/skills/` are referenced by absolute path in phase prompts. The orchestrator resolves the absolute path to each skill file at prompt-build time and embeds that path in the prompt. The CLI reads skill files on demand using its Read tool — no content is inlined into prompts.
+Skills in `resources/skills/` are the source-of-truth, synced to `{workspace_root}/skills/` at startup by `WorkspaceManager.syncSkills()`. Phase prompts reference skills by absolute path to that runtime location. The CLI reads skill files on demand using its Read tool — no content is inlined into prompts.
 
-This makes skills portable across any CLI tool: the CLI receives a path, not CLI-specific registration or format. Skills are accessible from any worktree because the prompt contains absolute paths back to The Engineer's source tree.
+This makes skills portable across any CLI tool: the CLI receives a path, not CLI-specific registration or format. Skills are accessible from any worktree because the runtime copy lives at `{workspace_root}/skills/`, above and outside any repo or worktree.
 
 Each skill directory contains:
 - `SKILL.md` — the skill instructions

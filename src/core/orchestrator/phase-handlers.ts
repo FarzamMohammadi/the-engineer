@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import type { LlmCaller } from "./llm-caller.js";
@@ -32,26 +30,8 @@ export function createPhaseHandlers(
 ): Record<Phase, PhaseHandler> {
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  /** Resolve The Engineer's repo root by walking up from this module's location. */
-  function findRepoRoot(): string {
-    const thisDir = path.dirname(fileURLToPath(import.meta.url));
-    let current = thisDir;
-    const root = path.resolve("/");
-
-    while (current !== root) {
-      try {
-        readFileSync(path.join(current, "package.json"), "utf-8");
-        return current;
-      } catch {
-        current = path.dirname(current);
-      }
-    }
-
-    return path.resolve(thisDir, "../../../..");
-  }
-
-  /** Absolute path to skills directory, resolved once per factory call. */
-  const skillsDir = path.join(findRepoRoot(), "resources", "skills");
+  /** Absolute path to skills directory, resolved from workspace config. */
+  const skillsDir = ctx.workspaceManager.getSkillsDir();
 
   /** Resolve absolute thoughts dir for use in prompts (LLM sees these paths). */
   function absThoughts(taskId: string, thoughtsDir: string): string {

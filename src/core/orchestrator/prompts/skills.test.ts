@@ -1,27 +1,7 @@
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { resolveSkillsDir } from "../../../../test/helpers/test-skills-dir.js";
 import { Phases } from "../../../schemas/orchestrator.js";
 import { buildSkillsSection } from "./skills.js";
-
-/** Resolve the skills directory from the repo root (same walk-up pattern as production). */
-function resolveSkillsDir(): string {
-  const thisDir = dirname(fileURLToPath(import.meta.url));
-  let current = thisDir;
-  const root = resolve("/");
-
-  while (current !== root) {
-    try {
-      readFileSync(join(current, "package.json"), "utf-8");
-      return join(current, "resources", "skills");
-    } catch {
-      current = dirname(current);
-    }
-  }
-
-  return join(resolve(thisDir, "../../../.."), "resources", "skills");
-}
 
 const skillsDir = resolveSkillsDir();
 

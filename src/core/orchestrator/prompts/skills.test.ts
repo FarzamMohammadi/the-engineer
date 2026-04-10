@@ -1,78 +1,95 @@
-import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
 import { Phases } from "../../../schemas/orchestrator.js";
-import { buildSkillsSection, loadSkillContent } from "./skills.js";
+import { buildSkillsSection } from "./skills.js";
 
-describe("loadSkillContent", () => {
-  it("should load commit skill content", () => {
-    const content = loadSkillContent("commit");
-    expect(content).toBeTruthy();
-    expect(content).toContain("Grouping Priority");
-    expect(content).toContain("HEREDOC");
-    expect(content).toContain("Levels of Detail");
-  });
+/** Resolve the skills directory from the repo root (same walk-up pattern as production). */
+function resolveSkillsDir(): string {
+  const thisDir = dirname(fileURLToPath(import.meta.url));
+  let current = thisDir;
+  const root = resolve("/");
 
-  it("should load expert-panel-review skill with inlined personas", () => {
-    const content = loadSkillContent("expert-panel-review");
-    expect(content).toBeTruthy();
-    // Main SKILL.md content
-    expect(content).toContain("Expert Panel Review");
-    expect(content).toContain("Synthesize Convergence");
-    // Persona content inlined
-    expect(content).toContain("## Persona: Technical Architect");
-    expect(content).toContain("## Persona: Critical Reviewer");
-    expect(content).toContain("## Persona: Pragmatic Senior Engineer");
-    // Verify actual persona content is present (not just headings)
-    expect(content).toContain("Decision reversibility");
-    expect(content).toContain("Assumption mapping");
-    expect(content).toContain("Implementation-first thinking");
-  });
+  while (current !== root) {
+    try {
+      readFileSync(join(current, "package.json"), "utf-8");
+      return join(current, "resources", "skills");
+    } catch {
+      current = dirname(current);
+    }
+  }
 
-  it("should return empty string for non-existent skill and warn", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const content = loadSkillContent("nonexistent" as never);
-    expect(content).toBe("");
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("nonexistent"));
-    warnSpy.mockRestore();
-  });
-});
+  return join(resolve(thisDir, "../../../.."), "resources", "skills");
+}
+
+const skillsDir = resolveSkillsDir();
 
 describe("buildSkillsSection", () => {
-  it("should return section with commit skill for execution phase", () => {
-    const result = buildSkillsSection(Phases.execution);
+  it("should return section with commit skill path for execution phase", () => {
+    const result = buildSkillsSection(Phases.execution, skillsDir);
     expect(result).not.toBeNull();
     expect(result).toContain("## Skills");
     expect(result).toContain("### Skill: commit");
-    expect(result).toContain("Grouping Priority");
+    expect(result).toContain("commit/SKILL.md");
+    // Content must NOT be inlined
+    expect(result).not.toContain("Grouping Priority");
   });
 
-  it("should return section with both skills for self_review phase", () => {
-    const result = buildSkillsSection(Phases.self_review);
+  it("should return section with both skill paths for self_review phase", () => {
+    const result = buildSkillsSection(Phases.self_review, skillsDir);
     expect(result).not.toBeNull();
     expect(result).toContain("### Skill: commit");
+    expect(result).toContain("commit/SKILL.md");
     expect(result).toContain("### Skill: expert-panel-review");
-    expect(result).toContain("Expert Panel Review");
+    expect(result).toContain("expert-panel-review/SKILL.md");
   });
 
-  it("should include persona content in expert-panel-review skill", () => {
-    const result = buildSkillsSection(Phases.self_review);
+  it("should include persona file paths in expert-panel-review skill", () => {
+    const result = buildSkillsSection(Phases.self_review, skillsDir);
     expect(result).not.toBeNull();
-    expect(result).toContain("## Persona: Technical Architect");
-    expect(result).toContain("## Persona: Critical Reviewer");
-    expect(result).toContain("## Persona: Pragmatic Senior Engineer");
+    expect(result).toContain("personas/critical-reviewer.md");
+    expect(result).toContain("personas/pragmatic-senior-engineer.md");
+    expect(result).toContain("personas/technical-architect.md");
+    // Persona content must NOT be inlined
+    expect(result).not.toContain("Decision reversibility");
   });
 
-  it("should return section with commit skill for integration phase", () => {
-    const result = buildSkillsSection(Phases.integration);
+  it("should return section with commit skill path for integration phase", () => {
+    const result = buildSkillsSection(Phases.integration, skillsDir);
     expect(result).not.toBeNull();
     expect(result).toContain("### Skill: commit");
+    expect(result).toContain("commit/SKILL.md");
     // Should not include expert-panel-review
-    expect(result).not.toContain("Expert Panel Review");
+    expect(result).not.toContain("expert-panel-review");
   });
 
   it("should return null for phases with no skills", () => {
-    expect(buildSkillsSection(Phases.requirements_gathering)).toBeNull();
-    expect(buildSkillsSection(Phases.research)).toBeNull();
-    expect(buildSkillsSection(Phases.planning)).toBeNull();
-    expect(buildSkillsSection(Phases.demo_prep)).toBeNull();
+    expect(buildSkillsSection(Phases.requirements_gathering, skillsDir)).toBeNull();
+    expect(buildSkillsSection(Phases.research, skillsDir)).toBeNull();
+    expect(buildSkillsSection(Phases.planning, skillsDir)).toBeNull();
+    expect(buildSkillsSection(Phases.demo_prep, skillsDir)).toBeNull();
+  });
+
+  it("should contain absolute paths using the provided skillsDir", () => {
+    const result = buildSkillsSection(Phases.execution, skillsDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain(skillsDir);
+  });
+
+  it("should gracefully handle invalid skillsDir without crashing", () => {
+    // With an invalid path, skill path blocks are still constructed (paths are strings).
+    // The personas dir won't be found, but that's handled gracefully.
+    const result = buildSkillsSection(Phases.execution, "/nonexistent/path/skills");
+    expect(result).not.toBeNull();
+    expect(result).toContain("/nonexistent/path/skills/commit/SKILL.md");
+    // No persona paths since the directory doesn't exist
+    expect(result).not.toContain("personas/");
+  });
+
+  it("should instruct the CLI to read skill files", () => {
+    const result = buildSkillsSection(Phases.execution, skillsDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("You MUST read the following skill files");
   });
 });

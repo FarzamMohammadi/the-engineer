@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "execution",
-  "summary": "Plan complete: skill loader module in prompts/, phase-specific injection into execution/review/integration prompts, persona inlining, tests for loader and prompt builders",
-  "complexity": "moderate"
-}

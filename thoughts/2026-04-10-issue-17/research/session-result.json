@@ -1,5 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "planning",
-  "summary": "Injection point is phase prompts (not system prompt). Skill loader reads from resources/skills/, inlines persona files, and phase-to-skill mapping controls which phases get which skills. No adapter/plugin/schema changes needed."
-}

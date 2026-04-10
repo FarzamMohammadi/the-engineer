@@ -16,6 +16,8 @@ export interface ReviewSubPhaseContext {
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
+  /** Absolute path to skills directory for on-demand reading by the CLI. */
+  skillsDir: string;
   /** Which review lens to apply. */
   reviewPhaseName: ReviewPhaseName;
   /** How many times we've looped back. 0 on first pass. */
@@ -32,6 +34,8 @@ export interface RefinementPromptContext {
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
+  /** Absolute path to skills directory for on-demand reading by the CLI. */
+  skillsDir: string;
   /** Which review phases were run (their .md files exist in review/). */
   reviewPhases: ReviewPhaseName[];
   /** How many times we've looped back. 0 on first pass. */
@@ -168,7 +172,7 @@ export function buildReviewSubPhasePrompt(ctx: ReviewSubPhaseContext): string {
   parts.push(buildTaskContext(ctx));
 
   // 6. Skills
-  const skills = buildSkillsSection("self_review");
+  const skills = buildSkillsSection("self_review", ctx.skillsDir);
   if (skills) {
     parts.push(skills);
   }
@@ -201,7 +205,7 @@ export function buildRefinementPrompt(ctx: RefinementPromptContext): string {
   parts.push(buildTaskContext(ctx));
 
   // 6. Skills
-  const skills = buildSkillsSection("self_review");
+  const skills = buildSkillsSection("self_review", ctx.skillsDir);
   if (skills) {
     parts.push(skills);
   }

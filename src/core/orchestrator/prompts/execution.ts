@@ -23,6 +23,8 @@ export interface ExecutionPromptContext {
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
+  /** Absolute path to skills directory for on-demand reading by the CLI. */
+  skillsDir: string;
   /** Unapplied feedback rounds from PR review (rework mode). */
   feedbackRounds?: FeedbackRound[] | undefined;
   /** True when research was skipped for a trivial task. */
@@ -55,7 +57,7 @@ export function buildExecutionPrompt(ctx: ExecutionPromptContext): string {
   parts.push(buildTaskContext(ctx));
 
   // 6. Skills
-  const skills = buildSkillsSection("execution");
+  const skills = buildSkillsSection("execution", ctx.skillsDir);
   if (skills) {
     parts.push(skills);
   }

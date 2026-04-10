@@ -21,6 +21,8 @@ export interface IntegrationPromptContext {
   };
   repoContext: RepoContext | null;
   thoughtsDir: string;
+  /** Absolute path to skills directory for on-demand reading by the CLI. */
+  skillsDir: string;
   childSummaries: ChildTaskSummary[];
 }
 
@@ -50,7 +52,7 @@ export function buildIntegrationPrompt(ctx: IntegrationPromptContext): string {
   parts.push(buildTaskContext(ctx));
 
   // 6. Skills
-  const skills = buildSkillsSection("integration");
+  const skills = buildSkillsSection("integration", ctx.skillsDir);
   if (skills) {
     parts.push(skills);
   }

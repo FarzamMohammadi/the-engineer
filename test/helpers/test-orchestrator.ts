@@ -60,15 +60,28 @@ function writeSessionResultFiles(
   for (const phase of phases) {
     const phaseDir = path.join(worktreePath, thoughtsDir, PHASE_DIR_MAP[phase]);
     mkdirSync(phaseDir, { recursive: true });
-    writeFileSync(
-      path.join(phaseDir, "session-result.json"),
-      JSON.stringify({
-        status: "ready",
-        next_phase: phase === "integration" ? "integration" : "research",
-        summary: `Mock ${phase} complete`,
-        complexity: "moderate",
-      }),
-    );
+    const resultData = {
+      status: "ready",
+      next_phase: phase === "integration" ? "integration" : "research",
+      summary: `Mock ${phase} complete`,
+      complexity: "moderate",
+    };
+    writeFileSync(path.join(phaseDir, "session-result.json"), JSON.stringify(resultData));
+
+    // Refinement step reads from review/refinement/ (step-scoped directory)
+    if (phase === "self_review") {
+      const refinementDir = path.join(phaseDir, "refinement");
+      mkdirSync(refinementDir, { recursive: true });
+      writeFileSync(
+        path.join(refinementDir, "session-result.json"),
+        JSON.stringify({
+          status: "ready",
+          next_phase: "demo_prep",
+          summary: "Mock refinement complete",
+          complexity: "moderate",
+        }),
+      );
+    }
   }
 }
 

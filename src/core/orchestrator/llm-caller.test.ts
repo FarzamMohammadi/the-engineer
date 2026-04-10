@@ -5,7 +5,7 @@ import type { InferenceResult } from "../../schemas/adapters.js";
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { SessionResult } from "../../schemas/orchestrator.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
-import { readSessionResult } from "./session-result.js";
+import { backupSessionResult, readSessionResult } from "./session-result.js";
 
 // Mock session-result reader — allows tests to control what readSessionResult returns
 vi.mock("./session-result.js", () => ({
@@ -437,6 +437,177 @@ describe("LlmCaller", () => {
         (call: unknown[]) => (call[0] as { type: string }).type === "cost.incurred",
       );
       expect(costCalls).toHaveLength(0);
+    });
+  });
+
+  describe("step-scoped directories and requiresSessionResult", () => {
+    const readSessionResultMock = vi.mocked(readSessionResult);
+    const backupSessionResultMock = vi.mocked(backupSessionResult);
+
+    function setupForStepTests() {
+      readSessionResultMock.mockReset().mockReturnValue(null);
+      backupSessionResultMock.mockReset();
+
+      const fakeLlm = {
+        infer: vi.fn().mockResolvedValue({
+          content: "done",
+          cost_usd: 0.01,
+          duration_ms: 100,
+          usage: null,
+        }),
+        getCapabilities: vi
+          .fn()
+          .mockReturnValue({ model_id: "test-model", context_window: 100000 }),
+        hasCapability: vi.fn().mockReturnValue(true),
+        manifest: { id: "test-llm", type: "llm" as const },
+      };
+
+      const ctx = createMockContext();
+      (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeLlm);
+      return { ctx, fakeLlm };
+    }
+
+    const baseState = {
+      traceId: "trace-001",
+      sessionId: "session-001",
+      loopbackCount: 0,
+      requirementsLoopCount: 0,
+      thoughtsDir: null,
+      repoContext: null,
+      returnToPhase: null,
+      phaseSequence: 1,
+    };
+
+    it("skips backup and validation when requiresSessionResult is false", async () => {
+      const { ctx } = setupForStepTests();
+      const caller = createLlmCaller(ctx);
+
+      const output = await caller.runPhaseWithCli(
+        "self_review",
+        "task-001",
+        "system prompt",
+        "review code",
+        baseState,
+        "thoughts/2026-04-09-issue-5",
+        "review",
+        "requirements-check",
+        false,
+      );
+
+      expect(backupSessionResultMock).not.toHaveBeenCalled();
+      expect(readSessionResultMock).not.toHaveBeenCalled();
+      expect(output.data["status"]).toBe("ready");
+    });
+
+    it("returns synthetic passthrough PhaseOutput when requiresSessionResult is false", async () => {
+      const { ctx } = setupForStepTests();
+      const caller = createLlmCaller(ctx);
+
+      const output = await caller.runPhaseWithCli(
+        "self_review",
+        "task-001",
+        "system prompt",
+        "review code",
+        baseState,
+        "thoughts/2026-04-09-issue-5",
+        "review",
+        "requirements-check",
+        false,
+      );
+
+      expect(output.phase).toBe("self_review");
+      expect(output.data["status"]).toBe("ready");
+      expect(output.data["summary"]).toBe("");
+      expect(output.data["complexity"]).toBe("moderate");
+    });
+
+    it("uses step-scoped deliverable_path when stepName is provided", async () => {
+      const { ctx } = setupForStepTests();
+      const caller = createLlmCaller(ctx);
+
+      const output = await caller.runPhaseWithCli(
+        "self_review",
+        "task-001",
+        "system prompt",
+        "review code",
+        baseState,
+        "thoughts/2026-04-09-issue-5",
+        "review",
+        "requirements-check",
+        false,
+      );
+
+      expect(output.data["deliverable_path"]).toBe(
+        "thoughts/2026-04-09-issue-5/review/requirements-check",
+      );
+    });
+
+    it("runs backup and validation when requiresSessionResult is true", async () => {
+      const { ctx } = setupForStepTests();
+      const sessionResult: SessionResult = {
+        status: "ready",
+        next_phase: "demo_prep",
+        summary: "Refinement complete",
+        complexity: "moderate",
+      };
+      readSessionResultMock.mockReturnValue(sessionResult);
+
+      const caller = createLlmCaller(ctx);
+      const output = await caller.runPhaseWithCli(
+        "self_review",
+        "task-001",
+        "system prompt",
+        "refine code",
+        baseState,
+        "thoughts/2026-04-09-issue-5",
+        "review",
+        "refinement",
+        true,
+      );
+
+      expect(backupSessionResultMock).toHaveBeenCalled();
+      expect(readSessionResultMock).toHaveBeenCalled();
+      expect(output.data["status"]).toBe("ready");
+      expect(output.data["next_phase"]).toBe("demo_prep");
+    });
+
+    it("throws when requiresSessionResult is true and session-result.json is missing", async () => {
+      const { ctx } = setupForStepTests();
+      readSessionResultMock.mockReturnValue(null);
+
+      const caller = createLlmCaller(ctx);
+      await expect(
+        caller.runPhaseWithCli(
+          "self_review",
+          "task-001",
+          "system prompt",
+          "refine code",
+          baseState,
+          "thoughts/2026-04-09-issue-5",
+          "review",
+          "refinement",
+          true,
+        ),
+      ).rejects.toThrow("session-result.json was not created by the CLI");
+    });
+
+    it("defaults requiresSessionResult to true when omitted", async () => {
+      const { ctx } = setupForStepTests();
+      readSessionResultMock.mockReturnValue(null);
+
+      const caller = createLlmCaller(ctx);
+      await expect(
+        caller.runPhaseWithCli(
+          "execution",
+          "task-001",
+          "system prompt",
+          "do work",
+          baseState,
+          "thoughts/2026-04-09-issue-5",
+        ),
+      ).rejects.toThrow("session-result.json was not created by the CLI");
+
+      expect(backupSessionResultMock).toHaveBeenCalled();
     });
   });
 });

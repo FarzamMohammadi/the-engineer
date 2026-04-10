@@ -297,7 +297,7 @@ function buildRefinementOutputInstructions(thoughtsDir: string): string {
       "- What was fixed (with file references)",
       "- What remains unfixed (and why)",
       "",
-      `Update session-result.json at \`${thoughtsDir}/review/session-result.json\` with:`,
+      `Update session-result.json at \`${thoughtsDir}/review/refinement/session-result.json\` with:`,
       "",
       "```json",
       "{",

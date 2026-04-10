@@ -188,6 +188,7 @@ export function createPhaseHandlers(
         thoughtsDir,
         "review",
         reviewPhaseName.replace(/_/g, "-"),
+        false, // sub-phases don't write session-result.json
       );
     }
 
@@ -209,6 +210,7 @@ export function createPhaseHandlers(
       thoughtsDir,
       "review",
       "refinement",
+      true, // refinement writes session-result.json for routing
     );
 
     // Step 3: Map next_phase → quality_assessment for checkSelfReviewLoopback compatibility

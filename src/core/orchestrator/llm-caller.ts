@@ -236,6 +236,7 @@ export interface LlmCaller {
     thoughtsDir: string,
     overridePhaseDir?: string,
     stepName?: string,
+    requiresSessionResult?: boolean,
   ): Promise<PhaseOutput>;
   /** Emit cost.incurred event from inference result. */
   emitCostIncurred(taskId: string, result: InferenceResult): void;
@@ -372,6 +373,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     thoughtsDir: string,
     overridePhaseDir?: string,
     stepName?: string,
+    requiresSessionResult?: boolean,
   ): Promise<PhaseOutput> {
     if (!thoughtsDir) {
       throw new WorkspaceNotReadyError(
@@ -385,8 +387,14 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     }
 
     const phaseSubDir = overridePhaseDir ?? PHASE_DIR_MAP[phase];
-    const phaseDir = phaseSubDir ? path.join(worktreePath, thoughtsDir, phaseSubDir) : null;
+    const effectiveSubDir = stepName && phaseSubDir ? `${phaseSubDir}/${stepName}` : phaseSubDir;
+    const phaseDir = effectiveSubDir ? path.join(worktreePath, thoughtsDir, effectiveSubDir) : null;
     const { traceId, sessionId } = state;
+
+    // Step subdirs don't exist at workspace init — create on demand
+    if (phaseDir && stepName) {
+      mkdirSync(phaseDir, { recursive: true });
+    }
 
     // ── Generate trace path ──────────────────────────────────────────────
     const resolvedStepName = stepName ?? "initial";
@@ -412,7 +420,8 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
     // ── Backup stale session-result.json before CLI call ──────────────────
     // Prevents files from prior runs masking failures. Backup preserved for debugging.
-    if (phaseDir) {
+    // Skipped for steps that don't produce session-result.json (e.g., review sub-phases).
+    if (phaseDir && requiresSessionResult !== false) {
       backupSessionResult(phaseDir);
     }
 
@@ -453,26 +462,35 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     }
 
     // ── Read session-result.json ─────────────────────────────────────────
-    const sessionResult = phaseDir ? readSessionResult(phaseDir) : null;
+    // Skipped for steps that don't produce session-result.json (e.g., review sub-phases).
+    const sessionResult =
+      phaseDir && requiresSessionResult !== false ? readSessionResult(phaseDir) : null;
 
     // ── Resolve final session result ────────────────────────────────────
-    // If the CLI wrote session-result.json, use it. If not, the phase failed —
-    // the CLI must produce its routing output or it's a failure (Fail Loud).
+    // If the CLI wrote session-result.json, use it. If not and it was required,
+    // the phase failed (Fail Loud). If not required, return a synthetic passthrough.
     const finalResult =
       sessionResult && sessionResult !== "invalid"
         ? sessionResult
-        : (() => {
-            const detail =
-              sessionResult === "invalid"
-                ? "session-result.json was not updated by the CLI (still contains template placeholders or invalid data)"
-                : "session-result.json was not created by the CLI";
-            ctx.observer.error("Phase failed: CLI completed but no valid session-result.json", {
-              taskId,
-              phase,
-              detail,
-            });
-            throw new Error(`Phase ${phase} failed: ${detail}`);
-          })();
+        : requiresSessionResult === false
+          ? {
+              status: "ready" as const,
+              next_phase: phase,
+              summary: "",
+              complexity: "moderate" as const,
+            }
+          : (() => {
+              const detail =
+                sessionResult === "invalid"
+                  ? "session-result.json was not updated by the CLI (still contains template placeholders or invalid data)"
+                  : "session-result.json was not created by the CLI";
+              ctx.observer.error("Phase failed: CLI completed but no valid session-result.json", {
+                taskId,
+                phase,
+                detail,
+              });
+              throw new Error(`Phase ${phase} failed: ${detail}`);
+            })();
 
     // ── Cost + tracking (skip cost emission on recovery — no cost data) ──
     if (!recoveredFromError) {
@@ -520,10 +538,10 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       task_id: taskId,
       timestamp: new Date().toISOString(),
       data: {
-        deliverable_path: phaseSubDir
+        deliverable_path: effectiveSubDir
           ? phase === Phases.demo_prep
-            ? `${thoughtsDir}/${phaseSubDir}/pr-description.md`
-            : `${thoughtsDir}/${phaseSubDir}`
+            ? `${thoughtsDir}/${effectiveSubDir}/pr-description.md`
+            : `${thoughtsDir}/${effectiveSubDir}`
           : "",
         status: finalResult.status,
         next_phase: finalResult.next_phase,

@@ -30,6 +30,9 @@ export function createPhaseHandlers(
 ): Record<Phase, PhaseHandler> {
   // ── Helpers ────────────────────────────────────────────────────────────
 
+  /** Absolute path to skills directory, resolved from workspace config. */
+  const skillsDir = ctx.workspaceManager.getSkillsDir();
+
   /** Resolve absolute thoughts dir for use in prompts (LLM sees these paths). */
   function absThoughts(taskId: string, thoughtsDir: string): string {
     const wt = ctx.workspaceManager.getWorktreePath(taskId);
@@ -143,6 +146,7 @@ export function createPhaseHandlers(
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
+        skillsDir,
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
         skipResearch: task?.skip_research ?? false,
       }),
@@ -181,6 +185,7 @@ export function createPhaseHandlers(
           repoKnowledge: dispatch.knowledge.repo,
           userKnowledge: dispatch.knowledge.user,
           thoughtsDir: absThoughts(taskId, thoughtsDir),
+          skillsDir,
           reviewPhaseName,
           loopbackCount: state.loopbackCount,
         }),
@@ -203,6 +208,7 @@ export function createPhaseHandlers(
         repoKnowledge: dispatch.knowledge.repo,
         userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
+        skillsDir,
         reviewPhases,
         loopbackCount: state.loopbackCount,
       }),
@@ -279,6 +285,7 @@ export function createPhaseHandlers(
         task: dispatch.task,
         repoContext: state.repoContext,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
+        skillsDir,
         childSummaries,
       }),
       state,

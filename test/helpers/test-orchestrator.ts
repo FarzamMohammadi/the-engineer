@@ -493,6 +493,8 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     registerExistingWorkspace: vi.fn(),
     pushBranch: vi.fn(),
     cleanupWorkspace: vi.fn(),
+    getSkillsDir: vi.fn().mockReturnValue("/tmp/test-skills"),
+    syncSkills: vi.fn(),
   };
 
   // ── Build Orchestrator ─────────────────────────────────────────────────

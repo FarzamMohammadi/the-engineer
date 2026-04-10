@@ -306,6 +306,8 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     cleanupWorkspace: vi.fn(),
     registerExistingWorkspace: vi.fn(),
     removeThoughtsAndPush: vi.fn().mockReturnValue(false),
+    getSkillsDir: vi.fn().mockReturnValue("/tmp/test-skills"),
+    syncSkills: vi.fn(),
   };
 
   // ── PeopleDirectory mock ──────────────────────────────────────────────

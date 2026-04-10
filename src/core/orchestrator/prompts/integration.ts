@@ -1,5 +1,6 @@
 import type { RepoContext } from "./context.js";
 import { buildRRPIROverview, buildTaskBrief, section } from "./format.js";
+import { buildSkillsSection } from "./skills.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ export interface IntegrationPromptContext {
   };
   repoContext: RepoContext | null;
   thoughtsDir: string;
+  /** Absolute path to skills directory for on-demand reading by the CLI. */
+  skillsDir: string;
   childSummaries: ChildTaskSummary[];
 }
 
@@ -47,6 +50,12 @@ export function buildIntegrationPrompt(ctx: IntegrationPromptContext): string {
 
   // 5. The Task Context
   parts.push(buildTaskContext(ctx));
+
+  // 6. Skills
+  const skills = buildSkillsSection("integration", ctx.skillsDir);
+  if (skills) {
+    parts.push(skills);
+  }
 
   return parts.join("\n\n");
 }

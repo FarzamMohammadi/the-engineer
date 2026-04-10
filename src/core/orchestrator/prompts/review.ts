@@ -2,6 +2,7 @@ import type { ReviewPhaseName } from "../../../schemas/config.js";
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 import { buildKnowledgeSection, buildRRPIROverview, buildTaskBrief, section } from "./format.js";
+import { buildSkillsSection } from "./skills.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,8 @@ export interface ReviewSubPhaseContext {
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
+  /** Absolute path to skills directory for on-demand reading by the CLI. */
+  skillsDir: string;
   /** Which review lens to apply. */
   reviewPhaseName: ReviewPhaseName;
   /** How many times we've looped back. 0 on first pass. */
@@ -31,6 +34,8 @@ export interface RefinementPromptContext {
   repoKnowledge: KnowledgeEntry[];
   userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
+  /** Absolute path to skills directory for on-demand reading by the CLI. */
+  skillsDir: string;
   /** Which review phases were run (their .md files exist in review/). */
   reviewPhases: ReviewPhaseName[];
   /** How many times we've looped back. 0 on first pass. */
@@ -166,6 +171,12 @@ export function buildReviewSubPhasePrompt(ctx: ReviewSubPhaseContext): string {
   // 5. The Task Context
   parts.push(buildTaskContext(ctx));
 
+  // 6. Skills
+  const skills = buildSkillsSection("self_review", ctx.skillsDir);
+  if (skills) {
+    parts.push(skills);
+  }
+
   return parts.join("\n\n");
 }
 
@@ -192,6 +203,12 @@ export function buildRefinementPrompt(ctx: RefinementPromptContext): string {
 
   // 5. The Task Context
   parts.push(buildTaskContext(ctx));
+
+  // 6. Skills
+  const skills = buildSkillsSection("self_review", ctx.skillsDir);
+  if (skills) {
+    parts.push(skills);
+  }
 
   return parts.join("\n\n");
 }

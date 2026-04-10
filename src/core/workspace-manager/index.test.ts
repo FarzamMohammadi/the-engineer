@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -420,5 +420,48 @@ describe("removeThoughtsAndPush", () => {
   it("throws WorkspaceNotFoundError for unknown task", () => {
     const h = setup();
     expect(() => h.workspaceManager.removeThoughtsAndPush("unknown-task")).toThrow();
+  });
+});
+
+// ── getSkillsDir ────────────────────────────────────────────────────────────
+
+describe("getSkillsDir", () => {
+  it("returns {workspace_root}/skills/", () => {
+    const h = setup();
+    expect(h.workspaceManager.getSkillsDir()).toBe(join(h.workspaceRoot, "skills"));
+  });
+});
+
+// ── syncSkills ──────────────────────────────────────────────────────────────
+
+describe("syncSkills", () => {
+  it("copies skill files to {workspace_root}/skills/", () => {
+    const h = setup();
+    h.workspaceManager.syncSkills();
+
+    const skillsDir = h.workspaceManager.getSkillsDir();
+    expect(existsSync(join(skillsDir, "commit", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(skillsDir, "expert-panel-review", "SKILL.md"))).toBe(true);
+  });
+
+  it("copies persona files for expert-panel-review", () => {
+    const h = setup();
+    h.workspaceManager.syncSkills();
+
+    const personasDir = join(h.workspaceManager.getSkillsDir(), "expert-panel-review", "personas");
+    expect(existsSync(personasDir)).toBe(true);
+    const personas = readdirSync(personasDir);
+    expect(personas.length).toBeGreaterThan(0);
+    expect(personas.some((f) => f.endsWith(".md"))).toBe(true);
+  });
+
+  it("is idempotent — calling twice does not throw", () => {
+    const h = setup();
+    h.workspaceManager.syncSkills();
+    expect(() => h.workspaceManager.syncSkills()).not.toThrow();
+
+    // Files still present after second call
+    const skillsDir = h.workspaceManager.getSkillsDir();
+    expect(existsSync(join(skillsDir, "commit", "SKILL.md"))).toBe(true);
   });
 });

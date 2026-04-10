@@ -104,10 +104,10 @@ const PHASE_GUIDANCE: Record<Phase, string> = {
     "Phase: research. Explore the codebase systematically before forming conclusions. Find the files that matter, the patterns established, and the conventions to follow. Do not re-read files already seen.",
 
   planning:
-    "Phase: planning. Create a concrete, actionable technical plan. Every change justified. Every risk mitigated. Stress-test the plan — revise completely if a better path emerges.",
+    "Phase: planning. Evaluate multiple approaches before committing to one. The simplest path that meets requirements is your baseline — complexity must justify itself. Stress-test the plan against architectural principles, then detail it.",
 
   execution:
-    "Phase: execution. Write clean, tested code. Follow the plan but adapt when you discover something it did not anticipate. Run tests after changes. Fix failures immediately.",
+    "Phase: execution. The plan is your starting point, not a contract. Write clean, tested code. If a simpler approach emerges during implementation, take it and document the deviation. Run tests after changes.",
 
   self_review:
     "Phase: self-review. Review your own work as a senior code reviewer would. Look for bugs, missed edge cases, poor naming, unnecessary complexity, missing tests. Fix what you find.",

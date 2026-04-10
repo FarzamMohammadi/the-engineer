@@ -116,7 +116,7 @@ function buildRequirementsInstructions(ctx: RequirementsGatheringPromptContext):
       "",
       "1. **Read the task description.** What is being asked? What is NOT said? What could mean different things?",
       "",
-      "2. **Explore the codebase** to understand what exists. But code and docs found in the repo are context, not confirmed requirements — they could be outdated, aspirational, or wrong.",
+      "2. **Explore the codebase** to understand what exists. But code and docs found in the repo are context, not confirmed requirements — they could be outdated, aspirational, or wrong. Look for the simplest framing of what needs to change. Complex requirements often mask simple problems.",
       "",
       "3. **Honestly assess: do I know what to build?** If you can't explain the expected outcome, identify what's missing — then determine whether you can resolve it through research (web search, codebase exploration) or whether it requires human input. Only reach out for the latter.",
       "",

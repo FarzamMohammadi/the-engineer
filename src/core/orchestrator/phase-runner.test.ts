@@ -253,121 +253,10 @@ describe("PhaseRunner", () => {
     });
 
     // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
-    it.skip("loops back to execution on self_review needs_work", async () => {
-      const ctx = createMockContext();
-      let selfReviewCallCount = 0;
-      const outputs = new Map<Phase, PhaseOutput>();
-      for (const phase of PHASE_SEQUENCE) {
-        outputs.set(phase, makeOutput(phase));
-      }
-
-      const handlerFns = Object.fromEntries(
-        PHASE_SEQUENCE.map((phase) => [
-          phase,
-          vi.fn(() => {
-            if (phase === Phases.self_review) {
-              selfReviewCallCount++;
-              if (selfReviewCallCount === 1) {
-                return Promise.resolve(
-                  makeOutput(Phases.self_review, {
-                    findings: ["issue"],
-                    refactoring_applied: [],
-                    quality_assessment: "needs_work",
-                  }),
-                );
-              }
-            }
-            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
-          }),
-        ]),
-      ) as Record<Phase, ReturnType<typeof vi.fn>>;
-      const handlers = createPhaseHandlerRegistry(handlerFns);
-      const deps = createDeps(ctx, handlers);
-
-      const result = await runPhasePipeline(createDispatch(), createState(), deps);
-
-      expect(result.outcome).toBe("completed");
-      expect(selfReviewCallCount).toBe(2);
-    });
-
-    // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
-    it.skip("emits loopback alert when threshold exceeded", async () => {
-      const ctx = createMockContext();
-      const outputs = new Map<Phase, PhaseOutput>();
-      for (const phase of PHASE_SEQUENCE) {
-        outputs.set(phase, makeOutput(phase));
-      }
-
-      const handlerFns = Object.fromEntries(
-        PHASE_SEQUENCE.map((phase) => [
-          phase,
-          vi.fn(() => {
-            if (phase === Phases.self_review) {
-              return Promise.resolve(
-                makeOutput(Phases.self_review, {
-                  findings: ["issue"],
-                  refactoring_applied: [],
-                  quality_assessment: "needs_work",
-                }),
-              );
-            }
-            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
-          }),
-        ]),
-      ) as Record<Phase, ReturnType<typeof vi.fn>>;
-      const handlers = createPhaseHandlerRegistry(handlerFns);
-      const deps = createDeps(ctx, handlers);
-
-      // Start with loopback count at 3 (threshold)
-      const result = await runPhasePipeline(
-        createDispatch(),
-        createState({ loopbackCount: 3 }),
-        deps,
-      );
-
-      // Should proceed past self_review (alert emitted, no loop)
-      expect(result.outcome).toBe("completed");
-      expect(ctx.notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "alert" }),
-      );
-    });
-
-    // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
-    it.skip("loops back via next_phase when quality_assessment is absent", async () => {
-      const ctx = createMockContext();
-      const outputs = new Map<Phase, PhaseOutput>();
-      for (const phase of PHASE_SEQUENCE) {
-        outputs.set(phase, makeOutput(phase));
-      }
-
-      let selfReviewCallCount = 0;
-      const handlerFns = Object.fromEntries(
-        PHASE_SEQUENCE.map((phase) => [
-          phase,
-          vi.fn(() => {
-            if (phase === Phases.self_review) {
-              selfReviewCallCount++;
-              if (selfReviewCallCount === 1) {
-                // CLI-native style: next_phase without quality_assessment
-                return Promise.resolve(
-                  makeOutput(Phases.self_review, {
-                    next_phase: "execution",
-                  }),
-                );
-              }
-            }
-            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
-          }),
-        ]),
-      ) as Record<Phase, ReturnType<typeof vi.fn>>;
-      const handlers = createPhaseHandlerRegistry(handlerFns);
-      const deps = createDeps(ctx, handlers);
-
-      const result = await runPhasePipeline(createDispatch(), createState(), deps);
-
-      expect(result.outcome).toBe("completed");
-      expect(selfReviewCallCount).toBe(2);
-    });
+    // Removed tests (restore from git history when un-skipping):
+    //   - "loops back to execution on self_review needs_work"
+    //   - "emits loopback alert when threshold exceeded"
+    //   - "loops back via next_phase when quality_assessment is absent"
 
     it("halts on preemption and creates checkpoint", async () => {
       const ctx = createMockContext();
@@ -553,46 +442,8 @@ describe("PhaseRunner", () => {
 
   describe("config-driven behavior", () => {
     // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
-    it.skip("respects custom rrpir.max_review_loopbacks from config", async () => {
-      const ctx = createMockContext({ rrpir: { max_review_loopbacks: 5 } });
-      const outputs = new Map<Phase, PhaseOutput>();
-      for (const phase of PHASE_SEQUENCE) {
-        outputs.set(phase, makeOutput(phase));
-      }
-
-      const handlerFns = Object.fromEntries(
-        PHASE_SEQUENCE.map((phase) => [
-          phase,
-          vi.fn(() => {
-            if (phase === Phases.self_review) {
-              return Promise.resolve(
-                makeOutput(Phases.self_review, {
-                  findings: ["issue"],
-                  refactoring_applied: [],
-                  quality_assessment: "needs_work",
-                }),
-              );
-            }
-            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
-          }),
-        ]),
-      ) as Record<Phase, ReturnType<typeof vi.fn>>;
-      const handlers = createPhaseHandlerRegistry(handlerFns);
-      const deps = createDeps(ctx, handlers);
-
-      // At loopbackCount 4 (below custom threshold of 5), should still loop back
-      const result = await runPhasePipeline(
-        createDispatch(),
-        createState({ loopbackCount: 4 }),
-        deps,
-      );
-
-      // It loops back once (4→5), then hits threshold (5→alert, no loop)
-      expect(result.outcome).toBe("completed");
-      // Loopback happened (execution handler called more than once)
-      const executionCalls = (handlerFns[Phases.execution] as ReturnType<typeof vi.fn>).mock.calls;
-      expect(executionCalls.length).toBeGreaterThanOrEqual(2);
-    });
+    // Removed test (restore from git history when un-skipping):
+    //   - "respects custom rrpir.max_review_loopbacks from config"
 
     it("runs all phases with rrpir config defaults", async () => {
       const ctx = createMockContext({ rrpir: { max_requirements_loops: 3 } });
@@ -913,45 +764,8 @@ describe("PhaseRunner", () => {
     });
 
     // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
-    it.skip("self-review loopback lands on execution, not planning", async () => {
-      const ctx = createMockContext();
-      const phaseExecutionOrder: Phase[] = [];
-      let selfReviewCalls = 0;
-      const outputs = new Map<Phase, PhaseOutput>();
-      for (const phase of PHASE_SEQUENCE) {
-        outputs.set(phase, makeOutput(phase));
-      }
-
-      const handlerFns = Object.fromEntries(
-        PHASE_SEQUENCE.map((phase) => [
-          phase,
-          vi.fn(() => {
-            phaseExecutionOrder.push(phase);
-            if (phase === Phases.self_review) {
-              selfReviewCalls++;
-              if (selfReviewCalls === 1) {
-                return Promise.resolve(
-                  makeOutput(Phases.self_review, {
-                    findings: ["issue"],
-                    refactoring_applied: [],
-                    quality_assessment: "needs_work",
-                  }),
-                );
-              }
-            }
-            return Promise.resolve(outputs.get(phase) ?? makeOutput(phase));
-          }),
-        ]),
-      ) as Record<Phase, ReturnType<typeof vi.fn>>;
-      const handlers = createPhaseHandlerRegistry(handlerFns);
-      const deps = createDeps(ctx, handlers);
-
-      await runPhasePipeline(createDispatch(), createState(), deps);
-
-      // After self_review(needs_work), the next phase should be execution, NOT planning
-      const selfReviewIdx = phaseExecutionOrder.indexOf(Phases.self_review);
-      expect(phaseExecutionOrder[selfReviewIdx + 1]).toBe(Phases.execution);
-    });
+    // Removed test (restore from git history when un-skipping):
+    //   - "self-review loopback lands on execution, not planning"
   });
 
   describe("PhaseHandlerRegistry", () => {

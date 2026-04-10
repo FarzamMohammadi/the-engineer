@@ -99,9 +99,9 @@ function buildSkillPathBlock(skillName: SkillName, skillsDir: string): string | 
     }
 
     return lines.join("\n");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[skills] Failed to build paths for skill "${skillName}": ${message}`);
+  } catch {
+    // Path construction failed (shouldn't happen — all inputs are strings).
+    // Return null so the phase continues without this skill.
     return null;
   }
 }

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -652,8 +652,7 @@ export class WorkspaceManager implements IWorkspaceManager {
    * resources/ at the repo root.
    */
   syncSkills(): void {
-    const thisDir = path.dirname(fileURLToPath(import.meta.url));
-    const source = path.resolve(thisDir, "../../../resources/skills");
+    const source = path.join(this.findRepoRoot(), "resources", "skills");
 
     if (!existsSync(source)) {
       this.observer.warn("Skills source directory not found — skipping sync", { source });
@@ -667,6 +666,22 @@ export class WorkspaceManager implements IWorkspaceManager {
   }
 
   // ── Private Helpers ────────────────────────────────────────────────────────
+
+  /** Walk up from this module to find the repo root (directory containing package.json). */
+  private findRepoRoot(): string {
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    let current = thisDir;
+    const root = path.resolve("/");
+    while (current !== root) {
+      try {
+        readFileSync(path.join(current, "package.json"), "utf-8");
+        return current;
+      } catch {
+        current = path.dirname(current);
+      }
+    }
+    return path.resolve(thisDir, "../../../..");
+  }
 
   /** Resolve the git token from the environment variable. */
   private resolveToken(): string {

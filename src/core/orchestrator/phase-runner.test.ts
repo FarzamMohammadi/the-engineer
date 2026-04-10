@@ -246,13 +246,14 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // All 7 phases should have checkpoints (no fast-path)
+      // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 phases instead of 7
       const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
         .calls;
-      expect(checkpointCalls.length).toBe(7);
+      expect(checkpointCalls.length).toBe(5);
     });
 
-    it("loops back to execution on self_review needs_work", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
+    it.skip("loops back to execution on self_review needs_work", async () => {
       const ctx = createMockContext();
       let selfReviewCallCount = 0;
       const outputs = new Map<Phase, PhaseOutput>();
@@ -289,7 +290,8 @@ describe("PhaseRunner", () => {
       expect(selfReviewCallCount).toBe(2);
     });
 
-    it("emits loopback alert when threshold exceeded", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
+    it.skip("emits loopback alert when threshold exceeded", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -330,7 +332,8 @@ describe("PhaseRunner", () => {
       );
     });
 
-    it("loops back via next_phase when quality_assessment is absent", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
+    it.skip("loops back via next_phase when quality_assessment is absent", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -512,7 +515,8 @@ describe("PhaseRunner", () => {
       expect(result.outcome).toBe("decomposed");
     });
 
-    it("exits with review_pending when PR is created after demo_prep", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — PR now triggers after execution (original: "exits with review_pending when PR is created after demo_prep")
+    it("exits with review_pending when PR is created after execution", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -548,7 +552,8 @@ describe("PhaseRunner", () => {
   });
 
   describe("config-driven behavior", () => {
-    it("respects custom rrpir.max_review_loopbacks from config", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
+    it.skip("respects custom rrpir.max_review_loopbacks from config", async () => {
       const ctx = createMockContext({ rrpir: { max_review_loopbacks: 5 } });
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -601,10 +606,10 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // All 7 phases should have checkpoints
+      // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 phases instead of 7
       const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
         .calls;
-      expect(checkpointCalls.length).toBe(7);
+      expect(checkpointCalls.length).toBe(5);
     });
   });
 
@@ -901,13 +906,14 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // All 7 phases should run — requirements_gathering runs once, then advances normally
+      // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 phases instead of 7
       const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock
         .calls;
-      expect(checkpointCalls.length).toBe(7);
+      expect(checkpointCalls.length).toBe(5);
     });
 
-    it("self-review loopback lands on execution, not planning", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — self_review never runs
+    it.skip("self-review loopback lands on execution, not planning", async () => {
       const ctx = createMockContext();
       const phaseExecutionOrder: Phase[] = [];
       let selfReviewCalls = 0;

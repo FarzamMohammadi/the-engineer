@@ -114,6 +114,11 @@ export const PHASE_SEQUENCE: Phase[] = [
 ];
 
 /** Build the phase sequence, optionally skipping research for trivial tasks. */
+// TODO-TEMP: Temporarily skipping self_review and demo_prep
 export function buildPhaseSequence(skipResearch: boolean): Phase[] {
-  return skipResearch ? PHASE_SEQUENCE.filter((p) => p !== Phases.research) : [...PHASE_SEQUENCE];
+  const base = skipResearch
+    ? PHASE_SEQUENCE.filter((p) => p !== Phases.research)
+    : [...PHASE_SEQUENCE];
+  // TODO-TEMP: Temporarily skipping self_review and demo_prep
+  return base.filter((p) => p !== Phases.self_review && p !== Phases.demo_prep);
 }

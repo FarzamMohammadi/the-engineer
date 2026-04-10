@@ -8,7 +8,9 @@ import {
   createMockTask,
   createTestOrchestrator,
 } from "../../../test/helpers/test-orchestrator.js";
-import { PHASE_SEQUENCE } from "./phase-runner.js";
+// TODO-TEMP: Temporarily skipping self_review and demo_prep — use runtime sequence for assertions
+import { buildPhaseSequence } from "./types.js";
+const RUNTIME_PHASES = buildPhaseSequence(false);
 
 describe("Orchestrator", () => {
   let handle: TestOrchestratorHandle;
@@ -20,7 +22,8 @@ describe("Orchestrator", () => {
   // ── Pipeline Progression ───────────────────────────────────────────────────
 
   describe("pipeline progression", () => {
-    it("runs through all 7 phases and returns completed", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 phases instead of 7
+    it("runs through all phases and returns completed", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
@@ -28,8 +31,8 @@ describe("Orchestrator", () => {
 
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        expect(result.phaseOutputs.size).toBe(7);
-        for (const phase of PHASE_SEQUENCE) {
+        expect(result.phaseOutputs.size).toBe(5);
+        for (const phase of RUNTIME_PHASES) {
           expect(result.phaseOutputs.has(phase)).toBe(true);
         }
       }
@@ -43,7 +46,8 @@ describe("Orchestrator", () => {
 
       if (result.outcome === "completed") {
         const phases = [...result.phaseOutputs.keys()];
-        expect(phases).toEqual(PHASE_SEQUENCE);
+        // TODO-TEMP: Temporarily skipping self_review and demo_prep
+        expect(phases).toEqual(RUNTIME_PHASES);
       }
     });
 
@@ -73,31 +77,31 @@ describe("Orchestrator", () => {
       }
     });
 
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 LLM calls instead of 8
     it("calls LLM adapter once per phase", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
       await handle.orchestrator.executeTask(dispatch);
 
-      // 7 phases = 8 LLM calls (self_review runs 1 review sub-phase + 1 refinement)
       const llmCalls = handle.actionPipeline.execute.mock.calls.filter(
         (call: any[]) => call[0]?.details?.operation === "llm_infer",
       );
-      expect(llmCalls).toHaveLength(8);
+      expect(llmCalls).toHaveLength(5);
     });
   });
 
   // ── Checkpointing ──────────────────────────────────────────────────────────
 
   describe("checkpointing", () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 checkpoints instead of 7
     it("creates a checkpoint at each phase transition", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
       await handle.orchestrator.executeTask(dispatch);
 
-      // 7 phases = 7 checkpoints
-      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(7);
+      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(5);
     });
 
     it("checkpoints have reason 'phase_transition'", async () => {
@@ -111,6 +115,7 @@ describe("Orchestrator", () => {
       }
     });
 
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep
     it("checkpoints contain correct phase names", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
@@ -120,9 +125,10 @@ describe("Orchestrator", () => {
       const checkpointPhases = handle.sessionMemory.createCheckpoint.mock.calls.map(
         (call: unknown[]) => (call[0] as { phase: string }).phase,
       );
-      expect(checkpointPhases).toEqual(PHASE_SEQUENCE);
+      expect(checkpointPhases).toEqual(RUNTIME_PHASES);
     });
 
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — last checkpoint index is 4 instead of 6
     it("checkpoint nextAction references next phase", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
@@ -133,13 +139,14 @@ describe("Orchestrator", () => {
       // First checkpoint (requirements_gathering) should reference research
       expect((calls[0]![0] as { nextAction: string }).nextAction).toContain("research");
       // Last checkpoint (integration) should say complete
-      expect((calls[6]![0] as { nextAction: string }).nextAction).toContain("complete");
+      expect((calls[4]![0] as { nextAction: string }).nextAction).toContain("complete");
     });
   });
 
   // ── Journal Entries ────────────────────────────────────────────────────────
 
   describe("journal entries", () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 entries instead of 7
     it("logs a phase_change entry at each transition", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
@@ -149,10 +156,10 @@ describe("Orchestrator", () => {
       const phaseChangeCalls = handle.sessionMemory.addJournalEntry.mock.calls.filter(
         (call: unknown[]) => (call[0] as { type: string }).type === "phase_change",
       );
-      // 7 phases = 7 phase_change entries
-      expect(phaseChangeCalls).toHaveLength(7);
+      expect(phaseChangeCalls).toHaveLength(5);
     });
 
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep
     it("journal entries have correct phase references", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
@@ -165,7 +172,7 @@ describe("Orchestrator", () => {
       const journalPhases = phaseChangeCalls.map(
         (call: unknown[]) => (call[0] as { phase: string }).phase,
       );
-      expect(journalPhases).toEqual(PHASE_SEQUENCE);
+      expect(journalPhases).toEqual(RUNTIME_PHASES);
     });
 
     it("journal entries include phase_transition tag", async () => {
@@ -198,6 +205,7 @@ describe("Orchestrator", () => {
       expect(sessionIdCall).toBeDefined();
     });
 
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 phase updates instead of 7
     it("updates task.phase for each phase transition", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
@@ -207,11 +215,9 @@ describe("Orchestrator", () => {
       const phaseCalls = handle.taskEngine.updateTaskField.mock.calls.filter(
         (call: unknown[]) => (call as string[])[1] === "phase",
       );
-      // 7 phase updates: 1 initial (requirements_gathering) + 6 transitions (research through integration)
-      // Last phase (integration) doesn't trigger a transition, but initial set covers requirements_gathering
-      expect(phaseCalls).toHaveLength(7);
+      expect(phaseCalls).toHaveLength(5);
       const phaseValues = phaseCalls.map((call: unknown[]) => (call as string[])[2]);
-      expect(phaseValues).toEqual(PHASE_SEQUENCE);
+      expect(phaseValues).toEqual(RUNTIME_PHASES);
     });
   });
 
@@ -280,19 +286,18 @@ describe("Orchestrator", () => {
   // ── Resume from Checkpoint ─────────────────────────────────────────────────
 
   describe("resume from checkpoint", () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 3 remaining phases instead of 5
     it("skips completed phases when resuming", async () => {
       handle.setAllPhaseResponses();
       const checkpoint = createMockCheckpoint({ phase: "research" });
       const dispatch = createMockDispatch({ resume_from: checkpoint });
 
-      // After research, remaining phases are: planning, execution, self_review, demo_prep, integration
-      // Need LLM responses for those 5 phases (indices 2-6 in the full sequence)
       const result = await handle.orchestrator.executeTask(dispatch);
 
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        // Should have 5 phase outputs (planning through integration)
-        expect(result.phaseOutputs.size).toBe(5);
+        // After research, remaining phases are: planning, execution, integration (3 phases)
+        expect(result.phaseOutputs.size).toBe(3);
         expect(result.phaseOutputs.has("requirements_gathering")).toBe(false);
         expect(result.phaseOutputs.has("research")).toBe(false);
         expect(result.phaseOutputs.has("planning")).toBe(true);
@@ -343,7 +348,7 @@ describe("Orchestrator", () => {
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           if (input.details?.operation === "llm_infer") {
             llmCallCount++;
-            // LLM calls 5+ = self_review phase: return non-JSON without writing session-result
+            // TODO-TEMP: Temporarily skipping self_review and demo_prep — LLM calls 5+ = integration phase
             if (llmCallCount >= 5 && llmCallCount <= 14) {
               return {
                 outcome: "executed",
@@ -437,9 +442,9 @@ describe("Orchestrator", () => {
         const planningOutput = result.phaseOutputs.get("planning");
         expect(planningOutput?.confidence).toBe("high");
 
-        // Self-review is now CLI-native — gets "high" confidence
-        const selfReviewOutput = result.phaseOutputs.get("self_review");
-        expect(selfReviewOutput?.confidence).toBe("high");
+        // TODO-TEMP: Temporarily skipping self_review and demo_prep — check integration instead
+        const integrationOutput = result.phaseOutputs.get("integration");
+        expect(integrationOutput?.confidence).toBe("high");
       }
     });
   });
@@ -447,6 +452,7 @@ describe("Orchestrator", () => {
   // ── Action Pipeline Integration ────────────────────────────────────────────
 
   describe("action pipeline integration", () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 phases instead of 7
     it("all phases use ActionPipeline for LLM calls", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
@@ -457,7 +463,7 @@ describe("Orchestrator", () => {
       const readCalls = handle.actionPipeline.execute.mock.calls.filter(
         (call: unknown[]) => (call[0] as { actionClass: string }).actionClass === "read",
       );
-      expect(readCalls.length).toBeGreaterThanOrEqual(7);
+      expect(readCalls.length).toBeGreaterThanOrEqual(5);
     });
 
     it("handles pipeline rejection gracefully in execution phase", async () => {
@@ -484,7 +490,8 @@ describe("Orchestrator", () => {
   // ── Fast-Path ──────────────────────────────────────────────────────────────
 
   describe("trivial tasks (no fast-path skip)", () => {
-    it("runs all 7 phases even for trivial requirements_gathering output", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 phases instead of 7
+    it("runs all phases even for trivial requirements_gathering output", async () => {
       handle.setAllPhaseResponses();
       // Override first LLM response (intake) with trivial data — pipeline still runs all phases
       handle.setLlmResponseAtIndex(0, TRIVIAL_REQUIREMENTS_DATA);
@@ -494,23 +501,22 @@ describe("Orchestrator", () => {
 
       expect(result.outcome).toBe("completed");
       if (result.outcome === "completed") {
-        // All 7 phases run — no fast-path skipping in current architecture
-        expect(result.phaseOutputs.size).toBe(7);
-        for (const phase of PHASE_SEQUENCE) {
+        expect(result.phaseOutputs.size).toBe(5);
+        for (const phase of RUNTIME_PHASES) {
           expect(result.phaseOutputs.has(phase)).toBe(true);
         }
       }
     });
 
-    it("trivial task produces checkpoints for all 7 phases", async () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 checkpoints instead of 7
+    it("trivial task produces checkpoints for all phases", async () => {
       handle.setAllPhaseResponses();
       handle.setLlmResponseAtIndex(0, TRIVIAL_REQUIREMENTS_DATA);
 
       const dispatch = createMockDispatch();
       await handle.orchestrator.executeTask(dispatch);
 
-      // 7 phases = 7 checkpoints (no fast-path reduction)
-      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(7);
+      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(5);
     });
   });
 
@@ -597,6 +603,7 @@ describe("Orchestrator", () => {
   // ── Cost Tracking ──────────────────────────────────────────────────────────
 
   describe("cost tracking", () => {
+    // TODO-TEMP: Temporarily skipping self_review and demo_prep — 5 cost events instead of 8
     it("emits cost.incurred event after each LLM call", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
@@ -606,8 +613,7 @@ describe("Orchestrator", () => {
       const costEvents = handle.eventBus.publish.mock.calls.filter(
         (call: unknown[]) => (call[0] as { type: string }).type === "cost.incurred",
       );
-      // 8 LLM calls = 8 cost events (self_review: 1 review sub-phase + 1 refinement)
-      expect(costEvents).toHaveLength(8);
+      expect(costEvents).toHaveLength(5);
     });
 
     it("cost.incurred payload includes correct usage data", async () => {

@@ -313,6 +313,7 @@ describe("commitPushAndCreatePR", () => {
 
   // ── Review Pending Outcome ────────────────────────────────────────────
 
+  // TODO-TEMP: Temporarily skipping self_review and demo_prep — PR now triggers after execution
   it("returns review_pending outcome when PR is successfully created", async () => {
     setupGitMocks({ hasStagedChanges: true });
 
@@ -321,9 +322,9 @@ describe("commitPushAndCreatePR", () => {
 
     expect(result.outcome).toBe("review_pending");
     if (result.outcome === "review_pending") {
-      expect(result.phase).toBe("demo_prep");
-      // Should include phases up to demo_prep (6 of 7)
-      expect(result.phaseOutputs.size).toBe(6);
+      expect(result.phase).toBe("execution");
+      // Should include phases up to execution (4 of 5)
+      expect(result.phaseOutputs.size).toBe(4);
       expect(result.phaseOutputs.has("integration")).toBe(false);
     }
   });

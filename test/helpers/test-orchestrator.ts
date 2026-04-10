@@ -526,6 +526,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────
+  // TODO-TEMP: Temporarily skipping self_review and demo_prep — only 5 phase responses needed
   const setAllPhaseResponses = (): void => {
     llmCallIndex = 0;
     llmResponses = [
@@ -533,8 +534,6 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       createLlmResponse(VALID_PHASE_DATA.research),
       createLlmResponse(VALID_PHASE_DATA.planning),
       createLlmResponse(VALID_PHASE_DATA.execution),
-      createLlmResponse(VALID_PHASE_DATA.self_review),
-      createLlmResponse(VALID_PHASE_DATA.demo_prep),
       createLlmResponse(VALID_PHASE_DATA.integration),
     ];
   };

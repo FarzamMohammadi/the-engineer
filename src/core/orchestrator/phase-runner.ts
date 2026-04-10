@@ -693,6 +693,27 @@ async function handlePostPhaseActions(
     }
   }
 
+  // TODO-TEMP: Temporarily skipping self_review and demo_prep — trigger PR after execution instead
+  if (
+    phase === Phases.execution &&
+    !phases.includes(Phases.self_review) &&
+    !phases.includes(Phases.demo_prep)
+  ) {
+    const prResult = await tryCreatePRAndExitForReview(
+      sessionId,
+      taskId,
+      phase,
+      output,
+      dispatch,
+      priorOutputs,
+      ctx,
+      prManager,
+    );
+    if (prResult) {
+      return { completion: prResult, loopbackCount, requirementsLoopCount, returnToPhase };
+    }
+  }
+
   // After demo_prep: commit, push, create draft PR — then exit pipeline for review
   if (phase === Phases.demo_prep) {
     const prResult = await tryCreatePRAndExitForReview(

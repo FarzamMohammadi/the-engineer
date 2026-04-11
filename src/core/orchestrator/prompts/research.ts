@@ -81,7 +81,7 @@ function buildResearchInstructions(thoughtsDir: string): string {
       "   - Study the architectural patterns in the files you will modify. Every file has design choices — how it organizes logic, what it extracts vs inlines, how it separates concerns. These are the patterns your changes must follow. New code that ignores the architecture of the file it lives in is a regression, even if it works.",
       "   - Identify dependencies: external packages involved, internal modules that interact with target code, shared types/schemas/utilities.",
       "   - Look at existing tests for the relevant modules. Understand the testing approach so new tests follow the same patterns.",
-      "   - Check configuration, build setup, and CI/CD patterns that might affect changes.",
+      "   - Check tooling configuration: linter rules, formatter settings, pre-commit hooks, test setup. These are hard constraints your implementation must satisfy — understand them now, not after a failed commit.",
       "",
       "3. **Challenge what you found.** After gathering findings, step back and stress-test them:",
       "   - What is the simplest possible approach to this task? Not the first approach you thought of — the minimum viable change that fully meets the requirements.",

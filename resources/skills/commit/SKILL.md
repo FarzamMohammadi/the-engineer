@@ -70,6 +70,7 @@ Write bullet points (or other clear format) that:
 - Go one level deeper than the title
 - Provide enough detail that a reader fully understands WITHOUT looking at files
 - Stay concise — not overly verbose or exhaustive
+- Scale detail to change size. A mechanical 3-file rename needs 2 bullets. Save the full narrative for complex changes.
 - Complement the title, do not repeat it
 
 **Example:**
@@ -81,6 +82,17 @@ Add 8-step autonomous session protocol with cross-references
 - Create continuation-prompt-template.md for consistent session prompts
 - Update CHANGELOG with Phase 3 entries
 ```
+
+---
+
+## Step 3.5: Verify
+
+Before staging and committing, confirm:
+- Type checker passes on changed files
+- Linter passes on changed files (check the project's linter config if unsure what rules apply)
+- Tests pass
+
+Fix issues first. A commit that triggers a hook failure or needs a follow-up "fix lint" commit is not a clean commit.
 
 ---
 

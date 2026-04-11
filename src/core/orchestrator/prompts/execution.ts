@@ -118,7 +118,7 @@ function buildInstructions(): string {
       "",
       "6. **Update documentation** in the same step as code changes. A code change without a doc update is unfinished work.",
       "",
-      "7. **Commit at meaningful checkpoints** — each commit a logical unit of work with passing tests.",
+      "7. **Commit at meaningful checkpoints** — each commit a logical unit of work with passing type checks, linter, and tests. Verify tooling accepts the change before committing.",
     ].join("\n"),
   );
 }

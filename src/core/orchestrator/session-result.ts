@@ -40,6 +40,13 @@ export function backupSessionResult(phaseDir: string): void {
     return;
   }
 
+  // Only backup files that contain a real, schema-valid result.
+  // Templates (placeholder values) and corrupt files are not worth preserving.
+  const existing = readSessionResult(phaseDir);
+  if (existing === null || existing === "invalid") {
+    return;
+  }
+
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupPath = path.join(phaseDir, `session-result.${timestamp}.json.bak`);
   try {

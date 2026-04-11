@@ -1,8 +1,12 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readSessionResult, writeSessionResultTemplate } from "./session-result.js";
+import {
+  backupSessionResult,
+  readSessionResult,
+  writeSessionResultTemplate,
+} from "./session-result.js";
 
 describe("readSessionResult", () => {
   let dir: string;
@@ -72,5 +76,56 @@ describe("readSessionResult", () => {
       summary: "need clarification",
       complexity: "moderate",
     });
+  });
+});
+
+describe("backupSessionResult", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = path.join(
+      tmpdir(),
+      `session-result-backup-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(dir, { recursive: true });
+  });
+
+  function getBakFiles(): string[] {
+    return readdirSync(dir).filter((f) => f.endsWith(".json.bak"));
+  }
+
+  it("does nothing when file does not exist", () => {
+    backupSessionResult(dir);
+    expect(getBakFiles()).toHaveLength(0);
+  });
+
+  it("skips backup when file is an unfilled template", () => {
+    writeSessionResultTemplate(dir);
+    backupSessionResult(dir);
+    expect(getBakFiles()).toHaveLength(0);
+    // Original template still in place
+    expect(existsSync(path.join(dir, "session-result.json"))).toBe(true);
+  });
+
+  it("skips backup for corrupt JSON", () => {
+    writeFileSync(path.join(dir, "session-result.json"), "not valid json {{{");
+    backupSessionResult(dir);
+    expect(getBakFiles()).toHaveLength(0);
+  });
+
+  it("backs up valid result and writes fresh template", () => {
+    const validResult = { status: "ready", next_phase: "research", summary: "done" };
+    writeFileSync(path.join(dir, "session-result.json"), JSON.stringify(validResult));
+
+    backupSessionResult(dir);
+
+    // .bak created with old content
+    const bakFiles = getBakFiles();
+    expect(bakFiles).toHaveLength(1);
+    const bakContent = JSON.parse(readFileSync(path.join(dir, bakFiles[0]!), "utf-8"));
+    expect(bakContent).toEqual(validResult);
+
+    // session-result.json reset to template (invalid)
+    expect(readSessionResult(dir)).toBe("invalid");
   });
 });

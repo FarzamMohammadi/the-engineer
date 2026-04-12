@@ -6,7 +6,7 @@ PR management spans three phases of The Engineer's pipeline: **demo_prep** (crea
 
 | Component | File | Role |
 |---|---|---|
-| PR creation | `src/core/orchestrator/pr-manager.ts` | Commit, push, create/update PR |
+| PR creation | `src/core/orchestrator/pr-manager.ts` | commitAndPush + createPullRequest (split workflow) |
 | Review polling | `src/core/daemon/review-handler.ts` | Detect reviews, approvals, merges |
 | CI gate + merge | `src/core/daemon/review-handler.ts` | Check CI, attempt merge, pipeline fix |
 | GitHub API | `src/plugins/git-hosting/github-hosting/github-hosting.ts` | All GitHub REST operations |
@@ -18,33 +18,52 @@ PR management spans three phases of The Engineer's pipeline: **demo_prep** (crea
 
 ## 1. PR Creation
 
-**Entry point:** `commitPushAndCreatePR()` in `pr-manager.ts`
+The PR workflow is split into two independent steps: **commit+push** and **PR creation**. Each step returns a discriminated result that the phase runner matches on — errors block the task and notify the owner instead of silently continuing.
 
-Called after the demo_prep phase completes. Handles both initial creation and rework pushes.
+**Entry points:** `commitAndPush()` and `createPullRequest()` in `pr-manager.ts`
 
-### Flow
+Called by `tryCommitPushAndCreatePR()` in `phase-runner.ts` after the demo_prep phase completes.
+
+### Step 1: commitAndPush
 
 ```
-Orchestrator completes demo_prep
+commitAndPush(sessionId, taskId, dispatch)
   |
-  v
-commitPushAndCreatePR(dispatch, demoPrepOutput)
+  +-- No workspace path?  → nothing_to_push (skip — continue pipeline)
+  +-- No workspace record? → nothing_to_push (skip — continue pipeline)
   |
   +-- git add -A
   +-- git diff --cached --quiet  (anything to commit?)
   |     |
   |     +-- YES: git commit -m "feat: {title}" (or "fix: address review feedback" for rework)
   |     +-- NO:  check rev-list count ahead of base
-  |               +-- 0 ahead: skip PR entirely (nothing to push)
+  |               +-- 0 ahead: nothing_to_push (skip)
   |
   +-- workspaceManager.pushBranch(taskId)  (token injected at operation time, never persisted)
+  |
+  +-- Returns: { outcome: "pushed", committed: boolean }
+  |            { outcome: "nothing_to_push" }
+  |            { outcome: "error", step: "commit"|"push", reason: string }
+```
+
+**On error:** Task transitions to `blocked`, owner notified via `task_error`, session ends. The task waits for human resolution (e.g., fix credentials) and can be unblocked to retry from the same phase.
+
+### Step 2: createPullRequest
+
+Only called after `commitAndPush` returns `"pushed"`.
+
+```
+createPullRequest(sessionId, taskId, demoPrepOutput, dispatch)
   |
   +-- Is rework? (task.review.pr_number exists?)
   |     |
   |     +-- YES: dismiss stale approvals (gitHosting.dismissApprovals)
   |     |        mark all feedback_rounds as applied
-  |     |        notify "Pushed rework", return
+  |     |        notify "Pushed rework"
+  |     |        → rework_pushed
   |     +-- NO:  continue to PR creation
+  |
+  +-- No git hosting plugin? → no_hosting_plugin (skip — continue pipeline)
   |
   +-- Resolve PR description (demoPrepOutput > deliverable file > default)
   +-- Sanitize secrets from description
@@ -54,6 +73,29 @@ commitPushAndCreatePR(dispatch, demoPrepOutput)
   +-- gitHosting.createPR({ repo, branch, base, title, body, draft: false })
   +-- Update task: review = { pr_number, pr_state: "ready", ... }
   +-- Notify: "PR created: {url}" (milestone + ticket comment)
+  |
+  +-- Returns: { outcome: "created", pr_number, url }
+  |            { outcome: "rework_pushed" }
+  |            { outcome: "no_hosting_plugin" }
+  |            { outcome: "error", step: "pr_creation", reason: string }
+```
+
+**On error:** Same as commitAndPush — task blocks, owner notified, awaits human resolution.
+
+### Phase Runner Orchestration
+
+```
+tryCommitPushAndCreatePR()  (phase-runner.ts)
+  |
+  +-- commitAndPush()
+  |     +-- nothing_to_push → return null (continue pipeline to integration)
+  |     +-- error           → blockForPrWorkflowError() (task blocked, owner notified)
+  |     +-- pushed          → continue to step 2
+  |
+  +-- createPullRequest()
+        +-- no_hosting_plugin → return null (continue pipeline)
+        +-- error             → blockForPrWorkflowError() (task blocked, owner notified)
+        +-- created / rework_pushed → exit with review_pending
 ```
 
 ### Notifications
@@ -62,6 +104,7 @@ commitPushAndCreatePR(dispatch, demoPrepOutput)
 |---|---|---|
 | PR created | `milestone` + `ticket_comment` | "PR created: {url}" |
 | Rework pushed | `ticket_comment` | "Pushed rework addressing review feedback." |
+| Commit/push/PR failed | `task_error` | "PR workflow failed at {step}: {reason}" |
 
 ---
 
@@ -334,6 +377,7 @@ Every notification the owner receives during PR lifecycle:
 |---|---|---|
 | PR created | milestone + ticket | "PR created: {url}" |
 | Rework pushed | ticket | "Pushed rework addressing review feedback." |
+| Commit/push/PR failed | task_error | "PR workflow failed at {step}: {reason}" — task blocked |
 | Stale approvals dismissed | (logged, not notified) | Dismissed via GitHub API with "Re-review required" message |
 | Approved, no auto-merge | completion + ticket | "Code review approved — ready to merge." |
 | Approved, CI pending | ticket | "Code approved — waiting for CI pipeline to complete before merging." |
@@ -357,13 +401,25 @@ Every notification the owner receives during PR lifecycle:
                     +-----+-----+
                           |
                     demo_prep completes
-                    PR created/pushed
                           |
-                          v
-                 +----------------+
-                 | review_pending |<------ merge failure retry (same tick)
-                 |    (code)      |<------ CI pending (deferred, next tick)
-                 +-------+--------+
+               +----------+----------+
+               |                     |
+          commit/push/PR         PR created
+          failed (error)         or rework pushed
+               |                     |
+               v                     v
+          +---------+       +----------------+
+          | blocked |       | review_pending |<------ merge failure retry (same tick)
+          | (human) |       |    (code)      |<------ CI pending (deferred, next tick)
+          +----+----+       +-------+--------+
+               |
+          owner fixes
+          issue, unblocks
+               |
+               v
+           +--------+
+           | queued  |  (re-dispatched, resumes at demo_prep)
+           +--------+
                          |
           +--------------+--------------+
           |              |              |
@@ -388,6 +444,14 @@ Every notification the owner receives during PR lifecycle:
 ---
 
 ## 9. Edge Cases
+
+### PR workflow failure (commit, push, or PR creation)
+- Each step returns a discriminated result: `nothing_to_push` (skip), `error` (block), or success
+- On error: task transitions to `blocked`, owner receives `task_error` notification with the failing step and reason
+- Blocked metadata includes `reason: "pr_workflow_failed"` and `waiting_for: "human"`
+- On unblock: task re-dispatches, resumes at demo_prep, retries the full commit+push+PR flow
+- Git operations are naturally idempotent — re-committing with no changes is a no-op, re-pushing is safe
+- "Nothing to do" cases (no workspace, no changes ahead of base) continue the pipeline without blocking
 
 ### Daemon restart with pending CI
 - `approvedAwaitingCI` map is in-memory — lost on restart

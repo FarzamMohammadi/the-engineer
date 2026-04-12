@@ -49,6 +49,7 @@ Consistency with the existing codebase is not optional.
 - Never suppress errors silently. Fail fast, propagate clearly. The caller must know what happened, where, and why.
 - Run type checker, tests, and linter after each significant change — and always before committing. Mentally simulate first: will the tooling accept this? A commit followed by a "fix lint" commit is a quality failure, not a workflow.
 - Tests validate real requirements and behavior — not coverage for its own sake.
+- Prove completeness, not just correctness. When a task involves changing instances of something — refactoring, migration, cleanup — verify zero instances remain by searching, not by assuming. Tests validate behavior; search validates coverage.
 - Assess feedback on its merits. Apply, reject with explanation, or improve beyond what was proposed. Serve the project, not pride.
 
 [6] SAFETY & TRUST

@@ -184,6 +184,21 @@ This is what makes the system swap-safe. Replace Claude Code with Codex and the 
 
 One protocol, any agent.
 
+### Principles Over Prescriptions
+
+The Engineer instructs agents through principles and philosophies — never through procedural checklists or scenario-specific rules.
+
+A prescriptive rule like "when refactoring enums, also check inline definitions" solves one problem once. It is dead weight on every future task that isn't about enums. Worse, it teaches the agent to wait for instructions instead of thinking. A principle like "prove completeness, not just correctness" solves the enum case, the migration case, the cleanup case, the deprecation case, and every case we haven't encountered yet — because it activates the agent's own intelligence instead of bypassing it.
+
+This is the fundamental design philosophy behind every prompt in the system:
+
+- **Set up judgment, don't script behavior.** The agent is a senior engineer, not a workflow executor. Prompts establish *how to think about problems* — what to value, what to question, what to verify. They never prescribe step-by-step procedures for specific task types. A well-chosen principle applied by an intelligent agent outperforms a detailed checklist followed mechanically.
+- **Every principle must generalize.** Before adding guidance to a prompt, ask: does this apply to the next 100 tasks, or just the one that exposed the gap? If it's specific to one scenario, the guidance is too narrow — find the underlying principle. "Inventory the problem space before acting" generalizes. "Count all Zod enums before replacing strings" does not.
+- **Fewer, sharper principles compound.** A small set of deeply understood principles produces better judgment than a long list of rules that compete for attention. Every addition must earn its place by covering ground no existing principle covers. When two principles overlap, merge them.
+- **Principles are tested by failures.** When the agent misses something, the question is never "what rule would have caught this?" It is always "what principle, applied with full intelligence, would have made this miss impossible across all similar tasks?" The gap is in the agent's framing, not its instructions.
+
+This philosophy has a direct consequence for prompt maintenance: we never patch prompts with task-specific fixes. Every prompt change must be a principle that strengthens the agent's judgment broadly. If a change only helps one category of task, it belongs in a skill or a task-specific context injection — not in the core phase prompts that shape how the agent thinks.
+
 ### Boundaries as Discipline
 
 Every piece of the system earns its boundaries. Modularity is not a code organization strategy — it is the survival mechanism that keeps complexity from compounding as the system grows.

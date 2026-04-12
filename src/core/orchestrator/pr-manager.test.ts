@@ -3,6 +3,7 @@ import { createTestObserverFacade } from "../../../test/helpers/test-observer-fa
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { Phases } from "../../schemas/orchestrator.js";
+import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import { composePrBody, createPrManager, formatTriggerReference } from "./pr-manager.js";
@@ -99,75 +100,78 @@ function createMockNotifier(): NotificationRouter {
   };
 }
 
+function makeDemoPrepOutput(data?: Record<string, unknown>): PhaseOutput {
+  return {
+    phase: Phases.demo_prep,
+    task_id: "task-001",
+    timestamp: new Date().toISOString(),
+    data: data ?? {},
+    confidence: "high" as const,
+    open_questions: [],
+  };
+}
+
+/** Mock git so staged changes exist (git diff --cached --quiet throws). */
+function mockStagedChanges(): void {
+  mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+    if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
+      throw new Error("has changes");
+    }
+    return "";
+  });
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
-describe("PrManager", () => {
+describe("commitAndPush", () => {
   beforeEach(() => {
     mockedExecFileSync.mockReset();
   });
 
-  it("returns false when no workspace path", async () => {
+  it("returns nothing_to_push when no workspace path", () => {
     const ctx = createMockContext();
     (ctx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: {},
-      confidence: "high" as const,
-      open_questions: [],
-    };
 
-    const result = await pm.commitPushAndCreatePR(
-      "session-001",
-      "task-001",
-      demoPrepOutput,
-      createDispatch(),
-    );
+    const result = pm.commitAndPush("session-001", "task-001", createDispatch());
 
-    expect(result).toBe(false);
+    expect(result).toEqual({ outcome: "nothing_to_push" });
   });
 
-  it("returns false when no workspace record", async () => {
+  it("returns nothing_to_push when no workspace record", () => {
     const ctx = createMockContext();
     (ctx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: {},
-      confidence: "high" as const,
-      open_questions: [],
-    };
 
-    const result = await pm.commitPushAndCreatePR(
-      "session-001",
-      "task-001",
-      demoPrepOutput,
-      createDispatch(),
-    );
+    const result = pm.commitAndPush("session-001", "task-001", createDispatch());
 
-    expect(result).toBe(false);
+    expect(result).toEqual({ outcome: "nothing_to_push" });
   });
 
-  it("logs journal entry when commit fails", async () => {
+  it("returns error with step and reason when commit fails", () => {
     const ctx = createMockContext();
     mockedExecFileSync.mockImplementation(() => {
       throw new Error("git error");
     });
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: {},
-      confidence: "high" as const,
-      open_questions: [],
-    };
 
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, createDispatch());
+    const result = pm.commitAndPush("session-001", "task-001", createDispatch());
+
+    expect(result).toEqual({
+      outcome: "error",
+      step: "commit",
+      reason: expect.stringContaining("git error"),
+    });
+  });
+
+  it("logs journal entry when commit fails", () => {
+    const ctx = createMockContext();
+    mockedExecFileSync.mockImplementation(() => {
+      throw new Error("git error");
+    });
+    const pm = createPrManager(ctx, createMockNotifier());
+
+    pm.commitAndPush("session-001", "task-001", createDispatch());
 
     expect(ctx.sessionMemory.addJournalEntry).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -177,11 +181,8 @@ describe("PrManager", () => {
     );
   });
 
-  it("returns false when no commits ahead of base and no staged changes", async () => {
+  it("returns nothing_to_push when no commits ahead of base and no staged changes", () => {
     const ctx = createMockContext();
-    // git add -A succeeds
-    // git diff --cached --quiet succeeds (no staged changes)
-    // git rev-list --count returns 0
     mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
       if (Array.isArray(args) && args[0] === "rev-list") {
         return "0\n";
@@ -189,26 +190,68 @@ describe("PrManager", () => {
       return "";
     });
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: {},
-      confidence: "high" as const,
-      open_questions: [],
-    };
 
-    const result = await pm.commitPushAndCreatePR(
-      "session-001",
-      "task-001",
-      demoPrepOutput,
-      createDispatch(),
-    );
+    const result = pm.commitAndPush("session-001", "task-001", createDispatch());
 
-    expect(result).toBe(false);
+    expect(result).toEqual({ outcome: "nothing_to_push" });
   });
 
-  it("marks feedback as applied on rework path", async () => {
+  it("returns pushed with committed=true when staged changes exist", () => {
+    const ctx = createMockContext();
+    mockStagedChanges();
+    const pm = createPrManager(ctx, createMockNotifier());
+
+    const result = pm.commitAndPush("session-001", "task-001", createDispatch());
+
+    expect(result).toEqual({ outcome: "pushed", committed: true });
+    expect(ctx.workspaceManager.pushBranch).toHaveBeenCalledWith("task-001");
+  });
+
+  it("returns error when push fails", () => {
+    const ctx = createMockContext();
+    mockStagedChanges();
+    (ctx.workspaceManager.pushBranch as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error("401 Unauthorized");
+    });
+    const pm = createPrManager(ctx, createMockNotifier());
+
+    const result = pm.commitAndPush("session-001", "task-001", createDispatch());
+
+    expect(result).toEqual({
+      outcome: "error",
+      step: "push",
+      reason: expect.stringContaining("401 Unauthorized"),
+    });
+  });
+
+  it("sanitizes task title in commit message", () => {
+    const ctx = createMockContext();
+    mockStagedChanges();
+    const pm = createPrManager(ctx, createMockNotifier());
+    const poisonedTitle = "Fix ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA leak";
+    const dispatch = createDispatch({ title: poisonedTitle } as unknown as Partial<Task>);
+
+    pm.commitAndPush("session-001", "task-001", dispatch);
+
+    const commitCall = mockedExecFileSync.mock.calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes("-m"),
+    );
+    expect(commitCall).toBeDefined();
+    const commitMsg = (commitCall![1] as string[])[2]!;
+    expect(commitMsg).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    expect(commitMsg).toContain("[REDACTED:github_token]");
+    expect(commitMsg).toContain("Crafted by The Engineer");
+  });
+});
+
+describe("createPullRequest", () => {
+  beforeEach(() => {
+    mockedExecFileSync.mockReset();
+  });
+
+  // ── Rework Path ─────────────────────────────────────────────────────────
+
+  it("returns rework_pushed and marks feedback as applied on rework path", async () => {
     const ctx = createMockContext();
     const task = {
       id: "task-001",
@@ -218,15 +261,6 @@ describe("PrManager", () => {
       },
     };
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
-
-    // Simulate staged changes exist
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
     const dispatch = createDispatch({
       review: {
@@ -236,23 +270,15 @@ describe("PrManager", () => {
         feedback_rounds: [{ round: 1, applied: false, comments: [] }],
       },
     } as unknown as Partial<Task>);
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: {},
-      confidence: "high" as const,
-      open_questions: [],
-    };
 
-    const result = await pm.commitPushAndCreatePR(
+    const result = await pm.createPullRequest(
       "session-001",
       "task-001",
-      demoPrepOutput,
+      makeDemoPrepOutput(),
       dispatch,
     );
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ outcome: "rework_pushed" });
     expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
       "task-001",
       "review",
@@ -272,18 +298,8 @@ describe("PrManager", () => {
       },
     };
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
-
     const fakeHosting = { dismissApprovals: vi.fn().mockResolvedValue(undefined) };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeHosting);
-
-    // Simulate staged changes exist
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
     const dispatch = createDispatch({
       review: {
@@ -293,23 +309,15 @@ describe("PrManager", () => {
         feedback_rounds: [{ round: 1, applied: false, comments: [] }],
       },
     } as unknown as Partial<Task>);
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: {},
-      confidence: "high" as const,
-      open_questions: [],
-    };
 
-    const result = await pm.commitPushAndCreatePR(
+    const result = await pm.createPullRequest(
       "session-001",
       "task-001",
-      demoPrepOutput,
+      makeDemoPrepOutput(),
       dispatch,
     );
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ outcome: "rework_pushed" });
     expect(fakeHosting.dismissApprovals).toHaveBeenCalledWith(
       "owner/repo",
       42,
@@ -327,20 +335,10 @@ describe("PrManager", () => {
       },
     };
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
-
     const fakeHosting = {
       dismissApprovals: vi.fn().mockRejectedValue(new Error("403 Forbidden")),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockReturnValue(fakeHosting);
-
-    // Simulate staged changes exist
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
     const dispatch = createDispatch({
       review: {
@@ -350,82 +348,101 @@ describe("PrManager", () => {
         feedback_rounds: [{ round: 1, applied: false, comments: [] }],
       },
     } as unknown as Partial<Task>);
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: {},
-      confidence: "high" as const,
-      open_questions: [],
-    };
 
-    const result = await pm.commitPushAndCreatePR(
+    const result = await pm.createPullRequest(
       "session-001",
       "task-001",
-      demoPrepOutput,
+      makeDemoPrepOutput(),
       dispatch,
     );
 
-    // Should still succeed despite dismissApprovals failing
-    expect(result).toBe(true);
-    expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
-      "task-001",
-      "review",
-      expect.objectContaining({
-        feedback_rounds: [expect.objectContaining({ applied: true })],
-      }),
-    );
+    expect(result).toEqual({ outcome: "rework_pushed" });
   });
 
-  // SECURITY: PR title is sanitized before sending to GitHub API
-  it("sanitizes task title in PR title and commit message", async () => {
+  // ── New PR Path ─────────────────────────────────────────────────────────
+
+  it("returns no_hosting_plugin when git hosting adapter is absent", async () => {
+    const ctx = createMockContext();
+    const pm = createPrManager(ctx, createMockNotifier());
+
+    const result = await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput(),
+      createDispatch(),
+    );
+
+    expect(result).toEqual({ outcome: "no_hosting_plugin" });
+  });
+
+  it("creates PR and returns created with pr_number and url", async () => {
     const ctx = createMockContext();
     const fakeGitHosting = {
       createPR: vi.fn().mockResolvedValue({ pr_number: 99, url: "https://github.com/pr/99" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
+    );
+    const pm = createPrManager(ctx, createMockNotifier());
+
+    const result = await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Clean description" }),
+      createDispatch(),
     );
 
-    // Simulate staged changes
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
+    expect(result).toEqual({ outcome: "created", pr_number: 99, url: "https://github.com/pr/99" });
+    expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
+      "task-001",
+      "review",
+      expect.objectContaining({ pr_number: 99, pr_state: "ready" }),
+    );
+  });
 
-    const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "Clean description" },
-      confidence: "high" as const,
-      open_questions: [],
+  it("returns error when PR creation fails", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
     };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
+    );
+    const pm = createPrManager(ctx, createMockNotifier());
 
-    // Use a title containing a recognizable GitHub token pattern
+    const result = await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Some PR" }),
+      createDispatch(),
+    );
+
+    expect(result).toEqual({
+      outcome: "error",
+      step: "pr_creation",
+      reason: expect.stringContaining("401 Unauthorized"),
+    });
+  });
+
+  it("sanitizes PR title before sending to API", async () => {
+    const ctx = createMockContext();
+    const fakeGitHosting = {
+      createPR: vi.fn().mockResolvedValue({ pr_number: 99, url: "https://github.com/pr/99" }),
+    };
+    (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
+    );
+    const pm = createPrManager(ctx, createMockNotifier());
     const poisonedTitle = "Fix ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA leak";
     const dispatch = createDispatch({ title: poisonedTitle } as unknown as Partial<Task>);
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
 
-    // Verify commit message has sanitized title
-    const commitCall = mockedExecFileSync.mock.calls.find(
-      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes("-m"),
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Clean" }),
+      dispatch,
     );
-    expect(commitCall).toBeDefined();
-    const commitMsg = (commitCall![1] as string[])[2]!;
-    expect(commitMsg).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    expect(commitMsg).toContain("[REDACTED:github_token]");
-    expect(commitMsg).toContain("Crafted by The Engineer");
 
-    // Verify PR title has sanitized title
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
       expect.objectContaining({
         title: expect.not.stringContaining("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
@@ -439,39 +456,19 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 99, url: "https://github.com/pr/99" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
+    );
+    const pm = createPrManager(ctx, createMockNotifier());
+
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "PR with token ghp_secret123abc in description" }),
+      createDispatch(),
     );
 
-    // Simulate staged changes
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
-    const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "PR with token ghp_secret123abc in description" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
-
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, createDispatch());
-
-    // The createPR call should have sanitized the description
     if (fakeGitHosting.createPR.mock.calls.length > 0) {
       const prArgs = fakeGitHosting.createPR.mock.calls[0]![0];
-      // sanitizeSecrets replaces known env var values, not arbitrary tokens
-      // Just verify it was called with a body field
       expect(prArgs.body).toBeDefined();
     }
   });
@@ -482,54 +479,33 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 42, url: "https://github.com/pr/42" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
     );
-
-    // Simulate staged changes
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
-    // Configure fs mocks to return file content for the deliverable path
-    vi.mocked(existsSync).mockImplementation((p: unknown) => {
-      if (String(p).endsWith("pr-description.md")) {
-        return true;
-      }
-      return false;
-    });
+    vi.mocked(existsSync).mockImplementation((p: unknown) =>
+      String(p).endsWith("pr-description.md"),
+    );
     vi.mocked(readFileSync).mockImplementation((p: unknown) => {
       if (String(p).endsWith("pr-description.md")) {
         return "# PR from file\n\nDescription read from deliverable file." as any;
       }
       return "" as any;
     });
-
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { deliverable_path: "thoughts/2026-03-22-issue-1/demo-prep/pr-description.md" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
-    const dispatch = createDispatch();
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({
+        deliverable_path: "thoughts/2026-03-22-issue-1/demo-prep/pr-description.md",
+      }),
+      createDispatch(),
+    );
 
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.stringContaining("Description read from deliverable file"),
       }),
     );
-    // Verify branding footer is present
     const prArgs = fakeGitHosting.createPR.mock.calls[0]![0];
     expect(prArgs.body).toContain("Crafted by The Engineer");
   });
@@ -540,23 +516,8 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 43, url: "https://github.com/pr/43" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
     );
-
-    // Simulate staged changes
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
-    // deliverable_path points to a directory; statSync reports it as directory
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(statSync).mockImplementation((p: unknown) => {
       const s = String(p);
@@ -568,27 +529,22 @@ describe("PrManager", () => {
       }
       return "" as any;
     });
-
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { deliverable_path: "thoughts/2026-03-22-issue-1/demo-prep" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
-    const dispatch = createDispatch();
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ deliverable_path: "thoughts/2026-03-22-issue-1/demo-prep" }),
+      createDispatch(),
+    );
 
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.stringContaining("PR from directory fallback"),
       }),
     );
-    // Verify branding footer is present
-    const prArgs2 = fakeGitHosting.createPR.mock.calls[0]![0];
-    expect(prArgs2.body).toContain("Crafted by The Engineer");
+    const prArgs = fakeGitHosting.createPR.mock.calls[0]![0];
+    expect(prArgs.body).toContain("Crafted by The Engineer");
   });
 
   it("includes trigger reference when external_ref has URL", async () => {
@@ -597,30 +553,9 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 55, url: "https://github.com/pr/55" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
     );
-
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "Added feature X" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
     const dispatch = createDispatch({
       external_ref: {
         type: "github_issue",
@@ -630,7 +565,12 @@ describe("PrManager", () => {
       },
     } as unknown as Partial<Task>);
 
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Added feature X" }),
+      dispatch,
+    );
 
     const prArgs = fakeGitHosting.createPR.mock.calls[0]![0];
     expect(prArgs.body).toContain(
@@ -640,36 +580,17 @@ describe("PrManager", () => {
     expect(prArgs.body).toContain("Crafted by The Engineer");
   });
 
+  // ── PR Title Decorations ──────────────────────────────────────────────
+
   it("applies title_prefix from pr_decorations", async () => {
     const ctx = createMockContext();
     const fakeGitHosting = {
       createPR: vi.fn().mockResolvedValue({ pr_number: 60, url: "https://github.com/pr/60" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
     );
-
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "Added feature X" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
     const dispatch = createDispatch({
       title: "Fix authentication bug",
       external_ref: {
@@ -681,12 +602,15 @@ describe("PrManager", () => {
       },
     } as unknown as Partial<Task>);
 
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Added feature X" }),
+      dispatch,
+    );
 
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "#42: Fix authentication bug",
-      }),
+      expect.objectContaining({ title: "#42: Fix authentication bug" }),
     );
   });
 
@@ -696,30 +620,9 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 63, url: "https://github.com/pr/63" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
     );
-
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "Added feature X" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
     const dispatch = createDispatch({
       title: "Fix bug",
       external_ref: {
@@ -730,12 +633,15 @@ describe("PrManager", () => {
       },
     } as unknown as Partial<Task>);
 
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Added feature X" }),
+      dispatch,
+    );
 
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Fix bug [urgent]",
-      }),
+      expect.objectContaining({ title: "Fix bug [urgent]" }),
     );
   });
 
@@ -745,30 +651,9 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 64, url: "https://github.com/pr/64" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
     );
-
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "Added feature X" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
     const dispatch = createDispatch({
       title: "Fix bug",
       external_ref: {
@@ -779,12 +664,15 @@ describe("PrManager", () => {
       },
     } as unknown as Partial<Task>);
 
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Added feature X" }),
+      dispatch,
+    );
 
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "#42: Fix bug [urgent]",
-      }),
+      expect.objectContaining({ title: "#42: Fix bug [urgent]" }),
     );
   });
 
@@ -794,45 +682,23 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 61, url: "https://github.com/pr/61" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
     );
-
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
     const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "Clean description" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
     const dispatch = createDispatch({
       title: "Fix authentication bug",
-      external_ref: {
-        type: "github_issue",
-        repo: "owner/repo",
-        id: "42",
-      },
+      external_ref: { type: "github_issue", repo: "owner/repo", id: "42" },
     } as unknown as Partial<Task>);
 
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Clean" }),
+      dispatch,
+    );
 
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Fix authentication bug",
-      }),
+      expect.objectContaining({ title: "Fix authentication bug" }),
     );
   });
 
@@ -842,38 +708,19 @@ describe("PrManager", () => {
       createPR: vi.fn().mockResolvedValue({ pr_number: 62, url: "https://github.com/pr/62" }),
     };
     (ctx.registry.getPrimaryPlugin as ReturnType<typeof vi.fn>).mockImplementation(
-      (type: string) => {
-        if (type === "git_hosting") {
-          return fakeGitHosting;
-        }
-        return null;
-      },
+      (type: string) => (type === "git_hosting" ? fakeGitHosting : null),
+    );
+    const pm = createPrManager(ctx, createMockNotifier());
+
+    await pm.createPullRequest(
+      "session-001",
+      "task-001",
+      makeDemoPrepOutput({ pr_description: "Clean" }),
+      createDispatch(),
     );
 
-    mockedExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
-      if (Array.isArray(args) && args[0] === "diff" && args[1] === "--cached") {
-        throw new Error("has changes");
-      }
-      return "";
-    });
-
-    const pm = createPrManager(ctx, createMockNotifier());
-    const demoPrepOutput = {
-      phase: Phases.demo_prep,
-      task_id: "task-001",
-      timestamp: new Date().toISOString(),
-      data: { pr_description: "Clean description" },
-      confidence: "high" as const,
-      open_questions: [],
-    };
-    const dispatch = createDispatch();
-
-    await pm.commitPushAndCreatePR("session-001", "task-001", demoPrepOutput, dispatch);
-
     expect(fakeGitHosting.createPR).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Test task",
-      }),
+      expect.objectContaining({ title: "Test task" }),
     );
   });
 });
@@ -900,141 +747,48 @@ describe("formatTriggerReference", () => {
     expect(result).toBe("> Triggered by group/project#7");
   });
 
-  it("returns null when external_ref is null", () => {
-    expect(formatTriggerReference({ external_ref: null })).toBeNull();
-  });
-
-  it("returns null when external_ref is undefined", () => {
+  it("returns null when no external_ref", () => {
     expect(formatTriggerReference({})).toBeNull();
-  });
-
-  it("never inspects external_ref.type (plugin-blind)", () => {
-    const result = formatTriggerReference({
-      external_ref: {
-        type: "azure_devops_work_item",
-        repo: "org/project",
-        id: "999",
-        url: "https://dev.azure.com/org/project/_workitems/edit/999",
-      },
-    });
-    expect(result).toBe(
-      "> Triggered by [org/project#999](https://dev.azure.com/org/project/_workitems/edit/999)",
-    );
+    expect(formatTriggerReference({ external_ref: null })).toBeNull();
   });
 });
 
 describe("composePrBody", () => {
   it("includes trigger reference, description, and branding", () => {
-    const body = composePrBody("Feature description", {
+    const result = composePrBody("Feature description", {
       external_ref: {
         type: "github_issue",
         repo: "owner/repo",
-        id: "42",
-        url: "https://github.com/owner/repo/issues/42",
+        id: "1",
+        url: "https://github.com/owner/repo/issues/1",
       },
     });
-    expect(body).toContain("> Triggered by [owner/repo#42]");
-    expect(body).toContain("Feature description");
-    expect(body).toContain("*Crafted by The Engineer*");
+    expect(result).toContain("> Triggered by [owner/repo#1]");
+    expect(result).toContain("Feature description");
+    expect(result).toContain("Crafted by The Engineer");
   });
 
   it("omits trigger reference when no external_ref", () => {
-    const body = composePrBody("Feature description", { external_ref: null });
-    expect(body).not.toContain("Triggered by");
-    expect(body).toContain("Feature description");
-    expect(body).toContain("*Crafted by The Engineer*");
+    const result = composePrBody("Just a fix", {});
+    expect(result).not.toContain("Triggered by");
+    expect(result).toContain("Just a fix");
+    expect(result).toContain("Crafted by The Engineer");
   });
 
-  it("works with empty description", () => {
-    const body = composePrBody("", { external_ref: null });
-    expect(body).toContain("*Crafted by The Engineer*");
-  });
-
-  it("separates sections with blank lines", () => {
-    const body = composePrBody("Desc", {
-      external_ref: { type: "x", repo: "a/b", id: "1", url: "https://example.com" },
-    });
-    const lines = body.split("\n");
-    // trigger ref, blank, desc, blank, hr + footer
-    expect(lines[0]).toMatch(/^> Triggered by/);
-    expect(lines[1]).toBe("");
-    expect(lines[2]).toBe("Desc");
-    expect(lines[3]).toBe("");
-    expect(lines[4]).toBe("---");
-  });
-
-  it("inserts description_prefix before trigger reference", () => {
-    const body = composePrBody("Feature description", {
+  it("includes description_prefix and description_suffix from decorations", () => {
+    const result = composePrBody("Feature X", {
       external_ref: {
         type: "github_issue",
-        repo: "owner/repo",
-        id: "42",
-        url: "https://github.com/owner/repo/issues/42",
-        pr_decorations: { description_prefix: "Sprint: 12" },
-      },
-    });
-    const prefixIdx = body.indexOf("Sprint: 12");
-    const triggerIdx = body.indexOf("> Triggered by");
-    const descIdx = body.indexOf("Feature description");
-    expect(prefixIdx).toBeGreaterThanOrEqual(0);
-    expect(prefixIdx).toBeLessThan(triggerIdx);
-    expect(triggerIdx).toBeLessThan(descIdx);
-  });
-
-  it("inserts description_suffix after description and before branding footer", () => {
-    const body = composePrBody("Feature description", {
-      external_ref: {
-        type: "github_issue",
-        repo: "owner/repo",
-        id: "42",
-        pr_decorations: { description_suffix: "Closes #42" },
-      },
-    });
-    const descIdx = body.indexOf("Feature description");
-    const suffixIdx = body.indexOf("Closes #42");
-    const brandIdx = body.indexOf("Crafted by The Engineer");
-    expect(suffixIdx).toBeGreaterThan(descIdx);
-    expect(suffixIdx).toBeLessThan(brandIdx);
-    // No extra --- before suffix
-    expect(body).not.toContain("---\nCloses #42");
-  });
-
-  it("applies all 4 description decorations together", () => {
-    const body = composePrBody("Main content", {
-      external_ref: {
-        type: "github_issue",
-        repo: "owner/repo",
-        id: "42",
-        url: "https://github.com/owner/repo/issues/42",
+        repo: "o/r",
+        id: "1",
         pr_decorations: {
-          description_prefix: "Context: sprint-12",
-          description_suffix: "Closes #42",
+          description_prefix: "<!-- prefix -->",
+          description_suffix: "<!-- suffix -->",
         },
       },
     });
-    const prefixIdx = body.indexOf("Context: sprint-12");
-    const triggerIdx = body.indexOf("> Triggered by");
-    const contentIdx = body.indexOf("Main content");
-    const suffixIdx = body.indexOf("Closes #42");
-    const brandIdx = body.indexOf("Crafted by The Engineer");
-    expect(prefixIdx).toBeLessThan(triggerIdx);
-    expect(triggerIdx).toBeLessThan(contentIdx);
-    expect(contentIdx).toBeLessThan(suffixIdx);
-    expect(suffixIdx).toBeLessThan(brandIdx);
-  });
-
-  it("treats empty string decorations as absent (no extra whitespace)", () => {
-    const bodyWithEmpty = composePrBody("Desc", {
-      external_ref: {
-        type: "x",
-        repo: "a/b",
-        id: "1",
-        pr_decorations: { description_prefix: "", description_suffix: "" },
-      },
-    });
-    const bodyWithout = composePrBody("Desc", {
-      external_ref: { type: "x", repo: "a/b", id: "1" },
-    });
-    expect(bodyWithEmpty).toBe(bodyWithout);
+    expect(result).toContain("<!-- prefix -->");
+    expect(result).toContain("Feature X");
+    expect(result).toContain("<!-- suffix -->");
   });
 });

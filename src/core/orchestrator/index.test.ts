@@ -829,8 +829,8 @@ describe("Orchestrator", () => {
 
       const result = await handle.orchestrator.executeTask(dispatch);
 
-      // Should start from intake (index 0), run full pipeline
-      expect(result.outcome).toBe("completed");
+      // Should start from intake (index 0) — rework dispatch exits with review_pending after push
+      expect(result.outcome).toBe("review_pending");
       // Verify first phase was requirements_gathering (task.phase set to requirements_gathering first)
       const phaseUpdates = handle.taskEngine.updateTaskField.mock.calls
         .filter((c: unknown[]) => c[1] === "phase")

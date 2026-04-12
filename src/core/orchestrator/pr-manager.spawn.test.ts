@@ -337,15 +337,15 @@ describe("commitPushAndCreatePR", () => {
     expect(h.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "review_pending");
   });
 
-  it("returns completed when PR creation fails (no early exit)", async () => {
+  it("blocks task when PR creation fails", async () => {
     setupGitMocks({ hasStagedChanges: true });
     fakeGitHosting.createPR.mockRejectedValue(new Error("API rate limited"));
 
     const dispatch = dispatchWithWorkspace();
     const result = await h.orchestrator.executeTask(dispatch);
 
-    // PR creation failed, so pipeline continues and completes normally
-    expect(result.outcome).toBe("completed");
+    // PR creation failed — task blocks for owner attention
+    expect(result.outcome).toBe("blocked");
   });
 
   it("returns completed when no workspace record at PR creation time (no PR to create)", async () => {

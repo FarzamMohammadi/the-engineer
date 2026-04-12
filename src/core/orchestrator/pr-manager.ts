@@ -67,22 +67,42 @@ export function composePrBody(description: string, task: TriggerRefInput): strin
   return parts.join("\n\n");
 }
 
+// ── Result Types ──────────────────────────────────────────────────────────
+
+/** Discriminated result from commitAndPush — callers match on outcome. */
+export type CommitAndPushResult =
+  | { outcome: "pushed"; committed: boolean }
+  | { outcome: "nothing_to_push" }
+  | { outcome: "error"; step: string; reason: string };
+
+/** Discriminated result from createPullRequest — callers match on outcome. */
+export type CreatePRResult =
+  | { outcome: "created"; pr_number: number; url: string }
+  | { outcome: "rework_pushed" }
+  | { outcome: "no_hosting_plugin" }
+  | { outcome: "error"; step: string; reason: string };
+
 // ── PrManager Interface ────────────────────────────────────────────────────
 
-/** Commit, push, and PR creation workflow. */
+/** Split PR workflow: commit+push and PR creation are independently callable. */
 export interface PrManager {
+  /** Commit staged changes and push branch to remote. */
+  commitAndPush(
+    sessionId: string,
+    taskId: string,
+    dispatch: Dispatch,
+  ): CommitAndPushResult | Promise<CommitAndPushResult>;
+
   /**
-   * Commit all changes, push branch, and create a PR (D149, D150, D151).
-   *
-   * For rework dispatches (PR already exists): commits, pushes to existing
-   * branch, marks feedback as applied, and returns true (no new PR).
+   * Create a PR (or handle rework push to existing PR).
+   * Only call after a successful commitAndPush with outcome "pushed".
    */
-  commitPushAndCreatePR(
+  createPullRequest(
     sessionId: string,
     taskId: string,
     demoPrepOutput: PhaseOutput,
     dispatch: Dispatch,
-  ): Promise<boolean>;
+  ): Promise<CreatePRResult>;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -93,6 +113,7 @@ export function createPrManager(
   notifications: NotificationRouter,
 ): PrManager {
   const observer = ctx.observer;
+
   function recordPrWorkflowError(
     sessionId: string,
     taskId: string,
@@ -110,39 +131,33 @@ export function createPrManager(
     });
   }
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-step PR workflow with rework branch — extraction would fragment the sequential logic
-  async function commitPushAndCreatePR(
+  // ── commitAndPush ─────────────────────────────────────────────────────
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-step git workflow — sequential by nature
+  function commitAndPush(
     sessionId: string,
     taskId: string,
-    demoPrepOutput: PhaseOutput,
     dispatch: Dispatch,
-  ): Promise<boolean> {
-    const prStart = Date.now();
+  ): CommitAndPushResult {
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
       observer.warn("No workspace path — skipping PR workflow", { taskId });
-      return false;
+      return { outcome: "nothing_to_push" };
     }
 
     const record = ctx.workspaceManager.getWorkspaceRecord(taskId);
     if (!record) {
       observer.warn("No workspace record — skipping PR workflow", { taskId });
-      return false;
+      return { outcome: "nothing_to_push" };
     }
 
     const isRework = dispatch.task.review?.pr_number != null;
     const span = observer.startSpan(
       ObservationType.PLUGIN_CALL,
-      "pr_workflow",
+      "commit_and_push",
       { taskId, repo: record.repo, branch: record.branch, isRework },
       { task_id: taskId },
     );
-    observer.info("Starting PR workflow", {
-      taskId,
-      repo: record.repo,
-      branch: record.branch,
-      isRework,
-    });
 
     // 1. Deterministic commit: git add -A && git commit
     let hasNewCommit = false;
@@ -177,13 +192,10 @@ export function createPrManager(
       }
     } catch (error) {
       recordPrWorkflowError(sessionId, taskId, "commit", error);
-      observer.error("PR workflow commit failed", {
-        taskId,
-        error: sanitizeErrorMessage(error),
-      });
+      observer.error("Commit failed", { taskId, error: sanitizeErrorMessage(error) });
       span.setError(error);
-      span.end({ step: "commit", success: false, elapsedMs: Date.now() - prStart });
-      return false;
+      span.end({ step: "commit", success: false });
+      return { outcome: "error", step: "commit", reason: sanitizeErrorMessage(error) };
     }
 
     // Check if branch has commits ahead of base
@@ -195,18 +207,18 @@ export function createPrManager(
           { cwd: worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
         ).trim();
         if (aheadCount === "0") {
-          observer.warn("No commits ahead of base — skipping PR workflow", { taskId });
-          span.end({ step: "ahead_check", success: false, elapsedMs: Date.now() - prStart });
-          return false;
+          observer.warn("No commits ahead of base — nothing to push", { taskId });
+          span.end({ step: "ahead_check", success: true });
+          return { outcome: "nothing_to_push" };
         }
         observer.debug("Commits ahead of base", { taskId, aheadCount });
       } catch (error) {
-        observer.warn("Cannot determine ahead count — skipping PR workflow", {
+        observer.warn("Cannot determine ahead count — nothing to push", {
           taskId,
           error: sanitizeErrorMessage(error),
         });
-        span.end({ step: "ahead_check", success: false, elapsedMs: Date.now() - prStart });
-        return false;
+        span.end({ step: "ahead_check", success: true });
+        return { outcome: "nothing_to_push" };
       }
     }
 
@@ -217,23 +229,44 @@ export function createPrManager(
       observer.info("Push succeeded", { taskId, branch: record.branch });
     } catch (error) {
       recordPrWorkflowError(sessionId, taskId, "push", error);
-      observer.error("PR workflow push failed", {
-        taskId,
-        error: sanitizeErrorMessage(error),
-      });
+      observer.error("Push failed", { taskId, error: sanitizeErrorMessage(error) });
       span.setError(error);
-      span.end({ step: "push", success: false, elapsedMs: Date.now() - prStart });
-      return false;
+      span.end({ step: "push", success: false });
+      return { outcome: "error", step: "push", reason: sanitizeErrorMessage(error) };
     }
 
-    // Rework path: PR already exists — just push, mark feedback applied, notify
+    span.end({ step: "push", success: true });
+    return { outcome: "pushed", committed: hasNewCommit };
+  }
+
+  // ── createPullRequest ─────────────────────────────────────────────────
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: PR creation with rework path and file resolution
+  async function createPullRequest(
+    sessionId: string,
+    taskId: string,
+    demoPrepOutput: PhaseOutput,
+    dispatch: Dispatch,
+  ): Promise<CreatePRResult> {
+    const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
+    const record = ctx.workspaceManager.getWorkspaceRecord(taskId);
+    const isRework = dispatch.task.review?.pr_number != null;
+    const prStart = Date.now();
+
+    const span = observer.startSpan(
+      ObservationType.PLUGIN_CALL,
+      "pr_workflow",
+      { taskId, repo: record?.repo, branch: record?.branch, isRework },
+      { task_id: taskId },
+    );
+
+    // Rework path: PR already exists — mark feedback applied, notify
     if (isRework) {
-      // Dismiss stale approvals — old approval was for different code
       const gitHosting = ctx.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
       if (gitHosting && dispatch.task.review?.pr_number) {
         try {
           await gitHosting.dismissApprovals(
-            record.repo,
+            record?.repo ?? "",
             dispatch.task.review.pr_number,
             "New commits pushed — previous approval is for outdated code. Re-review required.",
           );
@@ -268,15 +301,21 @@ export function createPrManager(
         elapsedMs: Date.now() - prStart,
       });
       span.end({ step: "rework_push", success: true, elapsedMs: Date.now() - prStart });
-      return true;
+      return { outcome: "rework_pushed" };
     }
 
-    // 3. Create draft PR via GitHostingAdapter
+    // New PR path
     const gitHosting = ctx.registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!gitHosting) {
       observer.warn("No git hosting plugin — skipping PR creation", { taskId });
       span.end({ step: "pr_create", success: false, elapsedMs: Date.now() - prStart });
-      return false;
+      return { outcome: "no_hosting_plugin" };
+    }
+
+    // biome-ignore lint/complexity/useSimplifiedLogicExpression: TypeScript narrowing guard — both must be non-null for PR creation
+    if (!record || !worktreePath) {
+      span.end({ step: "pr_create", success: false, elapsedMs: Date.now() - prStart });
+      return { outcome: "error", step: "pr_create", reason: "No workspace record for PR creation" };
     }
 
     observer.info("Creating PR", { taskId, repo: record.repo });
@@ -355,7 +394,7 @@ export function createPrManager(
         message: `PR created: ${prResult.url}`,
       });
       span.end({ step: "pr_create", success: true, prNumber: prResult.pr_number, elapsedMs });
-      return true;
+      return { outcome: "created", pr_number: prResult.pr_number, url: prResult.url };
     } catch (error) {
       recordPrWorkflowError(sessionId, taskId, "pr_creation", error);
       observer.error("PR creation failed", {
@@ -364,9 +403,9 @@ export function createPrManager(
       });
       span.setError(error);
       span.end({ step: "pr_create", success: false, elapsedMs: Date.now() - prStart });
-      return false;
+      return { outcome: "error", step: "pr_creation", reason: sanitizeErrorMessage(error) };
     }
   }
 
-  return { commitPushAndCreatePR };
+  return { commitAndPush, createPullRequest };
 }

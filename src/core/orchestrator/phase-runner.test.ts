@@ -157,7 +157,8 @@ function createDeps(
     handlers,
     andonCord: createAndonCord(),
     prManager: {
-      commitPushAndCreatePR: vi.fn().mockResolvedValue(false),
+      commitAndPush: vi.fn().mockReturnValue({ outcome: "nothing_to_push" }),
+      createPullRequest: vi.fn().mockResolvedValue({ outcome: "no_hosting_plugin" }),
     } as unknown as PrManager,
     decompositionHandler: {
       handleDecomposition: vi.fn().mockReturnValue(null),
@@ -450,15 +451,19 @@ describe("PhaseRunner", () => {
       const deps = createDeps(ctx, handlers);
       const state = createState({ sessionId: "session-xyz" });
 
-      // Make PR creation throw (happens inside handlePostPhaseActions after demo_prep)
-      (deps.prManager.commitPushAndCreatePR as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error("git push failed: remote rejected"),
-      );
+      // Make commit+push return an error — task should block
+      (deps.prManager.commitAndPush as ReturnType<typeof vi.fn>).mockReturnValue({
+        outcome: "error",
+        step: "push",
+        reason: "git push failed: remote rejected",
+      });
 
       const result = await runPhasePipeline(createDispatch(), state, deps);
 
-      expect(result.outcome).toBe("error");
-      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-xyz", "crashed");
+      expect(result.outcome).toBe("blocked");
+      if (result.outcome === "blocked") {
+        expect(result.reason).toContain("push");
+      }
     });
 
     it("truncates long error messages in journal entry and reason", async () => {
@@ -520,7 +525,15 @@ describe("PhaseRunner", () => {
       }
       const handlers = createHandlersThatReturn(outputs);
       const deps = createDeps(ctx, handlers);
-      (deps.prManager.commitPushAndCreatePR as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (deps.prManager.commitAndPush as ReturnType<typeof vi.fn>).mockReturnValue({
+        outcome: "pushed",
+        committed: true,
+      });
+      (deps.prManager.createPullRequest as ReturnType<typeof vi.fn>).mockResolvedValue({
+        outcome: "created",
+        pr_number: 1,
+        url: "https://example.com/pr/1",
+      });
 
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 

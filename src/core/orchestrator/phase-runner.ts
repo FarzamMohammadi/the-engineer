@@ -428,8 +428,31 @@ function emitLoopbackAlert(
   });
 }
 
-/** Attempt PR creation; if successful, exit the pipeline for human review. */
-async function tryCreatePRAndExitForReview(
+/** Block task when a PR workflow step fails — notify owner and wait for resolution. */
+function blockForPrWorkflowError(
+  sessionId: string,
+  taskId: string,
+  phase: Phase,
+  step: string,
+  reason: string,
+  ctx: OrchestratorContext,
+): PhaseCompletionResult {
+  const message = `PR workflow failed at ${step}: ${reason}`;
+  ctx.taskEngine.requestTransition(taskId, TaskStates.blocked, null, message, "orchestrator");
+  ctx.taskEngine.updateTaskField(taskId, "blocked", {
+    reason: "pr_workflow_failed",
+    efforts_made: [`Attempted ${step} — see journal for error details`],
+    contacted: [],
+    needed: `Fix the issue causing ${step} failure, then unblock`,
+    waiting_for: "human",
+  });
+  ctx.notifications.notify({ kind: "task_error", taskId, reason: message });
+  ctx.sessionMemory.endSession(sessionId, SessionEndReasons.blocked);
+  return { kind: "exit", result: { outcome: "blocked", phase, reason: message } };
+}
+
+/** Commit, push, and optionally create PR. Returns pipeline exit result or null to continue. */
+async function tryCommitPushAndCreatePR(
   sessionId: string,
   taskId: string,
   phase: Phase,
@@ -439,14 +462,34 @@ async function tryCreatePRAndExitForReview(
   ctx: OrchestratorContext,
   prManager: PrManager,
 ): Promise<PhaseCompletionResult | null> {
-  const prCreated = await prManager.commitPushAndCreatePR(sessionId, taskId, output, dispatch);
-  if (!prCreated) {
-    return null;
+  // Step 1: Commit and push
+  const pushResult = await prManager.commitAndPush(sessionId, taskId, dispatch);
+
+  if (pushResult.outcome === "nothing_to_push") {
+    return null; // No workspace or no changes — continue pipeline
+  }
+  if (pushResult.outcome === "error") {
+    return blockForPrWorkflowError(
+      sessionId,
+      taskId,
+      phase,
+      pushResult.step,
+      pushResult.reason,
+      ctx,
+    );
   }
 
-  // PR is created — from here, we MUST return reviewPendingResult regardless of errors.
-  // If recordPhaseTransition or endSession throws, a crash_recovery re-dispatch
-  // would resume at demo_prep (bypassing the fast-path exit).
+  // Step 2: Create PR (or handle rework)
+  const prResult = await prManager.createPullRequest(sessionId, taskId, output, dispatch);
+
+  if (prResult.outcome === "error") {
+    return blockForPrWorkflowError(sessionId, taskId, phase, prResult.step, prResult.reason, ctx);
+  }
+  if (prResult.outcome === "no_hosting_plugin") {
+    return null; // No git hosting adapter configured — continue pipeline
+  }
+
+  // PR created or rework pushed — exit pipeline for human review
   try {
     recordPhaseTransition(sessionId, taskId, phase, null, priorOutputs, dispatch, ctx);
     ctx.sessionMemory.endSession(sessionId, SessionEndReasons.review_pending);
@@ -695,7 +738,7 @@ async function handlePostPhaseActions(
 
   // After demo_prep: commit, push, create draft PR — then exit pipeline for review
   if (phase === Phases.demo_prep) {
-    const prResult = await tryCreatePRAndExitForReview(
+    const prResult = await tryCommitPushAndCreatePR(
       sessionId,
       taskId,
       phase,
@@ -725,7 +768,7 @@ async function handlePostPhaseActions(
   // Fast-path PR: when self_review is the final phase
   if (phase === Phases.self_review && isLastPhase) {
     ctx.observer.info("Fast-path PR exit: self_review is last phase, creating PR", { taskId });
-    const prResult = await tryCreatePRAndExitForReview(
+    const prResult = await tryCommitPushAndCreatePR(
       sessionId,
       taskId,
       phase,

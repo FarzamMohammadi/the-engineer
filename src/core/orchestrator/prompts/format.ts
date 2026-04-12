@@ -109,8 +109,7 @@ export function buildKnowledgeSection(
 /**
  * Build the repository overview section from gathered repo context.
  *
- * Includes branch, package info, README excerpt, file structure, and recent
- * commits when available. Returns a section string (never null).
+ * Branch and package info only. The CLI can explore the codebase itself.
  */
 export function buildRepoOverview(repoContext: RepoContext | null): string {
   if (!repoContext) {
@@ -128,18 +127,6 @@ export function buildRepoOverview(repoContext: RepoContext | null): string {
 
   if (repoContext.packageInfo) {
     parts.push("", repoContext.packageInfo);
-  }
-
-  if (repoContext.readme) {
-    parts.push("", "### README (excerpt)", "", repoContext.readme);
-  }
-
-  if (repoContext.directoryTree) {
-    parts.push("", "### File Structure", "", repoContext.directoryTree);
-  }
-
-  if (repoContext.recentCommits) {
-    parts.push("", "### Recent Commits", "", repoContext.recentCommits);
   }
 
   return section("Repository", parts.join("\n"));

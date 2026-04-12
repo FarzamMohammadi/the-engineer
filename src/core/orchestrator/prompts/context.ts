@@ -4,34 +4,10 @@ import { join } from "node:path";
 import { sanitizeSecrets } from "../../../utils/sanitize.js";
 import type { IObserver } from "../../observer/index.js";
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const README_MAX_LINES = 200;
-const README_MAX_CHARS = 4000;
-const TREE_MAX_ENTRIES = 150;
-const COMMITS_COUNT = 15;
-
-const TREE_EXCLUDE_DIRS = [
-  "node_modules",
-  ".git",
-  "dist",
-  "coverage",
-  ".next",
-  ".turbo",
-  "__pycache__",
-  ".mypy_cache",
-];
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Repository context gathered before the agent loop starts. */
 export interface RepoContext {
-  /** First ~200 lines of README.md, or null if not found. */
-  readme: string | null;
-  /** Directory tree (top 3 levels, excluding common noise). */
-  directoryTree: string;
-  /** Recent git commits (one-line format). */
-  recentCommits: string;
   /** Current git branch name. */
   gitBranch: string;
   /** Package name, description, and scripts from package.json, or null. */
@@ -47,30 +23,18 @@ export interface RepoContext {
  * wrapped in try/catch — partial context is better than no context.
  */
 export function gatherRepoContext(worktreePath: string, observer?: IObserver): RepoContext {
-  const readme = readReadme(worktreePath);
-  const directoryTree = readDirectoryTree(worktreePath);
-  const recentCommits = readRecentCommits(worktreePath);
   const gitBranch = readGitBranch(worktreePath);
   const packageInfo = readPackageInfo(worktreePath);
 
   const context: RepoContext = {
-    readme: readme ? sanitizeSecrets(readme) : null,
-    directoryTree: sanitizeSecrets(directoryTree),
-    recentCommits: sanitizeSecrets(recentCommits),
     gitBranch,
     packageInfo: packageInfo ? sanitizeSecrets(packageInfo) : null,
   };
 
   if (observer) {
-    const hasBranch = gitBranch !== "(branch unavailable)";
-    const hasTree = directoryTree !== "(directory tree unavailable)";
-    const hasCommits = recentCommits !== "(git log unavailable)";
     observer.debug("Repo context gathered", {
       worktreePath,
-      hasReadme: readme !== null,
-      hasTree,
-      hasCommits,
-      hasBranch,
+      hasBranch: gitBranch !== "(branch unavailable)",
       hasPackageInfo: packageInfo !== null,
     });
   }
@@ -92,64 +56,6 @@ export function gatherRepoContextSafe(
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────
-
-function readReadme(worktreePath: string): string | null {
-  try {
-    const content = readFileSync(join(worktreePath, "README.md"), "utf-8");
-    const lines = content.split("\n").slice(0, README_MAX_LINES);
-    const truncated = lines.join("\n");
-    if (truncated.length > README_MAX_CHARS) {
-      return `${truncated.slice(0, README_MAX_CHARS)}\n[... truncated]`;
-    }
-    return truncated;
-  } catch {
-    return null;
-  }
-}
-
-function readDirectoryTree(worktreePath: string): string {
-  try {
-    const excludeArgs: string[] = [];
-    for (const dir of TREE_EXCLUDE_DIRS) {
-      excludeArgs.push("-not", "-path", `*/${dir}/*`);
-    }
-
-    const output = execFileSync("find", [".", "-maxdepth", "3", "-type", "f", ...excludeArgs], {
-      cwd: worktreePath,
-      encoding: "utf-8",
-      timeout: 5000,
-    });
-
-    const entries = output
-      .trim()
-      .split("\n")
-      .filter((line) => line.length > 0)
-      .sort();
-
-    if (entries.length > TREE_MAX_ENTRIES) {
-      return [
-        ...entries.slice(0, TREE_MAX_ENTRIES),
-        `[... ${String(entries.length - TREE_MAX_ENTRIES)} more files]`,
-      ].join("\n");
-    }
-
-    return entries.join("\n");
-  } catch {
-    return "(directory tree unavailable)";
-  }
-}
-
-function readRecentCommits(worktreePath: string): string {
-  try {
-    return execFileSync("git", ["log", "--oneline", `-${String(COMMITS_COUNT)}`], {
-      cwd: worktreePath,
-      encoding: "utf-8",
-      timeout: 5000,
-    }).trim();
-  } catch {
-    return "(git log unavailable)";
-  }
-}
 
 function readGitBranch(worktreePath: string): string {
   try {

@@ -38,7 +38,7 @@ export type Notification =
   // Orchestrator + direct — custom message or person-targeted
   | { kind: "question"; taskId: string; personId: string; message: string }
   | { kind: "milestone"; taskId: string; message: string }
-  | { kind: "alert"; taskId: string; message: string }
+  | { kind: "alert"; taskId: string | null; message: string }
   | { kind: "status_response"; taskId: string | null; personId: string; message: string }
   | { kind: "ticket_comment"; taskId: string; message: string };
 

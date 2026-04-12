@@ -27,14 +27,14 @@ export const EVENTS: EventDeclaration[] = [
     description: "Emitted when a plugin fails a health check",
     payloadSchema: HealthPluginUnhealthyPayloadSchema,
     publishers: ["registry"],
-    subscribers: [],
+    subscribers: ["daemon"],
   },
   {
     type: "health.plugin_failed",
     description: "Emitted when a plugin exceeds the failure threshold and is marked failed",
     payloadSchema: HealthPluginFailedPayloadSchema,
     publishers: ["registry"],
-    subscribers: [],
+    subscribers: ["daemon"],
   },
   {
     type: "health.plugin_recovered",

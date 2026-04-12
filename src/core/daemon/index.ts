@@ -51,14 +51,14 @@ export const EVENTS: EventDeclaration[] = [
     description: "Emitted when a trigger adapter fails consecutively",
     payloadSchema: HealthTriggerFailurePayloadSchema,
     publishers: ["daemon"],
-    subscribers: [],
+    subscribers: ["daemon"],
   },
   {
     type: "health.stuck_detected",
     description: "Emitted when a task is detected as stuck (no progress)",
     payloadSchema: HealthStuckDetectedPayloadSchema,
     publishers: ["daemon"],
-    subscribers: [],
+    subscribers: ["daemon"],
   },
   {
     type: "task.children_all_done",
@@ -186,6 +186,10 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   let startedAt: string | null = null;
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   let tickCount = 0;
+
+  /** Cooldown map for health event notifications — prevents flooding owner. */
+  const healthNotifyCooldowns = new Map<string, number>();
+  const HEALTH_NOTIFY_COOLDOWN_MS = 300_000; // 5 minutes
 
   /** Memory warning threshold in bytes (2 GB). */
   const MEMORY_WARNING_BYTES = 2 * 1024 * 1024 * 1024;
@@ -419,7 +423,83 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       reviewHandler.handleFeedbackEvent(payload);
     });
 
-    observer.debug("Event subscriptions registered", { count: 5 });
+    // ── Health event → owner notification (with cooldown dedup) ──────────
+
+    function shouldNotifyHealth(key: string, now: number): boolean {
+      const last = healthNotifyCooldowns.get(key) ?? 0;
+      if (now - last < HEALTH_NOTIFY_COOLDOWN_MS) {
+        return false;
+      }
+      healthNotifyCooldowns.set(key, now);
+      return true;
+    }
+
+    eventBus.subscribe(
+      "daemon:health-trigger",
+      EventTypes["health.trigger_failure"],
+      (event: Event) => {
+        const p = event.payload as EventPayloads["health.trigger_failure"];
+        if (!shouldNotifyHealth(`trigger:${p.trigger_id}`, clock.now())) {
+          return;
+        }
+        notifications.notify({
+          kind: "alert",
+          taskId: null,
+          message: `Trigger adapter "${p.trigger_id}" has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Last error: ${p.last_error}. Check your configuration.`,
+        });
+      },
+    );
+
+    eventBus.subscribe(
+      "daemon:health-stuck",
+      EventTypes["health.stuck_detected"],
+      (event: Event) => {
+        const p = event.payload as EventPayloads["health.stuck_detected"];
+        if (!shouldNotifyHealth(`stuck:${p.task_id}`, clock.now())) {
+          return;
+        }
+        const title = taskEngine.getTask(p.task_id)?.title ?? p.task_id;
+        notifications.notify({
+          kind: "alert",
+          taskId: p.task_id,
+          message: `Task "${title}" appears stuck (${p.condition}). Elapsed: ${String(Math.floor(p.elapsed_ms / 60_000))}m. Threshold: ${String(Math.floor(p.threshold_ms / 60_000))}m.`,
+        });
+      },
+    );
+
+    eventBus.subscribe(
+      "daemon:health-plugin-failed",
+      EventTypes["health.plugin_failed"],
+      (event: Event) => {
+        const p = event.payload as EventPayloads["health.plugin_failed"];
+        if (!shouldNotifyHealth(`plugin:${p.plugin_id}`, clock.now())) {
+          return;
+        }
+        notifications.notify({
+          kind: "alert",
+          taskId: null,
+          message: `Plugin "${p.plugin_id}" (${p.plugin_type}) has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Error: ${p.error}`,
+        });
+      },
+    );
+
+    eventBus.subscribe(
+      "daemon:health-plugin-unhealthy",
+      EventTypes["health.plugin_unhealthy"],
+      (event: Event) => {
+        const p = event.payload as EventPayloads["health.plugin_unhealthy"];
+        if (!shouldNotifyHealth(`plugin-unhealthy:${p.plugin_id}`, clock.now())) {
+          return;
+        }
+        notifications.notify({
+          kind: "alert",
+          taskId: null,
+          message: `Plugin "${p.plugin_id}" (${p.plugin_type}) is unhealthy after ${String(p.consecutive_failures)} consecutive failures. Error: ${p.error}`,
+        });
+      },
+    );
+
+    observer.debug("Event subscriptions registered", { count: 9 });
   }
 
   function unregisterSubscriptions(): void {
@@ -428,6 +508,10 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     eventBus.unsubscribe("daemon:state-sync");
     eventBus.unsubscribe("daemon:children-done");
     eventBus.unsubscribe("daemon:feedback");
+    eventBus.unsubscribe("daemon:health-trigger");
+    eventBus.unsubscribe("daemon:health-stuck");
+    eventBus.unsubscribe("daemon:health-plugin-failed");
+    eventBus.unsubscribe("daemon:health-plugin-unhealthy");
   }
 
   // ── Startup: Protocol P1 ──────────────────────────────────────────────
@@ -510,8 +594,13 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     await reviewHandler.checkFeedback(reviewPendingTasks);
     await reviewHandler.checkApprovedCI();
 
-    // Step 9: Cleanup expired seen keys
+    // Step 9: Cleanup expired seen keys and stale health cooldowns
     triggerPoller.cleanupExpiredKeys(now);
+    for (const [key, ts] of healthNotifyCooldowns) {
+      if (now - ts > HEALTH_NOTIFY_COOLDOWN_MS * 2) {
+        healthNotifyCooldowns.delete(key);
+      }
+    }
 
     // Step 10: Memory instrumentation
     tickCount++;

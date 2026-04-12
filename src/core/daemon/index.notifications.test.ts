@@ -411,4 +411,197 @@ describe("Daemon Notifications", () => {
       expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
     });
   });
+
+  // ── Health Event Notifications ──────────────────────────────────────────
+
+  describe("health event notifications", () => {
+    function setupCommAndOwner(handle: TestDaemonHandle) {
+      const commPlugin = createMockCommPlugin();
+      handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
+      handle.peopleDirectory.getOwner.mockReturnValue({
+        id: "farzam",
+        contacts: [{ channel: "telegram", handle: "@farzam" }],
+      });
+      return commPlugin;
+    }
+
+    it("notifies owner when health.trigger_failure fires", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.trigger_failure");
+      expect(callback).toBeDefined();
+      callback!({
+        id: "evt-1",
+        sequence: 1,
+        type: "health.trigger_failure",
+        source: "daemon",
+        task_id: null,
+        timestamp: new Date().toISOString(),
+        payload: {
+          trigger_id: "github-trigger",
+          consecutive_failures: 5,
+          threshold: 3,
+          last_error: "auth_failed: 401 Unauthorized",
+          last_success: null,
+        },
+      });
+      await flush();
+      await handle.daemon.stop();
+
+      const formatCalls = commPlugin.formatMessage.mock.calls;
+      const alertCall = formatCalls.find(
+        (call: unknown[]) =>
+          (call[0] as string).includes("github-trigger") &&
+          (call[0] as string).includes("auth_failed") &&
+          call[1] === "alert",
+      );
+      expect(alertCall).toBeDefined();
+    });
+
+    it("notifies owner when health.stuck_detected fires", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-stuck", title: "Stuck task", state: "active" }),
+      );
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.stuck_detected");
+      expect(callback).toBeDefined();
+      callback!({
+        id: "evt-2",
+        sequence: 2,
+        type: "health.stuck_detected",
+        source: "daemon",
+        task_id: "task-stuck",
+        timestamp: new Date().toISOString(),
+        payload: {
+          task_id: "task-stuck",
+          condition: "stale_journal",
+          threshold_ms: 1_800_000,
+          elapsed_ms: 2_400_000,
+          last_activity: null,
+        },
+      });
+      await flush();
+      await handle.daemon.stop();
+
+      const formatCalls = commPlugin.formatMessage.mock.calls;
+      const alertCall = formatCalls.find(
+        (call: unknown[]) =>
+          (call[0] as string).includes("Stuck task") &&
+          (call[0] as string).includes("stale_journal") &&
+          call[1] === "alert",
+      );
+      expect(alertCall).toBeDefined();
+    });
+
+    it("notifies owner when health.plugin_failed fires", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.plugin_failed");
+      expect(callback).toBeDefined();
+      callback!({
+        id: "evt-3",
+        sequence: 3,
+        type: "health.plugin_failed",
+        source: "registry",
+        task_id: null,
+        timestamp: new Date().toISOString(),
+        payload: {
+          plugin_id: "github-trigger",
+          plugin_type: "trigger",
+          error: "auth_failed",
+          consecutive_failures: 5,
+          threshold: 3,
+        },
+      });
+      await flush();
+      await handle.daemon.stop();
+
+      const formatCalls = commPlugin.formatMessage.mock.calls;
+      const alertCall = formatCalls.find(
+        (call: unknown[]) =>
+          (call[0] as string).includes("github-trigger") &&
+          (call[0] as string).includes("trigger") &&
+          call[1] === "alert",
+      );
+      expect(alertCall).toBeDefined();
+    });
+
+    it("deduplicates health notifications within cooldown period", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.trigger_failure");
+      const event = {
+        id: "evt-dup",
+        sequence: 1,
+        type: "health.trigger_failure" as const,
+        source: "daemon",
+        task_id: null,
+        timestamp: new Date().toISOString(),
+        payload: {
+          trigger_id: "github-trigger",
+          consecutive_failures: 5,
+          threshold: 3,
+          last_error: "auth_failed",
+          last_success: null,
+        },
+      };
+
+      // Fire twice without advancing clock — second should be suppressed
+      callback!(event);
+      callback!(event);
+      await flush();
+      await handle.daemon.stop();
+
+      const formatCalls = commPlugin.formatMessage.mock.calls;
+      const alertCalls = formatCalls.filter(
+        (call: unknown[]) => (call[0] as string).includes("github-trigger") && call[1] === "alert",
+      );
+      expect(alertCalls).toHaveLength(1);
+    });
+
+    it("sends new notification after cooldown expires", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.trigger_failure");
+      const event = {
+        id: "evt-cd",
+        sequence: 1,
+        type: "health.trigger_failure" as const,
+        source: "daemon",
+        task_id: null,
+        timestamp: new Date().toISOString(),
+        payload: {
+          trigger_id: "github-trigger",
+          consecutive_failures: 5,
+          threshold: 3,
+          last_error: "auth_failed",
+          last_success: null,
+        },
+      };
+
+      // First notification
+      callback!(event);
+      await flush();
+
+      // Advance past cooldown (5 minutes)
+      handle.clock.advance(300_001);
+
+      // Second notification — should go through
+      callback!(event);
+      await flush();
+      await handle.daemon.stop();
+
+      const formatCalls = commPlugin.formatMessage.mock.calls;
+      const alertCalls = formatCalls.filter(
+        (call: unknown[]) => (call[0] as string).includes("github-trigger") && call[1] === "alert",
+      );
+      expect(alertCalls).toHaveLength(2);
+    });
+  });
 });

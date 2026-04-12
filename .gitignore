@@ -9,7 +9,6 @@ coverage/
 
 # Runtime data (never commit)
 .engineer/
-thoughts/
 *.db
 *.db-wal
 *.db-shm

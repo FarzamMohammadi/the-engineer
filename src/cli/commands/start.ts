@@ -235,31 +235,62 @@ async function runForeground(
   // NOTE: Signal handlers are registered after bootstrap completes. If the process
   // receives SIGTERM/SIGINT during bootstrap, cleanup won't run. This is an accepted
   // gap — bootstrap is typically <2s, and the OS reclaims all resources on exit.
-  const shutdown = async () => {
-    observer?.info("Shutdown signal received, stopping daemon...");
-    try {
-      await daemon.stop();
-    } finally {
-      try {
-        cleanupDashboard();
-      } finally {
-        cleanup();
-      }
+
+  // ── APE-proof shutdown: survives rapid/repeated Ctrl+C ──────────────────────
+  // First signal  → graceful shutdown (drain tasks, close plugins, clean up)
+  // Second signal → immediate hard exit (kill everything, exit now)
+  // Timeout (10s) → forced exit if graceful shutdown hangs
+
+  const SHUTDOWN_TIMEOUT_MS = 10_000;
+  let shutdownInProgress = false;
+  let cleanedUp = false;
+
+  const runCleanup = () => {
+    if (cleanedUp) {
+      return;
     }
-    observer?.info("Shutdown complete");
-    process.exit(0);
+    cleanedUp = true;
+    try {
+      cleanupDashboard();
+    } finally {
+      cleanup();
+    }
   };
 
   const handleShutdownSignal = () => {
-    shutdown().catch((err) => {
-      try {
-        observer?.recordError(err, { operation: "shutdown", component: "cli" });
-      } catch {
-        // Observer transport may be broken during shutdown — stderr fallback below
-      }
-      process.stderr.write(`Shutdown failed: ${sanitizeErrorMessage(err)}\n`);
+    if (shutdownInProgress) {
+      // Second signal — user is mashing Ctrl+C. Hard exit immediately.
+      process.stderr.write("\nForced shutdown — exiting immediately.\n");
+      runCleanup();
       process.exit(1);
-    });
+    }
+    shutdownInProgress = true;
+
+    // Hard timeout — if graceful shutdown hangs, force exit
+    const forceExitTimer = setTimeout(() => {
+      process.stderr.write("\nShutdown timed out — force exiting.\n");
+      runCleanup();
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    forceExitTimer.unref(); // Don't keep process alive for the timer
+
+    observer?.info("Shutdown signal received, stopping daemon...");
+    daemon
+      .stop()
+      .catch((err) => {
+        try {
+          observer?.recordError(err, { operation: "shutdown", component: "cli" });
+        } catch {
+          // Observer transport may be broken during shutdown — stderr fallback below
+        }
+        process.stderr.write(`Shutdown error: ${sanitizeErrorMessage(err)}\n`);
+      })
+      .finally(() => {
+        clearTimeout(forceExitTimer);
+        runCleanup();
+        observer?.info("Shutdown complete");
+        process.exit(0);
+      });
   };
   process.on("SIGTERM", handleShutdownSignal);
   process.on("SIGINT", handleShutdownSignal);

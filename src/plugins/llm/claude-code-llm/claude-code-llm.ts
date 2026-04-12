@@ -15,6 +15,7 @@ import {
   type QuotaWindow,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { killProcess } from "../../../utils/process.js";
 import { type ClaudeCodeLLMConfig, ClaudeCodeLLMConfigSchema } from "./config.js";
 
 // ── LLM subprocess env isolation ─────────────────────────────────────────────
@@ -156,7 +157,7 @@ export function appendStderr(current: string, chunk: string): string {
  */
 export class ClaudeCodeLLMPlugin extends LLMAdapter {
   private config!: ClaudeCodeLLMConfig;
-  private activeProcess: ChildProcess | null = null;
+  private activeProcesses = new Set<ChildProcess>();
   private lastRateLimits: RateLimitInfo[] = [];
 
   // Quota API cache — instance-level so each plugin instance has its own cache.
@@ -248,10 +249,10 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
   }
 
   protected doShutdown(): Promise<void> {
-    if (this.activeProcess) {
-      this.activeProcess.kill("SIGTERM");
-      this.activeProcess = null;
+    for (const child of this.activeProcesses) {
+      killProcess(child);
     }
+    this.activeProcesses.clear();
     return Promise.resolve();
   }
 
@@ -331,7 +332,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         cwd,
       });
 
-      this.activeProcess = child;
+      this.activeProcesses.add(child);
 
       // ── Streaming stdout handler ───────────────────────────────────
       child.stdout?.on("data", (chunk: Buffer) => {
@@ -342,7 +343,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
           console.error(
             `[claude-code-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
           );
-          child.kill("SIGTERM");
+          killProcess(child);
           return;
         }
 
@@ -375,7 +376,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: output salvage + error classification requires branching on exit code, parse success, and signal type
       child.on("close", (code) => {
-        this.activeProcess = null;
+        this.activeProcesses.delete(child);
         const durationMs = Date.now() - startMs;
 
         // Close trace stream
@@ -457,7 +458,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
       });
 
       child.on("error", (err) => {
-        this.activeProcess = null;
+        this.activeProcesses.delete(child);
         if (traceStream) {
           traceStream.end();
         }

@@ -10,6 +10,7 @@ import {
   type ToolResult,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { killProcess } from "../../../utils/process.js";
 import { SECRET_ENV_VARS } from "../../../utils/sanitize.js";
 import { type BashToolConfig, BashToolConfigSchema } from "./config.js";
 
@@ -31,9 +32,6 @@ const ENV_ALLOWLIST = [
   "GIT_SSH_COMMAND",
   "GIT_TERMINAL_PROMPT",
 ];
-
-/** Grace period before SIGKILL after SIGTERM (ms). */
-const KILL_GRACE_MS = 5000;
 
 /**
  * BashToolPlugin — the Engineer's hands.
@@ -257,15 +255,6 @@ export function validateCommand(command: string, blockedPatterns: string[]): str
     }
   }
   return null;
-}
-
-function killProcess(child: ChildProcess): void {
-  child.kill("SIGTERM");
-  setTimeout(() => {
-    if (!child.killed) {
-      child.kill("SIGKILL");
-    }
-  }, KILL_GRACE_MS);
 }
 
 function buildResult(

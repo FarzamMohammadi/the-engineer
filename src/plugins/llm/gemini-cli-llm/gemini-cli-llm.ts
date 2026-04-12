@@ -12,6 +12,7 @@ import {
   type QuotaStatus,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { killProcess } from "../../../utils/process.js";
 import { appendStderr } from "../claude-code-llm/claude-code-llm.js";
 import { type GeminiCliLLMConfig, GeminiCliLLMConfigSchema } from "./config.js";
 
@@ -250,7 +251,7 @@ export function parseGeminiCliOutput(raw: string): ParsedGeminiCliOutput {
  */
 export class GeminiCliLLMPlugin extends LLMAdapter {
   private config!: GeminiCliLLMConfig;
-  private activeProcess: ChildProcess | null = null;
+  private activeProcesses = new Set<ChildProcess>();
   private rateLimited = false;
 
   protected doInfer(request: InferenceRequest): Promise<InferenceResult> {
@@ -319,10 +320,10 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
   }
 
   protected doShutdown(): Promise<void> {
-    if (this.activeProcess) {
-      this.activeProcess.kill("SIGTERM");
-      this.activeProcess = null;
+    for (const child of this.activeProcesses) {
+      killProcess(child);
     }
+    this.activeProcesses.clear();
     return Promise.resolve();
   }
 
@@ -394,7 +395,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
         cwd,
       });
 
-      this.activeProcess = child;
+      this.activeProcesses.add(child);
       let killedForRateLimit = false;
 
       let totalStdoutBytes = 0;
@@ -408,7 +409,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
           console.error(
             `[gemini-cli-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
           );
-          child.kill("SIGTERM");
+          killProcess(child);
           return;
         }
 
@@ -440,13 +441,13 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
         stderrBuf = appendStderr(stderrBuf, text);
         if (!killedForRateLimit && RATE_LIMIT_STDERR_RE.test(text)) {
           killedForRateLimit = true;
-          child.kill("SIGTERM");
+          killProcess(child);
         }
       });
 
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI process lifecycle with rate limit + error + parse paths
       child.on("close", (code) => {
-        this.activeProcess = null;
+        this.activeProcesses.delete(child);
         if (traceStream) {
           traceStream.end();
         }
@@ -534,7 +535,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
       });
 
       child.on("error", (err) => {
-        this.activeProcess = null;
+        this.activeProcesses.delete(child);
         if (traceStream) {
           traceStream.end();
         }

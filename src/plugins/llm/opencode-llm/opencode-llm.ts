@@ -11,6 +11,7 @@ import {
   type LLMCapabilities,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { killProcess } from "../../../utils/process.js";
 import { appendStderr } from "../claude-code-llm/claude-code-llm.js";
 import { type OpenCodeLLMConfig, OpenCodeLLMConfigSchema } from "./config.js";
 
@@ -217,7 +218,7 @@ export function parseOpenCodeOutput(raw: string): ParsedOpenCodeOutput {
  */
 export class OpenCodeLLMPlugin extends LLMAdapter {
   private config!: OpenCodeLLMConfig;
-  private activeProcess: ChildProcess | null = null;
+  private activeProcesses = new Set<ChildProcess>();
 
   protected doInfer(request: InferenceRequest): Promise<InferenceResult> {
     const args = ["run", "--format", "json", "--model", this.config.model];
@@ -258,10 +259,10 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
   }
 
   protected doShutdown(): Promise<void> {
-    if (this.activeProcess) {
-      this.activeProcess.kill("SIGTERM");
-      this.activeProcess = null;
+    for (const child of this.activeProcesses) {
+      killProcess(child);
     }
+    this.activeProcesses.clear();
     return Promise.resolve();
   }
 
@@ -329,7 +330,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
         env: buildLlmEnv(process.env),
       });
 
-      this.activeProcess = child;
+      this.activeProcesses.add(child);
       let killedForRateLimit = false;
 
       let totalStdoutBytes = 0;
@@ -343,7 +344,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
           console.error(
             `[opencode-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
           );
-          child.kill("SIGTERM");
+          killProcess(child);
           return;
         }
 
@@ -372,12 +373,12 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
         stderrBuf = appendStderr(stderrBuf, text);
         if (!killedForRateLimit && RATE_LIMIT_STDERR_RE.test(text)) {
           killedForRateLimit = true;
-          child.kill("SIGTERM");
+          killProcess(child);
         }
       });
 
       child.on("close", (code) => {
-        this.activeProcess = null;
+        this.activeProcesses.delete(child);
         if (traceStream) {
           traceStream.end();
         }
@@ -443,7 +444,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
       });
 
       child.on("error", (err) => {
-        this.activeProcess = null;
+        this.activeProcesses.delete(child);
         if (traceStream) {
           traceStream.end();
         }

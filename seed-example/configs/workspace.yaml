@@ -7,6 +7,8 @@ default_base_branch: main
 pr:
   default_merge_strategy: squash
   delete_branch_after_merge: true
+  skip_pr_creation:
+    default: false
 
 cleanup:
   preserve_branch_on_failure: true

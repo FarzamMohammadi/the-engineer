@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import { OrchestratorConfigSchema } from "../../schemas/config.js";
+import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
@@ -24,10 +24,12 @@ import type { OrchestratorContext, PipelineState } from "./types.js";
 
 function createMockContext(
   configOverrides?: Partial<Parameters<typeof OrchestratorConfigSchema.parse>[0]>,
+  workspaceConfigOverrides?: Partial<Parameters<typeof WorkspaceConfigSchema.parse>[0]>,
 ): OrchestratorContext {
   let checkpointCounter = 0;
   return {
     config: OrchestratorConfigSchema.parse(configOverrides ?? {}),
+    workspaceConfig: WorkspaceConfigSchema.parse(workspaceConfigOverrides ?? {}),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),
@@ -56,6 +58,7 @@ function createMockContext(
     } as unknown as OrchestratorContext["sessionMemory"],
     workspaceManager: {
       getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree"),
+      getWorkspaceRecord: vi.fn().mockReturnValue(null),
       verifyWorkspace: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],
     peopleDirectory: {} as OrchestratorContext["peopleDirectory"],
@@ -547,6 +550,89 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("review_pending");
+    });
+
+    it("completes with completed when skip_pr_creation is enabled and push succeeds", async () => {
+      const ctx = createMockContext({}, { pr: { skip_pr_creation: { default: true } } });
+      (ctx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue({
+        taskId: "task-001",
+        repo: "owner/repo",
+        branch: "engineer/task-001",
+        baseBranch: "main",
+      });
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+      (deps.prManager.commitAndPush as ReturnType<typeof vi.fn>).mockReturnValue({
+        outcome: "pushed",
+        committed: true,
+      });
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      expect(deps.prManager.createPullRequest).not.toHaveBeenCalled();
+    });
+
+    it("respects per-repo override for skip_pr_creation", async () => {
+      const ctx = createMockContext(
+        {},
+        { pr: { skip_pr_creation: { default: false, repos: { "owner/repo": true } } } },
+      );
+      (ctx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue({
+        taskId: "task-001",
+        repo: "owner/repo",
+        branch: "engineer/task-001",
+        baseBranch: "main",
+      });
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+      (deps.prManager.commitAndPush as ReturnType<typeof vi.fn>).mockReturnValue({
+        outcome: "pushed",
+        committed: true,
+      });
+
+      const result = await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(result.outcome).toBe("completed");
+      expect(deps.prManager.createPullRequest).not.toHaveBeenCalled();
+    });
+
+    it("sends notification when skipping PR creation", async () => {
+      const ctx = createMockContext({}, { pr: { skip_pr_creation: { default: true } } });
+      (ctx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue({
+        taskId: "task-001",
+        repo: "owner/repo",
+        branch: "engineer/task-001",
+        baseBranch: "main",
+      });
+      const outputs = new Map<Phase, PhaseOutput>();
+      for (const phase of PHASE_SEQUENCE) {
+        outputs.set(phase, makeOutput(phase));
+      }
+      const handlers = createHandlersThatReturn(outputs);
+      const deps = createDeps(ctx, handlers);
+      (deps.prManager.commitAndPush as ReturnType<typeof vi.fn>).mockReturnValue({
+        outcome: "pushed",
+        committed: true,
+      });
+
+      await runPhasePipeline(createDispatch(), createState(), deps);
+
+      expect(ctx.notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: NotificationKinds.milestone,
+          taskId: "task-001",
+          message: expect.stringContaining("PR creation skipped"),
+        }),
+      );
     });
 
     it("halts pipeline when AndonCord is pulled", async () => {

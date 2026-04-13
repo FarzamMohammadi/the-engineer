@@ -481,7 +481,32 @@ async function tryCommitPushAndCreatePR(
     );
   }
 
-  // Step 2: Create PR (or handle rework)
+  // Step 2: Check if PR creation should be skipped
+  const skipConfig = ctx.workspaceConfig.pr.skip_pr_creation;
+  const record = ctx.workspaceManager.getWorkspaceRecord(taskId);
+  const shouldSkipPr = record
+    ? (skipConfig.repos[record.repo] ?? skipConfig.default)
+    : skipConfig.default;
+
+  if (shouldSkipPr) {
+    const branchInfo = record ? ` \`${record.branch}\` on \`${record.repo}\`` : "";
+    ctx.observer.info(`Skipping PR creation per config — changes pushed to branch${branchInfo}`, {
+      taskId,
+    });
+    ctx.notifications.notify({
+      kind: NotificationKinds.milestone,
+      taskId,
+      message: `Changes pushed to branch${branchInfo} — PR creation skipped per config.`,
+    });
+    ctx.notifications.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId,
+      message: `Changes pushed to branch${branchInfo} — PR creation skipped per config.`,
+    });
+    return null; // Continue pipeline → integration → completed
+  }
+
+  // Step 3: Create PR (or handle rework)
   const prResult = await prManager.createPullRequest(sessionId, taskId, output, dispatch);
 
   if (prResult.outcome === "error") {

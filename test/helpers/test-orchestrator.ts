@@ -23,7 +23,7 @@ import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { InferenceResult } from "../../src/schemas/adapters.js";
-import { OrchestratorConfigSchema } from "../../src/schemas/config.js";
+import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import type { Dispatch } from "../../src/schemas/ephemeral.js";
 import type { Event } from "../../src/schemas/events.js";
 import type { Phase } from "../../src/schemas/orchestrator.js";
@@ -514,6 +514,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
 
   const orchestrator = new Orchestrator({
     config: OrchestratorConfigSchema.parse({}),
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
     eventBus: eventBus as unknown as EventBus,
     registry: registry as unknown as Registry,
     taskEngine: taskEngine as unknown as ITaskEngine,

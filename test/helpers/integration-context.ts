@@ -16,12 +16,14 @@ import { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import { createCoreComponents } from "../../src/core/system.js";
 import type { Person } from "../../src/schemas/adapters.js";
-import type { DaemonConfig, SafetyConfig, WorkspaceConfig } from "../../src/schemas/config.js";
 import {
+  type DaemonConfig,
   DaemonConfigSchema,
   OrchestratorConfigSchema,
   PeopleConfigSchema,
+  type SafetyConfig,
   SafetyConfigSchema,
+  type WorkspaceConfig,
   WorkspaceConfigSchema,
 } from "../../src/schemas/config.js";
 import { FakeClock } from "./fake-clock.js";
@@ -164,6 +166,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   // 10. Orchestrator
   const orchestrator = new Orchestrator({
     config: OrchestratorConfigSchema.parse({}),
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
     eventBus,
     registry,
     taskEngine,

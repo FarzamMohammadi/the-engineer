@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import { OrchestratorConfigSchema } from "../../schemas/config.js";
+import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
@@ -35,6 +35,7 @@ const mockedExecFileSync = vi.mocked(execFileSync);
 function createMockContext(): OrchestratorContext {
   return {
     config: OrchestratorConfigSchema.parse({}),
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
     eventBus: { publish: vi.fn() } as unknown as OrchestratorContext["eventBus"],
     registry: {
       getPrimaryPlugin: vi.fn().mockReturnValue(null),

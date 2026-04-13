@@ -48,7 +48,7 @@ const REVIEW_LENS: Record<ReviewPhaseName, { title: string; instructions: string
   requirements_check: {
     title: "Requirements Check",
     instructions: [
-      "Your sole focus is verifying that the implementation meets all acceptance criteria.",
+      "Your sole focus is verifying that the implementation meets all acceptance criteria — and surfacing implications the criteria didn't anticipate.",
       "",
       '1. Read the requirements file (see path in the "What Happened Before You" section above) carefully. Extract every acceptance criterion and requirement.',
       "2. Run `git diff` to see all code changes.",
@@ -57,6 +57,7 @@ const REVIEW_LENS: Record<ReviewPhaseName, { title: string; instructions: string
       "5. Verify tests cover the acceptance criteria.",
       "6. Check if the codebase has documentation covering the behavior that changed. If relevant docs exist and were not updated, flag as NOT MET — a code change without a doc update is unfinished work.",
       "7. Run `git status` — if there are ANY unstaged or uncommitted changes, flag as NOT MET. All work must be committed before the branch is pushed.",
+      "8. **Question what wasn't asked.** Meeting every criterion is necessary but not sufficient. Ask: does this change introduce new risks, side effects, or behavioral implications that the requirements didn't anticipate? A feature that works exactly as specified can still be incomplete if its consequences weren't considered. Flag these as IMPLICATIONS — not failures, but things the owner should be aware of before merging.",
       "",
       "Rate each requirement: MET, PARTIALLY MET (explain gap), or NOT MET (explain what's missing).",
     ].join("\n"),
@@ -287,7 +288,7 @@ function buildRefinementInstructions(thoughtsDir: string): string {
   return section(
     "What YOU Need To Do",
     [
-      "You are the final quality gate before the PR goes out.",
+      "You are the final quality gate before the PR goes out. Your stance is adversarial: assume issues exist. Your job is to find them, not to confirm their absence. A clean report means you missed something — challenge that assumption before signing off.",
       "",
       `1. Read ALL review findings from \`${thoughtsDir}/review/*.md\`.`,
       "2. Consolidate findings. Group by severity and type.",
@@ -300,10 +301,11 @@ function buildRefinementInstructions(thoughtsDir: string): string {
       "   - Could this have been done with fewer abstractions? If a type, interface, or wrapper exists only to satisfy a pattern rather than a real need, remove it.",
       "   - Could this have been done with less code? Look for over-engineering: premature generalization, unused flexibility, defensive code against scenarios that cannot happen.",
       "   - If the answer to any of these is yes — simplify now. This is your last chance before the PR.",
-      "5. Run the test suite after applying fixes. Ensure all tests pass.",
-      "6. **Verify completeness mechanically.** Tests prove the code works — they do not prove a refactoring is complete. If the task involved replacing, migrating, or removing instances of something, search the codebase to confirm zero remain. If research produced an inventory, reconcile against it. A passing test suite with un-migrated instances is not done.",
-      "7. **Commit ALL changes before finishing.** Run `git status` — there must be zero unstaged or uncommitted changes in the worktree. Use the commit skill (see Skills section) for clean, descriptive commits. The system pushes your branch after this phase — uncommitted work will be lost, and leftover changes cause push hook failures.",
-      "8. Write a summary of what you found and what you fixed (including any simplifications).",
+      "5. **Review what ships, not just what changed.** `git diff` shows intent — but what ships is the full commit. Run `git log --stat` and examine every file in the diff. Look for artifacts that shouldn't be there: wrong lockfiles, generated files, stale fixtures, files from the wrong package manager, backup files, build output. If a human reviewer would send the PR back for it, catch it now.",
+      "6. Run the test suite after applying fixes. Ensure all tests pass.",
+      "7. **Verify completeness mechanically.** Tests prove the code works — they do not prove a refactoring is complete. If the task involved replacing, migrating, or removing instances of something, search the codebase to confirm zero remain. If research produced an inventory, reconcile against it. A passing test suite with un-migrated instances is not done.",
+      "8. **Commit ALL changes before finishing.** Run `git status` — there must be zero unstaged or uncommitted changes in the worktree. Use the commit skill (see Skills section) for clean, descriptive commits. The system pushes your branch after this phase — uncommitted work will be lost, and leftover changes cause push hook failures.",
+      "9. Write a summary of what you found and what you fixed (including any simplifications).",
       "",
       "If substantial issues remain that you cannot fix in this pass, signal that another implementation pass is needed.",
       "If requirements are ambiguous and you cannot determine the correct fix, signal that requirements gathering is needed.",

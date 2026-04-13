@@ -172,6 +172,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     eventTopology.registerPublisher("orchestrator", ORCHESTRATOR_EVENTS);
     const orchestrator = new Orchestrator({
       config: config.orchestrator,
+      workspaceConfig: config.workspace,
       eventBus,
       registry,
       taskEngine,

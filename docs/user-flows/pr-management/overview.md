@@ -92,6 +92,10 @@ tryCommitPushAndCreatePR()  (phase-runner.ts)
   |     +-- error           → blockForPrWorkflowError() (task blocked, owner notified)
   |     +-- pushed          → continue to step 2
   |
+  +-- skip_pr_creation enabled for repo?
+  |     +-- YES → notify "pushed to branch", return null (continue pipeline → completed)
+  |     +-- NO  → continue to step 3
+  |
   +-- createPullRequest()
         +-- no_hosting_plugin → return null (continue pipeline)
         +-- error             → blockForPrWorkflowError() (task blocked, owner notified)
@@ -340,6 +344,22 @@ The old approval is explicitly invalidated — changed code must not ride on a s
 
 ## 6. Configuration
 
+### workspace.yaml — PR Workflow
+
+```yaml
+pr:
+  skip_pr_creation:
+    default: false                     # Global default — PR created as usual
+    repos:
+      owner/internal-tools: true       # Push-only for this repo (no PR)
+```
+
+When `skip_pr_creation` is enabled for a repo (or globally), the pipeline skips `createPullRequest` after a successful push. The task continues to the integration phase and completes with outcome `completed` instead of `review_pending`. The owner receives a "changes pushed to branch" notification.
+
+When disabled (default), behavior is unchanged — the full PR workflow runs as documented above.
+
+Per-repo values override the global default. Repos not listed in `repos` fall back to `default`.
+
 ### safety.yaml — Merge Policy
 
 ```yaml
@@ -376,6 +396,7 @@ Every notification the owner receives during PR lifecycle:
 | Milestone | Kind | Message |
 |---|---|---|
 | PR created | milestone + ticket | "PR created: {url}" |
+| PR skipped (config) | milestone + ticket | "Changes pushed to branch — PR creation skipped per config." |
 | Rework pushed | ticket | "Pushed rework addressing review feedback." |
 | Commit/push/PR failed | task_error | "PR workflow failed at {step}: {reason}" — task blocked |
 | Stale approvals dismissed | (logged, not notified) | Dismissed via GitHub API with "Re-review required" message |

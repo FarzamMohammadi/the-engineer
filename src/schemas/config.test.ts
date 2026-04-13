@@ -221,6 +221,21 @@ describe("PrConfigSchema", () => {
     expect(config.default_merge_strategy).toBe("squash");
     expect(config.delete_branch_after_merge).toBe(true);
     expect(config.branch_retention_days).toBeNull();
+    expect(config.skip_pr_creation).toEqual({ default: false, repos: {} });
+  });
+
+  it("accepts skip_pr_creation with default override", () => {
+    const config = PrConfigSchema.parse({ skip_pr_creation: { default: true } });
+    expect(config.skip_pr_creation.default).toBe(true);
+    expect(config.skip_pr_creation.repos).toEqual({});
+  });
+
+  it("accepts skip_pr_creation with per-repo overrides", () => {
+    const config = PrConfigSchema.parse({
+      skip_pr_creation: { default: false, repos: { "owner/repo": true } },
+    });
+    expect(config.skip_pr_creation.default).toBe(false);
+    expect(config.skip_pr_creation.repos["owner/repo"]).toBe(true);
   });
 });
 

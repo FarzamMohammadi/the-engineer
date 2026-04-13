@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { AdapterMethodError, createAdapterError } from "../../adapters/index.js";
 import type { InferenceResult } from "../../schemas/adapters.js";
-import { OrchestratorConfigSchema } from "../../schemas/config.js";
+import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../schemas/config.js";
 import { Complexities, Phases } from "../../schemas/orchestrator.js";
 import type { SessionResult } from "../../schemas/orchestrator.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
@@ -20,6 +20,7 @@ import type { OrchestratorContext } from "./types.js";
 function createMockContext(overrides?: Partial<OrchestratorContext>): OrchestratorContext {
   return {
     config: OrchestratorConfigSchema.parse({}),
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),

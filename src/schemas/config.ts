@@ -340,6 +340,15 @@ export const PrConfigSchema = z.object({
     .describe(
       "Days to retain merged branches before cleanup. Null means no automatic deletion. Default: null.",
     ),
+  skip_pr_creation: z
+    .object({
+      default: z.boolean().default(false),
+      repos: z.record(z.boolean()).default({}),
+    })
+    .default({})
+    .describe(
+      "Skip PR creation after push. When enabled, the task completes after pushing to the remote branch. Supports per-repo overrides.",
+    ),
 });
 export type PrConfig = z.infer<typeof PrConfigSchema>;
 

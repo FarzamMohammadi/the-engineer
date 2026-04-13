@@ -24,9 +24,6 @@ coverage/
 !.env*.example
 seed/
 
-# Session-result backups (created by checkpoint system, diagnostic only)
-*.json.bak
-
 # OS
 .DS_Store
 Thumbs.db

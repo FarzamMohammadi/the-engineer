@@ -18,6 +18,8 @@ import {
   createMockDispatch,
   createTestOrchestrator,
 } from "../../../test/helpers/test-orchestrator.js";
+import { Phases } from "../../schemas/orchestrator.js";
+import { SessionEndReasons } from "../../schemas/session-memory.js";
 import type { WorkspaceRecord } from "../interfaces/workspace-manager.interface.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -321,10 +323,10 @@ describe("commitPushAndCreatePR", () => {
 
     expect(result.outcome).toBe("review_pending");
     if (result.outcome === "review_pending") {
-      expect(result.phase).toBe("demo_prep");
+      expect(result.phase).toBe(Phases.demo_prep);
       // Should include phases up to demo_prep (6 of 7)
       expect(result.phaseOutputs.size).toBe(6);
-      expect(result.phaseOutputs.has("integration")).toBe(false);
+      expect(result.phaseOutputs.has(Phases.integration)).toBe(false);
     }
   });
 
@@ -334,7 +336,10 @@ describe("commitPushAndCreatePR", () => {
     const dispatch = dispatchWithWorkspace();
     await h.orchestrator.executeTask(dispatch);
 
-    expect(h.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "review_pending");
+    expect(h.sessionMemory.endSession).toHaveBeenCalledWith(
+      expect.any(String),
+      SessionEndReasons.review_pending,
+    );
   });
 
   it("blocks task when PR creation fails", async () => {

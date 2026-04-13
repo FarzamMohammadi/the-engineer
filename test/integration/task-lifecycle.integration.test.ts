@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EventBus } from "../../src/core/event-bus/index.js";
 import { TaskEngine } from "../../src/core/task-engine/index.js";
 import type { Event } from "../../src/schemas/events.js";
+import { SubStates, TaskStates } from "../../src/schemas/task.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
 import { createTestObserverFacade } from "../helpers/test-observer-facade.js";
 
@@ -34,33 +35,57 @@ describe("Task lifecycle (integration)", () => {
         source: "test",
         description: "A test task",
       });
-      expect(task.state).toBe("requirements_gathering");
+      expect(task.state).toBe(TaskStates.requirements_gathering);
 
       // requirements_gathering → queued
-      const r1 = taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
+      const r1 = taskEngine.requestTransition(
+        task.id,
+        TaskStates.queued,
+        null,
+        "triggered",
+        "daemon",
+      );
       expect(r1.success).toBe(true);
-      expect(taskEngine.getTask(task.id)?.state).toBe("queued");
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.queued);
 
       // queued → active.working
-      const r2 = taskEngine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
+      const r2 = taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "scheduled",
+        "daemon",
+      );
       expect(r2.success).toBe(true);
       const activeTask = taskEngine.getTask(task.id);
-      expect(activeTask?.state).toBe("active");
-      expect(activeTask?.sub_state).toBe("working");
+      expect(activeTask?.state).toBe(TaskStates.active);
+      expect(activeTask?.sub_state).toBe(SubStates.working);
 
       // active.working → completed
-      const r3 = taskEngine.requestTransition(task.id, "completed", null, "done", "orchestrator");
+      const r3 = taskEngine.requestTransition(
+        task.id,
+        TaskStates.completed,
+        null,
+        "done",
+        "orchestrator",
+      );
       expect(r3.success).toBe(true);
-      expect(taskEngine.getTask(task.id)?.state).toBe("completed");
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.completed);
 
       // Verify events emitted for each transition
       expect(events).toHaveLength(3);
       expect(events[0]?.payload).toMatchObject({
-        from_state: "requirements_gathering",
-        to_state: "queued",
+        from_state: TaskStates.requirements_gathering,
+        to_state: TaskStates.queued,
       });
-      expect(events[1]?.payload).toMatchObject({ from_state: "queued", to_state: "active" });
-      expect(events[2]?.payload).toMatchObject({ from_state: "active", to_state: "completed" });
+      expect(events[1]?.payload).toMatchObject({
+        from_state: TaskStates.queued,
+        to_state: TaskStates.active,
+      });
+      expect(events[2]?.payload).toMatchObject({
+        from_state: TaskStates.active,
+        to_state: TaskStates.completed,
+      });
     });
 
     it("transitions through review_pending.demo → review_pending.code → completed", () => {
@@ -73,18 +98,36 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
-      taskEngine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
-      taskEngine.requestTransition(task.id, "review_pending", "code", "demo_ready", "orchestrator");
+      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "scheduled",
+        "daemon",
+      );
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.review_pending,
+        SubStates.code,
+        "demo_ready",
+        "orchestrator",
+      );
 
-      expect(taskEngine.getTask(task.id)?.state).toBe("review_pending");
-      expect(taskEngine.getTask(task.id)?.sub_state).toBe("code");
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.review_pending);
+      expect(taskEngine.getTask(task.id)?.sub_state).toBe(SubStates.code);
 
-      taskEngine.requestTransition(task.id, "review_pending", "code", "demo_approved", "reviewer");
-      expect(taskEngine.getTask(task.id)?.sub_state).toBe("code");
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.review_pending,
+        SubStates.code,
+        "demo_approved",
+        "reviewer",
+      );
+      expect(taskEngine.getTask(task.id)?.sub_state).toBe(SubStates.code);
 
-      taskEngine.requestTransition(task.id, "completed", null, "approved", "reviewer");
-      expect(taskEngine.getTask(task.id)?.state).toBe("completed");
+      taskEngine.requestTransition(task.id, TaskStates.completed, null, "approved", "reviewer");
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.completed);
     });
   });
 
@@ -99,17 +142,35 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
-      taskEngine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
-      taskEngine.requestTransition(task.id, "blocked", null, "waiting_for_input", "orchestrator");
+      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "scheduled",
+        "daemon",
+      );
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.blocked,
+        null,
+        "waiting_for_input",
+        "orchestrator",
+      );
 
-      expect(taskEngine.getTask(task.id)?.state).toBe("blocked");
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.blocked);
 
-      taskEngine.requestTransition(task.id, "active", "working", "unblocked", "daemon");
-      expect(taskEngine.getTask(task.id)?.state).toBe("active");
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "unblocked",
+        "daemon",
+      );
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.active);
 
-      taskEngine.requestTransition(task.id, "completed", null, "done", "orchestrator");
-      expect(taskEngine.getTask(task.id)?.state).toBe("completed");
+      taskEngine.requestTransition(task.id, TaskStates.completed, null, "done", "orchestrator");
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.completed);
     });
   });
 
@@ -124,11 +185,23 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
-      taskEngine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
-      taskEngine.requestTransition(task.id, "failed", null, "unrecoverable_error", "orchestrator");
+      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "scheduled",
+        "daemon",
+      );
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.failed,
+        null,
+        "unrecoverable_error",
+        "orchestrator",
+      );
 
-      expect(taskEngine.getTask(task.id)?.state).toBe("failed");
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.failed);
     });
   });
 
@@ -143,7 +216,13 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      const result = taskEngine.requestTransition(task.id, "active", "working", "bad", "daemon");
+      const result = taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "bad",
+        "daemon",
+      );
       expect(result.success).toBe(false);
     });
 
@@ -157,11 +236,23 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
-      taskEngine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
-      taskEngine.requestTransition(task.id, "completed", null, "done", "orchestrator");
+      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "scheduled",
+        "daemon",
+      );
+      taskEngine.requestTransition(task.id, TaskStates.completed, null, "done", "orchestrator");
 
-      const result = taskEngine.requestTransition(task.id, "queued", null, "retry", "daemon");
+      const result = taskEngine.requestTransition(
+        task.id,
+        TaskStates.queued,
+        null,
+        "retry",
+        "daemon",
+      );
       expect(result.success).toBe(false);
     });
   });
@@ -177,18 +268,30 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, "queued", null, "triggered", "daemon");
-      taskEngine.requestTransition(task.id, "active", "working", "scheduled", "daemon");
-      taskEngine.requestTransition(task.id, "completed", null, "done", "orchestrator");
+      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
+      taskEngine.requestTransition(
+        task.id,
+        TaskStates.active,
+        SubStates.working,
+        "scheduled",
+        "daemon",
+      );
+      taskEngine.requestTransition(task.id, TaskStates.completed, null, "done", "orchestrator");
 
       const history = taskEngine.getStateHistory(task.id);
       expect(history).toHaveLength(3);
       expect(history[0]).toMatchObject({
-        from_state: "requirements_gathering",
-        to_state: "queued",
+        from_state: TaskStates.requirements_gathering,
+        to_state: TaskStates.queued,
       });
-      expect(history[1]).toMatchObject({ from_state: "queued", to_state: "active" });
-      expect(history[2]).toMatchObject({ from_state: "active", to_state: "completed" });
+      expect(history[1]).toMatchObject({
+        from_state: TaskStates.queued,
+        to_state: TaskStates.active,
+      });
+      expect(history[2]).toMatchObject({
+        from_state: TaskStates.active,
+        to_state: TaskStates.completed,
+      });
     });
   });
 
@@ -232,15 +335,15 @@ describe("Task lifecycle (integration)", () => {
 
       const t1 = taskEngine.createTask({ title: "T1", repo: "r", source: "s", description: "" });
       const t2 = taskEngine.createTask({ title: "T2", repo: "r", source: "s", description: "" });
-      taskEngine.requestTransition(t1.id, "queued", null, "go", "daemon");
-      taskEngine.requestTransition(t2.id, "queued", null, "go", "daemon");
-      taskEngine.requestTransition(t1.id, "active", "working", "go", "daemon");
+      taskEngine.requestTransition(t1.id, TaskStates.queued, null, "go", "daemon");
+      taskEngine.requestTransition(t2.id, TaskStates.queued, null, "go", "daemon");
+      taskEngine.requestTransition(t1.id, TaskStates.active, SubStates.working, "go", "daemon");
 
-      const queued = taskEngine.getTasksByState("queued");
+      const queued = taskEngine.getTasksByState(TaskStates.queued);
       expect(queued).toHaveLength(1);
       expect(queued[0]?.id).toBe(t2.id);
 
-      const active = taskEngine.getTasksByState("active");
+      const active = taskEngine.getTasksByState(TaskStates.active);
       expect(active).toHaveLength(1);
       expect(active[0]?.id).toBe(t1.id);
     });

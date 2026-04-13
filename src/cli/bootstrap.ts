@@ -24,6 +24,7 @@ import { createCoreComponents } from "../core/system.js";
 import { type DatabaseHandle, createDatabase } from "../db/index.js";
 import { loadBuiltinPlugins } from "../plugins/loader.js";
 import { AdapterTypes } from "../schemas/adapters.js";
+import { EventTypes } from "../schemas/events.js";
 import { RealClock } from "../utils/clock.js";
 import { sanitizeErrorMessage } from "../utils/sanitize.js";
 import { SecureValue } from "../utils/secure-value.js";
@@ -220,15 +221,15 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // ── Event Topology: Subscribers ──────────────────────────────────────────
 
     // 11. Register event topology subscriptions
-    eventTopology.registerSubscriber("orchestrator", "preemption.requested");
-    eventTopology.registerSubscriber("safety_layer", "cost.incurred");
-    eventTopology.registerSubscriber("safety_layer:cleanup", "task.state_changed");
-    eventTopology.registerSubscriber("daemon:cost", "cost.limit_reached");
+    eventTopology.registerSubscriber("orchestrator", EventTypes["preemption.requested"]);
+    eventTopology.registerSubscriber("safety_layer", EventTypes["cost.incurred"]);
+    eventTopology.registerSubscriber("safety_layer:cleanup", EventTypes["task.state_changed"]);
+    eventTopology.registerSubscriber("daemon:cost", EventTypes["cost.limit_reached"]);
     // daemon:comm subscribes to comm.message_received — topology registration deferred until
     // CommunicationAdapter.receive capability is implemented (see future-considerations.md)
-    eventTopology.registerSubscriber("daemon:state-sync", "task.state_changed");
-    eventTopology.registerSubscriber("daemon:children-done", "task.children_all_done");
-    eventTopology.registerSubscriber("daemon:feedback", "task.feedback_received");
+    eventTopology.registerSubscriber("daemon:state-sync", EventTypes["task.state_changed"]);
+    eventTopology.registerSubscriber("daemon:children-done", EventTypes["task.children_all_done"]);
+    eventTopology.registerSubscriber("daemon:feedback", EventTypes["task.feedback_received"]);
 
     const eventDeclarations = eventTopology.getAllDeclarations();
     const publisherIds = new Set(eventDeclarations.flatMap((d) => d.publishers));

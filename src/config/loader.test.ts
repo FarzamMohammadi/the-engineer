@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { NotificationLevels } from "../schemas/adapters.js";
 import { DaemonConfigSchema, PeopleConfigSchema, SafetyConfigSchema } from "../schemas/config.js";
 import {
   ConfigError,
@@ -465,7 +466,9 @@ describe("PeopleConfig loading", () => {
     expect(result.config.people[0]?.name).toBe("Farzam Mohammadi");
     expect(result.config.people[0]?.roles).toEqual(["owner", "reviewer"]);
     expect(result.config.people[0]?.contacts).toHaveLength(2);
-    expect(result.config.people[0]?.preferences.notification_level).toBe("milestones");
+    expect(result.config.people[0]?.preferences.notification_level).toBe(
+      NotificationLevels.milestones,
+    );
     expect(result.config.people[0]?.preferences.quiet_hours).toBeNull();
 
     expect(result.config.people[1]?.id).toBe("alice");

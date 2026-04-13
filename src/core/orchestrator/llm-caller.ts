@@ -3,7 +3,7 @@ import path from "node:path";
 import { AdapterMethodError } from "../../adapters/index.js";
 import type { LLMAdapter } from "../../adapters/llm.js";
 import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
-import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
+import { Complexities, type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import {
@@ -477,7 +477,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
               status: "ready" as const,
               next_phase: phase,
               summary: "",
-              complexity: "moderate" as const,
+              complexity: Complexities.moderate,
             }
           : (() => {
               const detail =

@@ -16,6 +16,7 @@ import {
   type TaskReconciliationInput,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import type { ExternalRef } from "../../../schemas/task.js";
 import { type GitHubCommConfig, GitHubCommConfigSchema } from "./config.js";
 import { diffStateLabels, parseTargetChannel } from "./github-utils.js";
@@ -142,7 +143,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
         createAdapterError(
           classifyGitHubError(error),
           `Failed to sync state for ${ref.repo}#${String(Number(ref.id))}: ${error instanceof Error ? error.message : String(error)}`,
-          { retryable: isRetryable(error), severity: "error" },
+          { retryable: isRetryable(error), severity: AdapterErrorSeverities.error },
         ),
       );
     }

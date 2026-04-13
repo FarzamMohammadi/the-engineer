@@ -8,7 +8,7 @@ import {
   TriggerEventSchema,
 } from "../../src/schemas/adapters.js";
 import { EventSchema } from "../../src/schemas/events.js";
-import { TaskSchema } from "../../src/schemas/task.js";
+import { TaskSchema, TaskStates } from "../../src/schemas/task.js";
 import {
   createMockEvent,
   createMockInferenceRequest,
@@ -78,15 +78,19 @@ describe("mock-factories", () => {
     });
 
     it("applies overrides", () => {
-      const task = createMockTask({ title: "Custom task", state: "active", sub_state: "working" });
+      const task = createMockTask({
+        title: "Custom task",
+        state: TaskStates.active,
+        sub_state: "working",
+      });
       expect(task.title).toBe("Custom task");
-      expect(task.state).toBe("active");
+      expect(task.state).toBe(TaskStates.active);
       expect(task.sub_state).toBe("working");
     });
 
     it("has sensible defaults", () => {
       const task = createMockTask();
-      expect(task.state).toBe("requirements_gathering");
+      expect(task.state).toBe(TaskStates.requirements_gathering);
       expect(task.priority).toBe(50);
       expect(task.children).toEqual([]);
     });

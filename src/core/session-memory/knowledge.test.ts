@@ -4,6 +4,11 @@ import {
   type TestDatabaseHandle,
   createTestDatabase,
 } from "../../../test/helpers/test-database.js";
+import {
+  KnowledgeConfidences,
+  KnowledgeDomains,
+  KnowledgeScopes,
+} from "../../schemas/session-memory.js";
 import type { StoreKnowledgeInput } from "../interfaces/session-memory.interface.js";
 import { KnowledgeStore } from "./knowledge.js";
 
@@ -19,12 +24,12 @@ function setup(): void {
 
 function makeInput(overrides?: Partial<StoreKnowledgeInput>): StoreKnowledgeInput {
   return {
-    scope: "repo",
+    scope: KnowledgeScopes.repo,
     repoScope: "owner/repo",
-    domain: "conventions",
+    domain: KnowledgeDomains.conventions,
     key: "test framework",
     body: "Uses Vitest for all tests",
-    confidence: "observed",
+    confidence: KnowledgeConfidences.observed,
     evidence: [{ task_id: "task-1", description: "Saw vitest.config.ts" }],
     sourceTaskId: "task-1",
     sourcePhase: "research",
@@ -72,9 +77,11 @@ describe("KnowledgeStore", () => {
 
   it("stores user-scope knowledge with null repo_scope", () => {
     setup();
-    const entry = knowledge.storeKnowledge(makeInput({ scope: "user", repoScope: null }));
+    const entry = knowledge.storeKnowledge(
+      makeInput({ scope: KnowledgeScopes.user, repoScope: null }),
+    );
 
-    expect(entry.scope).toBe("user");
+    expect(entry.scope).toBe(KnowledgeScopes.user);
     expect(entry.repo_scope).toBeNull();
   });
 
@@ -84,7 +91,7 @@ describe("KnowledgeStore", () => {
     const newer = knowledge.storeKnowledge(makeInput({ key: "new-key", body: "new body" }));
     knowledge.supersedeKnowledge(old.id, newer.id);
 
-    const results = knowledge.getKnowledge("repo", "owner/repo");
+    const results = knowledge.getKnowledge(KnowledgeScopes.repo, "owner/repo");
     expect(results).toHaveLength(1);
     expect(results[0]!.id).toBe(newer.id);
   });
@@ -94,7 +101,7 @@ describe("KnowledgeStore", () => {
     knowledge.storeKnowledge(makeInput({ repoScope: "owner/repo-a", key: "k1" }));
     knowledge.storeKnowledge(makeInput({ repoScope: "owner/repo-b", key: "k2" }));
 
-    const resultsA = knowledge.getKnowledge("repo", "owner/repo-a");
+    const resultsA = knowledge.getKnowledge(KnowledgeScopes.repo, "owner/repo-a");
     expect(resultsA).toHaveLength(1);
     expect(resultsA[0]!.key).toBe("k1");
   });
@@ -104,7 +111,7 @@ describe("KnowledgeStore", () => {
     knowledge.storeKnowledge(makeInput({ repoScope: "owner/repo-a", key: "k1" }));
     knowledge.storeKnowledge(makeInput({ repoScope: "owner/repo-b", key: "k2" }));
 
-    const results = knowledge.getKnowledge("repo");
+    const results = knowledge.getKnowledge(KnowledgeScopes.repo);
     expect(results).toHaveLength(2);
   });
 
@@ -117,7 +124,7 @@ describe("KnowledgeStore", () => {
     knowledge.supersedeKnowledge(a.id, b.id);
     knowledge.supersedeKnowledge(b.id, c.id);
 
-    const results = knowledge.getKnowledge("repo", "owner/repo");
+    const results = knowledge.getKnowledge(KnowledgeScopes.repo, "owner/repo");
     expect(results).toHaveLength(1);
     expect(results[0]!.id).toBe(c.id);
   });
@@ -136,7 +143,7 @@ describe("KnowledgeStore", () => {
 
     knowledge.confirmKnowledge(entry.id);
 
-    const results = knowledge.getKnowledge("repo", "owner/repo");
+    const results = knowledge.getKnowledge(KnowledgeScopes.repo, "owner/repo");
     expect(results[0]!.last_confirmed >= originalConfirmed).toBe(true);
   });
 

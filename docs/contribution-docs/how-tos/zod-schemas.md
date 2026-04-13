@@ -73,12 +73,16 @@ taskEngine.getTasksByState(TaskStates.queued);
 | `task.ts` | `RelatedTypeSchema` | `RelatedType` | `RelatedTypes` |
 | `events.ts` | `EventTypeSchema` | `EventType` | `EventTypes` |
 | `orchestrator.ts` | `PhaseSchema` | `Phase` | `Phases` |
+| `orchestrator.ts` | `ComplexitySchema` | `Complexity` | `Complexities` |
 | `config.ts` | `AutonomyLevelSchema` | `AutonomyLevel` | `AutonomyLevels` |
+| `config.ts` | `ReviewPhaseNameSchema` | `ReviewPhaseName` | `ReviewPhaseNames` |
+| `config.ts` | `TimeoutStageActionSchema` | `TimeoutStageAction` | `TimeoutStageActions` |
 | `adapters.ts` | `AdapterTypeSchema` | `AdapterType` | `AdapterTypes` |
 | `adapters.ts` | `AdapterErrorSeveritySchema` | `AdapterErrorSeverity` | `AdapterErrorSeverities` |
 | `adapters.ts` | `MessageTypeSchema` | `MessageType` | `MessageTypes` |
 | `adapters.ts` | `MergeStrategySchema` | `MergeStrategy` | `MergeStrategies` |
 | `adapters.ts` | `NotificationLevelSchema` | `NotificationLevel` | `NotificationLevels` |
+| `adapters.ts` | `SideEffectTypeSchema` | `SideEffectType` | `SideEffectTypes` |
 | `adapters.ts` | `PluginHealthStateSchema` | `PluginHealthState` | `PluginHealthStates` |
 | `session-memory.ts` | `SessionEndReasonSchema` | `SessionEndReason` | `SessionEndReasons` |
 | `session-memory.ts` | `JournalEntryTypeSchema` | `JournalEntryType` | `JournalEntryTypes` |
@@ -86,8 +90,11 @@ taskEngine.getTasksByState(TaskStates.queued);
 | `session-memory.ts` | `KnowledgeScopeSchema` | `KnowledgeScope` | `KnowledgeScopes` |
 | `session-memory.ts` | `KnowledgeConfidenceSchema` | `KnowledgeConfidence` | `KnowledgeConfidences` |
 | `session-memory.ts` | `KnowledgeDomainSchema` | `KnowledgeDomain` | `KnowledgeDomains` |
+| `observer.ts` | `ObservationLevelSchema` | `ObservationLevel` | `ObservationLevels` |
+| `observer.ts` | `ObservationStatusSchema` | `ObservationStatus` | `ObservationStatuses` |
 | `ephemeral.ts` | `PrioritySourceSchema` | `PrioritySource` | `PrioritySources` |
 | `ephemeral.ts` | `PreemptionStatusSchema` | `PreemptionStatus` | `PreemptionStatuses` |
+| `notifications.ts` | `NotificationKindSchema` | `NotificationKind` | `NotificationKinds` |
 
 ---
 

@@ -6,6 +6,7 @@ import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
+import { TaskStates } from "../../schemas/task.js";
 
 export interface TaskRoutesDeps {
   db: Database.Database;
@@ -142,7 +143,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     // Fetch latest transition reason for blocked/failed tasks (single batch query)
     const reasonMap: Record<string, string> = {};
     const blockedIds = tasks
-      .filter((t) => t.state === "blocked" || t.state === "failed")
+      .filter((t) => t.state === TaskStates.blocked || t.state === TaskStates.failed)
       .map((t) => t.id);
     if (blockedIds.length > 0) {
       try {

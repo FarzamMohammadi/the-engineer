@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
+import { SubStates, TaskStates } from "../../src/schemas/task.js";
 import {
   type IntegrationContext,
   createIntegrationContext,
@@ -140,8 +141,8 @@ describe("E2E: Daemon lifecycle", () => {
     expect(ctx.daemon.getState().running).toBe(false);
 
     // Task should not be stuck in active — either completed or moved to queued
-    const activeTasks = ctx.taskEngine.getTasksByState("active");
-    const workingActive = activeTasks.filter((t) => t.sub_state === "working");
+    const activeTasks = ctx.taskEngine.getTasksByState(TaskStates.active);
+    const workingActive = activeTasks.filter((t) => t.sub_state === SubStates.working);
     expect(workingActive).toHaveLength(0);
   });
 });

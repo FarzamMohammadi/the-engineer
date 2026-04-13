@@ -1,6 +1,7 @@
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { EventTypes } from "../../schemas/events.js";
-import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { CascadePolicies, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
@@ -123,7 +124,7 @@ export function createTaskScheduler(
       return false;
     }
 
-    if (parent.cascade_policy === "pause_siblings") {
+    if (parent.cascade_policy === CascadePolicies.pause_siblings) {
       const siblings = taskEngine.getChildren(task.parent_id);
       const activeSibling = siblings.find((s) => s.id !== task.id && s.state === TaskStates.active);
       if (activeSibling) {
@@ -261,9 +262,9 @@ export function createTaskScheduler(
         error: sanitizeErrorMessage(err),
       });
     }
-    notifications.notify({ kind: "completion", taskId });
+    notifications.notify({ kind: NotificationKinds.completion, taskId });
     notifications.notify({
-      kind: "ticket_comment",
+      kind: NotificationKinds.ticket_comment,
       taskId,
       message: "Task completed successfully.",
     });
@@ -298,9 +299,9 @@ export function createTaskScheduler(
     // Truncate reason for notifications — full error details are in logs and journal entries
     const notifyReason =
       reason.length > 2000 ? `${reason.slice(0, 2000)}... [see logs for full details]` : reason;
-    notifications.notify({ kind: "task_error", taskId, reason: notifyReason });
+    notifications.notify({ kind: NotificationKinds.task_error, taskId, reason: notifyReason });
     notifications.notify({
-      kind: "ticket_comment",
+      kind: NotificationKinds.ticket_comment,
       taskId,
       message: `Task encountered an error: ${notifyReason}`,
     });
@@ -315,9 +316,9 @@ export function createTaskScheduler(
       "daemon",
     );
     if (reviewTransition.success) {
-      notifications.notify({ kind: "review_pending", taskId });
+      notifications.notify({ kind: NotificationKinds.review_pending, taskId });
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId,
         message: "Pull request created — awaiting review.",
       });
@@ -371,12 +372,12 @@ export function createTaskScheduler(
         { taskId, retryCount },
       );
       notifications.notify({
-        kind: "alert",
+        kind: NotificationKinds.alert,
         taskId,
         message: `LLM adapter unavailable after ${String(retryCount)} retry cycles (~47 minutes). Task blocked until you respond to unblock.`,
       });
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId,
         message:
           "LLM adapter has been unavailable for ~47 minutes. Task is blocked. Reply to this issue or use any communication channel to retry when the issue is resolved.",
@@ -491,7 +492,7 @@ export function createTaskScheduler(
         }
         observer.error("Task exceeded max crash retries — marking failed", { taskId, crashCount });
         notifications.notify({
-          kind: "task_error",
+          kind: NotificationKinds.task_error,
           taskId,
           reason: `Task crashed ${crashCount} times — exceeded max retries`,
         });

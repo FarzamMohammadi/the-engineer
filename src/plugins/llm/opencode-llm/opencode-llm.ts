@@ -11,6 +11,7 @@ import {
   type LLMCapabilities,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import { killProcess } from "../../../utils/process.js";
 import { appendStderr } from "../claude-code-llm/claude-code-llm.js";
 import { type OpenCodeLLMConfig, OpenCodeLLMConfigSchema } from "./config.js";
@@ -402,7 +403,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
               createAdapterError(
                 "cli_error",
                 `opencode CLI rate limited: ${stderrBuf.slice(0, 200)}`,
-                { retryable: true, severity: "error" },
+                { retryable: true, severity: AdapterErrorSeverities.error },
               ),
             ),
           );
@@ -415,7 +416,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
               createAdapterError(
                 "cli_error",
                 `opencode CLI exited with code ${String(code)}: ${stderrBuf || textParts.join("")}`,
-                { retryable: true, severity: "error" },
+                { retryable: true, severity: AdapterErrorSeverities.error },
               ),
             ),
           );

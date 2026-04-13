@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { MergeStrategies, MessageTypes } from "./adapters.js";
 import {
   ActionRejectedPayloadSchema,
   CommMessageReceivedPayloadSchema,
@@ -8,6 +9,7 @@ import {
   CostLimitReachedPayloadSchema,
   EventSchema,
   EventTypeSchema,
+  EventTypes,
   GitBranchCreatedPayloadSchema,
   GitCommittedPayloadSchema,
   GitMergeCompletedPayloadSchema,
@@ -37,6 +39,8 @@ import {
   WorkspaceVerifiedPayloadSchema,
   eventPayloadSchemas,
 } from "./events.js";
+import { Phases } from "./orchestrator.js";
+import { ActionClasses, TaskStates } from "./task.js";
 
 // ── Event Envelope ─────────────────────────────────────────────────────────────
 
@@ -44,7 +48,7 @@ describe("EventSchema", () => {
   const validEvent = {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     sequence: 1,
-    type: "task.created",
+    type: EventTypes["task.created"],
     source: "task_engine",
     task_id: "01TASK",
     timestamp: "2026-03-10T12:00:00.000Z",
@@ -56,7 +60,11 @@ describe("EventSchema", () => {
   });
 
   it("accepts null task_id for system-level events", () => {
-    const systemEvent = { ...validEvent, task_id: null, type: "health.config_reload_failed" };
+    const systemEvent = {
+      ...validEvent,
+      task_id: null,
+      type: EventTypes["health.config_reload_failed"],
+    };
     expect(EventSchema.parse(systemEvent)).toBeDefined();
   });
 
@@ -136,9 +144,9 @@ describe("TaskStateChangedPayloadSchema", () => {
   it("parses valid data with task state enums", () => {
     const valid = {
       task_id: "01TASK",
-      from_state: "requirements_gathering",
+      from_state: TaskStates.requirements_gathering,
       from_sub: null,
-      to_state: "queued",
+      to_state: TaskStates.queued,
       to_sub: null,
       reason: "Task validated",
       triggered_by: "task_engine",
@@ -152,7 +160,7 @@ describe("TaskStateChangedPayloadSchema", () => {
         task_id: "01TASK",
         from_state: "running",
         from_sub: null,
-        to_state: "queued",
+        to_state: TaskStates.queued,
         to_sub: null,
         reason: "test",
         triggered_by: "test",
@@ -164,9 +172,9 @@ describe("TaskStateChangedPayloadSchema", () => {
     expect(() =>
       TaskStateChangedPayloadSchema.parse({
         task_id: "01TASK",
-        from_state: "active",
+        from_state: TaskStates.active,
         from_sub: "invalid_sub",
-        to_state: "blocked",
+        to_state: TaskStates.blocked,
         to_sub: null,
         reason: "test",
         triggered_by: "test",
@@ -205,7 +213,7 @@ describe("ActionRejectedPayloadSchema", () => {
   it("validates action_class against ActionClass enum", () => {
     const valid = {
       task_id: "01TASK",
-      action_class: "write",
+      action_class: ActionClasses.write,
       gate: "task_engine",
       reason: "Not in active state",
       details: null,
@@ -288,7 +296,7 @@ describe("PreemptionReadyPayloadSchema", () => {
     const valid = {
       task_id: "01TASK",
       checkpoint_id: "01CHK",
-      phase: "execution",
+      phase: Phases.execution,
       atomic_op: "llm_call",
     };
     expect(PreemptionReadyPayloadSchema.parse(valid)).toEqual(valid);
@@ -486,7 +494,7 @@ describe("GitPrMergedPayloadSchema", () => {
       task_id: "01TASK",
       repo: "owner/repo",
       pr_number: 42,
-      merge_strategy: "squash",
+      merge_strategy: MergeStrategies.squash,
       merge_sha: "abc123",
       into_branch: "main",
     };
@@ -502,7 +510,7 @@ describe("GitMergeCompletedPayloadSchema", () => {
       source_branch: "engineer/42-auth",
       target_branch: "main",
       merge_sha: "abc123",
-      strategy: "merge",
+      strategy: MergeStrategies.merge,
     };
     expect(GitMergeCompletedPayloadSchema.parse(valid)).toEqual(valid);
   });
@@ -577,7 +585,7 @@ describe("CommMessageSentPayloadSchema", () => {
     const valid = {
       task_id: "01TASK",
       target: "farzam",
-      message_type: "question",
+      message_type: MessageTypes.question,
       content_summary: "Asked about API credentials",
       channel: "telegram",
     };

@@ -15,6 +15,7 @@ import type {
   PluginManifest,
   ReviewStatus,
 } from "../schemas/adapters.js";
+import { AdapterErrorSeverities, MergeStrategies } from "../schemas/adapters.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 import { GitHostingAdapter } from "./git-hosting.js";
@@ -187,7 +188,7 @@ describe("GitHostingAdapter", () => {
     it("mergePR", async () => {
       const adapter = new TestGitHostingAdapter();
       adapter.manifest = createManifest();
-      const result = await adapter.mergePR("test/repo", 42, "squash");
+      const result = await adapter.mergePR("test/repo", 42, MergeStrategies.squash);
       expect(result.success).toBe(true);
       expect(result.merge_sha).toBe("abc123");
     });
@@ -266,7 +267,7 @@ describe("GitHostingAdapter", () => {
         expect(error).toBeInstanceOf(AdapterMethodError);
         if (error instanceof AdapterMethodError) {
           expect(error.adapterError.code).toBe("internal_error");
-          expect(error.adapterError.severity).toBe("fatal");
+          expect(error.adapterError.severity).toBe(AdapterErrorSeverities.fatal);
         }
       }
     });
@@ -280,7 +281,7 @@ describe("GitHostingAdapter", () => {
       );
 
       try {
-        await adapter.mergePR("test/repo", 42, "merge");
+        await adapter.mergePR("test/repo", 42, MergeStrategies.merge);
         expect.unreachable("Should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterMethodError);

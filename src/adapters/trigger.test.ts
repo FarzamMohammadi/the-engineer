@@ -6,6 +6,7 @@ import type {
   PluginManifest,
   TriggerEvent,
 } from "../schemas/adapters.js";
+import { AdapterErrorSeverities } from "../schemas/adapters.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 import { TriggerAdapter } from "./trigger.js";
@@ -123,7 +124,7 @@ describe("TriggerAdapter", () => {
         expect(error).toBeInstanceOf(AdapterMethodError);
         if (error instanceof AdapterMethodError) {
           expect(error.adapterError.code).toBe("internal_error");
-          expect(error.adapterError.severity).toBe("fatal");
+          expect(error.adapterError.severity).toBe(AdapterErrorSeverities.fatal);
           expect(error.adapterError.message).toBe("Network failure");
         }
       }

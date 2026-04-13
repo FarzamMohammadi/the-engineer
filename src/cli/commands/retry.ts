@@ -111,7 +111,12 @@ function retryTask(db: BetterSqlite3.Database, taskId: string): number {
   })();
 
   if (out.mode === "json") {
-    out.data({ taskId, previousState: "blocked", newState: "queued", retriedAt: now });
+    out.data({
+      taskId,
+      previousState: TaskStates.blocked,
+      newState: TaskStates.queued,
+      retriedAt: now,
+    });
   } else {
     out.success(`Task ${taskId} retried — moved from blocked to queued.`);
     out.log(`  Title: ${task.title}`);

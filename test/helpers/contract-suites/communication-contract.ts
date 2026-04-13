@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { CommunicationAdapter } from "../../../src/adapters/communication.js";
 import {
   type FormattedMessage,
+  MessageTypes,
   type PluginManifest,
   SendResultSchema,
   type Target,
@@ -93,11 +94,11 @@ export function runCommunicationContractSuite(
 
     describe("formatMessage()", () => {
       const messageTypes = [
-        "notification",
-        "question",
-        "status_response",
-        "milestone",
-        "alert",
+        MessageTypes.notification,
+        MessageTypes.question,
+        MessageTypes.status_response,
+        MessageTypes.milestone,
+        MessageTypes.alert,
       ] as const;
 
       for (const type of messageTypes) {

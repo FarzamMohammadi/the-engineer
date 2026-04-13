@@ -1,14 +1,15 @@
-import type {
-  BranchProtection,
-  CommentResult,
-  MergeResult,
-  MergeStrategy,
-  PRComment,
-  PROptions,
-  PRResult,
-  PRStatus,
-  PRUpdates,
-  ReviewStatus,
+import {
+  AdapterErrorSeverities,
+  type BranchProtection,
+  type CommentResult,
+  type MergeResult,
+  type MergeStrategy,
+  type PRComment,
+  type PROptions,
+  type PRResult,
+  type PRStatus,
+  type PRUpdates,
+  type ReviewStatus,
 } from "../schemas/adapters.js";
 import type { SecureValue } from "../utils/secure-value.js";
 import { BaseAdapter } from "./base.js";
@@ -27,7 +28,7 @@ async function wrapAsync<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw new AdapterMethodError(
       createAdapterError("internal_error", error instanceof Error ? error.message : String(error), {
-        severity: "fatal",
+        severity: AdapterErrorSeverities.fatal,
       }),
     );
   }

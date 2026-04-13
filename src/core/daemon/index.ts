@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { PluginHealthStates } from "../../schemas/adapters.js";
 import {
   CommRetryExhaustedPayloadSchema,
   CommRetrySucceededPayloadSchema,
@@ -617,7 +618,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
           task_id: null,
           payload: {
             component: "daemon",
-            status: "unhealthy",
+            status: PluginHealthStates.unhealthy,
             message: `RSS ${rssMb} MB exceeds critical threshold`,
           },
         });

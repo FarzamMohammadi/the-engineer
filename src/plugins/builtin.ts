@@ -1,5 +1,5 @@
 import type { BaseAdapter } from "../adapters/base.js";
-import { type PluginManifest, PluginManifestSchema } from "../schemas/adapters.js";
+import { AdapterTypes, type PluginManifest, PluginManifestSchema } from "../schemas/adapters.js";
 import { GitHubCommPlugin } from "./communication/github-comm/github-comm.js";
 import { TelegramCommPlugin } from "./communication/telegram-comm/telegram-comm.js";
 import { GitHubHostingPlugin } from "./git-hosting/github-hosting/github-hosting.js";
@@ -28,7 +28,7 @@ export interface BuiltinPlugin {
 const manifests = [
   {
     id: "github-trigger",
-    type: "trigger",
+    type: AdapterTypes.trigger,
     version: "1.0.0",
     name: "GitHub Trigger",
     description: "Polls GitHub for assigned issues and PR reviews",
@@ -41,7 +41,7 @@ const manifests = [
   },
   {
     id: "claude-code-llm",
-    type: "llm",
+    type: AdapterTypes.llm,
     version: "1.0.0",
     name: "Claude Code CLI",
     description: "LLM reasoning via Claude Code CLI process",
@@ -53,7 +53,7 @@ const manifests = [
   },
   {
     id: "opencode-llm",
-    type: "llm",
+    type: AdapterTypes.llm,
     version: "1.0.0",
     name: "OpenCode CLI",
     description: "Multi-provider LLM reasoning via OpenCode CLI process",
@@ -65,7 +65,7 @@ const manifests = [
   },
   {
     id: "gemini-cli-llm",
-    type: "llm",
+    type: AdapterTypes.llm,
     version: "1.0.0",
     name: "Gemini CLI",
     description: "LLM reasoning via Google Gemini CLI process",
@@ -77,7 +77,7 @@ const manifests = [
   },
   {
     id: "bash-tool",
-    type: "tool",
+    type: AdapterTypes.tool,
     version: "1.0.0",
     name: "Bash Shell Tool",
     description: "Execute shell commands in task workspace",
@@ -89,7 +89,7 @@ const manifests = [
   },
   {
     id: "github-comm",
-    type: "communication",
+    type: AdapterTypes.communication,
     version: "1.0.0",
     name: "GitHub Communication",
     description: "Posts comments and manages labels on GitHub issues/PRs",
@@ -102,7 +102,7 @@ const manifests = [
   },
   {
     id: "telegram-comm",
-    type: "communication",
+    type: AdapterTypes.communication,
     version: "1.0.0",
     name: "Telegram Communication",
     description: "Sends notifications via Telegram bot",
@@ -117,7 +117,7 @@ const manifests = [
   },
   {
     id: "github-hosting",
-    type: "git_hosting",
+    type: AdapterTypes.git_hosting,
     version: "1.0.0",
     name: "GitHub Hosting",
     description: "PR lifecycle management via GitHub API",

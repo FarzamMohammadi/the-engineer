@@ -1,4 +1,5 @@
 import type { Dispatch } from "../../schemas/ephemeral.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import {
   LLMDecompositionPlanSchema,
   type Phase,
@@ -6,7 +7,7 @@ import {
   Phases,
 } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
-import { type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
+import { CascadePolicies, type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { ExecuteTaskResult, OrchestratorContext } from "./types.js";
 
@@ -80,7 +81,7 @@ export function createDecompositionHandler(
           parent_id: taskId,
           acceptance_criteria: childSpec.acceptance_criteria,
           clone_url: dispatch.task.clone_url,
-          cascade_policy: "pause_siblings",
+          cascade_policy: CascadePolicies.pause_siblings,
         });
 
         ctx.taskEngine.requestTransition(
@@ -152,7 +153,7 @@ export function createDecompositionHandler(
 
     const subtaskList = plan.children.map((c, i) => `${String(i + 1)}. ${c.title}`).join("\n");
     notifications.notify({
-      kind: "ticket_comment",
+      kind: NotificationKinds.ticket_comment,
       taskId: dispatch.task.id,
       message: `Decomposing into ${String(plan.children.length)} subtasks:\n${subtaskList}`,
     });

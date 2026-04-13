@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CommEventSchema,
+  Complexities,
   DecompositionChildSchema,
   DecompositionPlanSchema,
   DemoPrepOutputSchema,
@@ -11,6 +12,7 @@ import {
   LLMDecompositionPlanSchema,
   PhaseOutputSchema,
   PhaseSchema,
+  Phases,
   PlanningOutputSchema,
   QuestionBatchSchema,
   QuestionSchema,
@@ -23,6 +25,7 @@ import {
   SelfReviewOutputSchema,
   SessionResultSchema,
 } from "./orchestrator.js";
+import { ActionClasses } from "./task.js";
 
 // ── Phase Enum ──────────────────────────────────────────────────────────────────
 
@@ -62,7 +65,7 @@ describe("PhaseSchema", () => {
 
 describe("PhaseOutputSchema", () => {
   const validOutput = {
-    phase: "research",
+    phase: Phases.research,
     task_id: "01ABC",
     timestamp: "2026-03-10T12:00:00.000Z",
     data: { relevant_files: [] },
@@ -137,7 +140,7 @@ describe("ResearchOutputSchema", () => {
       status: "ready",
       contact: null,
       question: null,
-      complexity_hint: "moderate",
+      complexity_hint: Complexities.moderate,
     });
     expect(output.status).toBe("ready");
   });
@@ -574,11 +577,11 @@ describe("SessionResultSchema", () => {
   it("parses valid session result", () => {
     const result = SessionResultSchema.parse({
       status: "ready",
-      next_phase: "research",
+      next_phase: Phases.research,
       summary: "Requirements gathered successfully",
     });
     expect(result.status).toBe("ready");
-    expect(result.next_phase).toBe("research");
+    expect(result.next_phase).toBe(Phases.research);
   });
 
   it("accepts all status values", () => {
@@ -586,7 +589,7 @@ describe("SessionResultSchema", () => {
       expect(
         SessionResultSchema.parse({
           status: s,
-          next_phase: "research",
+          next_phase: Phases.research,
           summary: "test",
         }).status,
       ).toBe(s);
@@ -613,7 +616,7 @@ describe("SafetyQuerySchema", () => {
       context: {
         task_id: "01ABC",
         repo: "owner/repo",
-        action_class: "write",
+        action_class: ActionClasses.write,
         decision_category: null,
         details: { file: "src/auth.ts" },
       },

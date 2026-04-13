@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import type { BlockedDetails, ExternalRef } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
@@ -80,7 +81,7 @@ export async function sendOutreach(
 
     // Route through centralized notification router
     notifications.notify({
-      kind: "question",
+      kind: NotificationKinds.question,
       taskId,
       personId: contact.id,
       message: messageWithRef,
@@ -101,7 +102,7 @@ export async function sendOutreach(
   if (externalRef && files.length > 0) {
     const summary = files.map((f) => `- ${f.replace(TXT_SUFFIX_RE, "")}`).join("\n");
     notifications.notify({
-      kind: "ticket_comment",
+      kind: NotificationKinds.ticket_comment,
       taskId,
       message: `Blocked — reaching out for answers:\n\n${summary}`,
     });

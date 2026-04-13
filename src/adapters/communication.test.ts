@@ -14,6 +14,8 @@ import type {
   Target,
   TaskReconciliationInput,
 } from "../schemas/adapters.js";
+import { MessageTypes } from "../schemas/adapters.js";
+import { TaskStates } from "../schemas/task.js";
 import { BaseAdapter } from "./base.js";
 import { CommunicationAdapter } from "./communication.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
@@ -141,7 +143,7 @@ describe("CommunicationAdapter", () => {
       const target: Target = { user_id: "farzam", channel: null };
       const message: FormattedMessage = {
         content: "Hello",
-        metadata: { task_id: null, type: "notification" },
+        metadata: { task_id: null, type: MessageTypes.notification },
       };
       const result = await adapter.sendMessage(target, message);
       expect(result.success).toBe(true);
@@ -156,7 +158,7 @@ describe("CommunicationAdapter", () => {
       const target: Target = { user_id: "farzam", channel: null };
       const message: FormattedMessage = {
         content: "Hello",
-        metadata: { task_id: null, type: "notification" },
+        metadata: { task_id: null, type: MessageTypes.notification },
       };
 
       try {
@@ -178,7 +180,7 @@ describe("CommunicationAdapter", () => {
       const target: Target = { user_id: "farzam", channel: null };
       const message: FormattedMessage = {
         content: "Hello",
-        metadata: { task_id: null, type: "notification" },
+        metadata: { task_id: null, type: MessageTypes.notification },
       };
 
       try {
@@ -197,7 +199,7 @@ describe("CommunicationAdapter", () => {
     it("calls subclass implementation directly", () => {
       const adapter = new MinimalCommAdapter();
       adapter.manifest = createManifest();
-      expect(adapter.formatMessage("Hello", "notification")).toBe("[formatted] Hello");
+      expect(adapter.formatMessage("Hello", MessageTypes.notification)).toBe("[formatted] Hello");
     });
   });
 
@@ -221,7 +223,7 @@ describe("CommunicationAdapter", () => {
         name: "syncTaskState",
         capability: "sync",
         call: (a) =>
-          a.syncTaskState("task-1", "queued", "active", {
+          a.syncTaskState("task-1", TaskStates.queued, TaskStates.active, {
             task_title: "Test",
             external_ref: null,
             sub_state: null,
@@ -302,7 +304,7 @@ describe("CommunicationAdapter", () => {
       adapter.manifest = createManifest({
         adapter_meta: { capabilities: ["send", "sync"] },
       });
-      await adapter.syncTaskState("task-1", "queued", "active", {
+      await adapter.syncTaskState("task-1", TaskStates.queued, TaskStates.active, {
         task_title: "Test",
         external_ref: null,
         sub_state: null,

@@ -10,6 +10,7 @@ import {
   type TriggerEvent,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import { type GitHubTriggerConfig, GitHubTriggerConfigSchema } from "./config.js";
 
 /**
@@ -195,7 +196,7 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
       createAdapterError(
         classifyGitHubError(error),
         `Failed to poll ${owner}/${name}: ${error instanceof Error ? error.message : String(error)}`,
-        { retryable: isRetryable(error), severity: "error" },
+        { retryable: isRetryable(error), severity: AdapterErrorSeverities.error },
       ),
     );
   }

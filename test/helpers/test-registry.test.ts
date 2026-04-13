@@ -5,6 +5,7 @@ import { GitHostingAdapter } from "../../src/adapters/git-hosting.js";
 import { LLMAdapter } from "../../src/adapters/llm.js";
 import { ToolAdapter } from "../../src/adapters/tool.js";
 import { TriggerAdapter } from "../../src/adapters/trigger.js";
+import { AdapterTypes, MessageTypes } from "../../src/schemas/adapters.js";
 import { type TestEventBusHandle, createTestEventBus } from "./test-event-bus.js";
 import { type TestRegistryHandle, createTestRegistry } from "./test-registry.js";
 
@@ -24,11 +25,11 @@ describe("createTestRegistry", () => {
 
   it("registers all 5 fake plugins", () => {
     const { registry } = registryHandle;
-    expect(registry.getPluginsByType("trigger")).toHaveLength(1);
-    expect(registry.getPluginsByType("communication")).toHaveLength(1);
-    expect(registry.getPluginsByType("llm")).toHaveLength(1);
-    expect(registry.getPluginsByType("tool")).toHaveLength(1);
-    expect(registry.getPluginsByType("git_hosting")).toHaveLength(1);
+    expect(registry.getPluginsByType(AdapterTypes.trigger)).toHaveLength(1);
+    expect(registry.getPluginsByType(AdapterTypes.communication)).toHaveLength(1);
+    expect(registry.getPluginsByType(AdapterTypes.llm)).toHaveLength(1);
+    expect(registry.getPluginsByType(AdapterTypes.tool)).toHaveLength(1);
+    expect(registry.getPluginsByType(AdapterTypes.git_hosting)).toHaveLength(1);
   });
 
   it("provides direct access to fake instances", () => {
@@ -83,7 +84,7 @@ describe("createTestRegistry", () => {
     // Communication: records messages
     await fakes.communication.sendMessage(
       { user_id: "user1", channel: null },
-      { content: "hello", metadata: { task_id: null, type: "notification" } },
+      { content: "hello", metadata: { task_id: null, type: MessageTypes.notification } },
     );
     expect(fakes.communication.getMessages()).toHaveLength(1);
 

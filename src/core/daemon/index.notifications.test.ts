@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type TestDaemonHandle, createTestDaemon } from "../../../test/helpers/test-daemon.js";
 import { createMockTask } from "../../../test/helpers/test-orchestrator.js";
+import { EventTypes } from "../../schemas/events.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { ExecuteTaskResult } from "../orchestrator/index.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -36,7 +38,7 @@ function setupTaskDispatch(
   const task = createMockTask({
     id: "task-001",
     title: "Fix the bug",
-    state: "queued",
+    state: TaskStates.queued,
     sub_state: null,
     external_ref: { type: "test_issue", repo: "owner/repo", id: "42" },
     ...taskOverrides,
@@ -260,8 +262,8 @@ describe("Daemon Notifications", () => {
       const task = createMockTask({
         id: "task-cost",
         title: "Expensive task",
-        state: "active",
-        sub_state: "working",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
         external_ref: { type: "test_issue", repo: "owner/repo", id: "10" },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
@@ -270,12 +272,12 @@ describe("Daemon Notifications", () => {
       // Start to register subscriptions, then trigger event + tick manually
       await handle.daemon.start();
 
-      const costCallback = handle.getSubscriptionCallback("cost.limit_reached");
+      const costCallback = handle.getSubscriptionCallback(EventTypes["cost.limit_reached"]);
       expect(costCallback).toBeDefined();
       costCallback!({
         id: "evt-cost",
         sequence: 1,
-        type: "cost.limit_reached",
+        type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: "task-cost",
         timestamp: new Date().toISOString(),
@@ -306,8 +308,8 @@ describe("Daemon Notifications", () => {
       const task = createMockTask({
         id: "task-cost",
         title: "Expensive task",
-        state: "active",
-        sub_state: "working",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
         external_ref: { type: "test_issue", repo: "owner/repo", id: "10" },
       });
       handle.taskEngine.getTask.mockReturnValue(task);
@@ -315,11 +317,11 @@ describe("Daemon Notifications", () => {
 
       await handle.daemon.start();
 
-      const costCallback = handle.getSubscriptionCallback("cost.limit_reached");
+      const costCallback = handle.getSubscriptionCallback(EventTypes["cost.limit_reached"]);
       costCallback!({
         id: "evt-cost",
         sequence: 1,
-        type: "cost.limit_reached",
+        type: EventTypes["cost.limit_reached"],
         source: "safety_layer",
         task_id: "task-cost",
         timestamp: new Date().toISOString(),

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCommunicationContractSuite } from "../../../../test/helpers/contract-suites/communication-contract.js";
 import type { FormattedMessage, PluginManifest, Target } from "../../../schemas/adapters.js";
+import { MessageTypes } from "../../../schemas/adapters.js";
 import { TelegramCommPlugin } from "./telegram-comm.js";
 import { classifyTelegramError, escapeMarkdownV2 } from "./telegram-comm.js";
 
@@ -51,7 +52,7 @@ const INVALID_CONFIG = {};
 const TARGET: Target = { user_id: "FarzamMohammadi", channel: "telegram" };
 const MESSAGE: FormattedMessage = {
   content: "Task picked up",
-  metadata: { task_id: "task-1", type: "notification" },
+  metadata: { task_id: "task-1", type: MessageTypes.notification },
 };
 
 // ── Contract Suite ───────────────────────────────────────────────────────────
@@ -125,33 +126,33 @@ describe("TelegramCommPlugin", () => {
 
   describe("formatMessage()", () => {
     it("formats notification with bold Info prefix (MarkdownV2)", () => {
-      const result = plugin.formatMessage("Test", "notification");
+      const result = plugin.formatMessage("Test", MessageTypes.notification);
       expect(result).toContain("*Info*");
       expect(result).toContain("Test");
     });
 
     it("formats question with bold Question prefix", () => {
-      const result = plugin.formatMessage("What?", "question");
+      const result = plugin.formatMessage("What?", MessageTypes.question);
       expect(result).toContain("*Question*");
     });
 
     it("formats status_response with bold Status prefix", () => {
-      const result = plugin.formatMessage("All good", "status_response");
+      const result = plugin.formatMessage("All good", MessageTypes.status_response);
       expect(result).toContain("*Status*");
     });
 
     it("formats milestone with bold Milestone prefix", () => {
-      const result = plugin.formatMessage("Done!", "milestone");
+      const result = plugin.formatMessage("Done!", MessageTypes.milestone);
       expect(result).toContain("*Milestone*");
     });
 
     it("formats alert with bold Alert prefix", () => {
-      const result = plugin.formatMessage("Warning!", "alert");
+      const result = plugin.formatMessage("Warning!", MessageTypes.alert);
       expect(result).toContain("*Alert*");
     });
 
     it("escapes MarkdownV2 special characters in content", () => {
-      const result = plugin.formatMessage("file_name.ts [test]", "notification");
+      const result = plugin.formatMessage("file_name.ts [test]", MessageTypes.notification);
       expect(result).toContain("file\\_name\\.ts \\[test\\]");
     });
 
@@ -162,7 +163,7 @@ describe("TelegramCommPlugin", () => {
         ...VALID_CONFIG,
         parse_mode: "HTML",
       });
-      const result = htmlPlugin.formatMessage("Test <b>bold</b>", "notification");
+      const result = htmlPlugin.formatMessage("Test <b>bold</b>", MessageTypes.notification);
       expect(result).toContain("<b>Info</b>");
       expect(result).toContain("&lt;b&gt;bold&lt;/b&gt;");
     });
@@ -174,7 +175,7 @@ describe("TelegramCommPlugin", () => {
         ...VALID_CONFIG,
         parse_mode: "Markdown",
       });
-      const result = mdPlugin.formatMessage("Test_content", "notification");
+      const result = mdPlugin.formatMessage("Test_content", MessageTypes.notification);
       expect(result).toContain("*Info*");
       // Legacy Markdown does not escape underscores
       expect(result).toContain("Test_content");

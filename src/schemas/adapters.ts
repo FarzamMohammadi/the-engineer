@@ -287,6 +287,9 @@ export const SideEffectTypeSchema = z.enum([
 ]);
 export type SideEffectType = z.infer<typeof SideEffectTypeSchema>;
 
+/** Constant enum values for SideEffectType. Use instead of raw strings. */
+export const SideEffectTypes = SideEffectTypeSchema.enum;
+
 export const SideEffectSchema = z.object({
   type: SideEffectTypeSchema,
   details: z.record(z.unknown()),

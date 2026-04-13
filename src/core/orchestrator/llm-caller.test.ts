@@ -3,6 +3,7 @@ import { createTestObserverFacade } from "../../../test/helpers/test-observer-fa
 import { AdapterMethodError, createAdapterError } from "../../adapters/index.js";
 import type { InferenceResult } from "../../schemas/adapters.js";
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
+import { Complexities, Phases } from "../../schemas/orchestrator.js";
 import type { SessionResult } from "../../schemas/orchestrator.js";
 import { createLlmCaller, isRetryableError } from "./llm-caller.js";
 import { backupSessionResult, readSessionResult } from "./session-result.js";
@@ -283,15 +284,15 @@ describe("LlmCaller", () => {
 
       const sessionResult: SessionResult = {
         status: "ready",
-        next_phase: "self_review",
+        next_phase: Phases.self_review,
         summary: "Implementation complete",
-        complexity: "trivial",
+        complexity: Complexities.trivial,
       };
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
       const output = await caller.runPhaseWithCli(
-        "execution",
+        Phases.execution,
         "task-001",
         "system prompt",
         "do work",
@@ -309,7 +310,7 @@ describe("LlmCaller", () => {
       );
 
       expect(output.data["status"]).toBe("ready");
-      expect(output.data["next_phase"]).toBe("self_review");
+      expect(output.data["next_phase"]).toBe(Phases.self_review);
       expect(output.data["summary"]).toBe("Implementation complete");
     });
 
@@ -319,15 +320,15 @@ describe("LlmCaller", () => {
 
       const sessionResult: SessionResult = {
         status: "need_more_info",
-        next_phase: "requirements_gathering",
+        next_phase: Phases.requirements_gathering,
         summary: "Need clarification on scope",
-        complexity: "moderate",
+        complexity: Complexities.moderate,
       };
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
       const output = await caller.runPhaseWithCli(
-        "execution",
+        Phases.execution,
         "task-001",
         "system prompt",
         "do work",
@@ -355,7 +356,7 @@ describe("LlmCaller", () => {
       const caller = createLlmCaller(ctx);
       await expect(
         caller.runPhaseWithCli(
-          "execution",
+          Phases.execution,
           "task-001",
           "system prompt",
           "do work",
@@ -382,7 +383,7 @@ describe("LlmCaller", () => {
       const caller = createLlmCaller(ctx);
       await expect(
         caller.runPhaseWithCli(
-          "execution",
+          Phases.execution,
           "task-001",
           "system prompt",
           "do work",
@@ -407,15 +408,15 @@ describe("LlmCaller", () => {
 
       const sessionResult: SessionResult = {
         status: "ready",
-        next_phase: "self_review",
+        next_phase: Phases.self_review,
         summary: "Done",
-        complexity: "trivial",
+        complexity: Complexities.trivial,
       };
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
       await caller.runPhaseWithCli(
-        "execution",
+        Phases.execution,
         "task-001",
         "system prompt",
         "do work",
@@ -483,7 +484,7 @@ describe("LlmCaller", () => {
       const caller = createLlmCaller(ctx);
 
       const output = await caller.runPhaseWithCli(
-        "self_review",
+        Phases.self_review,
         "task-001",
         "system prompt",
         "review code",
@@ -504,7 +505,7 @@ describe("LlmCaller", () => {
       const caller = createLlmCaller(ctx);
 
       const output = await caller.runPhaseWithCli(
-        "self_review",
+        Phases.self_review,
         "task-001",
         "system prompt",
         "review code",
@@ -515,10 +516,10 @@ describe("LlmCaller", () => {
         false,
       );
 
-      expect(output.phase).toBe("self_review");
+      expect(output.phase).toBe(Phases.self_review);
       expect(output.data["status"]).toBe("ready");
       expect(output.data["summary"]).toBe("");
-      expect(output.data["complexity"]).toBe("moderate");
+      expect(output.data["complexity"]).toBe(Complexities.moderate);
     });
 
     it("uses step-scoped deliverable_path when stepName is provided", async () => {
@@ -526,7 +527,7 @@ describe("LlmCaller", () => {
       const caller = createLlmCaller(ctx);
 
       const output = await caller.runPhaseWithCli(
-        "self_review",
+        Phases.self_review,
         "task-001",
         "system prompt",
         "review code",
@@ -546,15 +547,15 @@ describe("LlmCaller", () => {
       const { ctx } = setupForStepTests();
       const sessionResult: SessionResult = {
         status: "ready",
-        next_phase: "demo_prep",
+        next_phase: Phases.demo_prep,
         summary: "Refinement complete",
-        complexity: "moderate",
+        complexity: Complexities.moderate,
       };
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
       const output = await caller.runPhaseWithCli(
-        "self_review",
+        Phases.self_review,
         "task-001",
         "system prompt",
         "refine code",
@@ -568,7 +569,7 @@ describe("LlmCaller", () => {
       expect(backupSessionResultMock).toHaveBeenCalled();
       expect(readSessionResultMock).toHaveBeenCalled();
       expect(output.data["status"]).toBe("ready");
-      expect(output.data["next_phase"]).toBe("demo_prep");
+      expect(output.data["next_phase"]).toBe(Phases.demo_prep);
     });
 
     it("throws when requiresSessionResult is true and session-result.json is missing", async () => {
@@ -578,7 +579,7 @@ describe("LlmCaller", () => {
       const caller = createLlmCaller(ctx);
       await expect(
         caller.runPhaseWithCli(
-          "self_review",
+          Phases.self_review,
           "task-001",
           "system prompt",
           "refine code",
@@ -598,7 +599,7 @@ describe("LlmCaller", () => {
       const caller = createLlmCaller(ctx);
       await expect(
         caller.runPhaseWithCli(
-          "execution",
+          Phases.execution,
           "task-001",
           "system prompt",
           "do work",

@@ -1,4 +1,9 @@
-import type { ToolDescription, ToolExecutionContext, ToolResult } from "../schemas/adapters.js";
+import {
+  AdapterErrorSeverities,
+  type ToolDescription,
+  type ToolExecutionContext,
+  type ToolResult,
+} from "../schemas/adapters.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 
@@ -38,7 +43,7 @@ export abstract class ToolAdapter extends BaseAdapter {
           "internal_error",
           error instanceof Error ? error.message : String(error),
           {
-            severity: "fatal",
+            severity: AdapterErrorSeverities.fatal,
           },
         ),
       );

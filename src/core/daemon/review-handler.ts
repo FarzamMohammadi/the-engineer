@@ -1,7 +1,8 @@
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes, type PRComment } from "../../schemas/adapters.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
-import { type Task, TaskStates } from "../../schemas/task.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { type Task, TaskStates, TeamMemberRoles } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -269,7 +270,7 @@ export function createReviewHandler(
   /** Check if a GitHub username is authorized to approve via comment command. */
   function isAuthorizedApprover(author: string): boolean {
     const owners = peopleDirectory.getByRole("owner");
-    const reviewers = peopleDirectory.getByRole("reviewer");
+    const reviewers = peopleDirectory.getByRole(TeamMemberRoles.reviewer);
     const authorizedPeople = [...owners, ...reviewers];
     // If no people configured, allow anyone (solo dev without people.yaml)
     if (authorizedPeople.length === 0) {
@@ -656,9 +657,13 @@ export function createReviewHandler(
         error: sanitizeErrorMessage(err),
       });
     }
-    notifications.notify({ kind: "completion", taskId });
+    notifications.notify({ kind: NotificationKinds.completion, taskId });
     if (commentMessage) {
-      notifications.notify({ kind: "ticket_comment", taskId, message: commentMessage });
+      notifications.notify({
+        kind: NotificationKinds.ticket_comment,
+        taskId,
+        message: commentMessage,
+      });
     }
     callbacks.onTaskCompletionFinalized(taskId);
   }
@@ -775,7 +780,7 @@ export function createReviewHandler(
     const notificationPrefix =
       issues.length > 1 ? "Post-approval issues" : (issueLabels[0] ?? "Post-approval issue");
     notifications.notify({
-      kind: "ticket_comment",
+      kind: NotificationKinds.ticket_comment,
       taskId,
       message: `${notificationPrefix} — reworking to fix (attempt ${String(attempt)}/${String(MAX_POST_APPROVAL_FIX_RETRIES)}).`,
     });
@@ -811,7 +816,7 @@ export function createReviewHandler(
       });
       allowApprovalRetry(taskId);
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId,
         message: "Auto-merge API call failed — will retry.",
       });
@@ -838,7 +843,7 @@ export function createReviewHandler(
       });
       allowApprovalRetry(taskId);
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId,
         message: `Auto-merge rejected: ${result.error?.message ?? "unknown reason"}. Will retry.`,
       });
@@ -899,7 +904,7 @@ export function createReviewHandler(
         approvedAwaitingCI.set(taskId, { repo, prNumber });
         observer.info("CI checks pending — deferring merge to next tick", { taskId, prNumber });
         notifications.notify({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           taskId,
           message: "Code approved — waiting for CI pipeline to complete before merging.",
         });
@@ -944,7 +949,7 @@ export function createReviewHandler(
         handlePostApprovalFailures(taskId, issues);
       } else {
         notifications.notify({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           taskId,
           message: "CI pipeline passed — proceeding with merge.",
         });
@@ -1019,7 +1024,7 @@ export function createReviewHandler(
       // Clear stale dedup key so re-polling after rework doesn't suppress events
       emittedFeedbackKeys.delete(payload.task_id);
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: payload.task_id,
         message: `Reviewer feedback received (${payload.feedback_type}) — reworking.`,
       });

@@ -233,6 +233,9 @@ export const ReviewPhaseNameSchema = z.enum([
 ]);
 export type ReviewPhaseName = z.infer<typeof ReviewPhaseNameSchema>;
 
+/** Constant enum values for ReviewPhaseName. Use instead of raw strings. */
+export const ReviewPhaseNames = ReviewPhaseNameSchema.enum;
+
 export const RrpirConfigSchema = z.object({
   max_requirements_loops: z.number().int().positive().default(5),
   include_thoughts_in_pr: z.boolean().default(true),

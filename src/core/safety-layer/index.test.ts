@@ -5,7 +5,8 @@ import {
   type TestSafetyLayerHandle,
   createTestSafetyLayer,
 } from "../../../test/helpers/test-safety-layer.js";
-import { SafetyConfigSchema } from "../../schemas/config.js";
+import { AutonomyLevels, SafetyConfigSchema } from "../../schemas/config.js";
+import { ActionClasses } from "../../schemas/task.js";
 import {
   SafetyLayer,
   evaluateThreshold,
@@ -137,7 +138,7 @@ describe("SafetyLayer — scope boundaries", () => {
     handle = createTestSafetyLayer({
       scope: { repos: { allowed: ["owner/repo-a", "owner/repo-b"] } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       repo: "owner/repo-a",
     });
     expect(verdict.allowed).toBe(true);
@@ -148,7 +149,7 @@ describe("SafetyLayer — scope boundaries", () => {
     handle = createTestSafetyLayer({
       scope: { repos: { allowed: ["owner/repo-a"] } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       repo: "owner/repo-b",
     });
     expect(verdict.allowed).toBe(false);
@@ -160,7 +161,7 @@ describe("SafetyLayer — scope boundaries", () => {
     handle = createTestSafetyLayer({
       scope: { repos: { allowed: null } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       repo: "any/repo",
     });
     expect(verdict.allowed).toBe(true);
@@ -170,7 +171,7 @@ describe("SafetyLayer — scope boundaries", () => {
     handle = createTestSafetyLayer({
       scope: { branches: { push_to: ["engineer/*"] } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "git_remote", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.git_remote, {
       branch: "engineer/42-fix",
     });
     expect(verdict.allowed).toBe(true);
@@ -180,7 +181,7 @@ describe("SafetyLayer — scope boundaries", () => {
     handle = createTestSafetyLayer({
       scope: { branches: { push_to: ["engineer/*"] } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "git_remote", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.git_remote, {
       branch: "main",
     });
     expect(verdict.allowed).toBe(false);
@@ -192,7 +193,7 @@ describe("SafetyLayer — scope boundaries", () => {
       scope: { branches: { merge_to: ["main", "develop"] } },
       merge: { auto_merge_after_approval: { default: true } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.merge, {
       branch: "main",
     });
     expect(verdict.allowed).toBe(true);
@@ -200,7 +201,7 @@ describe("SafetyLayer — scope boundaries", () => {
 
   it("denies writing to excluded file patterns", () => {
     handle = createTestSafetyLayer();
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       file: ".env.local",
     });
     expect(verdict.allowed).toBe(false);
@@ -209,7 +210,7 @@ describe("SafetyLayer — scope boundaries", () => {
 
   it("denies writing to files matching secrets/**", () => {
     handle = createTestSafetyLayer();
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       file: "secrets/api.key",
     });
     expect(verdict.allowed).toBe(false);
@@ -217,7 +218,7 @@ describe("SafetyLayer — scope boundaries", () => {
 
   it("denies writing to *.pem files", () => {
     handle = createTestSafetyLayer();
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       file: "certs/server.pem",
     });
     expect(verdict.allowed).toBe(false);
@@ -225,7 +226,7 @@ describe("SafetyLayer — scope boundaries", () => {
 
   it("allows writing to non-excluded files", () => {
     handle = createTestSafetyLayer();
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       file: "src/main.ts",
     });
     expect(verdict.allowed).toBe(true);
@@ -233,7 +234,7 @@ describe("SafetyLayer — scope boundaries", () => {
 
   it("checks multiple files and denies if any match", () => {
     handle = createTestSafetyLayer();
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       files: ["src/main.ts", ".env"],
     });
     expect(verdict.allowed).toBe(false);
@@ -249,7 +250,7 @@ describe("SafetyLayer — merge policy", () => {
       scope: { branches: { merge_to: ["main"] } },
       merge: { auto_merge_after_approval: { default: false, repos: { "owner/repo": true } } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.merge, {
       repo: "owner/repo",
       branch: "main",
     });
@@ -261,7 +262,7 @@ describe("SafetyLayer — merge policy", () => {
       scope: { branches: { merge_to: ["main"] } },
       merge: { auto_merge_after_approval: { default: false } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.merge, {
       repo: "owner/repo",
       branch: "main",
     });
@@ -275,7 +276,7 @@ describe("SafetyLayer — merge policy", () => {
       scope: { branches: { merge_to: ["main"] } },
       merge: { auto_merge_after_approval: { default: true } },
     });
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "merge", {
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.merge, {
       repo: "some/other-repo",
       branch: "main",
     });
@@ -462,7 +463,7 @@ describe("SafetyLayer — cost limit detection", () => {
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
 
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "read", {});
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.read, {});
     expect(verdict.allowed).toBe(false);
     expect(verdict.action).toBe("deny");
     expect(verdict.reason).toContain("per-task cost limit");
@@ -474,7 +475,7 @@ describe("SafetyLayer — cost limit detection", () => {
     });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.85 });
 
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "read", {});
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.read, {});
     expect(verdict.allowed).toBe(true);
     expect(verdict.warnings).toBeDefined();
     expect(verdict.warnings?.length).toBeGreaterThan(0);
@@ -587,7 +588,7 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
     handle = createTestSafetyLayer({
       autonomy: {
         decisions: {
-          code_style: { level: "always_decide", description: "formatting" },
+          code_style: { level: AutonomyLevels.always_decide, description: "formatting" },
         },
       },
     });
@@ -608,7 +609,7 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
     handle = createTestSafetyLayer({
       autonomy: {
         decisions: {
-          architectural: { level: "always_ask", description: "architecture" },
+          architectural: { level: AutonomyLevels.always_ask, description: "architecture" },
         },
       },
     });
@@ -630,7 +631,7 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
       autonomy: {
         decisions: {
           refactoring: {
-            level: "threshold",
+            level: AutonomyLevels.threshold,
             threshold: "scope > 5 files",
             description: "refactoring",
           },
@@ -655,7 +656,7 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
       autonomy: {
         decisions: {
           refactoring: {
-            level: "threshold",
+            level: AutonomyLevels.threshold,
             threshold: "scope > 5 files",
             description: "refactoring",
           },
@@ -696,7 +697,7 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
     handle = createTestSafetyLayer({
       autonomy: {
         decisions: {
-          test_cat: { level: "threshold", threshold: "invalid!!!", description: "" },
+          test_cat: { level: AutonomyLevels.threshold, threshold: "invalid!!!", description: "" },
         },
       },
     });
@@ -718,14 +719,14 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
       autonomy: {
         decisions: {
           refactoring: {
-            level: "always_decide",
+            level: AutonomyLevels.always_decide,
             description: "base: always decide",
           },
         },
         repo_overrides: {
           "owner/critical-repo": {
             decisions: {
-              refactoring: { level: "always_ask" },
+              refactoring: { level: AutonomyLevels.always_ask },
             },
           },
         },
@@ -814,7 +815,7 @@ describe("SafetyLayer — hot-reload", () => {
     });
 
     // Initially denied
-    let verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    let verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       repo: "owner/repo-b",
     });
     expect(verdict.allowed).toBe(false);
@@ -826,7 +827,7 @@ describe("SafetyLayer — hot-reload", () => {
       }),
     );
 
-    verdict = handle.safetyLayer.evaluateAction("task-1", "write", {
+    verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
       repo: "owner/repo-b",
     });
     expect(verdict.allowed).toBe(true);
@@ -839,7 +840,7 @@ describe("SafetyLayer — hot-reload", () => {
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.5 });
 
     // Still within $1.00 limit
-    let verdict = handle.safetyLayer.evaluateAction("task-1", "read", {});
+    let verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.read, {});
     expect(verdict.allowed).toBe(true);
 
     // Lower the limit to $0.40 — now breached
@@ -849,7 +850,7 @@ describe("SafetyLayer — hot-reload", () => {
       }),
     );
 
-    verdict = handle.safetyLayer.evaluateAction("task-1", "read", {});
+    verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.read, {});
     expect(verdict.allowed).toBe(false);
     expect(verdict.reason).toContain("per-task cost limit");
   });
@@ -858,7 +859,7 @@ describe("SafetyLayer — hot-reload", () => {
     handle = createTestSafetyLayer({
       autonomy: {
         decisions: {
-          refactoring: { level: "always_decide", description: "" },
+          refactoring: { level: AutonomyLevels.always_decide, description: "" },
         },
       },
     });
@@ -879,7 +880,7 @@ describe("SafetyLayer — hot-reload", () => {
       SafetyConfigSchema.parse({
         autonomy: {
           decisions: {
-            refactoring: { level: "always_ask", description: "" },
+            refactoring: { level: AutonomyLevels.always_ask, description: "" },
           },
         },
       }),
@@ -903,7 +904,7 @@ describe("SafetyLayer — hot-reload", () => {
 describe("SafetyLayer — input validation", () => {
   it("valid input passes through to existing logic", () => {
     handle = createTestSafetyLayer();
-    const verdict = handle.safetyLayer.evaluateAction("task-1", "read", {});
+    const verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.read, {});
     expect(verdict.allowed).toBe(true);
     expect(verdict.action).toBe("proceed");
   });

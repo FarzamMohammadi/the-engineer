@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   ActionClassSchema,
+  ActionClasses,
   BlockedDetailsSchema,
+  CascadePolicies,
   CascadePolicySchema,
   ChildCompletionSummarySchema,
   ChildEntrySchema,
@@ -12,10 +14,13 @@ import {
   ReviewStateSchema,
   StateTransitionSchema,
   SubStateSchema,
+  SubStates,
   TaskDecisionSchema,
   TaskSchema,
   TaskStateSchema,
+  TaskStates,
   TaskWorkspaceSchema,
+  TeamMemberRoles,
   TeamMemberSchema,
   ValidTransitions,
 } from "./task.js";
@@ -192,7 +197,7 @@ describe("ExternalRefSchema", () => {
 
 describe("ChildEntrySchema", () => {
   it("parses valid data", () => {
-    const valid = { id: "01ABC", state: "active", depends_on: ["01XYZ"] };
+    const valid = { id: "01ABC", state: TaskStates.active, depends_on: ["01XYZ"] };
     expect(ChildEntrySchema.parse(valid)).toEqual(valid);
   });
 
@@ -205,7 +210,7 @@ describe("ChildEntrySchema", () => {
 
 describe("TeamMemberSchema", () => {
   it("parses valid data", () => {
-    const valid = { person_id: "farzam", role: "author", context: "project owner" };
+    const valid = { person_id: "farzam", role: TeamMemberRoles.author, context: "project owner" };
     expect(TeamMemberSchema.parse(valid)).toEqual(valid);
   });
 
@@ -383,12 +388,12 @@ describe("TaskSchema", () => {
   const minimalTask = {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     external_ref: null,
-    state: "requirements_gathering",
+    state: TaskStates.requirements_gathering,
     sub_state: null,
     phase: null,
     parent_id: null,
     children: [],
-    cascade_policy: "pause_siblings",
+    cascade_policy: CascadePolicies.pause_siblings,
     title: "Fix auth bug",
     description: "Users can't log in",
     source_text: "Issue body text",
@@ -445,8 +450,8 @@ describe("StateTransitionSchema", () => {
     const valid = {
       id: "01ABC",
       task_id: "01XYZ",
-      from_state: "requirements_gathering",
-      to_state: "queued",
+      from_state: TaskStates.requirements_gathering,
+      to_state: TaskStates.queued,
       from_sub: null,
       to_sub: null,
       reason: "Task validated",
@@ -462,7 +467,7 @@ describe("StateTransitionSchema", () => {
         id: "01ABC",
         task_id: "01XYZ",
         from_state: "invalid",
-        to_state: "queued",
+        to_state: TaskStates.queued,
         from_sub: null,
         to_sub: null,
         reason: "test",
@@ -491,24 +496,24 @@ describe("ValidTransitions", () => {
 
   it("terminal states (completed, failed) are never a 'from' state", () => {
     const fromStates = new Set<string>(ValidTransitions.map((t) => t.from));
-    expect(fromStates.has("completed")).toBe(false);
-    expect(fromStates.has("failed")).toBe(false);
+    expect(fromStates.has(TaskStates.completed)).toBe(false);
+    expect(fromStates.has(TaskStates.failed)).toBe(false);
   });
 
   it("intake is never a 'to' state", () => {
     const toStates = new Set<string>(ValidTransitions.map((t) => t.to));
-    expect(toStates.has("requirements_gathering")).toBe(false);
+    expect(toStates.has(TaskStates.requirements_gathering)).toBe(false);
   });
 
   it("active 'from' entries always have from_sub specified", () => {
-    const activeFrom = ValidTransitions.filter((t) => t.from === "active");
+    const activeFrom = ValidTransitions.filter((t) => t.from === TaskStates.active);
     for (const t of activeFrom) {
       expect("from_sub" in t ? t.from_sub : undefined).toBeDefined();
     }
   });
 
   it("active 'to' entries always have to_sub specified", () => {
-    const activeTo = ValidTransitions.filter((t) => t.to === "active");
+    const activeTo = ValidTransitions.filter((t) => t.to === TaskStates.active);
     for (const t of activeTo) {
       expect("to_sub" in t ? t.to_sub : undefined).toBeDefined();
     }
@@ -524,15 +529,15 @@ describe("PermissionTable", () => {
 
   it("covers all valid (state, sub_state) pairs", () => {
     const expectedPairs = [
-      ["requirements_gathering", null],
-      ["queued", null],
-      ["active", "working"],
-      ["active", "supervising"],
-      ["active", "integrating"],
-      ["review_pending", "code"],
-      ["blocked", null],
-      ["completed", null],
-      ["failed", null],
+      [TaskStates.requirements_gathering, null],
+      [TaskStates.queued, null],
+      [TaskStates.active, SubStates.working],
+      [TaskStates.active, SubStates.supervising],
+      [TaskStates.active, SubStates.integrating],
+      [TaskStates.review_pending, SubStates.code],
+      [TaskStates.blocked, null],
+      [TaskStates.completed, null],
+      [TaskStates.failed, null],
     ];
 
     const actualPairs = PermissionTable.map((e) => [e.state, e.sub_state]);
@@ -540,23 +545,25 @@ describe("PermissionTable", () => {
   });
 
   it("completed state has no allowed actions", () => {
-    const completed = PermissionTable.find((e) => e.state === "completed");
+    const completed = PermissionTable.find((e) => e.state === TaskStates.completed);
     expect(completed?.allowed).toEqual([]);
   });
 
   it("failed state only allows communicate", () => {
-    const failed = PermissionTable.find((e) => e.state === "failed");
-    expect(failed?.allowed).toEqual(["communicate"]);
+    const failed = PermissionTable.find((e) => e.state === TaskStates.failed);
+    expect(failed?.allowed).toEqual([ActionClasses.communicate]);
   });
 
   it("active.working has the most permissions", () => {
-    const working = PermissionTable.find((e) => e.state === "active" && e.sub_state === "working");
+    const working = PermissionTable.find(
+      (e) => e.state === TaskStates.active && e.sub_state === SubStates.working,
+    );
     expect(working?.allowed.length).toBeGreaterThan(5);
   });
 
   it("review_pending.code has conditional merge permission", () => {
     const code = PermissionTable.find(
-      (e) => e.state === "review_pending" && e.sub_state === "code",
+      (e) => e.state === TaskStates.review_pending && e.sub_state === SubStates.code,
     );
     expect(code?.conditional).toBeDefined();
     expect(code?.conditional?.merge).toBeDefined();

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import type { DaemonConfig } from "../../schemas/config.js";
+import { type DaemonConfig, TimeoutStageActions } from "../../schemas/config.js";
+import { EventTypes } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { HealthMonitorContext } from "./types.js";
@@ -55,8 +58,8 @@ function makeTask(overrides: Record<string, unknown> = {}) {
   return {
     id: "task-1",
     title: "Test task",
-    state: "active",
-    sub_state: "working",
+    state: TaskStates.active,
+    sub_state: SubStates.working,
     priority: 50,
     started_at: new Date(1_000_000).toISOString(),
     last_transition_at: new Date(1_000_000).toISOString(),
@@ -80,21 +83,21 @@ function makeTimeoutPolicy() {
         {
           name: "reminder",
           after_ms: 14_400_000,
-          action: "send_reminder",
+          action: TimeoutStageActions.send_reminder,
           repeat: true,
           repeat_interval_ms: 14_400_000,
         },
         {
           name: "self_unblock",
           after_ms: 28_800_000,
-          action: "evaluate_self_unblock",
+          action: TimeoutStageActions.evaluate_self_unblock,
           repeat: null,
           repeat_interval_ms: null,
         },
         {
           name: "escalation",
           after_ms: 172_800_000,
-          action: "escalation_alert",
+          action: TimeoutStageActions.escalation_alert,
           repeat: null,
           repeat_interval_ms: null,
         },
@@ -165,7 +168,7 @@ describe("DaemonHealthMonitor", () => {
       expect(eventBus.publish).toHaveBeenCalledOnce();
       expect(eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "health.stuck_detected",
+          type: EventTypes["health.stuck_detected"],
           task_id: "task-1",
           payload: expect.objectContaining({
             task_id: "task-1",
@@ -199,7 +202,7 @@ describe("DaemonHealthMonitor", () => {
       expect(eventBus.publish).toHaveBeenCalledOnce();
       expect(eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "health.stuck_detected",
+          type: EventTypes["health.stuck_detected"],
           payload: expect.objectContaining({
             condition: "no_state_transition",
             threshold_ms: 28_800_000,
@@ -241,7 +244,7 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "blocked-1",
         title: "Blocked task",
-        state: "blocked",
+        state: TaskStates.blocked,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
       taskEngine.getTasksByState.mockReturnValue([task]);
@@ -251,7 +254,7 @@ describe("DaemonHealthMonitor", () => {
       hm.checkBlockedEscalation(now);
 
       expect(notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "blocked_reminder", taskId: "blocked-1" }),
+        expect.objectContaining({ kind: NotificationKinds.blocked_reminder, taskId: "blocked-1" }),
       );
     });
 
@@ -264,7 +267,7 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "blocked-2",
         title: "Blocked task 2",
-        state: "blocked",
+        state: TaskStates.blocked,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
       taskEngine.getTasksByState.mockReturnValue([task]);
@@ -277,7 +280,7 @@ describe("DaemonHealthMonitor", () => {
       expect(orchestrator.attemptSelfUnblock).toHaveBeenCalledWith("blocked-2");
       // Also fires reminder since elapsed > reminder threshold too
       expect(notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "blocked_reminder" }),
+        expect.objectContaining({ kind: NotificationKinds.blocked_reminder }),
       );
     });
 
@@ -290,7 +293,7 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "blocked-3",
         title: "Blocked task 3",
-        state: "blocked",
+        state: TaskStates.blocked,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
       taskEngine.getTasksByState.mockReturnValue([task]);
@@ -300,11 +303,11 @@ describe("DaemonHealthMonitor", () => {
       hm.checkBlockedEscalation(now);
 
       expect(notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "escalation_alert", taskId: "blocked-3" }),
+        expect.objectContaining({ kind: NotificationKinds.escalation_alert, taskId: "blocked-3" }),
       );
       expect(taskEngine.requestTransition).toHaveBeenCalledWith(
         "blocked-3",
-        "failed",
+        TaskStates.failed,
         null,
         "blocked_timeout_escalation",
         "daemon",
@@ -319,7 +322,7 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "blocked-cleanup",
         title: "Will unblock",
-        state: "blocked",
+        state: TaskStates.blocked,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
 
@@ -342,7 +345,9 @@ describe("DaemonHealthMonitor", () => {
       hm.checkBlockedEscalation(now3);
       const blockedReminderCalls = (
         notifications.notify as ReturnType<typeof vi.fn>
-      ).mock.calls.filter((c: unknown[]) => (c[0] as { kind: string }).kind === "blocked_reminder");
+      ).mock.calls.filter(
+        (c: unknown[]) => (c[0] as { kind: string }).kind === NotificationKinds.blocked_reminder,
+      );
       expect(blockedReminderCalls).toHaveLength(2);
     });
   });
@@ -359,7 +364,7 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "review-1",
         title: "Review task",
-        state: "review_pending",
+        state: TaskStates.review_pending,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
       taskEngine.getTasksByState.mockReturnValue([task]);
@@ -370,7 +375,7 @@ describe("DaemonHealthMonitor", () => {
 
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "review_reminder",
+          kind: NotificationKinds.review_reminder,
           taskId: "review-1",
           elapsedMs: 87_000_000,
         }),
@@ -385,7 +390,7 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "review-2",
         title: "Review task 2",
-        state: "review_pending",
+        state: TaskStates.review_pending,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
       taskEngine.getTasksByState.mockReturnValue([task]);
@@ -396,7 +401,7 @@ describe("DaemonHealthMonitor", () => {
       const notifyFn = notifications.notify as ReturnType<typeof vi.fn>;
       const countReviewReminders = () =>
         notifyFn.mock.calls.filter(
-          (c: unknown[]) => (c[0] as { kind: string }).kind === "review_reminder",
+          (c: unknown[]) => (c[0] as { kind: string }).kind === NotificationKinds.review_reminder,
         ).length;
 
       // First reminder

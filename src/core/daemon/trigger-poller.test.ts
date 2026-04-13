@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
+import { TaskStates } from "../../schemas/task.js";
 import { createTriggerPoller } from "./trigger-poller.js";
 import type { TriggerPollerContext } from "./types.js";
 import { externalRefsMatch } from "./unblock-resolver.js";
@@ -125,7 +126,7 @@ describe("TriggerPoller", () => {
     );
     expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
       "task-001",
-      "queued",
+      TaskStates.queued,
       null,
       "new_trigger_event",
       "daemon",

@@ -7,6 +7,7 @@ import { checkEnvFilePermissions, loadEnvFile } from "../../config/env.js";
 import { loadConfigSafe } from "../../config/loader.js";
 import type { ConfigBundle } from "../../config/loader.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+import { TimeoutStageActions } from "../../schemas/config.js";
 import {
   DaemonConfigSchema,
   OrchestratorConfigSchema,
@@ -469,7 +470,7 @@ function checkEscalationCoherence(
     }
   }
 
-  if (stages.length > 0 && !stages.some((s) => s.action === "escalation_alert")) {
+  if (stages.length > 0 && !stages.some((s) => s.action === TimeoutStageActions.escalation_alert)) {
     checks.push({
       label: "Escalation endpoint",
       status: "warn",

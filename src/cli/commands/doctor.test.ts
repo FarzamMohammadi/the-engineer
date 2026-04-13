@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { TimeoutStageActions } from "../../schemas/config.js";
 import { createOutput, resetOutput } from "../output.js";
 import {
   type DoctorCategory,
@@ -314,14 +315,14 @@ describe("checkRiskyConfig", () => {
       {
         name: "escalation",
         after_ms: 172_800_000,
-        action: "escalation_alert" as const,
+        action: TimeoutStageActions.escalation_alert,
         repeat: null,
         repeat_interval_ms: null,
       },
       {
         name: "reminder",
         after_ms: 14_400_000,
-        action: "send_reminder" as const,
+        action: TimeoutStageActions.send_reminder,
         repeat: true,
         repeat_interval_ms: 14_400_000,
       },
@@ -338,14 +339,14 @@ describe("checkRiskyConfig", () => {
       {
         name: "reminder",
         after_ms: 14_400_000,
-        action: "send_reminder" as const,
+        action: TimeoutStageActions.send_reminder,
         repeat: true,
         repeat_interval_ms: 14_400_000,
       },
       {
         name: "escalation",
         after_ms: 172_800_000,
-        action: "escalation_alert" as const,
+        action: TimeoutStageActions.escalation_alert,
         repeat: null,
         repeat_interval_ms: null,
       },
@@ -361,14 +362,14 @@ describe("checkRiskyConfig", () => {
       {
         name: "reminder",
         after_ms: 14_400_000,
-        action: "send_reminder" as const,
+        action: TimeoutStageActions.send_reminder,
         repeat: true,
         repeat_interval_ms: 14_400_000,
       },
       {
         name: "self_unblock",
         after_ms: 28_800_000,
-        action: "evaluate_self_unblock" as const,
+        action: TimeoutStageActions.evaluate_self_unblock,
         repeat: null,
         repeat_interval_ms: null,
       },
@@ -385,7 +386,7 @@ describe("checkRiskyConfig", () => {
       {
         name: "escalation",
         after_ms: 172_800_000,
-        action: "escalation_alert" as const,
+        action: TimeoutStageActions.escalation_alert,
         repeat: null,
         repeat_interval_ms: null,
       },

@@ -17,7 +17,12 @@ import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
-import { type DaemonConfig, WorkspaceConfigSchema } from "../../src/schemas/config.js";
+import {
+  type DaemonConfig,
+  TimeoutStageActions,
+  WorkspaceConfigSchema,
+} from "../../src/schemas/config.js";
+import { TaskStates } from "../../src/schemas/task.js";
 import { FakeClock } from "./fake-clock.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
 import { createMockTask } from "./test-orchestrator.js";
@@ -208,7 +213,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
       return createMockTask({
         id: `task-${String(taskCounter).padStart(3, "0")}`,
         title: input.title,
-        state: "requirements_gathering",
+        state: TaskStates.requirements_gathering,
         sub_state: null,
         priority: input.priority ?? 50,
         created_at: new Date(clock.now()).toISOString(),
@@ -265,21 +270,21 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
           {
             name: "reminder",
             after_ms: 14_400_000,
-            action: "send_reminder",
+            action: TimeoutStageActions.send_reminder,
             repeat: true,
             repeat_interval_ms: 14_400_000,
           },
           {
             name: "self_unblock_check",
             after_ms: 28_800_000,
-            action: "evaluate_self_unblock",
+            action: TimeoutStageActions.evaluate_self_unblock,
             repeat: null,
             repeat_interval_ms: null,
           },
           {
             name: "escalation",
             after_ms: 172_800_000,
-            action: "escalation_alert",
+            action: TimeoutStageActions.escalation_alert,
             repeat: null,
             repeat_interval_ms: null,
           },

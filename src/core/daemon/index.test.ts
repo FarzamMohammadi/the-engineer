@@ -8,6 +8,8 @@ import {
   createTestTriggerEvent,
 } from "../../../test/helpers/test-daemon.js";
 import { createMockTask } from "../../../test/helpers/test-orchestrator.js";
+import { EventTypes } from "../../schemas/events.js";
+import { CascadePolicies, SubStates, TaskStates } from "../../schemas/task.js";
 import type { ExecuteTaskResult } from "../orchestrator/index.js";
 import { deriveAggregateReviewState, isSlotConsuming, shouldPreempt } from "./index.js";
 
@@ -15,19 +17,19 @@ import { deriveAggregateReviewState, isSlotConsuming, shouldPreempt } from "./in
 
 describe("isSlotConsuming", () => {
   it("returns true for active.working", () => {
-    expect(isSlotConsuming("active", "working")).toBe(true);
+    expect(isSlotConsuming(TaskStates.active, SubStates.working)).toBe(true);
   });
 
   it("returns true for active.integrating", () => {
-    expect(isSlotConsuming("active", "integrating")).toBe(true);
+    expect(isSlotConsuming(TaskStates.active, SubStates.integrating)).toBe(true);
   });
 
   it("returns false for active.supervising", () => {
-    expect(isSlotConsuming("active", "supervising")).toBe(false);
+    expect(isSlotConsuming(TaskStates.active, SubStates.supervising)).toBe(false);
   });
 
   it("returns false for queued", () => {
-    expect(isSlotConsuming("queued", null)).toBe(false);
+    expect(isSlotConsuming(TaskStates.queued, null)).toBe(false);
   });
 });
 
@@ -112,7 +114,7 @@ describe("Daemon", () => {
       expect(handle.taskEngine.createTask).toHaveBeenCalledOnce();
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         expect.any(String),
-        "queued",
+        TaskStates.queued,
         null,
         "new_trigger_event",
         "daemon",
@@ -152,7 +154,7 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-high",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         priority: 80,
       });
@@ -163,8 +165,8 @@ describe("Daemon", () => {
       expect(handle.orchestrator.executeTask).toHaveBeenCalledOnce();
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-high",
-        "active",
-        "working",
+        TaskStates.active,
+        SubStates.working,
         "scheduled",
         "daemon",
       );
@@ -174,7 +176,7 @@ describe("Daemon", () => {
       handle = createTestDaemon({ trigger_poll_interval_ms: 0 });
 
       // Simulate an active dispatch by scheduling first
-      const task1 = createMockTask({ id: "task-1", state: "queued", sub_state: null });
+      const task1 = createMockTask({ id: "task-1", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task1]);
       // Make orchestrator return a never-resolving promise to keep slot occupied
       handle.orchestrator.executeTask.mockReturnValue(
@@ -186,7 +188,7 @@ describe("Daemon", () => {
       await handle.daemon.tick(); // Schedules task-1
 
       // Now another queued task should not be scheduled
-      const task2 = createMockTask({ id: "task-2", state: "queued", sub_state: null });
+      const task2 = createMockTask({ id: "task-2", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task2]);
       await handle.daemon.tick();
 
@@ -197,7 +199,7 @@ describe("Daemon", () => {
       handle = createTestDaemon();
 
       // First task completes immediately
-      const task1 = createMockTask({ id: "task-1", state: "queued", sub_state: null });
+      const task1 = createMockTask({ id: "task-1", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task1]);
       handle.orchestrator.executeTask.mockResolvedValueOnce({
         outcome: "completed",
@@ -210,7 +212,7 @@ describe("Daemon", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       // Second task available
-      const task2 = createMockTask({ id: "task-2", state: "queued", sub_state: null });
+      const task2 = createMockTask({ id: "task-2", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task2]);
       handle.orchestrator.executeTask.mockResolvedValueOnce({
         outcome: "completed",
@@ -228,7 +230,7 @@ describe("Daemon", () => {
   describe("dispatch", () => {
     it("includes checkpoint for resumed task", async () => {
       handle = createTestDaemon();
-      const task = createMockTask({ id: "task-resume", state: "queued", sub_state: null });
+      const task = createMockTask({ id: "task-resume", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
       const checkpoint = { id: "cp-1", phase: "research" };
       handle.sessionMemory.getLatestCheckpoint.mockReturnValue(checkpoint);
@@ -240,8 +242,8 @@ describe("Daemon", () => {
       );
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-resume",
-        "active",
-        "working",
+        TaskStates.active,
+        SubStates.working,
         "resumed_from_checkpoint",
         "daemon",
       );
@@ -249,7 +251,7 @@ describe("Daemon", () => {
 
     it("handles orchestrator completion", async () => {
       handle = createTestDaemon();
-      const task = createMockTask({ id: "task-done", state: "queued", sub_state: null });
+      const task = createMockTask({ id: "task-done", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
       await handle.daemon.tick();
@@ -261,7 +263,7 @@ describe("Daemon", () => {
 
     it("handles orchestrator crash with recovery and backoff", async () => {
       handle = createTestDaemon();
-      const task = createMockTask({ id: "task-crash", state: "queued", sub_state: null });
+      const task = createMockTask({ id: "task-crash", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
       handle.orchestrator.executeTask.mockRejectedValueOnce(new Error("crash"));
 
@@ -271,7 +273,7 @@ describe("Daemon", () => {
       // Should emit health.stuck_detected and transition to queued with backoff
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "health.stuck_detected",
+          type: EventTypes["health.stuck_detected"],
           payload: expect.objectContaining({
             condition: "orchestrator_crash",
           }),
@@ -279,7 +281,7 @@ describe("Daemon", () => {
       );
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-crash",
-        "queued",
+        TaskStates.queued,
         null,
         "crash_recovery_with_backoff",
         "daemon",
@@ -296,7 +298,7 @@ describe("Daemon", () => {
       // Simulate active dispatch
       const task = createMockTask({
         id: "task-stuck",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
@@ -308,8 +310,8 @@ describe("Daemon", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({
           id: "task-stuck",
-          state: "active",
-          sub_state: "working",
+          state: TaskStates.active,
+          sub_state: SubStates.working,
           started_at: new Date(handle.clock.now()).toISOString(),
         }),
       );
@@ -323,7 +325,7 @@ describe("Daemon", () => {
 
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "health.stuck_detected",
+          type: EventTypes["health.stuck_detected"],
           payload: expect.objectContaining({
             task_id: "task-stuck",
             condition: "no_journal_entries",
@@ -335,7 +337,7 @@ describe("Daemon", () => {
     it("emits health.stuck_detected for task exceeding max active duration", async () => {
       handle = createTestDaemon({ max_active_duration_ms: 28_800_000 });
 
-      const task = createMockTask({ id: "task-long", state: "queued", sub_state: null });
+      const task = createMockTask({ id: "task-long", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
       handle.orchestrator.executeTask.mockReturnValue(
         new Promise(() => {
@@ -345,8 +347,8 @@ describe("Daemon", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({
           id: "task-long",
-          state: "active",
-          sub_state: "working",
+          state: TaskStates.active,
+          sub_state: SubStates.working,
           started_at: new Date(handle.clock.now()).toISOString(),
         }),
       );
@@ -358,7 +360,7 @@ describe("Daemon", () => {
 
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "health.stuck_detected",
+          type: EventTypes["health.stuck_detected"],
           payload: expect.objectContaining({
             condition: "no_state_transition",
           }),
@@ -369,7 +371,7 @@ describe("Daemon", () => {
     it("does not emit stuck for healthy active task", async () => {
       handle = createTestDaemon({ stuck_threshold_ms: 1_800_000 });
 
-      const task = createMockTask({ id: "task-ok", state: "queued", sub_state: null });
+      const task = createMockTask({ id: "task-ok", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
       handle.orchestrator.executeTask.mockReturnValue(
         new Promise(() => {
@@ -379,8 +381,8 @@ describe("Daemon", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({
           id: "task-ok",
-          state: "active",
-          sub_state: "working",
+          state: TaskStates.active,
+          sub_state: SubStates.working,
           started_at: new Date(handle.clock.now()).toISOString(),
         }),
       );
@@ -391,7 +393,7 @@ describe("Daemon", () => {
       await handle.daemon.tick();
 
       const stuckCalls = handle.eventBus.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "health.stuck_detected",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["health.stuck_detected"],
       );
       expect(stuckCalls).toHaveLength(0);
     });
@@ -406,7 +408,7 @@ describe("Daemon", () => {
       // Schedule a low-priority task
       const lowTask = createMockTask({
         id: "task-low",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         priority: 50,
       });
@@ -422,7 +424,7 @@ describe("Daemon", () => {
       // Now a high-priority task appears in queue
       const highTask = createMockTask({
         id: "task-high",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         priority: 75,
       });
@@ -433,7 +435,7 @@ describe("Daemon", () => {
 
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "preemption.requested",
+          type: EventTypes["preemption.requested"],
           payload: expect.objectContaining({
             target_task_id: "task-low",
             preempting_task_id: "task-high",
@@ -447,7 +449,7 @@ describe("Daemon", () => {
 
       const lowTask = createMockTask({
         id: "task-low",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         priority: 50,
       });
@@ -463,7 +465,7 @@ describe("Daemon", () => {
       // Queued task has insufficient priority delta
       const medTask = createMockTask({
         id: "task-med",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         priority: 60,
       });
@@ -473,7 +475,7 @@ describe("Daemon", () => {
       await handle.daemon.tick();
 
       const preemptCalls = handle.eventBus.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "preemption.requested",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["preemption.requested"],
       );
       expect(preemptCalls).toHaveLength(0);
     });
@@ -483,7 +485,7 @@ describe("Daemon", () => {
 
       const lowTask = createMockTask({
         id: "task-low",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         priority: 50,
       });
@@ -502,7 +504,7 @@ describe("Daemon", () => {
       // Preemption requested
       const highTask = createMockTask({
         id: "task-high",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         priority: 75,
       });
@@ -549,9 +551,13 @@ describe("Daemon", () => {
 
     it("recovers orphaned active tasks on startup", async () => {
       handle = createTestDaemon();
-      const orphan = createMockTask({ id: "orphan-1", state: "active", sub_state: "working" });
+      const orphan = createMockTask({
+        id: "orphan-1",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
+      });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "active") {
+        if (state === TaskStates.active) {
           return [orphan];
         }
         return [];
@@ -561,7 +567,7 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "orphan-1",
-        "queued",
+        TaskStates.queued,
         null,
         "crash_recovery",
         "daemon",
@@ -595,7 +601,11 @@ describe("Daemon", () => {
       await handle.daemon.start();
 
       // Schedule a task
-      const task = createMockTask({ id: "task-shutdown", state: "queued", sub_state: null });
+      const task = createMockTask({
+        id: "task-shutdown",
+        state: TaskStates.queued,
+        sub_state: null,
+      });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
       handle.orchestrator.executeTask.mockReturnValue(
         new Promise(() => {
@@ -603,7 +613,11 @@ describe("Daemon", () => {
         }),
       );
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-shutdown", state: "active", sub_state: "working" }),
+        createMockTask({
+          id: "task-shutdown",
+          state: TaskStates.active,
+          sub_state: SubStates.working,
+        }),
       );
 
       await handle.daemon.tick();
@@ -611,7 +625,7 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-shutdown",
-        "queued",
+        TaskStates.queued,
         null,
         "graceful_shutdown",
         "daemon",
@@ -644,17 +658,21 @@ describe("Daemon", () => {
       await handle.daemon.start();
 
       // Simulate cost.limit_reached event
-      const callback = handle.getSubscriptionCallback("cost.limit_reached");
+      const callback = handle.getSubscriptionCallback(EventTypes["cost.limit_reached"]);
       expect(callback).toBeDefined();
 
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-costly", state: "active", sub_state: "working" }),
+        createMockTask({
+          id: "task-costly",
+          state: TaskStates.active,
+          sub_state: SubStates.working,
+        }),
       );
 
       callback?.({
         id: "evt-1",
         sequence: 1,
-        type: "cost.limit_reached",
+        type: EventTypes["cost.limit_reached"],
         source: "safety",
         task_id: "task-costly",
         timestamp: new Date().toISOString(),
@@ -672,7 +690,7 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-costly",
-        "blocked",
+        TaskStates.blocked,
         null,
         "cost_limit_reached",
         "daemon",
@@ -704,7 +722,7 @@ describe("Daemon", () => {
       // After 3 failures, should emit health.trigger_failure
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "health.trigger_failure",
+          type: EventTypes["health.trigger_failure"],
           payload: expect.objectContaining({
             trigger_id: "test-trigger",
             consecutive_failures: 3,
@@ -721,7 +739,7 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "top-level",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         parent_id: null,
       });
@@ -736,14 +754,14 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const child = createMockTask({
         id: "child-1",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         parent_id: "parent-1",
       });
       const parent = createMockTask({
         id: "parent-1",
-        state: "active",
-        sub_state: "working",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
       handle.taskEngine.getTask.mockReturnValue(parent);
@@ -757,14 +775,14 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const child = createMockTask({
         id: "child-1",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         parent_id: "parent-1",
       });
       const parent = createMockTask({
         id: "parent-1",
-        state: "active",
-        sub_state: "supervising",
+        state: TaskStates.active,
+        sub_state: SubStates.supervising,
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
       handle.taskEngine.getTask.mockReturnValue(parent);
@@ -778,20 +796,20 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const child = createMockTask({
         id: "child-2",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         parent_id: "parent-1",
       });
       const parent = createMockTask({
         id: "parent-1",
-        state: "active",
-        sub_state: "supervising",
-        cascade_policy: "pause_siblings",
+        state: TaskStates.active,
+        sub_state: SubStates.supervising,
+        cascade_policy: CascadePolicies.pause_siblings,
       });
       const activeSibling = createMockTask({
         id: "child-1",
-        state: "active",
-        sub_state: "working",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
         parent_id: "parent-1",
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
@@ -807,7 +825,7 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const child = createMockTask({
         id: "child-orphan",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         parent_id: "missing-parent",
       });
@@ -828,13 +846,13 @@ describe("Daemon", () => {
       const fourHoursAgo = new Date(handle.clock.now() - 14_400_000 - 1000).toISOString();
       const blockedTask = createMockTask({
         id: "blocked-1",
-        state: "blocked",
+        state: TaskStates.blocked,
         sub_state: null,
         title: "Stuck task",
         last_transition_at: fourHoursAgo,
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "blocked") {
+        if (state === TaskStates.blocked) {
           return [blockedTask];
         }
         return [];
@@ -877,13 +895,13 @@ describe("Daemon", () => {
       const eightHoursAgo = new Date(handle.clock.now() - 28_800_000 - 1000).toISOString();
       const blockedTask = createMockTask({
         id: "blocked-2",
-        state: "blocked",
+        state: TaskStates.blocked,
         sub_state: null,
         title: "Self-unblock candidate",
         last_transition_at: eightHoursAgo,
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "blocked") {
+        if (state === TaskStates.blocked) {
           return [blockedTask];
         }
         return [];
@@ -902,13 +920,13 @@ describe("Daemon", () => {
       const twoDaysAgo = new Date(handle.clock.now() - 172_800_000 - 1000).toISOString();
       const blockedTask = createMockTask({
         id: "blocked-3",
-        state: "blocked",
+        state: TaskStates.blocked,
         sub_state: null,
         title: "Escalation task",
         last_transition_at: twoDaysAgo,
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "blocked") {
+        if (state === TaskStates.blocked) {
           return [blockedTask];
         }
         return [];
@@ -920,7 +938,7 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "blocked-3",
-        "failed",
+        TaskStates.failed,
         null,
         "blocked_timeout_escalation",
         "daemon",
@@ -936,13 +954,13 @@ describe("Daemon", () => {
       const oneDayAgo = new Date(handle.clock.now() - 86_400_000 - 1000).toISOString();
       const reviewTask = createMockTask({
         id: "review-1",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         title: "Needs review",
         last_transition_at: oneDayAgo,
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "review_pending") {
+        if (state === TaskStates.review_pending) {
           return [reviewTask];
         }
         return [];
@@ -985,13 +1003,13 @@ describe("Daemon", () => {
       const recentTime = new Date(handle.clock.now() - 3_600_000).toISOString(); // 1h ago
       const reviewTask = createMockTask({
         id: "review-2",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         title: "Too early",
         last_transition_at: recentTime,
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "review_pending") {
+        if (state === TaskStates.review_pending) {
           return [reviewTask];
         }
         return [];
@@ -1019,13 +1037,13 @@ describe("Daemon", () => {
       const oneDayAgo = new Date(handle.clock.now() - 86_400_000 - 1000).toISOString();
       const reviewTask = createMockTask({
         id: "review-3",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         title: "Repeat check",
         last_transition_at: oneDayAgo,
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "review_pending") {
+        if (state === TaskStates.review_pending) {
           return [reviewTask];
         }
         return [];
@@ -1078,17 +1096,17 @@ describe("Daemon", () => {
 
       const parent = createMockTask({
         id: "parent-1",
-        state: "active",
-        sub_state: "supervising",
+        state: TaskStates.active,
+        sub_state: SubStates.supervising,
       });
       handle.taskEngine.getTask.mockReturnValue(parent);
 
-      const callback = handle.getSubscriptionCallback("task.children_all_done");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.children_all_done"]);
       expect(callback).toBeDefined();
 
       callback?.({
         id: "evt-1",
-        type: "task.children_all_done",
+        type: EventTypes["task.children_all_done"],
         source: "task-engine",
         task_id: "parent-1",
         sequence: 1,
@@ -1103,8 +1121,8 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "parent-1",
-        "active",
-        "integrating",
+        TaskStates.active,
+        SubStates.integrating,
         "children_all_done",
         "daemon",
       );
@@ -1116,15 +1134,15 @@ describe("Daemon", () => {
 
       const parent = createMockTask({
         id: "parent-1",
-        state: "active",
-        sub_state: "working",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
       });
       handle.taskEngine.getTask.mockReturnValue(parent);
 
-      const callback = handle.getSubscriptionCallback("task.children_all_done");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.children_all_done"]);
       callback?.({
         id: "evt-2",
-        type: "task.children_all_done",
+        type: EventTypes["task.children_all_done"],
         source: "task-engine",
         task_id: "parent-1",
         sequence: 2,
@@ -1139,8 +1157,8 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
         "parent-1",
-        "active",
-        "integrating",
+        TaskStates.active,
+        SubStates.integrating,
         expect.any(String),
         expect.any(String),
       );
@@ -1152,10 +1170,10 @@ describe("Daemon", () => {
 
       handle.taskEngine.getTask.mockReturnValue(null);
 
-      const callback = handle.getSubscriptionCallback("task.children_all_done");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.children_all_done"]);
       callback?.({
         id: "evt-3",
-        type: "task.children_all_done",
+        type: EventTypes["task.children_all_done"],
         source: "task-engine",
         task_id: "missing-parent",
         sequence: 3,
@@ -1170,8 +1188,8 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
         "missing-parent",
-        "active",
-        "integrating",
+        TaskStates.active,
+        SubStates.integrating,
         expect.any(String),
         expect.any(String),
       );
@@ -1185,7 +1203,7 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-pr",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
         title: "PR task",
       });
@@ -1201,8 +1219,8 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-pr",
-        "review_pending",
-        "code",
+        TaskStates.review_pending,
+        SubStates.code,
         "pr_created",
         "daemon",
       );
@@ -1212,7 +1230,7 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-pr",
-        state: "queued",
+        state: TaskStates.queued,
         sub_state: null,
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
@@ -1232,8 +1250,8 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-merged",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         title: "Merged task",
         repo: "org/repo",
         review: {
@@ -1246,7 +1264,7 @@ describe("Daemon", () => {
         },
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "review_pending") {
+        if (state === TaskStates.review_pending) {
           return [task];
         }
         return [];
@@ -1277,7 +1295,7 @@ describe("Daemon", () => {
       // Should transition directly to completed
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-merged",
-        "completed",
+        TaskStates.completed,
         null,
         "pr_merged",
         "daemon",
@@ -1289,8 +1307,8 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-open",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -1301,7 +1319,7 @@ describe("Daemon", () => {
         },
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === "review_pending") {
+        if (state === TaskStates.review_pending) {
           return [task];
         }
         return [];
@@ -1338,7 +1356,7 @@ describe("Daemon", () => {
 
       expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
         "task-open",
-        "completed",
+        TaskStates.completed,
         null,
         expect.any(String),
         expect.any(String),
@@ -1352,8 +1370,8 @@ describe("Daemon", () => {
     function setupReviewTask(overrides?: Partial<ReturnType<typeof createMockTask>>) {
       const task = createMockTask({
         id: "task-review",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1419,7 +1437,7 @@ describe("Daemon", () => {
 
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "task.feedback_received",
+          type: EventTypes["task.feedback_received"],
           payload: expect.objectContaining({
             task_id: "task-review",
             stage: "code",
@@ -1432,7 +1450,7 @@ describe("Daemon", () => {
 
     it("emits approved event when PR is approved", async () => {
       handle = createTestDaemon();
-      const task = setupReviewTask({ sub_state: "code" });
+      const task = setupReviewTask({ sub_state: SubStates.code });
       handle.taskEngine.getTasksByState.mockReturnValue([task]);
       handle.taskEngine.getTask.mockReturnValue(task);
 
@@ -1455,7 +1473,7 @@ describe("Daemon", () => {
 
       expect(handle.eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "task.feedback_received",
+          type: EventTypes["task.feedback_received"],
           payload: expect.objectContaining({
             task_id: "task-review",
             stage: "code",
@@ -1489,7 +1507,8 @@ describe("Daemon", () => {
       await handle.daemon.tick();
 
       const feedbackEvents = handle.eventBus.publish.mock.calls.filter(
-        (call: unknown[]) => (call[0] as { type: string }).type === "task.feedback_received",
+        (call: unknown[]) =>
+          (call[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackEvents).toHaveLength(1);
     });
@@ -1527,7 +1546,8 @@ describe("Daemon", () => {
       await handle.daemon.tick();
 
       const feedbackEvents = handle.eventBus.publish.mock.calls.filter(
-        (call: unknown[]) => (call[0] as { type: string }).type === "task.feedback_received",
+        (call: unknown[]) =>
+          (call[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackEvents).toHaveLength(2);
     });
@@ -1541,8 +1561,8 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-fb",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1556,12 +1576,12 @@ describe("Daemon", () => {
       handle.taskEngine.getTask.mockReturnValue(task);
 
       // Manually trigger the feedback subscription
-      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.feedback_received"]);
       expect(callback).toBeDefined();
 
       callback?.({
         id: "evt-1",
-        type: "task.feedback_received",
+        type: EventTypes["task.feedback_received"],
         source: "daemon",
         task_id: "task-fb",
         payload: {
@@ -1588,7 +1608,7 @@ describe("Daemon", () => {
       // Should transition to queued
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-fb",
-        "queued",
+        TaskStates.queued,
         null,
         "feedback_rework:changes_requested",
         "daemon",
@@ -1600,8 +1620,8 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-code-approve",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1615,10 +1635,10 @@ describe("Daemon", () => {
       handle.taskEngine.getTask.mockReturnValue(task);
       handle.safetyLayer.checkAutoMergeAllowed.mockReturnValue(false);
 
-      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.feedback_received"]);
       callback?.({
         id: "evt-3",
-        type: "task.feedback_received",
+        type: EventTypes["task.feedback_received"],
         source: "daemon",
         task_id: "task-code-approve",
         payload: {
@@ -1637,7 +1657,7 @@ describe("Daemon", () => {
       await vi.waitFor(() => {
         expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
           "task-code-approve",
-          "completed",
+          TaskStates.completed,
           null,
           "code_approved",
           "daemon",
@@ -1650,8 +1670,8 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-auto-merge",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1680,10 +1700,10 @@ describe("Daemon", () => {
       handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
       handle.registry.getPrimaryPlugin.mockReturnValue(fakeHosting);
 
-      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.feedback_received"]);
       callback?.({
         id: "evt-am-1",
-        type: "task.feedback_received",
+        type: EventTypes["task.feedback_received"],
         source: "daemon",
         task_id: "task-auto-merge",
         payload: {
@@ -1710,7 +1730,7 @@ describe("Daemon", () => {
       );
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-auto-merge",
-        "completed",
+        TaskStates.completed,
         null,
         "code_approved_merged",
         "daemon",
@@ -1722,8 +1742,8 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-merge-fail",
-        state: "review_pending",
-        sub_state: "code",
+        state: TaskStates.review_pending,
+        sub_state: SubStates.code,
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1752,10 +1772,10 @@ describe("Daemon", () => {
       handle.registry.getPluginsByType.mockReturnValue([fakeHosting]);
       handle.registry.getPrimaryPlugin.mockReturnValue(fakeHosting);
 
-      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.feedback_received"]);
       callback?.({
         id: "evt-am-2",
-        type: "task.feedback_received",
+        type: EventTypes["task.feedback_received"],
         source: "daemon",
         task_id: "task-merge-fail",
         payload: {
@@ -1779,7 +1799,7 @@ describe("Daemon", () => {
       await vi.waitFor(() => {
         expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
           "task-merge-fail",
-          "completed",
+          TaskStates.completed,
           null,
           expect.any(String),
           expect.any(String),
@@ -1792,15 +1812,15 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-active",
-        state: "active",
-        sub_state: "working",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
       });
       handle.taskEngine.getTask.mockReturnValue(task);
 
-      const callback = handle.getSubscriptionCallback("task.feedback_received");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.feedback_received"]);
       callback?.({
         id: "evt-4",
-        type: "task.feedback_received",
+        type: EventTypes["task.feedback_received"],
         source: "daemon",
         task_id: "task-active",
         payload: {

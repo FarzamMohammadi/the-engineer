@@ -5,6 +5,7 @@ import {
   type TestDatabaseHandle,
   createTestDatabase,
 } from "../../../test/helpers/test-database.js";
+import { CheckpointReasons, SessionEndReasons } from "../../schemas/session-memory.js";
 import type { CreateCheckpointInput } from "../interfaces/session-memory.interface.js";
 import { CheckpointStore } from "./checkpoints.js";
 import { SessionStore } from "./sessions.js";
@@ -50,7 +51,7 @@ function makeInput(
     nextAction: "Research OAuth",
     lastEventId: "01ABCDEF",
     workspaceRef: { branch: "engineer/47-dark-mode", last_commit: "abc123" },
-    reason: "phase_transition",
+    reason: CheckpointReasons.phase_transition,
     journalOffset: 5,
     ...overrides,
   };
@@ -107,7 +108,7 @@ describe("CheckpointStore", () => {
     const s1 = sessions.createSession({ taskId });
     checkpoints.createCheckpoint(makeInput(s1.id, taskId, { phase: "research" }));
 
-    sessions.endSession(s1.id, "preempted");
+    sessions.endSession(s1.id, SessionEndReasons.preempted);
     const s2 = sessions.createSession({ taskId, previousSessionId: s1.id });
     checkpoints.createCheckpoint(makeInput(s2.id, taskId, { phase: "planning" }));
 

@@ -1,4 +1,6 @@
+import { TimeoutStageActions } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -196,10 +198,10 @@ export function createDaemonHealthMonitor(
     taskId: string,
     stage: { name: string; action: string },
   ): void {
-    if (stage.action === "send_reminder") {
-      notifications.notify({ kind: "blocked_reminder", taskId });
+    if (stage.action === TimeoutStageActions.send_reminder) {
+      notifications.notify({ kind: NotificationKinds.blocked_reminder, taskId });
       observer.info("Blocked task reminder sent", { taskId, stage: stage.name });
-    } else if (stage.action === "evaluate_self_unblock") {
+    } else if (stage.action === TimeoutStageActions.evaluate_self_unblock) {
       orchestrator.attemptSelfUnblock(taskId).then(
         (resolved) => {
           if (resolved) {
@@ -227,7 +229,7 @@ export function createDaemonHealthMonitor(
           observer.error("Self-unblock check error", { taskId, err });
         },
       );
-    } else if (stage.action === "escalation_alert") {
+    } else if (stage.action === TimeoutStageActions.escalation_alert) {
       const result = taskEngine.requestTransition(
         taskId,
         TaskStates.failed,
@@ -236,7 +238,7 @@ export function createDaemonHealthMonitor(
         "daemon",
       );
       if (result.success) {
-        notifications.notify({ kind: "escalation_alert", taskId });
+        notifications.notify({ kind: NotificationKinds.escalation_alert, taskId });
         blockedEscalationState.delete(taskId);
         observer.warn("Blocked task escalated to failed", { taskId, stage: stage.name });
       } else {
@@ -291,7 +293,7 @@ export function createDaemonHealthMonitor(
       return;
     }
 
-    notifications.notify({ kind: "review_reminder", taskId: task.id, elapsedMs });
+    notifications.notify({ kind: NotificationKinds.review_reminder, taskId: task.id, elapsedMs });
     reviewReminderTimes.set(task.id, now);
     observer.info("Review pending reminder sent", {
       taskId: task.id,

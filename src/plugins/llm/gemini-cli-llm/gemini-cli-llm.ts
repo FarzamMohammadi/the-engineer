@@ -12,6 +12,7 @@ import {
   type QuotaStatus,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import { killProcess } from "../../../utils/process.js";
 import { appendStderr } from "../claude-code-llm/claude-code-llm.js";
 import { type GeminiCliLLMConfig, GeminiCliLLMConfigSchema } from "./config.js";
@@ -476,7 +477,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
                 `gemini CLI rate limited: ${stderrBuf.slice(0, 200)}`,
                 {
                   retryable: true,
-                  severity: "error",
+                  severity: AdapterErrorSeverities.error,
                 },
               ),
             ),
@@ -490,7 +491,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
               createAdapterError(
                 "cli_error",
                 `gemini CLI exited with code ${String(code)}: ${stderrBuf || contentParts.join("")}`,
-                { retryable: true, severity: "error" },
+                { retryable: true, severity: AdapterErrorSeverities.error },
               ),
             ),
           );
@@ -506,7 +507,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
               createAdapterError(
                 "cli_error",
                 `gemini CLI rate limited: ${streamRateLimitMessage ?? "quota exhausted"}`,
-                { retryable: true, severity: "error" },
+                { retryable: true, severity: AdapterErrorSeverities.error },
               ),
             ),
           );

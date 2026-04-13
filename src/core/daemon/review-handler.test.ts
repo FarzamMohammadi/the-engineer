@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { type DaemonConfig, WorkspaceConfigSchema } from "../../schemas/config.js";
-import type { TaskFeedbackReceivedPayload } from "../../schemas/events.js";
+import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { NotificationRouter } from "./notification-router.js";
 import {
   type ReviewHandler,
@@ -90,8 +92,8 @@ function createReviewTask(overrides?: Record<string, unknown>) {
   return {
     id: "task-1",
     title: "Fix the bug",
-    state: "review_pending",
-    sub_state: "code",
+    state: TaskStates.review_pending,
+    sub_state: SubStates.code,
     repo: "owner/repo",
     external_ref: "issue:1",
     workspace: "/tmp/ws/task-1",
@@ -152,7 +154,7 @@ function buildContext(
     } as unknown as ReviewHandlerContext["registry"],
     taskEngine: {
       getTasksByState: vi.fn().mockImplementation((state: string) => {
-        if (state === "review_pending") {
+        if (state === TaskStates.review_pending) {
           return tasks;
         }
         return [];
@@ -212,7 +214,7 @@ describe("ReviewHandler", () => {
       // Task is already in code sub_state, so it transitions directly to completed
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         null,
         "pr_merged",
         "daemon",
@@ -256,11 +258,11 @@ describe("ReviewHandler", () => {
       await handler.checkMerges();
 
       expect(notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "completion", taskId: "task-1" }),
+        expect.objectContaining({ kind: NotificationKinds.completion, taskId: "task-1" }),
       );
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           taskId: "task-1",
           message: "PR merged — task completed.",
         }),
@@ -294,7 +296,7 @@ describe("ReviewHandler", () => {
 
   describe("checkFeedback", () => {
     it("detects changes_requested and emits feedback event", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -309,7 +311,7 @@ describe("ReviewHandler", () => {
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       // Should have 2 calls: one for review.poll_completed, one for task.feedback_received
       const feedbackCall = eb.publish.mock.calls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackCall).toBeDefined();
       const payload = (feedbackCall?.[0] as { payload: TaskFeedbackReceivedPayload }).payload;
@@ -319,7 +321,7 @@ describe("ReviewHandler", () => {
     });
 
     it("detects approval and emits feedback event", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -333,7 +335,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCall = eb.publish.mock.calls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackCall).toBeDefined();
       const payload = (feedbackCall?.[0] as { payload: TaskFeedbackReceivedPayload }).payload;
@@ -342,7 +344,7 @@ describe("ReviewHandler", () => {
     });
 
     it("deduplicates identical review states", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -357,14 +359,14 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       // Only one feedback event despite two polls
       expect(feedbackCalls).toHaveLength(1);
     });
 
     it("emits new event when review state changes", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
 
@@ -388,7 +390,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackCalls).toHaveLength(2);
       expect(
@@ -400,7 +402,7 @@ describe("ReviewHandler", () => {
     });
 
     it("skips polling after too many recent failures (time-windowed)", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getReviewStatus.mockRejectedValue(new Error("API down"));
 
@@ -421,7 +423,7 @@ describe("ReviewHandler", () => {
 
     // SECURITY: reviewer comments are sanitized before EventBus emission
     it("sanitizes reviewer comment content in feedback event payload", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -436,7 +438,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCall = eb.publish.mock.calls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackCall).toBeDefined();
       const payload = (feedbackCall?.[0] as { payload: TaskFeedbackReceivedPayload }).payload;
@@ -445,7 +447,7 @@ describe("ReviewHandler", () => {
     });
 
     it("resumes polling after failure window expires", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getReviewStatus.mockRejectedValue(new Error("API down"));
 
@@ -472,7 +474,7 @@ describe("ReviewHandler", () => {
     });
 
     it("respects configurable max_failures_before_pause threshold", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       // Override config to pause after just 1 failure
@@ -500,7 +502,7 @@ describe("ReviewHandler", () => {
 
   describe("handleFeedbackEvent", () => {
     it("transitions to queued on changes_requested", () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       handler.handleFeedbackEvent({
@@ -517,14 +519,14 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "feedback_rework:changes_requested",
         "daemon",
       );
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           taskId: "task-1",
           message: "Reviewer feedback received (changes_requested) — reworking.",
         }),
@@ -532,7 +534,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on approved/code without auto-merge: transitions to completed with cleanup", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -554,14 +556,14 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         null,
         "code_approved",
         "daemon",
       );
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           taskId: "task-1",
           message: "Code review approved — ready to merge.",
         }),
@@ -572,13 +574,13 @@ describe("ReviewHandler", () => {
       };
       expect(ws.cleanupWorkspace).toHaveBeenCalledWith("task-1", true);
       expect(notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "completion", taskId: "task-1" }),
+        expect.objectContaining({ kind: NotificationKinds.completion, taskId: "task-1" }),
       );
       expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("on approved/code with auto-merge + CI passing: merges PR and completes", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -612,7 +614,7 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         null,
         "code_approved_merged",
         "daemon",
@@ -626,7 +628,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on approved/code with auto-merge + CI pending: defers merge", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -659,7 +661,7 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).not.toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         expect.anything(),
         expect.anything(),
         expect.anything(),
@@ -667,14 +669,14 @@ describe("ReviewHandler", () => {
       // Should notify about waiting
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: "Code approved — waiting for CI pipeline to complete before merging.",
         }),
       );
     });
 
     it("on approved/code with auto-merge + CI failing: re-queues for post-approval fix", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -707,21 +709,21 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "post_approval_fix",
         "daemon",
       );
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: expect.stringContaining("CI pipeline failing"),
         }),
       );
     });
 
     it("on approved/code with auto-merge + no CI: merges immediately", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -751,7 +753,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on merge rejected by GitHub: does NOT complete the task", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -787,7 +789,7 @@ describe("ReviewHandler", () => {
       // Should NOT transition to completed
       expect(te.requestTransition).not.toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         expect.anything(),
         expect.anything(),
         expect.anything(),
@@ -795,14 +797,14 @@ describe("ReviewHandler", () => {
       // Should notify about the failure
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: expect.stringContaining("Auto-merge rejected"),
         }),
       );
     });
 
     it("on merge API exception: does NOT complete the task", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -834,7 +836,7 @@ describe("ReviewHandler", () => {
       // Should NOT transition to completed
       expect(te.requestTransition).not.toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         expect.anything(),
         expect.anything(),
         expect.anything(),
@@ -843,7 +845,7 @@ describe("ReviewHandler", () => {
 
     it("post-approval fix resets accommodated_review_state and accommodated_comment_ids", async () => {
       const task = createReviewTask({
-        sub_state: "code",
+        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -891,7 +893,7 @@ describe("ReviewHandler", () => {
     });
 
     it("post-approval fix retry limit: completes with manual merge message", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -930,21 +932,21 @@ describe("ReviewHandler", () => {
       // Should complete the task (retry limit reached)
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         null,
         "code_approved",
         "daemon",
       );
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: expect.stringContaining("Please fix and merge manually"),
         }),
       );
     });
 
     it("ignores feedback for non-review_pending tasks", () => {
-      const task = createReviewTask({ state: "active", sub_state: null });
+      const task = createReviewTask({ state: TaskStates.active, sub_state: null });
       buildContext([task]);
 
       handler.handleFeedbackEvent({
@@ -981,7 +983,7 @@ describe("ReviewHandler", () => {
     });
 
     it("stores feedback round on the task", () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       handler.handleFeedbackEvent({
@@ -1013,7 +1015,7 @@ describe("ReviewHandler", () => {
 
     // SECURITY: feedback content is sanitized before storage
     it("sanitizes secrets in feedback content before storing in task review rounds", () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       const tokenContent =
@@ -1043,7 +1045,7 @@ describe("ReviewHandler", () => {
 
   describe("checkApprovedCI", () => {
     it("merges when pending CI becomes passing", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1088,7 +1090,7 @@ describe("ReviewHandler", () => {
     });
 
     it("re-queues for post-approval fix when pending CI becomes failing", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1131,7 +1133,7 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "post_approval_fix",
         "daemon",
@@ -1139,7 +1141,7 @@ describe("ReviewHandler", () => {
     });
 
     it("does nothing when CI is still pending", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1173,7 +1175,7 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).not.toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         expect.anything(),
         expect.anything(),
         expect.anything(),
@@ -1193,7 +1195,7 @@ describe("ReviewHandler", () => {
 
   describe("post-approval merge conflict detection", () => {
     it("handleCodeApproval: CI passing + mergeable false → re-queues with merge_conflict", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1224,7 +1226,7 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "post_approval_fix",
         "daemon",
@@ -1240,7 +1242,7 @@ describe("ReviewHandler", () => {
     });
 
     it("handleCodeApproval: CI failing + mergeable false → grouped feedback with BOTH issues", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1271,10 +1273,16 @@ describe("ReviewHandler", () => {
       };
       // ONE re-queue, not two
       const queuedCalls = te.requestTransition.mock.calls.filter(
-        (c: unknown[]) => c[1] === "queued",
+        (c: unknown[]) => c[1] === TaskStates.queued,
       );
       expect(queuedCalls).toHaveLength(1);
-      expect(queuedCalls[0]).toEqual(["task-1", "queued", null, "post_approval_fix", "daemon"]);
+      expect(queuedCalls[0]).toEqual([
+        "task-1",
+        TaskStates.queued,
+        null,
+        "post_approval_fix",
+        "daemon",
+      ]);
       // Verify feedback round mentions BOTH issues
       const reviewCalls = te.updateTaskField.mock.calls.filter((c: unknown[]) => c[1] === "review");
       const lastReviewArg = reviewCalls[reviewCalls.length - 1]![2] as {
@@ -1286,14 +1294,14 @@ describe("ReviewHandler", () => {
       // Verify notification mentions both
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: expect.stringContaining("Post-approval issues"),
         }),
       );
     });
 
     it("handleCodeApproval: CI failing + mergeable true → only CI failure in feedback", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1330,7 +1338,7 @@ describe("ReviewHandler", () => {
     });
 
     it("handleCodeApproval: CI pending → defers to approvedAwaitingCI (ignores mergeable)", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1361,7 +1369,7 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).not.toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         expect.anything(),
         expect.anything(),
         expect.anything(),
@@ -1374,7 +1382,7 @@ describe("ReviewHandler", () => {
     });
 
     it("attemptMerge: merge_conflict error → re-queues for resolution (no retry)", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1409,7 +1417,7 @@ describe("ReviewHandler", () => {
       // Should re-queue for post-approval fix, NOT just notify and retry
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "post_approval_fix",
         "daemon",
@@ -1417,7 +1425,7 @@ describe("ReviewHandler", () => {
     });
 
     it("attemptMerge: network_error → retries next tick (existing behavior preserved)", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1452,21 +1460,21 @@ describe("ReviewHandler", () => {
       // Should NOT re-queue — just allow retry
       expect(te.requestTransition).not.toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         expect.anything(),
         expect.anything(),
         expect.anything(),
       );
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: expect.stringContaining("Auto-merge rejected"),
         }),
       );
     });
 
     it("checkSingleTaskCI: CI passing + mergeable false → re-queues for merge conflict", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1510,7 +1518,7 @@ describe("ReviewHandler", () => {
       };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "post_approval_fix",
         "daemon",
@@ -1518,7 +1526,7 @@ describe("ReviewHandler", () => {
     });
 
     it("checkSingleTaskCI: CI passing + mergeable true → calls attemptMerge (happy path)", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1561,7 +1569,7 @@ describe("ReviewHandler", () => {
     });
 
     it("backward compat: pipeline_fix history entries counted by retry counter", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1599,21 +1607,21 @@ describe("ReviewHandler", () => {
       // 3 previous attempts → next would be attempt 4 > limit of 3 → completes with manual merge
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         null,
         "code_approved",
         "daemon",
       );
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: expect.stringContaining("Please fix and merge manually"),
         }),
       );
     });
 
     it("retry limit with grouped issues → completes with message listing all issues", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1646,7 +1654,7 @@ describe("ReviewHandler", () => {
 
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           message: expect.stringContaining("CI pipeline failing, merge conflicts"),
         }),
       );
@@ -1696,7 +1704,7 @@ describe("ReviewHandler", () => {
 
   describe("comment-based approval flow", () => {
     it("ignores /approve when enable_comment_approval is false", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       hostingPlugin.getPRComments.mockResolvedValue([
@@ -1709,7 +1717,7 @@ describe("ReviewHandler", () => {
       // Should emit "comment" feedback, not "approved"
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       if (feedbackCalls.length > 0) {
         const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
@@ -1718,7 +1726,7 @@ describe("ReviewHandler", () => {
     });
 
     it("treats /approve as approval when enabled and author is authorized", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       // Enable comment approval
@@ -1740,7 +1748,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackCalls.length).toBeGreaterThan(0);
       const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
@@ -1748,7 +1756,7 @@ describe("ReviewHandler", () => {
     });
 
     it("rejects /approve from unauthorized author when people are configured", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       const sl = ctx.safetyLayer as unknown as {
@@ -1774,7 +1782,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       // Should be "comment" not "approved"
       if (feedbackCalls.length > 0) {
@@ -1784,7 +1792,7 @@ describe("ReviewHandler", () => {
     });
 
     it("formal changes_requested takes precedence over /approve comment", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
 
       const sl = ctx.safetyLayer as unknown as {
@@ -1808,7 +1816,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackCalls.length).toBeGreaterThan(0);
       const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
@@ -1821,7 +1829,7 @@ describe("ReviewHandler", () => {
   describe("thoughts cleanup on code approval", () => {
     it("calls removeThoughtsAndPush before merge when config enabled", async () => {
       const task = createReviewTask({
-        sub_state: "code",
+        sub_state: SubStates.code,
         workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
         review: {
           pr_number: 42,
@@ -1870,7 +1878,7 @@ describe("ReviewHandler", () => {
 
     it("does not call removeThoughtsAndPush when config disabled", async () => {
       const task = createReviewTask({
-        sub_state: "code",
+        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -1914,7 +1922,7 @@ describe("ReviewHandler", () => {
 
     it("proceeds with merge even when removeThoughtsAndPush throws", async () => {
       const task = createReviewTask({
-        sub_state: "code",
+        sub_state: SubStates.code,
         workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
         review: {
           pr_number: 42,
@@ -1967,7 +1975,7 @@ describe("ReviewHandler", () => {
       const te = ctx.taskEngine as unknown as { requestTransition: ReturnType<typeof vi.fn> };
       expect(te.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "completed",
+        TaskStates.completed,
         null,
         "code_approved_merged",
         "daemon",
@@ -1980,7 +1988,7 @@ describe("ReviewHandler", () => {
   describe("feedback accommodation tracking", () => {
     it("suppresses re-trigger when same comments exist after rework", async () => {
       const task = createReviewTask({
-        sub_state: "code",
+        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -2007,7 +2015,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       // No feedback event — same comments, same state
       expect(feedbackCalls).toHaveLength(0);
@@ -2015,7 +2023,7 @@ describe("ReviewHandler", () => {
 
     it("triggers rework when new comment appears after accommodation", async () => {
       const task = createReviewTask({
-        sub_state: "code",
+        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -2043,7 +2051,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       // Should emit feedback — new comment ID detected
       expect(feedbackCalls).toHaveLength(1);
@@ -2051,7 +2059,7 @@ describe("ReviewHandler", () => {
 
     it("triggers rework when review state changes from accommodated state", async () => {
       const task = createReviewTask({
-        sub_state: "code",
+        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -2075,7 +2083,7 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       expect(feedbackCalls).toHaveLength(1);
       const payload = (feedbackCalls[0]![0] as { payload: TaskFeedbackReceivedPayload }).payload;
@@ -2083,7 +2091,7 @@ describe("ReviewHandler", () => {
     });
 
     it("fresh task (no accommodated state) treats all feedback as new", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -2100,14 +2108,14 @@ describe("ReviewHandler", () => {
 
       const eb = ctx.eventBus as unknown as { publish: ReturnType<typeof vi.fn> };
       const feedbackCalls = eb.publish.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "task.feedback_received",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["task.feedback_received"],
       );
       // Fresh task — all comments are new
       expect(feedbackCalls).toHaveLength(1);
     });
 
     it("updates accommodated state when new feedback is detected", async () => {
-      const task = createReviewTask({ sub_state: "code" });
+      const task = createReviewTask({ sub_state: SubStates.code });
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({

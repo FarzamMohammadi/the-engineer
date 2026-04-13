@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 
 function createMockDeps(): QueryHandlerDeps {
@@ -38,10 +40,10 @@ describe("handleQuery", () => {
     const deps = createMockDeps();
     (deps.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockImplementation(
       (state: string) => {
-        if (state === "active") {
+        if (state === TaskStates.active) {
           return [{ id: "1" }];
         }
-        if (state === "queued") {
+        if (state === TaskStates.queued) {
           return [{ id: "2" }, { id: "3" }];
         }
         return [];
@@ -52,7 +54,7 @@ describe("handleQuery", () => {
 
     expect(deps.notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "status_response",
+        kind: NotificationKinds.status_response,
         personId: "farzam",
       }),
     );
@@ -67,8 +69,8 @@ describe("handleQuery", () => {
     (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
       id: "42",
       title: "Fix login bug",
-      state: "active",
-      sub_state: "working",
+      state: TaskStates.active,
+      sub_state: SubStates.working,
       priority: 50,
       phase: "execution",
     });
@@ -124,7 +126,7 @@ describe("handleQuery", () => {
     (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
       id: "42",
       title: "Test",
-      state: "queued",
+      state: TaskStates.queued,
       sub_state: null,
       priority: 50,
       phase: null,
@@ -141,7 +143,7 @@ describe("handleQuery", () => {
     handleQuery(payload("status"), deps);
 
     expect(deps.notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "status_response" }),
+      expect.objectContaining({ kind: NotificationKinds.status_response }),
     );
   });
 });

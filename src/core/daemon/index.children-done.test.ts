@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { type TestDaemonHandle, createTestDaemon } from "../../../test/helpers/test-daemon.js";
 import { createMockTask } from "../../../test/helpers/test-orchestrator.js";
+import { EventTypes } from "../../schemas/events.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 
 describe("Daemon — Decomposition", () => {
   let handle: TestDaemonHandle;
@@ -17,15 +19,27 @@ describe("Daemon — Decomposition", () => {
       await handle.daemon.start();
 
       // Set up: parent in supervising, 2 children
-      const child1 = createMockTask({ id: "child-1", parent_id: "parent-1", state: "completed" });
-      const child2 = createMockTask({ id: "child-2", parent_id: "parent-1", state: "completed" });
+      const child1 = createMockTask({
+        id: "child-1",
+        parent_id: "parent-1",
+        state: TaskStates.completed,
+      });
+      const child2 = createMockTask({
+        id: "child-2",
+        parent_id: "parent-1",
+        state: TaskStates.completed,
+      });
 
       handle.taskEngine.getTask.mockImplementation((id: string) => {
         if (id === "child-2") {
           return child2;
         }
         if (id === "parent-1") {
-          return createMockTask({ id: "parent-1", state: "active", sub_state: "supervising" });
+          return createMockTask({
+            id: "parent-1",
+            state: TaskStates.active,
+            sub_state: SubStates.supervising,
+          });
         }
         return null;
       });
@@ -41,7 +55,7 @@ describe("Daemon — Decomposition", () => {
 
       // Dispatch child-2
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([
-        createMockTask({ id: "child-2", parent_id: "parent-1", state: "queued" }),
+        createMockTask({ id: "child-2", parent_id: "parent-1", state: TaskStates.queued }),
       ]);
 
       await handle.daemon.tick();
@@ -69,12 +83,16 @@ describe("Daemon — Decomposition", () => {
       handle = createTestDaemon();
       await handle.daemon.start();
 
-      const child1 = createMockTask({ id: "child-1", parent_id: "parent-1", state: "completed" });
+      const child1 = createMockTask({
+        id: "child-1",
+        parent_id: "parent-1",
+        state: TaskStates.completed,
+      });
       const child2 = createMockTask({
         id: "child-2",
         parent_id: "parent-1",
-        state: "active",
-        sub_state: "working",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
       });
 
       handle.taskEngine.getTask.mockImplementation((id: string) => {
@@ -82,7 +100,11 @@ describe("Daemon — Decomposition", () => {
           return child1;
         }
         if (id === "parent-1") {
-          return createMockTask({ id: "parent-1", state: "active", sub_state: "supervising" });
+          return createMockTask({
+            id: "parent-1",
+            state: TaskStates.active,
+            sub_state: SubStates.supervising,
+          });
         }
         return null;
       });
@@ -96,7 +118,7 @@ describe("Daemon — Decomposition", () => {
       });
 
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([
-        createMockTask({ id: "child-1", parent_id: "parent-1", state: "queued" }),
+        createMockTask({ id: "child-1", parent_id: "parent-1", state: TaskStates.queued }),
       ]);
 
       await handle.daemon.tick();
@@ -114,15 +136,27 @@ describe("Daemon — Decomposition", () => {
       handle = createTestDaemon();
       await handle.daemon.start();
 
-      const child1 = createMockTask({ id: "child-1", parent_id: "parent-1", state: "completed" });
-      const child2 = createMockTask({ id: "child-2", parent_id: "parent-1", state: "failed" });
+      const child1 = createMockTask({
+        id: "child-1",
+        parent_id: "parent-1",
+        state: TaskStates.completed,
+      });
+      const child2 = createMockTask({
+        id: "child-2",
+        parent_id: "parent-1",
+        state: TaskStates.failed,
+      });
 
       handle.taskEngine.getTask.mockImplementation((id: string) => {
         if (id === "child-2") {
           return child2;
         }
         if (id === "parent-1") {
-          return createMockTask({ id: "parent-1", state: "active", sub_state: "supervising" });
+          return createMockTask({
+            id: "parent-1",
+            state: TaskStates.active,
+            sub_state: SubStates.supervising,
+          });
         }
         return null;
       });
@@ -138,7 +172,7 @@ describe("Daemon — Decomposition", () => {
       });
 
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([
-        createMockTask({ id: "child-2", parent_id: "parent-1", state: "queued" }),
+        createMockTask({ id: "child-2", parent_id: "parent-1", state: TaskStates.queued }),
       ]);
 
       await handle.daemon.tick();
@@ -163,7 +197,7 @@ describe("Daemon — Decomposition", () => {
       await handle.daemon.start();
 
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-1", parent_id: null, state: "completed" }),
+        createMockTask({ id: "task-1", parent_id: null, state: TaskStates.completed }),
       );
       handle.taskEngine.getTasksByState.mockReturnValue([]);
       handle.taskEngine.getQueuedByPriority.mockReturnValue([]);
@@ -174,7 +208,7 @@ describe("Daemon — Decomposition", () => {
       });
 
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([
-        createMockTask({ id: "task-1", state: "queued" }),
+        createMockTask({ id: "task-1", state: TaskStates.queued }),
       ]);
 
       await handle.daemon.tick();
@@ -204,7 +238,7 @@ describe("Daemon — Decomposition", () => {
         phaseOutputs: new Map(),
       });
 
-      const parentTask = createMockTask({ id: "parent-1", state: "queued" });
+      const parentTask = createMockTask({ id: "parent-1", state: TaskStates.queued });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([parentTask]);
       handle.taskEngine.getTask.mockReturnValue(parentTask);
 
@@ -227,14 +261,14 @@ describe("Daemon — Decomposition", () => {
 
       const parent = createMockTask({
         id: "parent-1",
-        state: "active",
-        sub_state: "supervising",
+        state: TaskStates.active,
+        sub_state: SubStates.supervising,
       });
 
       const child1 = createMockTask({
         id: "child-1",
         title: "Schema changes",
-        state: "completed",
+        state: TaskStates.completed,
         description: "Added new schemas",
         workspace: {
           repo: "test/repo",
@@ -271,12 +305,12 @@ describe("Daemon — Decomposition", () => {
       handle.taskEngine.getTasksByState.mockReturnValue([]);
       handle.taskEngine.getQueuedByPriority.mockReturnValue([]);
 
-      const callback = handle.getSubscriptionCallback("task.children_all_done");
+      const callback = handle.getSubscriptionCallback(EventTypes["task.children_all_done"]);
       expect(callback).toBeDefined();
 
       callback?.({
         id: "evt-1",
-        type: "task.children_all_done",
+        type: EventTypes["task.children_all_done"],
         source: "daemon",
         task_id: "parent-1",
         sequence: 1,
@@ -315,13 +349,13 @@ describe("Daemon — Decomposition", () => {
 
       const parent = createMockTask({
         id: "parent-1",
-        state: "active",
-        sub_state: "supervising",
+        state: TaskStates.active,
+        sub_state: SubStates.supervising,
       });
       const child = createMockTask({
         id: "child-1",
         parent_id: "parent-1",
-        state: "completed",
+        state: TaskStates.completed,
       });
 
       handle.taskEngine.getTask.mockImplementation((id: string) => {
@@ -344,13 +378,17 @@ describe("Daemon — Decomposition", () => {
       });
       handle.orchestrator.executeTask.mockReturnValue(slotPromise);
 
-      const otherTask = createMockTask({ id: "other-1", state: "queued", sub_state: null });
+      const otherTask = createMockTask({
+        id: "other-1",
+        state: TaskStates.queued,
+        sub_state: null,
+      });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([otherTask]);
       await handle.daemon.tick();
 
       // Slot is now occupied by other-1. Fire children_all_done event.
       const subscribeCall = handle.eventBus.subscribe.mock.calls.find(
-        (call: unknown[]) => call[1] === "task.children_all_done",
+        (call: unknown[]) => call[1] === EventTypes["task.children_all_done"],
       );
       expect(subscribeCall).toBeDefined();
 
@@ -358,7 +396,7 @@ describe("Daemon — Decomposition", () => {
       handler({
         id: "evt-1",
         sequence: 1,
-        type: "task.children_all_done",
+        type: EventTypes["task.children_all_done"],
         source: "daemon",
         task_id: "parent-1",
         payload: {
@@ -374,7 +412,7 @@ describe("Daemon — Decomposition", () => {
       const requeueCall = handle.taskEngine.requestTransition.mock.calls.find(
         (call: unknown[]) =>
           call[0] === "parent-1" &&
-          call[1] === "queued" &&
+          call[1] === TaskStates.queued &&
           (call[3] as string).includes("slot_unavailable"),
       );
       expect(requeueCall).toBeDefined();
@@ -389,7 +427,9 @@ describe("Daemon — Decomposition", () => {
       // Should NOT have transitioned to integrating
       const integratingCall = handle.taskEngine.requestTransition.mock.calls.find(
         (call: unknown[]) =>
-          call[0] === "parent-1" && call[1] === "active" && call[2] === "integrating",
+          call[0] === "parent-1" &&
+          call[1] === TaskStates.active &&
+          call[2] === SubStates.integrating,
       );
       expect(integratingCall).toBeUndefined();
 

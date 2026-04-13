@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { Phases } from "../../schemas/orchestrator.js";
+import { CascadePolicies, SubStates, TaskStates } from "../../schemas/task.js";
 import type { Task } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import { createAndonCord } from "./andon-cord.js";
@@ -79,12 +82,12 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
     task: {
       id: "task-001",
       external_ref: null,
-      state: "active",
-      sub_state: "working",
+      state: TaskStates.active,
+      sub_state: SubStates.working,
       phase: null,
       parent_id: null,
       children: [],
-      cascade_policy: "pause_siblings",
+      cascade_policy: CascadePolicies.pause_siblings,
       title: "Test task",
       description: "A test task",
       source_text: "Test",
@@ -181,7 +184,7 @@ describe("WorkspaceLifecycle", () => {
       (dispatch as { resume_from: unknown }).resume_from = {
         id: "cp-001",
         session_id: "session-prev",
-        phase: "research",
+        phase: Phases.research,
       };
 
       wl.setupWorkspace(dispatch);
@@ -212,7 +215,7 @@ describe("WorkspaceLifecycle", () => {
       (dispatch as { resume_from: unknown }).resume_from = {
         id: "cp-001",
         session_id: "session-prev",
-        phase: "research",
+        phase: Phases.research,
       };
 
       wl.createSession(dispatch);
@@ -234,13 +237,17 @@ describe("WorkspaceLifecycle", () => {
 
       const dispatch = createDispatch();
       notifications.notify({
-        kind: "milestone",
+        kind: NotificationKinds.milestone,
         taskId: dispatch.task.id,
         message: "Task started",
       });
 
       expect(notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "milestone", taskId: "task-001", message: "Task started" }),
+        expect.objectContaining({
+          kind: NotificationKinds.milestone,
+          taskId: "task-001",
+          message: "Task started",
+        }),
       );
     });
   });
@@ -256,14 +263,14 @@ describe("WorkspaceLifecycle", () => {
         external_ref: { type: "test_issue", repo: "org/repo", id: "7" },
       } as Partial<Task>);
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: dispatch.task.id,
         message: "Starting work",
       });
 
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           taskId: "task-001",
           message: "Starting work",
         }),
@@ -279,7 +286,11 @@ describe("WorkspaceLifecycle", () => {
       };
 
       expect(() =>
-        notifications.notify({ kind: "ticket_comment", taskId: "task-001", message: "test" }),
+        notifications.notify({
+          kind: NotificationKinds.ticket_comment,
+          taskId: "task-001",
+          message: "test",
+        }),
       ).not.toThrow();
     });
   });

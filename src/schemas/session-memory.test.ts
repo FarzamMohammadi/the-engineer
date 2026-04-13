@@ -2,16 +2,23 @@ import { describe, expect, it } from "vitest";
 
 const HEX_32 = /^[0-9a-f]{32}$/;
 
+import { Phases } from "./orchestrator.js";
 import {
   CheckpointReasonSchema,
+  CheckpointReasons,
   CheckpointSchema,
   JournalEntrySchema,
   JournalEntryTypeSchema,
+  JournalEntryTypes,
   KnowledgeConfidenceSchema,
+  KnowledgeConfidences,
   KnowledgeDomainSchema,
+  KnowledgeDomains,
   KnowledgeEntrySchema,
   KnowledgeScopeSchema,
+  KnowledgeScopes,
   SessionEndReasonSchema,
+  SessionEndReasons,
   SessionSchema,
   knowledgeId,
 } from "./session-memory.js";
@@ -37,7 +44,7 @@ describe("SessionSchema", () => {
     const completed = {
       ...validSession,
       ended_at: "2026-03-10T14:00:00.000Z",
-      end_reason: "completed" as const,
+      end_reason: SessionEndReasons.completed,
     };
     expect(SessionSchema.parse(completed)).toEqual(completed);
   });
@@ -71,8 +78,8 @@ describe("JournalEntrySchema", () => {
     session_id: "01SESSION",
     task_id: "01TASK",
     timestamp: "2026-03-10T12:00:00.000Z",
-    phase: "research",
-    type: "action",
+    phase: Phases.research,
+    type: JournalEntryTypes.action,
     summary: "Read auth module source code",
     detail: null,
     action_type: "file_read",
@@ -127,7 +134,7 @@ describe("CheckpointSchema", () => {
     id: "01CHK",
     session_id: "01SESSION",
     task_id: "01TASK",
-    phase: "research",
+    phase: Phases.research,
     phase_progress: "researched auth module, found 3 patterns",
     context_summary: "Investigating authentication patterns in the codebase",
     key_findings: ["Uses JWT tokens", "Middleware pattern for auth"],
@@ -135,7 +142,7 @@ describe("CheckpointSchema", () => {
     next_action: "Read the token refresh endpoint",
     last_event_id: "01EVTID",
     workspace_ref: { branch: "engineer/42-auth", last_commit: "abc123" },
-    reason: "phase_transition",
+    reason: CheckpointReasons.phase_transition,
     timestamp: "2026-03-10T12:30:00.000Z",
     journal_offset: 5,
   };
@@ -173,18 +180,18 @@ describe("CheckpointSchema", () => {
 describe("KnowledgeEntrySchema", () => {
   const validKnowledge = {
     id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-    scope: "repo",
+    scope: KnowledgeScopes.repo,
     repo_scope: "owner/repo",
-    domain: "conventions",
+    domain: KnowledgeDomains.conventions,
     key: "test framework",
     body: "Uses Vitest with forks pool for all test tiers",
-    confidence: "observed",
+    confidence: KnowledgeConfidences.observed,
     evidence: [{ task_id: "01TASK", description: "saw this pattern in 5 files during task #42" }],
     created_at: "2026-03-10T12:00:00.000Z",
     last_confirmed: "2026-03-10T12:00:00.000Z",
     superseded_by: null,
     source_task_id: "01TASK",
-    source_phase: "research",
+    source_phase: Phases.research,
   };
 
   it("parses a valid knowledge entry", () => {
@@ -192,7 +199,7 @@ describe("KnowledgeEntrySchema", () => {
   });
 
   it("accepts null repo_scope for user-scoped knowledge", () => {
-    const userScoped = { ...validKnowledge, scope: "user", repo_scope: null };
+    const userScoped = { ...validKnowledge, scope: KnowledgeScopes.user, repo_scope: null };
     expect(KnowledgeEntrySchema.parse(userScoped)).toBeDefined();
   });
 

@@ -1,15 +1,16 @@
-import type {
-  FormattedMessage,
-  InboundMessage,
-  IssueOptions,
-  IssueResult,
-  IssueUpdates,
-  MessageType,
-  ReconciliationResult,
-  SendResult,
-  SyncMetadata,
-  Target,
-  TaskReconciliationInput,
+import {
+  AdapterErrorSeverities,
+  type FormattedMessage,
+  type InboundMessage,
+  type IssueOptions,
+  type IssueResult,
+  type IssueUpdates,
+  type MessageType,
+  type ReconciliationResult,
+  type SendResult,
+  type SyncMetadata,
+  type Target,
+  type TaskReconciliationInput,
 } from "../schemas/adapters.js";
 import type { ExternalRef } from "../schemas/task.js";
 import { BaseAdapter } from "./base.js";
@@ -40,7 +41,7 @@ async function wrapAsync<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw new AdapterMethodError(
       createAdapterError("internal_error", error instanceof Error ? error.message : String(error), {
-        severity: "fatal",
+        severity: AdapterErrorSeverities.fatal,
       }),
     );
   }

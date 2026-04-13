@@ -4,6 +4,15 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { Phases } from "../schemas/orchestrator.js";
+import {
+  CheckpointReasons,
+  JournalEntryTypes,
+  KnowledgeConfidences,
+  KnowledgeDomains,
+  KnowledgeScopes,
+} from "../schemas/session-memory.js";
+import { TaskStates } from "../schemas/task.js";
 import {
   DatabaseError,
   MigrationError,
@@ -101,7 +110,7 @@ describe("createInMemoryDatabase", () => {
         `INSERT INTO tasks (id, state, title, created_at, last_transition_at)
          VALUES (?, ?, ?, ?, ?)`,
       )
-      .run("01TEST", "requirements_gathering", "Test task", now, now);
+      .run("01TEST", TaskStates.requirements_gathering, "Test task", now, now);
 
     const row = handle.db.prepare("SELECT * FROM tasks WHERE id = ?").get("01TEST") as {
       title: string;
@@ -308,7 +317,7 @@ describe("table structure", () => {
         .prepare(
           "INSERT INTO tasks (id, state, cascade_policy, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
-        .run("01TEST", "requirements_gathering", "invalid_policy", "Test", now, now),
+        .run("01TEST", TaskStates.requirements_gathering, "invalid_policy", "Test", now, now),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
@@ -321,7 +330,7 @@ describe("table structure", () => {
         .prepare(
           "INSERT INTO tasks (id, state, priority, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
-        .run("01TEST", "requirements_gathering", 101, "Test", now, now),
+        .run("01TEST", TaskStates.requirements_gathering, 101, "Test", now, now),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
@@ -338,14 +347,14 @@ describe("table structure", () => {
         .run(
           "hash123",
           "invalid_scope",
-          "patterns",
+          KnowledgeDomains.patterns,
           "k",
           "v",
-          "observed",
+          KnowledgeConfidences.observed,
           now,
           now,
           "t1",
-          "research",
+          Phases.research,
         ),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
@@ -359,7 +368,7 @@ describe("table structure", () => {
           `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run("j1", "s1", "t1", new Date().toISOString(), "research", "invalid_type", "test"),
+        .run("j1", "s1", "t1", new Date().toISOString(), Phases.research, "invalid_type", "test"),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
@@ -389,7 +398,7 @@ describe("table structure", () => {
           "c1",
           "s1",
           "t1",
-          "research",
+          Phases.research,
           "50%",
           "summary",
           "next",
@@ -409,7 +418,7 @@ describe("table structure", () => {
       .prepare(
         "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("01TEST", "requirements_gathering", "Test task", now, now);
+      .run("01TEST", TaskStates.requirements_gathering, "Test task", now, now);
 
     const row = handle.db
       .prepare("SELECT children, team, related, decisions FROM tasks WHERE id = ?")
@@ -490,7 +499,7 @@ describe("table structure", () => {
       .prepare(
         "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("t1", "requirements_gathering", "Test", now, now);
+      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
 
     // Valid transition
     handle.db
@@ -498,7 +507,7 @@ describe("table structure", () => {
         `INSERT INTO state_transitions (id, task_id, from_state, to_state, reason, timestamp, triggered_by)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("st1", "t1", "requirements_gathering", "queued", "ready", now, "test");
+      .run("st1", "t1", TaskStates.requirements_gathering, TaskStates.queued, "ready", now, "test");
 
     // Invalid from_state
     expect(() =>
@@ -507,7 +516,7 @@ describe("table structure", () => {
           `INSERT INTO state_transitions (id, task_id, from_state, to_state, reason, timestamp, triggered_by)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run("st2", "t1", "bogus", "queued", "reason", now, "test"),
+        .run("st2", "t1", "bogus", TaskStates.queued, "reason", now, "test"),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 });
@@ -529,7 +538,15 @@ describe("foreign key enforcement", () => {
           `INSERT INTO state_transitions (id, task_id, from_state, to_state, reason, timestamp, triggered_by)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run("st1", "nonexistent", "requirements_gathering", "queued", "reason", now, "test"),
+        .run(
+          "st1",
+          "nonexistent",
+          TaskStates.requirements_gathering,
+          TaskStates.queued,
+          "reason",
+          now,
+          "test",
+        ),
     ).toThrow(FK_CONSTRAINT_PATTERN);
   });
 
@@ -554,7 +571,7 @@ describe("foreign key enforcement", () => {
           `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run("j1", "nonexistent", "t1", now, "research", "action", "test"),
+        .run("j1", "nonexistent", "t1", now, Phases.research, JournalEntryTypes.action, "test"),
     ).toThrow(FK_CONSTRAINT_PATTERN);
   });
 
@@ -567,7 +584,7 @@ describe("foreign key enforcement", () => {
       .prepare(
         "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("t1", "requirements_gathering", "Test", now, now);
+      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
 
     // Create session referencing task
     handle.db
@@ -580,7 +597,7 @@ describe("foreign key enforcement", () => {
         `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("j1", "s1", "t1", now, "research", "action", "test entry");
+      .run("j1", "s1", "t1", now, Phases.research, JournalEntryTypes.action, "test entry");
 
     // Verify all exist
     const journal = handle.db.prepare("SELECT * FROM journal_entries WHERE id = ?").get("j1");
@@ -603,7 +620,7 @@ describe("JSON default completeness", () => {
       .prepare(
         "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("t1", "requirements_gathering", "Test", now, now);
+      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
 
     const row = handle.db
       .prepare(
@@ -628,7 +645,7 @@ describe("JSON default completeness", () => {
       .prepare(
         "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("t1", "requirements_gathering", "Test", now, now);
+      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
     handle.db
       .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
       .run("s1", "t1", now);
@@ -638,7 +655,7 @@ describe("JSON default completeness", () => {
         `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("j1", "s1", "t1", now, "research", "action", "test");
+      .run("j1", "s1", "t1", now, Phases.research, JournalEntryTypes.action, "test");
 
     const row = handle.db.prepare("SELECT tags FROM journal_entries WHERE id = ?").get("j1") as {
       tags: string;
@@ -654,7 +671,7 @@ describe("JSON default completeness", () => {
       .prepare(
         "INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("t1", "requirements_gathering", "Test", now, now);
+      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
     handle.db
       .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
       .run("s1", "t1", now);
@@ -664,7 +681,19 @@ describe("JSON default completeness", () => {
         `INSERT INTO checkpoints (id, session_id, task_id, phase, phase_progress, context_summary, next_action, last_event_id, reason, timestamp, journal_offset)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("c1", "s1", "t1", "research", "50%", "summary", "next", "evt1", "periodic", now, 0);
+      .run(
+        "c1",
+        "s1",
+        "t1",
+        Phases.research,
+        "50%",
+        "summary",
+        "next",
+        "evt1",
+        CheckpointReasons.periodic,
+        now,
+        0,
+      );
 
     const row = handle.db
       .prepare("SELECT key_findings, open_questions FROM checkpoints WHERE id = ?")
@@ -682,7 +711,18 @@ describe("JSON default completeness", () => {
         `INSERT INTO knowledge (id, scope, domain, key, body, confidence, created_at, last_confirmed, source_task_id, source_phase)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("hash1", "repo", "patterns", "k", "v", "observed", now, now, "t1", "research");
+      .run(
+        "hash1",
+        KnowledgeScopes.repo,
+        KnowledgeDomains.patterns,
+        "k",
+        "v",
+        KnowledgeConfidences.observed,
+        now,
+        now,
+        "t1",
+        Phases.research,
+      );
 
     const row = handle.db.prepare("SELECT evidence FROM knowledge WHERE id = ?").get("hash1") as {
       evidence: string;
@@ -800,7 +840,7 @@ describe("foreign key enforcement during migrations", () => {
         .prepare(
           "INSERT INTO tasks (id, state, title, session_id, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
-        .run("t1", "requirements_gathering", "Test", "no-such-session", now, now),
+        .run("t1", TaskStates.requirements_gathering, "Test", "no-such-session", now, now),
     ).toThrow(FK_CONSTRAINT_PATTERN);
   });
 

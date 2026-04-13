@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   AdapterErrorSchema,
+  AdapterErrorSeverities,
   AdapterErrorSeveritySchema,
   AdapterTypeSchema,
+  AdapterTypes,
   BranchProtectionSchema,
   CommentResultSchema,
   ContactInfoSchema,
@@ -21,7 +23,9 @@ import {
   MergeResultSchema,
   MergeStrategySchema,
   MessageTypeSchema,
+  MessageTypes,
   NotificationLevelSchema,
+  NotificationLevels,
   PROptionsSchema,
   PRResultSchema,
   PRStatusSchema,
@@ -29,6 +33,7 @@ import {
   PersonSchema,
   PluginHealthRecordSchema,
   PluginHealthStateSchema,
+  PluginHealthStates,
   PluginManifestSchema,
   ReconciliationResultSchema,
   RegistrationResultSchema,
@@ -37,6 +42,7 @@ import {
   SendResultSchema,
   SideEffectSchema,
   SideEffectTypeSchema,
+  SideEffectTypes,
   SyncMetadataSchema,
   TargetSchema,
   TaskReconciliationInputSchema,
@@ -44,6 +50,7 @@ import {
   ToolResultSchema,
   TriggerEventSchema,
 } from "./adapters.js";
+import { ActionClasses } from "./task.js";
 
 // ── Universal Adapter Contract ──────────────────────────────────────────────────
 
@@ -66,7 +73,7 @@ describe("AdapterTypeSchema", () => {
 describe("PluginManifestSchema", () => {
   const minimal = {
     id: "github-trigger",
-    type: "trigger",
+    type: AdapterTypes.trigger,
     version: "1.0.0",
     name: "GitHub Issues Trigger",
     description: "Polls GitHub for new issues",
@@ -140,7 +147,7 @@ describe("AdapterErrorSchema", () => {
     message: "Too many requests",
     retryable: true,
     retry_after_ms: 5000,
-    severity: "warning",
+    severity: AdapterErrorSeverities.warning,
   };
 
   it("parses valid error", () => {
@@ -242,9 +249,9 @@ describe("FormattedMessageSchema", () => {
   it("parses valid data with nested metadata", () => {
     const msg = FormattedMessageSchema.parse({
       content: "Task completed!",
-      metadata: { task_id: "01ABC", type: "milestone" },
+      metadata: { task_id: "01ABC", type: MessageTypes.milestone },
     });
-    expect(msg.metadata.type).toBe("milestone");
+    expect(msg.metadata.type).toBe(MessageTypes.milestone);
   });
 
   it("rejects invalid message type in metadata", () => {
@@ -276,7 +283,7 @@ describe("SendResultSchema", () => {
         message: "Too many requests",
         retryable: true,
         retry_after_ms: 5000,
-        severity: "warning",
+        severity: AdapterErrorSeverities.warning,
       },
     });
     expect(result.error?.code).toBe("rate_limited");
@@ -509,7 +516,7 @@ describe("ToolDescriptionSchema", () => {
       name: "bash",
       description: "Execute shell commands",
       parameters: { type: "object" },
-      action_classes: ["read", "write", "test"],
+      action_classes: [ActionClasses.read, ActionClasses.write, ActionClasses.test],
     });
     expect(desc.action_classes).toHaveLength(3);
   });
@@ -536,7 +543,7 @@ describe("SideEffectTypeSchema", () => {
 describe("SideEffectSchema", () => {
   it("parses valid data", () => {
     const effect = SideEffectSchema.parse({
-      type: "file_written",
+      type: SideEffectTypes.file_written,
       details: { path: "src/auth.ts", bytes: 1024 },
     });
     expect(effect.type).toBe("file_written");
@@ -548,7 +555,7 @@ describe("ToolResultSchema", () => {
     const result = ToolResultSchema.parse({
       success: true,
       output: "File written",
-      side_effects: [{ type: "file_written", details: { path: "src/auth.ts" } }],
+      side_effects: [{ type: SideEffectTypes.file_written, details: { path: "src/auth.ts" } }],
       error: null,
     });
     expect(result.side_effects).toHaveLength(1);
@@ -564,7 +571,7 @@ describe("ToolResultSchema", () => {
         message: "Command timed out",
         retryable: true,
         retry_after_ms: null,
-        severity: "error",
+        severity: AdapterErrorSeverities.error,
       },
     });
     expect(result.error?.code).toBe("timeout");
@@ -662,7 +669,7 @@ describe("MergeResultSchema", () => {
         message: "Conflicts in 2 files",
         retryable: false,
         retry_after_ms: null,
-        severity: "error",
+        severity: AdapterErrorSeverities.error,
       },
     });
     expect(result.error?.code).toBe("merge_conflict");
@@ -771,7 +778,7 @@ describe("PersonSchema", () => {
       { channel: "github", handle: "farzam" },
     ],
     preferences: {
-      notification_level: "milestones",
+      notification_level: NotificationLevels.milestones,
       quiet_hours: null,
     },
   };
@@ -785,7 +792,7 @@ describe("PersonSchema", () => {
     const person = PersonSchema.parse({
       ...validPerson,
       preferences: {
-        notification_level: "all",
+        notification_level: NotificationLevels.all,
         quiet_hours: { start: "22:00", end: "08:00" },
       },
     });
@@ -832,7 +839,7 @@ describe("PluginHealthRecordSchema", () => {
   it("parses valid data with defaults", () => {
     const record = PluginHealthRecordSchema.parse({
       plugin_id: "github-trigger",
-      state: "healthy",
+      state: PluginHealthStates.healthy,
       last_check_at: "2026-03-10T12:00:00.000Z",
       last_healthy_at: "2026-03-10T12:00:00.000Z",
       last_error: null,
@@ -843,7 +850,7 @@ describe("PluginHealthRecordSchema", () => {
   it("accepts override of consecutive_failures default", () => {
     const record = PluginHealthRecordSchema.parse({
       plugin_id: "github-trigger",
-      state: "unhealthy",
+      state: PluginHealthStates.unhealthy,
       consecutive_failures: 3,
       last_check_at: null,
       last_healthy_at: null,

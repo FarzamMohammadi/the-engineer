@@ -5,6 +5,7 @@ import {
   type TestDatabaseHandle,
   createTestDatabase,
 } from "../../../test/helpers/test-database.js";
+import { SessionEndReasons } from "../../schemas/session-memory.js";
 import { SessionStore } from "./sessions.js";
 
 let testDb: TestDatabaseHandle;
@@ -68,17 +69,17 @@ describe("SessionStore", () => {
     const taskId = insertTask();
     const session = store.createSession({ taskId });
 
-    store.endSession(session.id, "completed");
+    store.endSession(session.id, SessionEndReasons.completed);
 
     const chain = store.getSessionChain(taskId);
     expect(chain).toHaveLength(1);
     expect(chain[0]!.ended_at).toBeTruthy();
-    expect(chain[0]!.end_reason).toBe("completed");
+    expect(chain[0]!.end_reason).toBe(SessionEndReasons.completed);
   });
 
   it("throws for non-existent session on endSession", () => {
     setup();
-    expect(() => store.endSession("nonexistent", "completed")).toThrow(
+    expect(() => store.endSession("nonexistent", SessionEndReasons.completed)).toThrow(
       'Session "nonexistent" not found',
     );
   });
@@ -88,9 +89,9 @@ describe("SessionStore", () => {
     const taskId = insertTask();
 
     const s1 = store.createSession({ taskId });
-    store.endSession(s1.id, "preempted");
+    store.endSession(s1.id, SessionEndReasons.preempted);
     const s2 = store.createSession({ taskId, previousSessionId: s1.id });
-    store.endSession(s2.id, "new_session");
+    store.endSession(s2.id, SessionEndReasons.new_session);
     const s3 = store.createSession({ taskId, previousSessionId: s2.id });
 
     const chain = store.getSessionChain(taskId);

@@ -27,8 +27,11 @@ import { OrchestratorConfigSchema } from "../../src/schemas/config.js";
 import type { Dispatch } from "../../src/schemas/ephemeral.js";
 import type { Event } from "../../src/schemas/events.js";
 import type { Phase } from "../../src/schemas/orchestrator.js";
+import { Complexities, Phases } from "../../src/schemas/orchestrator.js";
 import type { Checkpoint, Session } from "../../src/schemas/session-memory.js";
+import { CheckpointReasons } from "../../src/schemas/session-memory.js";
 import type { Task } from "../../src/schemas/task.js";
+import { CascadePolicies, TaskStates } from "../../src/schemas/task.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
 
 // ── Phase Directory Map (mirrors PHASE_DIR_MAP in llm-caller.ts) ─────────────
@@ -64,7 +67,7 @@ function writeSessionResultFiles(
       status: "ready",
       next_phase: phase === "integration" ? "integration" : "research",
       summary: `Mock ${phase} complete`,
-      complexity: "moderate",
+      complexity: Complexities.moderate,
     };
     writeFileSync(path.join(phaseDir, "session-result.json"), JSON.stringify(resultData));
 
@@ -76,9 +79,9 @@ function writeSessionResultFiles(
         path.join(refinementDir, "session-result.json"),
         JSON.stringify({
           status: "ready",
-          next_phase: "demo_prep",
+          next_phase: Phases.demo_prep,
           summary: "Mock refinement complete",
-          complexity: "moderate",
+          complexity: Complexities.moderate,
         }),
       );
     }
@@ -150,12 +153,12 @@ export function createMockTask(overrides?: Partial<Task>): Task {
   return {
     id: "task-001",
     external_ref: null,
-    state: "active",
+    state: TaskStates.active,
     sub_state: "working",
     phase: null,
     parent_id: null,
     children: [],
-    cascade_policy: "pause_siblings",
+    cascade_policy: CascadePolicies.pause_siblings,
     title: "Test task",
     description: "A test task for orchestrator testing",
     source_text: "Test source",
@@ -205,7 +208,7 @@ export function createMockCheckpoint(overrides?: Partial<Checkpoint>): Checkpoin
     id: "checkpoint-001",
     session_id: "session-prev",
     task_id: "task-001",
-    phase: "research",
+    phase: Phases.research,
     phase_progress: "Completed research",
     context_summary: "Task context summary",
     key_findings: ["finding 1"],
@@ -213,7 +216,7 @@ export function createMockCheckpoint(overrides?: Partial<Checkpoint>): Checkpoin
     next_action: "Begin planning phase",
     last_event_id: "event-001",
     workspace_ref: null,
-    reason: "phase_transition",
+    reason: CheckpointReasons.phase_transition,
     timestamp: new Date().toISOString(),
     journal_offset: 0,
     ...overrides,

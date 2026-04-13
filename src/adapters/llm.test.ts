@@ -8,6 +8,7 @@ import type {
   LLMCapabilities,
   PluginManifest,
 } from "../schemas/adapters.js";
+import { AdapterErrorSeverities } from "../schemas/adapters.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 import { LLMAdapter } from "./llm.js";
@@ -123,7 +124,7 @@ describe("LLMAdapter", () => {
         expect(error).toBeInstanceOf(AdapterMethodError);
         if (error instanceof AdapterMethodError) {
           expect(error.adapterError.code).toBe("internal_error");
-          expect(error.adapterError.severity).toBe("fatal");
+          expect(error.adapterError.severity).toBe(AdapterErrorSeverities.fatal);
         }
       }
     });

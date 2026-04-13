@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { OrchestratorConfig } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { ComplexitySchema, Phases } from "../../schemas/orchestrator.js";
 import {
@@ -24,6 +25,7 @@ import { gatherRepoContextSafe } from "./prompts/index.js";
 import {
   type ExecuteTaskResult,
   type OrchestratorContext,
+  Outcomes,
   type PipelineState,
   type PreemptionGate,
   buildPhaseSequence,
@@ -416,7 +418,7 @@ function emitLoopbackAlert(
   const alertContent = `Self-review loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`;
 
   // Deliver alert via centralized notification router
-  ctx.notifications.notify({ kind: "alert", taskId, message: alertContent });
+  ctx.notifications.notify({ kind: NotificationKinds.alert, taskId, message: alertContent });
 
   ctx.sessionMemory.addJournalEntry({
     sessionId,
@@ -505,7 +507,7 @@ async function tryCommitPushAndCreatePR(
 
   return {
     kind: "exit",
-    result: { outcome: "review_pending", phase, phaseOutputs: priorOutputs },
+    result: { outcome: Outcomes.review_pending, phase, phaseOutputs: priorOutputs },
   };
 }
 
@@ -645,7 +647,7 @@ async function handlePostPhaseActions(
         completion: {
           kind: "exit",
           result: {
-            outcome: "blocked",
+            outcome: Outcomes.blocked,
             phase,
             reason: "Awaiting human input — see requirements.md",
           },
@@ -991,7 +993,7 @@ export async function runPhasePipeline(
         ctx.taskEngine.updateTaskField(taskId, "not_before", notBefore);
 
         ctx.notifications.notify({
-          kind: "alert",
+          kind: NotificationKinds.alert,
           taskId,
           message: `LLM adapter unavailable — task blocked, will retry in ${String(Math.round(backoffMs / 60_000))} minutes. Respond to unblock manually.`,
         });
@@ -1000,7 +1002,7 @@ export async function runPhasePipeline(
 
         return endPipelineSpan(
           {
-            outcome: "blocked" as const,
+            outcome: Outcomes.blocked,
             phase,
             reason: `LLM adapter unavailable: ${error.lastError}`,
           },
@@ -1121,10 +1123,10 @@ export async function runPhasePipeline(
     taskId,
     sessionId,
     phasesRun: navigator.phasesRun(),
-    outcome: "completed",
+    outcome: Outcomes.completed,
   });
   return endPipelineSpan(
-    { outcome: "completed", phaseOutputs: priorOutputs },
+    { outcome: Outcomes.completed, phaseOutputs: priorOutputs },
     navigator.phasesRun(),
   );
 }

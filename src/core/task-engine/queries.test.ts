@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTestDatabase } from "../../../test/helpers/test-database.js";
 import type { TestDatabaseHandle } from "../../../test/helpers/test-database.js";
-import { TaskStates } from "../../schemas/task.js";
+import { CascadePolicies, TaskStates } from "../../schemas/task.js";
 import { TaskQueries } from "./queries.js";
 
 describe("TaskQueries", () => {
@@ -52,7 +52,7 @@ describe("TaskQueries", () => {
         (overrides["phase"] as string) ?? null,
         (overrides["parent_id"] as string) ?? null,
         "[]",
-        "pause_siblings",
+        CascadePolicies.pause_siblings,
         (overrides["title"] as string) ?? `Task ${id}`,
         "",
         "",

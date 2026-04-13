@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
+import { TaskStates } from "../../schemas/task.js";
 import { createPreemptionManager } from "./preemption-manager.js";
 import type { PreemptionManagerContext } from "./types.js";
 
@@ -190,7 +191,7 @@ describe("PreemptionManager", () => {
 
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
       "active-1",
-      "queued",
+      TaskStates.queued,
       null,
       "preemption_timeout",
       "daemon",

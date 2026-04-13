@@ -4,6 +4,7 @@ import {
   type TestObserverHandle,
   createTestObserver,
 } from "../../../test/helpers/test-observer.js";
+import { ObservationLevels } from "../../schemas/observer.js";
 import { ObserverStream } from "./stream.js";
 import { ObservationType } from "./types.js";
 import type { Observation } from "./types.js";
@@ -78,7 +79,7 @@ describe("Observer", () => {
           trace_id: "trace-1",
           phase: "intake_analysis",
           session_id: "session-1",
-          level: "debug",
+          level: ObservationLevels.debug,
         },
       );
 
@@ -439,7 +440,7 @@ describe("Observer", () => {
         {},
         { task_id: "task-2", trace_id: "trace-2", phase: "execution" },
       );
-      handle.observer.observe("lifecycle", "shutdown", {}, { level: "warn" });
+      handle.observer.observe("lifecycle", "shutdown", {}, { level: ObservationLevels.warn });
     });
 
     it("filters by type", () => {
@@ -464,7 +465,7 @@ describe("Observer", () => {
     });
 
     it("filters by level", () => {
-      const results = handle.observer.query({ level: "warn" });
+      const results = handle.observer.query({ level: ObservationLevels.warn });
       expect(results).toHaveLength(1);
       expect(results[0]?.name).toBe("shutdown");
     });

@@ -50,8 +50,14 @@ export const ObservationType = {
 export const ObservationLevelSchema = z.enum(["debug", "info", "warn", "error"]);
 export type ObservationLevel = z.infer<typeof ObservationLevelSchema>;
 
+/** Constant enum values for ObservationLevel. Use instead of raw strings. */
+export const ObservationLevels = ObservationLevelSchema.enum;
+
 export const ObservationStatusSchema = z.enum(["ok", "error"]);
 export type ObservationStatus = z.infer<typeof ObservationStatusSchema>;
+
+/** Constant enum values for ObservationStatus. Use instead of raw strings. */
+export const ObservationStatuses = ObservationStatusSchema.enum;
 
 // ── Span Options ──────────────────────────────────────────────────────────────
 

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { EventBus, matchesPattern } from "../../src/core/event-bus/index.js";
 import type { Event } from "../../src/schemas/events.js";
+import { EventTypes } from "../../src/schemas/events.js";
+import { TaskStates } from "../../src/schemas/task.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
 import { createTestObserverFacade } from "../helpers/test-observer-facade.js";
 
@@ -29,7 +31,7 @@ describe("EventBus delivery (integration)", () => {
       bus.subscribe("sub-2", "task.created", (e) => received2.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -53,7 +55,7 @@ describe("EventBus delivery (integration)", () => {
       bus.subscribe("glob-sub", "task.*", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -67,14 +69,14 @@ describe("EventBus delivery (integration)", () => {
       });
 
       bus.publish({
-        type: "task.state_changed",
+        type: EventTypes["task.state_changed"],
         source: "test",
         task_id: "t1",
         payload: {
           task_id: "t1",
-          from_state: "requirements_gathering",
+          from_state: TaskStates.requirements_gathering,
           from_sub: null,
-          to_state: "queued",
+          to_state: TaskStates.queued,
           to_sub: null,
           reason: "test",
           triggered_by: "test",
@@ -82,8 +84,8 @@ describe("EventBus delivery (integration)", () => {
       });
 
       expect(received).toHaveLength(2);
-      expect(received[0]?.type).toBe("task.created");
-      expect(received[1]?.type).toBe("task.state_changed");
+      expect(received[0]?.type).toBe(EventTypes["task.created"]);
+      expect(received[1]?.type).toBe(EventTypes["task.state_changed"]);
     });
 
     it("delivers to wildcard (*) subscriber for all events", () => {
@@ -92,7 +94,7 @@ describe("EventBus delivery (integration)", () => {
       bus.subscribe("wildcard", "*", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -106,7 +108,7 @@ describe("EventBus delivery (integration)", () => {
       });
 
       bus.publish({
-        type: "cost.incurred",
+        type: EventTypes["cost.incurred"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -131,7 +133,7 @@ describe("EventBus delivery (integration)", () => {
 
       for (let i = 0; i < 5; i++) {
         bus.publish({
-          type: "task.created",
+          type: EventTypes["task.created"],
           source: "test",
           task_id: `t${String(i)}`,
           payload: {
@@ -163,7 +165,7 @@ describe("EventBus delivery (integration)", () => {
       bus.subscribe("receiver", "task.created", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -187,7 +189,7 @@ describe("EventBus delivery (integration)", () => {
       bus.subscribe("unsub-test", "task.created", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -203,7 +205,7 @@ describe("EventBus delivery (integration)", () => {
       bus.unsubscribe("unsub-test");
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t2",
         payload: {
@@ -227,7 +229,7 @@ describe("EventBus delivery (integration)", () => {
       // Publish some events without a subscriber
       for (let i = 0; i < 3; i++) {
         bus.publish({
-          type: "task.created",
+          type: EventTypes["task.created"],
           source: "test",
           task_id: `t${String(i)}`,
           payload: {
@@ -258,7 +260,7 @@ describe("EventBus delivery (integration)", () => {
       setup();
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -271,7 +273,7 @@ describe("EventBus delivery (integration)", () => {
         },
       });
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t2",
         payload: {
@@ -293,7 +295,7 @@ describe("EventBus delivery (integration)", () => {
       setup();
 
       const e1 = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t1",
         payload: {
@@ -307,7 +309,7 @@ describe("EventBus delivery (integration)", () => {
       });
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "t2",
         payload: {

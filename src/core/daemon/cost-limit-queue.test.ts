@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import { createCostLimitQueue } from "./cost-limit-queue.js";
 import type { NotificationRouter } from "./notification-router.js";
 
@@ -8,8 +10,8 @@ function makeTask(overrides: Record<string, unknown> = {}) {
   return {
     id: "task-1",
     title: "Test task",
-    state: "active",
-    sub_state: "working",
+    state: TaskStates.active,
+    sub_state: SubStates.working,
     priority: 50,
     started_at: new Date(1_000_000).toISOString(),
     last_transition_at: new Date(1_000_000).toISOString(),
@@ -29,7 +31,7 @@ function makeNotifications(): NotificationRouter {
 describe("CostLimitQueue", () => {
   it("transitions active task to blocked and sends notification", () => {
     const taskEngine = {
-      getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-1", state: "active" })),
+      getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-1", state: TaskStates.active })),
       requestTransition: vi.fn().mockReturnValue({ success: true }),
     };
     const notifications = makeNotifications();
@@ -46,17 +48,17 @@ describe("CostLimitQueue", () => {
 
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
       "cost-1",
-      "blocked",
+      TaskStates.blocked,
       null,
       "cost_limit_reached",
       "daemon",
     );
     expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "cost_limit", taskId: "cost-1" }),
+      expect.objectContaining({ kind: NotificationKinds.cost_limit, taskId: "cost-1" }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: "cost-1",
         message: "Task blocked \u2014 cost limit reached.",
       }),
@@ -65,7 +67,7 @@ describe("CostLimitQueue", () => {
 
   it("drains the queue — subsequent process is a no-op", () => {
     const taskEngine = {
-      getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-2", state: "active" })),
+      getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-2", state: TaskStates.active })),
       requestTransition: vi.fn().mockReturnValue({ success: true }),
     };
     const notifications = makeNotifications();
@@ -87,7 +89,7 @@ describe("CostLimitQueue", () => {
 
   it("skips non-active tasks in the queue", () => {
     const taskEngine = {
-      getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-3", state: "blocked" })),
+      getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-3", state: TaskStates.blocked })),
       requestTransition: vi.fn(),
     };
     const notifications = makeNotifications();

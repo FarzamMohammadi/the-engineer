@@ -1,4 +1,5 @@
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import { type TaskState, TaskStates } from "../../schemas/task.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -43,7 +44,7 @@ export function handleQuery(payload: CommMessageReceivedPayload, deps: QueryHand
 
   // Route response through centralized notification router
   notifications.notify({
-    kind: "status_response",
+    kind: NotificationKinds.status_response,
     taskId: null,
     personId: payload.sender,
     message: response,

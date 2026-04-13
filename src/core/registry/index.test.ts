@@ -11,6 +11,7 @@ import {
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import type { AdapterType, PluginManifest } from "../../schemas/adapters.js";
+import { PluginHealthStates } from "../../schemas/adapters.js";
 import { Registry, type RegistryOptions } from "./index.js";
 
 // ── Test Helpers ──────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ describe("Registry", () => {
 
       const health = assertDefined(registry.getHealthRecord("test-trigger"));
 
-      expect(health.state).toBe("healthy");
+      expect(health.state).toBe(PluginHealthStates.healthy);
       expect(health.consecutive_failures).toBe(0);
       expect(health.last_check_at).toBeNull();
       expect(health.last_error).toBeNull();
@@ -337,7 +338,7 @@ describe("Registry", () => {
       registry.register(createManifest("trigger", "t1"), new FakeTriggerPlugin());
 
       const health = assertDefined(registry.getHealthRecord("t1"));
-      expect(health.state).toBe("healthy");
+      expect(health.state).toBe(PluginHealthStates.healthy);
     });
 
     it("transitions healthy → unhealthy on 1 failed check", async () => {
@@ -348,7 +349,7 @@ describe("Registry", () => {
       await registry.healthCheckAll();
 
       const health = assertDefined(registry.getHealthRecord("t1"));
-      expect(health.state).toBe("unhealthy");
+      expect(health.state).toBe(PluginHealthStates.unhealthy);
       expect(health.consecutive_failures).toBe(1);
     });
 
@@ -369,14 +370,16 @@ describe("Registry", () => {
       // Make unhealthy
       instance.setUnhealthy(true);
       await registry.healthCheckAll();
-      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe("unhealthy");
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(
+        PluginHealthStates.unhealthy,
+      );
 
       // Recover
       instance.setUnhealthy(false);
       await registry.healthCheckAll();
 
       const health = assertDefined(registry.getHealthRecord("t1"));
-      expect(health.state).toBe("healthy");
+      expect(health.state).toBe(PluginHealthStates.healthy);
       expect(health.consecutive_failures).toBe(0);
     });
 
@@ -389,15 +392,19 @@ describe("Registry", () => {
 
       // 1st fail: healthy → unhealthy
       await registry.healthCheckAll();
-      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe("unhealthy");
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(
+        PluginHealthStates.unhealthy,
+      );
 
       // 2nd fail: stays unhealthy
       await registry.healthCheckAll();
-      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe("unhealthy");
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(
+        PluginHealthStates.unhealthy,
+      );
 
       // 3rd fail: unhealthy → failed
       await registry.healthCheckAll();
-      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe("failed");
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(PluginHealthStates.failed);
       expect(assertDefined(registry.getHealthRecord("t1")).consecutive_failures).toBe(3);
     });
 
@@ -429,7 +436,7 @@ describe("Registry", () => {
       await registry.healthCheckAll(); // → healthy
 
       const health = assertDefined(registry.getHealthRecord("t1"));
-      expect(health.state).toBe("healthy");
+      expect(health.state).toBe(PluginHealthStates.healthy);
       expect(health.consecutive_failures).toBe(0);
     });
 
@@ -505,7 +512,7 @@ describe("Registry", () => {
       await registry.healthCheckAll();
 
       const health = assertDefined(registry.getHealthRecord("t1"));
-      expect(health.state).toBe("unhealthy");
+      expect(health.state).toBe(PluginHealthStates.unhealthy);
       expect(health.last_error).toContain("timeout");
     });
 
@@ -619,7 +626,7 @@ describe("Registry", () => {
       const records = registry.getAllHealthRecords();
       assertDefined(records[0]).state = "failed";
 
-      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe("healthy");
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(PluginHealthStates.healthy);
     });
   });
 });

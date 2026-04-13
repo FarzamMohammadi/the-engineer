@@ -1,4 +1,5 @@
 import path from "node:path";
+import { ReviewPhaseNames } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import type { LlmCaller } from "./llm-caller.js";
@@ -171,7 +172,7 @@ export function createPhaseHandlers(
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
-    const reviewPhases = ctx.config.rrpir?.review_phases ?? ["requirements_check" as const];
+    const reviewPhases = ctx.config.rrpir?.review_phases ?? [ReviewPhaseNames.requirements_check];
 
     // Step 1: Run each review sub-phase as a separate CLI call
     for (const reviewPhaseName of reviewPhases) {
@@ -244,7 +245,7 @@ export function createPhaseHandlers(
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
-    const reviewPhases = ctx.config.rrpir?.review_phases ?? ["requirements_check" as const];
+    const reviewPhases = ctx.config.rrpir?.review_phases ?? [ReviewPhaseNames.requirements_check];
     return llmCaller.runPhaseWithCli(
       Phases.demo_prep,
       taskId,

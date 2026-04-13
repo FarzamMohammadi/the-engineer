@@ -2,8 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
+import { CheckpointReasons, SessionEndReasons } from "../../schemas/session-memory.js";
+import { TaskStates } from "../../schemas/task.js";
 import type { Task } from "../../schemas/task.js";
 import { createAndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
@@ -187,7 +190,10 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-001", "completed");
+      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith(
+        "session-001",
+        SessionEndReasons.completed,
+      );
     });
 
     it("resumes from checkpoint, skipping completed phases", async () => {
@@ -203,7 +209,7 @@ describe("PhaseRunner", () => {
       (dispatch as { resume_from: unknown }).resume_from = {
         id: "cp-001",
         session_id: "session-prev",
-        phase: "planning",
+        phase: Phases.planning,
         phase_progress: "done",
         context_summary: "summary",
         key_findings: [],
@@ -211,7 +217,7 @@ describe("PhaseRunner", () => {
         next_action: "execute",
         last_event_id: "",
         workspace_ref: null,
-        reason: "phase_transition",
+        reason: CheckpointReasons.phase_transition,
         timestamp: new Date().toISOString(),
         journal_offset: 0,
       };
@@ -327,7 +333,7 @@ describe("PhaseRunner", () => {
       // Should proceed past self_review (alert emitted, no loop)
       expect(result.outcome).toBe("completed");
       expect(ctx.notifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "alert" }),
+        expect.objectContaining({ kind: NotificationKinds.alert }),
       );
     });
 
@@ -349,7 +355,7 @@ describe("PhaseRunner", () => {
                 // CLI-native style: next_phase without quality_assessment
                 return Promise.resolve(
                   makeOutput(Phases.self_review, {
-                    next_phase: "execution",
+                    next_phase: Phases.execution,
                   }),
                 );
               }
@@ -414,7 +420,7 @@ describe("PhaseRunner", () => {
 
       expect(result.outcome).toBe("error");
       if (result.outcome === "error") {
-        expect(result.phase).toBe("requirements_gathering");
+        expect(result.phase).toBe(Phases.requirements_gathering);
         expect(result.reason).toContain("LLM unavailable");
       }
     });
@@ -438,7 +444,10 @@ describe("PhaseRunner", () => {
 
       await runPhasePipeline(createDispatch(), state, deps);
 
-      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-abc", "crashed");
+      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith(
+        "session-abc",
+        SessionEndReasons.crashed,
+      );
     });
 
     it("closes session with 'crashed' when handlePostPhaseActions throws (F7)", async () => {
@@ -694,7 +703,7 @@ describe("PhaseRunner", () => {
       // Should have transitioned to blocked
       expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-001",
-        "blocked",
+        TaskStates.blocked,
         null,
         expect.stringContaining("Awaiting human input"),
         "orchestrator",
@@ -780,7 +789,7 @@ describe("PhaseRunner", () => {
         expect(result.outcome).toBe("blocked");
         // Outreach goes through centralized notification router
         expect(ctx.notifications.notify).toHaveBeenCalledWith(
-          expect.objectContaining({ kind: "question", personId: "farzam" }),
+          expect.objectContaining({ kind: NotificationKinds.question, personId: "farzam" }),
         );
       } finally {
         rmSync(tmpDir, { recursive: true, force: true });
@@ -803,7 +812,7 @@ describe("PhaseRunner", () => {
           return Promise.resolve(
             makeOutput(Phases.planning, {
               status: "need_more_info",
-              next_phase: "requirements_gathering",
+              next_phase: Phases.requirements_gathering,
             }),
           );
         }
@@ -840,7 +849,7 @@ describe("PhaseRunner", () => {
       expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
         "task-001",
         "return_to_phase",
-        "planning",
+        Phases.planning,
       );
     });
 
@@ -849,7 +858,7 @@ describe("PhaseRunner", () => {
       // Simulate a task with return_to_phase set from prior blocked dispatch
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         id: "task-001",
-        return_to_phase: "planning",
+        return_to_phase: Phases.planning,
       });
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -1010,8 +1019,8 @@ describe("PhaseRunner", () => {
     });
 
     it("starts with requirements_gathering and ends with integration", () => {
-      expect(PHASE_SEQUENCE[0]).toBe("requirements_gathering");
-      expect(PHASE_SEQUENCE[6]).toBe("integration");
+      expect(PHASE_SEQUENCE[0]).toBe(Phases.requirements_gathering);
+      expect(PHASE_SEQUENCE[6]).toBe(Phases.integration);
     });
   });
 });

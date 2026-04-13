@@ -52,14 +52,14 @@ export { checkPermission } from "./permissions.js";
 
 export const EVENTS: EventDeclaration[] = [
   {
-    type: "task.created",
+    type: EventTypes["task.created"],
     description: "Emitted when a new task is created in the system",
     payloadSchema: TaskCreatedPayloadSchema,
     publishers: ["task-engine"],
     subscribers: [],
   },
   {
-    type: "task.state_changed",
+    type: EventTypes["task.state_changed"],
     description: "Emitted when a task transitions between states",
     payloadSchema: TaskStateChangedPayloadSchema,
     publishers: ["task-engine"],

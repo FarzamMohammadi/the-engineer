@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { OrchestratorConfigSchema } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import type { Task } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import { createDecompositionHandler } from "./decomposition-handler.js";
@@ -234,8 +236,8 @@ describe("DecompositionHandler", () => {
 
     expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
       "task-001",
-      "active",
-      "supervising",
+      TaskStates.active,
+      SubStates.supervising,
       "decomposed_into_children",
       "orchestrator",
     );
@@ -274,13 +276,13 @@ describe("DecompositionHandler", () => {
 
     expect(wsl.notify).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         message: expect.stringContaining("Build UI"),
       }),
     );
     expect(wsl.notify).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         message: expect.stringContaining("Build API"),
       }),
     );

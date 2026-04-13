@@ -5,6 +5,8 @@ import {
   createMockDispatch,
   createTestOrchestrator,
 } from "../../../test/helpers/test-orchestrator.js";
+import { SessionEndReasons } from "../../schemas/session-memory.js";
+import { CascadePolicies, SubStates, TaskStates } from "../../schemas/task.js";
 
 describe("Orchestrator — Decomposition", () => {
   let h: TestOrchestratorHandle;
@@ -80,11 +82,11 @@ describe("Orchestrator — Decomposition", () => {
       return {
         id: `child-${String(childCounter).padStart(3, "0")}`,
         title: input["title"],
-        state: "requirements_gathering",
+        state: TaskStates.requirements_gathering,
         sub_state: null,
         parent_id: input["parent_id"],
         children: [],
-        cascade_policy: "pause_siblings",
+        cascade_policy: CascadePolicies.pause_siblings,
         description: input["description"] ?? "",
         source_text: "",
         acceptance_criteria: input["acceptance_criteria"] ?? [],
@@ -134,7 +136,7 @@ describe("Orchestrator — Decomposition", () => {
     for (const call of h.taskEngine.createTask.mock.calls) {
       expect(call[0].parent_id).toBe("task-001");
       expect(call[0].source).toBe("decomposition");
-      expect(call[0].cascade_policy).toBe("pause_siblings");
+      expect(call[0].cascade_policy).toBe(CascadePolicies.pause_siblings);
     }
 
     // Verify each child was transitioned: requirements_gathering → queued
@@ -157,13 +159,16 @@ describe("Orchestrator — Decomposition", () => {
 
     // Verify parent transitioned to active.supervising
     const supervisingCall = h.taskEngine.requestTransition.mock.calls.find(
-      (call: unknown[]) => call[2] === "supervising",
+      (call: unknown[]) => call[2] === SubStates.supervising,
     );
     expect(supervisingCall).toBeDefined();
     expect(supervisingCall?.[0]).toBe("task-001");
 
     // Verify session was ended with "decomposed"
-    expect(h.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "decomposed");
+    expect(h.sessionMemory.endSession).toHaveBeenCalledWith(
+      expect.any(String),
+      SessionEndReasons.decomposed,
+    );
   });
 
   it("proceeds normally when decomposition_plan is invalid (falls back to null)", async () => {
@@ -205,11 +210,11 @@ describe("Orchestrator — Decomposition", () => {
       childCounter++;
       return {
         id: `child-${String(childCounter).padStart(3, "0")}`,
-        state: "requirements_gathering",
+        state: TaskStates.requirements_gathering,
         sub_state: null,
         parent_id: "task-001",
         children: [],
-        cascade_policy: "pause_siblings",
+        cascade_policy: CascadePolicies.pause_siblings,
         title: `Child ${String(childCounter)}`,
         description: "",
         source_text: "",
@@ -274,11 +279,11 @@ describe("Orchestrator — Decomposition", () => {
 
     h.taskEngine.createTask.mockImplementation((input: Record<string, unknown>) => ({
       id: "child-001",
-      state: "requirements_gathering",
+      state: TaskStates.requirements_gathering,
       sub_state: null,
       parent_id: input["parent_id"],
       children: [],
-      cascade_policy: "pause_siblings",
+      cascade_policy: CascadePolicies.pause_siblings,
       title: input["title"],
       description: "",
       source_text: "",

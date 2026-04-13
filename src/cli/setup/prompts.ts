@@ -1,6 +1,7 @@
 import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 
 import type { BuiltinPlugin } from "../../plugins/builtin.js";
+import { AdapterTypes } from "../../schemas/adapters.js";
 import { getOutput } from "../output.js";
 import { ALL_TEMPLATES } from "../templates.js";
 import type {
@@ -243,16 +244,16 @@ function showSelectionWarnings(
     plugins.filter((p) => selectedPlugins.includes(p.manifest.id)).map((p) => p.manifest.type),
   );
 
-  if (!selectedTypes.has("trigger")) {
+  if (!selectedTypes.has(AdapterTypes.trigger)) {
     out.warn("No trigger plugin selected. The Engineer will start but won't pick up tasks.");
   }
-  if (!selectedTypes.has("llm")) {
+  if (!selectedTypes.has(AdapterTypes.llm)) {
     out.warn("No LLM plugin selected. The Engineer cannot reason without an LLM.");
   }
-  if (!selectedTypes.has("communication")) {
+  if (!selectedTypes.has(AdapterTypes.communication)) {
     out.warn("No communication plugin selected. The Engineer won't send notifications.");
   }
-  if (!selectedTypes.has("git_hosting")) {
+  if (!selectedTypes.has(AdapterTypes.git_hosting)) {
     out.warn("No git hosting plugin selected. The Engineer won't create PRs.");
   }
 }
@@ -272,7 +273,10 @@ function resolveCommChannels(
   plugins: readonly BuiltinPlugin[],
 ): Array<{ channel: string; pluginName: string }> {
   return plugins
-    .filter((p) => p.manifest.type === "communication" && selectedPlugins.includes(p.manifest.id))
+    .filter(
+      (p) =>
+        p.manifest.type === AdapterTypes.communication && selectedPlugins.includes(p.manifest.id),
+    )
     .map((p) => ({
       channel: String(p.manifest.adapter_meta["channel"] ?? p.manifest.id),
       pluginName: p.manifest.name,

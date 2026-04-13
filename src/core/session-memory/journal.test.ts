@@ -5,6 +5,7 @@ import {
   type TestDatabaseHandle,
   createTestDatabase,
 } from "../../../test/helpers/test-database.js";
+import { JournalEntryTypes } from "../../schemas/session-memory.js";
 import { JournalStore } from "./journal.js";
 import { SessionStore } from "./sessions.js";
 
@@ -49,7 +50,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "research",
-      type: "action",
+      type: JournalEntryTypes.action,
       summary: "Read 12 files",
       actionType: "file_read",
     });
@@ -58,7 +59,7 @@ describe("JournalStore", () => {
     expect(entry.session_id).toBe(sessionId);
     expect(entry.task_id).toBe(taskId);
     expect(entry.phase).toBe("research");
-    expect(entry.type).toBe("action");
+    expect(entry.type).toBe(JournalEntryTypes.action);
     expect(entry.action_type).toBe("file_read");
     expect(entry.tags).toEqual([]);
   });
@@ -72,7 +73,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "research",
-      type: "finding",
+      type: JournalEntryTypes.finding,
       summary: "Found patterns",
       tags: ["auth", "css"],
     });
@@ -91,7 +92,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "execution",
-      type: "error",
+      type: JournalEntryTypes.error,
       summary: `Clone failed at ${secretUrl}`,
       detail: `Detail: ${secretUrl}`,
       errorDetail: `Error: ${secretUrl}`,
@@ -112,7 +113,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "execution",
-      type: "error",
+      type: JournalEntryTypes.error,
       summary: "Test failure",
       detail: "3 assertions failed",
       errorDetail: "auth.test.ts: expected 200, got 401",
@@ -145,9 +146,9 @@ describe("JournalStore", () => {
     const sessionId = createSession(taskId);
     addSampleEntries(sessionId, taskId);
 
-    const entries = journal.queryJournal(taskId, { type: "finding" });
+    const entries = journal.queryJournal(taskId, { type: JournalEntryTypes.finding });
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.type).toBe("finding");
+    expect(entries[0]!.type).toBe(JournalEntryTypes.finding);
   });
 
   it("filters by phase", () => {
@@ -177,7 +178,10 @@ describe("JournalStore", () => {
     const sessionId = createSession(taskId);
     addSampleEntries(sessionId, taskId);
 
-    const entries = journal.queryJournal(taskId, { type: "action", phase: "research" });
+    const entries = journal.queryJournal(taskId, {
+      type: JournalEntryTypes.action,
+      phase: "research",
+    });
     expect(entries).toHaveLength(1);
     expect(entries[0]!.summary).toBe("Read files");
   });
@@ -187,7 +191,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "research",
-      type: "action",
+      type: JournalEntryTypes.action,
       summary: "Read files",
       tags: ["auth"],
     });
@@ -195,7 +199,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "research",
-      type: "finding",
+      type: JournalEntryTypes.finding,
       summary: "Found patterns",
       tags: ["auth", "patterns"],
     });
@@ -203,7 +207,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "planning",
-      type: "decision",
+      type: JournalEntryTypes.decision,
       summary: "Chose approach",
       tags: ["architecture"],
     });
@@ -211,7 +215,7 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "execution",
-      type: "error",
+      type: JournalEntryTypes.error,
       summary: "Test failure",
       tags: ["testing"],
     });
@@ -226,14 +230,14 @@ describe("JournalStore", () => {
       sessionId,
       taskId,
       phase: "intake_analysis",
-      type: "finding",
+      type: JournalEntryTypes.finding,
       summary: "First entry",
     });
     journal.addJournalEntry({
       sessionId,
       taskId,
       phase: "research",
-      type: "finding",
+      type: JournalEntryTypes.finding,
       summary: "Second entry",
     });
 

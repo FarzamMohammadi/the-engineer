@@ -10,6 +10,7 @@ import {
   type ToolResult,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { SideEffectTypes } from "../../../schemas/adapters.js";
 import { killProcess } from "../../../utils/process.js";
 import { getSecretEnvVars } from "../../../utils/secret-registry.js";
 import { type BashToolConfig, BashToolConfigSchema } from "./config.js";
@@ -84,7 +85,7 @@ export class BashToolPlugin extends ToolAdapter {
       return Promise.resolve({
         success: false,
         output: "",
-        side_effects: [{ type: "command_run", details: { command, blocked: true } }],
+        side_effects: [{ type: SideEffectTypes.command_run, details: { command, blocked: true } }],
         error: createAdapterError("command_blocked", blockReason),
       });
     }
@@ -269,7 +270,7 @@ function buildResult(
     return {
       success: false,
       output,
-      side_effects: [{ type: "command_run", details: { command, timed_out: true } }],
+      side_effects: [{ type: SideEffectTypes.command_run, details: { command, timed_out: true } }],
       error: createAdapterError(
         "timeout",
         `Command timed out after ${String(config.command_timeout_ms)}ms`,
@@ -282,7 +283,9 @@ function buildResult(
     return {
       success: false,
       output,
-      side_effects: [{ type: "command_run", details: { command, output_exceeded: true } }],
+      side_effects: [
+        { type: SideEffectTypes.command_run, details: { command, output_exceeded: true } },
+      ],
       error: createAdapterError(
         "output_limit",
         `Output exceeded ${String(config.max_output_bytes)} bytes`,
@@ -291,7 +294,7 @@ function buildResult(
   }
 
   const sideEffects: SideEffect[] = [
-    { type: "command_run", details: { command, exit_code: code ?? -1 } },
+    { type: SideEffectTypes.command_run, details: { command, exit_code: code ?? -1 } },
   ];
 
   return {

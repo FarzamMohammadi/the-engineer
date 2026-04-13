@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
 import type { Event } from "../../src/schemas/events.js";
+import { TaskStates } from "../../src/schemas/task.js";
 import {
   type IntegrationContext,
   createIntegrationContext,
@@ -58,9 +59,9 @@ describe("Daemon trigger polling (integration)", () => {
     await ctx.daemon.tick();
 
     // Verify task was created (may be queued or already active/completed)
-    const queued = ctx.taskEngine.getTasksByState("queued");
-    const active = ctx.taskEngine.getTasksByState("active");
-    const completed = ctx.taskEngine.getTasksByState("completed");
+    const queued = ctx.taskEngine.getTasksByState(TaskStates.queued);
+    const active = ctx.taskEngine.getTasksByState(TaskStates.active);
+    const completed = ctx.taskEngine.getTasksByState(TaskStates.completed);
     const allTasks = [...queued, ...active, ...completed];
     expect(allTasks.length).toBeGreaterThanOrEqual(1);
     expect(allTasks.some((t) => t.title === "Add dark mode")).toBe(true);
@@ -82,13 +83,13 @@ describe("Daemon trigger polling (integration)", () => {
     ctx.clock.advance(1_000);
     await ctx.daemon.tick();
 
-    const afterFirst = ctx.taskEngine.getTasksByState("queued").length;
+    const afterFirst = ctx.taskEngine.getTasksByState(TaskStates.queued).length;
 
     // Second tick — same event, should be deduped
     ctx.clock.advance(1_000);
     await ctx.daemon.tick();
 
-    const afterSecond = ctx.taskEngine.getTasksByState("queued").length;
+    const afterSecond = ctx.taskEngine.getTasksByState(TaskStates.queued).length;
     expect(afterSecond).toBe(afterFirst);
   });
 

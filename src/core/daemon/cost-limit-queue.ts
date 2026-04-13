@@ -1,3 +1,4 @@
+import { NotificationKinds } from "../../schemas/notifications.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IObserver } from "../observer/index.js";
@@ -50,9 +51,9 @@ export function createCostLimitQueue(
             reason: result.reason,
           });
         }
-        notifications.notify({ kind: "cost_limit", taskId });
+        notifications.notify({ kind: NotificationKinds.cost_limit, taskId });
         notifications.notify({
-          kind: "ticket_comment",
+          kind: NotificationKinds.ticket_comment,
           taskId,
           message: "Task blocked \u2014 cost limit reached.",
         });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { EventBus } from "../../src/core/event-bus/index.js";
 import { Registry } from "../../src/core/registry/index.js";
+import { AdapterTypes, PluginHealthStates } from "../../src/schemas/adapters.js";
 import { FakeCommunicationPlugin } from "../helpers/fake-plugins/fake-comm/index.js";
 import { FakeGitHostingPlugin } from "../helpers/fake-plugins/fake-git-hosting/index.js";
 import { FakeLLMPlugin } from "../helpers/fake-plugins/fake-llm/index.js";
@@ -40,23 +41,23 @@ describe("Registry plugin loading (integration)", () => {
       setup();
 
       registry.register(
-        createMockManifest({ id: "t1", type: "trigger", name: "Trigger" }),
+        createMockManifest({ id: "t1", type: AdapterTypes.trigger, name: "Trigger" }),
         new FakeTriggerPlugin(),
       );
       registry.register(
-        createMockManifest({ id: "c1", type: "communication", name: "Comm" }),
+        createMockManifest({ id: "c1", type: AdapterTypes.communication, name: "Comm" }),
         new FakeCommunicationPlugin(),
       );
       registry.register(
-        createMockManifest({ id: "l1", type: "llm", name: "LLM" }),
+        createMockManifest({ id: "l1", type: AdapterTypes.llm, name: "LLM" }),
         new FakeLLMPlugin(),
       );
       registry.register(
-        createMockManifest({ id: "o1", type: "tool", name: "Tool" }),
+        createMockManifest({ id: "o1", type: AdapterTypes.tool, name: "Tool" }),
         new FakeToolPlugin(),
       );
       registry.register(
-        createMockManifest({ id: "g1", type: "git_hosting", name: "Git" }),
+        createMockManifest({ id: "g1", type: AdapterTypes.git_hosting, name: "Git" }),
         new FakeGitHostingPlugin(),
       );
 
@@ -71,15 +72,15 @@ describe("Registry plugin loading (integration)", () => {
       setup();
 
       registry.register(
-        createMockManifest({ id: "t1", type: "trigger", name: "T1" }),
+        createMockManifest({ id: "t1", type: AdapterTypes.trigger, name: "T1" }),
         new FakeTriggerPlugin(),
       );
       registry.register(
-        createMockManifest({ id: "t2", type: "trigger", name: "T2" }),
+        createMockManifest({ id: "t2", type: AdapterTypes.trigger, name: "T2" }),
         new FakeTriggerPlugin(),
       );
       registry.register(
-        createMockManifest({ id: "l1", type: "llm", name: "LLM" }),
+        createMockManifest({ id: "l1", type: AdapterTypes.llm, name: "LLM" }),
         new FakeLLMPlugin(),
       );
 
@@ -94,9 +95,12 @@ describe("Registry plugin loading (integration)", () => {
       setup();
 
       const first = new FakeLLMPlugin();
-      registry.register(createMockManifest({ id: "l1", type: "llm", name: "Primary" }), first);
       registry.register(
-        createMockManifest({ id: "l2", type: "llm", name: "Secondary" }),
+        createMockManifest({ id: "l1", type: AdapterTypes.llm, name: "Primary" }),
+        first,
+      );
+      registry.register(
+        createMockManifest({ id: "l2", type: AdapterTypes.llm, name: "Secondary" }),
         new FakeLLMPlugin(),
       );
 
@@ -115,13 +119,13 @@ describe("Registry plugin loading (integration)", () => {
       setup();
 
       const first = registry.register(
-        createMockManifest({ id: "dup", type: "trigger", name: "First" }),
+        createMockManifest({ id: "dup", type: AdapterTypes.trigger, name: "First" }),
         new FakeTriggerPlugin(),
       );
       expect(first.success).toBe(true);
 
       const second = registry.register(
-        createMockManifest({ id: "dup", type: "trigger", name: "Second" }),
+        createMockManifest({ id: "dup", type: AdapterTypes.trigger, name: "Second" }),
         new FakeTriggerPlugin(),
       );
       expect(second.success).toBe(false);
@@ -134,7 +138,7 @@ describe("Registry plugin loading (integration)", () => {
       setup();
 
       registry.register(
-        createMockManifest({ id: "rem", type: "trigger", name: "Removable" }),
+        createMockManifest({ id: "rem", type: AdapterTypes.trigger, name: "Removable" }),
         new FakeTriggerPlugin(),
       );
 
@@ -151,12 +155,15 @@ describe("Registry plugin loading (integration)", () => {
       setup();
 
       const plugin = new FakeTriggerPlugin();
-      registry.register(createMockManifest({ id: "h1", type: "trigger", name: "Healthy" }), plugin);
+      registry.register(
+        createMockManifest({ id: "h1", type: AdapterTypes.trigger, name: "Healthy" }),
+        plugin,
+      );
       await registry.initializePlugin("h1", {});
 
       const results = await registry.healthCheckAll();
       const h1Result = results.find((r) => r.plugin_id === "h1");
-      expect(h1Result?.state).toBe("healthy");
+      expect(h1Result?.state).toBe(PluginHealthStates.healthy);
     });
 
     it("reports unhealthy when plugin health check fails", async () => {
@@ -164,7 +171,7 @@ describe("Registry plugin loading (integration)", () => {
 
       const plugin = new FakeTriggerPlugin();
       registry.register(
-        createMockManifest({ id: "h2", type: "trigger", name: "Unhealthy" }),
+        createMockManifest({ id: "h2", type: AdapterTypes.trigger, name: "Unhealthy" }),
         plugin,
       );
       await registry.initializePlugin("h2", {});
@@ -173,7 +180,7 @@ describe("Registry plugin loading (integration)", () => {
 
       const results = await registry.healthCheckAll();
       const h2Result = results.find((r) => r.plugin_id === "h2");
-      expect(h2Result?.state).toBe("unhealthy");
+      expect(h2Result?.state).toBe(PluginHealthStates.unhealthy);
     });
   });
 
@@ -184,8 +191,14 @@ describe("Registry plugin loading (integration)", () => {
       const trigger = new FakeTriggerPlugin();
       const comm = new FakeCommunicationPlugin();
 
-      registry.register(createMockManifest({ id: "s1", type: "trigger", name: "S1" }), trigger);
-      registry.register(createMockManifest({ id: "s2", type: "communication", name: "S2" }), comm);
+      registry.register(
+        createMockManifest({ id: "s1", type: AdapterTypes.trigger, name: "S1" }),
+        trigger,
+      );
+      registry.register(
+        createMockManifest({ id: "s2", type: AdapterTypes.communication, name: "S2" }),
+        comm,
+      );
 
       await registry.initializePlugin("s1", {});
       await registry.initializePlugin("s2", {});

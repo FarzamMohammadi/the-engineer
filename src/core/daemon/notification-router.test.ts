@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
-import type { TaskStateChangedPayload } from "../../schemas/events.js";
+import { EventTypes, type TaskStateChangedPayload } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import { createNotificationRouter } from "./notification-router.js";
 import type { NotificationRouterContext } from "./notification-router.js";
 
@@ -57,7 +59,7 @@ async function flush(): Promise<void> {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("NotificationRouter", () => {
-  // 1. notify({ kind: "completion" }) sends milestone notification to owner via comm plugins
+  // 1. notify({ kind: NotificationKinds.completion }) sends milestone notification to owner via comm plugins
   it("notify completion sends milestone notification to owner via comm plugins", async () => {
     const commPlugin = createMockCommPlugin({ channel: "telegram" });
     const ctx = createMockContext([commPlugin]);
@@ -69,7 +71,7 @@ describe("NotificationRouter", () => {
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Fix the bug" });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "completion", taskId: "task-001" });
+    router.notify({ kind: NotificationKinds.completion, taskId: "task-001" });
     await flush();
 
     expect(commPlugin.formatMessage).toHaveBeenCalledWith(
@@ -85,7 +87,7 @@ describe("NotificationRouter", () => {
     );
   });
 
-  // 2. notify({ kind: "task_error" }) sends alert to owner with reason
+  // 2. notify({ kind: NotificationKinds.task_error }) sends alert to owner with reason
   it("notify task_error sends alert notification to owner with reason", async () => {
     const commPlugin = createMockCommPlugin({ channel: "telegram" });
     const ctx = createMockContext([commPlugin]);
@@ -99,7 +101,11 @@ describe("NotificationRouter", () => {
     });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "task_error", taskId: "task-002", reason: "build_failed" });
+    router.notify({
+      kind: NotificationKinds.task_error,
+      taskId: "task-002",
+      reason: "build_failed",
+    });
     await flush();
 
     expect(commPlugin.formatMessage).toHaveBeenCalledWith(
@@ -114,7 +120,7 @@ describe("NotificationRouter", () => {
     );
   });
 
-  // 3. notify({ kind: "escalation_alert" }) sends to owner AND reviewers
+  // 3. notify({ kind: NotificationKinds.escalation_alert }) sends to owner AND reviewers
   it("notify escalation_alert sends to both owner and reviewers", async () => {
     const commPlugin = createMockCommPlugin({ channel: "telegram" });
     const ctx = createMockContext([commPlugin]);
@@ -130,7 +136,7 @@ describe("NotificationRouter", () => {
     const router = createNotificationRouter(ctx);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Critical fix" });
 
-    router.notify({ kind: "escalation_alert", taskId: "task-003" });
+    router.notify({ kind: NotificationKinds.escalation_alert, taskId: "task-003" });
     await flush();
 
     // Should send to owner + 2 reviewers = 3 sends
@@ -144,7 +150,7 @@ describe("NotificationRouter", () => {
     expect(recipientHandles).toContain("@rev2");
   });
 
-  // 4. notify({ kind: "review_reminder" }) sends to reviewers only
+  // 4. notify({ kind: NotificationKinds.review_reminder }) sends to reviewers only
   it("notify review_reminder sends to reviewers only, not owner", async () => {
     const commPlugin = createMockCommPlugin({ channel: "telegram" });
     const ctx = createMockContext([commPlugin]);
@@ -159,7 +165,11 @@ describe("NotificationRouter", () => {
     const router = createNotificationRouter(ctx);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Add tests" });
 
-    router.notify({ kind: "review_reminder", taskId: "task-004", elapsedMs: 7_200_000 }); // 2 hours
+    router.notify({
+      kind: NotificationKinds.review_reminder,
+      taskId: "task-004",
+      elapsedMs: 7_200_000,
+    }); // 2 hours
     await flush();
 
     expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
@@ -183,7 +193,7 @@ describe("NotificationRouter", () => {
     // getOwner returns null by default
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "completion", taskId: "task-005" });
+    router.notify({ kind: NotificationKinds.completion, taskId: "task-005" });
     await flush();
 
     expect(commPlugin.sendMessage).not.toHaveBeenCalled();
@@ -195,13 +205,17 @@ describe("NotificationRouter", () => {
     // getReviewers returns [] by default
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "review_reminder", taskId: "task-006", elapsedMs: 3_600_000 });
+    router.notify({
+      kind: NotificationKinds.review_reminder,
+      taskId: "task-006",
+      elapsedMs: 3_600_000,
+    });
     await flush();
 
     expect(commPlugin.sendMessage).not.toHaveBeenCalled();
   });
 
-  // 6. notify({ kind: "ticket_comment" }) routes to plugin with ticket_management capability
+  // 6. notify({ kind: NotificationKinds.ticket_comment }) routes to plugin with ticket_management capability
   it("notify ticket_comment routes to plugin with ticket_management capability", async () => {
     const sendOnlyPlugin = createMockCommPlugin({
       id: "telegram",
@@ -219,7 +233,11 @@ describe("NotificationRouter", () => {
     });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "ticket_comment", taskId: "task-008", message: "PR merged!" });
+    router.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId: "task-008",
+      message: "PR merged!",
+    });
     await flush();
 
     expect(issuePlugin.commentOnTicket).toHaveBeenCalledWith(
@@ -229,7 +247,7 @@ describe("NotificationRouter", () => {
     expect(sendOnlyPlugin.commentOnTicket).not.toHaveBeenCalled();
   });
 
-  // 7. notify({ kind: "ticket_comment" }) skips when no external_ref
+  // 7. notify({ kind: NotificationKinds.ticket_comment }) skips when no external_ref
   it("notify ticket_comment skips when task has no external_ref", async () => {
     const commPlugin = createMockCommPlugin({
       capabilities: ["send", "ticket_management"],
@@ -241,7 +259,7 @@ describe("NotificationRouter", () => {
     });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "ticket_comment", taskId: "task-009", message: "Hello" });
+    router.notify({ kind: NotificationKinds.ticket_comment, taskId: "task-009", message: "Hello" });
     await flush();
 
     expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
@@ -267,9 +285,9 @@ describe("NotificationRouter", () => {
 
     const payload: TaskStateChangedPayload = {
       task_id: "task-010",
-      from_state: "active",
-      from_sub: "working",
-      to_state: "completed",
+      from_state: TaskStates.active,
+      from_sub: SubStates.working,
+      to_state: TaskStates.completed,
       to_sub: null,
       reason: "All done",
       triggered_by: "orchestrator",
@@ -281,8 +299,8 @@ describe("NotificationRouter", () => {
 
     expect(syncPlugin.syncTaskState).toHaveBeenCalledWith(
       "task-010",
-      "active",
-      "completed",
+      TaskStates.active,
+      TaskStates.completed,
       expect.objectContaining({
         task_title: "My task",
         external_ref: { type: "test_issue", repo: "owner/repo", id: "10" },
@@ -306,7 +324,9 @@ describe("NotificationRouter", () => {
     const router = createNotificationRouter(ctx);
 
     // Should not throw
-    expect(() => router.notify({ kind: "completion", taskId: "task-011" })).not.toThrow();
+    expect(() =>
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-011" }),
+    ).not.toThrow();
     await flush();
   });
 
@@ -324,7 +344,11 @@ describe("NotificationRouter", () => {
     const router = createNotificationRouter(ctx);
 
     expect(() =>
-      router.notify({ kind: "ticket_comment", taskId: "task-012", message: "Comment" }),
+      router.notify({
+        kind: NotificationKinds.ticket_comment,
+        taskId: "task-012",
+        message: "Comment",
+      }),
     ).not.toThrow();
     await flush();
   });
@@ -343,10 +367,10 @@ describe("NotificationRouter", () => {
 
     const payload: TaskStateChangedPayload = {
       task_id: "task-013",
-      from_state: "queued",
+      from_state: TaskStates.queued,
       from_sub: null,
-      to_state: "active",
-      to_sub: "working",
+      to_state: TaskStates.active,
+      to_sub: SubStates.working,
       reason: "dispatched",
       triggered_by: "daemon",
     };
@@ -371,7 +395,7 @@ describe("NotificationRouter", () => {
       title: "Expensive task",
     });
 
-    router.notify({ kind: "cost_limit", taskId: "task-014" });
+    router.notify({ kind: NotificationKinds.cost_limit, taskId: "task-014" });
     await flush();
 
     expect(commPlugin.formatMessage).toHaveBeenCalledWith(
@@ -390,7 +414,11 @@ describe("NotificationRouter", () => {
     // getTask returns null by default
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "ticket_comment", taskId: "nonexistent-task", message: "Hello" });
+    router.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId: "nonexistent-task",
+      message: "Hello",
+    });
     await flush();
 
     expect(commPlugin.commentOnTicket).not.toHaveBeenCalled();
@@ -412,7 +440,11 @@ describe("NotificationRouter", () => {
       title: "Deploy service",
     });
 
-    router.notify({ kind: "task_error", taskId: "task-sec", reason: poisonedReason });
+    router.notify({
+      kind: NotificationKinds.task_error,
+      taskId: "task-sec",
+      reason: poisonedReason,
+    });
     await flush();
 
     const formattedArg = (commPlugin.formatMessage as ReturnType<typeof vi.fn>).mock
@@ -436,9 +468,9 @@ describe("NotificationRouter", () => {
 
     const payload: TaskStateChangedPayload = {
       task_id: "task-sec",
-      from_state: "active",
-      from_sub: "working",
-      to_state: "completed",
+      from_state: TaskStates.active,
+      from_sub: SubStates.working,
+      to_state: TaskStates.completed,
       to_sub: null,
       reason: "done",
       triggered_by: "daemon",
@@ -469,7 +501,11 @@ describe("NotificationRouter", () => {
     const router = createNotificationRouter(ctx);
     const poisonedMessage =
       "Error: clone failed at https://git:ghp_SECRETTOKEN1234567890abcdefgh@github.com/org/repo.git";
-    router.notify({ kind: "ticket_comment", taskId: "task-sec", message: poisonedMessage });
+    router.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId: "task-sec",
+      message: poisonedMessage,
+    });
     await flush();
 
     const commentArg = (commPlugin.commentOnTicket as ReturnType<typeof vi.fn>).mock
@@ -504,7 +540,7 @@ describe("NotificationRouter", () => {
     });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "completion", taskId: "task-pref" });
+    router.notify({ kind: NotificationKinds.completion, taskId: "task-pref" });
     await flush();
 
     // Telegram (preferred) should receive the message
@@ -545,7 +581,7 @@ describe("NotificationRouter", () => {
     });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "completion", taskId: "task-fallback" });
+    router.notify({ kind: NotificationKinds.completion, taskId: "task-fallback" });
     await flush();
 
     // Both should have been tried — telegram first, then github as fallback
@@ -574,7 +610,7 @@ describe("NotificationRouter", () => {
     });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "completion", taskId: "task-skip" });
+    router.notify({ kind: NotificationKinds.completion, taskId: "task-skip" });
     await flush();
 
     // Telegram should receive (slack skipped, no plugin)
@@ -602,7 +638,7 @@ describe("NotificationRouter", () => {
 
     const router = createNotificationRouter(ctx);
     router.notify({
-      kind: "question",
+      kind: NotificationKinds.question,
       taskId: "task-route",
       personId: "alice",
       message: "What do you think?",
@@ -628,7 +664,11 @@ describe("NotificationRouter", () => {
 
     const router = createNotificationRouter(ctx);
     const hugeMessage = "x".repeat(100_000);
-    router.notify({ kind: "ticket_comment", taskId: "task-trunc", message: hugeMessage });
+    router.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId: "task-trunc",
+      message: hugeMessage,
+    });
     await flush();
 
     const commentArg = (commPlugin.commentOnTicket as ReturnType<typeof vi.fn>).mock
@@ -648,7 +688,11 @@ describe("NotificationRouter", () => {
     });
 
     const router = createNotificationRouter(ctx);
-    router.notify({ kind: "ticket_comment", taskId: "task-short", message: "Short message" });
+    router.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId: "task-short",
+      message: "Short message",
+    });
     await flush();
 
     const commentArg = (commPlugin.commentOnTicket as ReturnType<typeof vi.fn>).mock
@@ -680,13 +724,13 @@ describe("NotificationRouter", () => {
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Fix bug" });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-retry-1" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-retry-1" });
       await flush();
 
       // Should emit comm.send_failed with retryable: true
       const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
       const sendFailed = publishCalls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "comm.send_failed",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["comm.send_failed"],
       );
       expect(sendFailed).toBeDefined();
       expect((sendFailed![0] as { payload: { retryable: boolean } }).payload.retryable).toBe(true);
@@ -712,16 +756,16 @@ describe("NotificationRouter", () => {
       });
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-no-retry" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-no-retry" });
       await flush();
 
       const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
       const sendFailed = publishCalls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "comm.send_failed",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["comm.send_failed"],
       );
       expect(sendFailed).toBeDefined();
       expect((sendFailed![0] as { payload: { retryable: boolean } }).payload.retryable).toBe(false);
@@ -733,8 +777,8 @@ describe("NotificationRouter", () => {
       // No retry events should be emitted
       const retryEvents = publishCalls.filter(
         (c: unknown[]) =>
-          (c[0] as { type: string }).type === "comm.retry_succeeded" ||
-          (c[0] as { type: string }).type === "comm.retry_exhausted",
+          (c[0] as { type: string }).type === EventTypes["comm.retry_succeeded"] ||
+          (c[0] as { type: string }).type === EventTypes["comm.retry_exhausted"],
       );
       expect(retryEvents).toHaveLength(0);
     });
@@ -766,11 +810,11 @@ describe("NotificationRouter", () => {
       });
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-retry-success" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-retry-success" });
       await flush();
 
       // First send failed, now trigger retry after interval
@@ -782,7 +826,7 @@ describe("NotificationRouter", () => {
 
       const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
       const retrySucceeded = publishCalls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_succeeded",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["comm.retry_succeeded"],
       );
       expect(retrySucceeded).toBeDefined();
       expect((retrySucceeded![0] as { payload: { attempt: number } }).payload.attempt).toBe(1);
@@ -808,11 +852,11 @@ describe("NotificationRouter", () => {
       });
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-interval" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-interval" });
       await flush();
 
       expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
@@ -846,24 +890,24 @@ describe("NotificationRouter", () => {
       // Initially active, then completed
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-terminal" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-terminal" });
       await flush();
 
       // Now task is completed
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "completed",
+        state: TaskStates.completed,
       });
       router.processRetries!(1_000_000 + 200);
       await flush();
 
       const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
       const exhausted = publishCalls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_exhausted",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["comm.retry_exhausted"],
       );
       expect(exhausted).toBeDefined();
       expect((exhausted![0] as { payload: { reason: string } }).payload.reason).toBe(
@@ -895,11 +939,11 @@ describe("NotificationRouter", () => {
       });
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-max" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-max" });
       await flush();
 
       // Retry 3 times (max_attempts = 3)
@@ -914,7 +958,7 @@ describe("NotificationRouter", () => {
 
       const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
       const exhausted = publishCalls.filter(
-        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_exhausted",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["comm.retry_exhausted"],
       );
       expect(exhausted.length).toBeGreaterThanOrEqual(1);
       const lastExhausted = exhausted[exhausted.length - 1]!;
@@ -943,11 +987,11 @@ describe("NotificationRouter", () => {
       });
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-age" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-age" });
       await flush();
 
       // max_age_ms is 10_000 in test config — advance time past that
@@ -956,7 +1000,7 @@ describe("NotificationRouter", () => {
 
       const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
       const exhausted = publishCalls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_exhausted",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["comm.retry_exhausted"],
       );
       expect(exhausted).toBeDefined();
       expect((exhausted![0] as { payload: { reason: string } }).payload.reason).toBe("max_age");
@@ -1005,11 +1049,11 @@ describe("NotificationRouter", () => {
       });
       (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         title: "Fix bug",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const router = createNotificationRouter(ctx);
-      router.notify({ kind: "completion", taskId: "task-chain" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-chain" });
       await flush();
 
       // First attempt: telegram fails, github fails → both tried
@@ -1026,7 +1070,7 @@ describe("NotificationRouter", () => {
 
       const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
       const retrySucceeded = publishCalls.find(
-        (c: unknown[]) => (c[0] as { type: string }).type === "comm.retry_succeeded",
+        (c: unknown[]) => (c[0] as { type: string }).type === EventTypes["comm.retry_succeeded"],
       );
       expect(retrySucceeded).toBeDefined();
       expect((retrySucceeded![0] as { payload: { channel: string } }).payload.channel).toBe(

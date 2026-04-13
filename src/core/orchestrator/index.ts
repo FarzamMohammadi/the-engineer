@@ -9,6 +9,7 @@ import {
   EventTypes,
   PreemptionReadyPayloadSchema,
 } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import { SessionEndReasons } from "../../schemas/session-memory.js";
 import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
@@ -192,12 +193,12 @@ export class Orchestrator {
 
     // Notify task pickup (D152) — personal channels + GitHub issue comment
     this.notifications.notify({
-      kind: "milestone",
+      kind: NotificationKinds.milestone,
       taskId,
       message: `Starting work on: ${dispatch.task.title}`,
     });
     this.notifications.notify({
-      kind: "ticket_comment",
+      kind: NotificationKinds.ticket_comment,
       taskId,
       message: "Starting work on this ticket.",
     });

@@ -2,6 +2,15 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { TestSessionMemoryHandle } from "../../../test/helpers/test-session-memory.js";
 import { createTestSessionMemory } from "../../../test/helpers/test-session-memory.js";
+import { Phases } from "../../schemas/orchestrator.js";
+import {
+  CheckpointReasons,
+  JournalEntryTypes,
+  KnowledgeConfidences,
+  KnowledgeDomains,
+  KnowledgeScopes,
+  SessionEndReasons,
+} from "../../schemas/session-memory.js";
 import type { AddJournalEntryInput, CreateCheckpointInput, StoreKnowledgeInput } from "./index.js";
 
 const HEX_32 = /^[\da-f]{32}$/;
@@ -67,18 +76,18 @@ describe("endSession", () => {
     const taskId = insertTask();
     const session = sessionMemory.createSession({ taskId });
 
-    sessionMemory.endSession(session.id, "completed");
+    sessionMemory.endSession(session.id, SessionEndReasons.completed);
 
     const chain = sessionMemory.getSessionChain(taskId);
     expect(chain).toHaveLength(1);
     expect(chain[0]!.ended_at).toBeTruthy();
-    expect(chain[0]!.end_reason).toBe("completed");
+    expect(chain[0]!.end_reason).toBe(SessionEndReasons.completed);
   });
 
   it("throws for non-existent session", () => {
     setup();
     expect(() => {
-      handle.sessionMemory.endSession("nonexistent", "completed");
+      handle.sessionMemory.endSession("nonexistent", SessionEndReasons.completed);
     }).toThrow('Session "nonexistent" not found');
   });
 });
@@ -94,8 +103,8 @@ describe("addJournalEntry", () => {
     const entry = sessionMemory.addJournalEntry({
       sessionId: session.id,
       taskId,
-      phase: "research",
-      type: "action",
+      phase: Phases.research,
+      type: JournalEntryTypes.action,
       summary: "Read 12 files in src/auth/",
       actionType: "file_read",
     });
@@ -104,7 +113,7 @@ describe("addJournalEntry", () => {
     expect(entry.session_id).toBe(session.id);
     expect(entry.task_id).toBe(taskId);
     expect(entry.phase).toBe("research");
-    expect(entry.type).toBe("action");
+    expect(entry.type).toBe(JournalEntryTypes.action);
     expect(entry.summary).toBe("Read 12 files in src/auth/");
     expect(entry.action_type).toBe("file_read");
     expect(entry.tags).toEqual([]);
@@ -118,8 +127,8 @@ describe("addJournalEntry", () => {
     const entry = sessionMemory.addJournalEntry({
       sessionId: session.id,
       taskId,
-      phase: "research",
-      type: "finding",
+      phase: Phases.research,
+      type: JournalEntryTypes.finding,
       summary: "Found patterns",
       tags: ["auth", "css"],
     });
@@ -135,8 +144,8 @@ describe("addJournalEntry", () => {
     const input: AddJournalEntryInput = {
       sessionId: session.id,
       taskId,
-      phase: "execution",
-      type: "error",
+      phase: Phases.execution,
+      type: JournalEntryTypes.error,
       summary: "Test failure",
       detail: "3 assertions failed",
       errorDetail: "auth.test.ts: expected 200, got 401",
@@ -159,7 +168,7 @@ function makeCheckpointInput(
   return {
     sessionId,
     taskId,
-    phase: "research",
+    phase: Phases.research,
     phaseProgress: "researched auth module, found 3 patterns",
     contextSummary: "Exploring auth patterns in the codebase",
     keyFindings: ["Uses JWT", "No refresh tokens"],
@@ -167,7 +176,7 @@ function makeCheckpointInput(
     nextAction: "Research OAuth integration",
     lastEventId: "01ABCDEF",
     workspaceRef: { branch: "engineer/47-dark-mode", last_commit: "abc123" },
-    reason: "phase_transition",
+    reason: CheckpointReasons.phase_transition,
     journalOffset: 5,
     ...overrides,
   };
@@ -222,11 +231,11 @@ describe("getLatestCheckpoint", () => {
     const taskId = insertTask();
 
     const s1 = sessionMemory.createSession({ taskId });
-    sessionMemory.createCheckpoint(makeCheckpointInput(s1.id, taskId, { phase: "research" }));
+    sessionMemory.createCheckpoint(makeCheckpointInput(s1.id, taskId, { phase: Phases.research }));
 
-    sessionMemory.endSession(s1.id, "preempted");
+    sessionMemory.endSession(s1.id, SessionEndReasons.preempted);
     const s2 = sessionMemory.createSession({ taskId, previousSessionId: s1.id });
-    sessionMemory.createCheckpoint(makeCheckpointInput(s2.id, taskId, { phase: "planning" }));
+    sessionMemory.createCheckpoint(makeCheckpointInput(s2.id, taskId, { phase: Phases.planning }));
 
     const latest = sessionMemory.getLatestCheckpoint(taskId);
     expect(latest).not.toBeNull();
@@ -247,12 +256,12 @@ describe("getLatestCheckpoint", () => {
 
 function makeKnowledgeInput(overrides?: Partial<StoreKnowledgeInput>): StoreKnowledgeInput {
   return {
-    scope: "repo",
+    scope: KnowledgeScopes.repo,
     repoScope: "owner/repo",
-    domain: "conventions",
+    domain: KnowledgeDomains.conventions,
     key: "test framework",
     body: "Uses Vitest for all tests",
-    confidence: "observed",
+    confidence: KnowledgeConfidences.observed,
     evidence: [{ task_id: "task-1", description: "Saw vitest.config.ts" }],
     sourceTaskId: "task-1",
     sourcePhase: "research",
@@ -307,10 +316,10 @@ describe("storeKnowledge", () => {
     const { sessionMemory } = setup();
 
     const entry = sessionMemory.storeKnowledge(
-      makeKnowledgeInput({ scope: "user", repoScope: null }),
+      makeKnowledgeInput({ scope: KnowledgeScopes.user, repoScope: null }),
     );
 
-    expect(entry.scope).toBe("user");
+    expect(entry.scope).toBe(KnowledgeScopes.user);
     expect(entry.repo_scope).toBeNull();
   });
 });
@@ -423,32 +432,32 @@ describe("queryJournal", () => {
     sm.addJournalEntry({
       sessionId,
       taskId,
-      phase: "research",
-      type: "action",
+      phase: Phases.research,
+      type: JournalEntryTypes.action,
       summary: "Read files",
       tags: ["auth"],
     });
     sm.addJournalEntry({
       sessionId,
       taskId,
-      phase: "research",
-      type: "finding",
+      phase: Phases.research,
+      type: JournalEntryTypes.finding,
       summary: "Found patterns",
       tags: ["auth", "patterns"],
     });
     sm.addJournalEntry({
       sessionId,
       taskId,
-      phase: "planning",
-      type: "decision",
+      phase: Phases.planning,
+      type: JournalEntryTypes.decision,
       summary: "Chose approach",
       tags: ["architecture"],
     });
     sm.addJournalEntry({
       sessionId,
       taskId,
-      phase: "execution",
-      type: "error",
+      phase: Phases.execution,
+      type: JournalEntryTypes.error,
       summary: "Test failure",
       tags: ["testing"],
     });
@@ -470,9 +479,9 @@ describe("queryJournal", () => {
     const session = sessionMemory.createSession({ taskId });
     addEntries(sessionMemory, session.id, taskId);
 
-    const entries = sessionMemory.queryJournal(taskId, { type: "finding" });
+    const entries = sessionMemory.queryJournal(taskId, { type: JournalEntryTypes.finding });
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.type).toBe("finding");
+    expect(entries[0]!.type).toBe(JournalEntryTypes.finding);
   });
 
   it("filters by phase", () => {
@@ -481,7 +490,7 @@ describe("queryJournal", () => {
     const session = sessionMemory.createSession({ taskId });
     addEntries(sessionMemory, session.id, taskId);
 
-    const entries = sessionMemory.queryJournal(taskId, { phase: "research" });
+    const entries = sessionMemory.queryJournal(taskId, { phase: Phases.research });
     expect(entries).toHaveLength(2);
   });
 
@@ -506,8 +515,8 @@ describe("queryJournal", () => {
     sessionMemory.addJournalEntry({
       sessionId: session.id,
       taskId,
-      phase: "research",
-      type: "action",
+      phase: Phases.research,
+      type: JournalEntryTypes.action,
       summary: "Early entry",
     });
 
@@ -518,8 +527,8 @@ describe("queryJournal", () => {
     sessionMemory.addJournalEntry({
       sessionId: session.id,
       taskId,
-      phase: "planning",
-      type: "decision",
+      phase: Phases.planning,
+      type: JournalEntryTypes.decision,
       summary: "Later entry",
     });
 
@@ -535,8 +544,8 @@ describe("queryJournal", () => {
     addEntries(sessionMemory, session.id, taskId);
 
     const entries = sessionMemory.queryJournal(taskId, {
-      type: "action",
-      phase: "research",
+      type: JournalEntryTypes.action,
+      phase: Phases.research,
     });
     expect(entries).toHaveLength(1);
     expect(entries[0]!.summary).toBe("Read files");
@@ -551,9 +560,9 @@ describe("getSessionChain", () => {
     const taskId = insertTask();
 
     const s1 = sessionMemory.createSession({ taskId });
-    sessionMemory.endSession(s1.id, "preempted");
+    sessionMemory.endSession(s1.id, SessionEndReasons.preempted);
     const s2 = sessionMemory.createSession({ taskId, previousSessionId: s1.id });
-    sessionMemory.endSession(s2.id, "new_session");
+    sessionMemory.endSession(s2.id, SessionEndReasons.new_session);
     const s3 = sessionMemory.createSession({ taskId, previousSessionId: s2.id });
 
     const chain = sessionMemory.getSessionChain(taskId);

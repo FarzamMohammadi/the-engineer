@@ -8,6 +8,13 @@ import {
   createMockTask,
   createTestOrchestrator,
 } from "../../../test/helpers/test-orchestrator.js";
+import { Phases } from "../../schemas/orchestrator.js";
+import {
+  CheckpointReasons,
+  JournalEntryTypes,
+  SessionEndReasons,
+} from "../../schemas/session-memory.js";
+import { ActionClasses, SubStates, TaskStates } from "../../schemas/task.js";
 import { PHASE_SEQUENCE } from "./phase-runner.js";
 
 describe("Orchestrator", () => {
@@ -107,7 +114,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       for (const call of handle.sessionMemory.createCheckpoint.mock.calls) {
-        expect(call[0].reason).toBe("phase_transition");
+        expect(call[0].reason).toBe(CheckpointReasons.phase_transition);
       }
     });
 
@@ -147,7 +154,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       const phaseChangeCalls = handle.sessionMemory.addJournalEntry.mock.calls.filter(
-        (call: unknown[]) => (call[0] as { type: string }).type === "phase_change",
+        (call: unknown[]) => (call[0] as { type: string }).type === JournalEntryTypes.phase_change,
       );
       // 7 phases = 7 phase_change entries
       expect(phaseChangeCalls).toHaveLength(7);
@@ -160,7 +167,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       const phaseChangeCalls = handle.sessionMemory.addJournalEntry.mock.calls.filter(
-        (call: unknown[]) => (call[0] as { type: string }).type === "phase_change",
+        (call: unknown[]) => (call[0] as { type: string }).type === JournalEntryTypes.phase_change,
       );
       const journalPhases = phaseChangeCalls.map(
         (call: unknown[]) => (call[0] as { phase: string }).phase,
@@ -175,10 +182,10 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       const phaseChangeCalls = handle.sessionMemory.addJournalEntry.mock.calls.filter(
-        (call: unknown[]) => (call[0] as { type: string }).type === "phase_change",
+        (call: unknown[]) => (call[0] as { type: string }).type === JournalEntryTypes.phase_change,
       );
       for (const call of phaseChangeCalls) {
-        expect((call[0] as { tags: string[] }).tags).toContain("phase_transition");
+        expect((call[0] as { tags: string[] }).tags).toContain(CheckpointReasons.phase_transition);
       }
     });
   });
@@ -247,7 +254,8 @@ describe("Orchestrator", () => {
 
       // Find the preemption checkpoint
       const preemptionCheckpoint = handle.sessionMemory.createCheckpoint.mock.calls.find(
-        (call: unknown[]) => (call[0] as { reason: string }).reason === "preemption",
+        (call: unknown[]) =>
+          (call[0] as { reason: string }).reason === CheckpointReasons.preemption,
       );
       expect(preemptionCheckpoint).toBeDefined();
     });
@@ -273,7 +281,10 @@ describe("Orchestrator", () => {
       handle.triggerPreemption("task-001", "task-high-priority");
       await handle.orchestrator.executeTask(dispatch);
 
-      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "preempted");
+      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(
+        expect.any(String),
+        SessionEndReasons.preempted,
+      );
     });
   });
 
@@ -282,7 +293,7 @@ describe("Orchestrator", () => {
   describe("resume from checkpoint", () => {
     it("skips completed phases when resuming", async () => {
       handle.setAllPhaseResponses();
-      const checkpoint = createMockCheckpoint({ phase: "research" });
+      const checkpoint = createMockCheckpoint({ phase: Phases.research });
       const dispatch = createMockDispatch({ resume_from: checkpoint });
 
       // After research, remaining phases are: planning, execution, self_review, demo_prep, integration
@@ -293,9 +304,9 @@ describe("Orchestrator", () => {
       if (result.outcome === "completed") {
         // Should have 5 phase outputs (planning through integration)
         expect(result.phaseOutputs.size).toBe(5);
-        expect(result.phaseOutputs.has("requirements_gathering")).toBe(false);
-        expect(result.phaseOutputs.has("research")).toBe(false);
-        expect(result.phaseOutputs.has("planning")).toBe(true);
+        expect(result.phaseOutputs.has(Phases.requirements_gathering)).toBe(false);
+        expect(result.phaseOutputs.has(Phases.research)).toBe(false);
+        expect(result.phaseOutputs.has(Phases.planning)).toBe(true);
       }
     });
 
@@ -316,7 +327,7 @@ describe("Orchestrator", () => {
 
     it("logs a resume journal entry", async () => {
       handle.setAllPhaseResponses();
-      const checkpoint = createMockCheckpoint({ phase: "planning" });
+      const checkpoint = createMockCheckpoint({ phase: Phases.planning });
       const dispatch = createMockDispatch({ resume_from: checkpoint });
 
       await handle.orchestrator.executeTask(dispatch);
@@ -428,17 +439,17 @@ describe("Orchestrator", () => {
 
       if (result.outcome === "completed") {
         // CLI-native phases return file-based output with "high" confidence
-        const reqOutput = result.phaseOutputs.get("requirements_gathering");
+        const reqOutput = result.phaseOutputs.get(Phases.requirements_gathering);
         expect(reqOutput?.confidence).toBe("high");
         expect(reqOutput?.data).toHaveProperty("status");
         expect(reqOutput?.data).toHaveProperty("deliverable_path");
 
         // Planning is now CLI-native — gets "high" confidence
-        const planningOutput = result.phaseOutputs.get("planning");
+        const planningOutput = result.phaseOutputs.get(Phases.planning);
         expect(planningOutput?.confidence).toBe("high");
 
         // Self-review is now CLI-native — gets "high" confidence
-        const selfReviewOutput = result.phaseOutputs.get("self_review");
+        const selfReviewOutput = result.phaseOutputs.get(Phases.self_review);
         expect(selfReviewOutput?.confidence).toBe("high");
       }
     });
@@ -455,7 +466,8 @@ describe("Orchestrator", () => {
 
       // Agent loop calls LLM through ActionPipeline (actionClass: "read" for inference)
       const readCalls = handle.actionPipeline.execute.mock.calls.filter(
-        (call: unknown[]) => (call[0] as { actionClass: string }).actionClass === "read",
+        (call: unknown[]) =>
+          (call[0] as { actionClass: string }).actionClass === ActionClasses.read,
       );
       expect(readCalls.length).toBeGreaterThanOrEqual(7);
     });
@@ -465,7 +477,7 @@ describe("Orchestrator", () => {
       // Override actionPipeline to reject write actions
       handle.actionPipeline.execute.mockImplementation(
         async (input: { actionClass: string; executeFn: () => Promise<unknown> }) => {
-          if (input.actionClass === "write") {
+          if (input.actionClass === ActionClasses.write) {
             return { outcome: "rejected", gate: "safety_layer", reason: "cost limit exceeded" };
           }
           const result = await input.executeFn();
@@ -535,7 +547,10 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "completed");
+      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(
+        expect.any(String),
+        SessionEndReasons.completed,
+      );
     });
   });
 
@@ -573,7 +588,7 @@ describe("Orchestrator", () => {
 
       expect(result.outcome).toBe("error");
       if (result.outcome === "error") {
-        expect(result.phase).toBe("requirements_gathering");
+        expect(result.phase).toBe(Phases.requirements_gathering);
       }
     });
 
@@ -590,7 +605,10 @@ describe("Orchestrator", () => {
         "git clone failed: authentication required",
       );
 
-      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), "crashed");
+      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(
+        expect.any(String),
+        SessionEndReasons.crashed,
+      );
     });
   });
 
@@ -638,7 +656,7 @@ describe("Orchestrator", () => {
 
     it("returns false when task is not in blocked state", async () => {
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-1", state: "active", sub_state: "working" }),
+        createMockTask({ id: "task-1", state: TaskStates.active, sub_state: SubStates.working }),
       );
 
       const result = await handle.orchestrator.attemptSelfUnblock("task-1");
@@ -647,7 +665,7 @@ describe("Orchestrator", () => {
 
     it("returns false when no LLM plugin is available", async () => {
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+        createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
       handle.registry.getPrimaryPlugin.mockReturnValue(null);
 
@@ -659,7 +677,7 @@ describe("Orchestrator", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({
           id: "task-1",
-          state: "blocked",
+          state: TaskStates.blocked,
           sub_state: null,
           blocked: {
             reason: "Missing dependency",
@@ -687,7 +705,7 @@ describe("Orchestrator", () => {
 
     it("returns false when LLM responds with can_resolve: false", async () => {
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+        createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
       handle.sessionMemory.queryJournal.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
@@ -706,7 +724,7 @@ describe("Orchestrator", () => {
 
     it("returns false when pipeline rejects the action", async () => {
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+        createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
       handle.sessionMemory.queryJournal.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
@@ -720,7 +738,7 @@ describe("Orchestrator", () => {
 
     it("returns false on invalid JSON response", async () => {
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+        createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
       handle.sessionMemory.queryJournal.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
@@ -742,7 +760,7 @@ describe("Orchestrator", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({
           id: "task-1",
-          state: "blocked",
+          state: TaskStates.blocked,
           sub_state: null,
           title: `Fix auth with ${secretToken}`,
           blocked: {
@@ -785,7 +803,7 @@ describe("Orchestrator", () => {
 
     it("uses actionClass read for the LLM call", async () => {
       handle.taskEngine.getTask.mockReturnValue(
-        createMockTask({ id: "task-1", state: "blocked", sub_state: null }),
+        createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
       handle.sessionMemory.queryJournal.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
@@ -802,7 +820,7 @@ describe("Orchestrator", () => {
 
       expect(handle.actionPipeline.execute).toHaveBeenCalledWith(
         expect.objectContaining({
-          actionClass: "read",
+          actionClass: ActionClasses.read,
           taskId: "task-1",
         }),
       );
@@ -820,7 +838,7 @@ describe("Orchestrator", () => {
             pr_number: 42,
             pr_state: "ready",
             demo_artifacts: [],
-            feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
+            feedback_rounds: [{ stage: SubStates.code, comments: ["Fix naming"], applied: false }],
             accommodated_comment_ids: [],
             accommodated_review_state: null,
           },
@@ -835,7 +853,7 @@ describe("Orchestrator", () => {
       const phaseUpdates = handle.taskEngine.updateTaskField.mock.calls
         .filter((c: unknown[]) => c[1] === "phase")
         .map((c: unknown[]) => c[2]);
-      expect(phaseUpdates[0]).toBe("requirements_gathering");
+      expect(phaseUpdates[0]).toBe(Phases.requirements_gathering);
     });
   });
 
@@ -857,7 +875,7 @@ describe("Orchestrator", () => {
           pr_number: 42,
           pr_state: "ready",
           demo_artifacts: [],
-          feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
+          feedback_rounds: [{ stage: SubStates.code, comments: ["Fix naming"], applied: false }],
           accommodated_comment_ids: [],
           accommodated_review_state: null,
         },
@@ -899,7 +917,7 @@ describe("Orchestrator", () => {
           pr_number: 42,
           pr_state: "ready",
           demo_artifacts: [],
-          feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
+          feedback_rounds: [{ stage: SubStates.code, comments: ["Fix naming"], applied: false }],
           accommodated_comment_ids: [],
           accommodated_review_state: null,
         },

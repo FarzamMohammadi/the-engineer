@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { EventBus } from "../../src/core/event-bus/index.js";
+import { EventTypes } from "../../src/schemas/events.js";
 import { type TestEventBusHandle, createTestEventBus } from "./test-event-bus.js";
 
 describe("createTestEventBus", () => {
@@ -21,7 +22,7 @@ describe("createTestEventBus", () => {
   it("getEmittedEvents returns all events when no type filter", () => {
     handle = createTestEventBus();
     handle.eventBus.publish({
-      type: "task.created",
+      type: EventTypes["task.created"],
       source: "test",
       task_id: null,
       payload: {
@@ -35,7 +36,7 @@ describe("createTestEventBus", () => {
       },
     });
     handle.eventBus.publish({
-      type: "git.pushed",
+      type: EventTypes["git.pushed"],
       source: "test",
       task_id: "task-1",
       payload: {
@@ -55,7 +56,7 @@ describe("createTestEventBus", () => {
   it("getEmittedEvents filters by type", () => {
     handle = createTestEventBus();
     handle.eventBus.publish({
-      type: "task.created",
+      type: EventTypes["task.created"],
       source: "test",
       task_id: null,
       payload: {
@@ -69,7 +70,7 @@ describe("createTestEventBus", () => {
       },
     });
     handle.eventBus.publish({
-      type: "git.pushed",
+      type: EventTypes["git.pushed"],
       source: "test",
       task_id: "task-1",
       payload: {
@@ -84,13 +85,13 @@ describe("createTestEventBus", () => {
 
     const taskEvents = handle.getEmittedEvents("task.created");
     expect(taskEvents).toHaveLength(1);
-    expect(taskEvents[0]?.type).toBe("task.created");
+    expect(taskEvents[0]?.type).toBe(EventTypes["task.created"]);
   });
 
   it("assertEventEmitted passes when event exists", () => {
     handle = createTestEventBus();
     handle.eventBus.publish({
-      type: "task.created",
+      type: EventTypes["task.created"],
       source: "test",
       task_id: null,
       payload: {
@@ -118,7 +119,7 @@ describe("createTestEventBus", () => {
   it("assertEventEmitted with payloadMatcher works", () => {
     handle = createTestEventBus();
     handle.eventBus.publish({
-      type: "task.created",
+      type: EventTypes["task.created"],
       source: "test",
       task_id: null,
       payload: {

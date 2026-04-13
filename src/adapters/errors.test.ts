@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { AdapterErrorSeverities } from "../schemas/adapters.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 
 describe("createAdapterError", () => {
@@ -10,7 +11,7 @@ describe("createAdapterError", () => {
       message: "Too many requests",
       retryable: false,
       retry_after_ms: null,
-      severity: "error",
+      severity: AdapterErrorSeverities.error,
     });
   });
 
@@ -18,14 +19,14 @@ describe("createAdapterError", () => {
     const error = createAdapterError("rate_limited", "Slow down", {
       retryable: true,
       retry_after_ms: 5000,
-      severity: "warning",
+      severity: AdapterErrorSeverities.warning,
     });
     expect(error).toEqual({
       code: "rate_limited",
       message: "Slow down",
       retryable: true,
       retry_after_ms: 5000,
-      severity: "warning",
+      severity: AdapterErrorSeverities.warning,
     });
   });
 
@@ -33,7 +34,7 @@ describe("createAdapterError", () => {
     const error = createAdapterError("timeout", "Timed out", { retryable: true });
     expect(error.retryable).toBe(true);
     expect(error.retry_after_ms).toBeNull();
-    expect(error.severity).toBe("error");
+    expect(error.severity).toBe(AdapterErrorSeverities.error);
   });
 });
 
@@ -48,7 +49,7 @@ describe("AdapterMethodError", () => {
   it("carries structured adapterError payload", () => {
     const adapterError = createAdapterError("timeout", "Request timed out", {
       retryable: true,
-      severity: "warning",
+      severity: AdapterErrorSeverities.warning,
     });
     const error = new AdapterMethodError(adapterError);
     expect(error.adapterError).toBe(adapterError);

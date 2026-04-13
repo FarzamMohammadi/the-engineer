@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Complexities, Phases } from "../../schemas/orchestrator.js";
 import {
   backupSessionResult,
   readSessionResult,
@@ -30,14 +31,14 @@ describe("readSessionResult", () => {
   it("returns parsed SessionResult for valid JSON", () => {
     writeFileSync(
       path.join(dir, "session-result.json"),
-      JSON.stringify({ status: "ready", next_phase: "research", summary: "done" }),
+      JSON.stringify({ status: "ready", next_phase: Phases.research, summary: "done" }),
     );
     const result = readSessionResult(dir);
     expect(result).toEqual({
       status: "ready",
-      next_phase: "research",
+      next_phase: Phases.research,
       summary: "done",
-      complexity: "moderate",
+      complexity: Complexities.moderate,
     });
   });
 
@@ -49,7 +50,7 @@ describe("readSessionResult", () => {
   it('returns "invalid" for valid JSON that fails schema validation', () => {
     writeFileSync(
       path.join(dir, "session-result.json"),
-      JSON.stringify({ status: "unknown_status", next_phase: "research", summary: "" }),
+      JSON.stringify({ status: "unknown_status", next_phase: Phases.research, summary: "" }),
     );
     expect(readSessionResult(dir)).toBe("invalid");
   });
@@ -65,16 +66,16 @@ describe("readSessionResult", () => {
       path.join(dir, "session-result.json"),
       JSON.stringify({
         status: "need_more_info",
-        next_phase: "requirements_gathering",
+        next_phase: Phases.requirements_gathering,
         summary: "need clarification",
       }),
     );
     const result = readSessionResult(dir);
     expect(result).toEqual({
       status: "need_more_info",
-      next_phase: "requirements_gathering",
+      next_phase: Phases.requirements_gathering,
       summary: "need clarification",
-      complexity: "moderate",
+      complexity: Complexities.moderate,
     });
   });
 });
@@ -114,7 +115,7 @@ describe("backupSessionResult", () => {
   });
 
   it("backs up valid result and writes fresh template", () => {
-    const validResult = { status: "ready", next_phase: "research", summary: "done" };
+    const validResult = { status: "ready", next_phase: Phases.research, summary: "done" };
     writeFileSync(path.join(dir, "session-result.json"), JSON.stringify(validResult));
 
     backupSessionResult(dir);

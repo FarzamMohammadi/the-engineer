@@ -333,13 +333,13 @@ export class PolicyEngine {
     }
 
     const patterns =
-      actionClass === "merge"
+      actionClass === ActionClasses.merge
         ? this.config.scope.branches.merge_to
         : this.config.scope.branches.push_to;
 
     const matches = patterns.some((p) => matchesPathPattern(p, branch));
     if (!matches) {
-      const verb = actionClass === "merge" ? "merge into" : "push to";
+      const verb = actionClass === ActionClasses.merge ? "merge into" : "push to";
       return {
         allowed: false,
         action: "deny",

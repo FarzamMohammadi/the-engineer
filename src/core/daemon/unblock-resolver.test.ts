@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
+import { TaskStates } from "../../schemas/task.js";
 import {
   type UnblockResolverContext,
   createUnblockResolver,
@@ -37,7 +38,7 @@ function makeBlockedTask(
   return {
     id,
     title: "Blocked task",
-    state: "blocked",
+    state: TaskStates.blocked,
     external_ref: { type: "test_issue", repo, id: externalId },
     thoughts_id: thoughtsId,
   };
@@ -95,7 +96,7 @@ describe("UnblockResolver", () => {
       expect(result).toEqual({ unblocked: true, taskId: "task-1", reason: null });
       expect(mockCtx.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "github_response_received",
         "daemon",
@@ -175,7 +176,7 @@ describe("UnblockResolver", () => {
       expect(result).toEqual({ unblocked: true, taskId: "task-1", reason: null });
       expect(mockCtx.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-1",
-        "queued",
+        TaskStates.queued,
         null,
         "dashboard_response_received",
         "daemon",
@@ -185,7 +186,7 @@ describe("UnblockResolver", () => {
     it("returns not_blocked when task is not in blocked state", () => {
       (mockCtx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
         id: "task-1",
-        state: "active",
+        state: TaskStates.active,
       });
 
       const resolver = createUnblockResolver(mockCtx);

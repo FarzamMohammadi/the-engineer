@@ -6,6 +6,7 @@ import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
+import { ObservationType } from "../../schemas/observer.js";
 
 export interface MetricsRoutesDeps {
   db: Database.Database;
@@ -28,7 +29,10 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       .all() as Record<string, unknown>[];
 
     // Aggregate cost from phase_transition observations
-    const phaseObs = deps.observationStore.query({ type: "phase_transition", limit: 10000 });
+    const phaseObs = deps.observationStore.query({
+      type: ObservationType.PHASE_TRANSITION,
+      limit: 10000,
+    });
 
     // Per-day cost
     const dayMap = new Map<string, { spend_usd: number; duration_ms: number }>();
@@ -101,7 +105,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       .sort((a, b) => b.spend_usd - a.spend_usd);
 
     // Aggregate token totals from llm_call observations
-    const llmObs = deps.observationStore.query({ type: "llm_call", limit: 50000 });
+    const llmObs = deps.observationStore.query({ type: ObservationType.LLM_CALL, limit: 50000 });
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let totalCacheReadTokens = 0;
@@ -153,7 +157,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
     try {
       // Latest quota status from observations (written by orchestrator + daemon)
       const latestObs = deps.observationStore.query({
-        type: "quota_status",
+        type: ObservationType.QUOTA_STATUS,
         limit: 1,
       });
       // observe() stores data in `input` field (output is for span end-data only)
@@ -200,7 +204,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
 
     if (taskId) {
       const phases = deps.observationStore.query({
-        type: "phase_transition",
+        type: ObservationType.PHASE_TRANSITION,
         task_id: taskId,
         limit: 100,
       });
@@ -209,7 +213,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
 
     // Recent phase observations across all tasks
     const phases = deps.observationStore.query({
-      type: "phase_transition",
+      type: ObservationType.PHASE_TRANSITION,
       limit: 50,
     });
     return c.json({ phases });

@@ -1,5 +1,6 @@
 import type { ContactInfo, Person } from "../../schemas/adapters.js";
 import type { PeopleConfig } from "../../schemas/config.js";
+import { TeamMemberRoles } from "../../schemas/task.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 
 // ── PeopleDirectory ──────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ export class PeopleDirectory implements IPeopleDirectory {
 
   /** Convenience: all people with role "reviewer". */
   getReviewers(): Person[] {
-    return this.getByRole("reviewer");
+    return this.getByRole(TeamMemberRoles.reviewer);
   }
 
   /**

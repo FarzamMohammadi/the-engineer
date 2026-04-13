@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { InferenceResult, TriggerEvent } from "../../src/schemas/adapters.js";
 import type { Event } from "../../src/schemas/events.js";
+import { Complexities } from "../../src/schemas/orchestrator.js";
+import { TaskStates } from "../../src/schemas/task.js";
 import {
   type IntegrationContext,
   createIntegrationContext,
@@ -63,7 +65,7 @@ function makeFullPipelineResponses(): InferenceResult[] {
       status: "ready",
       contact: null,
       question: null,
-      complexity_hint: "moderate",
+      complexity_hint: Complexities.moderate,
     }),
     makeResponse({
       approach: "Modify the settings module to add dark mode toggle",
@@ -177,9 +179,9 @@ describe("E2E: Task happy path", () => {
     await runFullLifecycle(ctx);
 
     // Find the task that was created
-    const completed = ctx.taskEngine.getTasksByState("completed");
-    const queued = ctx.taskEngine.getTasksByState("queued");
-    const active = ctx.taskEngine.getTasksByState("active");
+    const completed = ctx.taskEngine.getTasksByState(TaskStates.completed);
+    const queued = ctx.taskEngine.getTasksByState(TaskStates.queued);
+    const active = ctx.taskEngine.getTasksByState(TaskStates.active);
     const allTasks = [...completed, ...queued, ...active];
 
     // At least 1 task should exist
@@ -228,17 +230,17 @@ describe("E2E: Task happy path", () => {
     await ctx.daemon.tick();
 
     // Count tasks after first tick
-    const queued1 = ctx.taskEngine.getTasksByState("queued");
-    const active1 = ctx.taskEngine.getTasksByState("active");
+    const queued1 = ctx.taskEngine.getTasksByState(TaskStates.queued);
+    const active1 = ctx.taskEngine.getTasksByState(TaskStates.active);
     const taskCount1 = queued1.length + active1.length;
 
     // Second tick — same event, should be deduped
     ctx.clock.advance(1_000);
     await ctx.daemon.tick();
 
-    const queued2 = ctx.taskEngine.getTasksByState("queued");
-    const active2 = ctx.taskEngine.getTasksByState("active");
-    const completed2 = ctx.taskEngine.getTasksByState("completed");
+    const queued2 = ctx.taskEngine.getTasksByState(TaskStates.queued);
+    const active2 = ctx.taskEngine.getTasksByState(TaskStates.active);
+    const completed2 = ctx.taskEngine.getTasksByState(TaskStates.completed);
     const taskCount2 = queued2.length + active2.length + completed2.length;
 
     // Same total task count (may have been dispatched/completed, but no new task)

@@ -4,6 +4,7 @@ import path from "node:path";
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import { ObservationType } from "../../schemas/observer.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
@@ -291,7 +292,7 @@ export function createPrManager(
         });
       }
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: dispatch.task.id,
         message: "Pushed rework addressing review feedback.",
       });
@@ -384,12 +385,12 @@ export function createPrManager(
       });
 
       notifications.notify({
-        kind: "milestone",
+        kind: NotificationKinds.milestone,
         taskId: dispatch.task.id,
         message: `PR created: ${prResult.url}`,
       });
       notifications.notify({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: dispatch.task.id,
         message: `PR created: ${prResult.url}`,
       });

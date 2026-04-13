@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createDatabase } from "../../db/database.js";
+import { Phases } from "../../schemas/orchestrator.js";
+import { JournalEntryTypes } from "../../schemas/session-memory.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import { createOutput, resetOutput } from "../output.js";
 import { runWhy } from "./why.js";
 
@@ -43,7 +46,7 @@ function insertTask(
   overrides: Record<string, unknown> = {},
 ): void {
   const defaults = {
-    state: "requirements_gathering",
+    state: TaskStates.requirements_gathering,
     sub_state: null as string | null,
     priority: 50,
     title: "Test task",
@@ -94,8 +97,8 @@ describe("runWhy", () => {
     const dbPath = join(tempDir, "data", "engineer.db");
     const handle = createDatabase(dbPath);
     insertTask(handle.db, "task-001", {
-      state: "active",
-      sub_state: "working",
+      state: TaskStates.active,
+      sub_state: SubStates.working,
       description: "Fix bug",
       repo: "owner/repo",
       llm_tokens: 1230,
@@ -117,7 +120,7 @@ describe("runWhy", () => {
   it("displays timeline with state transitions", () => {
     const dbPath = join(tempDir, "data", "engineer.db");
     const handle = createDatabase(dbPath);
-    insertTask(handle.db, "task-002", { state: "queued" });
+    insertTask(handle.db, "task-002", { state: TaskStates.queued });
 
     handle.db
       .prepare(
@@ -127,8 +130,8 @@ describe("runWhy", () => {
       .run(
         "tr-1",
         "task-002",
-        "requirements_gathering",
-        "queued",
+        TaskStates.requirements_gathering,
+        TaskStates.queued,
         "auto-transition",
         "daemon",
         "2026-01-15T10:30:01Z",
@@ -161,7 +164,7 @@ describe("runWhy", () => {
   it("displays journal entries", () => {
     const dbPath = join(tempDir, "data", "engineer.db");
     const handle = createDatabase(dbPath);
-    insertTask(handle.db, "task-004", { state: "active" });
+    insertTask(handle.db, "task-004", { state: TaskStates.active });
 
     handle.db
       .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
@@ -176,9 +179,9 @@ describe("runWhy", () => {
         "j-1",
         "session-001",
         "task-004",
-        "finding",
+        JournalEntryTypes.finding,
         "Found 3 related files",
-        "research",
+        Phases.research,
         "[]",
         "2026-01-15T10:32:00Z",
       );
@@ -200,7 +203,7 @@ describe("runWhy", () => {
     const dbPath = join(tempDir, "data", "engineer.db");
     const handle = createDatabase(dbPath);
     insertTask(handle.db, "task-005", {
-      state: "completed",
+      state: TaskStates.completed,
       description: "Fix auth",
       llm_tokens: 500,
       llm_cost_usd: 0.25,
@@ -213,7 +216,7 @@ describe("runWhy", () => {
     const output = stdoutWrites.join("");
     const parsed = JSON.parse(output);
     expect(parsed.task.id).toBe("task-005");
-    expect(parsed.task.state).toBe("completed");
+    expect(parsed.task.state).toBe(TaskStates.completed);
     expect(parsed.cost.usd).toBe(0.25);
   });
 });

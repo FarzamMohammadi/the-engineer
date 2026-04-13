@@ -8,6 +8,7 @@
  * Complements (does not replace) EventBus (audit trail) and Logger (ops logs).
  */
 import { ulid } from "ulid";
+import { ObservationLevels, ObservationStatuses, ObservationType } from "../../schemas/observer.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { BlobStore } from "./blob-store.js";
 import { ObserverStore } from "./store.js";
@@ -85,7 +86,15 @@ export class ObservationStore implements IObservationStore {
   ): ObservationSpan {
     const id = ulid();
     const startMs = Date.now();
-    const obs = buildObservation(id, type, name, input ?? null, options, "info", "ok");
+    const obs = buildObservation(
+      id,
+      type,
+      name,
+      input ?? null,
+      options,
+      ObservationLevels.info,
+      ObservationStatuses.ok,
+    );
 
     this.store.insertObservation(obs);
     this.stream.notify(obs);
@@ -100,7 +109,15 @@ export class ObservationStore implements IObservationStore {
     options?: SpanOptions,
   ): string {
     const id = ulid();
-    const obs = buildObservation(id, type, name, data, options, "info", "ok");
+    const obs = buildObservation(
+      id,
+      type,
+      name,
+      data,
+      options,
+      ObservationLevels.info,
+      ObservationStatuses.ok,
+    );
     const now = obs.start_time;
     obs.end_time = now;
 
@@ -120,7 +137,7 @@ export class ObservationStore implements IObservationStore {
     opts?: SpanOptions,
   ): string {
     return this.observe(
-      "decision_point",
+      ObservationType.DECISION_POINT,
       name,
       {
         context,
@@ -142,7 +159,7 @@ export class ObservationStore implements IObservationStore {
     const id = ulid();
     const obs = buildObservation(
       id,
-      "error",
+      ObservationType.ERROR,
       context.operation,
       {
         component: context.component,
@@ -150,9 +167,9 @@ export class ObservationStore implements IObservationStore {
         stack: extractStack(error),
         recovery: recovery ?? null,
       },
-      { ...opts, level: "error" },
-      "error",
-      "error",
+      { ...opts, level: ObservationLevels.error },
+      ObservationLevels.error,
+      ObservationStatuses.error,
     );
     obs.end_time = obs.start_time;
     obs.error_message = sanitizeErrorMessage(error);
@@ -196,7 +213,7 @@ export class ObservationStore implements IObservationStore {
   ): ObservationSpan {
     let ended = false;
     let errorMessage: string | null = null;
-    let status: Observation["status"] = "ok";
+    let status: Observation["status"] = ObservationStatuses.ok;
 
     const self = this;
 
@@ -237,14 +254,14 @@ export class ObservationStore implements IObservationStore {
       },
 
       addEvent(eventName: string, data?: Record<string, unknown>): void {
-        self.observe("lifecycle", eventName, data ?? {}, {
+        self.observe(ObservationType.LIFECYCLE, eventName, data ?? {}, {
           ...options,
           parent_observation_id: id,
         });
       },
 
       setError(error: unknown): void {
-        status = "error";
+        status = ObservationStatuses.error;
         errorMessage = sanitizeErrorMessage(error);
       },
     };

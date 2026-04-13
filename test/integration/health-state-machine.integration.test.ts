@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { EventBus } from "../../src/core/event-bus/index.js";
 import { Registry } from "../../src/core/registry/index.js";
+import { PluginHealthStates } from "../../src/schemas/adapters.js";
 import type { Event } from "../../src/schemas/events.js";
 import { FakeLLMPlugin } from "../helpers/fake-plugins/fake-llm/index.js";
 import { FakeTriggerPlugin } from "../helpers/fake-plugins/fake-trigger/index.js";
@@ -40,7 +41,7 @@ describe("Health state machine (integration)", () => {
 
     const results = await registry.healthCheckAll();
     const p1 = results.find((r) => r.plugin_id === "p1");
-    expect(p1?.state).toBe("healthy");
+    expect(p1?.state).toBe(PluginHealthStates.healthy);
   });
 
   it("transitions to unhealthy when plugin reports unhealthy", async () => {
@@ -57,7 +58,7 @@ describe("Health state machine (integration)", () => {
 
     const results = await registry.healthCheckAll();
     const p2 = results.find((r) => r.plugin_id === "p2");
-    expect(p2?.state).toBe("unhealthy");
+    expect(p2?.state).toBe(PluginHealthStates.unhealthy);
 
     const unhealthyEvents = healthEvents.filter((e) => e.type === "health.plugin_unhealthy");
     expect(unhealthyEvents.length).toBeGreaterThanOrEqual(1);
@@ -81,7 +82,7 @@ describe("Health state machine (integration)", () => {
 
     const results = await registry.healthCheckAll();
     const p3 = results.find((r) => r.plugin_id === "p3");
-    expect(p3?.state).toBe("failed");
+    expect(p3?.state).toBe(PluginHealthStates.failed);
 
     const failedEvents = healthEvents.filter((e) => e.type === "health.plugin_failed");
     expect(failedEvents.length).toBeGreaterThanOrEqual(1);
@@ -101,7 +102,7 @@ describe("Health state machine (integration)", () => {
     await registry.healthCheckAll();
 
     let results = await registry.healthCheckAll();
-    expect(results.find((r) => r.plugin_id === "p4")?.state).toBe("unhealthy");
+    expect(results.find((r) => r.plugin_id === "p4")?.state).toBe(PluginHealthStates.unhealthy);
 
     // Recover
     plugin.setUnhealthy(false);
@@ -109,7 +110,7 @@ describe("Health state machine (integration)", () => {
 
     results = await registry.healthCheckAll();
     const p4 = results.find((r) => r.plugin_id === "p4");
-    expect(p4?.state).toBe("healthy");
+    expect(p4?.state).toBe(PluginHealthStates.healthy);
 
     const recoveredEvents = healthEvents.filter((e) => e.type === "health.plugin_recovered");
     expect(recoveredEvents.length).toBeGreaterThanOrEqual(1);
@@ -132,7 +133,7 @@ describe("Health state machine (integration)", () => {
     await registry.healthCheckAll();
 
     const results = await registry.healthCheckAll();
-    expect(results.find((r) => r.plugin_id === "t1")?.state).toBe("unhealthy");
-    expect(results.find((r) => r.plugin_id === "l1")?.state).toBe("healthy");
+    expect(results.find((r) => r.plugin_id === "t1")?.state).toBe(PluginHealthStates.unhealthy);
+    expect(results.find((r) => r.plugin_id === "l1")?.state).toBe(PluginHealthStates.healthy);
   });
 });

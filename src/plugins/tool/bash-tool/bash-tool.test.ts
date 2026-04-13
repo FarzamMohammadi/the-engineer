@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runToolContractSuite } from "../../../../test/helpers/contract-suites/tool-contract.js";
-import { PluginManifestSchema, type ToolExecutionContext } from "../../../schemas/adapters.js";
+import {
+  PluginManifestSchema,
+  SideEffectTypes,
+  type ToolExecutionContext,
+} from "../../../schemas/adapters.js";
+import { ActionClasses } from "../../../schemas/task.js";
 import {
   _resetSecretRegistryForTest,
   registerSecretEnvVars,
@@ -72,7 +77,11 @@ describe("BashToolPlugin", () => {
   it("echo hello returns success with output", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
-    const result = await plugin.execute("read", { command: "echo hello" }, makeContext());
+    const result = await plugin.execute(
+      ActionClasses.read,
+      { command: "echo hello" },
+      makeContext(),
+    );
     expect(result.success).toBe(true);
     expect(result.output.trim()).toBe("hello");
   });
@@ -80,7 +89,7 @@ describe("BashToolPlugin", () => {
   it("exit 1 returns failure with exit code", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
-    const result = await plugin.execute("write", { command: "exit 1" }, makeContext());
+    const result = await plugin.execute(ActionClasses.write, { command: "exit 1" }, makeContext());
     expect(result.success).toBe(false);
     expect(result.error).not.toBeNull();
     expect(result.error?.code).toBe("command_failed");
@@ -90,7 +99,7 @@ describe("BashToolPlugin", () => {
   it("pwd returns workspace_path (workspace confinement)", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
-    const result = await plugin.execute("read", { command: "pwd" }, makeContext());
+    const result = await plugin.execute(ActionClasses.read, { command: "pwd" }, makeContext());
     expect(result.success).toBe(true);
     expect(result.output.trim()).toBe(workspaceDir);
   });
@@ -99,7 +108,11 @@ describe("BashToolPlugin", () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
     // Use "env | cat" to bypass the bare "env" block pattern while still dumping env vars
-    const result = await plugin.execute("read", { command: "env | cat" }, makeContext());
+    const result = await plugin.execute(
+      ActionClasses.read,
+      { command: "env | cat" },
+      makeContext(),
+    );
     expect(result.success).toBe(true);
     // Should NOT contain random env vars
     expect(result.output).not.toContain("CLAUDECODE");
@@ -110,7 +123,11 @@ describe("BashToolPlugin", () => {
   it("output limit kills process when exceeded", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({ max_output_bytes: 100 });
-    const result = await plugin.execute("read", { command: "yes | head -c 1000" }, makeContext());
+    const result = await plugin.execute(
+      ActionClasses.read,
+      { command: "yes | head -c 1000" },
+      makeContext(),
+    );
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("output_limit");
   });
@@ -118,7 +135,7 @@ describe("BashToolPlugin", () => {
   it("command timeout kills long-running process", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({ command_timeout_ms: 200 });
-    const result = await plugin.execute("read", { command: "sleep 10" }, makeContext());
+    const result = await plugin.execute(ActionClasses.read, { command: "sleep 10" }, makeContext());
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("timeout");
     expect(result.error?.retryable).toBe(true);
@@ -127,7 +144,7 @@ describe("BashToolPlugin", () => {
   it("invalid command param returns error", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
-    const result = await plugin.execute("read", { command: "" }, makeContext());
+    const result = await plugin.execute(ActionClasses.read, { command: "" }, makeContext());
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("invalid_params");
   });
@@ -135,7 +152,7 @@ describe("BashToolPlugin", () => {
   it("missing command param returns error", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
-    const result = await plugin.execute("read", {}, makeContext());
+    const result = await plugin.execute(ActionClasses.read, {}, makeContext());
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("invalid_params");
   });
@@ -159,9 +176,13 @@ describe("BashToolPlugin", () => {
   it("side_effects always includes command_run", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
-    const result = await plugin.execute("read", { command: "echo test" }, makeContext());
+    const result = await plugin.execute(
+      ActionClasses.read,
+      { command: "echo test" },
+      makeContext(),
+    );
     expect(result.side_effects).toHaveLength(1);
-    expect(result.side_effects[0]?.type).toBe("command_run");
+    expect(result.side_effects[0]?.type).toBe(SideEffectTypes.command_run);
     expect(result.side_effects[0]?.details["command"]).toBe("echo test");
   });
 
@@ -197,7 +218,7 @@ describe("BashToolPlugin", () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
     for (const cmd of ["echo $HOME", "ls -la", "git status", "npm test"]) {
-      const result = await plugin.execute("read", { command: cmd }, makeContext());
+      const result = await plugin.execute(ActionClasses.read, { command: cmd }, makeContext());
       expect(result.error?.code).not.toBe("command_blocked");
     }
   });
@@ -205,7 +226,11 @@ describe("BashToolPlugin", () => {
   it("blocks case-insensitively", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({});
-    const result = await plugin.execute("read", { command: "KILLALL node" }, makeContext());
+    const result = await plugin.execute(
+      ActionClasses.read,
+      { command: "KILLALL node" },
+      makeContext(),
+    );
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("command_blocked");
   });
@@ -224,18 +249,26 @@ describe("BashToolPlugin", () => {
   it("applies custom blocked_patterns from config", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({ blocked_patterns: ["^dangerous$"] });
-    const result = await plugin.execute("read", { command: "dangerous" }, makeContext());
+    const result = await plugin.execute(
+      ActionClasses.read,
+      { command: "dangerous" },
+      makeContext(),
+    );
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("command_blocked");
     // Should allow other commands
-    const ok = await plugin.execute("read", { command: "echo safe" }, makeContext());
+    const ok = await plugin.execute(ActionClasses.read, { command: "echo safe" }, makeContext());
     expect(ok.success).toBe(true);
   });
 
   it("includes command in side_effects when audit_commands is true", async () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({ audit_commands: true });
-    const result = await plugin.execute("read", { command: "echo audited" }, makeContext());
+    const result = await plugin.execute(
+      ActionClasses.read,
+      { command: "echo audited" },
+      makeContext(),
+    );
     expect(result.side_effects[0]?.details["command"]).toBe("echo audited");
   });
 
@@ -286,7 +319,7 @@ describe("BashToolPlugin", () => {
     const plugin = createInitializedPlugin();
     await plugin.initialize({ command_timeout_ms: 60_000 });
     // Start a long-running command
-    const promise = plugin.execute("read", { command: "sleep 60" }, makeContext());
+    const promise = plugin.execute(ActionClasses.read, { command: "sleep 60" }, makeContext());
     // Give process time to start
     await new Promise((r) => {
       setTimeout(r, 100);

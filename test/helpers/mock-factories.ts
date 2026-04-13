@@ -11,7 +11,7 @@ import {
   TriggerEventSchema,
 } from "../../src/schemas/adapters.js";
 import { type Event, EventSchema } from "../../src/schemas/events.js";
-import { type Task, TaskSchema } from "../../src/schemas/task.js";
+import { CascadePolicies, type Task, TaskSchema, TaskStates } from "../../src/schemas/task.js";
 
 // ── Plugin Manifest ─────────────────────────────────────────────────────────
 
@@ -90,12 +90,12 @@ export function createMockTask(overrides?: Partial<Task>): Task {
   return TaskSchema.parse({
     id: "01MOCK000000000000000000000",
     external_ref: null,
-    state: "requirements_gathering",
+    state: TaskStates.requirements_gathering,
     sub_state: null,
     phase: null,
     parent_id: null,
     children: [],
-    cascade_policy: "best_effort",
+    cascade_policy: CascadePolicies.best_effort,
     title: "Mock task",
     description: "A mock task for testing",
     source_text: "Mock source text",

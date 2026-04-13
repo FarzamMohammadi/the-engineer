@@ -6,7 +6,7 @@ import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 import { loadEnvFile, writeEnvFile } from "../../config/env.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
-import type { PluginRequirement } from "../../schemas/adapters.js";
+import { AdapterTypes, type PluginRequirement } from "../../schemas/adapters.js";
 import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 import { ALL_PLUGIN_DOCS } from "../plugin-docs.js";
@@ -21,35 +21,35 @@ export type { AdapterTypeConfig } from "./types.js";
 
 export const ADAPTER_TYPE_CONFIGS: AdapterTypeConfig[] = [
   {
-    type: "llm",
+    type: AdapterTypes.llm,
     label: "Which AI do you use?",
     selectionMode: "single",
     setupOrder: 1,
     required: true,
   },
   {
-    type: "trigger",
+    type: AdapterTypes.trigger,
     label: "Where do your tasks come from?",
     selectionMode: "single",
     setupOrder: 2,
     required: true,
   },
   {
-    type: "git_hosting",
+    type: AdapterTypes.git_hosting,
     label: "Where does your code live?",
     selectionMode: "single",
     setupOrder: 3,
     required: true,
   },
   {
-    type: "communication",
+    type: AdapterTypes.communication,
     label: "How should The Engineer reach you?",
     selectionMode: "multi",
     setupOrder: 4,
     required: false,
   },
   {
-    type: "tool",
+    type: AdapterTypes.tool,
     label: "Which tools should The Engineer use?",
     selectionMode: "multi",
     setupOrder: 5,

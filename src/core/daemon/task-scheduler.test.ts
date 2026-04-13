@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
-import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
+import { CascadePolicies, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { ExecuteTaskResult } from "../orchestrator/index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import {
@@ -71,7 +72,7 @@ function makeMockTask(overrides?: Record<string, unknown>): Task {
     created_at: new Date(1_000_000).toISOString(),
     started_at: null,
     decisions: [],
-    cascade_policy: "best_effort",
+    cascade_policy: CascadePolicies.best_effort,
     description: "A test task",
     children: [],
     external_ref: null,
@@ -262,11 +263,11 @@ describe("TaskScheduler", () => {
     );
     expect(workspaceManager.cleanupWorkspace).toHaveBeenCalledWith("t1", true);
     expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "completion", taskId: "t1" }),
+      expect.objectContaining({ kind: NotificationKinds.completion, taskId: "t1" }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: "t1",
         message: "Task completed successfully.",
       }),
@@ -301,11 +302,11 @@ describe("TaskScheduler", () => {
       "daemon",
     );
     expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "review_pending", taskId: "t1" }),
+      expect.objectContaining({ kind: NotificationKinds.review_pending, taskId: "t1" }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: "t1",
         message: "Pull request created — awaiting review.",
       }),
@@ -339,11 +340,15 @@ describe("TaskScheduler", () => {
       "daemon",
     );
     expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "task_error", taskId: "t1", reason: "build_failed" }),
+      expect.objectContaining({
+        kind: NotificationKinds.task_error,
+        taskId: "t1",
+        reason: "build_failed",
+      }),
     );
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "ticket_comment",
+        kind: NotificationKinds.ticket_comment,
         taskId: "t1",
         message: "Task encountered an error: build_failed",
       }),
@@ -371,7 +376,7 @@ describe("TaskScheduler", () => {
 
     // task_error notification reason should be truncated
     const errorNotifyCall = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.find(
-      (c: unknown[]) => (c[0] as { kind: string }).kind === "task_error",
+      (c: unknown[]) => (c[0] as { kind: string }).kind === NotificationKinds.task_error,
     );
     const notifiedReason = (errorNotifyCall?.[0] as { reason: string }).reason;
     expect(notifiedReason.length).toBeLessThan(2200);
@@ -449,7 +454,7 @@ describe("TaskScheduler", () => {
     );
     // Should notify about failure
     expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "task_error", taskId: "t1" }),
+      expect.objectContaining({ kind: NotificationKinds.task_error, taskId: "t1" }),
     );
   });
 
@@ -506,7 +511,7 @@ describe("TaskScheduler", () => {
         id: "parent-1",
         state: TaskStates.active,
         sub_state: SubStates.supervising,
-        cascade_policy: "pause_siblings",
+        cascade_policy: CascadePolicies.pause_siblings,
       }),
     );
 
@@ -754,7 +759,7 @@ describe("TaskScheduler", () => {
     expect(() => scheduler.handleTaskCompletion("t1", result)).not.toThrow();
     // Notification should still be sent
     expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "completion" }),
+      expect.objectContaining({ kind: NotificationKinds.completion }),
     );
   });
 
@@ -771,7 +776,7 @@ describe("TaskScheduler", () => {
         id: "parent-1",
         state: TaskStates.active,
         sub_state: SubStates.supervising,
-        cascade_policy: "best_effort",
+        cascade_policy: CascadePolicies.best_effort,
       }),
     );
     taskEngine.getChildren.mockReturnValue([]);
@@ -831,7 +836,7 @@ describe("TaskScheduler", () => {
     const postDispatchCalls = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.filter(
       (c: unknown[]) => {
         const kind = (c[0] as { kind: string }).kind;
-        return kind === "completion" || kind === "ticket_comment";
+        return kind === NotificationKinds.completion || kind === NotificationKinds.ticket_comment;
       },
     );
     expect(postDispatchCalls).toHaveLength(0);
@@ -862,7 +867,7 @@ describe("TaskScheduler", () => {
       notifications.notify as ReturnType<typeof vi.fn>
     ).mock.calls.filter((c: unknown[]) => {
       const kind = (c[0] as { kind: string }).kind;
-      return kind === "task_error" || kind === "ticket_comment";
+      return kind === NotificationKinds.task_error || kind === NotificationKinds.ticket_comment;
     });
     expect(postDispatchErrorCalls).toHaveLength(0);
   });

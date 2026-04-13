@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestDatabase } from "../../../test/helpers/test-database.js";
 import type { TestDatabaseHandle } from "../../../test/helpers/test-database.js";
-import { SubStates, TaskStates } from "../../schemas/task.js";
+import { CascadePolicies, SubStates, TaskStates } from "../../schemas/task.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import { StateMachine, isValidTransition, subStateMatches } from "./state-machine.js";
 
@@ -51,7 +51,7 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
     null,
     null,
     "[]",
-    "pause_siblings",
+    CascadePolicies.pause_siblings,
     "Test Task",
     "",
     "",

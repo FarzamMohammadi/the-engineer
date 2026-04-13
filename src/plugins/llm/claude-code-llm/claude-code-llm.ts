@@ -15,6 +15,7 @@ import {
   type QuotaWindow,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import { killProcess } from "../../../utils/process.js";
 import { type ClaudeCodeLLMConfig, ClaudeCodeLLMConfigSchema } from "./config.js";
 
@@ -424,7 +425,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
               createAdapterError(
                 "cli_error",
                 `claude CLI exited with code ${String(code)}: ${truncatedError}`,
-                { retryable: !isSignalKill, severity: "error" },
+                { retryable: !isSignalKill, severity: AdapterErrorSeverities.error },
               ),
             ),
           );

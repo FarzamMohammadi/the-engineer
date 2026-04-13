@@ -7,6 +7,8 @@ import {
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { SafetyConfigSchema } from "../../schemas/config.js";
 import type { CostIncurredPayload, Event } from "../../schemas/events.js";
+import { EventTypes } from "../../schemas/events.js";
+import { SubStates, TaskStates } from "../../schemas/task.js";
 import { EventBus } from "../event-bus/index.js";
 import type { EventRow } from "../event-bus/index.js";
 import { rowToEvent } from "../event-bus/index.js";
@@ -51,7 +53,7 @@ function simulateCostEvent(eb: EventBus, overrides: Partial<CostIncurredPayload>
     model_id: null,
   };
   return eb.publish({
-    type: "cost.incurred" as const,
+    type: EventTypes["cost.incurred"],
     source: "test",
     task_id: overrides.task_id ?? defaults.task_id,
     payload: { ...defaults, ...overrides },
@@ -141,14 +143,14 @@ describe("CostTracker — per_task cleanup on terminal state", () => {
 
     // Simulate task completion via state change event
     eb.publish({
-      type: "task.state_changed" as const,
+      type: EventTypes["task.state_changed"],
       source: "task_engine",
       task_id: "task-1",
       payload: {
         task_id: "task-1",
-        from_state: "active",
-        from_sub: "working",
-        to_state: "completed",
+        from_state: TaskStates.active,
+        from_sub: SubStates.working,
+        to_state: TaskStates.completed,
         to_sub: null,
         reason: "pipeline_completed",
         triggered_by: "daemon",
@@ -163,14 +165,14 @@ describe("CostTracker — per_task cleanup on terminal state", () => {
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.3 });
 
     eb.publish({
-      type: "task.state_changed" as const,
+      type: EventTypes["task.state_changed"],
       source: "task_engine",
       task_id: "task-1",
       payload: {
         task_id: "task-1",
-        from_state: "blocked",
+        from_state: TaskStates.blocked,
         from_sub: null,
-        to_state: "failed",
+        to_state: TaskStates.failed,
         to_sub: null,
         reason: "escalation",
         triggered_by: "daemon",
@@ -185,15 +187,15 @@ describe("CostTracker — per_task cleanup on terminal state", () => {
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.2 });
 
     eb.publish({
-      type: "task.state_changed" as const,
+      type: EventTypes["task.state_changed"],
       source: "task_engine",
       task_id: "task-1",
       payload: {
         task_id: "task-1",
-        from_state: "queued",
+        from_state: TaskStates.queued,
         from_sub: null,
-        to_state: "active",
-        to_sub: "working",
+        to_state: TaskStates.active,
+        to_sub: SubStates.working,
         reason: "scheduled",
         triggered_by: "daemon",
       },

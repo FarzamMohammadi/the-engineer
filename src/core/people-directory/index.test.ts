@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Person } from "../../schemas/adapters.js";
+import { NotificationLevels } from "../../schemas/adapters.js";
 import type { PeopleConfig } from "../../schemas/config.js";
 import { PeopleDirectory } from "./index.js";
 
@@ -12,7 +13,7 @@ function makePerson(overrides: Partial<Person> & { id: string }): Person {
     roles: [],
     contacts: [],
     preferences: {
-      notification_level: "all",
+      notification_level: NotificationLevels.all,
       quiet_hours: null,
     },
     ...overrides,

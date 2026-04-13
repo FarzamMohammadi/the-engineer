@@ -1,5 +1,6 @@
 import type { EventBus } from "../../src/core/event-bus/index.js";
 import { Registry } from "../../src/core/registry/index.js";
+import { AdapterTypes } from "../../src/schemas/adapters.js";
 import { FakeCommunicationPlugin } from "./fake-plugins/fake-comm/index.js";
 import { FakeGitHostingPlugin } from "./fake-plugins/fake-git-hosting/index.js";
 import { FakeLLMPlugin } from "./fake-plugins/fake-llm/index.js";
@@ -49,7 +50,7 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
   registry.register(
     createMockManifest({
       id: "fake-trigger",
-      type: "trigger",
+      type: AdapterTypes.trigger,
       name: "Fake Trigger Plugin",
       description: "Test trigger plugin",
       critical: false,
@@ -61,7 +62,7 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
   registry.register(
     createMockManifest({
       id: "fake-comm",
-      type: "communication",
+      type: AdapterTypes.communication,
       name: "Fake Communication Plugin",
       description: "Test communication plugin",
       critical: false,
@@ -73,7 +74,7 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
   registry.register(
     createMockManifest({
       id: "fake-llm",
-      type: "llm",
+      type: AdapterTypes.llm,
       name: "Fake LLM Plugin",
       description: "Test LLM plugin",
       critical: false,
@@ -85,7 +86,7 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
   registry.register(
     createMockManifest({
       id: "fake-tool",
-      type: "tool",
+      type: AdapterTypes.tool,
       name: "Fake Tool Plugin",
       description: "Test tool plugin",
       critical: false,
@@ -97,7 +98,7 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
   registry.register(
     createMockManifest({
       id: "fake-git-hosting",
-      type: "git_hosting",
+      type: AdapterTypes.git_hosting,
       name: "Fake Git Hosting Plugin",
       description: "Test git hosting plugin",
       critical: false,

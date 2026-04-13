@@ -6,6 +6,7 @@ import { FakeTriggerPlugin } from "../../../test/helpers/fake-plugins/fake-trigg
 import { createMockManifest } from "../../../test/helpers/mock-factories.js";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { AdapterType, PluginManifest } from "../../schemas/adapters.js";
+import { PluginHealthStates } from "../../schemas/adapters.js";
 import { createLifecycleManager } from "./lifecycle.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ describe("createLifecycleManager", () => {
       lifecycle.register(createManifest("trigger", "t1"), instance);
 
       const record = lifecycle.getRecord("t1");
-      expect(record?.health.state).toBe("healthy");
+      expect(record?.health.state).toBe(PluginHealthStates.healthy);
       expect(record?.health.consecutive_failures).toBe(0);
     });
   });

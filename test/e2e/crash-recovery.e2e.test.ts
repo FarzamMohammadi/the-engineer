@@ -11,6 +11,8 @@ import {
   DaemonConfigSchema,
   WorkspaceConfigSchema,
 } from "../../src/schemas/config.js";
+import { CheckpointReasons, JournalEntryTypes } from "../../src/schemas/session-memory.js";
+import { SubStates, TaskStates } from "../../src/schemas/task.js";
 import {
   type IntegrationContext,
   createIntegrationContext,
@@ -87,8 +89,14 @@ function createOrphanedTask(
   });
 
   // Transition: intake → queued → active.working
-  ctx.taskEngine.requestTransition(task.id, "queued", null, "created", "test");
-  ctx.taskEngine.requestTransition(task.id, "active", "working", "scheduled", "test");
+  ctx.taskEngine.requestTransition(task.id, TaskStates.queued, null, "created", "test");
+  ctx.taskEngine.requestTransition(
+    task.id,
+    TaskStates.active,
+    SubStates.working,
+    "scheduled",
+    "test",
+  );
 
   // Create a session + checkpoint to simulate partial execution
   const session = ctx.sessionMemory.createSession({ taskId: task.id });
@@ -98,7 +106,7 @@ function createOrphanedTask(
     sessionId: session.id,
     taskId: task.id,
     phase: checkpointPhase,
-    type: "phase_change",
+    type: JournalEntryTypes.phase_change,
     summary: `Completed ${checkpointPhase}`,
     tags: ["phase_transition"],
   });
@@ -115,7 +123,7 @@ function createOrphanedTask(
     nextAction: "Continue with next phase",
     lastEventId: "test-event-001",
     workspaceRef: null,
-    reason: "phase_transition",
+    reason: CheckpointReasons.phase_transition,
     journalOffset: 1,
   });
 
@@ -214,15 +222,15 @@ describe("E2E: Crash recovery", () => {
 
     // Verify task is in active.working
     const taskBefore = ctx.taskEngine.getTask(taskId);
-    expect(taskBefore?.state).toBe("active");
-    expect(taskBefore?.sub_state).toBe("working");
+    expect(taskBefore?.state).toBe(TaskStates.active);
+    expect(taskBefore?.sub_state).toBe(SubStates.working);
 
     // Start daemon — should detect orphan and transition to queued
     daemon2 = createSecondDaemon(ctx);
     await daemon2.start();
 
     const taskAfter = ctx.taskEngine.getTask(taskId);
-    expect(taskAfter?.state).toBe("queued");
+    expect(taskAfter?.state).toBe(TaskStates.queued);
   });
 
   it("resumes from checkpoint after crash recovery", async () => {
@@ -244,7 +252,7 @@ describe("E2E: Crash recovery", () => {
     await daemon2.start();
 
     // Verify recovered to queued
-    expect(ctx.taskEngine.getTask(taskId)?.state).toBe("queued");
+    expect(ctx.taskEngine.getTask(taskId)?.state).toBe(TaskStates.queued);
 
     // Tick to schedule and dispatch
     ctx.clock.advance(1_000);
@@ -266,15 +274,15 @@ describe("E2E: Crash recovery", () => {
     const taskId2 = createOrphanedTask(ctx, { title: "Orphan B" });
 
     // Both in active.working
-    expect(ctx.taskEngine.getTask(taskId1)?.state).toBe("active");
-    expect(ctx.taskEngine.getTask(taskId2)?.state).toBe("active");
+    expect(ctx.taskEngine.getTask(taskId1)?.state).toBe(TaskStates.active);
+    expect(ctx.taskEngine.getTask(taskId2)?.state).toBe(TaskStates.active);
 
     // Start daemon — recovers both to queued
     daemon2 = createSecondDaemon(ctx);
     await daemon2.start();
 
-    expect(ctx.taskEngine.getTask(taskId1)?.state).toBe("queued");
-    expect(ctx.taskEngine.getTask(taskId2)?.state).toBe("queued");
+    expect(ctx.taskEngine.getTask(taskId1)?.state).toBe(TaskStates.queued);
+    expect(ctx.taskEngine.getTask(taskId2)?.state).toBe(TaskStates.queued);
   });
 
   it("PID file from dead process is overwritten", async () => {

@@ -36,32 +36,32 @@ interface TemplateEntry {
 }
 
 const NOTIFICATION_TEMPLATES: Partial<Record<Notification["kind"], TemplateEntry>> = {
-  completion: {
+  [NotificationKinds.completion]: {
     format: (v) => `Task "${v["title"]}" completed successfully.`,
     messageType: MessageTypes.milestone,
   },
-  review_pending: {
+  [NotificationKinds.review_pending]: {
     format: (v) => `Task "${v["title"]}" — PR created, awaiting review.`,
     messageType: MessageTypes.milestone,
   },
-  task_error: {
+  [NotificationKinds.task_error]: {
     format: (v) => `Task "${v["title"]}" encountered an error: ${v["reason"]}. Status: blocked.`,
     messageType: MessageTypes.alert,
   },
-  cost_limit: {
+  [NotificationKinds.cost_limit]: {
     format: (v) => `Task "${v["title"]}" blocked — cost limit reached.`,
     messageType: MessageTypes.alert,
   },
-  blocked_reminder: {
+  [NotificationKinds.blocked_reminder]: {
     format: (v) => `Task "${v["title"]}" is still blocked and waiting for attention.`,
     messageType: MessageTypes.notification,
   },
-  escalation_alert: {
+  [NotificationKinds.escalation_alert]: {
     format: (v) =>
       `ALERT: Task "${v["title"]}" has been blocked too long and was transitioned to failed. Please investigate.`,
     messageType: MessageTypes.alert,
   },
-  review_reminder: {
+  [NotificationKinds.review_reminder]: {
     format: (v) =>
       `Review reminder: Task "${v["title"]}" has been pending review for ${v["hours"]}h.`,
     messageType: MessageTypes.notification,
@@ -190,10 +190,10 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     const template = NOTIFICATION_TEMPLATES[notification.kind];
     if (template) {
       const vars: Record<string, string> = { title: resolveTitle(notification.taskId) };
-      if (notification.kind === "task_error") {
+      if (notification.kind === NotificationKinds.task_error) {
         vars["reason"] = notification.reason;
       }
-      if (notification.kind === "review_reminder") {
+      if (notification.kind === NotificationKinds.review_reminder) {
         vars["hours"] = String(Math.floor(notification.elapsedMs / 3_600_000));
       }
       return { content: template.format(vars), messageType: template.messageType };
@@ -208,13 +208,13 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
   function kindToMessageType(kind: Notification["kind"]): MessageType {
     switch (kind) {
-      case "question":
+      case NotificationKinds.question:
         return MessageTypes.question;
-      case "milestone":
+      case NotificationKinds.milestone:
         return MessageTypes.milestone;
-      case "alert":
+      case NotificationKinds.alert:
         return MessageTypes.alert;
-      case "status_response":
+      case NotificationKinds.status_response:
         return MessageTypes.status_response;
       default:
         return MessageTypes.notification;

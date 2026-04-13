@@ -4,6 +4,7 @@ import {
   AutonomyBoundariesSchema,
   AutonomyDecisionSchema,
   AutonomyLevelSchema,
+  AutonomyLevels,
   CleanupConfigSchema,
   CostLimitValueSchema,
   CostLimitsSchema,
@@ -22,9 +23,11 @@ import {
   QuestionBatchingConfigSchema,
   QuietHoursConfigSchema,
   ResponseTimeoutSchema,
+  ReviewPhaseNames,
   RrpirConfigSchema,
   SafetyConfigSchema,
   ScopeBoundariesSchema,
+  TimeoutStageActions,
   TimeoutStageSchema,
   WorkspaceConfigSchema,
 } from "./config.js";
@@ -90,15 +93,23 @@ describe("RrpirConfigSchema", () => {
     const config = RrpirConfigSchema.parse({});
     expect(config.max_requirements_loops).toBe(5);
     expect(config.include_thoughts_in_pr).toBe(true);
-    expect(config.review_phases).toEqual(["requirements_check"]);
+    expect(config.review_phases).toEqual([ReviewPhaseNames.requirements_check]);
     expect(config.max_review_loopbacks).toBe(3);
   });
 
   it("accepts custom review_phases", () => {
     const config = RrpirConfigSchema.parse({
-      review_phases: ["requirements_check", "security_review", "code_quality"],
+      review_phases: [
+        ReviewPhaseNames.requirements_check,
+        ReviewPhaseNames.security_review,
+        ReviewPhaseNames.code_quality,
+      ],
     });
-    expect(config.review_phases).toEqual(["requirements_check", "security_review", "code_quality"]);
+    expect(config.review_phases).toEqual([
+      ReviewPhaseNames.requirements_check,
+      ReviewPhaseNames.security_review,
+      ReviewPhaseNames.code_quality,
+    ]);
   });
 
   it("rejects invalid review phase names", () => {
@@ -310,7 +321,7 @@ describe("AutonomyLevelSchema", () => {
 describe("AutonomyDecisionSchema", () => {
   it("produces valid defaults from empty input", () => {
     const config = AutonomyDecisionSchema.parse({});
-    expect(config.level).toBe("always_ask");
+    expect(config.level).toBe(AutonomyLevels.always_ask);
     expect(config.threshold).toBeNull();
     expect(config.description).toBe("");
   });
@@ -326,10 +337,14 @@ describe("AutonomyBoundariesSchema", () => {
   it("accepts decisions with custom categories", () => {
     const config = AutonomyBoundariesSchema.parse({
       decisions: {
-        merge: { level: "always_ask", threshold: null, description: "Merge decisions" },
+        merge: {
+          level: AutonomyLevels.always_ask,
+          threshold: null,
+          description: "Merge decisions",
+        },
       },
     });
-    expect(config.decisions["merge"]?.level).toBe("always_ask");
+    expect(config.decisions["merge"]?.level).toBe(AutonomyLevels.always_ask);
   });
 
   it("accepts repo_overrides with partial decisions", () => {
@@ -337,12 +352,14 @@ describe("AutonomyBoundariesSchema", () => {
       repo_overrides: {
         "owner/repo": {
           decisions: {
-            merge: { level: "always_decide" },
+            merge: { level: AutonomyLevels.always_decide },
           },
         },
       },
     });
-    expect(config.repo_overrides["owner/repo"]?.decisions["merge"]?.level).toBe("always_decide");
+    expect(config.repo_overrides["owner/repo"]?.decisions["merge"]?.level).toBe(
+      AutonomyLevels.always_decide,
+    );
   });
 });
 
@@ -351,7 +368,7 @@ describe("TimeoutStageSchema", () => {
     const stage = TimeoutStageSchema.parse({
       name: "reminder",
       after_ms: 14_400_000,
-      action: "send_reminder",
+      action: TimeoutStageActions.send_reminder,
     });
     expect(stage.name).toBe("reminder");
     expect(stage.repeat).toBeNull();

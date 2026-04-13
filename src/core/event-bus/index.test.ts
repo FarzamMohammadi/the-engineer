@@ -5,6 +5,8 @@ import type Database from "better-sqlite3";
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import { createInMemoryDatabase } from "../../db/database.js";
 import type { Event } from "../../schemas/events.js";
+import { EventTypes } from "../../schemas/events.js";
+import { TaskStates } from "../../schemas/task.js";
 import { EventBus, type EventRow, matchesPattern, rowToEvent } from "./index.js";
 
 const ULID_PATTERN = /^[0-9A-Z]{26}$/;
@@ -16,7 +18,7 @@ describe("rowToEvent", () => {
   const baseRow: EventRow = {
     id: "01ABC",
     sequence: 1,
-    type: "task.created",
+    type: EventTypes["task.created"],
     source: "test",
     task_id: "task-1",
     timestamp: "2026-01-01T00:00:00.000Z",
@@ -27,7 +29,7 @@ describe("rowToEvent", () => {
     const event = rowToEvent(baseRow);
     expect(event.payload).toEqual({ key: "value" });
     expect(event.id).toBe("01ABC");
-    expect(event.type).toBe("task.created");
+    expect(event.type).toBe(EventTypes["task.created"]);
   });
 
   it("returns fallback payload for corrupted JSON", () => {
@@ -35,7 +37,7 @@ describe("rowToEvent", () => {
     const event = rowToEvent(row);
     expect(event.payload).toEqual({ _parse_error: true, _raw: "{not valid json" });
     expect(event.id).toBe("01ABC");
-    expect(event.type).toBe("task.created");
+    expect(event.type).toBe(EventTypes["task.created"]);
   });
 
   it("returns fallback payload for empty string", () => {
@@ -115,7 +117,7 @@ describe("EventBus", () => {
     it("persists event to database with correct fields", () => {
       setup();
       const event = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "task_engine",
         task_id: "task-1",
         payload: {
@@ -129,7 +131,7 @@ describe("EventBus", () => {
         },
       });
 
-      expect(event.type).toBe("task.created");
+      expect(event.type).toBe(EventTypes["task.created"]);
       expect(event.source).toBe("task_engine");
       expect(event.task_id).toBe("task-1");
       expect(event.payload).toEqual({
@@ -153,7 +155,7 @@ describe("EventBus", () => {
     it("assigns a ULID id", () => {
       setup();
       const event = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -174,7 +176,7 @@ describe("EventBus", () => {
     it("assigns auto-incremented sequence starting at 1", () => {
       setup();
       const e1 = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -193,7 +195,7 @@ describe("EventBus", () => {
     it("assigns ISO 8601 timestamp", () => {
       setup();
       const event = bus.publish({
-        type: "git.pushed",
+        type: EventTypes["git.pushed"],
         source: "workspace_manager",
         task_id: "task-1",
         payload: {
@@ -214,7 +216,7 @@ describe("EventBus", () => {
     it("handles system events with null task_id", () => {
       setup();
       const event = bus.publish({
-        type: "trigger.new_event",
+        type: EventTypes["trigger.new_event"],
         source: "daemon",
         task_id: null,
         payload: {
@@ -260,7 +262,7 @@ describe("EventBus", () => {
       for (let i = 0; i < 5; i++) {
         events.push(
           bus.publish({
-            type: "git.committed",
+            type: EventTypes["git.committed"],
             source: "workspace_manager",
             task_id: "task-1",
             payload: {
@@ -288,7 +290,7 @@ describe("EventBus", () => {
       const sequences = new Set<number>();
       for (let i = 0; i < 10; i++) {
         const event = bus.publish({
-          type: "git.committed",
+          type: EventTypes["git.committed"],
           source: "test",
           task_id: "task-1",
           payload: {
@@ -314,7 +316,7 @@ describe("EventBus", () => {
       bus.subscribe("test-sub", "task.created", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -329,7 +331,7 @@ describe("EventBus", () => {
       });
 
       expect(received).toHaveLength(1);
-      expect(received[0]?.type).toBe("task.created");
+      expect(received[0]?.type).toBe(EventTypes["task.created"]);
     });
 
     it("delivers to multiple subscribers", () => {
@@ -340,7 +342,7 @@ describe("EventBus", () => {
       bus.subscribe("sub-2", "task.created", (e) => received2.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -364,7 +366,7 @@ describe("EventBus", () => {
       bus.subscribe("test-sub", "git.pushed", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -389,7 +391,7 @@ describe("EventBus", () => {
       });
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -416,7 +418,7 @@ describe("EventBus", () => {
       bus.subscribe("after-sub", "task.created", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -446,7 +448,7 @@ describe("EventBus", () => {
       bus.unsubscribe("test-sub");
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -472,7 +474,7 @@ describe("EventBus", () => {
       bus.unsubscribe("test-sub");
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -486,7 +488,7 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: "git.pushed",
+        type: EventTypes["git.pushed"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -525,7 +527,7 @@ describe("EventBus", () => {
       bus.subscribe("good-sub", "task.created", (e) => received.push(e));
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -554,7 +556,7 @@ describe("EventBus", () => {
       });
 
       const event = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -583,7 +585,7 @@ describe("EventBus", () => {
       });
 
       const event = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -614,7 +616,7 @@ describe("EventBus", () => {
       });
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -641,7 +643,7 @@ describe("EventBus", () => {
 
       expect(() =>
         bus.publish({
-          type: "task.created",
+          type: EventTypes["task.created"],
           source: "test",
           task_id: null,
           payload: {
@@ -665,7 +667,7 @@ describe("EventBus", () => {
       setup();
       // Publish 3 events without subscribers
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -679,21 +681,21 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: "task.state_changed",
+        type: EventTypes["task.state_changed"],
         source: "test",
         task_id: "task-1",
         payload: {
           task_id: "task-1",
-          from_state: "requirements_gathering",
+          from_state: TaskStates.requirements_gathering,
           from_sub: null,
-          to_state: "queued",
+          to_state: TaskStates.queued,
           to_sub: null,
           reason: "scheduled",
           triggered_by: "daemon",
         },
       });
       bus.publish({
-        type: "git.committed",
+        type: EventTypes["git.committed"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -712,14 +714,14 @@ describe("EventBus", () => {
 
       // Should get the 2 task.* events in order
       expect(received).toHaveLength(2);
-      expect(received[0]?.type).toBe("task.created");
-      expect(received[1]?.type).toBe("task.state_changed");
+      expect(received[0]?.type).toBe(EventTypes["task.created"]);
+      expect(received[1]?.type).toBe(EventTypes["task.state_changed"]);
     });
 
     it("only replays events after fromSequence", () => {
       setup();
       const e1 = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -733,7 +735,7 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: "git.committed",
+        type: EventTypes["git.committed"],
         source: "test",
         task_id: "task-1",
         payload: { task_id: "task-1", repo: "r", sha: "abc", message: "fix", files_changed: 1 },
@@ -745,7 +747,7 @@ describe("EventBus", () => {
 
       // Should only get the second event (sequence > e1.sequence)
       expect(received).toHaveLength(1);
-      expect(received[0]?.type).toBe("git.committed");
+      expect(received[0]?.type).toBe(EventTypes["git.committed"]);
     });
 
     it("is a no-op when no events match", () => {
@@ -764,7 +766,7 @@ describe("EventBus", () => {
       bus = new EventBus(db, { observer });
 
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {
@@ -792,7 +794,7 @@ describe("EventBus", () => {
     it("returns events for the given task_id ordered by sequence", () => {
       setup();
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -806,14 +808,14 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: "git.committed",
+        type: EventTypes["git.committed"],
         source: "test",
         task_id: "task-1",
         payload: { task_id: "task-1", repo: "r", sha: "abc", message: "fix", files_changed: 1 },
       });
       // Different task
       bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "task-2",
         payload: {
@@ -829,8 +831,8 @@ describe("EventBus", () => {
 
       const events = bus.getEventsForTask("task-1");
       expect(events).toHaveLength(2);
-      expect(events[0]?.type).toBe("task.created");
-      expect(events[1]?.type).toBe("git.committed");
+      expect(events[0]?.type).toBe(EventTypes["task.created"]);
+      expect(events[1]?.type).toBe(EventTypes["git.committed"]);
     });
 
     it("returns empty array for unknown task_id", () => {
@@ -844,7 +846,7 @@ describe("EventBus", () => {
     it("returns events after the given sequence", () => {
       setup();
       const e1 = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -858,7 +860,7 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: "git.pushed",
+        type: EventTypes["git.pushed"],
         source: "test",
         task_id: "task-1",
         payload: {
@@ -873,13 +875,13 @@ describe("EventBus", () => {
 
       const events = bus.getEventsSince(e1.sequence);
       expect(events).toHaveLength(1);
-      expect(events[0]?.type).toBe("git.pushed");
+      expect(events[0]?.type).toBe(EventTypes["git.pushed"]);
     });
 
     it("returns empty array when no events exist after sequence", () => {
       setup();
       const e = bus.publish({
-        type: "task.created",
+        type: EventTypes["task.created"],
         source: "test",
         task_id: null,
         payload: {

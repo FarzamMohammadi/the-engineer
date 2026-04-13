@@ -1,10 +1,14 @@
-import { PluginManifestSchema } from "../../../../src/schemas/adapters.js";
+import {
+  AdapterTypes,
+  MessageTypes,
+  PluginManifestSchema,
+} from "../../../../src/schemas/adapters.js";
 import { runCommunicationContractSuite } from "../../contract-suites/communication-contract.js";
 import { FakeCommunicationPlugin } from "./index.js";
 
 const manifest = PluginManifestSchema.parse({
   id: "fake-comm",
-  type: "communication",
+  type: AdapterTypes.communication,
   version: "1.0.0",
   name: "Fake Communication Plugin",
   description: "Test communication plugin",
@@ -18,6 +22,6 @@ runCommunicationContractSuite(() => new FakeCommunicationPlugin(), {
   target: { user_id: "test-user", channel: null },
   message: {
     content: "Test message",
-    metadata: { task_id: null, type: "notification" },
+    metadata: { task_id: null, type: MessageTypes.notification },
   },
 });

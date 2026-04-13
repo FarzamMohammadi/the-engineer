@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { SafetyConfigSchema } from "../../schemas/config.js";
+import { AutonomyLevels, SafetyConfigSchema } from "../../schemas/config.js";
+import { ActionClasses } from "../../schemas/task.js";
 import type { SafetyQuery } from "../interfaces/safety-layer.interface.js";
 import {
   PolicyEngine,
@@ -57,13 +58,13 @@ describe("matchesPathPattern", () => {
 describe("PolicyEngine — evaluateScope", () => {
   it("returns null when all scope checks pass", () => {
     const engine = createEngine();
-    const result = engine.evaluateScope("write", { file: "src/main.ts" });
+    const result = engine.evaluateScope(ActionClasses.write, { file: "src/main.ts" });
     expect(result).toBeNull();
   });
 
   it("denies repo not in allowed list", () => {
     const engine = createEngine({ scope: { repos: { allowed: ["owner/repo-a"] } } });
-    const result = engine.evaluateScope("write", { repo: "owner/repo-b" });
+    const result = engine.evaluateScope(ActionClasses.write, { repo: "owner/repo-b" });
     expect(result).not.toBeNull();
     expect(result?.action).toBe("deny");
     expect(result?.reason).toContain("repo-b");
@@ -71,45 +72,45 @@ describe("PolicyEngine — evaluateScope", () => {
 
   it("allows repo in allowed list", () => {
     const engine = createEngine({ scope: { repos: { allowed: ["owner/repo-a"] } } });
-    const result = engine.evaluateScope("write", { repo: "owner/repo-a" });
+    const result = engine.evaluateScope(ActionClasses.write, { repo: "owner/repo-a" });
     expect(result).toBeNull();
   });
 
   it("allows any repo when allowed is null", () => {
     const engine = createEngine({ scope: { repos: { allowed: null } } });
-    const result = engine.evaluateScope("write", { repo: "any/repo" });
+    const result = engine.evaluateScope(ActionClasses.write, { repo: "any/repo" });
     expect(result).toBeNull();
   });
 
   it("denies push to branch not matching push_to patterns", () => {
     const engine = createEngine({ scope: { branches: { push_to: ["engineer/*"] } } });
-    const result = engine.evaluateScope("git_remote", { branch: "main" });
+    const result = engine.evaluateScope(ActionClasses.git_remote, { branch: "main" });
     expect(result?.action).toBe("deny");
     expect(result?.reason).toContain("push to");
   });
 
   it("allows push to matching branch", () => {
     const engine = createEngine({ scope: { branches: { push_to: ["engineer/*"] } } });
-    const result = engine.evaluateScope("git_remote", { branch: "engineer/42-fix" });
+    const result = engine.evaluateScope(ActionClasses.git_remote, { branch: "engineer/42-fix" });
     expect(result).toBeNull();
   });
 
   it("denies writing to excluded file", () => {
     const engine = createEngine();
-    const result = engine.evaluateScope("write", { file: ".env.local" });
+    const result = engine.evaluateScope(ActionClasses.write, { file: ".env.local" });
     expect(result?.action).toBe("deny");
     expect(result?.reason).toContain(".env");
   });
 
   it("allows writing to non-excluded file", () => {
     const engine = createEngine();
-    const result = engine.evaluateScope("write", { file: "src/index.ts" });
+    const result = engine.evaluateScope(ActionClasses.write, { file: "src/index.ts" });
     expect(result).toBeNull();
   });
 
   it("checks multiple files via files array", () => {
     const engine = createEngine();
-    const result = engine.evaluateScope("write", { files: ["src/main.ts", ".env"] });
+    const result = engine.evaluateScope(ActionClasses.write, { files: ["src/main.ts", ".env"] });
     expect(result?.action).toBe("deny");
   });
 
@@ -118,7 +119,10 @@ describe("PolicyEngine — evaluateScope", () => {
       scope: { branches: { merge_to: ["main"] } },
       merge: { auto_merge_after_approval: { default: false } },
     });
-    const result = engine.evaluateScope("merge", { repo: "owner/repo", branch: "main" });
+    const result = engine.evaluateScope(ActionClasses.merge, {
+      repo: "owner/repo",
+      branch: "main",
+    });
     expect(result?.action).toBe("ask_human");
   });
 
@@ -127,7 +131,10 @@ describe("PolicyEngine — evaluateScope", () => {
       scope: { branches: { merge_to: ["main"] } },
       merge: { auto_merge_after_approval: { default: true } },
     });
-    const result = engine.evaluateScope("merge", { repo: "owner/repo", branch: "main" });
+    const result = engine.evaluateScope(ActionClasses.merge, {
+      repo: "owner/repo",
+      branch: "main",
+    });
     expect(result).toBeNull();
   });
 });
@@ -197,7 +204,9 @@ describe("PolicyEngine — evaluateAutonomy", () => {
 
   it("returns proceed for always_decide", () => {
     const engine = createEngine({
-      autonomy: { decisions: { code_style: { level: "always_decide", description: "" } } },
+      autonomy: {
+        decisions: { code_style: { level: AutonomyLevels.always_decide, description: "" } },
+      },
     });
     const verdict = engine.evaluateAutonomy(makeQuery({ decision_category: "code_style" }));
     expect(verdict.allowed).toBe(true);
@@ -206,7 +215,7 @@ describe("PolicyEngine — evaluateAutonomy", () => {
 
   it("returns ask_human for always_ask", () => {
     const engine = createEngine({
-      autonomy: { decisions: { arch: { level: "always_ask", description: "" } } },
+      autonomy: { decisions: { arch: { level: AutonomyLevels.always_ask, description: "" } } },
     });
     const verdict = engine.evaluateAutonomy(makeQuery({ decision_category: "arch" }));
     expect(verdict.allowed).toBe(false);
@@ -217,7 +226,11 @@ describe("PolicyEngine — evaluateAutonomy", () => {
     const engine = createEngine({
       autonomy: {
         decisions: {
-          refactoring: { level: "threshold", threshold: "scope > 5 files", description: "" },
+          refactoring: {
+            level: AutonomyLevels.threshold,
+            threshold: "scope > 5 files",
+            description: "",
+          },
         },
       },
     });
@@ -231,7 +244,11 @@ describe("PolicyEngine — evaluateAutonomy", () => {
     const engine = createEngine({
       autonomy: {
         decisions: {
-          refactoring: { level: "threshold", threshold: "scope > 5 files", description: "" },
+          refactoring: {
+            level: AutonomyLevels.threshold,
+            threshold: "scope > 5 files",
+            description: "",
+          },
         },
       },
     });
@@ -257,9 +274,11 @@ describe("PolicyEngine — evaluateAutonomy", () => {
   it("repo override takes precedence over base config", () => {
     const engine = createEngine({
       autonomy: {
-        decisions: { refactoring: { level: "always_decide", description: "" } },
+        decisions: { refactoring: { level: AutonomyLevels.always_decide, description: "" } },
         repo_overrides: {
-          "owner/critical-repo": { decisions: { refactoring: { level: "always_ask" } } },
+          "owner/critical-repo": {
+            decisions: { refactoring: { level: AutonomyLevels.always_ask } },
+          },
         },
       },
     });
@@ -294,7 +313,9 @@ describe("PolicyEngine — hot-reload", () => {
     const engine = createEngine({ scope: { repos: { allowed: ["owner/repo-a"] } } });
 
     // Initially denied
-    expect(engine.evaluateScope("write", { repo: "owner/repo-b" })?.action).toBe("deny");
+    expect(engine.evaluateScope(ActionClasses.write, { repo: "owner/repo-b" })?.action).toBe(
+      "deny",
+    );
 
     // Update config
     engine.updateConfig(
@@ -304,12 +325,14 @@ describe("PolicyEngine — hot-reload", () => {
     );
 
     // Now allowed
-    expect(engine.evaluateScope("write", { repo: "owner/repo-b" })).toBeNull();
+    expect(engine.evaluateScope(ActionClasses.write, { repo: "owner/repo-b" })).toBeNull();
   });
 
   it("new autonomy rules apply after updateConfig", () => {
     const engine = createEngine({
-      autonomy: { decisions: { refactoring: { level: "always_decide", description: "" } } },
+      autonomy: {
+        decisions: { refactoring: { level: AutonomyLevels.always_decide, description: "" } },
+      },
     });
 
     const query: SafetyQuery = {
@@ -321,7 +344,9 @@ describe("PolicyEngine — hot-reload", () => {
 
     engine.updateConfig(
       SafetyConfigSchema.parse({
-        autonomy: { decisions: { refactoring: { level: "always_ask", description: "" } } },
+        autonomy: {
+          decisions: { refactoring: { level: AutonomyLevels.always_ask, description: "" } },
+        },
       }),
     );
 

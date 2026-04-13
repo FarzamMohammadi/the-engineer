@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createTestObserverFacade } from "../../../test/helpers/test-observer-facade.js";
 import type { ActionClass } from "../../schemas/task.js";
+import { ActionClasses } from "../../schemas/task.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine, PermissionResult } from "../interfaces/task-engine.interface.js";
@@ -66,7 +67,7 @@ describe("ActionPipeline", () => {
       const executeFn = vi.fn();
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "git_remote",
+        actionClass: ActionClasses.git_remote,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn,
@@ -86,7 +87,7 @@ describe("ActionPipeline", () => {
 
       await pipeline.execute({
         taskId: "t1",
-        actionClass: "merge",
+        actionClass: ActionClasses.merge,
         details: { repo: "owner/repo" },
         requestedBy: "workspace_manager",
         executeFn: () => null,
@@ -100,7 +101,7 @@ describe("ActionPipeline", () => {
         task_id: "t1",
         payload: {
           task_id: "t1",
-          action_class: "merge",
+          action_class: ActionClasses.merge,
           gate: "task_engine",
           reason: "blocked state",
           details: { repo: "owner/repo" },
@@ -115,7 +116,7 @@ describe("ActionPipeline", () => {
 
       await pipeline.execute({
         taskId: "t1",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => null,
@@ -135,7 +136,7 @@ describe("ActionPipeline", () => {
       const executeFn = vi.fn(() => "done");
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "merge",
+        actionClass: ActionClasses.merge,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn,
@@ -161,7 +162,7 @@ describe("ActionPipeline", () => {
       const executeFn = vi.fn();
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "git_remote",
+        actionClass: ActionClasses.git_remote,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn,
@@ -186,7 +187,7 @@ describe("ActionPipeline", () => {
 
       await pipeline.execute({
         taskId: "t2",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: { file: "secret.env" },
         requestedBy: "orchestrator",
         executeFn: () => null,
@@ -216,7 +217,7 @@ describe("ActionPipeline", () => {
       const executeFn = vi.fn();
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "deploy",
+        actionClass: ActionClasses.deploy,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn,
@@ -238,7 +239,7 @@ describe("ActionPipeline", () => {
 
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "communicate",
+        actionClass: ActionClasses.communicate,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => null,
@@ -262,7 +263,7 @@ describe("ActionPipeline", () => {
 
       await pipeline.execute({
         taskId: "t1",
-        actionClass: "merge",
+        actionClass: ActionClasses.merge,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => null,
@@ -286,7 +287,7 @@ describe("ActionPipeline", () => {
       const executeFn = vi.fn(() => "data");
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "read",
+        actionClass: ActionClasses.read,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn,
@@ -303,7 +304,7 @@ describe("ActionPipeline", () => {
 
       await pipeline.execute({
         taskId: "t1",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => null,
@@ -324,7 +325,7 @@ describe("ActionPipeline", () => {
 
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "git_remote",
+        actionClass: ActionClasses.git_remote,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => ({ sha: "abc123" }),
@@ -340,7 +341,7 @@ describe("ActionPipeline", () => {
 
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => Promise.resolve(42),
@@ -356,7 +357,7 @@ describe("ActionPipeline", () => {
 
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "git_remote",
+        actionClass: ActionClasses.git_remote,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => {
@@ -380,7 +381,7 @@ describe("ActionPipeline", () => {
 
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => {
@@ -407,7 +408,7 @@ describe("ActionPipeline", () => {
       const notifyFn = vi.fn();
       await pipeline.execute({
         taskId: "t1",
-        actionClass: "git_remote",
+        actionClass: ActionClasses.git_remote,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => ({ pushed: true }),
@@ -425,7 +426,7 @@ describe("ActionPipeline", () => {
 
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => "done",
@@ -450,7 +451,7 @@ describe("ActionPipeline", () => {
 
       const result = await pipeline.execute({
         taskId: "t1",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: DEFAULT_DETAILS,
         requestedBy: "orchestrator",
         executeFn: () => "ok",
@@ -476,7 +477,7 @@ describe("ActionPipeline", () => {
 
       await pipeline.execute({
         taskId: "task-42",
-        actionClass: "deploy",
+        actionClass: ActionClasses.deploy,
         details: { environment: "prod" },
         requestedBy: "orchestrator",
         executeFn: () => null,
@@ -485,7 +486,7 @@ describe("ActionPipeline", () => {
       const payload = eventBus.publish.mock.calls[0]?.[0]?.payload;
       expect(payload).toStrictEqual({
         task_id: "task-42",
-        action_class: "deploy",
+        action_class: ActionClasses.deploy,
         gate: "task_engine",
         reason: "state denies",
         details: { environment: "prod" },
@@ -499,7 +500,7 @@ describe("ActionPipeline", () => {
 
       await pipeline.execute({
         taskId: "t1",
-        actionClass: "write",
+        actionClass: ActionClasses.write,
         details: {},
         requestedBy: "orchestrator",
         executeFn: () => null,

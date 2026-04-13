@@ -11,8 +11,10 @@ import {
   EventSubscriptionSchema,
   PendingPreemptionSchema,
   PreemptionStatusSchema,
+  PreemptionStatuses,
   PrioritySchema,
   PrioritySourceSchema,
+  PrioritySources,
   QueueEntrySchema,
   SafetySnapshotSchema,
   SafetyStateSchema,
@@ -20,6 +22,14 @@ import {
   WorkspaceStateSchema,
   WorktreeInfoSchema,
 } from "./ephemeral.js";
+import { Phases } from "./orchestrator.js";
+import {
+  CheckpointReasons,
+  KnowledgeConfidences,
+  KnowledgeDomains,
+  KnowledgeScopes,
+} from "./session-memory.js";
+import { CascadePolicies, SubStates, TaskStates } from "./task.js";
 
 // ── Daemon State ────────────────────────────────────────────────────────────────
 
@@ -54,7 +64,7 @@ describe("PrioritySourceSchema", () => {
 describe("PrioritySchema", () => {
   const validPriority = {
     value: 50,
-    source: "default",
+    source: PrioritySources.default,
     base_value: 50,
     assigned_at: "2026-03-10T12:00:00.000Z",
   };
@@ -82,7 +92,7 @@ describe("QueueEntrySchema", () => {
       task_id: "01ABC",
       priority: {
         value: 50,
-        source: "default",
+        source: PrioritySources.default,
         base_value: 50,
         assigned_at: "2026-03-10T12:00:00.000Z",
       },
@@ -133,9 +143,9 @@ describe("PendingPreemptionSchema", () => {
       target_task_id: "01ABC",
       replacement_task_id: "01DEF",
       requested_at: "2026-03-10T12:00:00.000Z",
-      status: "requested",
+      status: PreemptionStatuses.requested,
     });
-    expect(preemption.status).toBe("requested");
+    expect(preemption.status).toBe(PreemptionStatuses.requested);
   });
 });
 
@@ -189,10 +199,10 @@ describe("DaemonStateSchema", () => {
         target_task_id: "01ABC",
         replacement_task_id: "01DEF",
         requested_at: "2026-03-10T12:00:00.000Z",
-        status: "checkpointing",
+        status: PreemptionStatuses.checkpointing,
       },
     });
-    expect(state.pending_preemption?.status).toBe("checkpointing");
+    expect(state.pending_preemption?.status).toBe(PreemptionStatuses.checkpointing);
   });
 });
 
@@ -202,12 +212,12 @@ describe("DispatchSchema", () => {
   const minimalTask = {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     external_ref: null,
-    state: "active",
-    sub_state: "working",
-    phase: "execution",
+    state: TaskStates.active,
+    sub_state: SubStates.working,
+    phase: Phases.execution,
     parent_id: null,
     children: [],
-    cascade_policy: "pause_siblings",
+    cascade_policy: CascadePolicies.pause_siblings,
     title: "Fix auth bug",
     description: "Users can't log in",
     source_text: "Issue body",
@@ -249,7 +259,7 @@ describe("DispatchSchema", () => {
       id: "01CKPT",
       session_id: "01SESSION",
       task_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-      phase: "execution",
+      phase: Phases.execution,
       phase_progress: "50% through file changes",
       context_summary: "Implementing OAuth",
       key_findings: ["Found existing middleware"],
@@ -257,7 +267,7 @@ describe("DispatchSchema", () => {
       next_action: "Write tests",
       last_event_id: "01EVT",
       workspace_ref: { branch: "engineer/47-auth", last_commit: "abc123" },
-      reason: "phase_transition",
+      reason: CheckpointReasons.phase_transition,
       timestamp: "2026-03-10T12:30:00.000Z",
       journal_offset: 42,
     };
@@ -273,18 +283,18 @@ describe("DispatchSchema", () => {
   it("parses dispatch with knowledge entries", () => {
     const knowledge = {
       id: "abcdef1234567890abcdef1234567890",
-      scope: "repo",
+      scope: KnowledgeScopes.repo,
       repo_scope: "owner/repo",
-      domain: "conventions",
+      domain: KnowledgeDomains.conventions,
       key: "naming",
       body: "Use camelCase",
-      confidence: "observed",
+      confidence: KnowledgeConfidences.observed,
       evidence: [{ task_id: "01ABC", description: "Seen in codebase" }],
       created_at: "2026-03-10T12:00:00.000Z",
       last_confirmed: "2026-03-10T12:00:00.000Z",
       superseded_by: null,
       source_task_id: "01ABC",
-      source_phase: "research",
+      source_phase: Phases.research,
     };
 
     const dispatch = DispatchSchema.parse({

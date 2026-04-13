@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runCommunicationContractSuite } from "../../../../test/helpers/contract-suites/communication-contract.js";
 import type { FormattedMessage, PluginManifest, Target } from "../../../schemas/adapters.js";
+import { MessageTypes } from "../../../schemas/adapters.js";
+import { TaskStates } from "../../../schemas/task.js";
 import { GitHubCommPlugin } from "./github-comm.js";
 import {
   diffStateLabels,
@@ -60,7 +62,7 @@ const INVALID_CONFIG = {};
 const TARGET: Target = { user_id: "farzam", channel: "acme/webapp#42" };
 const MESSAGE: FormattedMessage = {
   content: "Task picked up",
-  metadata: { task_id: "task-1", type: "notification" },
+  metadata: { task_id: "task-1", type: MessageTypes.notification },
 };
 
 // ── Contract Suite ──────────────────────────────────────────────────────────
@@ -122,28 +124,28 @@ describe("GitHubCommPlugin", () => {
 
   describe("formatMessage()", () => {
     it("formats notification with Info prefix", () => {
-      const result = plugin.formatMessage("Test", "notification");
+      const result = plugin.formatMessage("Test", MessageTypes.notification);
       expect(result).toContain("> **Info**");
       expect(result).toContain("Test");
     });
 
     it("formats question with Question prefix", () => {
-      const result = plugin.formatMessage("What?", "question");
+      const result = plugin.formatMessage("What?", MessageTypes.question);
       expect(result).toContain("> **Question**");
     });
 
     it("formats status_response with Status prefix", () => {
-      const result = plugin.formatMessage("All good", "status_response");
+      const result = plugin.formatMessage("All good", MessageTypes.status_response);
       expect(result).toContain("> **Status**");
     });
 
     it("formats milestone with Milestone prefix", () => {
-      const result = plugin.formatMessage("Done!", "milestone");
+      const result = plugin.formatMessage("Done!", MessageTypes.milestone);
       expect(result).toContain("> **Milestone**");
     });
 
     it("formats alert with Alert prefix", () => {
-      const result = plugin.formatMessage("Warning!", "alert");
+      const result = plugin.formatMessage("Warning!", MessageTypes.alert);
       expect(result).toContain("> **Alert**");
     });
   });
@@ -185,7 +187,7 @@ describe("GitHubCommPlugin", () => {
 
   describe("syncTaskState()", () => {
     it("adds new label and removes old one", async () => {
-      await plugin.syncTaskState("task-1", "queued", "active", {
+      await plugin.syncTaskState("task-1", TaskStates.queued, TaskStates.active, {
         task_title: "Fix bug",
         external_ref: { type: "github_issue", repo: "acme/webapp", id: "42" },
         sub_state: null,
@@ -207,7 +209,7 @@ describe("GitHubCommPlugin", () => {
     });
 
     it("no-ops when external_ref is null", async () => {
-      await plugin.syncTaskState("task-1", "queued", "active", {
+      await plugin.syncTaskState("task-1", TaskStates.queued, TaskStates.active, {
         task_title: "Fix bug",
         external_ref: null,
         sub_state: null,
@@ -217,7 +219,7 @@ describe("GitHubCommPlugin", () => {
     });
 
     it("no-ops when external_ref repo lacks owner/name format", async () => {
-      await plugin.syncTaskState("task-1", "queued", "active", {
+      await plugin.syncTaskState("task-1", TaskStates.queued, TaskStates.active, {
         task_title: "Fix bug",
         external_ref: { type: "jira_ticket", repo: "no-slash", id: "1" },
         sub_state: null,
@@ -233,7 +235,7 @@ describe("GitHubCommPlugin", () => {
         {
           task_id: "task-1",
           external_ref: { type: "github_issue", repo: "acme/webapp", id: "42" },
-          expected_state: "active",
+          expected_state: TaskStates.active,
           expected_label: "engineer:active",
         },
       ]);
@@ -249,7 +251,7 @@ describe("GitHubCommPlugin", () => {
         {
           task_id: "task-1",
           external_ref: { type: "github_issue", repo: "acme/webapp", id: "42" },
-          expected_state: "active",
+          expected_state: TaskStates.active,
           expected_label: "engineer:active",
         },
       ]);
@@ -261,7 +263,7 @@ describe("GitHubCommPlugin", () => {
         {
           task_id: "task-1",
           external_ref: null,
-          expected_state: "active",
+          expected_state: TaskStates.active,
           expected_label: "engineer:active",
         },
       ]);
@@ -398,7 +400,7 @@ describe("parseGitHubUrl", () => {
 
 describe("stateLabelName", () => {
   it("generates label with prefix", () => {
-    expect(stateLabelName("active", "engineer:")).toBe("engineer:active");
+    expect(stateLabelName(TaskStates.active, "engineer:")).toBe("engineer:active");
   });
 
   it("lowercases the state", () => {
@@ -406,7 +408,7 @@ describe("stateLabelName", () => {
   });
 
   it("works with custom prefix", () => {
-    expect(stateLabelName("queued", "bot-")).toBe("bot-queued");
+    expect(stateLabelName(TaskStates.queued, "bot-")).toBe("bot-queued");
   });
 });
 
@@ -414,30 +416,38 @@ describe("diffStateLabels", () => {
   const prefix = "engineer:";
 
   it("adds new label and removes old one", () => {
-    const result = diffStateLabels(["engineer:queued", "bug"], "active", prefix);
+    const result = diffStateLabels(["engineer:queued", "bug"], TaskStates.active, prefix);
     expect(result.add).toEqual(["engineer:active"]);
     expect(result.remove).toEqual(["engineer:queued"]);
   });
 
   it("no-ops when label already present", () => {
-    const result = diffStateLabels(["engineer:active", "bug"], "active", prefix);
+    const result = diffStateLabels(["engineer:active", "bug"], TaskStates.active, prefix);
     expect(result.add).toEqual([]);
     expect(result.remove).toEqual([]);
   });
 
   it("removes multiple old state labels", () => {
-    const result = diffStateLabels(["engineer:queued", "engineer:blocked"], "active", prefix);
+    const result = diffStateLabels(
+      ["engineer:queued", "engineer:blocked"],
+      TaskStates.active,
+      prefix,
+    );
     expect(result.add).toEqual(["engineer:active"]);
     expect(result.remove).toEqual(["engineer:queued", "engineer:blocked"]);
   });
 
   it("preserves non-prefixed labels", () => {
-    const result = diffStateLabels(["bug", "priority:high", "engineer:queued"], "active", prefix);
+    const result = diffStateLabels(
+      ["bug", "priority:high", "engineer:queued"],
+      TaskStates.active,
+      prefix,
+    );
     expect(result.remove).toEqual(["engineer:queued"]);
   });
 
   it("handles empty current labels", () => {
-    const result = diffStateLabels([], "active", prefix);
+    const result = diffStateLabels([], TaskStates.active, prefix);
     expect(result.add).toEqual(["engineer:active"]);
     expect(result.remove).toEqual([]);
   });

@@ -239,7 +239,7 @@ describe("commitAndPush", () => {
     expect(commitCall).toBeDefined();
     const commitMsg = (commitCall![1] as string[])[2]!;
     expect(commitMsg).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    expect(commitMsg).toContain("[REDACTED:github_token]");
+    expect(commitMsg).toContain("[REDACTED:token]");
     expect(commitMsg).toContain("Crafted by The Engineer");
   });
 });

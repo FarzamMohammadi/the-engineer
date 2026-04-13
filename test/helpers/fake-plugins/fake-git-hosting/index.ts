@@ -13,6 +13,8 @@ import type {
   PRUpdates,
   ReviewStatus,
 } from "../../../../src/schemas/adapters.js";
+import { injectAuth } from "../../../../src/utils/git-url.js";
+import { SecureValue } from "../../../../src/utils/secure-value.js";
 
 interface StoredPR {
   options: PROptions;
@@ -193,6 +195,10 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
 
   protected doGetDefaultBranch(_repo: string): Promise<string> {
     return Promise.resolve("main");
+  }
+
+  protected doGetAuthenticatedRemoteUrl(remoteUrl: string): SecureValue {
+    return new SecureValue(injectAuth(remoteUrl, "fake-test-token"));
   }
 
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {

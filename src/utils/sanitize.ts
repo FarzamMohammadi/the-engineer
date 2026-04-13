@@ -3,23 +3,12 @@
  *
  * Applied at chokepoints (SessionMemory, LLM caller) to prevent tokens
  * from leaking into journal entries, LLM context, or log output.
+ *
+ * Secret env var names are discovered dynamically at startup via the
+ * secret-registry module — no hardcoded plugin-specific names in Core.
  */
 
-// ── Known secret environment variable names ──────────────────────────────────
-
-export const SECRET_ENV_VARS = [
-  "GITHUB_TOKEN",
-  "TELEGRAM_BOT_TOKEN",
-  "TELEGRAM_CHAT_ID",
-  "OPENAI_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "CLAUDE_API_KEY",
-  "AWS_SECRET_ACCESS_KEY",
-  "AWS_SESSION_TOKEN",
-  "NPM_TOKEN",
-  "DOCKER_PASSWORD",
-  "DATABASE_URL",
-];
+import { getSecretEnvVars } from "./secret-registry.js";
 
 /** Minimum length for an env var value to be treated as a secret. */
 const MIN_SECRET_LENGTH = 8;
@@ -43,12 +32,12 @@ const BARE_TOKEN_URL_RE = /https:\/\/(?!git:)[^/:@\s]+@/g;
 
 /** Patterns that look like API keys/tokens regardless of env var. */
 const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
-  // GitHub tokens (ghp_, gho_, ghs_, ghr_, github_pat_)
-  { pattern: /\b(ghp_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:github_token]" },
-  { pattern: /\b(gho_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:github_token]" },
-  { pattern: /\b(ghs_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:github_token]" },
-  { pattern: /\b(ghr_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:github_token]" },
-  { pattern: /\b(github_pat_[a-zA-Z0-9_]{36,})\b/g, replacement: "[REDACTED:github_pat]" },
+  // Tokens with known prefixes (ghp_, gho_, ghs_, ghr_, github_pat_)
+  { pattern: /\b(ghp_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:token]" },
+  { pattern: /\b(gho_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:token]" },
+  { pattern: /\b(ghs_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:token]" },
+  { pattern: /\b(ghr_[a-zA-Z0-9]{36,})\b/g, replacement: "[REDACTED:token]" },
+  { pattern: /\b(github_pat_[a-zA-Z0-9_]{36,})\b/g, replacement: "[REDACTED:pat]" },
   // AWS access key IDs
   { pattern: /\b(AKIA[A-Z0-9]{16})\b/g, replacement: "[REDACTED:aws_key]" },
   // Generic assignment patterns (conservative: only in key=value contexts)
@@ -82,8 +71,8 @@ export function sanitizeSecrets(text: string): string {
   result = result.replace(GIT_CREDENTIAL_URL_RE, "https://git:***@");
   result = result.replace(BARE_TOKEN_URL_RE, "https://***@");
 
-  // Phase 2: Known env var values
-  for (const envKey of SECRET_ENV_VARS) {
+  // Phase 2: Known env var values (dynamically discovered at startup)
+  for (const envKey of getSecretEnvVars()) {
     const value = process.env[envKey];
     if (value && value.length >= MIN_SECRET_LENGTH) {
       result = replaceAll(result, value, "[REDACTED]");

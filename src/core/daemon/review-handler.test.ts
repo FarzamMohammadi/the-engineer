@@ -441,7 +441,7 @@ describe("ReviewHandler", () => {
       expect(feedbackCall).toBeDefined();
       const payload = (feedbackCall?.[0] as { payload: TaskFeedbackReceivedPayload }).payload;
       expect(payload.content).not.toContain("ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-      expect(payload.content).toContain("[REDACTED:github_token]");
+      expect(payload.content).toContain("[REDACTED:token]");
     });
 
     it("resumes polling after failure window expires", async () => {

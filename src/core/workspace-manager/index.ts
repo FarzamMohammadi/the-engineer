@@ -18,6 +18,7 @@ import type { TaskWorkspace } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type {
+  AuthUrlProvider,
   CreateWorkspaceOptions,
   IWorkspaceManager,
   WorkspaceRecord,
@@ -89,19 +90,8 @@ export function branchName(prefix: string, taskId: string, slug: string): string
   return `${prefix}${taskId}-${slug}`;
 }
 
-/**
- * Inject authentication into an HTTPS git URL (D148).
- *
- * Replaces `https://` with `https://git:{token}@`. If token is empty or URL
- * is not HTTPS, returns the URL unchanged. The token is read from an
- * environment variable at call time — never persisted.
- */
-export function injectAuth(url: string, token: string): string {
-  if (!(token && url.startsWith("https://"))) {
-    return url;
-  }
-  return url.replace("https://", `https://git:${token}@`);
-}
+// Re-export from utils for backwards compatibility — canonical home is src/utils/git-url.ts.
+export { injectAuth } from "../../utils/git-url.js";
 
 /**
  * Validate that a path is within the expected workspace root.
@@ -150,19 +140,26 @@ export function validateWorkspacePath(targetPath: string, workspaceRoot: string)
  *
  * Emits workspace events on the Event Bus at each lifecycle point.
  *
- * Authentication: reads the git token from process.env at operation time
- * via the `git_token_env` config field. The token never appears in config
- * files, the database, or git remote URLs on disk.
+ * Authentication: delegates to an injected `AuthUrlProvider` callback that
+ * transforms plain remote URLs into authenticated ones. The token never
+ * appears in config files, the database, or git remote URLs on disk.
  */
 export class WorkspaceManager implements IWorkspaceManager {
   private readonly eventBus: IEventBus;
   private readonly config: WorkspaceConfig;
   private readonly observer: IObserver;
+  private readonly authUrlProvider: AuthUrlProvider;
   private readonly workspaces = new Map<string, WorkspaceRecord>();
 
-  constructor(eventBus: IEventBus, config: WorkspaceConfig, observer: IObserver) {
+  constructor(
+    eventBus: IEventBus,
+    config: WorkspaceConfig,
+    observer: IObserver,
+    authUrlProvider: AuthUrlProvider,
+  ) {
     this.eventBus = eventBus;
     this.observer = observer;
+    this.authUrlProvider = authUrlProvider;
     // Expand ~ to actual home directory — Node APIs don't handle tilde
     this.config = {
       ...config,
@@ -464,9 +461,8 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Clone with auth token (transient). Disable credential helpers so the
     // token is never cached to disk by git-credential-store or similar.
-    const token = this.resolveToken();
-    const authUrl = injectAuth(cloneUrl, token);
-    execFileSync("git", ["-c", "credential.helper=", "clone", authUrl, repoCloneDir], {
+    const authUrl = this.authUrlProvider(cloneUrl);
+    execFileSync("git", ["-c", "credential.helper=", "clone", authUrl.unwrap(), repoCloneDir], {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -510,15 +506,14 @@ export class WorkspaceManager implements IWorkspaceManager {
     this.observer.info("Pushing branch to remote", { taskId, branch: record.branch });
     const pushStart = Date.now();
 
-    const token = this.resolveToken();
     const repoCloneDir = path.join(this.config.workspace_root, record.repo);
 
     // Get the unauthenticated remote URL
     const remoteUrl = this.gitExec(["remote", "get-url", "origin"], repoCloneDir);
 
     // Push with transient auth — explicit URL, not remote name
-    const authUrl = injectAuth(remoteUrl, token);
-    this.gitExec(["push", "-u", authUrl, record.branch], record.worktreePath);
+    const authUrl = this.authUrlProvider(remoteUrl);
+    this.gitExec(["push", "-u", authUrl.unwrap(), record.branch], record.worktreePath);
 
     this.observer.info("Branch pushed", {
       taskId,
@@ -536,15 +531,14 @@ export class WorkspaceManager implements IWorkspaceManager {
     this.observer.info("Deleting branch from remote", { taskId, branch: record.branch });
     const deleteStart = Date.now();
 
-    const token = this.resolveToken();
     const repoCloneDir = path.join(this.config.workspace_root, record.repo);
 
     // Get the unauthenticated remote URL
     const remoteUrl = this.gitExec(["remote", "get-url", "origin"], repoCloneDir);
 
     // Delete with transient auth — explicit URL, not remote name
-    const authUrl = injectAuth(remoteUrl, token);
-    this.gitExec(["push", authUrl, "--delete", record.branch], repoCloneDir);
+    const authUrl = this.authUrlProvider(remoteUrl);
+    this.gitExec(["push", authUrl.unwrap(), "--delete", record.branch], repoCloneDir);
 
     this.observer.info("Branch deleted from remote", {
       taskId,
@@ -683,20 +677,14 @@ export class WorkspaceManager implements IWorkspaceManager {
     return path.resolve(thisDir, "../../../..");
   }
 
-  /** Resolve the git token from the environment variable. */
-  private resolveToken(): string {
-    return process.env[this.config.git_token_env] ?? "";
-  }
-
   /** Run a git command with auth injected into the remote URL for fetch/push. */
   private gitExecWithAuth(args: string[], cwd: string): string {
-    const token = this.resolveToken();
-    if (token && (args[0] === "fetch" || args[0] === "push")) {
+    if (args[0] === "fetch" || args[0] === "push") {
       // Get remote URL and inject auth for this operation only
       const remoteUrl = this.gitExec(["remote", "get-url", "origin"], cwd);
-      const authUrl = injectAuth(remoteUrl, token);
+      const authUrl = this.authUrlProvider(remoteUrl);
       // Replace "origin" with the auth URL in the args
-      const authArgs = args.map((a) => (a === "origin" ? authUrl : a));
+      const authArgs = args.map((a) => (a === "origin" ? authUrl.unwrap() : a));
       return this.gitExec(authArgs, cwd);
     }
     return this.gitExec(args, cwd);

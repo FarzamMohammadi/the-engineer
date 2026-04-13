@@ -11,6 +11,7 @@ import {
   type PluginManifest,
   ReviewStatusSchema,
 } from "../../../src/schemas/adapters.js";
+import { SecureValue } from "../../../src/utils/secure-value.js";
 
 export interface GitHostingContractFixtures {
   validConfig: Record<string, unknown>;
@@ -155,6 +156,27 @@ export function runGitHostingContractSuite(
         const protection = await adapter.getBranchProtection(fixtures.prOptions.repo, "main");
         const parsed = BranchProtectionSchema.safeParse(protection);
         expect(parsed.success).toBe(true);
+      });
+    });
+
+    describe("Authentication", () => {
+      it("getAuthenticatedRemoteUrl() returns a SecureValue", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const result = adapter.getAuthenticatedRemoteUrl("https://github.com/owner/repo.git");
+        expect(result).toBeInstanceOf(SecureValue);
+      });
+
+      it("getAuthenticatedRemoteUrl() wraps the URL (toString never leaks)", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const result = adapter.getAuthenticatedRemoteUrl("https://github.com/owner/repo.git");
+        expect(result.toString()).toBe("[REDACTED]");
+        expect(JSON.stringify(result)).toBe('"[REDACTED]"');
+      });
+
+      it("getAuthenticatedRemoteUrl() unwrap contains the original host", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const result = adapter.getAuthenticatedRemoteUrl("https://github.com/owner/repo.git");
+        expect(result.unwrap()).toContain("github.com/owner/repo.git");
       });
     });
   });

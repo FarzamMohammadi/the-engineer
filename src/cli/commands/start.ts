@@ -6,6 +6,7 @@ import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
 import { DaemonAlreadyRunningError } from "../../core/daemon/errors.js";
 import { discoverEnabledPlugins } from "../../plugins/loader.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
+import { registerSecretEnvVars } from "../../utils/secret-registry.js";
 
 import { type BootstrapResult, type ProgressCallback, bootstrap } from "../bootstrap.js";
 import { type EngineerDirectories, resolveDirectories } from "../home.js";
@@ -114,6 +115,12 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
 
   // 1b. Capture env vars from shell into .env so daemon always has them.
   captureEnvVarsToFile(engineerHome, dirs.config);
+
+  // 1c. Register all env vars referenced in plugin configs as secrets for sanitization.
+  //     Replaces the former hardcoded SECRET_ENV_VARS list — Core discovers secrets
+  //     dynamically from what plugins declare in their ${VAR} config references.
+  const discoveredVars = findResolvedEnvVars(dirs.config);
+  registerSecretEnvVars(Object.keys(discoveredVars));
 
   // 2. Auto-create directories (idempotent — may already exist after setup)
   try {

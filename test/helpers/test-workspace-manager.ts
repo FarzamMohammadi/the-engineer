@@ -5,9 +5,11 @@ import path from "node:path";
 
 import type { z } from "zod";
 import { EventBus, type EventRow, rowToEvent } from "../../src/core/event-bus/index.js";
+import type { AuthUrlProvider } from "../../src/core/interfaces/workspace-manager.interface.js";
 import { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import type { Event } from "../../src/schemas/events.js";
+import { SecureValue } from "../../src/utils/secure-value.js";
 import { type TestDatabaseHandle, createTestDatabase } from "./test-database.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
 
@@ -103,11 +105,18 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
       enabled: true,
       max_repos_per_task: 5,
     },
-    git_token_env: "GITHUB_TOKEN",
   };
 
+  // Test auth provider — passes URL through unchanged (local bare repos don't need auth)
+  const authUrlProvider: AuthUrlProvider = (url) => new SecureValue(url);
+
   const workspaceManagerObserver = createTestObserverFacade("workspace-manager");
-  const workspaceManager = new WorkspaceManager(eventBus, config, workspaceManagerObserver);
+  const workspaceManager = new WorkspaceManager(
+    eventBus,
+    config,
+    workspaceManagerObserver,
+    authUrlProvider,
+  );
 
   const allEventsStmt = testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
   const eventsByTypeStmt = testDb.db.prepare(

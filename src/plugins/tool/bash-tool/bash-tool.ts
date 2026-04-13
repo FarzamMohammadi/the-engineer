@@ -11,7 +11,7 @@ import {
   createAdapterError,
 } from "../../../adapters/index.js";
 import { killProcess } from "../../../utils/process.js";
-import { SECRET_ENV_VARS } from "../../../utils/sanitize.js";
+import { getSecretEnvVars } from "../../../utils/secret-registry.js";
 import { type BashToolConfig, BashToolConfigSchema } from "./config.js";
 
 /**
@@ -117,7 +117,7 @@ export class BashToolPlugin extends ToolAdapter {
     this.config = parsed.data;
 
     // Validate env_passthrough doesn't include known secret env vars
-    const secretSet = new Set(SECRET_ENV_VARS);
+    const secretSet = getSecretEnvVars();
     const leaked = this.config.env_passthrough.filter((v) => secretSet.has(v));
     if (leaked.length > 0) {
       this.config = {

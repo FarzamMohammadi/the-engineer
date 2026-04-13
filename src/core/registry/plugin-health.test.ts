@@ -223,7 +223,7 @@ describe("createPluginHealthMonitor", () => {
       await monitor.healthCheckAll();
 
       expect(record.health.last_error).not.toContain(secretToken);
-      expect(record.health.last_error).toContain("[REDACTED:github_token]");
+      expect(record.health.last_error).toContain("[REDACTED:token]");
     });
 
     it("sanitizes secrets in unhealthy status messages from plugins", async () => {
@@ -259,7 +259,7 @@ describe("createPluginHealthMonitor", () => {
       expect(events).toHaveLength(1);
       const payload = events[0]!.payload as { error: string };
       expect(payload.error).not.toContain(secretToken);
-      expect(payload.error).toContain("[REDACTED:github_token]");
+      expect(payload.error).toContain("[REDACTED:token]");
     });
   });
 

@@ -1,4 +1,14 @@
 import type { TaskWorkspace } from "../../schemas/task.js";
+import type { SecureValue } from "../../utils/secure-value.js";
+
+/**
+ * Callback that transforms a plain remote URL into an authenticated one.
+ *
+ * Returns a SecureValue so the token never leaks through toString/toJSON.
+ * If no auth is available, returns a SecureValue wrapping the original URL.
+ * Injected at bootstrap — Core never knows which plugin provides auth.
+ */
+export type AuthUrlProvider = (remoteUrl: string) => SecureValue;
 
 /** Result of verifyWorkspace(). */
 export interface WorkspaceVerification {

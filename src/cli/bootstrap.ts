@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import type { GitHostingAdapter } from "../adapters/git-hosting.js";
 import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
 import { createNotificationRouter } from "../core/daemon/notification-router.js";
@@ -8,6 +9,7 @@ import {
   createDataLifecycleManager,
 } from "../core/data-lifecycle/index.js";
 import { HookRegistry } from "../core/hooks/index.js";
+import type { AuthUrlProvider } from "../core/interfaces/workspace-manager.interface.js";
 import {
   BlobStore,
   type IObserver,
@@ -24,6 +26,7 @@ import { loadBuiltinPlugins } from "../plugins/loader.js";
 import { AdapterTypes } from "../schemas/adapters.js";
 import { RealClock } from "../utils/clock.js";
 import { sanitizeErrorMessage } from "../utils/sanitize.js";
+import { SecureValue } from "../utils/secure-value.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +97,17 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     progress?.("Initializing database", "done");
 
     // 3. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
+    //    AuthUrlProvider uses a late-binding closure — the git hosting plugin
+    //    reference is populated after plugin loading (step 12), but by the time
+    //    any git operation runs (during task execution), the reference is set.
     progress?.("Wiring system", "start");
+    let gitHostingPlugin: GitHostingAdapter | null = null;
+    const authUrlProvider: AuthUrlProvider = (remoteUrl) => {
+      if (gitHostingPlugin) {
+        return gitHostingPlugin.getAuthenticatedRemoteUrl(remoteUrl);
+      }
+      return new SecureValue(remoteUrl);
+    };
     const {
       components: {
         eventBus,
@@ -111,6 +124,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       safetyConfig: config.safety,
       workspaceConfig: config.workspace,
       subscriberWarnThresholdMs: config.daemon.subscriber_warn_threshold_ms,
+      authUrlProvider,
     });
     milestones["components"] = Date.now() - bootstrapStartMs;
     observer.debug(
@@ -246,6 +260,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     );
     milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");
+
+    // Late-bind git hosting plugin for AuthUrlProvider (step 3 closure)
+    gitHostingPlugin = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
 
     observer.info("Plugins loaded", {
       loaded: pluginResult.loaded,

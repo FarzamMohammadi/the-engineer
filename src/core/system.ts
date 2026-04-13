@@ -8,6 +8,7 @@
 import type Database from "better-sqlite3";
 
 import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
+import { SecureValue } from "../utils/secure-value.js";
 import { EVENTS as ACTION_PIPELINE_EVENTS, ActionPipeline } from "./action-pipeline/index.js";
 import { EventBus, type EventBusOptions } from "./event-bus/index.js";
 import { EventTopology } from "./event-bus/topology.js";
@@ -16,6 +17,7 @@ import type { IEventBus } from "./interfaces/event-bus.interface.js";
 import type { ISafetyLayer } from "./interfaces/safety-layer.interface.js";
 import type { ISessionMemory } from "./interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "./interfaces/task-engine.interface.js";
+import type { AuthUrlProvider } from "./interfaces/workspace-manager.interface.js";
 import type { IWorkspaceManager } from "./interfaces/workspace-manager.interface.js";
 import { EVENTS as SAFETY_LAYER_EVENTS, SafetyLayer } from "./safety-layer/index.js";
 import { SessionMemory } from "./session-memory/index.js";
@@ -45,6 +47,8 @@ export interface CreateCoreInput {
   observer: import("./observer/index.js").IObserver;
   /** EventBus subscriber slow-callback warning threshold (ms). 0 = disabled. */
   subscriberWarnThresholdMs?: number;
+  /** Callback that provides authenticated git URLs. Injected at bootstrap from the git hosting plugin. */
+  authUrlProvider?: AuthUrlProvider;
 }
 
 /**
@@ -82,10 +86,12 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponentGraph
     input.observer.child("action-pipeline"),
   );
   const sessionMemory = new SessionMemory(input.db);
+  const defaultAuthUrlProvider: AuthUrlProvider = (url) => new SecureValue(url);
   const workspaceManager = new WorkspaceManager(
     eventBus,
     input.workspaceConfig,
     input.observer.child("workspace-manager"),
+    input.authUrlProvider ?? defaultAuthUrlProvider,
   );
 
   return {

@@ -1,10 +1,22 @@
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runToolContractSuite } from "../../../../test/helpers/contract-suites/tool-contract.js";
 import { PluginManifestSchema, type ToolExecutionContext } from "../../../schemas/adapters.js";
+import {
+  _resetSecretRegistryForTest,
+  registerSecretEnvVars,
+} from "../../../utils/secret-registry.js";
 import { BashToolPlugin } from "./bash-tool.js";
+
+// Register secrets for tests that check env_passthrough filtering
+beforeAll(() => {
+  registerSecretEnvVars(["GITHUB_TOKEN", "TELEGRAM_BOT_TOKEN", "AWS_SECRET_ACCESS_KEY"]);
+});
+afterAll(() => {
+  _resetSecretRegistryForTest();
+});
 
 // ── Shared Setup ────────────────────────────────────────────────────────────
 

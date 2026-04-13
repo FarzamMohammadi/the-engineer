@@ -17,6 +17,8 @@ import {
   type ReviewStatus,
   createAdapterError,
 } from "../../../adapters/index.js";
+import { injectAuth } from "../../../utils/git-url.js";
+import { SecureValue } from "../../../utils/secure-value.js";
 import { type GitHubHostingConfig, GitHubHostingConfigSchema } from "./config.js";
 
 /** No-op observer for when the real observer is not injected. */
@@ -420,6 +422,10 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     const { data } = await this.octokit.repos.get({ owner, repo: repoName });
     this.obs.debug("Default branch resolved", { repo, branch: data.default_branch });
     return data.default_branch;
+  }
+
+  protected doGetAuthenticatedRemoteUrl(remoteUrl: string): SecureValue {
+    return new SecureValue(injectAuth(remoteUrl, this.config.github_token));
   }
 
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {

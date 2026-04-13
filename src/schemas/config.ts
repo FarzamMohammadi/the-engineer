@@ -389,12 +389,6 @@ export const WorkspaceConfigSchema = z.object({
     .string()
     .default("main")
     .describe("Default base branch for PRs when not specified by the task. Default: main."),
-  git_token_env: z
-    .string()
-    .default("GIT_TOKEN")
-    .describe(
-      "Name of the environment variable holding the git authentication token. Set to GITHUB_TOKEN if using GitHub. Default: GIT_TOKEN.",
-    ),
   pr: PrConfigSchema.default({}),
   cleanup: CleanupConfigSchema.default({}),
   child_pr_strategy: z

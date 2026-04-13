@@ -2308,7 +2308,7 @@ On plugin shutdown, all active child processes receive the same SIGTERM-then-SIG
 - \`side_effects\`: array with command details (command text, exit code, timeout/limit flags)
 - \`error\`: structured adapter error on failure (\`command_failed\`, \`timeout\`, \`output_limit\`, \`command_blocked\`, \`spawn_error\`)
 
-**Initialization safety.** During config parsing, if \`env_passthrough\` contains known secret variable names (from the central \`SECRET_ENV_VARS\` list), those entries are silently removed and a warning is returned. The plugin still initializes successfully.
+**Initialization safety.** During config parsing, if \`env_passthrough\` contains known secret variable names (discovered dynamically from plugin config \`\${VAR}\` references at startup), those entries are silently removed and a warning is returned. The plugin still initializes successfully.
 
 ## Limitations
 

@@ -779,7 +779,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.attemptSelfUnblock("task-1");
 
       expect(capturedPrompt).not.toContain(secretToken);
-      expect(capturedPrompt).toContain("[REDACTED:github_token]");
+      expect(capturedPrompt).toContain("[REDACTED:token]");
       expect(capturedPrompt).toContain("https://git:***@");
     });
 

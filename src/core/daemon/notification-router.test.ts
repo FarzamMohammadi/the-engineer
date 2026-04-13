@@ -452,7 +452,7 @@ describe("NotificationRouter", () => {
       task_title: string;
     };
     expect(syncArgs.task_title).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    expect(syncArgs.task_title).toContain("[REDACTED:github_token]");
+    expect(syncArgs.task_title).toContain("[REDACTED:token]");
   });
 
   // SECURITY: notify ticket_comment strips auth tokens from message before posting to GitHub

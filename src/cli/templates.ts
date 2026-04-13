@@ -197,9 +197,6 @@ export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
 # branch_prefix: "engineer/"                 # Prefix for created branches
 # slug_max_length: 30                        # Max length for branch slug
 # default_base_branch: main                  # Default base branch for PRs
-# git_token_env: GIT_TOKEN                   # Env var name for git auth token (default: GIT_TOKEN)
-#                                            # Using GitHub? Set this to GITHUB_TOKEN, or alias:
-#                                            # export GIT_TOKEN=$GITHUB_TOKEN
 
 # --- PR settings ---
 # pr:
@@ -536,9 +533,6 @@ workspace_root: "~/.engineer/workspaces/" # Where git worktrees are created (def
 branch_prefix: "engineer/"                # Prefix for created branches (default: "engineer/")
 slug_max_length: 30                       # Max length for branch slug (default: 30)
 default_base_branch: main                 # Default base branch for PRs (default: main)
-git_token_env: GIT_TOKEN                  # Env var name for git auth token (default: GIT_TOKEN)
-                                          # Generic default works with any git host.
-                                          # For GitHub: export GIT_TOKEN=$GITHUB_TOKEN
 
 # ── PR Settings ──────────────────────────────────────────────────────────────
 pr:

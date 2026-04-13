@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { sanitizeErrorMessage, sanitizeSecrets } from "./sanitize.js";
+import { _resetSecretRegistryForTest, registerSecretEnvVars } from "./secret-registry.js";
 
 describe("sanitizeSecrets", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    _resetSecretRegistryForTest();
+    // Register the env vars used in these tests (simulates startup discovery)
+    registerSecretEnvVars(["GITHUB_TOKEN", "TELEGRAM_BOT_TOKEN", "ANTHROPIC_API_KEY"]);
     // Clear secret env vars so they don't interfere
     process.env["GITHUB_TOKEN"] = undefined;
     process.env["TELEGRAM_BOT_TOKEN"] = undefined;
@@ -14,6 +18,7 @@ describe("sanitizeSecrets", () => {
   afterEach(() => {
     process.env["GITHUB_TOKEN"] = originalEnv["GITHUB_TOKEN"];
     process.env["TELEGRAM_BOT_TOKEN"] = originalEnv["TELEGRAM_BOT_TOKEN"];
+    _resetSecretRegistryForTest();
   });
 
   // ── Empty / no-op cases ──────────────────────────────────────────────────
@@ -108,12 +113,12 @@ describe("sanitizeSecrets", () => {
     expect(result).not.toContain(gho);
     expect(result).not.toContain(ghs);
     expect(result).not.toContain(ghr);
-    expect(result).toContain("[REDACTED:github_token]");
+    expect(result).toContain("[REDACTED:token]");
   });
 
   it("redacts github_pat_ tokens", () => {
     const pat = `github_pat_${"x".repeat(40)}`;
-    expect(sanitizeSecrets(`pat=${pat}`)).toContain("[REDACTED:github_pat]");
+    expect(sanitizeSecrets(`pat=${pat}`)).toContain("[REDACTED:pat]");
   });
 
   it("redacts AWS key patterns (AKIA...)", () => {
@@ -147,7 +152,7 @@ describe("sanitizeSecrets", () => {
     const awsKey = `AKIA${"B".repeat(16)}`;
     const input = `Tokens: ${ghp} and ${awsKey}`;
     const result = sanitizeSecrets(input);
-    expect(result).toContain("[REDACTED:github_token]");
+    expect(result).toContain("[REDACTED:token]");
     expect(result).toContain("[REDACTED:aws_key]");
   });
 

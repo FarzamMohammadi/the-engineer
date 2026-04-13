@@ -10,6 +10,7 @@ import type {
   PRUpdates,
   ReviewStatus,
 } from "../schemas/adapters.js";
+import type { SecureValue } from "../utils/secure-value.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 
@@ -104,6 +105,19 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     return wrapAsync(() => this.doGetDefaultBranch(repo));
   }
 
+  // ── Authentication ────────────────────────────────────────────────────────
+
+  /**
+   * Transform a plain remote URL into an authenticated one.
+   *
+   * Returns a SecureValue so the token never leaks through toString/toJSON.
+   * Synchronous — no I/O, just URL string manipulation with an
+   * already-available token.
+   */
+  getAuthenticatedRemoteUrl(remoteUrl: string): SecureValue {
+    return this.doGetAuthenticatedRemoteUrl(remoteUrl);
+  }
+
   // ── Protected Abstract (plugin authors implement) ──────────────────────────
 
   protected abstract doCreatePR(options: PROptions): Promise<PRResult>;
@@ -130,4 +144,5 @@ export abstract class GitHostingAdapter extends BaseAdapter {
   ): Promise<void>;
   protected abstract doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection>;
   protected abstract doGetDefaultBranch(repo: string): Promise<string>;
+  protected abstract doGetAuthenticatedRemoteUrl(remoteUrl: string): SecureValue;
 }

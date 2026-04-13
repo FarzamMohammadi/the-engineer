@@ -336,3 +336,47 @@ Each adapter type needs a "How to build a plugin" guide so contributors can add 
 5. Existing `ClaudeCodeLLMPlugin.spawnAndParse()` delegates to the active strategy
 
 ---
+
+## Session Evaluation & Benchmarking
+
+**Current state (v1):** No way to measure whether prompt or strategy changes improve or degrade session quality. Changes are evaluated by gut feel — run a task, eyeball the result, hope it's better.
+
+**Why this matters — observed problems (Session 069, April 2026):**
+
+Trace analysis of real autonomous sessions revealed severe inefficiencies compared to interactive Claude Code sessions:
+
+1. **Output per turn: 12 tokens (autonomous) vs 342–520 tokens (interactive).** The autonomous model enters a pure tool-call loop — one Read, one Grep, one tool per turn — with no batching, no synthesis between reads, no planning. Each turn re-sends the full conversation history (~35k avg) for 1 token of output.
+
+2. **Input:output ratio: 2,748:1 (autonomous) vs 618:1 (interactive).** The autonomous sessions consume 4.5x more input per unit of output. A simple config flag research phase burned 5M tokens across 137 turns to produce a 10k-char research.md.
+
+3. **Prompts don't scale with task complexity.** The research prompt has a 13-section template and instructs "trace execution paths end-to-end," "inventory every instance," "challenge what you found" — the same heavyweight checklist regardless of whether the task is adding one boolean config field or redesigning the architecture. The model obeys: it explores exhaustively because the prompt says to.
+
+4. **Sub-agent duplication.** Research spawned 3 parallel sub-agents that independently read the same files (`phase-runner.ts` read 9 times, `config.ts` 7 times, `pr-manager.ts` 6 times). The parent agent then re-read key files because sub-agent results are compressed summaries. ~70% of the research cost was duplication.
+
+5. **Discovery of known context.** Demo-prep wasted 19 turns (7 failed path guesses + 12-turn sub-agent) discovering the worktree path and thoughts directory structure — information the Orchestrator already has but doesn't inject.
+
+Without measurement, we can't tell whether fixes to these problems actually work. A prompt change might cut turns by 30% but miss a key file. Complexity-adaptive routing might route incorrectly. We need a feedback loop.
+
+**When it becomes relevant:** Before any further prompt or session strategy refinement. Every change from here should be measurable.
+
+**What it enables:**
+
+1. **Frozen benchmark tasks** — 3 task definitions stored in the repo (not GitHub issues) at different complexity levels: simple (config flag addition), moderate (new feature touching 5–6 files), complex (cross-cutting change). Fixed descriptions, fixed codebase snapshot (git tag). Same input every time so the only variable is the prompt/strategy.
+
+2. **Metrics extraction** — a script that reads any trace directory (`~/.engineer/traces/sessions/`) and outputs a structured scorecard: turns, total tokens, output/turn ratio, file re-read count, cost estimate, peak context, files read list. The trace infrastructure already captures everything needed (NDJSON with full usage data per turn).
+
+3. **Results history** — each benchmark run appends to a log with: date, benchmark task, prompt/strategy version, the scorecard. This is the trend line — did the last change help or hurt?
+
+4. **Quality assessment** — starts with human review (pass/fail + one-line note on the deliverable). LLM-as-judge or golden-output diffing can be added later, but human judgment is the ground truth for v1.
+
+**Workflow:** Make a prompt change → run the simple benchmark → check the scorecard → check the deliverable → log it. ~10 minutes per iteration.
+
+**Migration path:**
+1. Create `test/benchmarks/tasks/` with 3 frozen task definitions (title, description, acceptance criteria)
+2. Tag a codebase snapshot (`git tag benchmark-v1`) as the fixed evaluation target
+3. Build `scripts/analyze-trace.ts` — reads trace NDJSON, outputs JSON scorecard (turns, tokens, output/turn, re-reads, cost, peak context, files list)
+4. Build `scripts/run-benchmark.sh` — runs a benchmark task through The Engineer against the tagged snapshot, captures trace
+5. Create `test/benchmarks/results/` — append-only log of run results with scorecard + human notes
+6. Add `scripts/compare-runs.ts` — side-by-side comparison of two benchmark runs
+
+---

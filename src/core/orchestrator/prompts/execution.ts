@@ -119,6 +119,8 @@ function buildInstructions(): string {
       "6. **Update documentation** in the same step as code changes. A code change without a doc update is unfinished work.",
       "",
       "7. **Commit at meaningful checkpoints** — each commit a logical unit of work with passing type checks, linter, and tests. Verify tooling accepts the change before committing.",
+      "",
+      "8. **Before finishing, commit ALL remaining changes.** Run `git status` — there must be zero unstaged or uncommitted changes. Use the commit skill (see Skills section) to create a final commit if anything remains. The system will push your branch after this phase completes — uncommitted work will be lost, and leftover changes can cause push failures.",
     ].join("\n"),
   );
 }

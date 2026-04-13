@@ -513,7 +513,10 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Push with transient auth — explicit URL, not remote name
     const authUrl = this.authUrlProvider(remoteUrl);
-    this.gitExec(["push", "-u", authUrl.unwrap(), record.branch], record.worktreePath);
+    this.gitExec(
+      ["push", "--no-verify", "-u", authUrl.unwrap(), record.branch],
+      record.worktreePath,
+    );
 
     this.observer.info("Branch pushed", {
       taskId,
@@ -538,7 +541,10 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Delete with transient auth — explicit URL, not remote name
     const authUrl = this.authUrlProvider(remoteUrl);
-    this.gitExec(["push", authUrl.unwrap(), "--delete", record.branch], repoCloneDir);
+    this.gitExec(
+      ["push", "--no-verify", authUrl.unwrap(), "--delete", record.branch],
+      repoCloneDir,
+    );
 
     this.observer.info("Branch deleted from remote", {
       taskId,

@@ -237,7 +237,8 @@ describe("commitAndPush", () => {
       (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes("-m"),
     );
     expect(commitCall).toBeDefined();
-    const commitMsg = (commitCall![1] as string[])[2]!;
+    const args = commitCall![1] as string[];
+    const commitMsg = args[args.indexOf("-m") + 1]!;
     expect(commitMsg).not.toContain("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     expect(commitMsg).toContain("[REDACTED:token]");
     expect(commitMsg).toContain("Crafted by The Engineer");

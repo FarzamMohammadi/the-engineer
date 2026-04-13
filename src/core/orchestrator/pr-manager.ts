@@ -160,6 +160,9 @@ export function createPrManager(
       { task_id: taskId },
     );
 
+    // TODO: Reconsider moving commit responsibility back to the execution phase entirely.
+    // The CLI agent should commit all changes during its session; pr-manager should only push.
+    // This safety-net commit exists because the agent may leave uncommitted changes.
     // 1. Deterministic commit: git add -A && git commit
     let hasNewCommit = false;
     try {
@@ -184,7 +187,7 @@ export function createPrManager(
         const commitMessage = isRework
           ? "fix: address review feedback\n\nCrafted by The Engineer"
           : `feat: ${sanitizeSecrets(dispatch.task.title)}\n\nCrafted by The Engineer`;
-        execFileSync("git", ["commit", "-m", commitMessage], {
+        execFileSync("git", ["commit", "--no-verify", "-m", commitMessage], {
           cwd: worktreePath,
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],

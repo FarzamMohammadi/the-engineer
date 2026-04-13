@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "execution",
-  "summary": "Add skip_pr_creation to PrConfigSchema with per-repo overrides, thread workspaceConfig into OrchestratorContext, gate PR creation in tryCommitPushAndCreatePR — return null (continue pipeline) when skip enabled.",
-  "complexity": "moderate"
-}

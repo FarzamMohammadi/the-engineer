@@ -356,6 +356,8 @@ pr:
 
 When `skip_pr_creation` is enabled for a repo (or globally), the pipeline skips `createPullRequest` after a successful push. The task continues to the integration phase and completes with outcome `completed` instead of `review_pending`. The owner receives a "changes pushed to branch" notification.
 
+> **Warning:** This bypasses the review gate entirely. Code pushed with this config enabled lands on the remote branch without a pull request, without human review, and without CI checks on the merge path. A warning-level log is emitted each time this fires. Use this only for repos where branch protection or other external gates provide equivalent safety.
+
 When disabled (default), behavior is unchanged — the full PR workflow runs as documented above.
 
 Per-repo values override the global default. Repos not listed in `repos` fall back to `default`.

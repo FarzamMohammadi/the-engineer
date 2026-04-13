@@ -1,5 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "planning",
-  "summary": "OrchestratorContext needs workspaceConfig added; skip logic goes in tryCommitPushAndCreatePR returning null after push to continue pipeline to completed; per-repo override follows MergePolicySchema pattern"
-}

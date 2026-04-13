@@ -347,7 +347,7 @@ export const PrConfigSchema = z.object({
     })
     .default({})
     .describe(
-      "Skip PR creation after push. When enabled, the task completes after pushing to the remote branch. Supports per-repo overrides.",
+      "Skip PR creation after push — code lands on the remote branch without a PR or review gate. When enabled, the task completes after pushing. Supports per-repo overrides.",
     ),
 });
 export type PrConfig = z.infer<typeof PrConfigSchema>;

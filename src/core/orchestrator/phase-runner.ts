@@ -490,18 +490,19 @@ async function tryCommitPushAndCreatePR(
 
   if (shouldSkipPr) {
     const branchInfo = record ? ` \`${record.branch}\` on \`${record.repo}\`` : "";
-    ctx.observer.info(`Skipping PR creation per config — changes pushed to branch${branchInfo}`, {
-      taskId,
-    });
+    ctx.observer.warn(
+      `PR creation skipped — code pushed without review gate.${branchInfo} No PR will be created, no human review will be requested. Ensure this is intentional.`,
+      { taskId },
+    );
     ctx.notifications.notify({
       kind: NotificationKinds.milestone,
       taskId,
-      message: `Changes pushed to branch${branchInfo} — PR creation skipped per config.`,
+      message: `Changes pushed to branch${branchInfo} — PR creation skipped per config. No PR or review gate.`,
     });
     ctx.notifications.notify({
       kind: NotificationKinds.ticket_comment,
       taskId,
-      message: `Changes pushed to branch${branchInfo} — PR creation skipped per config.`,
+      message: `Changes pushed to branch${branchInfo} — PR creation skipped per config. No PR or review gate.`,
     });
     return null; // Continue pipeline → integration → completed
   }

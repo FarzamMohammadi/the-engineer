@@ -24,6 +24,8 @@ coverage/
 !.env*.example
 seed/
 
+package-lock.json
+
 # OS
 .DS_Store
 Thumbs.db

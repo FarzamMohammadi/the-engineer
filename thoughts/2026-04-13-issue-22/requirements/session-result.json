@@ -1,6 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "research",
-  "summary": "Add skip_pr_creation config to PrConfigSchema in workspace.yaml with per-repo overrides; wire into tryCommitPushAndCreatePR to skip PR creation and complete with 'completed' outcome",
-  "complexity": "moderate"
-}

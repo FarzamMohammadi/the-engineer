@@ -1,5 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "self_review",
-  "summary": "Add skip_pr_creation config to PrConfigSchema with per-repo overrides, thread workspaceConfig into OrchestratorContext, skip PR creation in phase-runner when enabled, with tests and docs"
-}

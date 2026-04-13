@@ -1,5 +1,0 @@
-{
-  "status": "ready",
-  "next_phase": "demo_prep",
-  "summary": "PR description written for #22: Add skip_pr_creation config for push-only PR workflow"
-}

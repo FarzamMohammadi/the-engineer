@@ -90,6 +90,7 @@ taskEngine.getTasksByState(TaskStates.queued);
 | `session-memory.ts` | `KnowledgeScopeSchema` | `KnowledgeScope` | `KnowledgeScopes` |
 | `session-memory.ts` | `KnowledgeConfidenceSchema` | `KnowledgeConfidence` | `KnowledgeConfidences` |
 | `session-memory.ts` | `KnowledgeDomainSchema` | `KnowledgeDomain` | `KnowledgeDomains` |
+| `observer.ts` | `ObservationTypeSchema` | `ObservationTypeValue` | `ObservationTypes` |
 | `observer.ts` | `ObservationLevelSchema` | `ObservationLevel` | `ObservationLevels` |
 | `observer.ts` | `ObservationStatusSchema` | `ObservationStatus` | `ObservationStatuses` |
 | `ephemeral.ts` | `PrioritySourceSchema` | `PrioritySource` | `PrioritySources` |

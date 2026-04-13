@@ -27,23 +27,8 @@ export const ObservationTypeSchema = z.enum([
 ]);
 export type ObservationTypeValue = z.infer<typeof ObservationTypeSchema>;
 
-/** Runtime const object for ObservationType — use like `ObservationType.LLM_CALL`. */
-export const ObservationType = {
-  AGENT_ITERATION: "agent_iteration",
-  LLM_CALL: "llm_call",
-  TOOL_EXECUTION: "tool_execution",
-  PHASE_TRANSITION: "phase_transition",
-  DECISION_POINT: "decision_point",
-  SAFETY_VERDICT: "safety_verdict",
-  STATE_TRANSITION: "state_transition",
-  WORKSPACE_OP: "workspace_op",
-  PLUGIN_CALL: "plugin_call",
-  ERROR: "error",
-  COST_SNAPSHOT: "cost_snapshot",
-  LIFECYCLE: "lifecycle",
-  CONFIG_CHANGE: "config_change",
-  QUOTA_STATUS: "quota_status",
-} as const satisfies Record<string, ObservationTypeValue>;
+/** Constant enum values for ObservationType. Use instead of raw strings. */
+export const ObservationTypes = ObservationTypeSchema.enum;
 
 // ── Level & Status ────────────────────────────────────────────────────────────
 

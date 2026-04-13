@@ -13,7 +13,7 @@ export type {
   SpanOptions,
 } from "../../schemas/observer.js";
 
-export { ObservationType } from "../../schemas/observer.js";
+export { ObservationTypes } from "../../schemas/observer.js";
 
 // ── ObservationSpan ───────────────────────────────────────────────────────────
 

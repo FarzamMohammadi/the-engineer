@@ -9,7 +9,7 @@ import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
-import { ObservationType } from "../../schemas/observer.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 
 export interface SystemRoutesDeps {
   db: Database.Database;
@@ -44,7 +44,7 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
 
     // Sum spend from phase_transition observations (stored in output JSON)
     const phaseObs = deps.observationStore.query({
-      type: ObservationType.PHASE_TRANSITION,
+      type: ObservationTypes.phase_transition,
       limit: 10000,
     });
     let totalSpend: number | null = null;
@@ -77,7 +77,7 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
 
     // Detect LLM provider from observations
     let llmProvider: string | null = null;
-    const recentLlm = deps.observationStore.query({ type: ObservationType.LLM_CALL, limit: 1 });
+    const recentLlm = deps.observationStore.query({ type: ObservationTypes.llm_call, limit: 1 });
     if (recentLlm.length > 0) {
       const input = recentLlm[0]?.input as Record<string, unknown> | null;
       llmProvider = (input?.["provider_id"] as string) ?? null;

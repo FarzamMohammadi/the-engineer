@@ -44,21 +44,21 @@ export { Outcomes } from "./types.js";
 
 export const EVENTS: EventDeclaration[] = [
   {
-    type: "cost.incurred",
+    type: EventTypes["cost.incurred"],
     description: "Emitted after each LLM call with token/cost details",
     payloadSchema: CostIncurredPayloadSchema,
     publishers: ["orchestrator"],
     subscribers: [],
   },
   {
-    type: "preemption.ready",
+    type: EventTypes["preemption.ready"],
     description: "Emitted when the orchestrator reaches a safe checkpoint for preemption",
     payloadSchema: PreemptionReadyPayloadSchema,
     publishers: ["orchestrator"],
     subscribers: [],
   },
   {
-    type: "comm.message_sent",
+    type: EventTypes["comm.message_sent"],
     description: "Emitted when a notification is sent to a communication channel",
     payloadSchema: CommMessageSentPayloadSchema,
     publishers: ["orchestrator"],

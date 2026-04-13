@@ -6,7 +6,7 @@ import {
 } from "../../../test/helpers/test-observer.js";
 import { ObservationLevels } from "../../schemas/observer.js";
 import { ObserverStream } from "./stream.js";
-import { ObservationType } from "./types.js";
+import { ObservationTypes } from "./types.js";
 import type { Observation } from "./types.js";
 
 const ULID_PATTERN = /^[0-9A-Z]{26}$/;
@@ -25,15 +25,15 @@ describe("Observer", () => {
     handle.cleanup();
   });
 
-  // ── ObservationType ────────────────────────────────────────────────────────
+  // ── ObservationTypes ───────────────────────────────────────────────────────
 
-  describe("ObservationType", () => {
+  describe("ObservationTypes", () => {
     it("has all 14 types", () => {
-      expect(Object.keys(ObservationType)).toHaveLength(14);
+      expect(Object.keys(ObservationTypes)).toHaveLength(14);
     });
 
     it("values are lowercase_snake_case strings", () => {
-      for (const value of Object.values(ObservationType)) {
+      for (const value of Object.values(ObservationTypes)) {
         expect(value).toMatch(SNAKE_CASE_PATTERN);
       }
     });

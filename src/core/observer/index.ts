@@ -31,5 +31,5 @@ export type { ComponentTag } from "./logging.js";
 
 export type { IObservationStore, ObservationSpan } from "./types.js";
 export type { Observation, ObservationQuery, SpanOptions } from "./types.js";
-export { ObservationType } from "./types.js";
+export { ObservationTypes } from "./types.js";
 export type { ObservationTypeValue } from "./types.js";

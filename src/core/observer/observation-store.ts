@@ -8,7 +8,11 @@
  * Complements (does not replace) EventBus (audit trail) and Logger (ops logs).
  */
 import { ulid } from "ulid";
-import { ObservationLevels, ObservationStatuses, ObservationType } from "../../schemas/observer.js";
+import {
+  ObservationLevels,
+  ObservationStatuses,
+  ObservationTypes,
+} from "../../schemas/observer.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { BlobStore } from "./blob-store.js";
 import { ObserverStore } from "./store.js";
@@ -20,7 +24,7 @@ import type { IObservationStore, ObservationSpan } from "./types.js";
 
 export type { IObservationStore, ObservationSpan } from "./types.js";
 export type { Observation, ObservationQuery, SpanOptions } from "./types.js";
-export { ObservationType } from "./types.js";
+export { ObservationTypes } from "./types.js";
 export type { ObservationTypeValue } from "./types.js";
 
 // ── Pure Helpers ─────────────────────────────────────────────────────────────
@@ -137,7 +141,7 @@ export class ObservationStore implements IObservationStore {
     opts?: SpanOptions,
   ): string {
     return this.observe(
-      ObservationType.DECISION_POINT,
+      ObservationTypes.decision_point,
       name,
       {
         context,
@@ -159,7 +163,7 @@ export class ObservationStore implements IObservationStore {
     const id = ulid();
     const obs = buildObservation(
       id,
-      ObservationType.ERROR,
+      ObservationTypes.error,
       context.operation,
       {
         component: context.component,
@@ -254,7 +258,7 @@ export class ObservationStore implements IObservationStore {
       },
 
       addEvent(eventName: string, data?: Record<string, unknown>): void {
-        self.observe(ObservationType.LIFECYCLE, eventName, data ?? {}, {
+        self.observe(ObservationTypes.lifecycle, eventName, data ?? {}, {
           ...options,
           parent_observation_id: id,
         });

@@ -5,7 +5,7 @@ import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { ObservationType } from "../../schemas/observer.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import type { PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../schemas/session-memory.js";
@@ -154,7 +154,7 @@ export function createPrManager(
 
     const isRework = dispatch.task.review?.pr_number != null;
     const span = observer.startSpan(
-      ObservationType.PLUGIN_CALL,
+      ObservationTypes.plugin_call,
       "commit_and_push",
       { taskId, repo: record.repo, branch: record.branch, isRework },
       { task_id: taskId },
@@ -255,7 +255,7 @@ export function createPrManager(
     const prStart = Date.now();
 
     const span = observer.startSpan(
-      ObservationType.PLUGIN_CALL,
+      ObservationTypes.plugin_call,
       "pr_workflow",
       { taskId, repo: record?.repo, branch: record?.branch, isRework },
       { task_id: taskId },

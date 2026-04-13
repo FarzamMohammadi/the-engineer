@@ -41,42 +41,42 @@ import { createUnblockResolver } from "./unblock-resolver.js";
 
 export const EVENTS: EventDeclaration[] = [
   {
-    type: "trigger.new_event",
+    type: EventTypes["trigger.new_event"],
     description: "Emitted when a trigger adapter detects a new assignable event",
     payloadSchema: TriggerNewEventPayloadSchema,
     publishers: ["daemon"],
     subscribers: [],
   },
   {
-    type: "health.trigger_failure",
+    type: EventTypes["health.trigger_failure"],
     description: "Emitted when a trigger adapter fails consecutively",
     payloadSchema: HealthTriggerFailurePayloadSchema,
     publishers: ["daemon"],
     subscribers: ["daemon"],
   },
   {
-    type: "health.stuck_detected",
+    type: EventTypes["health.stuck_detected"],
     description: "Emitted when a task is detected as stuck (no progress)",
     payloadSchema: HealthStuckDetectedPayloadSchema,
     publishers: ["daemon"],
     subscribers: ["daemon"],
   },
   {
-    type: "task.children_all_done",
+    type: EventTypes["task.children_all_done"],
     description: "Emitted when all child tasks of a parent have completed",
     payloadSchema: TaskChildrenAllDonePayloadSchema,
     publishers: ["daemon"],
     subscribers: [],
   },
   {
-    type: "preemption.requested",
+    type: EventTypes["preemption.requested"],
     description: "Emitted when a higher-priority task preempts a running task",
     payloadSchema: PreemptionRequestedPayloadSchema,
     publishers: ["daemon"],
     subscribers: [],
   },
   {
-    type: "preemption.completed",
+    type: EventTypes["preemption.completed"],
     description:
       "Emitted when a preemption cycle completes (cooperative yield or forced transition)",
     payloadSchema: PreemptionCompletedPayloadSchema,
@@ -84,35 +84,35 @@ export const EVENTS: EventDeclaration[] = [
     subscribers: [],
   },
   {
-    type: "task.feedback_received",
+    type: EventTypes["task.feedback_received"],
     description: "Emitted when PR review feedback is processed",
     payloadSchema: TaskFeedbackReceivedPayloadSchema,
     publishers: ["daemon"],
     subscribers: [],
   },
   {
-    type: "review.poll_completed",
+    type: EventTypes["review.poll_completed"],
     description: "Emitted after polling PR review status",
     payloadSchema: ReviewPollCompletedPayloadSchema,
     publishers: ["daemon"],
     subscribers: [],
   },
   {
-    type: "comm.send_failed",
+    type: EventTypes["comm.send_failed"],
     description: "Emitted when a notification could not be delivered to any channel for a person",
     payloadSchema: CommSendFailedPayloadSchema,
     publishers: ["notification-router"],
     subscribers: [],
   },
   {
-    type: "comm.retry_succeeded",
+    type: EventTypes["comm.retry_succeeded"],
     description: "Emitted when a previously failed notification is successfully delivered on retry",
     payloadSchema: CommRetrySucceededPayloadSchema,
     publishers: ["notification-router"],
     subscribers: [],
   },
   {
-    type: "comm.retry_exhausted",
+    type: EventTypes["comm.retry_exhausted"],
     description:
       "Emitted when notification retries are abandoned (max attempts, max age, or task terminal)",
     payloadSchema: CommRetryExhaustedPayloadSchema,
@@ -120,7 +120,7 @@ export const EVENTS: EventDeclaration[] = [
     subscribers: [],
   },
   {
-    type: "git.branch_deleted",
+    type: EventTypes["git.branch_deleted"],
     description: "Emitted when the daemon deletes a task branch from the remote after merge",
     payloadSchema: GitBranchDeletedPayloadSchema,
     publishers: ["daemon"],

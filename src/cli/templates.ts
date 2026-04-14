@@ -67,6 +67,12 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # review_polling:
 #   failure_window_ms: "5m"              # Time window for failure counting (default: 5m)
 #   max_failures_before_pause: 3         # Failures in window before pausing polling (default: 3)
+
+# --- AI-as-Judge evaluation ---
+# evaluation:
+#   enabled: false                       # Run independent evaluation after each task (default: false)
+#                                        # Two CLI sessions: blind plan + comparison verdict
+#                                        # Results at ~/.engineer/evaluations/
 `;
 
 export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engineer
@@ -386,6 +392,14 @@ subscriber_warn_threshold_ms: 50          # Warn if a subscriber callback exceed
 review_polling:
   failure_window_ms: "5m"                 # Time window for failure counting (default: 5m)
   max_failures_before_pause: 3            # Failures in window before pausing polling (default: 3)
+
+# ── AI-as-Judge Evaluation ──────────────────────────────────────────────────
+# Run an independent evaluation after each task completes. Two CLI sessions:
+# Session 1 (blind plan): given only the ticket, plans how it would approach the task.
+# Session 2 (comparison): compares its blind plan against The Engineer's actual output.
+# Results stored at ~/.engineer/evaluations/{task-id}/
+evaluation:
+  enabled: false                            # Enable evaluation (default: false). Turn on to measure quality.
 `;
 
 export const EXAMPLE_ORCHESTRATOR = `# ┌─────────────────────────────────────────────────────────────────────────────┐

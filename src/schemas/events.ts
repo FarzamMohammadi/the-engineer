@@ -68,6 +68,7 @@ export const EventTypeSchema = z.enum([
   "comm.retry_succeeded",
   "comm.retry_exhausted",
   "review.poll_completed",
+  "evaluation.completed",
   "system.cleanup_completed",
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
@@ -480,6 +481,17 @@ export const ReviewPollCompletedPayloadSchema = z.object({
 });
 export type ReviewPollCompletedPayload = z.infer<typeof ReviewPollCompletedPayloadSchema>;
 
+// evaluation.*
+
+export const EvaluationCompletedPayloadSchema = z.object({
+  task_id: z.string(),
+  evaluation_dir: z.string(),
+  total_cost_usd: z.number().nullable(),
+  duration_ms: z.number().int(),
+  status: z.enum(["completed", "failed"]),
+});
+export type EvaluationCompletedPayload = z.infer<typeof EvaluationCompletedPayloadSchema>;
+
 // system.*
 
 export const SystemCleanupCompletedPayloadSchema = z.object({
@@ -538,6 +550,7 @@ export type EventPayloads = {
   "comm.retry_succeeded": CommRetrySucceededPayload;
   "comm.retry_exhausted": CommRetryExhaustedPayload;
   "review.poll_completed": ReviewPollCompletedPayload;
+  "evaluation.completed": EvaluationCompletedPayload;
   "system.cleanup_completed": SystemCleanupCompletedPayload;
 };
 
@@ -591,5 +604,6 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "comm.retry_succeeded": CommRetrySucceededPayloadSchema,
   "comm.retry_exhausted": CommRetryExhaustedPayloadSchema,
   "review.poll_completed": ReviewPollCompletedPayloadSchema,
+  "evaluation.completed": EvaluationCompletedPayloadSchema,
   "system.cleanup_completed": SystemCleanupCompletedPayloadSchema,
 };

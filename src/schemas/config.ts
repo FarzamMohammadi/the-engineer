@@ -198,6 +198,18 @@ export const DaemonConfigSchema = z.object({
     })
     .default({}),
 
+  // AI-as-Judge evaluation (config-gated)
+  evaluation: z
+    .object({
+      enabled: z
+        .boolean()
+        .default(false)
+        .describe(
+          "Run AI-as-Judge evaluation after each task completes. Two independent CLI sessions: a blind plan, then a comparison verdict. Results stored at ~/.engineer/evaluations/.",
+        ),
+    })
+    .default({}),
+
   // Review polling circuit breaker (Lens H)
   review_polling: z
     .object({

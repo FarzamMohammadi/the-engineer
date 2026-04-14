@@ -55,6 +55,7 @@ function makeDaemonConfig(): DaemonConfig {
     database: { cache_size_mb: 64 },
     notification_retry: { interval_ms: 30_000, max_attempts: 120, max_age_ms: 3_600_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
+    evaluation: { enabled: false },
   };
 }
 

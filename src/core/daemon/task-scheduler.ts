@@ -3,6 +3,7 @@ import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { CascadePolicies, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
+import type { EvaluationManager } from "../evaluation/types.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { MAX_LLM_UNAVAILABLE_RETRIES } from "../orchestrator/phase-runner.js";
@@ -77,6 +78,7 @@ export function createTaskScheduler(
   ctx: TaskSchedulerContext,
   notifications: NotificationRouter,
   callbacks: SchedulerCallbacks,
+  evaluationManager?: EvaluationManager | null,
 ): TaskScheduler {
   const { config, eventBus, taskEngine, orchestrator, clock, observer } = ctx;
   const { sessionMemory, workspaceManager } = ctx;
@@ -84,6 +86,19 @@ export function createTaskScheduler(
   // ── Internal State ──────────────────────────────────────────────────────
   const activeDispatches = new Map<string, Promise<ExecuteTaskResult>>();
   let tasksCompleted = 0;
+
+  // ── Evaluation ─────────────────────────────────────────────────────────
+
+  function triggerEvaluationIfEnabled(taskId: string): void {
+    if (!evaluationManager) {
+      return;
+    }
+    const worktreePath = workspaceManager.getWorktreePath(taskId);
+    const record = workspaceManager.getWorkspaceRecord(taskId);
+    if (worktreePath && record?.thoughtsDir) {
+      evaluationManager.triggerEvaluation(taskId, worktreePath, record.thoughtsDir);
+    }
+  }
 
   // ── Scheduling ──────────────────────────────────────────────────────────
 
@@ -254,6 +269,8 @@ export function createTaskScheduler(
       });
       return;
     }
+    // Trigger evaluation before cleanup — worktree must still exist for snapshot
+    triggerEvaluationIfEnabled(taskId);
     try {
       workspaceManager.cleanupWorkspace(taskId, true);
     } catch (err) {
@@ -316,6 +333,8 @@ export function createTaskScheduler(
       "daemon",
     );
     if (reviewTransition.success) {
+      // Trigger evaluation — worktree survives during review_pending
+      triggerEvaluationIfEnabled(taskId);
       notifications.notify({ kind: NotificationKinds.review_pending, taskId });
       notifications.notify({
         kind: NotificationKinds.ticket_comment,

@@ -6,6 +6,7 @@ import {
   CommRetryExhaustedPayloadSchema,
   CommRetrySucceededPayloadSchema,
   CommSendFailedPayloadSchema,
+  EvaluationCompletedPayloadSchema,
   type Event,
   type EventPayloads,
   EventTypes,
@@ -23,6 +24,7 @@ import {
 } from "../../schemas/events.js";
 import { SubStates, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
+import { createEvaluationManager } from "../evaluation/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { createCostLimitQueue } from "./cost-limit-queue.js";
@@ -126,6 +128,13 @@ export const EVENTS: EventDeclaration[] = [
     publishers: ["daemon"],
     subscribers: [],
   },
+  {
+    type: EventTypes["evaluation.completed"],
+    description: "Emitted when AI-as-Judge evaluation completes (or fails) for a task",
+    payloadSchema: EvaluationCompletedPayloadSchema,
+    publishers: ["evaluation"],
+    subscribers: [],
+  },
 ];
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -204,10 +213,27 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   // ── Create Subsystems ─────────────────────────────────────────────────
   const notifications = ctx.notifications;
 
-  const scheduler = createTaskScheduler(ctx, notifications, {
-    onTaskCompleted: (taskId, result) => handleTaskCompletion(taskId, result),
-    onTaskError: (taskId, error) => handleTaskError(taskId, error),
-  });
+  const evaluation = config.evaluation.enabled
+    ? createEvaluationManager({
+        config,
+        registry,
+        taskEngine,
+        workspaceManager: ctx.workspaceManager,
+        eventBus,
+        observer,
+        engineerHome,
+      })
+    : null;
+
+  const scheduler = createTaskScheduler(
+    ctx,
+    notifications,
+    {
+      onTaskCompleted: (taskId, result) => handleTaskCompletion(taskId, result),
+      onTaskError: (taskId, error) => handleTaskError(taskId, error),
+    },
+    evaluation,
+  );
 
   const preemption = createPreemptionManager(
     ctx,
@@ -704,6 +730,11 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     // Drain active dispatches with shutdown timeout
     await scheduler.drainForShutdown(config.shutdown_timeout_ms);
+
+    // Drain active evaluations (shorter timeout — evaluations are non-critical)
+    if (evaluation) {
+      await evaluation.drainForShutdown(Math.min(config.shutdown_timeout_ms, 15_000));
+    }
 
     // Shutdown plugins (reverse init order)
     await registry.shutdownAll();

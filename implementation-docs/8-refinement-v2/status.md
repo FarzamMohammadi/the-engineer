@@ -2,7 +2,9 @@
 
 ## Current Phase
 
-**RRPIR Implementation — Session 071 DONE.** All 7/7 phases CLI-native. Configurable multi-phase review pipeline: review sub-phases (requirements_check, security_review, code_quality) run as separate CLI calls, then refinement consolidates and fixes. Demo-prep is narrative-only (writes pr-description.md, orchestrator handles git/PR). Quality assessment derived from refinement session-result.json routing. `pnpm lint` unified to run all 4 checks.
+**AI-as-Judge Evaluation System — DONE.** Config-gated (`evaluation.enabled`) quality assessment. Two independent CLI sessions per completed task: Session 1 (blind plan — judge gets only the ticket, explores codebase read-only) → Session 2 (comparison — judge sees its plan + The Engineer's full output, produces 1-5 verdict). Results at `~/.engineer/evaluations/{task-id}/`. Fire-and-forget with shutdown drain. D178.
+
+Previous: **RRPIR Implementation — Session 071 DONE.** All 7/7 phases CLI-native. Configurable multi-phase review pipeline.
 
 ## Last Session
 

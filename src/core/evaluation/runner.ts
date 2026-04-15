@@ -63,6 +63,16 @@ export async function runEvaluation(
       return;
     }
 
+    // Skip if LLM is currently rate-limited — don't waste a call that will fail
+    const quota = await llm.getQuotaStatus();
+    if (quota?.is_rate_limited) {
+      ctx.observer.info("Evaluation skipped — LLM is rate-limited", {
+        taskId: snapshot.taskId,
+        resetsAt: quota.earliest_reset_at,
+      });
+      return;
+    }
+
     session1 = await runBlindPlan(llm, snapshot, ctx);
     session2 = await runComparison(llm, snapshot, ctx);
 

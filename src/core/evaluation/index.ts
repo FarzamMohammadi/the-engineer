@@ -15,6 +15,12 @@ export function createEvaluationManager(ctx: EvaluationManagerContext): Evaluati
       return;
     }
 
+    // Guard against duplicate trigger for the same task
+    if (activeEvaluations.has(taskId)) {
+      ctx.observer.debug("Evaluation already in-flight — skipping duplicate trigger", { taskId });
+      return;
+    }
+
     const task = ctx.taskEngine.getTask(taskId);
     if (!task) {
       ctx.observer.warn("Evaluation skipped — task not found", { taskId });

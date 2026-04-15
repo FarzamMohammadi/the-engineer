@@ -1303,3 +1303,15 @@ See `6-refinement/decisions.md` for full entries. Summary:
 **Expert panel review:** 5-panelist review (Torvalds, Hipp, Pike, Engineer, Architect) recommended 2 flat fields (YAGNI). Decision: keep 4-field nested design for completeness — adding fields later has zero migration cost (JSON TEXT storage), but the symmetrical design better communicates the intent. Key panel refinements adopted: (1) plugin owns delimiter formatting, (2) single separator before branding footer, (3) edge case tests for empty strings and empty objects.
 
 **Alternatives rejected:** (1) Two flat fields (`pr_prefix` + `pr_body_suffix`) — simpler but less expressive, loses grouping signal. (2) Template strings with placeholders — parser complexity, injection surface, breaks plugin blindness. (3) Keeping `pr_prefix` and adding `pr_body_suffix` — avoids rename churn but inconsistent naming between old flat field and new flat field.
+
+---
+
+## 2026-04-13 — AI-as-Judge evaluation system (D178)
+
+**Decision:** Add a config-gated (`evaluation.enabled: false` by default) quality assessment system that runs two independent CLI sessions after every task completes. Session 1 (blind plan): judge receives only the raw trigger details and explores the codebase read-only — plans how it would approach the task without knowing work has been done. Session 2 (comparison): judge sees its blind plan + The Engineer's full output (git diff, commit log, all thoughts/ files) and produces a structured verdict (1-5 rating, approach comparison, improvement recommendations). Results stored locally at `~/.engineer/evaluations/{task-id}/` — never pushed to remote.
+
+**Rationale:** The Engineer produces ~3.5/5 quality output with no automated way to measure it. Farzam's manual evaluation workflow (feed ticket to separate Claude session, let it plan, compare against Engineer output) works but doesn't scale. Automating this creates a continuous quality feedback loop. The blind-then-reveal design prevents the judge from adapting its "plan" to match the existing work — honest baseline comparison. Fire-and-forget execution ensures evaluation never blocks task completion.
+
+**Key design choices:** (1) Bypasses ActionPipeline — evaluation costs are not subject to safety limits (opt-in via flag). (2) Snapshot captured synchronously before worktree cleanup — survives cleanup. (3) Session 1 CWD is the bare clone dir (always exists), Session 2 CWD is the evaluation dir. (4) Tracked as promises with 15s shutdown drain — LLM plugin shutdown kills any surviving CLI processes. (5) New `evaluation.completed` event for future dashboard integration.
+
+**Alternatives rejected:** (1) Single-session evaluation (judge sees everything from start) — loses the honest baseline; judge would adapt its assessment to look smarter. (2) Storing results in git branch/worktree — evaluation is local-only diagnostic data, pushing it pollutes the repo. (3) Separate config for judge LLM — over-engineering; same CLI that does the work judges the work.

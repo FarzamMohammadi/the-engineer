@@ -895,6 +895,29 @@ payload {
 |-----------|-----|
 | (audit trail only) | Cleanup observability |
 
+### `evaluation.*` — AI-as-Judge Evaluation Events
+
+**Owner:** Evaluation Manager
+
+#### `evaluation.completed`
+
+An AI-as-Judge evaluation finished (successfully or with failure) for a completed task. Emitted after both sessions (blind plan + comparison verdict) run, or on failure after partial completion.
+
+```
+payload {
+  task_id:          string              // Task that was evaluated
+  evaluation_dir:   string              // Absolute path to results (~/.engineer/evaluations/{task-id}/)
+  total_cost_usd:   number | null       // Combined cost of both evaluation sessions
+  duration_ms:      number              // Total wall-clock duration of evaluation
+  status:           "completed" | "failed"  // Whether evaluation finished successfully
+}
+```
+
+**Subscribers:**
+| Subscriber | Why |
+|-----------|-----|
+| (audit trail only) | Evaluation observability; future dashboard integration |
+
 ---
 
 ## Delivery Model
@@ -967,9 +990,10 @@ The Orchestrator receiving events via the Daemon (not direct subscription) keeps
 | `git.*` | `branch_created`, `committed`, `pushed`, `pr_opened`, `pr_updated`, `pr_merged`, `merge_completed` | Workspace Manager |
 | `comm.*` | `message_received`, `message_sent` | Communication Plugins |
 | `review.*` | `poll_completed` | Daemon (ReviewHandler) |
+| `evaluation.*` | `completed` | Evaluation Manager |
 | `system.*` | `cleanup_completed` | DataLifecycleManager |
 
-**Total: 35 event types** across 12 groups.
+**Total: 42 event types** across 13 groups.
 
 ---
 

@@ -12,8 +12,9 @@
 ## Current State
 
 **Phase:** 9 — OSS Ready
-**Session:** 0 (brainstorm complete, no implementation yet)
-**Slice:** Pre-work — Phase 9 foundations written
+**Session:** 2 (Standards Alignment complete)
+**Slice:** 01-standards-alignment — COMPLETE
+**Next slice:** `slices/02-repo-readiness.md` (not yet created)
 
 ### What's Done
 
@@ -22,36 +23,32 @@
 - Lenses established (resilience, plugin integrity, plugin authoring simplicity, UX quality)
 - Co-founder dynamic agreed
 - Strategy agreed: vertical slices, RRPIR per slice, tangents welcome, no coming back
+- **Slice 1 COMPLETE:** `docs/standards.md` written — 10 categories of coding standards decided via deep Q&A
 
 ### What's Next
 
-**Session 1: Standards Alignment (Slice 1)**
+**Session 3: Repo Readiness (Slice 2)**
 
-The agent probes Farzam for coding standards, naming conventions, style preferences, and what "beautiful code" means specifically to him. This becomes the law for all subsequent slices.
+CI, git hooks, linters, Biome setup, dependency audit, migration consolidation, quality guardrails. The enforcement layer everything else benefits from.
 
-Topics to probe:
-- Naming conventions (files, variables, functions, classes, types)
-- Code organization within files (ordering of exports, helpers, types)
-- Import style and organization
-- Error handling patterns
-- Function style (arrow vs declaration, length limits, parameter patterns)
-- Comments philosophy (when, where, what style)
-- Type patterns (interfaces vs types, generics style, Zod patterns)
-- Test file organization and naming
-- What makes code "beautiful" vs "acceptable" to Farzam specifically
-- Examples from the codebase of code he loves vs code he hates
+Topics:
+- Biome configuration (matches our standards: 120 chars, double quotes, semicolons, trailing commas, 2-space)
+- ESLint rules (if any beyond Biome — TypeScript-specific rules)
+- Git hooks (pre-commit: format + lint + typecheck)
+- CI pipeline (GitHub Actions: test, lint, typecheck, build)
+- Dependency audit (outdated, unused, security)
+- Migration consolidation (single clean schema)
+- Test infrastructure (move tests to `tests/` mirroring `src/`)
 
 ### Decisions Made This Session
 
-- Vertical slice strategy with two permanent lenses (resilience, plugin integrity) + two additional (authoring simplicity, UX quality)
-- Plugin architecture is the moat — never compromise genericity
-- Every commit is green. Every slice is done fully. No coming back.
-- Zero backward compatibility. Consolidate migrations. Prompts are preview.
-- Main branch by default. Branches only for temporary breakage.
-- RRPIR methodology for each slice
-- Tangents are welcome — active.md tracks state
-- Session logs in 9-oss-ready/sessions/, starting at 1.md
-- future-considerations.md gets a fresh version in docs/
-- npm publish readiness is the final slice
-- Dashboard early (slice 3) to expose API/data gaps, revisited near end (slice 15)
-- Standards alignment first (slice 1) so all subsequent work is consistent
+- Newspaper order with `function` declarations (hoisting enables caller-above-callee)
+- Strict FCIS (pure decision functions, thin imperative shells)
+- Branded types by default for all domain IDs
+- Always annotate return types — explicit, intentful
+- Results for expected failures, exceptions for unexpected
+- Tests in separate `tests/` mirroring `src/`, fixtures colocated with tests
+- Biome formatter, 120 chars, semicolons, trailing commas, double quotes, 2-space indent
+- One concept per file, split on change-reason divergence
+- JSDoc one-liner on every export
+- No default exports, barrels for public API only

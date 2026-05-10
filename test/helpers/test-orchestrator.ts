@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type Mock, vi } from "vitest";
 
@@ -334,6 +335,28 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
   // Returns a fake LLM that uses llmResponses array
   const worktreePath = "/tmp/worktree/task-001";
   const thoughtsDir = "thoughts/2026-03-22-issue-1";
+
+  // Initialize worktree as a git repo so PR manager's real git operations succeed.
+  // Guard: skip when execFileSync is mocked (pr-manager.spawn.test.ts) or already initialized.
+  if (!existsSync(path.join(worktreePath, ".git"))) {
+    try {
+      mkdirSync(worktreePath, { recursive: true });
+      execFileSync("git", ["init"], { cwd: worktreePath, stdio: "pipe" });
+      execFileSync("git", ["config", "user.email", "test@test.com"], {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: worktreePath, stdio: "pipe" });
+      writeFileSync(path.join(worktreePath, ".gitkeep"), "");
+      execFileSync("git", ["add", "."], { cwd: worktreePath, stdio: "pipe" });
+      execFileSync("git", ["commit", "-m", "init", "--no-verify"], {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+    } catch {
+      // execFileSync may be mocked — git init not needed in those tests
+    }
+  }
 
   const fakeLlm = {
     infer: vi.fn(() => {

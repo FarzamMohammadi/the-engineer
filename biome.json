@@ -93,6 +93,11 @@
       }
     }
   ],
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
     "ignore": ["dist", "coverage", "node_modules", "~"]
   }

@@ -16,6 +16,7 @@ import type {
   ReviewStatus,
 } from "../schemas/adapters.js";
 import { AdapterErrorSeverities, MergeStrategies } from "../schemas/adapters.js";
+import { SecureValue } from "../utils/secure-value.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
 import { GitHostingAdapter } from "./git-hosting.js";
@@ -107,6 +108,11 @@ class TestGitHostingAdapter extends GitHostingAdapter {
   protected doGetDefaultBranch(_repo: string): Promise<string> {
     this.maybeThrow("getDefaultBranch");
     return Promise.resolve("main");
+  }
+
+  protected doGetAuthenticatedRemoteUrl(remoteUrl: string): SecureValue {
+    this.maybeThrow("getAuthenticatedRemoteUrl");
+    return new SecureValue(remoteUrl.replace("https://", "https://test-token@"));
   }
 
   protected doInitialize(_config: Record<string, unknown>): Promise<InitResult> {

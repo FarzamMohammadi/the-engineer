@@ -23,7 +23,7 @@
 - Lenses established (resilience, plugin integrity, plugin authoring simplicity, UX quality)
 - Co-founder dynamic agreed
 - Strategy agreed: vertical slices, RRPIR per slice, tangents welcome, no coming back
-- **Slice 1 COMPLETE:** `docs/standards.md` written — 10 categories of coding standards decided via deep Q&A
+- **Slice 1 COMPLETE:** `docs/coding-standards.md` written — 10 categories of coding standards decided via deep Q&A
 
 ### What's Next
 

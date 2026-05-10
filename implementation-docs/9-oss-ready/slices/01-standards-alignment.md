@@ -6,7 +6,7 @@
 
 Probed Farzam for coding standards across 10 categories. Researched eclectic sources (Ousterhout, Hickey, Muratori, Metz, Bernhardt, King, Knuth, DDD, Unix, Gestalt psychology, Google/Deno style guides). Made deliberate decisions for each category through Q&A.
 
-Output: `docs/standards.md` — the law for all subsequent slices.
+Output: `docs/coding-standards.md` — the law for all subsequent slices.
 
 ## Key Decisions
 

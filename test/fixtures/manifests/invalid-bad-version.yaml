@@ -1,5 +1,0 @@
-id: bad-version-plugin
-type: trigger
-version: "not-semver"
-name: Bad Version Plugin
-description: Has an invalid version string

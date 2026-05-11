@@ -1,7 +1,0 @@
-id: disabled-trigger
-type: trigger
-version: "1.0.0"
-name: Disabled Trigger Plugin
-description: A valid plugin that is disabled
-enabled: false
-entry: index.ts

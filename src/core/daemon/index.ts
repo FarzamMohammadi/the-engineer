@@ -79,8 +79,7 @@ export const EVENTS: EventDeclaration[] = [
   },
   {
     type: EventTypes["preemption.completed"],
-    description:
-      "Emitted when a preemption cycle completes (cooperative yield or forced transition)",
+    description: "Emitted when a preemption cycle completes (cooperative yield or forced transition)",
     payloadSchema: PreemptionCompletedPayloadSchema,
     publishers: ["daemon"],
     subscribers: [],
@@ -115,8 +114,7 @@ export const EVENTS: EventDeclaration[] = [
   },
   {
     type: EventTypes["comm.retry_exhausted"],
-    description:
-      "Emitted when notification retries are abandoned (max attempts, max age, or task terminal)",
+    description: "Emitted when notification retries are abandoned (max attempts, max age, or task terminal)",
     payloadSchema: CommRetryExhaustedPayloadSchema,
     publishers: ["notification-router"],
     subscribers: [],
@@ -179,16 +177,7 @@ export { evaluateTaskStuckness } from "./health-monitor.js";
  * signals, and coordinates graceful startup (P1) and shutdown (P15).
  */
 export function createDaemon(ctx: DaemonContext): Daemon {
-  const {
-    config,
-    eventBus,
-    registry,
-    taskEngine,
-    clock,
-    observer,
-    engineerHome,
-    dataLifecycleManager,
-  } = ctx;
+  const { config, eventBus, registry, taskEngine, clock, observer, engineerHome, dataLifecycleManager } = ctx;
 
   // ── Facade State ──────────────────────────────────────────────────────
   let running = false;
@@ -254,9 +243,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     onTaskCompletionFinalized: (taskId) => scheduler.checkAndEmitChildrenAllDone(taskId),
   });
 
-  const healthMonitor = createDaemonHealthMonitor(ctx, notifications, () =>
-    scheduler.getActiveTaskIds(),
-  );
+  const healthMonitor = createDaemonHealthMonitor(ctx, notifications, () => scheduler.getActiveTaskIds());
 
   const costLimitQueue = createCostLimitQueue(taskEngine, notifications, observer);
 
@@ -307,10 +294,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       decisions_made: child.decisions.map((d) => d.what),
       pr_number: child.review?.pr_number ?? null,
       branch: child.workspace?.branch ?? "",
-      test_status: (child.state === TaskStates.completed ? "passing" : "failing") as
-        | "passing"
-        | "failing"
-        | "no_tests",
+      test_status: (child.state === TaskStates.completed ? "passing" : "failing") as "passing" | "failing" | "no_tests",
     }));
     taskEngine.updateTaskField(parent.id, "child_summaries", summaries);
 
@@ -436,14 +420,10 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       notifications.syncStateToCommPlugin(payload);
     });
 
-    eventBus.subscribe(
-      "daemon:children-done",
-      EventTypes["task.children_all_done"],
-      (event: Event) => {
-        const payload = event.payload as TaskChildrenAllDonePayload;
-        handleChildrenAllDone(payload);
-      },
-    );
+    eventBus.subscribe("daemon:children-done", EventTypes["task.children_all_done"], (event: Event) => {
+      const payload = event.payload as TaskChildrenAllDonePayload;
+      handleChildrenAllDone(payload);
+    });
 
     eventBus.subscribe("daemon:feedback", EventTypes["task.feedback_received"], (event: Event) => {
       const payload = event.payload as TaskFeedbackReceivedPayload;
@@ -461,70 +441,54 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       return true;
     }
 
-    eventBus.subscribe(
-      "daemon:health-trigger",
-      EventTypes["health.trigger_failure"],
-      (event: Event) => {
-        const p = event.payload as EventPayloads["health.trigger_failure"];
-        if (!shouldNotifyHealth(`trigger:${p.trigger_id}`, clock.now())) {
-          return;
-        }
-        notifications.notify({
-          kind: "alert",
-          taskId: null,
-          message: `Trigger adapter "${p.trigger_id}" has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Last error: ${p.last_error}. Check your configuration.`,
-        });
-      },
-    );
+    eventBus.subscribe("daemon:health-trigger", EventTypes["health.trigger_failure"], (event: Event) => {
+      const p = event.payload as EventPayloads["health.trigger_failure"];
+      if (!shouldNotifyHealth(`trigger:${p.trigger_id}`, clock.now())) {
+        return;
+      }
+      notifications.notify({
+        kind: "alert",
+        taskId: null,
+        message: `Trigger adapter "${p.trigger_id}" has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Last error: ${p.last_error}. Check your configuration.`,
+      });
+    });
 
-    eventBus.subscribe(
-      "daemon:health-stuck",
-      EventTypes["health.stuck_detected"],
-      (event: Event) => {
-        const p = event.payload as EventPayloads["health.stuck_detected"];
-        if (!shouldNotifyHealth(`stuck:${p.task_id}`, clock.now())) {
-          return;
-        }
-        const title = taskEngine.getTask(p.task_id)?.title ?? p.task_id;
-        notifications.notify({
-          kind: "alert",
-          taskId: p.task_id,
-          message: `Task "${title}" appears stuck (${p.condition}). Elapsed: ${String(Math.floor(p.elapsed_ms / 60_000))}m. Threshold: ${String(Math.floor(p.threshold_ms / 60_000))}m.`,
-        });
-      },
-    );
+    eventBus.subscribe("daemon:health-stuck", EventTypes["health.stuck_detected"], (event: Event) => {
+      const p = event.payload as EventPayloads["health.stuck_detected"];
+      if (!shouldNotifyHealth(`stuck:${p.task_id}`, clock.now())) {
+        return;
+      }
+      const title = taskEngine.getTask(p.task_id)?.title ?? p.task_id;
+      notifications.notify({
+        kind: "alert",
+        taskId: p.task_id,
+        message: `Task "${title}" appears stuck (${p.condition}). Elapsed: ${String(Math.floor(p.elapsed_ms / 60_000))}m. Threshold: ${String(Math.floor(p.threshold_ms / 60_000))}m.`,
+      });
+    });
 
-    eventBus.subscribe(
-      "daemon:health-plugin-failed",
-      EventTypes["health.plugin_failed"],
-      (event: Event) => {
-        const p = event.payload as EventPayloads["health.plugin_failed"];
-        if (!shouldNotifyHealth(`plugin:${p.plugin_id}`, clock.now())) {
-          return;
-        }
-        notifications.notify({
-          kind: "alert",
-          taskId: null,
-          message: `Plugin "${p.plugin_id}" (${p.plugin_type}) has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Error: ${p.error}`,
-        });
-      },
-    );
+    eventBus.subscribe("daemon:health-plugin-failed", EventTypes["health.plugin_failed"], (event: Event) => {
+      const p = event.payload as EventPayloads["health.plugin_failed"];
+      if (!shouldNotifyHealth(`plugin:${p.plugin_id}`, clock.now())) {
+        return;
+      }
+      notifications.notify({
+        kind: "alert",
+        taskId: null,
+        message: `Plugin "${p.plugin_id}" (${p.plugin_type}) has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Error: ${p.error}`,
+      });
+    });
 
-    eventBus.subscribe(
-      "daemon:health-plugin-unhealthy",
-      EventTypes["health.plugin_unhealthy"],
-      (event: Event) => {
-        const p = event.payload as EventPayloads["health.plugin_unhealthy"];
-        if (!shouldNotifyHealth(`plugin-unhealthy:${p.plugin_id}`, clock.now())) {
-          return;
-        }
-        notifications.notify({
-          kind: "alert",
-          taskId: null,
-          message: `Plugin "${p.plugin_id}" (${p.plugin_type}) is unhealthy after ${String(p.consecutive_failures)} consecutive failures. Error: ${p.error}`,
-        });
-      },
-    );
+    eventBus.subscribe("daemon:health-plugin-unhealthy", EventTypes["health.plugin_unhealthy"], (event: Event) => {
+      const p = event.payload as EventPayloads["health.plugin_unhealthy"];
+      if (!shouldNotifyHealth(`plugin-unhealthy:${p.plugin_id}`, clock.now())) {
+        return;
+      }
+      notifications.notify({
+        kind: "alert",
+        taskId: null,
+        message: `Plugin "${p.plugin_id}" (${p.plugin_type}) is unhealthy after ${String(p.consecutive_failures)} consecutive failures. Error: ${p.error}`,
+      });
+    });
 
     observer.debug("Event subscriptions registered", { count: 9 });
   }
@@ -555,13 +519,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
           taskId: task.id,
           subState: task.sub_state,
         });
-        const result = taskEngine.requestTransition(
-          task.id,
-          TaskStates.queued,
-          null,
-          "crash_recovery",
-          "daemon",
-        );
+        const result = taskEngine.requestTransition(task.id, TaskStates.queued, null, "crash_recovery", "daemon");
         if (result.success) {
           recovered++;
         } else {

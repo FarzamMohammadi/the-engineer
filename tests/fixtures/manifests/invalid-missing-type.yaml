@@ -1,0 +1,4 @@
+id: broken-plugin
+version: "1.0.0"
+name: Broken Plugin
+description: Missing the required type field

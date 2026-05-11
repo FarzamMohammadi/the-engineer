@@ -4,10 +4,7 @@ import type { GitHostingAdapter } from "../adapters/git-hosting.js";
 import type { ConfigBundle } from "../config/loader.js";
 import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
 import { createNotificationRouter } from "../core/daemon/notification-router.js";
-import {
-  EVENTS as DATA_LIFECYCLE_EVENTS,
-  createDataLifecycleManager,
-} from "../core/data-lifecycle/index.js";
+import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../core/data-lifecycle/index.js";
 import { HookRegistry } from "../core/hooks/index.js";
 import type { AuthUrlProvider } from "../core/interfaces/workspace-manager.interface.js";
 import {
@@ -110,14 +107,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       return new SecureValue(remoteUrl);
     };
     const {
-      components: {
-        eventBus,
-        taskEngine,
-        safetyLayer,
-        actionPipeline,
-        sessionMemory,
-        workspaceManager,
-      },
+      components: { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager },
       topology: eventTopology,
     } = createCoreComponents({
       db: dbHandle.db,
@@ -254,12 +244,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // plugin, the instance is deregistered without calling shutdown(), which is safe.
     progress?.("Loading plugins", "start");
     const pluginConfigDir = join(engineerHome, "config", "plugins");
-    const pluginResult = await loadBuiltinPlugins(
-      registry,
-      pluginConfigDir,
-      observer.child("plugin-loader"),
-      { [AdapterTypes.communication]: { people: config.people } },
-    );
+    const pluginResult = await loadBuiltinPlugins(registry, pluginConfigDir, observer.child("plugin-loader"), {
+      [AdapterTypes.communication]: { people: config.people },
+    });
     milestones["plugins"] = Date.now() - bootstrapStartMs;
     progress?.("Plugins loaded", "done");
 

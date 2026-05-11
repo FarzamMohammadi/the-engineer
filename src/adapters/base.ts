@@ -83,10 +83,11 @@ export abstract class BaseAdapter {
     } catch (error) {
       const elapsed = Date.now() - start;
       const message = error instanceof Error ? error.message : String(error);
-      obs?.error(
-        `Plugin "${this.manifest.id}" failed to initialize after ${String(elapsed)}ms: ${message}`,
-        { pluginId: this.manifest.id, elapsedMs: elapsed, error: message },
-      );
+      obs?.error(`Plugin "${this.manifest.id}" failed to initialize after ${String(elapsed)}ms: ${message}`, {
+        pluginId: this.manifest.id,
+        elapsedMs: elapsed,
+        error: message,
+      });
       return { success: false, message };
     }
   }

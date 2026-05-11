@@ -7,12 +7,7 @@ import { ActionClassSchema, ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
-import type {
-  CostStatus,
-  ISafetyLayer,
-  SafetyQuery,
-  SafetyVerdict,
-} from "../interfaces/safety-layer.interface.js";
+import type { CostStatus, ISafetyLayer, SafetyQuery, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { IObserver } from "../observer/index.js";
 import { type ICostTracker, createCostTracker } from "./cost-tracker.js";
 import { PolicyEngine } from "./policy-engine.js";
@@ -89,12 +84,7 @@ export class SafetyLayer implements ISafetyLayer {
   private readonly costTracker: ICostTracker;
   private readonly policyEngine: PolicyEngine;
 
-  constructor(
-    db: Database.Database,
-    eventBus: IEventBus,
-    config: SafetyConfig,
-    observer: IObserver,
-  ) {
+  constructor(db: Database.Database, eventBus: IEventBus, config: SafetyConfig, observer: IObserver) {
     this.costTracker = createCostTracker({
       db,
       eventBus,
@@ -112,11 +102,7 @@ export class SafetyLayer implements ISafetyLayer {
    * This is Gate 2 of the Action Pipeline. Checks scope boundaries (repos,
    * branches, files), merge policy, and cost limits. Returns a SafetyVerdict.
    */
-  evaluateAction(
-    taskId: string,
-    actionClass: ActionClass,
-    details: Record<string, unknown>,
-  ): SafetyVerdict {
+  evaluateAction(taskId: string, actionClass: ActionClass, details: Record<string, unknown>): SafetyVerdict {
     // Input validation: deny on invalid input (never throw)
     const validationDeny = validateEvaluateInput(taskId, actionClass, details);
     if (validationDeny) {
@@ -158,14 +144,10 @@ export class SafetyLayer implements ISafetyLayer {
 
     switch (query.type) {
       case "can_i":
-        return this.evaluateAction(
-          query.context.task_id,
-          query.context.action_class ?? ActionClasses.read,
-          {
-            ...query.context.details,
-            repo: query.context.repo,
-          },
-        );
+        return this.evaluateAction(query.context.task_id, query.context.action_class ?? ActionClasses.read, {
+          ...query.context.details,
+          repo: query.context.repo,
+        });
 
       case "should_i_ask":
         return this.policyEngine.evaluateAutonomy(query);

@@ -23,9 +23,10 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: aggregation + PID check logic
   app.get("/status", (c) => {
     // Aggregate stats from observations table
-    const tasksByState = deps.db
-      .prepare("SELECT state, COUNT(*) as count FROM tasks GROUP BY state")
-      .all() as Array<{ state: string; count: number }>;
+    const tasksByState = deps.db.prepare("SELECT state, COUNT(*) as count FROM tasks GROUP BY state").all() as Array<{
+      state: string;
+      count: number;
+    }>;
 
     const stateMap: Record<string, number> = {};
     let totalTasks = 0;
@@ -38,9 +39,9 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       .prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'tool_execution'")
       .get() as { count: number } | undefined;
 
-    const llmCount = deps.db
-      .prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'llm_call'")
-      .get() as { count: number } | undefined;
+    const llmCount = deps.db.prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'llm_call'").get() as
+      | { count: number }
+      | undefined;
 
     // Sum spend from phase_transition observations (stored in output JSON)
     const phaseObs = deps.observationStore.query({

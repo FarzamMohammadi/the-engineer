@@ -72,14 +72,9 @@ export function backupSessionResult(phaseDir: string): void {
 export function writeSessionResultTemplate(phaseDir: string): void {
   const template = {
     status: "<ready | need_more_info | error>",
-    next_phase:
-      "<requirements_gathering | research | planning | execution | self_review | demo_prep | integration>",
+    next_phase: "<requirements_gathering | research | planning | execution | self_review | demo_prep | integration>",
     summary: "<one-line summary of what you accomplished>",
     complexity: "<trivial | moderate | complex>",
   };
-  writeFileSync(
-    path.join(phaseDir, "session-result.json"),
-    `${JSON.stringify(template, null, 2)}\n`,
-    "utf-8",
-  );
+  writeFileSync(path.join(phaseDir, "session-result.json"), `${JSON.stringify(template, null, 2)}\n`, "utf-8");
 }

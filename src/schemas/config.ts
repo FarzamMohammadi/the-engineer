@@ -50,9 +50,7 @@ export const DaemonConfigSchema = z.object({
     .int()
     .positive()
     .default(1)
-    .describe(
-      "Number of tasks the daemon runs in parallel. Start with 1; increase after testing stability.",
-    ),
+    .describe("Number of tasks the daemon runs in parallel. Start with 1; increase after testing stability."),
 
   // Tick loop
   tick_interval_ms: z
@@ -78,9 +76,7 @@ export const DaemonConfigSchema = z.object({
     .int()
     .positive()
     .default(60_000)
-    .describe(
-      "Grace period for a preempted task to checkpoint before forced swap. Default: 1 minute.",
-    ),
+    .describe("Grace period for a preempted task to checkpoint before forced swap. Default: 1 minute."),
 
   // Stuck/runaway detection
   stuck_threshold_ms: z
@@ -88,9 +84,7 @@ export const DaemonConfigSchema = z.object({
     .int()
     .positive()
     .default(1_800_000)
-    .describe(
-      "Duration of no progress after which a task is flagged as stuck. Default: 30 minutes.",
-    ),
+    .describe("Duration of no progress after which a task is flagged as stuck. Default: 30 minutes."),
   max_active_duration_ms: z
     .number()
     .int()
@@ -104,9 +98,7 @@ export const DaemonConfigSchema = z.object({
     .int()
     .positive()
     .default(30_000)
-    .describe(
-      "Time to wait for active tasks to checkpoint during graceful shutdown. Default: 30 seconds.",
-    ),
+    .describe("Time to wait for active tasks to checkpoint during graceful shutdown. Default: 30 seconds."),
 
   // Trigger polling (Decision #74)
   trigger_poll_interval_ms: z
@@ -128,9 +120,7 @@ export const DaemonConfigSchema = z.object({
     .int()
     .positive()
     .default(86_400_000)
-    .describe(
-      "How long trigger dedup keys are remembered. Events older than this may re-trigger. Default: 1 day.",
-    ),
+    .describe("How long trigger dedup keys are remembered. Events older than this may re-trigger. Default: 1 day."),
 
   // Logging (Decision #111)
   logging: z
@@ -186,9 +176,7 @@ export const DaemonConfigSchema = z.object({
         .int()
         .positive()
         .default(120)
-        .describe(
-          "Maximum retry attempts per notification. Default: 120 (~1 hour at 30s intervals).",
-        ),
+        .describe("Maximum retry attempts per notification. Default: 120 (~1 hour at 30s intervals)."),
       max_age_ms: z
         .number()
         .int()
@@ -218,17 +206,13 @@ export const DaemonConfigSchema = z.object({
         .int()
         .positive()
         .default(300_000)
-        .describe(
-          "Time window for counting review API failures before pausing polling. Default: 5 minutes.",
-        ),
+        .describe("Time window for counting review API failures before pausing polling. Default: 5 minutes."),
       max_failures_before_pause: z
         .number()
         .int()
         .positive()
         .default(3)
-        .describe(
-          "Number of review API failures within the failure window before pausing polling. Default: 3.",
-        ),
+        .describe("Number of review API failures within the failure window before pausing polling. Default: 3."),
     })
     .default({}),
 });
@@ -336,9 +320,7 @@ export const PrConfigSchema = z.object({
   default_merge_strategy: z
     .enum(["squash", "merge", "rebase"])
     .default("squash")
-    .describe(
-      "How PRs are merged: squash (single commit), merge (merge commit), or rebase. Default: squash.",
-    ),
+    .describe("How PRs are merged: squash (single commit), merge (merge commit), or rebase. Default: squash."),
   delete_branch_after_merge: z
     .boolean()
     .default(true)
@@ -349,9 +331,7 @@ export const PrConfigSchema = z.object({
     .positive()
     .nullable()
     .default(null)
-    .describe(
-      "Days to retain merged branches before cleanup. Null means no automatic deletion. Default: null.",
-    ),
+    .describe("Days to retain merged branches before cleanup. Null means no automatic deletion. Default: null."),
   skip_pr_creation: z
     .object({
       default: z.boolean().default(false),
@@ -380,9 +360,7 @@ export const MultiRepoConfigSchema = z.object({
   enabled: z
     .boolean()
     .default(true)
-    .describe(
-      "Allow tasks to span multiple repositories. Safe to leave enabled even for single-repo setups.",
-    ),
+    .describe("Allow tasks to span multiple repositories. Safe to leave enabled even for single-repo setups."),
   max_repos_per_task: z
     .number()
     .int()
@@ -396,9 +374,7 @@ export const WorkspaceConfigSchema = z.object({
   workspace_root: z
     .string()
     .default("~/.engineer/workspaces/")
-    .describe(
-      "Directory where git worktrees are created. Supports ~ expansion. Default: ~/.engineer/workspaces/",
-    ),
+    .describe("Directory where git worktrees are created. Supports ~ expansion. Default: ~/.engineer/workspaces/"),
   branch_prefix: z
     .string()
     .default("engineer/")
@@ -520,20 +496,14 @@ export const AutonomyBoundariesSchema = z.object({
 });
 export type AutonomyBoundaries = z.infer<typeof AutonomyBoundariesSchema>;
 
-export const TimeoutStageActionSchema = z.enum([
-  "send_reminder",
-  "evaluate_self_unblock",
-  "escalation_alert",
-]);
+export const TimeoutStageActionSchema = z.enum(["send_reminder", "evaluate_self_unblock", "escalation_alert"]);
 export type TimeoutStageAction = z.infer<typeof TimeoutStageActionSchema>;
 
 /** Constant enum values for TimeoutStageAction. Use instead of raw strings. */
 export const TimeoutStageActions = TimeoutStageActionSchema.enum;
 
 export const TimeoutStageSchema = z.object({
-  name: z
-    .string()
-    .describe("Human-readable stage name (e.g. 'reminder', 'self_unblock_check', 'escalation')."),
+  name: z.string().describe("Human-readable stage name (e.g. 'reminder', 'self_unblock_check', 'escalation')."),
   after_ms: z
     .number()
     .int()
@@ -594,9 +564,7 @@ export const ResponseTimeoutSchema = z.object({
         .int()
         .positive()
         .default(86_400_000)
-        .describe(
-          "Time before first review reminder. Accepts duration strings in config (e.g. '1d'). Default: 1 day.",
-        ),
+        .describe("Time before first review reminder. Accepts duration strings in config (e.g. '1d'). Default: 1 day."),
       repeat_interval_ms: z
         .number()
         .int()

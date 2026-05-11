@@ -227,12 +227,7 @@ function isYamlFile(name: string): boolean {
   return name.endsWith(".yaml") || name.endsWith(".yml");
 }
 
-function extractEnvVarsFromFile(
-  filePath: string,
-  pattern: RegExp,
-  missing: Set<string>,
-  found: Set<string>,
-): void {
+function extractEnvVarsFromFile(filePath: string, pattern: RegExp, missing: Set<string>, found: Set<string>): void {
   try {
     const content = readFileSync(filePath, "utf8");
     for (const match of content.matchAll(pattern)) {
@@ -251,12 +246,7 @@ function extractEnvVarsFromFile(
   }
 }
 
-function scanDirForEnvVars(
-  dir: string,
-  pattern: RegExp,
-  missing: Set<string>,
-  found: Set<string>,
-): void {
+function scanDirForEnvVars(dir: string, pattern: RegExp, missing: Set<string>, found: Set<string>): void {
   if (!existsSync(dir)) {
     return;
   }
@@ -462,8 +452,7 @@ function checkEscalationCoherence(
           label: "Escalation stage order",
           status: "warn",
           message: `Blocked escalation stage "${curr.name}" (${String(curr.after_ms)}ms) fires before "${prev.name}" (${String(prev.after_ms)}ms) — stages should be in chronological order`,
-          remedy:
-            "Reorder response_timeout.blocked.stages in safety.yaml so after_ms values are ascending",
+          remedy: "Reorder response_timeout.blocked.stages in safety.yaml so after_ms values are ascending",
         });
         break;
       }
@@ -474,10 +463,8 @@ function checkEscalationCoherence(
     checks.push({
       label: "Escalation endpoint",
       status: "warn",
-      message:
-        "No escalation_alert stage in response_timeout.blocked.stages — blocked tasks will never be auto-failed",
-      remedy:
-        "Add a stage with action: escalation_alert to response_timeout.blocked.stages in safety.yaml",
+      message: "No escalation_alert stage in response_timeout.blocked.stages — blocked tasks will never be auto-failed",
+      remedy: "Add a stage with action: escalation_alert to response_timeout.blocked.stages in safety.yaml",
     });
   }
 }
@@ -498,9 +485,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
   }
 
   // Check for repos with auto-merge
-  for (const [repo, enabled] of Object.entries(
-    bundle.safety.merge.auto_merge_after_approval.repos,
-  )) {
+  for (const [repo, enabled] of Object.entries(bundle.safety.merge.auto_merge_after_approval.repos)) {
     if (enabled) {
       checks.push({
         label: `Auto-merge: ${repo}`,
@@ -517,8 +502,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
       label: "Cost limits",
       status: "warn",
       message: "No daily or monthly cost limits set — spending is unbounded",
-      remedy:
-        "Set daily cost_usd: 25.0 and monthly cost_usd: 250.0 in safety.yaml for safe starting defaults",
+      remedy: "Set daily cost_usd: 25.0 and monthly cost_usd: 250.0 in safety.yaml for safe starting defaults",
     });
   }
 
@@ -610,8 +594,7 @@ function checkCliArtifacts(): DoctorCategory {
           label: "CLI session artifacts",
           status: "warn",
           message: `~/.claude/projects/ is ${sizeMb.toFixed(0)} MB (${String(fileCount)} files) — accumulated session history from CLI tools`,
-          remedy:
-            "Consider pruning old session files: find ~/.claude/projects -name '*.jsonl' -mtime +30 -delete",
+          remedy: "Consider pruning old session files: find ~/.claude/projects -name '*.jsonl' -mtime +30 -delete",
         });
       } else {
         checks.push({

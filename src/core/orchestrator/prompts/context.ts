@@ -45,10 +45,7 @@ export function gatherRepoContext(worktreePath: string, observer?: IObserver): R
 /**
  * Safe wrapper: returns null if worktreePath is null (no workspace).
  */
-export function gatherRepoContextSafe(
-  worktreePath: string | null,
-  observer?: IObserver,
-): RepoContext | null {
+export function gatherRepoContextSafe(worktreePath: string | null, observer?: IObserver): RepoContext | null {
   if (!worktreePath) {
     return null;
   }

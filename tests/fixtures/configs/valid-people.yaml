@@ -1,0 +1,26 @@
+people:
+  - id: farzam
+    name: Farzam Mohammadi
+    roles:
+      - owner
+      - reviewer
+    contacts:
+      - channel: telegram
+        handle: "@farzam"
+      - channel: github
+        handle: "farzam"
+    preferences:
+      notification_level: milestones
+      quiet_hours: null
+  - id: alice
+    name: Alice Engineer
+    roles:
+      - reviewer
+    contacts:
+      - channel: github
+        handle: "alice-eng"
+    preferences:
+      notification_level: all
+      quiet_hours:
+        start: "22:00"
+        end: "08:00"

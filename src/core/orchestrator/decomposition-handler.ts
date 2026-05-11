@@ -1,11 +1,6 @@
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import {
-  LLMDecompositionPlanSchema,
-  type Phase,
-  type PhaseOutput,
-  Phases,
-} from "../../schemas/orchestrator.js";
+import { LLMDecompositionPlanSchema, type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { CascadePolicies, type ChildEntry, SubStates, TaskStates } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
@@ -84,13 +79,7 @@ export function createDecompositionHandler(
           cascade_policy: CascadePolicies.pause_siblings,
         });
 
-        ctx.taskEngine.requestTransition(
-          childTask.id,
-          TaskStates.queued,
-          null,
-          "decomposition",
-          "orchestrator",
-        );
+        ctx.taskEngine.requestTransition(childTask.id, TaskStates.queued, null, "decomposition", "orchestrator");
 
         childIds.push(childTask.id);
       }

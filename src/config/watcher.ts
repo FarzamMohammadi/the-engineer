@@ -55,10 +55,7 @@ export function createConfigWatcher<S extends z.ZodTypeAny>(
       if (!fs.existsSync(filePath)) {
         onChange({
           ok: false,
-          error: new ConfigError(
-            `Config file was deleted: ${filePath}. Keeping previous config.`,
-            filePath,
-          ),
+          error: new ConfigError(`Config file was deleted: ${filePath}. Keeping previous config.`, filePath),
         });
         return;
       }

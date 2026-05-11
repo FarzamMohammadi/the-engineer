@@ -4,12 +4,7 @@ import { ulid } from "ulid";
 import { toSqliteJson } from "../../db/serialize.js";
 import type { Event, EventType } from "../../schemas/events.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
-import type {
-  EventCallback,
-  IEventBus,
-  PublishInput,
-  PublishInputGeneral,
-} from "../interfaces/event-bus.interface.js";
+import type { EventCallback, IEventBus, PublishInput, PublishInputGeneral } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
 import { EventReplayError } from "./errors.js";
 import { matchesPattern } from "./pattern.js";
@@ -111,9 +106,7 @@ export class EventBus implements IEventBus {
     );
     this.byTaskStmt = db.prepare("SELECT * FROM events WHERE task_id = ? ORDER BY sequence");
     this.sinceStmt = db.prepare("SELECT * FROM events WHERE sequence > ? ORDER BY sequence");
-    this.sinceLimitStmt = db.prepare(
-      "SELECT * FROM events WHERE sequence > ? ORDER BY sequence LIMIT ?",
-    );
+    this.sinceLimitStmt = db.prepare("SELECT * FROM events WHERE sequence > ? ORDER BY sequence LIMIT ?");
   }
 
   // ── Publishing ──────────────────────────────────────────────────────────────
@@ -128,10 +121,7 @@ export class EventBus implements IEventBus {
   publish(input: PublishInputGeneral): Event;
   publish(input: PublishInputGeneral): Event {
     if (this.validateOnPublish && this.topology) {
-      const validation = this.topology.validatePayload(
-        input.type,
-        input.payload as Record<string, unknown>,
-      );
+      const validation = this.topology.validatePayload(input.type, input.payload as Record<string, unknown>);
       if (!validation.valid) {
         const msg = `EventBus: payload validation failed for "${input.type}": ${validation.errors?.join(", ")}`;
         if (process.env["NODE_ENV"] === "test") {
@@ -148,14 +138,7 @@ export class EventBus implements IEventBus {
     // The EventBus does not sanitize payloads to avoid corrupting legitimate data.
     const payloadJson = toSqliteJson(input.payload);
 
-    const result = this.insertStmt.run(
-      id,
-      input.type,
-      input.source,
-      input.task_id,
-      timestamp,
-      payloadJson,
-    );
+    const result = this.insertStmt.run(id, input.type, input.source, input.task_id, timestamp, payloadJson);
 
     const sequence = Number(result.lastInsertRowid);
 

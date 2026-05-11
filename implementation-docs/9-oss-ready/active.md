@@ -7,14 +7,14 @@
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
 - [approach.md](approach.md) — strategy, lenses, co-founder rules, session protocol
-- Current slice: `slices/01-standards-alignment.md` (not yet created — first session work)
+- Current slice: `slices/03-dashboard.md` (not yet created — next session)
 
 ## Current State
 
 **Phase:** 9 — OSS Ready
-**Session:** 2 (Standards Alignment complete)
-**Slice:** 01-standards-alignment — COMPLETE
-**Next slice:** `slices/02-repo-readiness.md` (not yet created)
+**Session:** 3 (Repo Readiness complete)
+**Slice:** 02-repo-readiness — COMPLETE
+**Next slice:** `slices/03-dashboard.md` (not yet created)
 
 ### What's Done
 
@@ -24,31 +24,23 @@
 - Co-founder dynamic agreed
 - Strategy agreed: vertical slices, RRPIR per slice, tangents welcome, no coming back
 - **Slice 1 COMPLETE:** `docs/coding-standards.md` written — 10 categories of coding standards decided via deep Q&A
+- **Slice 2 COMPLETE:** Repo readiness — Biome aligned (120 chars, noDefaultExport, PascalCase enums, smart constructor naming), lint split (check-only vs fix), CI parallelized (3 jobs), tests restructured (tests/unit/ mirroring src/), 13 migrations consolidated to 2, unused exports removed, safe deps updated, hardcoded paths fixed
 
 ### What's Next
 
-**Session 3: Repo Readiness (Slice 2)**
+**Session 4: Dashboard (Slice 3)**
 
-CI, git hooks, linters, Biome setup, dependency audit, migration consolidation, quality guardrails. The enforcement layer everything else benefits from.
-
-Topics:
-- Biome configuration (matches our standards: 120 chars, double quotes, semicolons, trailing commas, 2-space)
-- ESLint rules (if any beyond Biome — TypeScript-specific rules)
-- Git hooks (pre-commit: format + lint + typecheck)
-- CI pipeline (GitHub Actions: test, lint, typecheck, build)
-- Dependency audit (outdated, unused, security)
-- Migration consolidation (single clean schema)
-- Test infrastructure (move tests to `tests/` mirroring `src/`)
+Complete rewrite. Exposes all API/data gaps that inform later slices. The dashboard is the first thing a user sees — it should be portfolio-quality.
 
 ### Decisions Made This Session
 
-- Newspaper order with `function` declarations (hoisting enables caller-above-callee)
-- Strict FCIS (pure decision functions, thin imperative shells)
-- Branded types by default for all domain IDs
-- Always annotate return types — explicit, intentful
-- Results for expected failures, exceptions for unexpected
-- Tests in separate `tests/` mirroring `src/`, fixtures colocated with tests
-- Biome formatter, 120 chars, semicolons, trailing commas, double quotes, 2-space indent
-- One concept per file, split on change-reason divergence
-- JSDoc one-liner on every export
-- No default exports, barrels for public API only
+- Biome `lineWidth` → 120 (was 100)
+- `noDefaultExport` → error (vitest configs exempted)
+- Function naming allows PascalCase (for smart constructors like `TaskId()`)
+- Enum member naming: PascalCase only
+- `pnpm lint` is check-only; `pnpm lint:fix` applies fixes
+- CI: 3 parallel jobs (lint, test, build)
+- Test structure: `tests/unit/` mirrors `src/`, `tests/boundary/`, `tests/integration/`, `tests/e2e/` as siblings
+- Migrations consolidated to 2 files: `001_schema.sql` (domain tables), `002_observations.sql` (observability)
+- Major version upgrades deferred — need individual evaluation (Biome 2, TS 6, Vitest 4, Zod 4, pino 10, etc.)
+- `@types/node-fetch` kept — required by grammy's type declarations

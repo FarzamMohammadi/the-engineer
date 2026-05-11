@@ -239,10 +239,7 @@ function buildPriorPhasePointers(thoughtsDir: string, loopbackCount: number): st
   return section("What Happened Before You", lines.join("\n"));
 }
 
-function buildReviewOutputInstructions(
-  thoughtsDir: string,
-  reviewPhaseName: ReviewPhaseName,
-): string {
+function buildReviewOutputInstructions(thoughtsDir: string, reviewPhaseName: ReviewPhaseName): string {
   return section(
     "Where To Put Your Work",
     [

@@ -18,10 +18,7 @@ import type { TaskRow } from "./row-mapper.js";
  * - Property absent (undefined) in entry → actual must be null (state has no sub-state).
  * - Property present → must match exactly.
  */
-export function subStateMatches(
-  entrySub: SubState | undefined,
-  actualSub: SubState | null,
-): boolean {
+export function subStateMatches(entrySub: SubState | undefined, actualSub: SubState | null): boolean {
   if (entrySub === undefined) {
     return actualSub === null;
   }
@@ -78,9 +75,7 @@ export class StateMachine {
       "UPDATE tasks SET state = ?, sub_state = ?, last_transition_at = ?, version = version + 1 WHERE id = ? AND version = ?",
     );
 
-    this.setStartedAtStmt = db.prepare(
-      "UPDATE tasks SET started_at = ? WHERE id = ? AND started_at IS NULL",
-    );
+    this.setStartedAtStmt = db.prepare("UPDATE tasks SET started_at = ? WHERE id = ? AND started_at IS NULL");
 
     this.setCompletedAtStmt = db.prepare("UPDATE tasks SET completed_at = ? WHERE id = ?");
 
@@ -140,17 +135,7 @@ export class StateMachine {
         this.setCompletedAtStmt.run(now, taskId);
       }
 
-      this.insertTransitionStmt.run(
-        transitionId,
-        taskId,
-        fromState,
-        toState,
-        fromSub,
-        toSub,
-        reason,
-        now,
-        triggeredBy,
-      );
+      this.insertTransitionStmt.run(transitionId, taskId, fromState, toState, fromSub, toSub, reason, now, triggeredBy);
     });
 
     try {

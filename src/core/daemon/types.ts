@@ -42,32 +42,15 @@ export type TriggerPollerContext = Pick<
 
 export type TaskSchedulerContext = Pick<
   DaemonContext,
-  | "config"
-  | "eventBus"
-  | "taskEngine"
-  | "orchestrator"
-  | "sessionMemory"
-  | "workspaceManager"
-  | "clock"
-  | "observer"
+  "config" | "eventBus" | "taskEngine" | "orchestrator" | "sessionMemory" | "workspaceManager" | "clock" | "observer"
 >;
 
 export type HealthMonitorContext = Pick<
   DaemonContext,
-  | "config"
-  | "eventBus"
-  | "taskEngine"
-  | "safetyLayer"
-  | "orchestrator"
-  | "sessionMemory"
-  | "clock"
-  | "observer"
+  "config" | "eventBus" | "taskEngine" | "safetyLayer" | "orchestrator" | "sessionMemory" | "clock" | "observer"
 >;
 
-export type PreemptionManagerContext = Pick<
-  DaemonContext,
-  "config" | "eventBus" | "taskEngine" | "clock" | "observer"
->;
+export type PreemptionManagerContext = Pick<DaemonContext, "config" | "eventBus" | "taskEngine" | "clock" | "observer">;
 
 export type ReviewHandlerContext = Pick<
   DaemonContext,
@@ -83,7 +66,4 @@ export type ReviewHandlerContext = Pick<
   | "observer"
 >;
 
-export type ResponsePollerContext = Pick<
-  DaemonContext,
-  "config" | "eventBus" | "registry" | "taskEngine" | "observer"
->;
+export type ResponsePollerContext = Pick<DaemonContext, "config" | "eventBus" | "registry" | "taskEngine" | "observer">;

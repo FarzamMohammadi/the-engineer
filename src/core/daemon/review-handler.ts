@@ -124,16 +124,8 @@ export function createReviewHandler(
   notifications: NotificationRouter,
   callbacks: ReviewHandlerCallbacks,
 ): ReviewHandler {
-  const {
-    eventBus,
-    registry,
-    taskEngine,
-    safetyLayer,
-    workspaceManager,
-    workspaceConfig,
-    peopleDirectory,
-    observer,
-  } = ctx;
+  const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, workspaceConfig, peopleDirectory, observer } =
+    ctx;
 
   // Circuit breaker thresholds — configurable for operators with slow/self-hosted git hosting
   const failureWindowMs = ctx.config.review_polling.failure_window_ms;
@@ -277,9 +269,7 @@ export function createReviewHandler(
       return true;
     }
     return authorizedPeople.some((p) =>
-      p.contacts.some(
-        (c) => c.channel === "github" && c.handle.toLowerCase() === author.toLowerCase(),
-      ),
+      p.contacts.some((c) => c.channel === "github" && c.handle.toLowerCase() === author.toLowerCase()),
     );
   }
 
@@ -345,8 +335,7 @@ export function createReviewHandler(
     emittedFeedbackKeys.set(taskId, dedupKey);
 
     const stage = "code" as const;
-    const primaryReviewer =
-      reviewStatus.reviewers.find((r) => r.state === aggregateState) ?? reviewStatus.reviewers[0];
+    const primaryReviewer = reviewStatus.reviewers.find((r) => r.state === aggregateState) ?? reviewStatus.reviewers[0];
 
     eventBus.publish({
       type: EventTypes["task.feedback_received"],
@@ -478,9 +467,7 @@ export function createReviewHandler(
 
       // Count review states for observability
       const approvalCount = reviewStatus.reviewers.filter((r) => r.state === "approved").length;
-      const changesCount = reviewStatus.reviewers.filter(
-        (r) => r.state === "changes_requested",
-      ).length;
+      const changesCount = reviewStatus.reviewers.filter((r) => r.state === "changes_requested").length;
 
       // Update accommodation state — records what we've seen and are about to process
       if (task.review) {
@@ -546,9 +533,7 @@ export function createReviewHandler(
       return;
     }
 
-    await Promise.allSettled(
-      reviewTasks.map((task) => checkSingleTaskReviewFeedback(task, hosting, now)),
-    );
+    await Promise.allSettled(reviewTasks.map((task) => checkSingleTaskReviewFeedback(task, hosting, now)));
   }
 
   // ── Feedback Event Handler ──────────────────────────────────────────────
@@ -590,9 +575,7 @@ export function createReviewHandler(
       feedback_rounds: [],
     };
     const sanitizedContent = payload.content ? sanitizeSecrets(payload.content) : null;
-    const comments = sanitizedContent
-      ? sanitizedContent.split("\n").filter((line) => line.trim().length > 0)
-      : [];
+    const comments = sanitizedContent ? sanitizedContent.split("\n").filter((line) => line.trim().length > 0) : [];
     const newRound = {
       stage: payload.stage,
       comments,
@@ -669,9 +652,7 @@ export function createReviewHandler(
   }
 
   /** Remove thoughts/ from the branch before merge if configured. Non-fatal. */
-  function tryRemoveThoughtsBeforeMerge(
-    task: NonNullable<ReturnType<typeof taskEngine.getTask>>,
-  ): void {
+  function tryRemoveThoughtsBeforeMerge(task: NonNullable<ReturnType<typeof taskEngine.getTask>>): void {
     if (!safetyLayer.shouldExcludeThoughtsOnMerge()) {
       return;
     }
@@ -691,8 +672,7 @@ export function createReviewHandler(
   /** Count how many post-approval fix rework cycles this task has been through (DB-persisted). Backward compat: counts both old "pipeline_fix" and new "post_approval_fix" reasons. */
   function countPostApprovalFixAttempts(taskId: string): number {
     const history = taskEngine.getStateHistory(taskId);
-    return history.filter((t) => t.reason === "post_approval_fix" || t.reason === "pipeline_fix")
-      .length;
+    return history.filter((t) => t.reason === "post_approval_fix" || t.reason === "pipeline_fix").length;
   }
 
   /**
@@ -709,9 +689,7 @@ export function createReviewHandler(
     if (attempt > MAX_POST_APPROVAL_FIX_RETRIES) {
       observer.warn("Post-approval fix retry limit reached", { taskId, attempts: attempt - 1 });
       taskEngine.requestTransition(taskId, TaskStates.completed, null, "code_approved", "daemon");
-      const issueDescriptions = issues.map((i) =>
-        i === "ci_failure" ? "CI pipeline failing" : "merge conflicts",
-      );
+      const issueDescriptions = issues.map((i) => (i === "ci_failure" ? "CI pipeline failing" : "merge conflicts"));
       finalizeTaskCompletion(
         taskId,
         `Code approved — unresolved issues after ${String(attempt - 1)} fix attempts: ${issueDescriptions.join(", ")}. Please fix and merge manually.`,
@@ -756,13 +734,7 @@ export function createReviewHandler(
 
     // Transition to queued — the scheduler will see the unapplied feedback
     // round and restart from requirements_gathering instead of resuming.
-    const transition = taskEngine.requestTransition(
-      taskId,
-      TaskStates.queued,
-      null,
-      "post_approval_fix",
-      "daemon",
-    );
+    const transition = taskEngine.requestTransition(taskId, TaskStates.queued, null, "post_approval_fix", "daemon");
     if (!transition.success) {
       observer.warn("Failed to re-queue task for post-approval fix", {
         taskId,
@@ -774,11 +746,8 @@ export function createReviewHandler(
     emittedFeedbackKeys.delete(taskId);
     approvedAwaitingCI.delete(taskId);
 
-    const issueLabels = issues.map((i) =>
-      i === "ci_failure" ? "CI pipeline failing" : "merge conflicts",
-    );
-    const notificationPrefix =
-      issues.length > 1 ? "Post-approval issues" : (issueLabels[0] ?? "Post-approval issue");
+    const issueLabels = issues.map((i) => (i === "ci_failure" ? "CI pipeline failing" : "merge conflicts"));
+    const notificationPrefix = issues.length > 1 ? "Post-approval issues" : (issueLabels[0] ?? "Post-approval issue");
     notifications.notify({
       kind: NotificationKinds.ticket_comment,
       taskId,
@@ -860,13 +829,7 @@ export function createReviewHandler(
       }),
       pr_state: "merged",
     });
-    taskEngine.requestTransition(
-      taskId,
-      TaskStates.completed,
-      null,
-      "code_approved_merged",
-      "daemon",
-    );
+    taskEngine.requestTransition(taskId, TaskStates.completed, null, "code_approved_merged", "daemon");
     finalizeTaskCompletion(taskId, `Code approved — PR #${String(prNumber)} auto-merged.`);
     observer.info("PR auto-merged successfully", { taskId, prNumber });
   }
@@ -977,9 +940,7 @@ export function createReviewHandler(
     });
 
     // Prune entries for tasks no longer in review_pending
-    const reviewTasks = new Set(
-      taskEngine.getTasksByState(TaskStates.review_pending).map((t) => t.id),
-    );
+    const reviewTasks = new Set(taskEngine.getTasksByState(TaskStates.review_pending).map((t) => t.id));
     for (const taskId of approvedAwaitingCI.keys()) {
       if (!reviewTasks.has(taskId)) {
         approvedAwaitingCI.delete(taskId);
@@ -1011,14 +972,11 @@ export function createReviewHandler(
         "daemon",
       );
       if (!transition.success) {
-        observer.warn(
-          "Failed to re-queue task for rework — task may have been completed concurrently",
-          {
-            taskId: payload.task_id,
-            reason: transition.reason,
-            feedbackType: payload.feedback_type,
-          },
-        );
+        observer.warn("Failed to re-queue task for rework — task may have been completed concurrently", {
+          taskId: payload.task_id,
+          reason: transition.reason,
+          feedbackType: payload.feedback_type,
+        });
         return;
       }
       // Clear stale dedup key so re-polling after rework doesn't suppress events

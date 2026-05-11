@@ -26,14 +26,7 @@ export interface PluginHealthMonitor {
 // ── Factory ────────────────────────────────────────────────────────────────
 
 export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): PluginHealthMonitor {
-  const {
-    observer,
-    eventBus,
-    getRecord,
-    getAllRecords,
-    healthCheckTimeoutMs,
-    consecutiveFailuresThreshold,
-  } = deps;
+  const { observer, eventBus, getRecord, getAllRecords, healthCheckTimeoutMs, consecutiveFailuresThreshold } = deps;
 
   function withTimeout<T>(promise: Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -54,11 +47,7 @@ export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): Plugin
     });
   }
 
-  function handleHealthy(
-    record: PluginRecord,
-    previousState: PluginHealthState,
-    now: string,
-  ): void {
+  function handleHealthy(record: PluginRecord, previousState: PluginHealthState, now: string): void {
     const { health, manifest } = record;
     health.consecutive_failures = 0;
     health.last_healthy_at = now;
@@ -80,11 +69,7 @@ export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): Plugin
     }
   }
 
-  function handleUnhealthy(
-    record: PluginRecord,
-    previousState: PluginHealthState,
-    errorMessage: string,
-  ): void {
+  function handleUnhealthy(record: PluginRecord, previousState: PluginHealthState, errorMessage: string): void {
     const { health, manifest } = record;
     health.consecutive_failures++;
     health.last_error = errorMessage;
@@ -155,11 +140,7 @@ export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): Plugin
     if (status.healthy) {
       handleHealthy(record, previousState, now);
     } else {
-      handleUnhealthy(
-        record,
-        previousState,
-        status.message ? sanitizeSecrets(status.message) : "unknown error",
-      );
+      handleUnhealthy(record, previousState, status.message ? sanitizeSecrets(status.message) : "unknown error");
     }
   }
 

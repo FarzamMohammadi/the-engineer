@@ -2,11 +2,7 @@ import { ActionRejectedPayloadSchema, EventTypes } from "../../schemas/events.js
 import { ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
-import type {
-  ExecuteInput,
-  IActionPipeline,
-  PipelineResult,
-} from "../interfaces/action-pipeline.interface.js";
+import type { ExecuteInput, IActionPipeline, PipelineResult } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ISafetyLayer, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -40,12 +36,7 @@ export class ActionPipeline implements IActionPipeline {
   private readonly eventBus: IEventBus;
   private readonly observer: IObserver;
 
-  constructor(
-    taskEngine: ITaskEngine,
-    safetyLayer: ISafetyLayer,
-    eventBus: IEventBus,
-    observer: IObserver,
-  ) {
+  constructor(taskEngine: ITaskEngine, safetyLayer: ISafetyLayer, eventBus: IEventBus, observer: IObserver) {
     this.taskEngine = taskEngine;
     this.safetyLayer = safetyLayer;
     this.eventBus = eventBus;
@@ -58,27 +49,14 @@ export class ActionPipeline implements IActionPipeline {
     // Gate 1: Task Engine — is this action class legal in the current task state?
     const permission = this.taskEngine.checkPermission(taskId, actionClass);
     if (!permission.allowed) {
-      this.emitRejection(
-        taskId,
-        actionClass,
-        "task_engine",
-        permission.reason ?? "denied",
-        details,
-        requestedBy,
-      );
+      this.emitRejection(taskId, actionClass, "task_engine", permission.reason ?? "denied", details, requestedBy);
       return { outcome: "rejected", gate: "task_engine", reason: permission.reason ?? "denied" };
     }
 
     // Gate 2: Safety Layer — does policy allow this action? (skip for read-only)
     if (actionClass !== ActionClasses.read) {
       const verdict = this.safetyLayer.evaluateAction(taskId, actionClass, details);
-      const rejection = this.checkSafetyVerdict<T>(
-        verdict,
-        taskId,
-        actionClass,
-        details,
-        requestedBy,
-      );
+      const rejection = this.checkSafetyVerdict<T>(verdict, taskId, actionClass, details, requestedBy);
       if (rejection) {
         return rejection;
       }

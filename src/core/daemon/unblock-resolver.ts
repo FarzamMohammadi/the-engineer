@@ -56,15 +56,9 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
     return tryUnblockByTaskId(input.taskId, input.source, input.content);
   }
 
-  function tryUnblockByExternalRef(
-    ref: ExternalRef,
-    source: string,
-    content?: string,
-  ): UnblockResult {
+  function tryUnblockByExternalRef(ref: ExternalRef, source: string, content?: string): UnblockResult {
     const blockedTasks = taskEngine.getTasksByState(TaskStates.blocked);
-    const match = blockedTasks.find(
-      (t) => t.external_ref !== null && externalRefsMatch(t.external_ref, ref),
-    );
+    const match = blockedTasks.find((t) => t.external_ref !== null && externalRefsMatch(t.external_ref, ref));
 
     if (!match) {
       return { unblocked: false, taskId: null, reason: "no_match" };

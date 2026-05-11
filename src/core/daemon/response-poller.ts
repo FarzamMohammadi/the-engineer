@@ -55,10 +55,7 @@ export function linkMessageToTask(msg: InboundMessage): UnblockInput | null {
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createResponsePoller(
-  ctx: ResponsePollerContext,
-  unblockResolver: UnblockResolver,
-): ResponsePoller {
+export function createResponsePoller(ctx: ResponsePollerContext, unblockResolver: UnblockResolver): ResponsePoller {
   const { config, eventBus, registry, taskEngine, observer } = ctx;
 
   // Per-plugin cursor for pollMessages
@@ -69,8 +66,7 @@ export function createResponsePoller(
   // Initialize to current max sequence — skip historical events on startup/restart.
   // Only new events written after this point will be processed.
   const startupEvents = eventBus.getEventsSince(0);
-  let lastEventSeq =
-    startupEvents.length > 0 ? (startupEvents[startupEvents.length - 1]?.sequence ?? 0) : 0;
+  let lastEventSeq = startupEvents.length > 0 ? (startupEvents[startupEvents.length - 1]?.sequence ?? 0) : 0;
 
   /** Maximum backoff interval (5 minutes, same as trigger-poller). */
   const MAX_BACKOFF_MS = 300_000;
@@ -81,8 +77,7 @@ export function createResponsePoller(
     if (failures === 0) {
       return config.response_poll_interval_ms;
     }
-    const backoff =
-      config.response_poll_interval_ms * 2 ** Math.min(failures, MAX_BACKOFF_EXPONENT);
+    const backoff = config.response_poll_interval_ms * 2 ** Math.min(failures, MAX_BACKOFF_EXPONENT);
     return Math.min(backoff, MAX_BACKOFF_MS);
   }
 
@@ -115,9 +110,7 @@ export function createResponsePoller(
     const receivePlugins = commPlugins.filter((p) => p.hasCapability("receive"));
 
     // Poll each plugin (channels may be empty — Telegram ignores them, uses getUpdates)
-    await Promise.allSettled(
-      receivePlugins.map((plugin) => pollSinglePlugin(plugin, channels, now, blockedTasks)),
-    );
+    await Promise.allSettled(receivePlugins.map((plugin) => pollSinglePlugin(plugin, channels, now, blockedTasks)));
   }
 
   async function pollSinglePlugin(

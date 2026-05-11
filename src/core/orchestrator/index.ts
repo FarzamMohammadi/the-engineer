@@ -19,19 +19,10 @@ import { type AndonCord, createAndonCord } from "./andon-cord.js";
 import { type DecompositionHandler, createDecompositionHandler } from "./decomposition-handler.js";
 import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
 import { createPhaseHandlers } from "./phase-handlers.js";
-import {
-  type PhaseHandlerRegistry,
-  createPhaseHandlerRegistry,
-  runPhasePipeline,
-} from "./phase-runner.js";
+import { type PhaseHandlerRegistry, createPhaseHandlerRegistry, runPhasePipeline } from "./phase-runner.js";
 import { type PrManager, createPrManager } from "./pr-manager.js";
 import { gatherRepoContextSafe } from "./prompts/index.js";
-import type {
-  ExecuteTaskResult,
-  OrchestratorContext,
-  PipelineState,
-  WritablePreemptionGate,
-} from "./types.js";
+import type { ExecuteTaskResult, OrchestratorContext, PipelineState, WritablePreemptionGate } from "./types.js";
 import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
@@ -130,17 +121,13 @@ export class Orchestrator {
 
     // Cooperative preemption state (Protocol P8)
     this.preemption = createPreemptionGate();
-    this.ctx.eventBus.subscribe(
-      "orchestrator",
-      EventTypes["preemption.requested"],
-      (event: Event) => {
-        const p = event.payload as {
-          target_task_id: string;
-          preempting_task_id: string;
-        };
-        this.preemption.request(p);
-      },
-    );
+    this.ctx.eventBus.subscribe("orchestrator", EventTypes["preemption.requested"], (event: Event) => {
+      const p = event.payload as {
+        target_task_id: string;
+        preempting_task_id: string;
+      };
+      this.preemption.request(p);
+    });
 
     // Sync portable skills to {workspace_root}/skills/ before phase handlers resolve paths
     this.ctx.workspaceManager.syncSkills();

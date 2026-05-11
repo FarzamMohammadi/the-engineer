@@ -38,13 +38,7 @@ export function createCostLimitQueue(
       const task = taskEngine.getTask(taskId);
       if (task && task.state === TaskStates.active) {
         observer.warn("Task blocked due to cost limit", { taskId });
-        const result = taskEngine.requestTransition(
-          taskId,
-          TaskStates.blocked,
-          null,
-          "cost_limit_reached",
-          "daemon",
-        );
+        const result = taskEngine.requestTransition(taskId, TaskStates.blocked, null, "cost_limit_reached", "daemon");
         if (!result.success) {
           observer.warn("Cost limit transition failed — task may have already changed state", {
             taskId,

@@ -117,8 +117,7 @@ export function processNdjsonLine(line: string): NdjsonLineResult {
         return {
           type: "rate_limit",
           info: {
-            rateLimitType:
-              typeof info["rateLimitType"] === "string" ? info["rateLimitType"] : "unknown",
+            rateLimitType: typeof info["rateLimitType"] === "string" ? info["rateLimitType"] : "unknown",
             status: typeof info["status"] === "string" ? info["status"] : "unknown",
             resetsAt: typeof info["resetsAt"] === "number" ? info["resetsAt"] : null,
           },
@@ -191,12 +190,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
     // Prompt is piped via stdin (not as a CLI arg) to avoid OS argument length limits.
     // The claude CLI reads from stdin when no positional prompt argument is given.
-    return this.spawnAndParse(
-      args,
-      request.prompt,
-      request.cwd ?? undefined,
-      request.trace_output_path ?? undefined,
-    );
+    return this.spawnAndParse(args, request.prompt, request.cwd ?? undefined, request.trace_output_path ?? undefined);
   }
 
   getCapabilities(): LLMCapabilities {
@@ -409,9 +403,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
           // If we captured a result event during streaming, use it despite non-zero exit
           if (resultEvent && resultEvent["subtype"] !== "error") {
             this.lastRateLimits = rateLimits;
-            console.error(
-              `[claude-code-llm] CLI exited code=${String(code)} but captured result event — salvaging`,
-            );
+            console.error(`[claude-code-llm] CLI exited code=${String(code)} but captured result event — salvaging`);
             resolve(buildInferenceResult(resultEvent, rateLimits, durationMs));
             return;
           }
@@ -422,11 +414,10 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
           reject(
             new AdapterMethodError(
-              createAdapterError(
-                "cli_error",
-                `claude CLI exited with code ${String(code)}: ${truncatedError}`,
-                { retryable: !isSignalKill, severity: AdapterErrorSeverities.error },
-              ),
+              createAdapterError("cli_error", `claude CLI exited with code ${String(code)}: ${truncatedError}`, {
+                retryable: !isSignalKill,
+                severity: AdapterErrorSeverities.error,
+              }),
             ),
           );
           return;
@@ -434,21 +425,14 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
         // ── Happy path: use streamed result ──
         if (!resultEvent) {
-          reject(
-            new AdapterMethodError(
-              createAdapterError("internal_error", "No result event found in CLI output"),
-            ),
-          );
+          reject(new AdapterMethodError(createAdapterError("internal_error", "No result event found in CLI output")));
           return;
         }
 
         if (resultEvent["subtype"] === "error") {
           reject(
             new AdapterMethodError(
-              createAdapterError(
-                "internal_error",
-                `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`,
-              ),
+              createAdapterError("internal_error", `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`),
             ),
           );
           return;
@@ -463,11 +447,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         if (traceStream) {
           traceStream.end();
         }
-        reject(
-          new AdapterMethodError(
-            createAdapterError("spawn_error", `Failed to spawn claude CLI: ${err.message}`),
-          ),
-        );
+        reject(new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn claude CLI: ${err.message}`)));
       });
 
       // Pipe prompt via stdin to avoid OS argument length limits
@@ -582,8 +562,7 @@ export function parseCliOutput(raw: string): ParsedCliOutput {
         const info = parsed["rate_limit_info"] as Record<string, unknown> | undefined;
         if (info) {
           rateLimits.push({
-            rateLimitType:
-              typeof info["rateLimitType"] === "string" ? info["rateLimitType"] : "unknown",
+            rateLimitType: typeof info["rateLimitType"] === "string" ? info["rateLimitType"] : "unknown",
             status: typeof info["status"] === "string" ? info["status"] : "unknown",
             resetsAt: typeof info["resetsAt"] === "number" ? info["resetsAt"] : null,
           });
@@ -595,17 +574,12 @@ export function parseCliOutput(raw: string): ParsedCliOutput {
   }
 
   if (!resultEvent) {
-    throw new AdapterMethodError(
-      createAdapterError("internal_error", "No result event found in CLI output"),
-    );
+    throw new AdapterMethodError(createAdapterError("internal_error", "No result event found in CLI output"));
   }
 
   if (resultEvent["subtype"] === "error") {
     throw new AdapterMethodError(
-      createAdapterError(
-        "internal_error",
-        `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`,
-      ),
+      createAdapterError("internal_error", `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`),
     );
   }
 
@@ -643,12 +617,9 @@ function extractUsage(resultEvent: Record<string, unknown>): InferenceUsage | nu
 
   const inputTokens = typeof usage["input_tokens"] === "number" ? usage["input_tokens"] : 0;
   const outputTokens = typeof usage["output_tokens"] === "number" ? usage["output_tokens"] : 0;
-  const cacheRead =
-    typeof usage["cache_read_input_tokens"] === "number" ? usage["cache_read_input_tokens"] : 0;
+  const cacheRead = typeof usage["cache_read_input_tokens"] === "number" ? usage["cache_read_input_tokens"] : 0;
   const cacheCreation =
-    typeof usage["cache_creation_input_tokens"] === "number"
-      ? usage["cache_creation_input_tokens"]
-      : 0;
+    typeof usage["cache_creation_input_tokens"] === "number" ? usage["cache_creation_input_tokens"] : 0;
   const serviceTier = typeof usage["service_tier"] === "string" ? usage["service_tier"] : null;
 
   // Derive model_id from modelUsage keys if available
@@ -696,10 +667,7 @@ function readOAuthToken(): string | null {
   }
 
   // File-based credentials (Linux, Windows, or macOS fallback)
-  const credPaths = [
-    join(homedir(), ".claude", ".credentials.json"),
-    join(homedir(), ".claude", "credentials.json"),
-  ];
+  const credPaths = [join(homedir(), ".claude", ".credentials.json"), join(homedir(), ".claude", "credentials.json")];
 
   for (const credPath of credPaths) {
     try {

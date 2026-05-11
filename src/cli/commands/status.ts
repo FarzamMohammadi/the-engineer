@@ -52,9 +52,7 @@ function getTaskSummary(dbPath: string): TaskCountRow[] {
     const db = new BetterSqlite3(dbPath, { readonly: true });
 
     try {
-      return db
-        .prepare("SELECT state, COUNT(*) as count FROM tasks GROUP BY state")
-        .all() as TaskCountRow[];
+      return db.prepare("SELECT state, COUNT(*) as count FROM tasks GROUP BY state").all() as TaskCountRow[];
     } finally {
       db.close();
     }

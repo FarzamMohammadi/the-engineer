@@ -4,12 +4,7 @@ import type { BuiltinPlugin } from "../../plugins/builtin.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { getOutput } from "../output.js";
 import { ALL_TEMPLATES } from "../templates.js";
-import type {
-  AdapterTypeConfig,
-  DetectionResult,
-  GuidedSetupResult,
-  PersonSetupEntry,
-} from "./types.js";
+import type { AdapterTypeConfig, DetectionResult, GuidedSetupResult, PersonSetupEntry } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,9 +73,7 @@ function showDetectionSummary(detection: DetectionResult): void {
     out.log(`    ${name.padEnd(22)} found`);
   }
   if (detection.gitRemote) {
-    out.log(
-      `    ${"Current repo".padEnd(22)} ${detection.gitRemote.owner}/${detection.gitRemote.name}`,
-    );
+    out.log(`    ${"Current repo".padEnd(22)} ${detection.gitRemote.owner}/${detection.gitRemote.name}`);
   }
   out.blank();
 }
@@ -235,10 +228,7 @@ async function promptForSecrets(fileContents: readonly string[]): Promise<Record
 
 // ── Warnings ─────────────────────────────────────────────────────────────────
 
-function showSelectionWarnings(
-  selectedPlugins: readonly string[],
-  plugins: readonly BuiltinPlugin[],
-): void {
+function showSelectionWarnings(selectedPlugins: readonly string[], plugins: readonly BuiltinPlugin[]): void {
   const out = getOutput();
   const selectedTypes = new Set(
     plugins.filter((p) => selectedPlugins.includes(p.manifest.id)).map((p) => p.manifest.type),
@@ -273,10 +263,7 @@ function resolveCommChannels(
   plugins: readonly BuiltinPlugin[],
 ): Array<{ channel: string; pluginName: string }> {
   return plugins
-    .filter(
-      (p) =>
-        p.manifest.type === AdapterTypes.communication && selectedPlugins.includes(p.manifest.id),
-    )
+    .filter((p) => p.manifest.type === AdapterTypes.communication && selectedPlugins.includes(p.manifest.id))
     .map((p) => ({
       channel: String(p.manifest.adapter_meta["channel"] ?? p.manifest.id),
       pluginName: p.manifest.name,
@@ -298,8 +285,7 @@ async function promptForPerson(
   const id = await input({
     message: "Identifier (used in configs):",
     default: defaultId,
-    validate: (v: string) =>
-      IDENTIFIER_PATTERN.test(v.trim()) || "Lowercase alphanumeric, hyphens, underscores only",
+    validate: (v: string) => IDENTIFIER_PATTERN.test(v.trim()) || "Lowercase alphanumeric, hyphens, underscores only",
   });
 
   let roles: string[];
@@ -387,13 +373,7 @@ export async function runGuidedSetup(
         continue;
       }
 
-      const selected = await promptForAdapterType(
-        config,
-        typePlugins,
-        detection,
-        allSelected,
-        engineerHome,
-      );
+      const selected = await promptForAdapterType(config, typePlugins, detection, allSelected, engineerHome);
       allSelected.push(...selected);
     }
 

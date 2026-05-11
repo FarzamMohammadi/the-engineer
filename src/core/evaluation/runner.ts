@@ -46,10 +46,7 @@ interface SessionResult {
  *
  * This function never throws — all errors are logged and swallowed.
  */
-export async function runEvaluation(
-  snapshot: EvaluationSnapshot,
-  ctx: EvaluationManagerContext,
-): Promise<void> {
+export async function runEvaluation(snapshot: EvaluationSnapshot, ctx: EvaluationManagerContext): Promise<void> {
   const startTime = Date.now();
   let session1: SessionResult | null = null;
   let session2: SessionResult | null = null;
@@ -143,12 +140,7 @@ async function runComparison(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function runSession(
-  llm: LLMAdapter,
-  systemPrompt: string,
-  prompt: string,
-  cwd: string,
-): Promise<SessionResult> {
+async function runSession(llm: LLMAdapter, systemPrompt: string, prompt: string, cwd: string): Promise<SessionResult> {
   const startedAt = new Date().toISOString();
   const start = Date.now();
 

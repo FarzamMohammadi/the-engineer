@@ -48,10 +48,7 @@ function ensureDirectories(dirs: EngineerDirectories): void {
 }
 
 /** Handle first-run setup if needed. Returns exit code or null to continue. */
-async function handleFirstRunSetup(
-  engineerHome: string,
-  options: StartOptions,
-): Promise<number | null> {
+async function handleFirstRunSetup(engineerHome: string, options: StartOptions): Promise<number | null> {
   const out = getOutput();
 
   if (!needsSetup(engineerHome)) {
@@ -341,9 +338,7 @@ async function runForeground(
     try {
       await daemon.stop();
     } catch (stopError) {
-      process.stderr.write(
-        `Warning: cleanup failed during startup error: ${sanitizeErrorMessage(stopError)}\n`,
-      );
+      process.stderr.write(`Warning: cleanup failed during startup error: ${sanitizeErrorMessage(stopError)}\n`);
     }
     cleanupDashboard();
     cleanup();
@@ -387,10 +382,7 @@ function runDryRun(
   out.blank();
   out.keyValue("Config", `${dirs.config}`);
   out.keyValue("Database", join(dirs.data, "engineer.db"));
-  out.keyValue(
-    "Plugins",
-    `${String(enabledPlugins.length)} plugins (${String(criticalCount)} critical)`,
-  );
+  out.keyValue("Plugins", `${String(enabledPlugins.length)} plugins (${String(criticalCount)} critical)`);
   out.keyValue("Pre-flight", `${String(totalChecks)}/${String(totalChecks)} checks passed`);
 
   out.blank();

@@ -84,10 +84,7 @@ export type GeminiNdjsonLineResult =
  * Pure function — independently testable.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON line processing with multiple event types and nested field extraction
-export function processGeminiNdjsonLine(
-  line: string,
-  currentModelId: string | null,
-): GeminiNdjsonLineResult {
+export function processGeminiNdjsonLine(line: string, currentModelId: string | null): GeminiNdjsonLineResult {
   const trimmed = line.trim();
   if (trimmed.length === 0) {
     return { type: "skip" };
@@ -126,8 +123,7 @@ export function processGeminiNdjsonLine(
       const stats = parsed["stats"] as Record<string, unknown> | undefined;
       if (stats) {
         const inputTokens = typeof stats["input_tokens"] === "number" ? stats["input_tokens"] : 0;
-        const outputTokens =
-          typeof stats["output_tokens"] === "number" ? stats["output_tokens"] : 0;
+        const outputTokens = typeof stats["output_tokens"] === "number" ? stats["output_tokens"] : 0;
         const totalTokens = typeof stats["total_tokens"] === "number" ? stats["total_tokens"] : 0;
         const cached = typeof stats["cached"] === "number" ? stats["cached"] : 0;
 
@@ -205,8 +201,7 @@ export function parseGeminiCliOutput(raw: string): ParsedGeminiCliOutput {
         const stats = parsed["stats"] as Record<string, unknown> | undefined;
         if (stats) {
           const inputTokens = typeof stats["input_tokens"] === "number" ? stats["input_tokens"] : 0;
-          const outputTokens =
-            typeof stats["output_tokens"] === "number" ? stats["output_tokens"] : 0;
+          const outputTokens = typeof stats["output_tokens"] === "number" ? stats["output_tokens"] : 0;
           const totalTokens = typeof stats["total_tokens"] === "number" ? stats["total_tokens"] : 0;
           const cached = typeof stats["cached"] === "number" ? stats["cached"] : 0;
 
@@ -232,10 +227,7 @@ export function parseGeminiCliOutput(raw: string): ParsedGeminiCliOutput {
 
   if (!rateLimited && content.length === 0 && usage === null) {
     throw new AdapterMethodError(
-      createAdapterError(
-        "internal_error",
-        "No assistant message or result event found in Gemini CLI output",
-      ),
+      createAdapterError("internal_error", "No assistant message or result event found in Gemini CLI output"),
     );
   }
 
@@ -273,12 +265,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
       "--yolo", // auto-approve tool calls (required for non-interactive)
     ];
 
-    return this.spawnAndParse(
-      args,
-      request.cwd ?? undefined,
-      prompt,
-      request.trace_output_path ?? undefined,
-    );
+    return this.spawnAndParse(args, request.cwd ?? undefined, prompt, request.trace_output_path ?? undefined);
   }
 
   getCapabilities(): LLMCapabilities {
@@ -472,14 +459,10 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
         if (killedForRateLimit) {
           reject(
             new AdapterMethodError(
-              createAdapterError(
-                "cli_error",
-                `gemini CLI rate limited: ${stderrBuf.slice(0, 200)}`,
-                {
-                  retryable: true,
-                  severity: AdapterErrorSeverities.error,
-                },
-              ),
+              createAdapterError("cli_error", `gemini CLI rate limited: ${stderrBuf.slice(0, 200)}`, {
+                retryable: true,
+                severity: AdapterErrorSeverities.error,
+              }),
             ),
           );
           return;
@@ -518,10 +501,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
         if (content.length === 0 && usage === null) {
           reject(
             new AdapterMethodError(
-              createAdapterError(
-                "internal_error",
-                "No assistant message or result event found in Gemini CLI output",
-              ),
+              createAdapterError("internal_error", "No assistant message or result event found in Gemini CLI output"),
             ),
           );
           return;
@@ -540,11 +520,7 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
         if (traceStream) {
           traceStream.end();
         }
-        reject(
-          new AdapterMethodError(
-            createAdapterError("spawn_error", `Failed to spawn gemini CLI: ${err.message}`),
-          ),
-        );
+        reject(new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn gemini CLI: ${err.message}`)));
       });
 
       // Suppress EPIPE — child may exit before stdin is consumed

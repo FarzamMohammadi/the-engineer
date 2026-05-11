@@ -27,18 +27,6 @@ export class LlmCallRejectedError extends OrchestratorError {
   }
 }
 
-/** File path escapes the worktree boundary (security violation). */
-export class WorkspaceEscapeError extends OrchestratorError {
-  readonly tag = "WorkspaceEscape" as const;
-  readonly filePath: string;
-
-  constructor(filePath: string) {
-    super(`Path escapes worktree: ${filePath}`);
-    this.name = "WorkspaceEscapeError";
-    this.filePath = filePath;
-  }
-}
-
 /** No handler registered for a pipeline phase. */
 export class PhaseHandlerMissingError extends OrchestratorError {
   readonly tag = "PhaseHandlerMissing" as const;

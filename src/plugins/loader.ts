@@ -13,11 +13,7 @@ import { BUILTIN_PLUGINS, type BuiltinPlugin } from "./builtin.js";
 // ── Plugin Config Loading ─────────────────────────────────────────────────────
 
 /** Load plugin config from YAML file, resolving env vars. Returns null on error for non-critical plugins. */
-function loadPluginConfig(
-  configPath: string,
-  pluginId: string,
-  critical: boolean,
-): Record<string, unknown> | null {
+function loadPluginConfig(configPath: string, pluginId: string, critical: boolean): Record<string, unknown> | null {
   if (!existsSync(configPath)) {
     return {};
   }
@@ -52,10 +48,9 @@ export function discoverEnabledPlugins(pluginConfigDir: string): BuiltinPlugin[]
         .filter((filename) => filename.endsWith(".yaml"))
         .map((filename) => filename.replace(YAML_EXTENSION_PATTERN, ""));
     } catch (error) {
-      throw new Error(
-        `Cannot read plugin config directory "${pluginConfigDir}": ${extractErrorMessage(error)}`,
-        { cause: error },
-      );
+      throw new Error(`Cannot read plugin config directory "${pluginConfigDir}": ${extractErrorMessage(error)}`, {
+        cause: error,
+      });
     }
   } else {
     filenames = [];
@@ -67,10 +62,7 @@ export function discoverEnabledPlugins(pluginConfigDir: string): BuiltinPlugin[]
 // ── Plugin Loading ───────────────────────────────────────────────────────────
 
 /** Create and validate a plugin instance. Throws for critical failures, returns null for non-critical. */
-function createPluginInstance(
-  plugin: BuiltinPlugin,
-  observer: IObserver,
-): ReturnType<BuiltinPlugin["create"]> | null {
+function createPluginInstance(plugin: BuiltinPlugin, observer: IObserver): ReturnType<BuiltinPlugin["create"]> | null {
   const pluginId = plugin.manifest.id;
   try {
     return plugin.create();
@@ -105,9 +97,7 @@ async function loadSinglePlugin(
   if (!registrationResult.success) {
     observer.warn("Plugin registration failed", { pluginId, reason: registrationResult.message });
     if (plugin.manifest.critical) {
-      throw new Error(
-        `Critical plugin "${pluginId}" failed to register: ${registrationResult.message}`,
-      );
+      throw new Error(`Critical plugin "${pluginId}" failed to register: ${registrationResult.message}`);
     }
     return false;
   }
@@ -129,9 +119,7 @@ async function loadSinglePlugin(
   const initializationResult = await registry.initializePlugin(pluginId, pluginConfig);
   if (!initializationResult.success) {
     if (plugin.manifest.critical) {
-      throw new Error(
-        `Critical plugin "${pluginId}" failed to initialize: ${initializationResult.message}`,
-      );
+      throw new Error(`Critical plugin "${pluginId}" failed to initialize: ${initializationResult.message}`);
     }
     observer.warn("Plugin init failed, deregistering", {
       pluginId,
@@ -179,13 +167,7 @@ export async function loadBuiltinPlugins(
 
   for (const plugin of plugins) {
     // Critical plugin failures throw from loadSinglePlugin — let them propagate
-    const loaded = await loadSinglePlugin(
-      plugin,
-      registry,
-      pluginConfigDir,
-      observer,
-      sharedConfigByType,
-    );
+    const loaded = await loadSinglePlugin(plugin, registry, pluginConfigDir, observer, sharedConfigByType);
     if (loaded) {
       result.loaded.push(plugin.manifest.id);
       // Collect startup hints from successfully loaded plugins

@@ -1,0 +1,59 @@
+import type Database from "better-sqlite3";
+import { ulid } from "ulid";
+
+import { SessionMemory } from "../../src/core/session-memory/index.js";
+import { type TestDatabaseHandle, createTestDatabase } from "./test-database.js";
+
+export interface TestSessionMemoryHandle {
+  sessionMemory: SessionMemory;
+  /** Exposed for direct queries in tests. */
+  db: Database.Database;
+  /**
+   * Insert a minimal task row to satisfy the FK constraint on sessions.task_id.
+   * Returns the generated task ID.
+   */
+  insertTask(title?: string): string;
+  /** Close the database. Call in afterEach. */
+  cleanup(): void;
+}
+
+/**
+ * Creates a fresh SessionMemory backed by an in-memory database with all migrations applied.
+ *
+ * The sessions table has a FK to tasks, so tests must call `insertTask()` before
+ * creating sessions. This helper provides that convenience method.
+ */
+export function createTestSessionMemory(): TestSessionMemoryHandle {
+  const testDb: TestDatabaseHandle = createTestDatabase();
+  const sessionMemory = new SessionMemory(testDb.db);
+
+  const insertTaskStmt = testDb.db.prepare(`
+    INSERT INTO tasks (
+      id, state, cascade_policy, title, description, source_text,
+      acceptance_criteria, children, team, related, decisions, child_summaries,
+      priority, llm_tokens, llm_cost_usd, compute_time_ms,
+      created_at, last_transition_at
+    ) VALUES (
+      ?, 'requirements_gathering', 'pause_siblings', ?, '', '',
+      '[]', '[]', '[]', '[]', '[]', '[]',
+      50, 0, 0.0, 0,
+      ?, ?
+    )
+  `);
+
+  return {
+    sessionMemory,
+    db: testDb.db,
+
+    insertTask(title?: string): string {
+      const id = ulid();
+      const now = new Date().toISOString();
+      insertTaskStmt.run(id, title ?? "Test task", now, now);
+      return id;
+    },
+
+    cleanup() {
+      testDb.cleanup();
+    },
+  };
+}

@@ -58,10 +58,7 @@ export function createDaemonHealthMonitor(
   const { config, eventBus, taskEngine, safetyLayer, orchestrator, sessionMemory, observer } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
-  const blockedEscalationState = new Map<
-    string,
-    { lastStageIndex: number; lastActionAt: number }
-  >();
+  const blockedEscalationState = new Map<string, { lastStageIndex: number; lastActionAt: number }>();
   const reviewReminderTimes = new Map<string, number>();
 
   // ── Stuck Detection ─────────────────────────────────────────────────────
@@ -80,9 +77,7 @@ export function createDaemonHealthMonitor(
 
     const activeElapsed = now - Date.parse(task.started_at);
     const latestTimestampStr =
-      activeElapsed > config.stuck_threshold_ms
-        ? sessionMemory.getLatestJournalTimestamp(taskId)
-        : null;
+      activeElapsed > config.stuck_threshold_ms ? sessionMemory.getLatestJournalTimestamp(taskId) : null;
     const latestTimestamp = latestTimestampStr ? Date.parse(latestTimestampStr) : null;
 
     const result = evaluateTaskStuckness(
@@ -100,11 +95,7 @@ export function createDaemonHealthMonitor(
 
   function emitStuckDetected(
     taskId: string,
-    condition:
-      | "no_journal_entries"
-      | "stale_journal"
-      | "no_state_transition"
-      | "orchestrator_crash",
+    condition: "no_journal_entries" | "stale_journal" | "no_state_transition" | "orchestrator_crash",
     elapsedMs: number,
   ): void {
     eventBus.publish({
@@ -114,10 +105,7 @@ export function createDaemonHealthMonitor(
       payload: {
         task_id: taskId,
         condition,
-        threshold_ms:
-          condition === "no_state_transition"
-            ? config.max_active_duration_ms
-            : config.stuck_threshold_ms,
+        threshold_ms: condition === "no_state_transition" ? config.max_active_duration_ms : config.stuck_threshold_ms,
         elapsed_ms: elapsedMs,
         last_activity: null,
       },
@@ -194,10 +182,7 @@ export function createDaemonHealthMonitor(
     return false;
   }
 
-  function executeBlockedStageAction(
-    taskId: string,
-    stage: { name: string; action: string },
-  ): void {
+  function executeBlockedStageAction(taskId: string, stage: { name: string; action: string }): void {
     if (stage.action === TimeoutStageActions.send_reminder) {
       notifications.notify({ kind: NotificationKinds.blocked_reminder, taskId });
       observer.info("Blocked task reminder sent", { taskId, stage: stage.name });
@@ -253,8 +238,7 @@ export function createDaemonHealthMonitor(
   // ── Review Pending Reminders ────────────────────────────────────────────
 
   function checkReviewPendingReminders(now: number, prefetchedTasks?: Task[]): void {
-    const reviewPendingTasks =
-      prefetchedTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
+    const reviewPendingTasks = prefetchedTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
     const timeoutPolicy = safetyLayer.getTimeoutPolicy();
     const reviewConfig = timeoutPolicy.review_pending;
 

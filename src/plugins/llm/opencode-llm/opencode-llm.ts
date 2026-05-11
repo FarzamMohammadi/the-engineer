@@ -297,11 +297,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
    * Spawn OpenCode CLI and stream-parse its NDJSON output.
    * Memory-safe: processes each line as it arrives. Optionally traces to disk.
    */
-  private spawnAndParse(
-    args: string[],
-    stdinContent?: string,
-    traceOutputPath?: string,
-  ): Promise<InferenceResult> {
+  private spawnAndParse(args: string[], stdinContent?: string, traceOutputPath?: string): Promise<InferenceResult> {
     const startMs = Date.now();
     return new Promise<InferenceResult>((resolve, reject) => {
       // ── Streaming state ──
@@ -400,11 +396,10 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
         if (killedForRateLimit) {
           reject(
             new AdapterMethodError(
-              createAdapterError(
-                "cli_error",
-                `opencode CLI rate limited: ${stderrBuf.slice(0, 200)}`,
-                { retryable: true, severity: AdapterErrorSeverities.error },
-              ),
+              createAdapterError("cli_error", `opencode CLI rate limited: ${stderrBuf.slice(0, 200)}`, {
+                retryable: true,
+                severity: AdapterErrorSeverities.error,
+              }),
             ),
           );
           return;
@@ -427,10 +422,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
         if (content.length === 0 && costUsd === null) {
           reject(
             new AdapterMethodError(
-              createAdapterError(
-                "internal_error",
-                "No text or step_finish event found in OpenCode output",
-              ),
+              createAdapterError("internal_error", "No text or step_finish event found in OpenCode output"),
             ),
           );
           return;
@@ -450,9 +442,7 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
           traceStream.end();
         }
         reject(
-          new AdapterMethodError(
-            createAdapterError("spawn_error", `Failed to spawn opencode CLI: ${err.message}`),
-          ),
+          new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn opencode CLI: ${err.message}`)),
         );
       });
 

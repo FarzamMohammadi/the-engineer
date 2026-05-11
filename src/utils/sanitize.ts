@@ -42,8 +42,7 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\b(AKIA[A-Z0-9]{16})\b/g, replacement: "[REDACTED:aws_key]" },
   // Generic assignment patterns (conservative: only in key=value contexts)
   {
-    pattern:
-      /(?:token|secret|password|key|api_key|apikey)["']?\s*[:=]\s*["']?([a-zA-Z0-9_\-/.]{40,})["']?/gi,
+    pattern: /(?:token|secret|password|key|api_key|apikey)["']?\s*[:=]\s*["']?([a-zA-Z0-9_\-/.]{40,})["']?/gi,
     replacement: "[REDACTED:secret_value]",
   },
 ];

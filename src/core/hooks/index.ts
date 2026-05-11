@@ -118,13 +118,10 @@ export class HookRegistry {
           throw error;
         }
         const message = error instanceof Error ? error.message : String(error);
-        this.observer.error(
-          `Hook error [${hookPoint}] from plugin "${entry.pluginId}": ${message}`,
-          {
-            hookPoint,
-            pluginId: entry.pluginId,
-          },
-        );
+        this.observer.error(`Hook error [${hookPoint}] from plugin "${entry.pluginId}": ${message}`, {
+          hookPoint,
+          pluginId: entry.pluginId,
+        });
       }
     }
   }

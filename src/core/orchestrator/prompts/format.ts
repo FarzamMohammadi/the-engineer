@@ -81,10 +81,7 @@ export function buildRRPIROverview(phaseName: string, thoughtsDir: string): stri
  *
  * Returns null if both are empty — callers should skip the section.
  */
-export function buildKnowledgeSection(
-  repoKnowledge: KnowledgeEntry[],
-  userKnowledge: KnowledgeEntry[],
-): string | null {
+export function buildKnowledgeSection(repoKnowledge: KnowledgeEntry[], userKnowledge: KnowledgeEntry[]): string | null {
   const repoFormatted = formatKnowledge(repoKnowledge);
   const userFormatted = formatKnowledge(userKnowledge);
 

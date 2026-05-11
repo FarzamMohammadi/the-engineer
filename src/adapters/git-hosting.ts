@@ -80,12 +80,7 @@ export abstract class GitHostingAdapter extends BaseAdapter {
 
   // ── PR Comments ───────────────────────────────────────────────────────────
 
-  async commentOnPR(
-    repo: string,
-    prNumber: number,
-    comment: string,
-    replyTo?: string,
-  ): Promise<CommentResult> {
+  async commentOnPR(repo: string, prNumber: number, comment: string, replyTo?: string): Promise<CommentResult> {
     return wrapAsync(() => this.doCommentOnPR(repo, prNumber, comment, replyTo));
   }
 
@@ -123,11 +118,7 @@ export abstract class GitHostingAdapter extends BaseAdapter {
 
   protected abstract doCreatePR(options: PROptions): Promise<PRResult>;
   protected abstract doUpdatePR(repo: string, prNumber: number, updates: PRUpdates): Promise<void>;
-  protected abstract doMergePR(
-    repo: string,
-    prNumber: number,
-    strategy: MergeStrategy,
-  ): Promise<MergeResult>;
+  protected abstract doMergePR(repo: string, prNumber: number, strategy: MergeStrategy): Promise<MergeResult>;
   protected abstract doClosePR(repo: string, prNumber: number): Promise<void>;
   protected abstract doGetPRStatus(repo: string, prNumber: number): Promise<PRStatus>;
   protected abstract doGetReviewStatus(repo: string, prNumber: number): Promise<ReviewStatus>;
@@ -138,11 +129,7 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     replyTo: string | undefined,
   ): Promise<CommentResult>;
   protected abstract doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]>;
-  protected abstract doDismissApprovals(
-    repo: string,
-    prNumber: number,
-    message: string,
-  ): Promise<void>;
+  protected abstract doDismissApprovals(repo: string, prNumber: number, message: string): Promise<void>;
   protected abstract doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection>;
   protected abstract doGetDefaultBranch(repo: string): Promise<string>;
   protected abstract doGetAuthenticatedRemoteUrl(remoteUrl: string): SecureValue;

@@ -123,11 +123,7 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
 
   // ── Private Helpers ──────────────────────────────────────────────────
 
-  private async pollIssues(
-    owner: string,
-    name: string,
-    since: string | undefined,
-  ): Promise<TriggerEvent[]> {
+  private async pollIssues(owner: string, name: string, since: string | undefined): Promise<TriggerEvent[]> {
     // Respect Retry-After from previous 429
     if (Date.now() < this.retryAfterUntil) {
       return [];
@@ -185,9 +181,7 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
     // Handle 429 with Retry-After
     if (getErrorStatus(error) === 429) {
       const retryAfter = Number(
-        (error as { response?: { headers?: Record<string, string> } }).response?.headers?.[
-          "retry-after"
-        ] ?? 60,
+        (error as { response?: { headers?: Record<string, string> } }).response?.headers?.["retry-after"] ?? 60,
       );
       this.retryAfterUntil = Date.now() + retryAfter * 1000;
     }
@@ -228,12 +222,7 @@ interface GitHubIssue {
   assignees?: Array<{ login: string }> | null;
 }
 
-function mapIssueToEvent(
-  owner: string,
-  repo: string,
-  issue: GitHubIssue,
-  pluginId: string,
-): TriggerEvent {
+function mapIssueToEvent(owner: string, repo: string, issue: GitHubIssue, pluginId: string): TriggerEvent {
   return {
     idempotency_key: `github:issue:${owner}/${repo}:${String(issue.number)}`,
     source: pluginId,

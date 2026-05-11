@@ -136,9 +136,7 @@ export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
   })();
 
   // Get remaining count
-  const remaining = (
-    db.prepare(`SELECT COUNT(*) as count FROM "${tableName}"`).get() as { count: number }
-  ).count;
+  const remaining = (db.prepare(`SELECT COUNT(*) as count FROM "${tableName}"`).get() as { count: number }).count;
 
   return { deleted, remaining };
 }

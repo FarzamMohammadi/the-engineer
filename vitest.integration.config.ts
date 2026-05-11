@@ -4,7 +4,7 @@ import { getConfig } from "./vitest.shared.js";
 export default defineConfig(
   getConfig({
     test: {
-      include: ["test/integration/**/*.integration.test.ts"],
+      include: ["tests/integration/**/*.integration.test.ts"],
     },
   }),
 );

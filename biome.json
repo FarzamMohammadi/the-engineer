@@ -27,19 +27,19 @@
         "noReExportAll": "off"
       },
       "style": {
-        "noDefaultExport": "off",
+        "noDefaultExport": "error",
         "useNamingConvention": {
           "level": "error",
           "options": {
             "strictCase": false,
             "conventions": [
-              { "selector": { "kind": "function" }, "formats": ["camelCase"] },
+              { "selector": { "kind": "function" }, "formats": ["camelCase", "PascalCase"] },
               { "selector": { "kind": "typeLike" }, "formats": ["PascalCase"] },
               {
                 "selector": { "kind": "variable" },
                 "formats": ["camelCase", "PascalCase", "CONSTANT_CASE"]
               },
-              { "selector": { "kind": "enumMember" }, "formats": ["CONSTANT_CASE", "camelCase"] },
+              { "selector": { "kind": "enumMember" }, "formats": ["PascalCase"] },
               {
                 "selector": { "kind": "objectLiteralProperty" },
                 "formats": ["camelCase", "snake_case", "CONSTANT_CASE"]
@@ -58,7 +58,7 @@
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2,
-    "lineWidth": 100
+    "lineWidth": 120
   },
   "javascript": {
     "formatter": {
@@ -72,7 +72,17 @@
   },
   "overrides": [
     {
-      "include": ["**/*.test.ts", "test/**/*.ts"],
+      "include": ["vitest.*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
+      "include": ["tests/**/*.ts"],
       "linter": {
         "rules": {
           "performance": {

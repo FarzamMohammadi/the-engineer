@@ -95,9 +95,7 @@ function queryAndDisplay(db: BetterSqlite3.Database, taskId: string): number {
     .all(taskId) as TransitionRow[];
 
   // 3. Events
-  const events = db
-    .prepare("SELECT * FROM events WHERE task_id = ? ORDER BY sequence ASC")
-    .all(taskId) as EventRow[];
+  const events = db.prepare("SELECT * FROM events WHERE task_id = ? ORDER BY sequence ASC").all(taskId) as EventRow[];
 
   // 4. Journal entries (last 5)
   const journal = db
@@ -170,10 +168,7 @@ function queryAndDisplay(db: BetterSqlite3.Database, taskId: string): number {
 
   // Cost
   out.blank();
-  out.keyValue(
-    "Cost",
-    `$${task.llm_cost_usd.toFixed(2)} total (${String(task.llm_tokens)} tokens)`,
-  );
+  out.keyValue("Cost", `$${task.llm_cost_usd.toFixed(2)} total (${String(task.llm_tokens)} tokens)`);
 
   return 0;
 }

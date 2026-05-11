@@ -151,12 +151,7 @@ export class WorkspaceManager implements IWorkspaceManager {
   private readonly authUrlProvider: AuthUrlProvider;
   private readonly workspaces = new Map<string, WorkspaceRecord>();
 
-  constructor(
-    eventBus: IEventBus,
-    config: WorkspaceConfig,
-    observer: IObserver,
-    authUrlProvider: AuthUrlProvider,
-  ) {
+  constructor(eventBus: IEventBus, config: WorkspaceConfig, observer: IObserver, authUrlProvider: AuthUrlProvider) {
     this.eventBus = eventBus;
     this.observer = observer;
     this.authUrlProvider = authUrlProvider;
@@ -184,12 +179,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     const slug = slugify(title ?? taskId, this.config.slug_max_length);
     const branch = branchName(this.config.branch_prefix, taskId, slug);
     const repoCloneDir = path.join(this.config.workspace_root, repo);
-    const worktreePath = path.join(
-      this.config.workspace_root,
-      "worktrees",
-      repo,
-      `${taskId}-${slug}`,
-    );
+    const worktreePath = path.join(this.config.workspace_root, "worktrees", repo, `${taskId}-${slug}`);
 
     this.observer.info("Creating workspace", {
       taskId,
@@ -202,9 +192,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     // Clone repo if not present (D147)
     if (!existsSync(repoCloneDir)) {
       if (!cloneUrl) {
-        throw new WorkspaceCreationError(
-          `WorkspaceManager: repo clone directory does not exist: ${repoCloneDir}`,
-        );
+        throw new WorkspaceCreationError(`WorkspaceManager: repo clone directory does not exist: ${repoCloneDir}`);
       }
       this.ensureClone(repo, cloneUrl);
     }
@@ -473,10 +461,9 @@ export class WorkspaceManager implements IWorkspaceManager {
     try {
       this.gitExec(["remote", "set-url", "origin", cloneUrl], repoCloneDir);
     } catch (setUrlError) {
-      this.observer.warn(
-        "Failed to reset git remote after clone — removing clone to prevent token persistence",
-        { repo },
-      );
+      this.observer.warn("Failed to reset git remote after clone — removing clone to prevent token persistence", {
+        repo,
+      });
       try {
         rmSync(repoCloneDir, { recursive: true, force: true });
       } catch {
@@ -513,10 +500,7 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Push with transient auth — explicit URL, not remote name
     const authUrl = this.authUrlProvider(remoteUrl);
-    this.gitExec(
-      ["push", "--no-verify", "-u", authUrl.unwrap(), record.branch],
-      record.worktreePath,
-    );
+    this.gitExec(["push", "--no-verify", "-u", authUrl.unwrap(), record.branch], record.worktreePath);
 
     this.observer.info("Branch pushed", {
       taskId,
@@ -541,10 +525,7 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     // Delete with transient auth — explicit URL, not remote name
     const authUrl = this.authUrlProvider(remoteUrl);
-    this.gitExec(
-      ["push", "--no-verify", authUrl.unwrap(), "--delete", record.branch],
-      repoCloneDir,
-    );
+    this.gitExec(["push", "--no-verify", authUrl.unwrap(), "--delete", record.branch], repoCloneDir);
 
     this.observer.info("Branch deleted from remote", {
       taskId,
@@ -615,10 +596,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     });
 
     this.gitExec(["rm", "-f", ...files], record.worktreePath);
-    this.gitExec(
-      ["commit", "-m", "chore: remove engineering thoughts before merge"],
-      record.worktreePath,
-    );
+    this.gitExec(["commit", "-m", "chore: remove engineering thoughts before merge"], record.worktreePath);
     this.pushBranch(taskId);
 
     this.observer.info("Thoughts files removed and pushed", { taskId, fileCount: files.length });

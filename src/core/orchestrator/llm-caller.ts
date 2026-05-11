@@ -6,12 +6,7 @@ import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import { Complexities, type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
-import {
-  LlmCallRejectedError,
-  LlmUnavailableError,
-  NoLlmPluginError,
-  WorkspaceNotReadyError,
-} from "./errors.js";
+import { LlmCallRejectedError, LlmUnavailableError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
 import { backupSessionResult, readSessionResult } from "./session-result.js";
 import type { OrchestratorContext, PipelineState } from "./types.js";
 
@@ -91,15 +86,6 @@ export function generateTracePath(
   }
 
   return tracePath;
-}
-
-/** Reset the step counter for a task (call on task completion/cleanup). */
-export function resetTraceStepCounters(taskId: string): void {
-  for (const key of taskStepCounters.keys()) {
-    if (key.startsWith(`${taskId}:`)) {
-      taskStepCounters.delete(key);
-    }
-  }
 }
 
 // ── Session Trace Manifest ─────────────────────────────────────────────────
@@ -301,8 +287,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
             taskId,
             attempt: attempt + 1,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
-            error:
-              error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+            error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
           });
           throw error;
         }
@@ -314,8 +299,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
             maxRetries: MAX_LLM_RETRIES,
             delayMs: delay,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
-            error:
-              error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+            error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
           });
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
@@ -376,9 +360,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     requiresSessionResult?: boolean,
   ): Promise<PhaseOutput> {
     if (!thoughtsDir) {
-      throw new WorkspaceNotReadyError(
-        `${taskId}: thoughtsDir is required for CLI-native phase "${phase}"`,
-      );
+      throw new WorkspaceNotReadyError(`${taskId}: thoughtsDir is required for CLI-native phase "${phase}"`);
     }
 
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
@@ -398,13 +380,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
     // ── Generate trace path ──────────────────────────────────────────────
     const resolvedStepName = stepName ?? "initial";
-    const tracePath = generateTracePath(
-      ctx.tracesDir,
-      taskId,
-      state.phaseSequence,
-      phase,
-      resolvedStepName,
-    );
+    const tracePath = generateTracePath(ctx.tracesDir, taskId, state.phaseSequence, phase, resolvedStepName);
     const startedAt = new Date().toISOString();
 
     // ── Observability span ────────────────────────────────────────────────
@@ -463,8 +439,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
     // ── Read session-result.json ─────────────────────────────────────────
     // Skipped for steps that don't produce session-result.json (e.g., review sub-phases).
-    const sessionResult =
-      phaseDir && requiresSessionResult !== false ? readSessionResult(phaseDir) : null;
+    const sessionResult = phaseDir && requiresSessionResult !== false ? readSessionResult(phaseDir) : null;
 
     // ── Resolve final session result ────────────────────────────────────
     // If the CLI wrote session-result.json, use it. If not and it was required,

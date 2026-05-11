@@ -75,11 +75,7 @@ function buildSkillPathBlock(skillName: SkillName, skillsDir: string): string | 
   try {
     const skillDir = join(skillsDir, skillName);
     const skillPath = join(skillDir, "SKILL.md");
-    const lines = [
-      `### Skill: ${skillName}`,
-      "",
-      `Read this skill's instructions from: \`${skillPath}\``,
-    ];
+    const lines = [`### Skill: ${skillName}`, "", `Read this skill's instructions from: \`${skillPath}\``];
 
     // Discover persona files if present
     const personasDir = join(skillDir, "personas");

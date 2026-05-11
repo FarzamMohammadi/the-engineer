@@ -60,10 +60,7 @@ export function createLogger(config: LoggingConfig, engineerHome: string): Logge
   try {
     mkdirSync(resolvedDir, { recursive: true, mode: 0o700 });
   } catch (error) {
-    throw new Error(
-      `Failed to create log directory "${resolvedDir}": ${extractErrorMessage(error)}`,
-      { cause: error },
-    );
+    throw new Error(`Failed to create log directory "${resolvedDir}": ${extractErrorMessage(error)}`, { cause: error });
   }
 
   const targets: pino.TransportTargetOptions[] = [
@@ -92,10 +89,9 @@ export function createLogger(config: LoggingConfig, engineerHome: string): Logge
     transport = pino.transport({ targets });
   } catch (error) {
     const targetNames = targets.map((t) => t.target).join(", ");
-    throw new Error(
-      `Failed to create log transport (targets: ${targetNames}): ${extractErrorMessage(error)}`,
-      { cause: error },
-    );
+    throw new Error(`Failed to create log transport (targets: ${targetNames}): ${extractErrorMessage(error)}`, {
+      cause: error,
+    });
   }
 
   const logger = pino(

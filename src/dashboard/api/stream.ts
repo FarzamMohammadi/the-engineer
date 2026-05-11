@@ -76,10 +76,7 @@ function getMaxEventSeq(db: Database.Database): number {
 }
 
 /** Poll for new observations and return them with the updated cursor. */
-function pollObservations(
-  db: Database.Database,
-  lastRowId: number,
-): { rows: ObservationRow[]; newCursor: number } {
+function pollObservations(db: Database.Database, lastRowId: number): { rows: ObservationRow[]; newCursor: number } {
   try {
     const rows = db
       .prepare("SELECT rowid, * FROM observations WHERE rowid > ? ORDER BY rowid ASC LIMIT 50")
@@ -93,10 +90,7 @@ function pollObservations(
 }
 
 /** Poll for new events and return them with the updated cursor. */
-function pollEvents(
-  db: Database.Database,
-  lastSeq: number,
-): { rows: EventRow[]; newCursor: number } {
+function pollEvents(db: Database.Database, lastSeq: number): { rows: EventRow[]; newCursor: number } {
   try {
     const rows = db
       .prepare("SELECT * FROM events WHERE sequence > ? ORDER BY sequence ASC LIMIT 50")

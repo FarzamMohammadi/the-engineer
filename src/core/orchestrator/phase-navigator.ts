@@ -17,9 +17,7 @@ export class PhaseNavigator {
       throw new Error("PhaseNavigator: phases array must not be empty");
     }
     if (startIndex < 0 || startIndex > phases.length) {
-      throw new Error(
-        `PhaseNavigator: startIndex ${String(startIndex)} out of bounds [0, ${String(phases.length)}]`,
-      );
+      throw new Error(`PhaseNavigator: startIndex ${String(startIndex)} out of bounds [0, ${String(phases.length)}]`);
     }
     this.phases = [...phases];
     this.cursor = startIndex;
@@ -47,9 +45,7 @@ export class PhaseNavigator {
   jumpTo(phase: Phase): void {
     const index = this.phases.indexOf(phase);
     if (index < 0) {
-      throw new Error(
-        `PhaseNavigator: phase "${phase}" not found in sequence [${this.phases.join(", ")}]`,
-      );
+      throw new Error(`PhaseNavigator: phase "${phase}" not found in sequence [${this.phases.join(", ")}]`);
     }
     this.cursor = index;
   }

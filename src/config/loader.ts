@@ -18,12 +18,7 @@ import {
   SafetyConfigSchema,
   WorkspaceConfigSchema,
 } from "../schemas/config.js";
-import type {
-  DaemonConfig,
-  OrchestratorConfig,
-  SafetyConfig,
-  WorkspaceConfig,
-} from "../schemas/config.js";
+import type { DaemonConfig, OrchestratorConfig, SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
 
 // ── Error Classes ────────────────────────────────────────────────────────────────
 
@@ -292,10 +287,7 @@ function applyDurations(data: unknown, node: PathNode): unknown {
  *
  * Missing file → returns Zod defaults with `source: "defaults"`.
  */
-export function loadConfig<S extends z.ZodTypeAny>(
-  filePath: string,
-  schema: S,
-): ConfigLoadResult<z.output<S>> {
+export function loadConfig<S extends z.ZodTypeAny>(filePath: string, schema: S): ConfigLoadResult<z.output<S>> {
   type T = z.output<S>;
 
   // Missing file → use Zod defaults
@@ -324,11 +316,9 @@ export function loadConfig<S extends z.ZodTypeAny>(
   try {
     parsed = YAML.parse(content) as unknown;
   } catch (error) {
-    throw new ConfigError(
-      `Failed to parse YAML in ${filePath}: ${extractErrorMessage(error)}`,
-      filePath,
-      { cause: error },
-    );
+    throw new ConfigError(`Failed to parse YAML in ${filePath}: ${extractErrorMessage(error)}`, filePath, {
+      cause: error,
+    });
   }
 
   // null from YAML.parse means the document was empty/null
@@ -352,10 +342,7 @@ export function loadConfig<S extends z.ZodTypeAny>(
  * Non-throwing variant of `loadConfig` for hot-reload use.
  * Returns `{ ok: true, config }` on success, `{ ok: false, error }` on failure.
  */
-export function loadConfigSafe<S extends z.ZodTypeAny>(
-  filePath: string,
-  schema: S,
-): ConfigReloadResult<z.output<S>> {
+export function loadConfigSafe<S extends z.ZodTypeAny>(filePath: string, schema: S): ConfigReloadResult<z.output<S>> {
   try {
     const result = loadConfig(filePath, schema);
     return { ok: true, config: result.config };
@@ -365,11 +352,9 @@ export function loadConfigSafe<S extends z.ZodTypeAny>(
     }
     return {
       ok: false,
-      error: new ConfigError(
-        `Unexpected error loading ${filePath}: ${extractErrorMessage(error)}`,
-        filePath,
-        { cause: error },
-      ),
+      error: new ConfigError(`Unexpected error loading ${filePath}: ${extractErrorMessage(error)}`, filePath, {
+        cause: error,
+      }),
     };
   }
 }
@@ -436,8 +421,7 @@ export function loadConfigDir(configDir?: string): ConfigDirResult {
   if (safety.source === "defaults") {
     warnings.push({
       file: "safety.yaml",
-      message:
-        "safety.yaml not found, using conservative defaults. Configure safety explicitly for production use.",
+      message: "safety.yaml not found, using conservative defaults. Configure safety explicitly for production use.",
     });
   }
   if (peopleResult.source === "defaults") {

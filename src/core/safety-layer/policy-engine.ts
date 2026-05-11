@@ -46,10 +46,7 @@ export function parseThreshold(threshold: string): ParsedThreshold | null {
  * Returns true if the threshold is EXCEEDED (i.e., the condition that triggers
  * "ask_human" is met). Returns false if the metric is not found in details.
  */
-export function evaluateThreshold(
-  parsed: ParsedThreshold,
-  details: Record<string, unknown>,
-): boolean {
+export function evaluateThreshold(parsed: ParsedThreshold, details: Record<string, unknown>): boolean {
   const actual = details[parsed.metric];
   if (typeof actual !== "number") {
     return false;
@@ -140,12 +137,7 @@ function matchSegments(
   return pi === pattern.length && vi === value.length;
 }
 
-function matchDoublestar(
-  pattern: readonly string[],
-  pi: number,
-  value: readonly string[],
-  vi: number,
-): boolean {
+function matchDoublestar(pattern: readonly string[], pi: number, value: readonly string[], vi: number): boolean {
   for (let skip = vi; skip <= value.length; skip++) {
     if (matchSegments(pattern, pi + 1, value, skip)) {
       return true;
@@ -333,9 +325,7 @@ export class PolicyEngine {
     }
 
     const patterns =
-      actionClass === ActionClasses.merge
-        ? this.config.scope.branches.merge_to
-        : this.config.scope.branches.push_to;
+      actionClass === ActionClasses.merge ? this.config.scope.branches.merge_to : this.config.scope.branches.push_to;
 
     const matches = patterns.some((p) => matchesPathPattern(p, branch));
     if (!matches) {

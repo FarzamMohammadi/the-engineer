@@ -4,20 +4,12 @@ import type { Dispatch } from "../../schemas/ephemeral.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { ComplexitySchema, Phases } from "../../schemas/orchestrator.js";
-import {
-  CheckpointReasons,
-  JournalEntryTypes,
-  SessionEndReasons,
-} from "../../schemas/session-memory.js";
+import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import type { AndonCord } from "./andon-cord.js";
 import type { DecompositionHandler } from "./decomposition-handler.js";
-import {
-  LlmUnavailableError,
-  PhaseHandlerMissingError,
-  WorkspaceVerificationError,
-} from "./errors.js";
+import { LlmUnavailableError, PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
 import { sendOutreach } from "./outreach-sender.js";
 import { PhaseNavigator } from "./phase-navigator.js";
 import type { PrManager } from "./pr-manager.js";
@@ -64,9 +56,7 @@ export interface PhaseHandlerRegistry {
 }
 
 /** Create a PhaseHandlerRegistry from a record of phase → handler mappings. */
-export function createPhaseHandlerRegistry(
-  handlers: Record<Phase, PhaseHandler>,
-): PhaseHandlerRegistry {
+export function createPhaseHandlerRegistry(handlers: Record<Phase, PhaseHandler>): PhaseHandlerRegistry {
   return {
     get(phase: Phase): PhaseHandler {
       const handler = handlers[phase];
@@ -471,22 +461,13 @@ async function tryCommitPushAndCreatePR(
     return null; // No workspace or no changes — continue pipeline
   }
   if (pushResult.outcome === "error") {
-    return blockForPrWorkflowError(
-      sessionId,
-      taskId,
-      phase,
-      pushResult.step,
-      pushResult.reason,
-      ctx,
-    );
+    return blockForPrWorkflowError(sessionId, taskId, phase, pushResult.step, pushResult.reason, ctx);
   }
 
   // Step 2: Check if PR creation should be skipped
   const skipConfig = ctx.workspaceConfig.pr.skip_pr_creation;
   const record = ctx.workspaceManager.getWorkspaceRecord(taskId);
-  const shouldSkipPr = record
-    ? (skipConfig.repos[record.repo] ?? skipConfig.default)
-    : skipConfig.default;
+  const shouldSkipPr = record ? (skipConfig.repos[record.repo] ?? skipConfig.default) : skipConfig.default;
 
   if (shouldSkipPr) {
     const branchInfo = record ? ` \`${record.branch}\` on \`${record.repo}\`` : "";
@@ -621,10 +602,7 @@ async function handlePostPhaseActions(
         } else if (outreachResult.reason === "no_contacts") {
           // No contacts resolved — don't block, task proceeds without human input
           shouldBlock = false;
-          ctx.observer.warn(
-            "No contacts resolved — skipping blocking, proceeding without human input",
-            { taskId },
-          );
+          ctx.observer.warn("No contacts resolved — skipping blocking, proceeding without human input", { taskId });
         }
         // "all_delivery_failed" or "no_files" — still block, but contacted stays empty
       }
@@ -941,18 +919,12 @@ export async function runPhasePipeline(
     if (deps.preemption.isRequested(taskId)) {
       const preemptingId = deps.preemption.getPayload(taskId)?.preempting_task_id ?? "unknown";
       deps.preemption.reset(taskId);
-      return endPipelineSpan(
-        handlePreemption(sessionId, taskId, phase, ctx, preemptingId),
-        navigator.phasesRun(),
-      );
+      return endPipelineSpan(handlePreemption(sessionId, taskId, phase, ctx, preemptingId), navigator.phasesRun());
     }
 
     // Check cooperative shutdown before phase start (same checkpoint pattern as preemption)
     if (deps.shutdown?.isRequested()) {
-      return endPipelineSpan(
-        handlePreemption(sessionId, taskId, phase, ctx, "shutdown"),
-        navigator.phasesRun(),
-      );
+      return endPipelineSpan(handlePreemption(sessionId, taskId, phase, ctx, "shutdown"), navigator.phasesRun());
     }
 
     ctx.observer.debug("Phase loop iteration", {
@@ -1042,10 +1014,7 @@ export async function runPhasePipeline(
         errorType: error instanceof Error ? error.constructor.name : typeof error,
         message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
       });
-      return endPipelineSpan(
-        handlePhaseError(sessionId, taskId, phase, error, ctx),
-        navigator.phasesRun(),
-      );
+      return endPipelineSpan(handlePhaseError(sessionId, taskId, phase, error, ctx), navigator.phasesRun());
     }
     ctx.observer.info("Phase completed", { taskId, phase, durationMs: Date.now() - phaseStart });
 
@@ -1084,11 +1053,7 @@ export async function runPhasePipeline(
         ctx.taskEngine.updateTaskField(taskId, "loopback_count", result.loopbackCount);
       }
       if (result.requirementsLoopCount !== currentState.requirementsLoopCount) {
-        ctx.taskEngine.updateTaskField(
-          taskId,
-          "requirements_loop_count",
-          result.requirementsLoopCount,
-        );
+        ctx.taskEngine.updateTaskField(taskId, "requirements_loop_count", result.requirementsLoopCount);
       }
 
       currentState = {
@@ -1151,8 +1116,5 @@ export async function runPhasePipeline(
     phasesRun: navigator.phasesRun(),
     outcome: Outcomes.completed,
   });
-  return endPipelineSpan(
-    { outcome: Outcomes.completed, phaseOutputs: priorOutputs },
-    navigator.phasesRun(),
-  );
+  return endPipelineSpan({ outcome: Outcomes.completed, phaseOutputs: priorOutputs }, navigator.phasesRun());
 }

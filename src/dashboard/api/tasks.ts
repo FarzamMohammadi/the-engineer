@@ -107,9 +107,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     let rows: TaskListRow[];
     if (state) {
       rows = deps.db
-        .prepare(
-          `SELECT ${LIST_COLUMNS} FROM tasks WHERE state = ? ORDER BY last_transition_at DESC LIMIT ?`,
-        )
+        .prepare(`SELECT ${LIST_COLUMNS} FROM tasks WHERE state = ? ORDER BY last_transition_at DESC LIMIT ?`)
         .all(state, limit) as TaskListRow[];
     } else {
       rows = deps.db
@@ -175,9 +173,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
   /** Full task detail. */
   app.get("/:id", (c) => {
     const taskId = c.req.param("id");
-    const row = deps.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as
-      | Record<string, unknown>
-      | undefined;
+    const row = deps.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as Record<string, unknown> | undefined;
 
     if (!row) {
       return c.json({ error: "Task not found" }, 404);

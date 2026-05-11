@@ -39,9 +39,7 @@ export class VersionConflictError extends TaskEngineError {
   readonly actualVersion: number;
 
   constructor(taskId: string, expectedVersion: number, actualVersion: number) {
-    super(
-      `Version conflict on task "${taskId}": expected ${expectedVersion}, got ${actualVersion}`,
-    );
+    super(`Version conflict on task "${taskId}": expected ${expectedVersion}, got ${actualVersion}`);
     this.name = "VersionConflictError";
     this.taskId = taskId;
     this.expectedVersion = expectedVersion;

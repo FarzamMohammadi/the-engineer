@@ -61,9 +61,7 @@ function retryTask(db: BetterSqlite3.Database, taskId: string): number {
   }
 
   if (task.state !== TaskStates.blocked) {
-    out.error(
-      `Task is in state "${task.state}", not "${TaskStates.blocked}". Only blocked tasks can be retried.`,
-    );
+    out.error(`Task is in state "${task.state}", not "${TaskStates.blocked}". Only blocked tasks can be retried.`);
     return 1;
   }
 

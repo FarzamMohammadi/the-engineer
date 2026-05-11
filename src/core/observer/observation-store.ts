@@ -8,11 +8,7 @@
  * Complements (does not replace) EventBus (audit trail) and Logger (ops logs).
  */
 import { ulid } from "ulid";
-import {
-  ObservationLevels,
-  ObservationStatuses,
-  ObservationTypes,
-} from "../../schemas/observer.js";
+import { ObservationLevels, ObservationStatuses, ObservationTypes } from "../../schemas/observer.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { BlobStore } from "./blob-store.js";
 import { ObserverStore } from "./store.js";
@@ -106,22 +102,9 @@ export class ObservationStore implements IObservationStore {
     return this.createSpan(id, type, name, startMs, options, obs);
   }
 
-  observe(
-    type: ObservationTypeValue,
-    name: string,
-    data: Record<string, unknown>,
-    options?: SpanOptions,
-  ): string {
+  observe(type: ObservationTypeValue, name: string, data: Record<string, unknown>, options?: SpanOptions): string {
     const id = ulid();
-    const obs = buildObservation(
-      id,
-      type,
-      name,
-      data,
-      options,
-      ObservationLevels.info,
-      ObservationStatuses.ok,
-    );
+    const obs = buildObservation(id, type, name, data, options, ObservationLevels.info, ObservationStatuses.ok);
     const now = obs.start_time;
     obs.end_time = now;
 

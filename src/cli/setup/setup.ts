@@ -117,9 +117,7 @@ const SSH_REMOTE_RE = /:([^/]+)\/([^/]+?)(?:\.git)?$/;
  */
 export function parseGitRemote(output: string): { owner: string; name: string } | null {
   // Find the "origin" remote (fetch line)
-  const originLine = output
-    .split("\n")
-    .find((line) => line.startsWith("origin") && line.includes("(fetch)"));
+  const originLine = output.split("\n").find((line) => line.startsWith("origin") && line.includes("(fetch)"));
   if (!originLine) {
     return null;
   }
@@ -221,10 +219,7 @@ function generatePeopleYaml(people: PeopleEntry[]): string {
 }
 
 /** Generate a single plugin config file from user config and/or template. */
-function generatePluginConfigContent(
-  pluginId: string,
-  pluginConfigs: Record<string, Record<string, unknown>>,
-): string {
+function generatePluginConfigContent(pluginId: string, pluginConfigs: Record<string, Record<string, unknown>>): string {
   const userConfig = pluginConfigs[pluginId];
   const template = ALL_TEMPLATES.find((t) => t.relativePath === `config/plugins/${pluginId}.yaml`);
   const hasUserConfig = userConfig && Object.keys(userConfig).length > 0;
@@ -333,10 +328,7 @@ export function findUnresolvedEnvVars(configDir: string): string[] {
   }
 
   scanYamlEnvVars(configDir, (varName) => {
-    if (
-      (process.env[varName] === undefined || process.env[varName] === "") &&
-      !missing.includes(varName)
-    ) {
+    if ((process.env[varName] === undefined || process.env[varName] === "") && !missing.includes(varName)) {
       missing.push(varName);
     }
   });
@@ -440,12 +432,7 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
 
   // Lazy import to avoid loading @inquirer/prompts unless needed
   const { runGuidedSetup } = await import("./prompts.js");
-  const result = await runGuidedSetup(
-    detection,
-    BUILTIN_PLUGINS,
-    ADAPTER_TYPE_CONFIGS,
-    engineerHome,
-  );
+  const result = await runGuidedSetup(detection, BUILTIN_PLUGINS, ADAPTER_TYPE_CONFIGS, engineerHome);
 
   if (!result) {
     out.blank();
@@ -514,8 +501,7 @@ function writeSeedFiles(engineerHome: string, seedPath: string, pluginFiles: str
     const configName = template.relativePath.replace("config/", "");
     const seedFile = join(configsDir, configName);
     const fullPath = join(engineerHome, template.relativePath);
-    const content =
-      hasConfigs && existsSync(seedFile) ? readFileSync(seedFile, "utf8") : template.content;
+    const content = hasConfigs && existsSync(seedFile) ? readFileSync(seedFile, "utf8") : template.content;
     writeSecureFile(fullPath, content);
   }
 
@@ -560,9 +546,7 @@ function checkPeoplePlaceholders(engineerHome: string): void {
   }
   const content = readFileSync(peopleConfigPath, "utf8");
   if (PEOPLE_PLACEHOLDERS.some((p) => content.includes(p))) {
-    out.warn(
-      "people.yaml contains placeholder values — edit ~/.engineer/config/people.yaml with real contact info.",
-    );
+    out.warn("people.yaml contains placeholder values — edit ~/.engineer/config/people.yaml with real contact info.");
   }
 }
 

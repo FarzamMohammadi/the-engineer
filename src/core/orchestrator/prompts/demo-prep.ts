@@ -51,9 +51,7 @@ export function buildDemoPrepPrompt(ctx: DemoPrepPromptContext): string {
 // ── Internal Helpers ─────────────────────────────────────────────────────────
 
 function buildPriorPhasePointers(thoughtsDir: string, reviewPhases: ReviewPhaseName[]): string {
-  const reviewFiles = reviewPhases
-    .map((name) => `- \`${thoughtsDir}/review/${name}.md\``)
-    .join("\n");
+  const reviewFiles = reviewPhases.map((name) => `- \`${thoughtsDir}/review/${name}.md\``).join("\n");
 
   return section(
     "What Happened Before You",

@@ -17,10 +17,7 @@ export function launchDashboard(dirs: EngineerDirectories): { cleanup: () => voi
 
   if (existsSync(dbPath)) {
     try {
-      dashboardHandle = startDashboard(
-        { dbPath, tracesDir: dirs.traces, runDir: dirs.run },
-        DASHBOARD_PORT,
-      );
+      dashboardHandle = startDashboard({ dbPath, tracesDir: dirs.traces, runDir: dirs.run }, DASHBOARD_PORT);
       writeFileSync(pidPath, String(process.pid), "utf8");
     } catch (error) {
       out.warn(`Dashboard failed to start: ${sanitizeErrorMessage(error)}`);

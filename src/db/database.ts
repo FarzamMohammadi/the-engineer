@@ -22,13 +22,7 @@ export class MigrationError extends DatabaseError {
   readonly migrationFile: string;
   readonly version: number;
 
-  constructor(
-    message: string,
-    dbPath: string,
-    migrationFile: string,
-    version: number,
-    options?: ErrorOptions,
-  ) {
+  constructor(message: string, dbPath: string, migrationFile: string, version: number, options?: ErrorOptions) {
     super(message, dbPath, options);
     this.name = "MigrationError";
     this.migrationFile = migrationFile;
@@ -91,11 +85,9 @@ function loadMigrations(migrationsDir: string, dbPath: string): MigrationFile[] 
     try {
       sql = fs.readFileSync(path.join(migrationsDir, filename), "utf-8");
     } catch (error) {
-      throw new DatabaseError(
-        `Cannot read migration file "${filename}": ${extractErrorMessage(error)}`,
-        dbPath,
-        { cause: error },
-      );
+      throw new DatabaseError(`Cannot read migration file "${filename}": ${extractErrorMessage(error)}`, dbPath, {
+        cause: error,
+      });
     }
     migrations.push({ version, filename, sql });
   }
@@ -113,9 +105,7 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
   `);
 
   // 2. Ensure schema_version row exists
-  const row = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as
-    | { value: string }
-    | undefined;
+  const row = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
 
   if (!row) {
     db.prepare("INSERT INTO _meta (key, value) VALUES ('schema_version', '0')").run();
@@ -152,9 +142,7 @@ function runMigrations(db: Database.Database, dbPath: string, migrationsDir: str
           { cause: error },
         );
       }
-      db.prepare("UPDATE _meta SET value = ? WHERE key = 'schema_version'").run(
-        migration.version.toString(),
-      );
+      db.prepare("UPDATE _meta SET value = ? WHERE key = 'schema_version'").run(migration.version.toString());
     });
 
     applyMigration();
@@ -189,22 +177,18 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
   try {
     fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
   } catch (error) {
-    throw new DatabaseError(
-      `Cannot create database directory "${dbDir}": ${extractErrorMessage(error)}`,
-      dbPath,
-      { cause: error },
-    );
+    throw new DatabaseError(`Cannot create database directory "${dbDir}": ${extractErrorMessage(error)}`, dbPath, {
+      cause: error,
+    });
   }
 
   let db: Database.Database;
   try {
     db = new BetterSqlite3(dbPath);
   } catch (error) {
-    throw new DatabaseError(
-      `Failed to open database at ${dbPath}: ${extractErrorMessage(error)}`,
-      dbPath,
-      { cause: error },
-    );
+    throw new DatabaseError(`Failed to open database at ${dbPath}: ${extractErrorMessage(error)}`, dbPath, {
+      cause: error,
+    });
   }
 
   restrictFilePermissions(dbPath);
@@ -237,11 +221,9 @@ export function createDatabase(dbPath: string, options?: DatabaseOptions): Datab
     if (error instanceof MigrationError) {
       throw error;
     }
-    throw new DatabaseError(
-      `Database initialization failed at ${dbPath}: ${extractErrorMessage(error)}`,
-      dbPath,
-      { cause: error },
-    );
+    throw new DatabaseError(`Database initialization failed at ${dbPath}: ${extractErrorMessage(error)}`, dbPath, {
+      cause: error,
+    });
   }
 
   // Restrict WAL/SHM sidecar files to owner-only access

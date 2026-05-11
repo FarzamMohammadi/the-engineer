@@ -21,13 +21,9 @@ export class SessionStore {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    this.endSessionStmt = db.prepare(
-      "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ?",
-    );
+    this.endSessionStmt = db.prepare("UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ?");
 
-    this.getSessionsByTaskStmt = db.prepare(
-      "SELECT * FROM sessions WHERE task_id = ? ORDER BY started_at ASC",
-    );
+    this.getSessionsByTaskStmt = db.prepare("SELECT * FROM sessions WHERE task_id = ? ORDER BY started_at ASC");
   }
 
   createSession(input: CreateSessionInput): Session {
@@ -36,15 +32,7 @@ export class SessionStore {
     const previousSessionId = input.previousSessionId ?? null;
     const resumedFromCheckpoint = input.resumedFromCheckpoint ?? null;
 
-    this.insertSessionStmt.run(
-      id,
-      input.taskId,
-      now,
-      null,
-      null,
-      previousSessionId,
-      resumedFromCheckpoint,
-    );
+    this.insertSessionStmt.run(id, input.taskId, now, null, null, previousSessionId, resumedFromCheckpoint);
 
     return {
       id,

@@ -6,11 +6,7 @@ import type { PreemptionManagerContext } from "./types.js";
 // ── Pure Functions ────────────────────────────────────────────────────────────
 
 /** Whether a higher-priority task should preempt a lower-priority one. */
-export function shouldPreempt(
-  currentPriority: number,
-  candidatePriority: number,
-  threshold: number,
-): boolean {
+export function shouldPreempt(currentPriority: number, candidatePriority: number, threshold: number): boolean {
   return candidatePriority - currentPriority >= threshold;
 }
 
@@ -73,11 +69,7 @@ export function createPreemptionManager(
     findAndInitiatePreemption(queuedTasks, activeTaskIds, now);
   }
 
-  function findAndInitiatePreemption(
-    queuedTasks: QueuedTaskEntry[],
-    activeTaskIds: string[],
-    now: number,
-  ): void {
+  function findAndInitiatePreemption(queuedTasks: QueuedTaskEntry[], activeTaskIds: string[], now: number): void {
     const candidate = queuedTasks[0];
     if (!candidate) {
       return;
@@ -90,12 +82,7 @@ export function createPreemptionManager(
       }
 
       if (shouldPreempt(activeTask.priority, candidate.priority, config.preemption_threshold)) {
-        initiatePreemption(
-          activeTaskId,
-          candidate.id,
-          candidate.priority - activeTask.priority,
-          now,
-        );
+        initiatePreemption(activeTaskId, candidate.id, candidate.priority - activeTask.priority, now);
         break; // One preemption per tick
       }
     }

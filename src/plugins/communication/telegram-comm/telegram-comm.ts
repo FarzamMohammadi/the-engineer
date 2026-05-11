@@ -375,8 +375,7 @@ export class TelegramCommPlugin extends CommunicationAdapter {
         continue;
       }
       const name = (person as { name?: string }).name;
-      const contacts = (person as { contacts?: Array<{ channel: string; handle: string }> })
-        .contacts;
+      const contacts = (person as { contacts?: Array<{ channel: string; handle: string }> }).contacts;
       if (!(name && Array.isArray(contacts))) {
         continue;
       }

@@ -109,18 +109,10 @@ export interface PrManager {
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 /** Create a PrManager bound to the given OrchestratorContext. */
-export function createPrManager(
-  ctx: OrchestratorContext,
-  notifications: NotificationRouter,
-): PrManager {
+export function createPrManager(ctx: OrchestratorContext, notifications: NotificationRouter): PrManager {
   const observer = ctx.observer;
 
-  function recordPrWorkflowError(
-    sessionId: string,
-    taskId: string,
-    step: string,
-    error: unknown,
-  ): void {
+  function recordPrWorkflowError(sessionId: string, taskId: string, step: string, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     ctx.sessionMemory.addJournalEntry({
       sessionId,
@@ -135,11 +127,7 @@ export function createPrManager(
   // ── commitAndPush ─────────────────────────────────────────────────────
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-step git workflow — sequential by nature
-  function commitAndPush(
-    sessionId: string,
-    taskId: string,
-    dispatch: Dispatch,
-  ): CommitAndPushResult {
+  function commitAndPush(sessionId: string, taskId: string, dispatch: Dispatch): CommitAndPushResult {
     const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
     if (!worktreePath) {
       observer.warn("No workspace path — skipping PR workflow", { taskId });
@@ -205,11 +193,11 @@ export function createPrManager(
     // Check if branch has commits ahead of base
     if (!hasNewCommit) {
       try {
-        const aheadCount = execFileSync(
-          "git",
-          ["rev-list", "--count", `origin/${record.baseBranch}..HEAD`],
-          { cwd: worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-        ).trim();
+        const aheadCount = execFileSync("git", ["rev-list", "--count", `origin/${record.baseBranch}..HEAD`], {
+          cwd: worktreePath,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
         if (aheadCount === "0") {
           observer.warn("No commits ahead of base — nothing to push", { taskId });
           span.end({ step: "ahead_check", success: true });
@@ -327,8 +315,7 @@ export function createPrManager(
       // CLI-native: read PR description from deliverable file when not in PhaseOutput.data
       let rawDescription = (demoPrepOutput.data as { pr_description?: string }).pr_description;
       if (!rawDescription) {
-        const deliverablePath = (demoPrepOutput.data as { deliverable_path?: string })
-          .deliverable_path;
+        const deliverablePath = (demoPrepOutput.data as { deliverable_path?: string }).deliverable_path;
         if (deliverablePath) {
           let absPath = path.join(worktreePath, deliverablePath);
           // deliverable_path may point to the phase directory — resolve to the actual file

@@ -14,10 +14,7 @@ import type { TaskSchedulerContext } from "./types.js";
 
 /** Whether a task in the given state consumes a working slot. */
 export function isSlotConsuming(state: string, subState: string | null): boolean {
-  return (
-    state === TaskStates.active &&
-    (subState === SubStates.working || subState === SubStates.integrating)
-  );
+  return state === TaskStates.active && (subState === SubStates.working || subState === SubStates.integrating);
 }
 
 // ── Retry Backoff ────────────────────────────────────────────────────────────
@@ -188,9 +185,7 @@ export function createTaskScheduler(
     const hasUnappliedFeedback = task.review?.feedback_rounds?.some((r) => !r.applied) ?? false;
     const checkpoint = hasUnappliedFeedback ? null : rawCheckpoint;
 
-    const repoKnowledge = task.workspace
-      ? sessionMemory.getKnowledge("repo", task.workspace.repo)
-      : [];
+    const repoKnowledge = task.workspace ? sessionMemory.getKnowledge("repo", task.workspace.repo) : [];
     const userKnowledge = sessionMemory.getKnowledge("user");
 
     const dispatch: Dispatch = {
@@ -255,13 +250,7 @@ export function createTaskScheduler(
   // ── Task Completion ─────────────────────────────────────────────────────
 
   function handleCompletedOutcome(taskId: string): void {
-    const transition = taskEngine.requestTransition(
-      taskId,
-      TaskStates.completed,
-      null,
-      "pipeline_completed",
-      "daemon",
-    );
+    const transition = taskEngine.requestTransition(taskId, TaskStates.completed, null, "pipeline_completed", "daemon");
     if (!transition.success) {
       observer.warn("Failed to transition task to completed — skipping cleanup and notifications", {
         taskId,
@@ -298,13 +287,7 @@ export function createTaskScheduler(
     const reason = "reason" in result ? (result.reason as string) : "unknown";
     const phase = "phase" in result ? result.phase : undefined;
     observer.error("Task error", { taskId, phase, reason: reason.slice(0, 500) });
-    const transition = taskEngine.requestTransition(
-      taskId,
-      TaskStates.blocked,
-      null,
-      reason,
-      "daemon",
-    );
+    const transition = taskEngine.requestTransition(taskId, TaskStates.blocked, null, reason, "daemon");
     if (!transition.success) {
       observer.warn("Failed to transition task to blocked — skipping notifications", {
         taskId,
@@ -314,8 +297,7 @@ export function createTaskScheduler(
     }
     checkAndEmitChildrenAllDone(taskId);
     // Truncate reason for notifications — full error details are in logs and journal entries
-    const notifyReason =
-      reason.length > 2000 ? `${reason.slice(0, 2000)}... [see logs for full details]` : reason;
+    const notifyReason = reason.length > 2000 ? `${reason.slice(0, 2000)}... [see logs for full details]` : reason;
     notifications.notify({ kind: NotificationKinds.task_error, taskId, reason: notifyReason });
     notifications.notify({
       kind: NotificationKinds.ticket_comment,
@@ -351,13 +333,7 @@ export function createTaskScheduler(
   }
 
   function handlePreemptedOutcome(taskId: string, lastPhase: unknown): void {
-    const preemptTransition = taskEngine.requestTransition(
-      taskId,
-      TaskStates.queued,
-      null,
-      "preempted",
-      "daemon",
-    );
+    const preemptTransition = taskEngine.requestTransition(taskId, TaskStates.queued, null, "preempted", "daemon");
     if (preemptTransition.success) {
       observer.info("Task preempted — returned to queue", { taskId, lastPhase });
     } else {
@@ -370,13 +346,7 @@ export function createTaskScheduler(
 
   function handleUnknownOutcome(taskId: string, outcome: string): void {
     observer.error("Unknown task outcome — transitioning task to blocked", { taskId, outcome });
-    taskEngine.requestTransition(
-      taskId,
-      TaskStates.blocked,
-      null,
-      `unknown_outcome_${outcome}`,
-      "daemon",
-    );
+    taskEngine.requestTransition(taskId, TaskStates.blocked, null, `unknown_outcome_${outcome}`, "daemon");
   }
 
   /** Handle blocked tasks with llm_unavailable reason: re-queue or final alert. */
@@ -386,10 +356,10 @@ export function createTaskScheduler(
 
     if (retryCount >= MAX_LLM_UNAVAILABLE_RETRIES) {
       // Exhausted all retry cycles — stay blocked until owner explicitly unblocks
-      observer.error(
-        "LLM unavailability retries exhausted — task stays blocked until manual unblock",
-        { taskId, retryCount },
-      );
+      observer.error("LLM unavailability retries exhausted — task stays blocked until manual unblock", {
+        taskId,
+        retryCount,
+      });
       notifications.notify({
         kind: NotificationKinds.alert,
         taskId,
@@ -403,13 +373,7 @@ export function createTaskScheduler(
       });
     } else {
       // Re-queue for retry — not_before already set by phase-runner
-      const requeue = taskEngine.requestTransition(
-        taskId,
-        TaskStates.queued,
-        null,
-        "llm_unavailable_retry",
-        "daemon",
-      );
+      const requeue = taskEngine.requestTransition(taskId, TaskStates.queued, null, "llm_unavailable_retry", "daemon");
       if (requeue.success) {
         observer.info("Task re-queued for LLM unavailability retry", {
           taskId,
@@ -565,10 +529,7 @@ export function createTaskScheduler(
     // blocked counts as terminal: an errored child transitions to blocked, not failed.
     // The parent must not wait forever for a child that cannot make progress.
     const allTerminal = siblings.every(
-      (s) =>
-        s.state === TaskStates.completed ||
-        s.state === TaskStates.failed ||
-        s.state === TaskStates.blocked,
+      (s) => s.state === TaskStates.completed || s.state === TaskStates.failed || s.state === TaskStates.blocked,
     );
 
     if (!allTerminal) {
@@ -661,13 +622,7 @@ export function createTaskScheduler(
       // Transition active tasks back to queued so they resume on next start
       const task = taskEngine.getTask(taskId);
       if (task && task.state === TaskStates.active) {
-        const transition = taskEngine.requestTransition(
-          taskId,
-          TaskStates.queued,
-          null,
-          "graceful_shutdown",
-          "daemon",
-        );
+        const transition = taskEngine.requestTransition(taskId, TaskStates.queued, null, "graceful_shutdown", "daemon");
         if (transition.success) {
           transitioned++;
         } else {

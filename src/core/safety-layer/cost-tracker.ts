@@ -313,10 +313,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     checkProviderLimitBreach(payload.provider_id, payload.task_id);
   }
 
-  function checkSpendLimitBreach(
-    limitType: "per_task" | "daily" | "monthly",
-    taskId: string,
-  ): void {
+  function checkSpendLimitBreach(limitType: "per_task" | "daily" | "monthly", taskId: string): void {
     const limitConfig = costLimits[limitType];
     if (limitConfig.cost_usd === null) {
       return;
@@ -365,10 +362,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       return;
     }
 
-    if (
-      providerConfig.daily_requests !== null &&
-      usage.requests_used >= providerConfig.daily_requests
-    ) {
+    if (providerConfig.daily_requests !== null && usage.requests_used >= providerConfig.daily_requests) {
       observer.warn("Provider usage limit breached", {
         providerId,
         limitType: "daily_requests",

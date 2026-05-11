@@ -73,18 +73,8 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponentGraph
   }
   const eventBus = new EventBus(input.db, eventBusOptions);
   const taskEngine = new TaskEngine(input.db, eventBus, input.observer.child("task-engine"));
-  const safetyLayer = new SafetyLayer(
-    input.db,
-    eventBus,
-    input.safetyConfig,
-    input.observer.child("safety-layer"),
-  );
-  const actionPipeline = new ActionPipeline(
-    taskEngine,
-    safetyLayer,
-    eventBus,
-    input.observer.child("action-pipeline"),
-  );
+  const safetyLayer = new SafetyLayer(input.db, eventBus, input.safetyConfig, input.observer.child("safety-layer"));
+  const actionPipeline = new ActionPipeline(taskEngine, safetyLayer, eventBus, input.observer.child("action-pipeline"));
   const sessionMemory = new SessionMemory(input.db);
   const defaultAuthUrlProvider: AuthUrlProvider = (url) => new SecureValue(url);
   const workspaceManager = new WorkspaceManager(

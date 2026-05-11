@@ -157,11 +157,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     }
   }
 
-  protected async doMergePR(
-    repo: string,
-    prNumber: number,
-    strategy: MergeStrategy,
-  ): Promise<MergeResult> {
+  protected async doMergePR(repo: string, prNumber: number, strategy: MergeStrategy): Promise<MergeResult> {
     const [owner, repoName] = splitRepo(repo);
     this.obs.info("Merging PR", { repo, prNumber, strategy });
 
@@ -336,11 +332,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     return [...conversation, ...inline];
   }
 
-  protected async doDismissApprovals(
-    repo: string,
-    prNumber: number,
-    message: string,
-  ): Promise<void> {
+  protected async doDismissApprovals(repo: string, prNumber: number, message: string): Promise<void> {
     const [owner, repoName] = splitRepo(repo);
     const { data: reviews } = await this.octokit.pulls.listReviews({
       owner,
@@ -385,9 +377,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         protected: true,
         required_reviews: data.required_pull_request_reviews?.required_approving_review_count ?? 0,
         required_checks: data.required_status_checks?.contexts ?? [],
-        restrictions: data.restrictions
-          ? { users: data.restrictions.users, teams: data.restrictions.teams }
-          : null,
+        restrictions: data.restrictions ? { users: data.restrictions.users, teams: data.restrictions.teams } : null,
       };
       this.obs.debug("Branch protection fetched", {
         repo,
@@ -399,12 +389,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       return protection;
     } catch (error) {
       // 404 means no protection rules set
-      if (
-        error &&
-        typeof error === "object" &&
-        "status" in error &&
-        (error as { status: number }).status === 404
-      ) {
+      if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 404) {
         this.obs.debug("Branch protection fetched", { repo, branch, isProtected: false });
         return {
           protected: false,
@@ -474,10 +459,7 @@ function splitRepo(repo: string): [string, string] {
   const [owner, name] = repo.split("/");
   if (!(owner && name)) {
     throw new AdapterMethodError(
-      createAdapterError(
-        "invalid_input",
-        `Invalid repo format: expected "owner/repo", got "${repo}"`,
-      ),
+      createAdapterError("invalid_input", `Invalid repo format: expected "owner/repo", got "${repo}"`),
     );
   }
   return [owner, name];
@@ -502,12 +484,7 @@ type ChecksState = "passing" | "failing" | "pending" | "none";
  *
  * Combining logic: worst state wins (failing > pending > passing > none).
  */
-async function getChecksState(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  sha: string,
-): Promise<ChecksState> {
+async function getChecksState(octokit: Octokit, owner: string, repo: string, sha: string): Promise<ChecksState> {
   try {
     const [statusResult, checksResult] = await Promise.all([
       octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha }),
@@ -515,10 +492,7 @@ async function getChecksState(
     ]);
 
     // Status API (legacy): "success" | "failure" | "error" | "pending"
-    const statusState = resolveStatusApiState(
-      statusResult.data.state,
-      statusResult.data.total_count,
-    );
+    const statusState = resolveStatusApiState(statusResult.data.state, statusResult.data.total_count);
 
     // Checks API (GitHub Actions): each run has status + conclusion
     const checksState = resolveChecksApiState(checksResult.data.check_runs);
@@ -543,9 +517,7 @@ function resolveStatusApiState(state: string, totalCount: number): ChecksState {
   }
 }
 
-function resolveChecksApiState(
-  checkRuns: Array<{ status: string; conclusion: string | null }>,
-): ChecksState {
+function resolveChecksApiState(checkRuns: Array<{ status: string; conclusion: string | null }>): ChecksState {
   if (checkRuns.length === 0) {
     return "none";
   }
@@ -559,11 +531,7 @@ function resolveChecksApiState(
       continue;
     }
     // completed: check conclusion
-    if (
-      run.conclusion !== "success" &&
-      run.conclusion !== "skipped" &&
-      run.conclusion !== "neutral"
-    ) {
+    if (run.conclusion !== "success" && run.conclusion !== "skipped" && run.conclusion !== "neutral") {
       hasFailure = true;
     }
   }

@@ -72,12 +72,7 @@ export interface IObserver {
     options?: SpanOptions,
   ): ObservationSpan;
 
-  observe(
-    type: ObservationTypeValue,
-    name: string,
-    data: Record<string, unknown>,
-    options?: SpanOptions,
-  ): string;
+  observe(type: ObservationTypeValue, name: string, data: Record<string, unknown>, options?: SpanOptions): string;
 
   recordDecision(
     name: string,
@@ -160,12 +155,7 @@ export class Observer implements IObserver {
     return this.ctx.store?.startSpan(type, name, input, options) ?? NO_OP_SPAN;
   }
 
-  observe(
-    type: ObservationTypeValue,
-    name: string,
-    data: Record<string, unknown>,
-    options?: SpanOptions,
-  ): string {
+  observe(type: ObservationTypeValue, name: string, data: Record<string, unknown>, options?: SpanOptions): string {
     return this.ctx.store?.observe(type, name, data, options) ?? "";
   }
 
@@ -178,10 +168,7 @@ export class Observer implements IObserver {
     confidence: number,
     opts?: SpanOptions,
   ): string {
-    return (
-      this.ctx.store?.recordDecision(name, context, options, chosen, reasoning, confidence, opts) ??
-      ""
-    );
+    return this.ctx.store?.recordDecision(name, context, options, chosen, reasoning, confidence, opts) ?? "";
   }
 
   recordError(

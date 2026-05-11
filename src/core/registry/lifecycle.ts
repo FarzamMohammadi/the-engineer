@@ -123,10 +123,7 @@ export function createLifecycleManager(observer: IObserver): LifecycleManager {
     return plugins.get(pluginId)?.manifest ?? null;
   }
 
-  async function initializePlugin(
-    pluginId: string,
-    config: Record<string, unknown>,
-  ): Promise<InitResult> {
+  async function initializePlugin(pluginId: string, config: Record<string, unknown>): Promise<InitResult> {
     const record = plugins.get(pluginId);
     if (!record) {
       return { success: false, message: `Plugin "${pluginId}" not registered` };

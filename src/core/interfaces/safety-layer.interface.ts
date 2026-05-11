@@ -31,11 +31,7 @@ export interface CostStatus {
 }
 
 export interface ISafetyLayer {
-  evaluateAction(
-    taskId: string,
-    actionClass: ActionClass,
-    details: Record<string, unknown>,
-  ): SafetyVerdict;
+  evaluateAction(taskId: string, actionClass: ActionClass, details: Record<string, unknown>): SafetyVerdict;
   consultJudgment(query: SafetyQuery): SafetyVerdict;
   getCostStatus(taskId?: string): CostStatus;
   getTimeoutPolicy(): ResponseTimeout;

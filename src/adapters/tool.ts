@@ -27,11 +27,7 @@ export abstract class ToolAdapter extends BaseAdapter {
    * Wraps `doExecute()` with error handling. The `context` parameter provides
    * workspace path and task ID for workspace confinement (Decision #108).
    */
-  async execute(
-    action: string,
-    params: Record<string, unknown>,
-    context: ToolExecutionContext,
-  ): Promise<ToolResult> {
+  async execute(action: string, params: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolResult> {
     try {
       return await this.doExecute(action, params, context);
     } catch (error) {
@@ -39,13 +35,9 @@ export abstract class ToolAdapter extends BaseAdapter {
         throw error;
       }
       throw new AdapterMethodError(
-        createAdapterError(
-          "internal_error",
-          error instanceof Error ? error.message : String(error),
-          {
-            severity: AdapterErrorSeverities.fatal,
-          },
-        ),
+        createAdapterError("internal_error", error instanceof Error ? error.message : String(error), {
+          severity: AdapterErrorSeverities.fatal,
+        }),
       );
     }
   }

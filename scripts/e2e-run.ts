@@ -3,11 +3,13 @@
  * Usage: source .env.test && GIT_TOKEN=$GITHUB_TOKEN npx tsx scripts/e2e-run.ts
  */
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 
 import { bootstrap } from "../src/cli/bootstrap.js";
 import { loadConfigDir } from "../src/config/loader.js";
 
-const home = "/Users/farzammohammadi/.engineer";
+const home = path.join(homedir(), ".engineer");
 mkdirSync(`${home}/data`, { recursive: true });
 
 async function main() {

@@ -6,6 +6,6 @@
     "declarationMap": false,
     "noEmit": true
   },
-  "include": ["src", "test"],
+  "include": ["src", "tests"],
   "exclude": []
 }

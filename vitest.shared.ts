@@ -11,13 +11,11 @@ const baseConfig: UserConfig = {
     passWithNoTests: true,
     unstubEnvs: true,
     unstubGlobals: true,
-    setupFiles: ["test/setup.ts"],
+    setupFiles: ["tests/setup.ts"],
 
     // Worker scaling: capped to avoid OOM (each fork can use 4GB+).
     // 14 cores × 4GB = 56GB — exceeds 48GB RAM. Cap at 4 everywhere.
-    maxWorkers: isCi
-      ? Math.min(2, Math.max(1, Math.floor(os.cpus().length * 0.25)))
-      : Math.min(4, os.cpus().length),
+    maxWorkers: isCi ? Math.min(2, Math.max(1, Math.floor(os.cpus().length * 0.25))) : Math.min(4, os.cpus().length),
 
     // Coverage (v8, enforced via pnpm test:coverage only)
     coverage: {
@@ -38,15 +36,8 @@ const baseConfig: UserConfig = {
         "src/plugins/**",
         "src/config/watcher.ts",
         "src/db/migrations/**",
-        "test/**",
-        "src/**/*.test.ts",
+        "tests/**",
       ],
-    },
-  },
-
-  resolve: {
-    alias: {
-      "@": new URL("./src", import.meta.url).pathname,
     },
   },
 };
@@ -58,10 +49,6 @@ export function getConfig(overrides?: UserConfig): UserConfig {
     test: {
       ...baseConfig.test,
       ...overrides?.test,
-    },
-    resolve: {
-      ...baseConfig.resolve,
-      ...overrides?.resolve,
     },
   };
 }

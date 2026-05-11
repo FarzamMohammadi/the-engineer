@@ -160,11 +160,7 @@ export class BashToolPlugin extends ToolAdapter {
 
   // ── Private Helpers ──────────────────────────────────────────────────
 
-  private spawnAndCollect(
-    command: string,
-    cwd: string,
-    env: Record<string, string>,
-  ): Promise<ToolResult> {
+  private spawnAndCollect(command: string, cwd: string, env: Record<string, string>): Promise<ToolResult> {
     return new Promise<ToolResult>((resolve) => {
       const chunks: Buffer[] = [];
       let totalBytes = 0;
@@ -203,14 +199,7 @@ export class BashToolPlugin extends ToolAdapter {
         clearTimeout(timeout);
         this.activeProcesses.delete(child);
         resolve(
-          buildResult(
-            command,
-            Buffer.concat(chunks).toString("utf-8"),
-            code,
-            timedOut,
-            outputExceeded,
-            this.config,
-          ),
+          buildResult(command, Buffer.concat(chunks).toString("utf-8"), code, timedOut, outputExceeded, this.config),
         );
       });
 
@@ -271,11 +260,9 @@ function buildResult(
       success: false,
       output,
       side_effects: [{ type: SideEffectTypes.command_run, details: { command, timed_out: true } }],
-      error: createAdapterError(
-        "timeout",
-        `Command timed out after ${String(config.command_timeout_ms)}ms`,
-        { retryable: true },
-      ),
+      error: createAdapterError("timeout", `Command timed out after ${String(config.command_timeout_ms)}ms`, {
+        retryable: true,
+      }),
     };
   }
 
@@ -283,13 +270,8 @@ function buildResult(
     return {
       success: false,
       output,
-      side_effects: [
-        { type: SideEffectTypes.command_run, details: { command, output_exceeded: true } },
-      ],
-      error: createAdapterError(
-        "output_limit",
-        `Output exceeded ${String(config.max_output_bytes)} bytes`,
-      ),
+      side_effects: [{ type: SideEffectTypes.command_run, details: { command, output_exceeded: true } }],
+      error: createAdapterError("output_limit", `Output exceeded ${String(config.max_output_bytes)} bytes`),
     };
   }
 

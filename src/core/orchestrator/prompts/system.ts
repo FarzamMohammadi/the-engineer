@@ -144,15 +144,7 @@ How this works:
  * NO output protocol — the CLI handles its own tool use natively.
  */
 export function buildCliNativeSystemPrompt(phase: Phase): string {
-  return [
-    IDENTITY,
-    "",
-    HOW_WE_WORK,
-    "",
-    RRPIR_METHODOLOGY,
-    "",
-    SECURITY_BOUNDARY,
-    "",
-    PHASE_GUIDANCE[phase],
-  ].join("\n");
+  return [IDENTITY, "", HOW_WE_WORK, "", RRPIR_METHODOLOGY, "", SECURITY_BOUNDARY, "", PHASE_GUIDANCE[phase]].join(
+    "\n",
+  );
 }

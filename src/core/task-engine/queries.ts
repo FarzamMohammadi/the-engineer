@@ -1,12 +1,7 @@
 import type Database from "better-sqlite3";
 
 import type { ExternalRef, StateTransition, Task, TaskState } from "../../schemas/task.js";
-import {
-  type StateTransitionRow,
-  type TaskRow,
-  rowToStateTransition,
-  rowToTask,
-} from "./row-mapper.js";
+import { type StateTransitionRow, type TaskRow, rowToStateTransition, rowToTask } from "./row-mapper.js";
 
 /**
  * Read-only query methods for tasks.
@@ -23,21 +18,15 @@ export class TaskQueries {
   constructor(db: Database.Database) {
     this.getTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?");
 
-    this.getTasksByStateStmt = db.prepare(
-      "SELECT * FROM tasks WHERE state = ? ORDER BY priority DESC, created_at ASC",
-    );
+    this.getTasksByStateStmt = db.prepare("SELECT * FROM tasks WHERE state = ? ORDER BY priority DESC, created_at ASC");
 
     this.getQueuedStmt = db.prepare(
       "SELECT * FROM tasks WHERE state = 'queued' ORDER BY priority DESC, created_at ASC",
     );
 
-    this.getChildrenStmt = db.prepare(
-      "SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at ASC",
-    );
+    this.getChildrenStmt = db.prepare("SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at ASC");
 
-    this.getStateHistoryStmt = db.prepare(
-      "SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp ASC",
-    );
+    this.getStateHistoryStmt = db.prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp ASC");
 
     this.findByExternalRefStmt = db.prepare(`
       SELECT 1 FROM tasks

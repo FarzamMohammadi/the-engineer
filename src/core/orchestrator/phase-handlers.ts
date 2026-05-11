@@ -25,10 +25,7 @@ import type { OrchestratorContext, PipelineState } from "./types.js";
  * All phases use CLI-native invocation (runPhaseWithCli).
  * Self-review runs a multi-step review pipeline: one CLI call per review lens + one refinement call.
  */
-export function createPhaseHandlers(
-  llmCaller: LlmCaller,
-  ctx: OrchestratorContext,
-): Record<Phase, PhaseHandler> {
+export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorContext): Record<Phase, PhaseHandler> {
   // ── Helpers ────────────────────────────────────────────────────────────
 
   /** Absolute path to skills directory, resolved from workspace config. */
@@ -50,9 +47,7 @@ export function createPhaseHandlers(
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
     const teamContacts = ctx.peopleDirectory.getAll();
-    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
-      (r) => !r.applied,
-    );
+    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter((r) => !r.applied);
 
     return llmCaller.runPhaseWithCli(
       Phases.requirements_gathering,
@@ -133,9 +128,7 @@ export function createPhaseHandlers(
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
     const task = ctx.taskEngine.getTask(taskId);
-    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter(
-      (r) => !r.applied,
-    );
+    const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter((r) => !r.applied);
 
     return llmCaller.runPhaseWithCli(
       Phases.execution,

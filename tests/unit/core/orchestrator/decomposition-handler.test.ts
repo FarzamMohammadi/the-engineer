@@ -1,0 +1,273 @@
+import { describe, expect, it, vi } from "vitest";
+import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
+import { createDecompositionHandler } from "../../../../src/core/orchestrator/decomposition-handler.js";
+import type { OrchestratorContext } from "../../../../src/core/orchestrator/types.js";
+import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
+import type { Dispatch } from "../../../../src/schemas/ephemeral.js";
+import { NotificationKinds } from "../../../../src/schemas/notifications.js";
+import type { PhaseOutput } from "../../../../src/schemas/orchestrator.js";
+import { Phases } from "../../../../src/schemas/orchestrator.js";
+import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import type { Task } from "../../../../src/schemas/task.js";
+import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function createMockContext(): OrchestratorContext {
+  let taskCounter = 0;
+  return {
+    config: OrchestratorConfigSchema.parse({}),
+    workspaceConfig: WorkspaceConfigSchema.parse({}),
+    eventBus: { publish: vi.fn() } as unknown as OrchestratorContext["eventBus"],
+    registry: {
+      getPrimaryPlugin: vi.fn().mockReturnValue(null),
+      getPluginsByType: vi.fn().mockReturnValue([]),
+    } as unknown as OrchestratorContext["registry"],
+    taskEngine: {
+      updateTaskField: vi.fn(),
+      getTask: vi.fn(),
+      requestTransition: vi.fn().mockReturnValue({ success: true }),
+      createTask: vi.fn(() => {
+        taskCounter++;
+        return { id: `child-${String(taskCounter).padStart(3, "0")}` };
+      }),
+    } as unknown as OrchestratorContext["taskEngine"],
+    safetyLayer: {} as OrchestratorContext["safetyLayer"],
+    actionPipeline: { execute: vi.fn() } as unknown as OrchestratorContext["actionPipeline"],
+    sessionMemory: {
+      addJournalEntry: vi.fn(),
+      endSession: vi.fn(),
+      createSession: vi.fn(),
+    } as unknown as OrchestratorContext["sessionMemory"],
+    workspaceManager: {} as OrchestratorContext["workspaceManager"],
+    peopleDirectory: {} as OrchestratorContext["peopleDirectory"],
+    observationStore: null,
+    observer: createTestObserverFacade("orchestrator"),
+    notifications: {
+      notify: vi.fn(),
+      syncStateToCommPlugin: vi.fn(),
+    } as unknown as OrchestratorContext["notifications"],
+    tracesDir: null,
+  };
+}
+
+function createDispatch(): Dispatch {
+  return {
+    task: {
+      id: "task-001",
+      title: "Parent task",
+      repo: "owner/repo",
+      clone_url: "https://github.com/owner/repo.git",
+      external_ref: null,
+    } as Task,
+    resume_from: null,
+    knowledge: { repo: [], user: [] },
+  } as Dispatch;
+}
+
+function createPlanningOutput(decompositionPlan: unknown): PhaseOutput {
+  return {
+    phase: Phases.planning,
+    task_id: "task-001",
+    timestamp: new Date().toISOString(),
+    data: {
+      approach: "Decompose",
+      file_changes: [],
+      risks: [],
+      decomposition_plan: decompositionPlan,
+    },
+    confidence: "high",
+    open_questions: [],
+  };
+}
+
+function createMockNotifier(): NotificationRouter {
+  return {
+    notify: vi.fn(),
+    syncStateToCommPlugin: vi.fn(),
+  };
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────
+
+describe("DecompositionHandler", () => {
+  it("returns null when no decomposition_plan in output", () => {
+    const ctx = createMockContext();
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
+    const output = createPlanningOutput(null);
+    const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
+
+    const result = handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when decomposition_plan fails validation", () => {
+    const ctx = createMockContext();
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
+    const output = createPlanningOutput({ invalid: "data" });
+    const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
+
+    const result = handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
+
+    expect(result).toBeNull();
+    expect(ctx.sessionMemory.addJournalEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: expect.stringContaining("Invalid decomposition plan"),
+      }),
+    );
+  });
+
+  it("creates child tasks from valid plan", () => {
+    const ctx = createMockContext();
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
+    const plan = {
+      rationale: "Too complex for one task",
+      children: [
+        {
+          title: "Subtask 1",
+          description: "First part",
+          acceptance_criteria: ["criterion A"],
+          estimated_time_ms: 30000,
+          depends_on: [],
+        },
+        {
+          title: "Subtask 2",
+          description: "Second part",
+          acceptance_criteria: ["criterion B"],
+          estimated_time_ms: 30000,
+          depends_on: [0],
+        },
+      ],
+      dependency_graph: "linear",
+      total_estimated_ms: 60000,
+      parallelizable: false,
+    };
+    const output = createPlanningOutput(plan);
+    const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
+
+    const result = handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
+
+    expect(result).not.toBeNull();
+    expect(result!.outcome).toBe("decomposed");
+    if (result!.outcome === "decomposed") {
+      expect(result!.childTaskIds).toHaveLength(2);
+    }
+    expect(ctx.taskEngine.createTask).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps dependency indices to task IDs", () => {
+    const ctx = createMockContext();
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
+    const plan = {
+      rationale: "Split into two",
+      children: [
+        {
+          title: "A",
+          description: "a",
+          acceptance_criteria: [],
+          estimated_time_ms: 10000,
+          depends_on: [],
+        },
+        {
+          title: "B",
+          description: "b",
+          acceptance_criteria: [],
+          estimated_time_ms: 10000,
+          depends_on: [0],
+        },
+      ],
+      dependency_graph: "linear",
+      total_estimated_ms: 30000,
+      parallelizable: false,
+    };
+    const output = createPlanningOutput(plan);
+    const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
+
+    handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
+
+    // Verify children array written to parent task includes dependency mapping
+    const updateCalls = (ctx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock.calls;
+    const childrenUpdate = updateCalls.find((c: unknown[]) => c[1] === "children");
+    expect(childrenUpdate).toBeDefined();
+    const children = childrenUpdate![2] as Array<{ depends_on: string[] }>;
+    expect(children[1]!.depends_on).toContain("child-001");
+  });
+
+  it("transitions parent to supervising", () => {
+    const ctx = createMockContext();
+    const handler = createDecompositionHandler(ctx, createMockNotifier());
+    const plan = {
+      rationale: "Split",
+      children: [
+        {
+          title: "A",
+          description: "a",
+          acceptance_criteria: [],
+          estimated_time_ms: 10000,
+          depends_on: [],
+        },
+      ],
+      dependency_graph: "none",
+      total_estimated_ms: 10000,
+      parallelizable: true,
+    };
+    const output = createPlanningOutput(plan);
+    const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
+
+    handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
+
+    expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
+      "task-001",
+      TaskStates.active,
+      SubStates.supervising,
+      "decomposed_into_children",
+      "orchestrator",
+    );
+  });
+
+  it("comments on source issue with subtask list", () => {
+    const ctx = createMockContext();
+    const wsl = createMockNotifier();
+    const handler = createDecompositionHandler(ctx, wsl);
+    const plan = {
+      rationale: "Too large",
+      children: [
+        {
+          title: "Build UI",
+          description: "ui",
+          acceptance_criteria: [],
+          estimated_time_ms: 20000,
+          depends_on: [],
+        },
+        {
+          title: "Build API",
+          description: "api",
+          acceptance_criteria: [],
+          estimated_time_ms: 20000,
+          depends_on: [],
+        },
+      ],
+      dependency_graph: "parallel",
+      total_estimated_ms: 40000,
+      parallelizable: true,
+    };
+    const output = createPlanningOutput(plan);
+    const priorOutputs = new Map<string, PhaseOutput>() as Map<typeof Phases.planning, PhaseOutput>;
+
+    handler.handleDecomposition("session-001", "task-001", output, createDispatch(), priorOutputs);
+
+    expect(wsl.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: NotificationKinds.ticket_comment,
+        message: expect.stringContaining("Build UI"),
+      }),
+    );
+    expect(wsl.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: NotificationKinds.ticket_comment,
+        message: expect.stringContaining("Build API"),
+      }),
+    );
+  });
+});

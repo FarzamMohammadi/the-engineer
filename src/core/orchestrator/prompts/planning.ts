@@ -1,12 +1,6 @@
 import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import {
-  buildKnowledgeSection,
-  buildRRPIROverview,
-  buildRepoOverview,
-  buildTaskBrief,
-  section,
-} from "./format.js";
+import { buildKnowledgeSection, buildRRPIROverview, buildRepoOverview, buildTaskBrief, section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

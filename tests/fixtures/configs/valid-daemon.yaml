@@ -1,0 +1,5 @@
+tick_interval_ms: 10000
+preemption_threshold: 25
+logging:
+  level: debug
+  console: true

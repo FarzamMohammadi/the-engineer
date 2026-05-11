@@ -71,12 +71,7 @@ export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 
 // ── Checkpoint ─────────────────────────────────────────────────────────────────
 
-export const CheckpointReasonSchema = z.enum([
-  "phase_transition",
-  "preemption",
-  "pre_costly_op",
-  "periodic",
-]);
+export const CheckpointReasonSchema = z.enum(["phase_transition", "preemption", "pre_costly_op", "periodic"]);
 export type CheckpointReason = z.infer<typeof CheckpointReasonSchema>;
 
 /** Constant enum values for CheckpointReason. Use instead of raw strings. */
@@ -127,14 +122,7 @@ export type KnowledgeConfidence = z.infer<typeof KnowledgeConfidenceSchema>;
 /** Constant enum values for KnowledgeConfidence. Use instead of raw strings. */
 export const KnowledgeConfidences = KnowledgeConfidenceSchema.enum;
 
-export const KnowledgeDomainSchema = z.enum([
-  "conventions",
-  "patterns",
-  "gotchas",
-  "domain",
-  "tooling",
-  "preferences",
-]);
+export const KnowledgeDomainSchema = z.enum(["conventions", "patterns", "gotchas", "domain", "tooling", "preferences"]);
 export type KnowledgeDomain = z.infer<typeof KnowledgeDomainSchema>;
 
 /** Constant enum values for KnowledgeDomain. Use instead of raw strings. */
@@ -174,12 +162,7 @@ export type KnowledgeEntry = z.infer<typeof KnowledgeEntrySchema>;
 
 // ── Knowledge ID generation ────────────────────────────────────────────────────
 
-export function knowledgeId(
-  scope: string,
-  repoScope: string | null,
-  key: string,
-  body: string,
-): string {
+export function knowledgeId(scope: string, repoScope: string | null, key: string, body: string): string {
   // 128-bit (32 hex chars) — sufficient collision resistance for expected cardinality (thousands, not billions)
   // repo_scope included to isolate knowledge per repository — same content in different repos gets distinct IDs
   // Null byte separators prevent field-boundary collisions (e.g., key="a:b" vs key="a", body="b:...")

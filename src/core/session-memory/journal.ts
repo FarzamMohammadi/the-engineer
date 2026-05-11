@@ -4,10 +4,7 @@ import { ulid } from "ulid";
 import { toSqliteJson } from "../../db/serialize.js";
 import type { JournalEntry } from "../../schemas/session-memory.js";
 import { sanitizeSecrets } from "../../utils/sanitize.js";
-import type {
-  AddJournalEntryInput,
-  JournalQueryFilters,
-} from "../interfaces/session-memory.interface.js";
+import type { AddJournalEntryInput, JournalQueryFilters } from "../interfaces/session-memory.interface.js";
 import { type JournalEntryRow, rowToJournalEntry } from "./row-mappers.js";
 
 /**
@@ -24,9 +21,7 @@ export class JournalStore {
 
   constructor(db: Database.Database) {
     this.db = db;
-    this.latestTimestampStmt = db.prepare(
-      "SELECT MAX(timestamp) as latest FROM journal_entries WHERE task_id = ?",
-    );
+    this.latestTimestampStmt = db.prepare("SELECT MAX(timestamp) as latest FROM journal_entries WHERE task_id = ?");
     this.insertJournalStmt = db.prepare(`
       INSERT INTO journal_entries (
         id, session_id, task_id, timestamp, phase, type,

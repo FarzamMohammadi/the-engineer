@@ -3,11 +3,7 @@ import { AdapterTypes, MessageTypes } from "../../schemas/adapters.js";
 import type { MessageType } from "../../schemas/adapters.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
-import {
-  type Notification,
-  NotificationKinds,
-  recipientsForKind,
-} from "../../schemas/notifications.js";
+import { type Notification, NotificationKinds, recipientsForKind } from "../../schemas/notifications.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
@@ -62,8 +58,7 @@ const NOTIFICATION_TEMPLATES: Partial<Record<Notification["kind"], TemplateEntry
     messageType: MessageTypes.alert,
   },
   [NotificationKinds.review_reminder]: {
-    format: (v) =>
-      `Review reminder: Task "${v["title"]}" has been pending review for ${v["hours"]}h.`,
+    format: (v) => `Review reminder: Task "${v["title"]}" has been pending review for ${v["hours"]}h.`,
     messageType: MessageTypes.notification,
   },
 };
@@ -101,15 +96,8 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
    * Find the comm plugin that handles the given channel.
    * Matches adapter_meta.channel on the plugin manifest. Returns null if none found.
    */
-  function findPluginForChannel(
-    channel: string,
-    plugins: CommunicationAdapter[],
-  ): CommunicationAdapter | null {
-    return (
-      plugins.find(
-        (p) => p.hasCapability("send") && p.manifest.adapter_meta["channel"] === channel,
-      ) ?? null
-    );
+  function findPluginForChannel(channel: string, plugins: CommunicationAdapter[]): CommunicationAdapter | null {
+    return plugins.find((p) => p.hasCapability("send") && p.manifest.adapter_meta["channel"] === channel) ?? null;
   }
 
   // ── Recipient Resolution ───────────────────────────────────────────────
@@ -254,14 +242,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
       // For each person, try contacts in order until one succeeds (fire-and-forget)
       for (const [personId, personContacts] of contactsByPerson) {
-        sendToFirstReachable(
-          personId,
-          personContacts,
-          safeContent,
-          messageType,
-          notification,
-          commPlugins,
-        );
+        sendToFirstReachable(personId, personContacts, safeContent, messageType, notification, commPlugins);
       }
     } catch (err) {
       observer.warn("Unexpected error in notify()", {
@@ -533,13 +514,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
             continue;
           }
 
-          const { delivered } = await tryDeliverToContact(
-            contact,
-            plugin,
-            safeContent,
-            messageType,
-            notification,
-          );
+          const { delivered } = await tryDeliverToContact(contact, plugin, safeContent, messageType, notification);
 
           if (delivered) {
             // Remove from queue

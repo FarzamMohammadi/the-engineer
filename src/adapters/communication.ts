@@ -99,10 +99,7 @@ export abstract class CommunicationAdapter extends BaseAdapter {
   }
 
   /** Poll for new inbound messages on specific channels. Override if "receive" capability. */
-  async pollMessages(
-    channels: string[],
-    since: string,
-  ): Promise<{ messages: InboundMessage[]; cursor: string }> {
+  async pollMessages(channels: string[], since: string): Promise<{ messages: InboundMessage[]; cursor: string }> {
     return wrapAsync(() => this.doPollMessages(channels, since));
   }
 
@@ -116,12 +113,7 @@ export abstract class CommunicationAdapter extends BaseAdapter {
   // ── Optional: State Sync (capability: "sync") ─────────────────────────────
 
   /** Sync a task state change to the external platform. Override if "sync" capability. */
-  async syncTaskState(
-    taskId: string,
-    oldState: string,
-    newState: string,
-    metadata: SyncMetadata,
-  ): Promise<void> {
+  async syncTaskState(taskId: string, oldState: string, newState: string, metadata: SyncMetadata): Promise<void> {
     return wrapAsync(() => this.doSyncTaskState(taskId, oldState, newState, metadata));
   }
 
@@ -168,11 +160,7 @@ export abstract class CommunicationAdapter extends BaseAdapter {
     throw capabilityError(this.manifest.id, "ticket_management", "createTicket");
   }
 
-  protected doUpdateTicket(
-    _repo: string,
-    _issueNumber: number,
-    _updates: IssueUpdates,
-  ): Promise<void> {
+  protected doUpdateTicket(_repo: string, _issueNumber: number, _updates: IssueUpdates): Promise<void> {
     throw capabilityError(this.manifest.id, "ticket_management", "updateTicket");
   }
 }

@@ -90,14 +90,7 @@ export const TeamMemberSchema = z.object({
 });
 export type TeamMember = z.infer<typeof TeamMemberSchema>;
 
-export const RelatedTypeSchema = z.enum([
-  "issue",
-  "pr",
-  "doc",
-  "previous_attempt",
-  "spec",
-  "design",
-]);
+export const RelatedTypeSchema = z.enum(["issue", "pr", "doc", "previous_attempt", "spec", "design"]);
 export type RelatedType = z.infer<typeof RelatedTypeSchema>;
 
 /** Constant enum values for RelatedType. Use instead of raw strings. */
@@ -369,12 +362,7 @@ export const PermissionTable: readonly PermissionEntry[] = [
   {
     state: TaskStates.active,
     sub_state: SubStates.supervising,
-    allowed: [
-      ActionClasses.read,
-      ActionClasses.communicate,
-      ActionClasses.task_manage,
-      ActionClasses.ask_human,
-    ],
+    allowed: [ActionClasses.read, ActionClasses.communicate, ActionClasses.task_manage, ActionClasses.ask_human],
   },
   {
     state: TaskStates.active,

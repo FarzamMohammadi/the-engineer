@@ -81,11 +81,9 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       return {
         success: false,
         message_id: null,
-        error: createAdapterError(
-          classifyGitHubError(error),
-          error instanceof Error ? error.message : String(error),
-          { retryable: isRetryable(error) },
-        ),
+        error: createAdapterError(classifyGitHubError(error), error instanceof Error ? error.message : String(error), {
+          retryable: isRetryable(error),
+        }),
       };
     }
   }
@@ -149,9 +147,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     }
   }
 
-  protected async doReconcileState(
-    tasks: TaskReconciliationInput[],
-  ): Promise<ReconciliationResult> {
+  protected async doReconcileState(tasks: TaskReconciliationInput[]): Promise<ReconciliationResult> {
     let reconciled = 0;
     const errors: Array<{ task_id: string; reason: string }> = [];
 
@@ -167,9 +163,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     return { reconciled, errors };
   }
 
-  private async reconcileOneTask(
-    task: TaskReconciliationInput,
-  ): Promise<"ok" | "reconciled" | string> {
+  private async reconcileOneTask(task: TaskReconciliationInput): Promise<"ok" | "reconciled" | string> {
     try {
       const ref = task.external_ref;
       if (!ref) {
@@ -191,13 +185,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
         return "ok";
       }
 
-      await this.applyLabelDiff(
-        owner,
-        repoName,
-        Number(ref.id),
-        currentLabels,
-        task.expected_state,
-      );
+      await this.applyLabelDiff(owner, repoName, Number(ref.id), currentLabels, task.expected_state);
       return "reconciled";
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
@@ -238,10 +226,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     const [owner, repoName] = externalRef.repo.split("/");
     if (!(owner && repoName)) {
       throw new AdapterMethodError(
-        createAdapterError(
-          "invalid_input",
-          `Invalid repo format: expected "owner/repo", got "${externalRef.repo}"`,
-        ),
+        createAdapterError("invalid_input", `Invalid repo format: expected "owner/repo", got "${externalRef.repo}"`),
       );
     }
     await this.octokit.issues.createComment({
@@ -256,10 +241,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     const [owner, repoName] = repo.split("/");
     if (!(owner && repoName)) {
       throw new AdapterMethodError(
-        createAdapterError(
-          "invalid_input",
-          `Invalid repo format: expected "owner/repo", got "${repo}"`,
-        ),
+        createAdapterError("invalid_input", `Invalid repo format: expected "owner/repo", got "${repo}"`),
       );
     }
     const params: Record<string, unknown> = {
@@ -274,24 +256,15 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     if (options.assignees) {
       params["assignees"] = options.assignees;
     }
-    const { data } = await this.octokit.issues.create(
-      params as Parameters<typeof this.octokit.issues.create>[0],
-    );
+    const { data } = await this.octokit.issues.create(params as Parameters<typeof this.octokit.issues.create>[0]);
     return { number: data.number, url: data.html_url };
   }
 
-  protected async doUpdateTicket(
-    repo: string,
-    issueNumber: number,
-    updates: IssueUpdates,
-  ): Promise<void> {
+  protected async doUpdateTicket(repo: string, issueNumber: number, updates: IssueUpdates): Promise<void> {
     const [owner, repoName] = repo.split("/");
     if (!(owner && repoName)) {
       throw new AdapterMethodError(
-        createAdapterError(
-          "invalid_input",
-          `Invalid repo format: expected "owner/repo", got "${repo}"`,
-        ),
+        createAdapterError("invalid_input", `Invalid repo format: expected "owner/repo", got "${repo}"`),
       );
     }
 
@@ -309,9 +282,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     }
 
     if (updates.state !== null || updates.body !== null) {
-      await this.octokit.issues.update(
-        updateParams as Parameters<typeof this.octokit.issues.update>[0],
-      );
+      await this.octokit.issues.update(updateParams as Parameters<typeof this.octokit.issues.update>[0]);
     }
 
     // Add labels

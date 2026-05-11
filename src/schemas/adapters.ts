@@ -99,13 +99,7 @@ export type TriggerEvent = z.infer<typeof TriggerEventSchema>;
 
 // ── Communication Adapter ───────────────────────────────────────────────────────
 
-export const MessageTypeSchema = z.enum([
-  "notification",
-  "question",
-  "status_response",
-  "milestone",
-  "alert",
-]);
+export const MessageTypeSchema = z.enum(["notification", "question", "status_response", "milestone", "alert"]);
 export type MessageType = z.infer<typeof MessageTypeSchema>;
 
 /** Constant enum values for MessageType. Use instead of raw strings. */

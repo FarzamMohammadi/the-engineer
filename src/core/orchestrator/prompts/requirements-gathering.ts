@@ -272,22 +272,14 @@ function buildDeliverableInstructions(thoughtsDir: string): string {
   );
 }
 
-function buildTaskContextSection(
-  ctx: RequirementsGatheringPromptContext,
-  isFeedbackRework: boolean,
-): string {
+function buildTaskContextSection(ctx: RequirementsGatheringPromptContext, isFeedbackRework: boolean): string {
   const parts: string[] = [];
 
   // Task brief
   if (isFeedbackRework) {
     const lines = [`Original Task: ${wrapUntrustedContent(ctx.task.title)}`];
     if (ctx.task.description) {
-      lines.push(
-        "",
-        "## Original Task Description",
-        "",
-        wrapUntrustedContent(ctx.task.description),
-      );
+      lines.push("", "## Original Task Description", "", wrapUntrustedContent(ctx.task.description));
     }
     parts.push(section("The Task Context", lines.join("\n")));
   } else {

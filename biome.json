@@ -82,6 +82,33 @@
       }
     },
     {
+      "include": ["src/dashboard/client/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off",
+            "noNamespaceImport": "off",
+            "useNamingConvention": "off",
+            "useBlockStatements": "off",
+            "noParameterProperties": "off",
+            "useExplicitLengthCheck": "off",
+            "noImplicitBoolean": "off"
+          },
+          "suspicious": {
+            "noReactSpecificProps": "off"
+          },
+          "correctness": {
+            "useExhaustiveDependencies": "off",
+            "useImportExtensions": "off",
+            "noUndeclaredVariables": "off"
+          },
+          "complexity": {
+            "useSimplifiedLogicExpression": "off"
+          }
+        }
+      }
+    },
+    {
       "include": ["tests/**/*.ts"],
       "linter": {
         "rules": {

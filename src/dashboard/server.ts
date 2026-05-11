@@ -6,7 +6,7 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
@@ -50,8 +50,8 @@ export function createDashboardApp(config: DashboardConfig): {
 
   const app = new Hono();
 
-  // CORS restricted to localhost — dashboard must not be accessible from the LAN
-  app.use("/*", cors({ origin: "http://localhost:3847" }));
+  // CORS restricted to localhost — dashboard and Vite dev server
+  app.use("/*", cors({ origin: ["http://localhost:3847", "http://localhost:5173"] }));
 
   // Mount API routes
   app.route("/api/system", systemRoutes({ db, observationStore, runDir: config.runDir }));
@@ -82,11 +82,45 @@ export function createDashboardApp(config: DashboardConfig): {
     return c.json({ ok: true });
   });
 
-  // Serve static dashboard HTML
-  app.get("/", (c) => {
-    const htmlPath = join(import.meta.dirname, "static", "index.html");
-    const html = readFileSync(htmlPath, "utf-8");
-    return c.html(html);
+  // Serve built React SPA from dist/dashboard/
+  const spaDir = resolve(import.meta.dirname, "../../dist/dashboard");
+
+  app.get("/*", (c) => {
+    const urlPath = c.req.path;
+
+    // Try serving static assets first (JS, CSS, images)
+    const assetPath = join(spaDir, urlPath);
+    if (urlPath !== "/" && existsSync(assetPath)) {
+      const content = readFileSync(assetPath);
+      const ext = urlPath.split(".").pop() ?? "";
+      const contentTypes: Record<string, string> = {
+        js: "application/javascript",
+        css: "text/css",
+        svg: "image/svg+xml",
+        png: "image/png",
+        ico: "image/x-icon",
+        json: "application/json",
+      };
+      return c.body(content, 200, {
+        "Content-Type": contentTypes[ext] ?? "application/octet-stream",
+      });
+    }
+
+    // SPA catch-all — serve index.html for client-side routing
+    const indexPath = join(spaDir, "index.html");
+    if (existsSync(indexPath)) {
+      const html = readFileSync(indexPath, "utf-8");
+      return c.html(html);
+    }
+
+    // Fallback: serve old static HTML (before dashboard is built)
+    const legacyPath = join(import.meta.dirname, "static", "index.html");
+    if (existsSync(legacyPath)) {
+      const html = readFileSync(legacyPath, "utf-8");
+      return c.html(html);
+    }
+
+    return c.text("Dashboard not built. Run: pnpm build:dashboard", 404);
   });
 
   return { app, db, writeDb };

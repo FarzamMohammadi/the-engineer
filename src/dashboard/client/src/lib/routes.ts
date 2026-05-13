@@ -1,3 +1,4 @@
+/** Client-side route paths and path-builder functions for the dashboard SPA. */
 export const ROUTES = {
   overview: "/",
   tasks: "/tasks",

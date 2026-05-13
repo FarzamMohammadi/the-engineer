@@ -8,6 +8,7 @@ import { useTaskList } from "../../hooks/use-tasks";
 import { cn } from "../../lib/cn";
 import { ROUTES } from "../../lib/routes";
 
+/** Card listing tasks that are blocked and awaiting user response. */
 export function BlockedTasksCard(): React.JSX.Element {
   const { data: tasks, isLoading } = useTaskList("blocked");
 

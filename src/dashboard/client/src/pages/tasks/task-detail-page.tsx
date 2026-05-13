@@ -18,6 +18,7 @@ import { TaskToolsTab } from "./task-tools-tab";
 const TAB_ROUTES = ["overview", "timeline", "phases", "llm", "tools"] as const;
 type TabValue = (typeof TAB_ROUTES)[number];
 
+/** Single task detail page with tabbed views for overview, timeline, phases, LLM calls, and tools. */
 export function TaskDetailPage(): React.JSX.Element {
   const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
   const navigate = useNavigate();
@@ -27,7 +28,9 @@ export function TaskDetailPage(): React.JSX.Element {
   const activeTab: TabValue = TAB_ROUTES.includes(tab as TabValue) ? (tab as TabValue) : "overview";
 
   function handleTabChange(value: string): void {
-    if (!taskId) return;
+    if (!taskId) {
+      return;
+    }
     if (value === "overview") {
       navigate(ROUTES.taskDetail(taskId), { replace: true });
     } else {
@@ -110,7 +113,11 @@ export function TaskDetailPage(): React.JSX.Element {
 
 function phasesFromDetail(task: TaskDetail): string[] {
   const phases: string[] = [];
-  if (task.review) phases.push("self_review");
-  if (task.workspace) phases.push("execution");
+  if (task.review) {
+    phases.push("self_review");
+  }
+  if (task.workspace) {
+    phases.push("execution");
+  }
   return phases;
 }

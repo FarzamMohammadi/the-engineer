@@ -8,11 +8,13 @@ import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { ObservationTypes } from "../../schemas/observer.js";
 
+/** Dependencies injected into metrics API route handlers. */
 export interface MetricsRoutesDeps {
   db: Database.Database;
   observationStore: ObservationStore;
 }
 
+/** Registers cost aggregation, quota status, and phase execution endpoints. */
 export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
   const app = new Hono();
 

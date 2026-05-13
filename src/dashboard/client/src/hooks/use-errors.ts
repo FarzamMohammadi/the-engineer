@@ -8,10 +8,15 @@ interface ErrorFilters {
   limit?: number;
 }
 
+/** Fetch and cache the consolidated error list from /api/errors with optional level/limit filters. */
 export function useErrors(filters: ErrorFilters = {}): ReturnType<typeof useQuery<ErrorEntry[]>> {
   const params = new URLSearchParams();
-  if (filters.level) params.set("level", filters.level);
-  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.level) {
+    params.set("level", filters.level);
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
 
   const queryString = params.toString();
   const path = queryString ? `/errors?${queryString}` : "/errors";
@@ -19,8 +24,8 @@ export function useErrors(filters: ErrorFilters = {}): ReturnType<typeof useQuer
   return useQuery({
     queryKey: queryKeys.errors,
     queryFn: async () => {
-      const res = await apiFetch<ErrorListResponse>(path);
-      return res.errors;
+      const response = await apiFetch<ErrorListResponse>(path);
+      return response.errors;
     },
     staleTime: 10_000,
   });

@@ -6,6 +6,7 @@ interface ErrorListProps {
   errors: ErrorEntry[];
 }
 
+/** Scrollable list of error cards. */
 export function ErrorList({ errors }: ErrorListProps): React.JSX.Element {
   return (
     <ScrollArea className="h-[calc(100vh-200px)]">

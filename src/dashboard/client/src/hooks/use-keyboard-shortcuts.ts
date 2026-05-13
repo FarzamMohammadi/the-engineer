@@ -11,12 +11,18 @@ const SHORTCUT_ROUTES: Record<string, string> = {
   e: ROUTES.errors,
 };
 
-function isInputFocused(target: EventTarget | null): boolean {
-  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-}
+/** Register global "g + key" keyboard chord shortcuts for page navigation. */
+export function useKeyboardShortcuts(): void {
+  const navigate = useNavigate();
 
-function hasModifier(e: KeyboardEvent): boolean {
-  return e.metaKey || e.ctrlKey || e.altKey;
+  useEffect(() => {
+    const { handler, cleanup } = createKeydownHandler(navigate);
+    window.addEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      cleanup();
+    };
+  }, [navigate]);
 }
 
 function createKeydownHandler(navigate: NavigateFunction): {
@@ -66,15 +72,10 @@ function createKeydownHandler(navigate: NavigateFunction): {
   return { handler, cleanup: resetGChord };
 }
 
-export function useKeyboardShortcuts(): void {
-  const navigate = useNavigate();
+function isInputFocused(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+}
 
-  useEffect(() => {
-    const { handler, cleanup } = createKeydownHandler(navigate);
-    window.addEventListener("keydown", handler);
-    return () => {
-      window.removeEventListener("keydown", handler);
-      cleanup();
-    };
-  }, [navigate]);
+function hasModifier(e: KeyboardEvent): boolean {
+  return e.metaKey || e.ctrlKey || e.altKey;
 }

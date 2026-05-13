@@ -66,29 +66,11 @@ const columns: ColumnDef<TaskListItem>[] = [
   },
 ];
 
-function SortButton({
-  column,
-  label,
-}: {
-  column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" };
-  label: string;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      className="inline-flex items-center gap-1 hover:text-foreground"
-      onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-    >
-      {label}
-      <ArrowUpDown size={12} className="opacity-50" />
-    </button>
-  );
-}
-
 interface TaskTableProps {
   tasks: TaskListItem[];
 }
 
+/** Sortable data table displaying task rows with state, phase, cost, and token columns. */
 export function TaskTable({ tasks }: TaskTableProps): React.JSX.Element {
   const navigate = useNavigate();
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -129,5 +111,24 @@ export function TaskTable({ tasks }: TaskTableProps): React.JSX.Element {
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+function SortButton({
+  column,
+  label,
+}: {
+  column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" };
+  label: string;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 hover:text-foreground"
+      onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+    >
+      {label}
+      <ArrowUpDown size={12} className="opacity-50" />
+    </button>
   );
 }

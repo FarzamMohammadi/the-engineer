@@ -8,6 +8,7 @@ import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { TaskStates } from "../../schemas/task.js";
 
+/** Dependencies injected into task API route handlers. */
 export interface TaskRoutesDeps {
   db: Database.Database;
   writeDb: Database.Database;
@@ -38,7 +39,26 @@ interface TaskListRow {
   workspace: string | null;
 }
 
-function mapListRow(row: TaskListRow) {
+interface TaskListItem {
+  id: string;
+  title: string;
+  state: string;
+  sub_state: string | null;
+  phase: string | null;
+  priority: number;
+  repo: string | null;
+  llm_cost_usd: number;
+  llm_tokens: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  last_transition_at: string;
+  parent_id: string | null;
+  children_count: number;
+  worktree_path: string | null;
+}
+
+function mapListRow(row: TaskListRow): TaskListItem {
   let childrenCount = 0;
   try {
     childrenCount = (fromSqliteJson<unknown[]>(row.children) ?? []).length;
@@ -71,7 +91,7 @@ function mapListRow(row: TaskListRow) {
 }
 
 /** Parse JSON columns for full task detail. */
-function mapFullTask(row: Record<string, unknown>) {
+function mapFullTask(row: Record<string, unknown>): Record<string, unknown> {
   const jsonFields = [
     "external_ref",
     "children",
@@ -95,6 +115,7 @@ function mapFullTask(row: Record<string, unknown>) {
   return result;
 }
 
+/** Registers task listing, detail, timeline, phase, trace, and cancel endpoints. */
 export function taskRoutes(deps: TaskRoutesDeps): Hono {
   const app = new Hono();
 

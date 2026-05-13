@@ -9,6 +9,7 @@ interface TaskOverviewTabProps {
   task: TaskDetail;
 }
 
+/** Overview tab showing task details, cost, timestamps, acceptance criteria, and workspace info. */
 export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Element {
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -24,7 +25,7 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
             <DetailRow label="Priority" value={String(task.priority)} />
             {task.repo && <DetailRow label="Repository" value={task.repo} />}
             {task.branch && <DetailRow label="Branch" value={task.branch} />}
-            {task.parent_id && <DetailRow label="Parent Task" value={task.parent_id} mono />}
+            {task.parent_id && <DetailRow label="Parent Task" value={task.parent_id} mono={true} />}
           </dl>
         </CardContent>
       </Card>
@@ -129,7 +130,7 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
             <CardTitle>Decisions</CardTitle>
           </CardHeader>
           <CardContent>
-            <JsonViewer data={task.decisions} defaultExpanded />
+            <JsonViewer data={task.decisions} defaultExpanded={true} />
           </CardContent>
         </Card>
       )}
@@ -140,7 +141,7 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
             <CardTitle>Workspace</CardTitle>
           </CardHeader>
           <CardContent>
-            <JsonViewer data={task.workspace} defaultExpanded />
+            <JsonViewer data={task.workspace} defaultExpanded={true} />
           </CardContent>
         </Card>
       )}
@@ -151,7 +152,7 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
             <CardTitle>Review</CardTitle>
           </CardHeader>
           <CardContent>
-            <JsonViewer data={task.review} defaultExpanded />
+            <JsonViewer data={task.review} defaultExpanded={true} />
           </CardContent>
         </Card>
       )}
@@ -162,7 +163,7 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
             <CardTitle>External Reference</CardTitle>
           </CardHeader>
           <CardContent>
-            <JsonViewer data={task.external_ref} defaultExpanded />
+            <JsonViewer data={task.external_ref} defaultExpanded={true} />
           </CardContent>
         </Card>
       )}

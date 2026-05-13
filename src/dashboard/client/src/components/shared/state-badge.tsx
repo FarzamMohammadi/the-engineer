@@ -8,6 +8,7 @@ interface StateBadgeProps {
   className?: string;
 }
 
+/** Color-coded badge showing task lifecycle state. */
 export function StateBadge({ state, showDot = true, className }: StateBadgeProps): React.JSX.Element {
   const colors = STATE_COLORS[state] ?? STATE_COLORS.queued;
   const dotColor = STATE_DOT_COLORS[state] ?? STATE_DOT_COLORS.queued;

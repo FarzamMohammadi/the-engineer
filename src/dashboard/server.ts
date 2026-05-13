@@ -25,12 +25,14 @@ import { systemRoutes } from "./api/system.js";
 import { taskRoutes } from "./api/tasks.js";
 import { blobRoutes, traceRoutes } from "./api/traces.js";
 
+/** Configuration required to initialize the dashboard server. */
 export interface DashboardConfig {
   dbPath: string;
   tracesDir: string;
   runDir: string;
 }
 
+/** Creates the Hono app with all API routes, static file serving, and database connections. */
 export function createDashboardApp(config: DashboardConfig): {
   app: Hono;
   db: Database.Database;

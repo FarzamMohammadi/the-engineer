@@ -11,6 +11,7 @@ import { ActivityFilters } from "./activity-filters";
 
 const MAX_ITEMS = 500;
 
+/** Real-time activity stream combining API backfill with live SSE events. */
 export function ActivityPage(): React.JSX.Element {
   const [sseItems, setSseItems] = useState<ActivityItem[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -23,16 +24,16 @@ export function ActivityPage(): React.JSX.Element {
   useSseSubscription(
     "observation",
     useCallback((data: unknown) => {
-      const obs = data as Observation;
-      setSseItems((prev) => [...prev, { source: "observation", data: obs }].slice(-MAX_ITEMS));
+      const observation = data as Observation;
+      setSseItems((prev) => [...prev, { source: "observation", data: observation }].slice(-MAX_ITEMS));
     }, []),
   );
 
   useSseSubscription(
     "event",
     useCallback((data: unknown) => {
-      const evt = data as DomainEvent;
-      setSseItems((prev) => [...prev, { source: "event", data: evt }].slice(-MAX_ITEMS));
+      const domainEvent = data as DomainEvent;
+      setSseItems((prev) => [...prev, { source: "event", data: domainEvent }].slice(-MAX_ITEMS));
     }, []),
   );
 
@@ -40,12 +41,12 @@ export function ActivityPage(): React.JSX.Element {
     const items: ActivityItem[] = [];
     if (observations) {
       for (const obs of observations) {
-        items.push({ source: "observation", data: obs });
+        items.push({ source: "observation", data: observation });
       }
     }
     if (events) {
-      for (const evt of events) {
-        items.push({ source: "event", data: evt });
+      for (const domainEvent of events) {
+        items.push({ source: "event", data: domainEvent });
       }
     }
     items.sort((a, b) => {
@@ -84,8 +85,11 @@ export function ActivityPage(): React.JSX.Element {
         onToggleType={(type) =>
           setSelectedTypes((prev) => {
             const next = new Set(prev);
-            if (next.has(type)) next.delete(type);
-            else next.add(type);
+            if (next.has(type)) {
+              next.delete(type);
+            } else {
+              next.add(type);
+            }
             return next;
           })
         }
@@ -93,8 +97,11 @@ export function ActivityPage(): React.JSX.Element {
         onToggleLevel={(level) =>
           setSelectedLevels((prev) => {
             const next = new Set(prev);
-            if (next.has(level)) next.delete(level);
-            else next.add(level);
+            if (next.has(level)) {
+              next.delete(level);
+            } else {
+              next.add(level);
+            }
             return next;
           })
         }
@@ -126,14 +133,22 @@ function matchesObservationFilters(
   types: Set<ObservationType>,
   levels: Set<ObservationLevel>,
 ): boolean {
-  if (types.size > 0 && !types.has(item.data.type as ObservationType)) return false;
-  if (levels.size > 0 && !levels.has(item.data.level as ObservationLevel)) return false;
+  if (types.size > 0 && !types.has(item.data.type as ObservationType)) {
+    return false;
+  }
+  if (levels.size > 0 && !levels.has(item.data.level as ObservationLevel)) {
+    return false;
+  }
   return true;
 }
 
 function matchesEventFilters(types: Set<ObservationType>, levels: Set<ObservationLevel>): boolean {
-  if (types.size > 0) return false;
-  if (levels.size > 0 && !levels.has("info")) return false;
+  if (types.size > 0) {
+    return false;
+  }
+  if (levels.size > 0 && !levels.has("info")) {
+    return false;
+  }
   return true;
 }
 
@@ -142,7 +157,9 @@ function filterActivityItems(
   types: Set<ObservationType>,
   levels: Set<ObservationLevel>,
 ): ActivityItem[] {
-  if (types.size === 0 && levels.size === 0) return items;
+  if (types.size === 0 && levels.size === 0) {
+    return items;
+  }
   return items.filter((item) =>
     item.source === "observation" ? matchesObservationFilters(item, types, levels) : matchesEventFilters(types, levels),
   );

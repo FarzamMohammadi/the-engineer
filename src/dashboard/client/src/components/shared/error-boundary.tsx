@@ -12,6 +12,7 @@ interface State {
   error: Error | null;
 }
 
+/** Catches render errors in child components and displays a recovery UI. */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -28,7 +29,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     if (this.state.hasError) {
-      if (this.props.fallback) return this.props.fallback;
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
       return (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-8">
           <AlertCircle size={24} className="text-red-400" />

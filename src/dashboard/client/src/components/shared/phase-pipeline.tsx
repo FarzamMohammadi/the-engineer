@@ -8,6 +8,7 @@ interface PhasePipelineProps {
   className?: string;
 }
 
+/** Horizontal pipeline showing RRPIR phase progression with current/completed indicators. */
 export function PhasePipeline({ currentPhase, phasesRan = [], className }: PhasePipelineProps): React.JSX.Element {
   return (
     <div className={cn("flex items-center gap-1", className)}>
@@ -23,7 +24,7 @@ export function PhasePipeline({ currentPhase, phasesRan = [], className }: Phase
                 "rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight transition-colors",
                 isCurrent && "bg-primary/20 text-primary ring-1 ring-primary/30",
                 isCompleted && "bg-emerald-500/15 text-emerald-400",
-                !isCurrent && !isCompleted && "bg-muted text-muted-foreground/50",
+                !(isCurrent || isCompleted) && "bg-muted text-muted-foreground/50",
               )}
               title={PHASE_LABELS[phase]}
             >

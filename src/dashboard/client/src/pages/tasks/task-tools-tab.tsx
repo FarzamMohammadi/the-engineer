@@ -14,6 +14,7 @@ interface TaskToolsTabProps {
   taskId: string;
 }
 
+/** Tool execution log with status, duration, and expandable input/output. */
 export function TaskToolsTab({ taskId }: TaskToolsTabProps): React.JSX.Element {
   const { data: traces, isLoading } = useTaskToolTraces(taskId);
 
@@ -53,7 +54,7 @@ function ToolTraceRow({ trace }: { trace: Observation }): React.JSX.Element {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
+      <CollapsibleTrigger asChild={true}>
         <button
           type="button"
           className={cn(

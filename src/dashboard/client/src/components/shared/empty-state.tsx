@@ -8,6 +8,7 @@ interface EmptyStateProps {
   className?: string;
 }
 
+/** Centered placeholder shown when a list or section has no content. */
 export function EmptyState({ icon, title, description, className }: EmptyStateProps): React.JSX.Element {
   return (
     <div className={cn("flex flex-col items-center justify-center py-12 text-center", className)}>

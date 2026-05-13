@@ -7,6 +7,7 @@ interface TokenUsageProps {
   isLoading: boolean;
 }
 
+/** Stat cards showing input, output, cache read, and total token counts. */
 export function TokenUsage({ data, isLoading }: TokenUsageProps): React.JSX.Element {
   if (isLoading) {
     return (

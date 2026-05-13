@@ -16,6 +16,7 @@ const KIND_LABELS: Record<string, string> = {
   event: "Event",
 };
 
+/** Error detail card with level-colored border, kind badge, and task click-through. */
 export function ErrorCard({ error }: ErrorCardProps): React.JSX.Element {
   const isError = error.level === "error";
   const borderColor = isError ? "border-red-500/20" : "border-amber-500/20";

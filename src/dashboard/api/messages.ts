@@ -9,11 +9,13 @@ import { Hono } from "hono";
 import { ulid } from "ulid";
 import { toSqliteJson } from "../../db/serialize.js";
 
+/** Dependencies injected into messages API route handlers. */
 export interface MessagesRoutesDeps {
   /** Writable DB connection (separate from the read-only main connection). */
   writeDb: Database.Database;
 }
 
+/** Registers the endpoint for owner responses to blocked tasks via the dashboard. */
 export function messagesRoutes(deps: MessagesRoutesDeps): Hono {
   const app = new Hono();
 

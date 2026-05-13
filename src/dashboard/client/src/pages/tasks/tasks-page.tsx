@@ -6,6 +6,7 @@ import { useTaskList } from "../../hooks/use-tasks";
 import { TaskFilters } from "./task-filters";
 import { TaskTable } from "./task-table";
 
+/** Task list page with state-based filtering and sortable table. */
 export function TasksPage(): React.JSX.Element {
   const [stateFilter, setStateFilter] = useState<string | undefined>(undefined);
   const { data: tasks, isLoading } = useTaskList();
@@ -21,8 +22,12 @@ export function TasksPage(): React.JSX.Element {
   }, [tasks]);
 
   const filtered = useMemo(() => {
-    if (!tasks) return [];
-    if (!stateFilter) return tasks;
+    if (!tasks) {
+      return [];
+    }
+    if (!stateFilter) {
+      return tasks;
+    }
     return tasks.filter((t) => t.state === stateFilter);
   }, [tasks, stateFilter]);
 

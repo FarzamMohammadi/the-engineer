@@ -21,6 +21,7 @@ interface ActivityFiltersProps {
   onToggleAutoScroll: () => void;
 }
 
+/** Filter chips for observation type, level, and auto-scroll toggle. */
 export function ActivityFilters({
   selectedTypes,
   onToggleType,

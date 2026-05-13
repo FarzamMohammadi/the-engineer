@@ -9,6 +9,7 @@ interface CostByTaskProps {
   isLoading: boolean;
 }
 
+/** Horizontal bar chart showing top 15 tasks by LLM cost. */
 export function CostByTask({ data, isLoading }: CostByTaskProps): React.JSX.Element {
   if (isLoading) {
     return (

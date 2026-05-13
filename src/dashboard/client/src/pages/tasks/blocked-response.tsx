@@ -10,12 +10,15 @@ interface BlockedResponseProps {
   blocked: Record<string, unknown> | null;
 }
 
+/** Conversation thread and response textarea for answering blocked task questions. */
 export function BlockedResponse({ taskId, blocked }: BlockedResponseProps): React.JSX.Element {
   const [content, setContent] = useState("");
   const respondMutation = useRespondToTask(taskId);
 
   function handleSubmit(): void {
-    if (!content.trim()) return;
+    if (!content.trim()) {
+      return;
+    }
     respondMutation.mutate(content.trim(), {
       onSuccess: () => setContent(""),
     });

@@ -9,11 +9,18 @@ interface EventFilters {
   limit?: number;
 }
 
+/** Fetch and cache domain events from /api/events with optional type, task, and limit filters. */
 export function useEvents(filters: EventFilters = {}): ReturnType<typeof useQuery<DomainEvent[]>> {
   const params = new URLSearchParams();
-  if (filters.type) params.set("type", filters.type);
-  if (filters.task_id) params.set("task_id", filters.task_id);
-  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.type) {
+    params.set("type", filters.type);
+  }
+  if (filters.task_id) {
+    params.set("task_id", filters.task_id);
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
 
   const queryString = params.toString();
   const path = queryString ? `/events?${queryString}` : "/events";
@@ -21,8 +28,8 @@ export function useEvents(filters: EventFilters = {}): ReturnType<typeof useQuer
   return useQuery({
     queryKey: queryKeys.events(Object.fromEntries(params)),
     queryFn: async () => {
-      const res = await apiFetch<EventListResponse>(path);
-      return res.events;
+      const response = await apiFetch<EventListResponse>(path);
+      return response.events;
     },
   });
 }

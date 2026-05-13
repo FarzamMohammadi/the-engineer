@@ -9,6 +9,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { useTaskList } from "../../hooks/use-tasks";
 import { ROUTES } from "../../lib/routes";
 
+/** Card listing currently active tasks with state badges and phase pipelines. */
 export function ActiveTasksCard(): React.JSX.Element {
   const { data: tasks, isLoading } = useTaskList("active");
 
@@ -33,7 +34,7 @@ export function ActiveTasksCard(): React.JSX.Element {
         <span className="text-xs font-mono tabular-nums text-muted-foreground">{tasks?.length ?? 0}</span>
       </CardHeader>
       <CardContent>
-        {tasks?.length ? (
+        {tasks?.length > 0 ? (
           <div className="space-y-2">
             {tasks.map((task) => (
               <Link

@@ -4,6 +4,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { useSystemStatus } from "../../hooks/use-system-status";
 import { cn } from "../../lib/cn";
 
+/** Displays daemon running/stopped state with PID and LLM provider info. */
 export function DaemonStatus(): React.JSX.Element {
   const { data: status, isLoading } = useSystemStatus();
 

@@ -5,6 +5,7 @@ import { ErrorBoundary } from "../shared/error-boundary";
 import { SidebarNav } from "./sidebar-nav";
 import { SystemBar } from "./system-bar";
 
+/** Top-level layout combining sidebar, system bar, and routed page content. */
 export function AppShell(): React.JSX.Element {
   const sseState = useSse();
   useKeyboardShortcuts();

@@ -14,6 +14,7 @@ interface PhasePerformanceProps {
   isLoading: boolean;
 }
 
+/** Average cost, duration, and execution count per pipeline phase. */
 export function PhasePerformance({ data, isLoading }: PhasePerformanceProps): React.JSX.Element {
   if (isLoading) {
     return (

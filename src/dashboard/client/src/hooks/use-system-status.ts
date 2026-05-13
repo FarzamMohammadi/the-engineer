@@ -4,6 +4,7 @@ import { STALE_TIMES } from "../lib/constants";
 import { queryKeys } from "../lib/query-keys";
 import type { SystemStatus } from "../types/api";
 
+/** Poll and cache overall system health from /api/system/status on a fixed interval. */
 export function useSystemStatus(): ReturnType<typeof useQuery<SystemStatus>> {
   return useQuery({
     queryKey: queryKeys.systemStatus,

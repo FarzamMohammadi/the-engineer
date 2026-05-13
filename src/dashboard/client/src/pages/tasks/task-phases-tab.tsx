@@ -14,6 +14,7 @@ interface TaskPhasesTabProps {
   taskId: string;
 }
 
+/** RRPIR phase breakdown cards with duration, cost, and iteration counts. */
 export function TaskPhasesTab({ taskId }: TaskPhasesTabProps): React.JSX.Element {
   const { data: phases, isLoading } = useTaskPhases(taskId);
 
@@ -38,7 +39,9 @@ export function TaskPhasesTab({ taskId }: TaskPhasesTabProps): React.JSX.Element
     <div className="grid gap-3 md:grid-cols-2">
       {PHASE_ORDER.map((phaseName) => {
         const entries = phaseMap.get(phaseName);
-        if (!entries) return null;
+        if (!entries) {
+          return null;
+        }
         return <PhaseCard key={phaseName} phaseName={phaseName} entries={entries} maxDuration={maxDuration} />;
       })}
     </div>
@@ -96,10 +99,10 @@ function PhaseCard({ phaseName, entries, maxDuration }: PhaseCardProps): React.J
 
 function groupByPhase(observations: Observation[]): Map<Phase, Observation[]> {
   const map = new Map<Phase, Observation[]>();
-  for (const obs of observations) {
-    const phase = obs.name as Phase;
+  for (const observation of observations) {
+    const phase = observation.name as Phase;
     const arr = map.get(phase) ?? [];
-    arr.push(obs);
+    arr.push(observation);
     map.set(phase, arr);
   }
   return map;

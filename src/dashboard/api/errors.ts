@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 
+/** Dependencies injected into error API route handlers. */
 export interface ErrorRoutesDeps {
   db: Database.Database;
   observationStore: ObservationStore;
@@ -74,18 +75,18 @@ function collectObservationErrors(store: ObservationStore, level: string | undef
   const levels = level === "warn" ? ["warn"] : level === "error" ? ["error"] : ["error", "warn"];
   const results: ErrorEntry[] = [];
 
-  for (const obsLevel of levels) {
-    const observations = store.query({ level: obsLevel as "error" | "warn", limit });
-    for (const obs of observations) {
+  for (const observationLevel of levels) {
+    const observations = store.query({ level: observationLevel as "error" | "warn", limit });
+    for (const observation of observations) {
       results.push({
         kind: "observation",
-        id: obs.id,
-        task_id: obs.task_id,
+        id: observation.id,
+        task_id: observation.task_id,
         task_title: null,
-        message: obs.error_message ?? obs.name,
-        detail: obs.error_message ? obs.name : null,
-        timestamp: obs.start_time,
-        level: obs.level as "error" | "warn",
+        message: observation.error_message ?? observation.name,
+        detail: observation.error_message ? observation.name : null,
+        timestamp: observation.start_time,
+        level: observation.level as "error" | "warn",
       });
     }
   }
@@ -108,22 +109,22 @@ function collectErrorEvents(db: Database.Database, limit: number): ErrorEntry[] 
       payload: string;
     }>;
 
-    return rows.map((evt) => {
-      const payload = fromSqliteJson<Record<string, unknown>>(evt.payload) ?? {};
+    return rows.map((event) => {
+      const payload = fromSqliteJson<Record<string, unknown>>(event.payload) ?? {};
       const message =
         typeof payload["reason"] === "string"
           ? payload["reason"]
           : typeof payload["message"] === "string"
             ? payload["message"]
-            : evt.type;
+            : event.type;
       return {
         kind: "event" as const,
-        id: evt.id,
-        task_id: evt.task_id,
+        id: event.id,
+        task_id: event.task_id,
         task_title: null,
         message,
-        detail: evt.type,
-        timestamp: evt.timestamp,
+        detail: event.type,
+        timestamp: event.timestamp,
         level: "error" as const,
       };
     });
@@ -132,6 +133,7 @@ function collectErrorEvents(db: Database.Database, limit: number): ErrorEntry[] 
   }
 }
 
+/** Registers the consolidated error listing endpoint across tasks, observations, and events. */
 export function errorRoutes(deps: ErrorRoutesDeps): Hono {
   const app = new Hono();
 

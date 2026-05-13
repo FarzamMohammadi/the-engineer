@@ -9,6 +9,7 @@ interface CostByPhaseProps {
   isLoading: boolean;
 }
 
+/** Bar chart showing LLM spend breakdown by pipeline phase. */
 export function CostByPhase({ data, isLoading }: CostByPhaseProps): React.JSX.Element {
   if (isLoading) {
     return (

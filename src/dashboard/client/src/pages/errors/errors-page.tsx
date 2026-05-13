@@ -9,13 +9,18 @@ import { ErrorList } from "./error-list";
 
 type LevelFilter = "all" | "error" | "warn";
 
+/** Consolidated error view with level filter chips across all error sources. */
 export function ErrorsPage(): React.JSX.Element {
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
   const { data: errors, isLoading } = useErrors();
 
   const filtered = useMemo((): ErrorEntry[] => {
-    if (!errors) return [];
-    if (levelFilter === "all") return errors;
+    if (!errors) {
+      return [];
+    }
+    if (levelFilter === "all") {
+      return errors;
+    }
     return errors.filter((e) => e.level === levelFilter);
   }, [errors, levelFilter]);
 

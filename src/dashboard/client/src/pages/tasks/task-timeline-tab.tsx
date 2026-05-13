@@ -13,6 +13,7 @@ interface TaskTimelineTabProps {
   taskId: string;
 }
 
+/** Unified chronological feed of state changes, journal entries, and tool executions. */
 export function TaskTimelineTab({ taskId }: TaskTimelineTabProps): React.JSX.Element {
   const { data: timeline, isLoading } = useTaskTimeline(taskId);
 

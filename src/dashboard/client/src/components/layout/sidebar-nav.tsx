@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: ROUTES.errors, icon: <AlertTriangle size={18} />, label: "Errors" },
 ];
 
+/** Fixed left sidebar with navigation links to each dashboard section. */
 export function SidebarNav(): React.JSX.Element {
   return (
     <aside className="flex h-screen w-52 flex-col border-r border-border bg-sidebar">

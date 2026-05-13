@@ -5,6 +5,7 @@ import { CostTicker } from "./cost-ticker";
 import { DaemonStatus } from "./daemon-status";
 import { RecentErrors } from "./recent-errors";
 
+/** Dashboard home page with status cards and activity snapshot. */
 export function OverviewPage(): React.JSX.Element {
   return (
     <div className="space-y-6">

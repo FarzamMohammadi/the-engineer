@@ -8,6 +8,7 @@ interface SystemBarProps {
   sseConnected: boolean;
 }
 
+/** Top status bar displaying daemon health, task counts, spend, and SSE connection state. */
 export function SystemBar({ sseConnected }: SystemBarProps): React.JSX.Element {
   const { data: status } = useSystemStatus();
 

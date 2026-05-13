@@ -1,3 +1,4 @@
+/** Centralized React Query cache key factories for all dashboard queries. */
 export const queryKeys = {
   systemStatus: ["system-status"] as const,
   tasks: {

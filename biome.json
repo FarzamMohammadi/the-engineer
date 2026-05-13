@@ -28,6 +28,13 @@
       },
       "style": {
         "noDefaultExport": "error",
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": {
+            "strictCase": true,
+            "filenameCases": ["kebab-case"]
+          }
+        },
         "useNamingConvention": {
           "level": "error",
           "options": {
@@ -82,28 +89,28 @@
       }
     },
     {
+      "include": ["src/dashboard/client/vite.config.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
       "include": ["src/dashboard/client/**"],
       "linter": {
         "rules": {
           "style": {
-            "noDefaultExport": "off",
-            "noNamespaceImport": "off",
-            "useNamingConvention": "off",
-            "useBlockStatements": "off",
-            "noParameterProperties": "off",
-            "useExplicitLengthCheck": "off",
-            "noImplicitBoolean": "off"
+            "noNamespaceImport": "off"
           },
           "suspicious": {
             "noReactSpecificProps": "off"
           },
           "correctness": {
-            "useExhaustiveDependencies": "off",
             "useImportExtensions": "off",
             "noUndeclaredVariables": "off"
-          },
-          "complexity": {
-            "useSimplifiedLogicExpression": "off"
           }
         }
       }

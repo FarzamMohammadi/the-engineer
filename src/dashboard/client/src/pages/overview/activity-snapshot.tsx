@@ -9,6 +9,7 @@ import { OBSERVATION_TYPE_LABELS } from "../../lib/constants";
 import { formatTimestamp } from "../../lib/formatters";
 import type { ObservationType } from "../../types/api";
 
+/** Card showing the latest observations as a compact activity feed. */
 export function ActivitySnapshot(): React.JSX.Element {
   const { data: observations, isLoading } = useObservations({ limit: 10 });
 
@@ -34,21 +35,21 @@ export function ActivitySnapshot(): React.JSX.Element {
         <Radio size={16} className="text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        {observations?.length ? (
+        {observations?.length > 0 ? (
           <div className="space-y-1">
-            {observations.map((obs) => (
+            {observations.map((observation) => (
               <div
-                key={obs.id}
+                key={observation.id}
                 className="flex items-center gap-3 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent"
               >
                 <span className="w-16 shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
-                  {formatTimestamp(obs.start_time)}
+                  {formatTimestamp(observation.start_time)}
                 </span>
                 <Badge variant="outline" className="w-16 justify-center text-[10px]">
-                  {OBSERVATION_TYPE_LABELS[obs.type as ObservationType] ?? obs.type}
+                  {OBSERVATION_TYPE_LABELS[observation.type as ObservationType] ?? observation.type}
                 </Badge>
-                <span className="min-w-0 flex-1 truncate text-foreground">{obs.name}</span>
-                <LevelDot level={obs.level} />
+                <span className="min-w-0 flex-1 truncate text-foreground">{observation.name}</span>
+                <LevelDot level={observation.level} />
               </div>
             ))}
           </div>

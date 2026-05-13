@@ -7,6 +7,7 @@ interface CostDisplayProps {
   size?: "sm" | "md" | "lg";
 }
 
+/** Monospaced USD cost figure with configurable size. */
 export function CostDisplay({ amount, className, size = "md" }: CostDisplayProps): React.JSX.Element {
   const sizeClasses = {
     sm: "text-xs",

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+/** Discriminated union of SSE channel names the dashboard subscribes to. */
 export type SseEventType = "observation" | "event" | "heartbeat";
 type SseCallback = (data: unknown) => void;
 
@@ -14,6 +15,7 @@ const MAX_RETRY_MS = 30_000;
 
 const sseListeners = new Map<SseEventType, Set<SseCallback>>();
 
+/** Establish and manage a singleton EventSource connection to /api/stream with exponential-backoff reconnect. */
 export function useSse(): SseState {
   const [state, setState] = useState<SseState>({ connected: false, reconnecting: false, lastEventId: null });
   const sourceRef = useRef<EventSource | null>(null);
@@ -25,7 +27,9 @@ export function useSse(): SseState {
         const parsed: unknown = JSON.parse(e.data as string);
         const callbacks = sseListeners.get(eventType);
         if (callbacks) {
-          for (const cb of callbacks) cb(parsed);
+          for (const cb of callbacks) {
+            cb(parsed);
+          }
         }
         if (e.lastEventId) {
           setState((prev) => ({ ...prev, lastEventId: e.lastEventId }));

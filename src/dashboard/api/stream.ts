@@ -13,6 +13,7 @@ import { fromSqliteJson } from "../../db/serialize.js";
 
 import { rowToObservation } from "../../schemas/observer.js";
 
+/** Dependencies injected into SSE stream route handlers. */
 export interface StreamRoutesDeps {
   db: Database.Database;
 }
@@ -177,6 +178,7 @@ async function emitHeartbeatIfDue(
   }
 }
 
+/** Registers the SSE endpoint that streams real-time observations and events. */
 export function streamRoutes(deps: StreamRoutesDeps): Hono {
   const app = new Hono();
 

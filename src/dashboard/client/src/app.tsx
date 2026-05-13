@@ -33,6 +33,7 @@ const router = createBrowserRouter([
   },
 ]);
 
+/** Root application component that provides routing, query client, and tooltip context. */
 export function App(): React.JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>

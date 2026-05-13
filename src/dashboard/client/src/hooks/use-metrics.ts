@@ -4,6 +4,7 @@ import { STALE_TIMES } from "../lib/constants";
 import { queryKeys } from "../lib/query-keys";
 import type { CostMetrics, QuotaStatus } from "../types/api";
 
+/** Fetch and cache aggregated LLM cost metrics from /api/metrics/cost. */
 export function useCostMetrics(): ReturnType<typeof useQuery<CostMetrics>> {
   return useQuery({
     queryKey: queryKeys.metrics.cost,
@@ -12,6 +13,7 @@ export function useCostMetrics(): ReturnType<typeof useQuery<CostMetrics>> {
   });
 }
 
+/** Fetch and cache current quota/rate-limit status from /api/metrics/quota. */
 export function useQuotaStatus(): ReturnType<typeof useQuery<QuotaStatus>> {
   return useQuery({
     queryKey: queryKeys.metrics.quota,

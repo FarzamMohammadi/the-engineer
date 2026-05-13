@@ -4,6 +4,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { useCostMetrics } from "../../hooks/use-metrics";
 import { formatCurrency } from "../../lib/formatters";
 
+/** Card showing today's and this month's LLM spend in USD. */
 export function CostTicker(): React.JSX.Element {
   const { data: metrics, isLoading } = useCostMetrics();
 

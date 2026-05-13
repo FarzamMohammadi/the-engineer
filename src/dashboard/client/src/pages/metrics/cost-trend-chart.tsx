@@ -8,6 +8,7 @@ interface CostTrendChartProps {
   isLoading: boolean;
 }
 
+/** Per-day bar chart of LLM spend over the last 30 days. */
 export function CostTrendChart({ data, isLoading }: CostTrendChartProps): React.JSX.Element {
   if (isLoading) {
     return (

@@ -9,6 +9,7 @@ interface JsonViewerProps {
   className?: string;
 }
 
+/** Recursively renders JSON data as a collapsible, syntax-highlighted tree. */
 export function JsonViewer({ data, label, defaultExpanded = false, className }: JsonViewerProps): React.JSX.Element {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -69,17 +70,33 @@ export function JsonViewer({ data, label, defaultExpanded = false, className }: 
 }
 
 function formatPrimitive(value: unknown): string {
-  if (value === null || value === undefined) return "null";
-  if (typeof value === "string") return `"${value}"`;
-  if (typeof value === "boolean") return String(value);
-  if (typeof value === "number") return String(value);
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return `"${value}"`;
+  }
+  if (typeof value === "boolean") {
+    return String(value);
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
   return String(value);
 }
 
 function valueColorClass(value: unknown): string {
-  if (value === null || value === undefined) return "text-muted-foreground";
-  if (typeof value === "string") return "text-emerald-400";
-  if (typeof value === "number") return "text-blue-400";
-  if (typeof value === "boolean") return "text-amber-400";
+  if (value === null || value === undefined) {
+    return "text-muted-foreground";
+  }
+  if (typeof value === "string") {
+    return "text-emerald-400";
+  }
+  if (typeof value === "number") {
+    return "text-blue-400";
+  }
+  if (typeof value === "boolean") {
+    return "text-amber-400";
+  }
   return "text-foreground";
 }

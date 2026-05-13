@@ -15,6 +15,7 @@ interface TaskLlmTabProps {
   taskId: string;
 }
 
+/** LLM call inspector showing model, tokens, cost, and latency per call. */
 export function TaskLlmTab({ taskId }: TaskLlmTabProps): React.JSX.Element {
   const { data: traces, isLoading } = useTaskLlmTraces(taskId);
 
@@ -84,7 +85,7 @@ function LlmTraceRow({ trace }: { trace: Observation }): React.JSX.Element {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
+      <CollapsibleTrigger asChild={true}>
         <button
           type="button"
           className={cn(

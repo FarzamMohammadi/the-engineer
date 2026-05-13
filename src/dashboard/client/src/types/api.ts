@@ -1,5 +1,6 @@
 // ── Task ─────────────────────────────────────────────────────────────────────
 
+/** Valid task lifecycle states. */
 export type TaskState =
   | "requirements_gathering"
   | "queued"
@@ -9,8 +10,10 @@ export type TaskState =
   | "completed"
   | "failed";
 
+/** Task sub-state when active. */
 export type SubState = "working" | "supervising" | "integrating" | "code";
 
+/** RRPIR pipeline phase. */
 export type Phase =
   | "requirements_gathering"
   | "research"
@@ -20,6 +23,7 @@ export type Phase =
   | "demo_prep"
   | "integration";
 
+/** Lightweight task row for list views. */
 export interface TaskListItem {
   id: string;
   title: string;
@@ -41,6 +45,7 @@ export interface TaskListItem {
   blocked_reason: string | null;
 }
 
+/** Full task record for detail views. */
 export interface TaskDetail {
   id: string;
   title: string;
@@ -71,6 +76,7 @@ export interface TaskDetail {
 
 // ── System Status ────────────────────────────────────────────────────────────
 
+/** Daemon health and aggregate task counts. */
 export interface SystemStatus {
   daemon_running: boolean;
   daemon_pid: number | null;
@@ -84,6 +90,7 @@ export interface SystemStatus {
 
 // ── Metrics ──────────────────────────────────────────────────────────────────
 
+/** Cost and token aggregations for the metrics page. */
 export interface CostMetrics {
   today_spend_usd: number;
   month_spend_usd: number;
@@ -104,6 +111,7 @@ export interface CostMetrics {
   };
 }
 
+/** LLM provider quota status and exhaustion history. */
 export interface QuotaStatus {
   available: boolean;
   live: Record<string, unknown> | null;
@@ -112,6 +120,7 @@ export interface QuotaStatus {
 
 // ── Observations ─────────────────────────────────────────────────────────────
 
+/** All 14 observation types recorded by the observer. */
 export type ObservationType =
   | "agent_iteration"
   | "llm_call"
@@ -128,8 +137,10 @@ export type ObservationType =
   | "config_change"
   | "quota_status";
 
+/** Log severity level for observations. */
 export type ObservationLevel = "debug" | "info" | "warn" | "error";
 
+/** Single observation row from the SQLite observations table. */
 export interface Observation {
   id: string;
   trace_id: string | null;
@@ -152,6 +163,7 @@ export interface Observation {
 
 // ── Events ───────────────────────────────────────────────────────────────────
 
+/** Event bus domain event row from the SQLite events table. */
 export interface DomainEvent {
   id: string;
   sequence: number;
@@ -164,16 +176,19 @@ export interface DomainEvent {
 
 // ── SSE ──────────────────────────────────────────────────────────────────────
 
+/** SSE message carrying a new observation. */
 export interface SseObservationEvent {
   event: "observation";
   data: Observation;
 }
 
+/** SSE message carrying a new domain event. */
 export interface SseDomainEvent {
   event: "event";
   data: DomainEvent;
 }
 
+/** SSE heartbeat with cursor positions. */
 export interface SseHeartbeat {
   event: "heartbeat";
   data: { lastObsRowId: number; lastEventSeq: number };
@@ -181,6 +196,7 @@ export interface SseHeartbeat {
 
 // ── Timeline ─────────────────────────────────────────────────────────────────
 
+/** Unified timeline entry combining events, journal entries, and action traces. */
 export interface TimelineItem {
   kind: "event" | "journal" | "action";
   timestamp: string;
@@ -189,8 +205,10 @@ export interface TimelineItem {
 
 // ── Errors ──────────────────────────────────────────────────────────────────
 
+/** Source category of an error entry. */
 export type ErrorKind = "task_failure" | "observation" | "event";
 
+/** Normalized error from any of the 3 error sources. */
 export interface ErrorEntry {
   kind: ErrorKind;
   id: string;
@@ -202,6 +220,7 @@ export interface ErrorEntry {
   level: "error" | "warn";
 }
 
+/** Response shape for GET /api/errors. */
 export interface ErrorListResponse {
   errors: ErrorEntry[];
   count: number;
@@ -209,28 +228,34 @@ export interface ErrorListResponse {
 
 // ── Activity ────────────────────────────────────────────────────────────────
 
+/** Discriminated union of observations and events for the activity feed. */
 export type ActivityItem = { source: "observation"; data: Observation } | { source: "event"; data: DomainEvent };
 
 // ── API Responses ────────────────────────────────────────────────────────────
 
+/** Response shape for GET /api/tasks. */
 export interface TaskListResponse {
   tasks: TaskListItem[];
   count: number;
 }
 
+/** Response shape for GET /api/tasks/:id. */
 export interface TaskDetailResponse {
   task: TaskDetail;
 }
 
+/** Response shape for GET /api/tasks/:id/timeline. */
 export interface TimelineResponse {
   timeline: TimelineItem[];
 }
 
+/** Response shape for GET /api/observations. */
 export interface ObservationListResponse {
   observations: Observation[];
   count: number;
 }
 
+/** Response shape for GET /api/events. */
 export interface EventListResponse {
   events: DomainEvent[];
   count: number;

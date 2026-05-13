@@ -11,6 +11,7 @@ interface QuotaStatusProps {
   isLoading: boolean;
 }
 
+/** LLM quota progress bar with usage percentage and exhaustion event history. */
 export function QuotaStatus({ data, isLoading }: QuotaStatusProps): React.JSX.Element {
   if (isLoading) {
     return (
@@ -52,13 +53,13 @@ export function QuotaStatus({ data, isLoading }: QuotaStatusProps): React.JSX.El
         {exhaustionEvents.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-medium text-red-400">Recent Exhaustion Events</p>
-            {exhaustionEvents.slice(0, 3).map((evt, i) => (
+            {exhaustionEvents.slice(0, 3).map((event, i) => (
               <div key={`exh-${String(i)}`} className="rounded-md border border-red-500/20 bg-red-500/5 p-2">
                 <p className="text-xs text-red-400">
-                  {typeof evt["reason"] === "string" ? evt["reason"] : "Quota exhausted"}
+                  {typeof event["reason"] === "string" ? event["reason"] : "Quota exhausted"}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  {formatTimeAgo(typeof evt["observed_at"] === "string" ? evt["observed_at"] : null)}
+                  {formatTimeAgo(typeof event["observed_at"] === "string" ? event["observed_at"] : null)}
                 </p>
               </div>
             ))}

@@ -6,6 +6,7 @@ import { useObservations } from "../../hooks/use-observations";
 import { cn } from "../../lib/cn";
 import { formatTimeAgo } from "../../lib/formatters";
 
+/** Card displaying the most recent error observations with severity styling. */
 export function RecentErrors(): React.JSX.Element {
   const { data: errors, isLoading } = useObservations({ level: "error", limit: 5 });
 

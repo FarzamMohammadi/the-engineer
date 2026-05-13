@@ -9,6 +9,7 @@ import { PhasePerformance } from "./phase-performance";
 import { QuotaStatus } from "./quota-status";
 import { TokenUsage } from "./token-usage";
 
+/** Metrics dashboard with spend cards, cost charts, token stats, and quota status. */
 export function MetricsPage(): React.JSX.Element {
   const { data: cost, isLoading: costLoading } = useCostMetrics();
   const { data: quota, isLoading: quotaLoading } = useQuotaStatus();

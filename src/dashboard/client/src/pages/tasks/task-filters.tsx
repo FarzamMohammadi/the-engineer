@@ -18,6 +18,7 @@ interface TaskFiltersProps {
   counts: Record<string, number>;
 }
 
+/** Horizontal chip bar for filtering the task list by state. */
 export function TaskFilters({ selected, onSelect, counts }: TaskFiltersProps): React.JSX.Element {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -65,6 +66,8 @@ function FilterChip({ label, count, active, onClick, dotColor }: FilterChipProps
 
 function totalCount(counts: Record<string, number>): number {
   let sum = 0;
-  for (const v of Object.values(counts)) sum += v;
+  for (const v of Object.values(counts)) {
+    sum += v;
+  }
   return sum;
 }

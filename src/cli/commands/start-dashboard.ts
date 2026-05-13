@@ -8,7 +8,7 @@ import { getOutput } from "../output.js";
 
 export const DASHBOARD_PORT = 3847;
 
-/** Launch the War Room dashboard alongside the daemon. */
+/** Launch the dashboard alongside the daemon. */
 export function launchDashboard(dirs: EngineerDirectories): { cleanup: () => void } {
   const out = getOutput();
   const dbPath = join(dirs.data, "engineer.db");

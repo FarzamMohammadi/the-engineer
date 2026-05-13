@@ -103,7 +103,7 @@ engineer start --dry-run                 # Show what would happen, don't start
 engineer start --seed ./seed-example/    # Non-interactive setup from seed directory
 ```
 
-**Startup sequence:** first-run detection → setup if needed → load `.env` → capture shell env vars to `.env` → load config → pre-flight checks (doctor categories 1-7) → bootstrap all components → start tick loop → launch War Room dashboard.
+**Startup sequence:** first-run detection → setup if needed → load `.env` → capture shell env vars to `.env` → load config → pre-flight checks (doctor categories 1-7) → bootstrap all components → start tick loop → launch dashboard (React SPA on port 3847).
 
 **Signal handling:** `SIGTERM` and `SIGINT` trigger graceful shutdown — active tasks transition to `queued`, plugins shut down, PID file cleaned up.
 

@@ -1,5 +1,5 @@
 /**
- * Centralized Observer — the War Room's eyes (Phase R-0).
+ * Centralized Observer — the dashboard's data source.
  *
  * Every component calls observer.startSpan() or observer.observe() to report
  * what's happening. The Observer persists to SQLite, notifies real-time

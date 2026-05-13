@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-type SseEventType = "observation" | "event" | "heartbeat";
+export type SseEventType = "observation" | "event" | "heartbeat";
 type SseCallback = (data: unknown) => void;
 
 interface SseState {
@@ -12,17 +12,18 @@ interface SseState {
 const INITIAL_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
 
+const sseListeners = new Map<SseEventType, Set<SseCallback>>();
+
 export function useSse(): SseState {
   const [state, setState] = useState<SseState>({ connected: false, reconnecting: false, lastEventId: null });
   const sourceRef = useRef<EventSource | null>(null);
-  const listenersRef = useRef<Map<SseEventType, Set<SseCallback>>>(new Map());
   const retryMsRef = useRef(INITIAL_RETRY_MS);
 
   useEffect(() => {
-    function handleSseMessage(listenersMap: Map<SseEventType, Set<SseCallback>>, eventType: SseEventType) {
+    function handleSseMessage(eventType: SseEventType) {
       return (e: MessageEvent) => {
         const parsed: unknown = JSON.parse(e.data as string);
-        const callbacks = listenersMap.get(eventType);
+        const callbacks = sseListeners.get(eventType);
         if (callbacks) {
           for (const cb of callbacks) cb(parsed);
         }
@@ -52,7 +53,7 @@ export function useSse(): SseState {
       };
 
       for (const eventType of ["observation", "event", "heartbeat"] as SseEventType[]) {
-        source.addEventListener(eventType, handleSseMessage(listenersRef.current, eventType));
+        source.addEventListener(eventType, handleSseMessage(eventType));
       }
     }
 
@@ -67,6 +68,7 @@ export function useSse(): SseState {
   return state;
 }
 
+/** Subscribe to a specific SSE event type. Callback is stable-ref'd — no need to memoize. */
 export function useSseSubscription(eventType: SseEventType, callback: SseCallback): void {
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
@@ -83,5 +85,3 @@ export function useSseSubscription(eventType: SseEventType, callback: SseCallbac
     };
   }, [eventType]);
 }
-
-const sseListeners = new Map<SseEventType, Set<SseCallback>>();

@@ -1,8 +1,10 @@
 # Slice 3: Dashboard — Complete Frontend Rewrite
 
-**Status:** Session 5 COMPLETE, Session 6 next
-**Sessions:** 4 (planning), 5-7 (implementation), 8 (optional polish)
+**Status:** COMPLETE
+**Sessions:** 4 (planning), 5-7 (implementation)
 **Session 5 completed:** 2026-05-11
+**Session 6 completed:** 2026-05-11
+**Session 7 completed:** 2026-05-12
 
 ## Goal
 
@@ -373,6 +375,12 @@ Light touch: update file paths and descriptions where they reference old static 
 8. Backend refines incrementally — not a big-bang rewrite, each change pairs with its frontend feature
 9. Delete existing dashboard tests — no maintenance burden for a peripheral service
 10. Frontend source in `src/dashboard/client/` — co-located with backend API routes
+
+**Session 6 (implementation):**
+- Filter chips (badge buttons) preferred over `<select>` for task state filtering — more visible, faster interaction
+- Mutations use arrow returns (not `async/await`) since `apiFetch` already returns a Promise — satisfies biome `useAwait` rule
+- `tsconfig.test.json` must exclude `src/dashboard/client` — Session 5 gap, fixed in Session 6
+- LLM trace row split into `parseLlmMeta` + `LlmTraceHeader` sub-components to stay under biome complexity threshold
 
 ## Discovered from Other Slices
 

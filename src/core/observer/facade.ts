@@ -2,7 +2,7 @@
  * Unified Observer facade — one interface for logging + observation.
  *
  * Wraps pino (structured ops logs → rolling JSON files) and the ObservationStore
- * (traces → SQLite for War Room) behind a single component-scoped API.
+ * (traces → SQLite for the dashboard) behind a single component-scoped API.
  *
  * Every component receives `observer: IObserver`. No more optional loggers,
  * no more console fallbacks.
@@ -64,7 +64,7 @@ export interface IObserver {
   error(msg: string, data?: Record<string, unknown>): void;
   debug(msg: string, data?: Record<string, unknown>): void;
 
-  // ── Tracing (→ SQLite for War Room) ─────────────────────────────────
+  // ── Tracing (→ SQLite for dashboard) ────────────────────────────────
   startSpan(
     type: ObservationTypeValue,
     name: string,

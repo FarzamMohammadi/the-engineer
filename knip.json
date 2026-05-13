@@ -24,7 +24,11 @@
     "@radix-ui/react-separator",
     "@radix-ui/react-slot",
     "@radix-ui/react-tooltip",
-    "@radix-ui/react-tabs"
+    "@radix-ui/react-tabs",
+    "@radix-ui/react-collapsible",
+    "@radix-ui/react-progress",
+    "@radix-ui/react-switch",
+    "@tanstack/react-table"
   ],
   "ignoreExportsUsedInFile": true,
   "exclude": ["unresolved"],

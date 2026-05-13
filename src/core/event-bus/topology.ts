@@ -46,7 +46,7 @@ export interface ValidationResult {
  * their publishers, subscribers, and payload schemas.
  *
  * Built during bootstrap. Consumed by EventBus (optional runtime validation)
- * and the War Room dashboard (topology graph).
+ * and the dashboard (topology graph).
  */
 export class EventTopology {
   private readonly declarations = new Map<string, EventDeclaration>();

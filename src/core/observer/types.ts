@@ -36,7 +36,7 @@ export interface ObservationSpan {
 
 // ── IObservationStore ─────────────────────────────────────────────────────────
 
-/** Observation-only store contract (SQLite persistence + real-time streaming for War Room). */
+/** Observation-only store contract (SQLite persistence + real-time streaming for dashboard). */
 export interface IObservationStore {
   /** Start an observation span. Returns a handle with end(). Duration auto-recorded. */
   startSpan(

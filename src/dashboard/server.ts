@@ -15,6 +15,7 @@ import { cors } from "hono/cors";
 
 import { BlobStore } from "../core/observer/index.js";
 import { createObservationStore } from "../core/observer/index.js";
+import { errorRoutes } from "./api/errors.js";
 import { eventRoutes } from "./api/events.js";
 import { messagesRoutes } from "./api/messages.js";
 import { metricsRoutes } from "./api/metrics.js";
@@ -55,12 +56,13 @@ export function createDashboardApp(config: DashboardConfig): {
 
   // Mount API routes
   app.route("/api/system", systemRoutes({ db, observationStore, runDir: config.runDir }));
-  app.route("/api/tasks", taskRoutes({ db, observationStore }));
+  app.route("/api/tasks", taskRoutes({ db, writeDb, observationStore }));
   app.route("/api/events", eventRoutes({ db }));
   app.route("/api/metrics", metricsRoutes({ db, observationStore }));
   app.route("/api/traces", traceRoutes({ observationStore }));
   app.route("/api/blob", blobRoutes({ observationStore }));
   app.route("/api/observations", observationRoutes({ observationStore }));
+  app.route("/api/errors", errorRoutes({ db, observationStore }));
   app.route("/api/stream", streamRoutes({ db }));
   app.route("/api/messages", messagesRoutes({ writeDb }));
 
@@ -110,13 +112,6 @@ export function createDashboardApp(config: DashboardConfig): {
     const indexPath = join(spaDir, "index.html");
     if (existsSync(indexPath)) {
       const html = readFileSync(indexPath, "utf-8");
-      return c.html(html);
-    }
-
-    // Fallback: serve old static HTML (before dashboard is built)
-    const legacyPath = join(import.meta.dirname, "static", "index.html");
-    if (existsSync(legacyPath)) {
-      const html = readFileSync(legacyPath, "utf-8");
       return c.html(html);
     }
 

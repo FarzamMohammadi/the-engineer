@@ -136,7 +136,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       hookRegistry,
     });
 
-    // 6. Observability (BlobStore + ObservationStore for War Room)
+    // 6. Observability (BlobStore + ObservationStore for dashboard)
     const tracesDir = join(engineerHome, "traces");
     const blobStore = new BlobStore(tracesDir);
     const observationStore = createObservationStore(dbHandle.db, blobStore);
@@ -265,7 +265,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       dbPath,
       milestones,
     });
-    // Record bootstrap summary as a lifecycle observation for War Room visibility
+    // Record bootstrap summary as a lifecycle observation for dashboard visibility
     observer.observe("lifecycle", "bootstrap_complete", {
       elapsedMs: bootstrapElapsedMs,
       milestones,

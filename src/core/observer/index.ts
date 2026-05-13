@@ -3,7 +3,7 @@
  *
  * Public API:
  * - IObserver / Observer / createObserverFacade — the facade every component receives
- * - ObservationStore / createObservationStore — persistence layer (War Room queries)
+ * - ObservationStore / createObservationStore — persistence layer (dashboard queries)
  * - BlobStore — content-addressable storage for large payloads
  * - createLogger — pino logger factory (rolling JSON files)
  * - Types — Observation, ObservationSpan, SpanOptions, etc.

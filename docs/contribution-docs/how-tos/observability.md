@@ -6,7 +6,7 @@ How logging, tracing, and real-time observation work in The Engineer.
 
 ## Overview
 
-Every component receives a single `observer: IObserver` — one interface for structured logging (pino rolling JSON) and tracing (SQLite observations for the War Room dashboard). No `console.*` calls in production code, no optional loggers, no fallbacks.
+Every component receives a single `observer: IObserver` — one interface for structured logging (pino rolling JSON) and tracing (SQLite observations for the dashboard). No `console.*` calls in production code, no optional loggers, no fallbacks.
 
 ```
 IObserver (what components use)
@@ -24,7 +24,7 @@ IObserver (what components use)
 | System | Purpose | Destination | Interface |
 |--------|---------|-------------|-----------|
 | Logging | Ops diagnostics | Rolling JSON log files | `observer.info/warn/error/debug()` |
-| Tracing | War Room visibility | SQLite `observations` table | `observer.startSpan/observe/recordDecision/recordError()` |
+| Tracing | Dashboard visibility | SQLite `observations` table | `observer.startSpan/observe/recordDecision/recordError()` |
 | Event Bus | Audit trail | SQLite `events` table | `eventBus.publish()` (separate from observer) |
 
 The Event Bus is a separate system — it records business events (task created, state changed, cost incurred). The observer records everything else (what's happening inside components, LLM calls, decisions, errors).
@@ -43,7 +43,7 @@ interface IObserver {
   error(msg: string, data?: Record<string, unknown>): void;
   debug(msg: string, data?: Record<string, unknown>): void;
 
-  // Tracing (→ SQLite for War Room)
+  // Tracing (→ SQLite for dashboard)
   startSpan(type, name, input?, options?): ObservationSpan;
   observe(type, name, data, options?): string;
   recordDecision(name, context, options, chosen, reasoning, confidence, opts?): string;
@@ -57,7 +57,7 @@ interface IObserver {
 }
 ```
 
-**Key rule:** `recordError()` is the only method with dual behavior — it writes to both pino (ops logs) and the observation store (War Room). All other methods target exactly one system.
+**Key rule:** `recordError()` is the only method with dual behavior — it writes to both pino (ops logs) and the observation store (dashboard). All other methods target exactly one system.
 
 ---
 
@@ -340,12 +340,12 @@ Stored content is deduped by hash. Used by the orchestrator's LLM caller to avoi
 
 ## Dashboard Integration
 
-The War Room dashboard consumes observations through two channels:
+The dashboard is a React SPA (`src/dashboard/client/`) with 5 views: Overview, Tasks, Activity, Metrics, and Errors. It consumes observations through two channels:
 
-1. **Real-time:** `ObserverStream` pub/sub delivers observations to SSE subscribers as they happen
-2. **Historical:** `ObservationStore.query(filters)` supports filtering by type, task_id, trace_id, phase, since, level (with limit)
+1. **Real-time:** SSE stream (`/api/stream`) polls SQLite for new observations/events every second, pushes to the browser via Server-Sent Events
+2. **Historical:** Dashboard API routes (`src/dashboard/api/`) query `ObservationStore` with filters (type, task_id, trace_id, phase, since, level) and serve blob content
 
-Dashboard API routes (`src/dashboard/api/traces.ts`) query the store and serve blob content.
+The frontend uses TanStack Query for data fetching with SSE-driven cache invalidation — expensive endpoints (metrics, traces) refresh only when new data arrives.
 
 ---
 

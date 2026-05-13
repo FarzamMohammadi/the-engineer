@@ -307,10 +307,10 @@ async function runForeground(
     startSpinner.start();
     await daemon.start();
     startSpinner.succeed("Daemon running");
-    const warRoomUrl = `http://localhost:${String(DASHBOARD_PORT)}`;
-    observer.info("The Engineer is ready", { engineerHome, warRoomUrl });
+    const dashboardUrl = `http://localhost:${String(DASHBOARD_PORT)}`;
+    observer.info("The Engineer is ready", { engineerHome, dashboardUrl });
     out.blank();
-    out.success(`The Engineer is ready. War Room: ${warRoomUrl}`);
+    out.success(`The Engineer is ready. Dashboard: ${dashboardUrl}`);
 
     if (startupHints.length > 0) {
       out.blank();

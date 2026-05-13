@@ -40,7 +40,7 @@ export function ActivityPage(): React.JSX.Element {
   const backfillItems = useMemo((): ActivityItem[] => {
     const items: ActivityItem[] = [];
     if (observations) {
-      for (const obs of observations) {
+      for (const observation of observations) {
         items.push({ source: "observation", data: observation });
       }
     }

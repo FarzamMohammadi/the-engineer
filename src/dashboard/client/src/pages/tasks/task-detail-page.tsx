@@ -1,0 +1,116 @@
+import { ArrowLeft, Ban } from "lucide-react";
+import { useNavigate, useParams } from "react-router";
+import { PhasePipeline } from "../../components/shared/phase-pipeline";
+import { StateBadge } from "../../components/shared/state-badge";
+import { Button } from "../../components/ui/button";
+import { Skeleton } from "../../components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { useCancelTask, useTaskDetail } from "../../hooks/use-tasks";
+import { ROUTES } from "../../lib/routes";
+import type { TaskDetail } from "../../types/api";
+import { BlockedResponse } from "./blocked-response";
+import { TaskLlmTab } from "./task-llm-tab";
+import { TaskOverviewTab } from "./task-overview-tab";
+import { TaskPhasesTab } from "./task-phases-tab";
+import { TaskTimelineTab } from "./task-timeline-tab";
+import { TaskToolsTab } from "./task-tools-tab";
+
+const TAB_ROUTES = ["overview", "timeline", "phases", "llm", "tools"] as const;
+type TabValue = (typeof TAB_ROUTES)[number];
+
+export function TaskDetailPage(): React.JSX.Element {
+  const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
+  const navigate = useNavigate();
+  const { data: task, isLoading } = useTaskDetail(taskId);
+  const cancelMutation = useCancelTask(taskId ?? "");
+
+  const activeTab: TabValue = TAB_ROUTES.includes(tab as TabValue) ? (tab as TabValue) : "overview";
+
+  function handleTabChange(value: string): void {
+    if (!taskId) return;
+    if (value === "overview") {
+      navigate(ROUTES.taskDetail(taskId), { replace: true });
+    } else {
+      navigate(`/tasks/${taskId}/${value}`, { replace: true });
+    }
+  }
+
+  if (isLoading || !task) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-6 w-96" />
+        <Skeleton className="h-[400px] w-full" />
+      </div>
+    );
+  }
+
+  const typedTask = task as TaskDetail;
+  const isBlocked = typedTask.state === "blocked";
+  const isCancellable = typedTask.state === "active" || typedTask.state === "queued" || typedTask.state === "blocked";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => navigate(ROUTES.tasks)}>
+          <ArrowLeft size={16} />
+        </Button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3">
+            <h1 className="truncate text-lg font-semibold">{typedTask.title}</h1>
+            <StateBadge state={typedTask.state} />
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-xs text-muted-foreground font-mono">{typedTask.id}</span>
+            <PhasePipeline currentPhase={typedTask.phase} phasesRan={phasesFromDetail(typedTask)} />
+          </div>
+        </div>
+        {isCancellable && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+          >
+            <Ban size={14} />
+            Cancel
+          </Button>
+        )}
+      </div>
+
+      {isBlocked && <BlockedResponse taskId={typedTask.id} blocked={typedTask.blocked} />}
+
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="phases">Phases</TabsTrigger>
+          <TabsTrigger value="llm">LLM Calls</TabsTrigger>
+          <TabsTrigger value="tools">Tools</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
+          <TaskOverviewTab task={typedTask} />
+        </TabsContent>
+        <TabsContent value="timeline">
+          <TaskTimelineTab taskId={typedTask.id} />
+        </TabsContent>
+        <TabsContent value="phases">
+          <TaskPhasesTab taskId={typedTask.id} />
+        </TabsContent>
+        <TabsContent value="llm">
+          <TaskLlmTab taskId={typedTask.id} />
+        </TabsContent>
+        <TabsContent value="tools">
+          <TaskToolsTab taskId={typedTask.id} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function phasesFromDetail(task: TaskDetail): string[] {
+  const phases: string[] = [];
+  if (task.review) phases.push("self_review");
+  if (task.workspace) phases.push("execution");
+  return phases;
+}

@@ -10,6 +10,7 @@ import { TaskStates } from "../../schemas/task.js";
 
 export interface TaskRoutesDeps {
   db: Database.Database;
+  writeDb: Database.Database;
   observationStore: ObservationStore;
 }
 
@@ -311,6 +312,59 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       limit: 1000,
     });
     return c.json({ traces });
+  });
+
+  /** Cancel a task — transitions to failed state. */
+  app.post("/:id/cancel", (c) => {
+    const taskId = c.req.param("id");
+    const row = deps.db.prepare("SELECT state, sub_state FROM tasks WHERE id = ?").get(taskId) as
+      | { state: string; sub_state: string | null }
+      | undefined;
+
+    if (!row) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const cancellableStates: ReadonlySet<string> = new Set([
+      TaskStates.requirements_gathering,
+      TaskStates.queued,
+      TaskStates.active,
+      TaskStates.blocked,
+      TaskStates.review_pending,
+    ]);
+
+    if (!cancellableStates.has(row.state)) {
+      return c.json({ error: `Cannot cancel task in "${row.state}" state` }, 400);
+    }
+
+    const now = new Date().toISOString();
+
+    try {
+      deps.writeDb
+        .prepare("UPDATE tasks SET state = ?, sub_state = NULL, completed_at = ?, last_transition_at = ? WHERE id = ?")
+        .run(TaskStates.failed, now, now, taskId);
+
+      deps.writeDb
+        .prepare(
+          `INSERT INTO state_transitions (id, task_id, from_state, from_sub_state, to_state, to_sub_state, reason, triggered_by, timestamp)
+           VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        )
+        .run(
+          `cancel-${taskId}-${Date.now()}`,
+          taskId,
+          row.state,
+          row.sub_state,
+          TaskStates.failed,
+          "Cancelled via dashboard",
+          "dashboard",
+          now,
+        );
+
+      return c.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: msg }, 500);
+    }
   });
 
   return app;

@@ -6,6 +6,7 @@ import { ActivityPage } from "./pages/activity/activity-page";
 import { ErrorsPage } from "./pages/errors/errors-page";
 import { MetricsPage } from "./pages/metrics/metrics-page";
 import { OverviewPage } from "./pages/overview/overview-page";
+import { TaskDetailPage } from "./pages/tasks/task-detail-page";
 import { TasksPage } from "./pages/tasks/tasks-page";
 
 const queryClient = new QueryClient({
@@ -23,8 +24,8 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <OverviewPage /> },
       { path: "tasks", element: <TasksPage /> },
-      { path: "tasks/:taskId", element: <TasksPage /> },
-      { path: "tasks/:taskId/:tab", element: <TasksPage /> },
+      { path: "tasks/:taskId", element: <TaskDetailPage /> },
+      { path: "tasks/:taskId/:tab", element: <TaskDetailPage /> },
       { path: "activity", element: <ActivityPage /> },
       { path: "metrics", element: <MetricsPage /> },
       { path: "errors", element: <ErrorsPage /> },

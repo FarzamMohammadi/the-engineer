@@ -179,6 +179,38 @@ export interface SseHeartbeat {
   data: { lastObsRowId: number; lastEventSeq: number };
 }
 
+// ── Timeline ─────────────────────────────────────────────────────────────────
+
+export interface TimelineItem {
+  kind: "event" | "journal" | "action";
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+// ── Errors ──────────────────────────────────────────────────────────────────
+
+export type ErrorKind = "task_failure" | "observation" | "event";
+
+export interface ErrorEntry {
+  kind: ErrorKind;
+  id: string;
+  task_id: string | null;
+  task_title: string | null;
+  message: string;
+  detail: string | null;
+  timestamp: string;
+  level: "error" | "warn";
+}
+
+export interface ErrorListResponse {
+  errors: ErrorEntry[];
+  count: number;
+}
+
+// ── Activity ────────────────────────────────────────────────────────────────
+
+export type ActivityItem = { source: "observation"; data: Observation } | { source: "event"; data: DomainEvent };
+
 // ── API Responses ────────────────────────────────────────────────────────────
 
 export interface TaskListResponse {
@@ -188,6 +220,10 @@ export interface TaskListResponse {
 
 export interface TaskDetailResponse {
   task: TaskDetail;
+}
+
+export interface TimelineResponse {
+  timeline: TimelineItem[];
 }
 
 export interface ObservationListResponse {

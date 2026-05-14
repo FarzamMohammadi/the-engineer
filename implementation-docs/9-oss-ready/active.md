@@ -7,14 +7,16 @@
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
 - [approach.md](approach.md) — strategy, lenses, co-founder rules, session protocol
-- Current slice: `slices/03-dashboard.md`
+- Current slice: `slices/04-startup.md` (to be created)
+- Previous slice: `slices/03-dashboard.md`
 
 ## Current State
 
 **Phase:** 9 — OSS Ready
-**Session:** 7 (Dashboard Activity + Metrics + Errors + Polish — COMPLETE)
-**Slice:** 03-dashboard — COMPLETE
-**Current slice file:** `slices/03-dashboard.md`
+**Session:** 8 (Coding Standards Audit — Dashboard — COMPLETE)
+**Slice:** 03-dashboard — COMPLETE (including coding standards audit)
+**Next slice:** 04-startup
+**Current slice file:** `slices/04-startup.md` (to be created)
 
 ### What's Done
 
@@ -25,7 +27,7 @@
 - Strategy agreed: vertical slices, RRPIR per slice, tangents welcome, no coming back
 - **Slice 1 COMPLETE:** `docs/coding-standards.md` written — 10 categories of coding standards decided via deep Q&A
 - **Slice 2 COMPLETE:** Repo readiness — Biome aligned (120 chars, noDefaultExport, PascalCase enums, smart constructor naming), lint split (check-only vs fix), CI parallelized (3 jobs), tests restructured (tests/unit/ mirroring src/), 13 migrations consolidated to 2, unused exports removed, safe deps updated, hardcoded paths fixed
-- **Slice 3 COMPLETE:** Dashboard frontend rewrite — 5-page React SPA, all features working
+- **Slice 3 COMPLETE:** Dashboard frontend rewrite — 5-page React SPA, all features working, coding standards enforced
   - **Session 4 (planning):** Tech stack, layout, information architecture, session phasing
   - **Session 5:** Foundation + Layout + Overview page
     - 48 new files, 6 modified root files
@@ -46,6 +48,10 @@
     - Cleanup: deleted old static HTML (`src/dashboard/static/index.html`), deleted old dashboard tests (2 files), removed legacy HTML fallback from server.ts, removed empty directories
     - Docs: updated `observability.md`, `architecture/overview.md`, `cli.md` to reference React SPA instead of "War Room"
     - 2 new devDependencies: @radix-ui/react-progress, @radix-ui/react-switch
+  - **Session 8:** Coding Standards Audit
+    - Tightened biome.json: `useFilenamingConvention` project-wide, dashboard override reduced from 10 to 4 rules
+    - JSDoc on all exports, return type annotations, newspaper order fixes, abbreviation elimination across 65 files
+    - Fixed sed-introduced bug in activity-page.tsx (unused loop variable)
     - All checks pass: build, 2520 tests (104 files), lint (0 errors, 10 pre-existing warnings)
 
 ### What's Next
@@ -90,3 +96,8 @@ Read `slices/04-startup.md` (to be created), then plan:
 - Chart component is a lightweight wrapper (ChartContainer + ChartTooltip + CHART_COLORS), not the full shadcn/ui chart — pragmatic, covers our needs
 - Keyboard shortcuts use "g then key" pattern (like GitHub) — g+o, g+t, g+a, g+m, g+e
 - Activity page backfills from API then appends SSE events with deduplication — true streaming feel without missing history
+
+**Session 8 (coding standards audit):**
+- Dashboard override reduced from 10 to 4 disabled rules — only React-essential rules stay off (`noNamespaceImport`, `noReactSpecificProps`, `useImportExtensions`, `noUndeclaredVariables`)
+- `useFilenamingConvention` added project-wide for kebab-case file naming enforcement
+- 5 of 10 coding standards are biome-automatable; the other 5 (newspaper order, function declarations, return types, JSDoc, guard clauses) require manual review

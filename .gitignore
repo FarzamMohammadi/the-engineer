@@ -22,7 +22,9 @@ coverage/
 # Environment / secrets (track .example files, ignore real ones)
 .env*
 !.env*.example
-seed/
+
+# Personal seed directories (seed-example/ itself stays tracked as a reference)
+seed-example-*
 
 package-lock.json
 

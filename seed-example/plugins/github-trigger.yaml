@@ -1,7 +1,7 @@
 # GitHub Issues trigger plugin
 
 repos:
-  - owner: FarzamMohammadi
-    name: the-engineer
+  - owner: your-github-username
+    name: your-repo-name
 
 github_token: "${GITHUB_TOKEN}"

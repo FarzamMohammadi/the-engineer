@@ -1,15 +1,16 @@
 # People configuration
 # Hot-reloadable — changes take effect without restart.
+# Replace the placeholder values below with real people.
 
 people:
-  - id: farzam
-    name: Farzam Mohammadi
+  - id: owner
+    name: Your Name
     roles: [owner]
     contacts:
       - channel: telegram
-        handle: "farzammoh"
+        handle: "your-telegram-handle"
       - channel: github
-        handle: "FarzamMohammadi"
+        handle: "your-github-username"
     preferences:
       notification_level: milestones
       quiet_hours: null

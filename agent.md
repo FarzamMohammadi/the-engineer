@@ -56,14 +56,13 @@ Everything below is loaded **only when your task requires it.** You may already 
 
 Each session operates within a finite context window (~200k tokens). Treat it as a budget — loading context, reading code, and producing output all draw from it. Running out mid-task means lost continuity and degraded quality.
 
-When a task is too large for a single session, don't attempt it all at once. Break the work into focused, deliberate phases that follow a natural progression:
+When the work is complex, break it into focused phases rather than attempting everything at once. The available skills reflect a natural progression — use the ones the task calls for:
 
-1. **Requirements Gathering** (`/requirements-gathering`) — Always first. Align with the user on intent, constraints, edge cases, and acceptance criteria before touching anything. Never skip this.
-2. **Research** (`/research`) — Once requirements are clear, investigate the codebase. Facts before opinions — build a complete picture of what exists before deciding what to change.
-3. **Planning** (`/create-plan`) — With requirements and research in hand, synthesize a plan with clear decisions, sequenced tasks, and verification steps.
-4. **Implementation** — Execute the plan in scoped pieces. Each session focuses on a subset, not the whole.
+- **`/requirements-gathering`** — Align with the user on intent, constraints, and acceptance criteria. Use when there is any ambiguity — no matter how small.
+- **`/research`** — Investigate the codebase with facts-before-opinions discipline. Use when you need to understand what exists before deciding what to change.
+- **`/create-plan`** — Synthesize findings into a plan with clear decisions and sequenced tasks. Use when the path forward has multiple options or non-trivial risk.
 
-These phases may span multiple sessions. That's the point — each phase gets full attention and full context rather than competing for space in a single overloaded session.
+A clear, small task might need none of these. An ambitious task might need all three across multiple sessions. Match the process to the complexity — don't over-engineer a one-liner, don't under-prepare a rewrite.
 
 The goal is utmost quality within each session, not maximum volume. A focused session that completes one phase well is worth more than an ambitious session that runs out of context halfway through implementation.
 

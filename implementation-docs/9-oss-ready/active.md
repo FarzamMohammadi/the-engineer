@@ -22,17 +22,18 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 04-startup — Startup & Configuration
-**State:** Phase 3 complete (Session 13). OS detection, setup gate, detection-summary confirm, messaging polish, future-considerations cleanup — all done. Phase 4 is next.
+**State:** Phase 4 complete (Session 14). CLI restructured — `commands/start/` groups 6 files, shutdown handler extracted, "Structure Reveals Intent" standard added. Phase 5 is next.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**Next step — Phase 4 (CLI Restructure: Screaming Architecture).** Read `slices/04-startup.md`
-and the plan, then: agree the target `src/cli/` directory layout with the owner, extract
-the signal-handling block from `start.ts` into its own unit, move/regroup files per the
-agreed structure, add the "Structure Reveals Intent" coding standard. Commit cohesively per
-task; the phase ends green (build + lint + tests + `check:circular`).
+**Next step — Phase 5 (Coding Standards Audit).** Read `slices/04-startup.md` and the plan,
+then: full standards sweep of all in-scope files (restructured `src/cli/`, `src/config/`,
+`src/plugins/loader.ts`, `src/plugins/builtin.ts`). Newspaper order, `function` declarations,
+return-type annotations, JSDoc on exports, guard clauses, `import type` separation. Rename
+abbreviations (`clr`→`colorize`, `wsRoot`→`workspaceRoot`). Fix doctor.ts orphaned JSDoc +
+stale numbering. CLI version from `package.json` + "Single Source of Truth" standard. Fix
+stale docs (`configuration/README.md`, `github-trigger.md`). Final green sweep.
 
-**Remaining slice phases:** 4 CLI Restructure (Screaming Architecture) → 5 Coding Standards
-Audit. One focused session each.
+**Remaining slice phases:** 5 Coding Standards Audit. One focused session.
 
 **Slice 4 decisions (Session 9):**
 - Getting-started: new `pnpm run setup` → `scripts/setup.sh` (confirm + install + build + link), then `engineer start`

@@ -50,6 +50,10 @@ Everything below is loaded **only when your task requires it.** You may already 
 
 **When the task is unclear:** don't load anything beyond the always-read files. Clarify with the user first, then load what's relevant.
 
+### Before You Start Working
+
+After you understand the task but before your first change, revisit the conditional reads table above and state which docs you loaded and why. If none apply, say so explicitly. This checkpoint makes your context loading visible — both to you and to the user.
+
 ---
 
 ## Know Your Limits

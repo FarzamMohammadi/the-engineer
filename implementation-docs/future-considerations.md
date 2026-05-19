@@ -201,26 +201,26 @@ packages/
 
 ---
 
-## OS-Specific Plugin Selection
+## Full Cross-Platform Support
 
-**Current state (v1):** All plugins are built and tested on macOS. Platform-specific functionality (macOS Keychain for credential access, `security` CLI for OAuth token reading) works on macOS only. Linux and Windows users may need to adapt credential access methods.
+**Current state (v1):** OS detection is built into first-run setup (`detectOperatingSystem()` in `src/cli/setup/os-detection.ts`). macOS is fully supported, Linux is preview (works but not thoroughly tested), and unsupported platforms warn but allow the user to proceed. All built-in plugins are developed and tested on macOS. Platform-specific functionality (macOS Keychain for credential access, `security` CLI for OAuth token reading) works on macOS only.
 
-**When it becomes relevant:** When users on Linux or Windows want to run The Engineer with full plugin functionality, including quota tracking that requires provider credential access.
+**When it becomes relevant:** When users on Linux or Windows want to run The Engineer with full plugin functionality, including credential access and quota tracking.
 
-**What it enables:** OS-aware plugin installation flow:
-1. Detect user's operating system during `engineer init` or plugin setup
-2. Filter available plugins to those compatible with the detected OS
-3. Present only compatible options, with clear warnings for partial support
-4. Platform-specific credential access abstracted per OS (macOS Keychain, Linux libsecret/file, Windows Credential Manager/file)
+**What it enables:**
+1. Per-plugin OS compatibility filtering — add `supported_platforms` to plugin manifests, filter during setup
+2. Platform-specific credential access abstracted per OS (macOS Keychain, Linux libsecret/file, Windows Credential Manager/file) behind a `CredentialProvider` interface
+3. Thorough Linux testing and promotion from "preview" to "full" support
+4. Windows support via POSIX compatibility layer or native adaptation
 
-**Current workaround:** The `contribution-docs/how-tos/plugins/` directory includes LLM-guided setup prompts. Users point their LLM CLI at the setup prompt, and the LLM detects their OS and guides them through platform-appropriate setup — including adapting credential access for their platform.
+**Current workaround:** The `contribution-docs/how-tos/plugins/` directory includes LLM-guided setup prompts. Users point their LLM CLI at the setup prompt, and the LLM detects their OS and guides them through platform-appropriate setup.
 
 **Migration path:**
 1. Abstract credential access into a `CredentialProvider` interface with OS-specific implementations
-2. Add OS detection to plugin manifests (`supported_platforms: ["darwin", "linux", "win32"]`)
-3. `engineer init` filters plugins by `process.platform` before presenting options
-4. Each plugin's `doInitialize()` validates platform compatibility and warns on unsupported OS
-5. Document per-platform setup in each adapter's README (or rely on LLM-guided setup)
+2. Add `supported_platforms` to plugin manifests; setup filters by `process.platform`
+3. Each plugin's `doInitialize()` validates platform compatibility and warns on unsupported OS
+4. Invest in Linux CI and testing to promote to full support
+5. Evaluate Windows POSIX options (WSL, Cygwin) for v2+ scope
 
 ---
 
@@ -240,43 +240,13 @@ packages/
 
 ---
 
-## Automatic Unblocking on Response
-
-**IMPLEMENTED** (Session 071). Trigger poller checks blocked tasks before creating new tasks. Matching on `external_ref` (repo + number). `blocked → queued` transition added. Health monitor timeout escalation kept as fallback.
-
----
-
-## Telegram Receive Capability
-
-**Current state:** Telegram plugin is send-only. The Engineer can message people but can't receive replies via Telegram. Responses currently come through trigger polling (e.g., GitHub issue comments detected by TriggerAdapter).
-
-**Design:** Add `receive` capability to CommunicationAdapter contract. Telegram plugin implements via webhook or long-polling. Received messages routed through the same `comm.message_received` event the daemon already subscribes to. The daemon matches incoming messages to blocked tasks and unblocks them.
-
-**Principle:** Goes through CommunicationAdapter contract, not Telegram-specific code. Any future comm plugin (Slack, Discord, email) that implements `receive` capability works the same way.
-
----
-
-## `engineer telegram-setup` CLI Command
-
-**Current state:** Users must manually get their `TELEGRAM_CHAT_ID` by messaging the bot and calling Telegram's `getUpdates` API.
-
-**Design:** `engineer telegram-setup` command that:
-1. Prompts user: "Send /start to @YourBotName on Telegram"
-2. Polls `getUpdates` for ~60 seconds
-3. When message arrives, extracts `chat.id`
-4. Writes to plugin config automatically
-5. Done — never needs manual `TELEGRAM_CHAT_ID` again
-
----
-
 ## Plugin How-To Guides
 
-Each adapter type needs a "How to build a plugin" guide so contributors can add new integrations without reading Core code. One guide per adapter type:
+Each adapter type needs a "How to build a plugin" guide so contributors can add new integrations without reading Core code. One guide per adapter type (4 adapter types):
 
 - **TriggerAdapter** — How to build a trigger plugin (poll for events, produce `TriggerEvent[]` with `external_ref`, idempotency keys, watermarks). Example: building a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
 - **CommunicationAdapter** — How to build a comm plugin (send messages, format for your platform, capability gates for send/receive/sync/issue_management). Example: building a Slack plugin, a Discord plugin, an email plugin.
 - **LLMAdapter** — How to build an LLM plugin (spawn CLI process, pipe prompt via stdin, parse output, report cost/tokens, detect rate limits). Example: building a plugin for a new CLI tool.
-- **ToolAdapter** — How to build a tool plugin (describe capabilities, execute within workspace confinement, ToolExecutionContext). Example: building a custom tool plugin.
 - **GitHostingAdapter** — How to build a git hosting plugin (PR lifecycle: create, update, merge, get status, list comments). Example: building a GitLab hosting plugin.
 
 **Format:** Each guide should include the adapter interface, required vs optional methods, capability gates, manifest format (`engineer.plugin.yaml`), config schema, a minimal working example, and how to register/test.

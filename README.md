@@ -48,7 +48,7 @@ Full command reference, options, and configuration details: **[docs/cli.md](docs
 - **Post-completion rigor** — reassess architecture, refine until beautiful, verify what matters, ship and refine through feedback.
 - **Every decision earned** — no dogma. Strong defaults, deliberate deviations. Question, evaluate, evolve.
 
-Full philosophy: [docs/philosophy.md](docs/philosophy.md) | Identity: [docs/persona.md](docs/persona.md)
+Full philosophy: [docs/philosophy.md](docs/philosophy.md) | Identity: [docs/the-engineer-persona.md](docs/the-engineer-persona.md)
 
 ## Architecture
 

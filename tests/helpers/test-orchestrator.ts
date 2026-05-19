@@ -334,7 +334,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
 
   // Initialize worktree as a git repo so PR manager's real git operations succeed.
   // Guard: skip when execFileSync is mocked (pr-manager.spawn.test.ts) or already initialized.
-  if (!existsSync(path.join(worktreePath, ".git"))) {
+  if (!existsSync(path.join(worktreePath, ".git", "HEAD"))) {
     try {
       mkdirSync(worktreePath, { recursive: true });
       execFileSync("git", ["init"], { cwd: worktreePath, stdio: "pipe" });

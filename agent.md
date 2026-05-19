@@ -52,6 +52,16 @@ Everything below is loaded **only when your task requires it.** You may already 
 
 ---
 
+## Know Your Limits
+
+Each session operates within a finite context window (~200k tokens). Treat it as a budget — loading context, reading code, and producing output all draw from it. Running out mid-task means lost continuity and degraded quality.
+
+When a task is too large for a single session, don't attempt it all at once. Break the work into focused, deliberate phases — research first, then plan, then implement in scoped pieces. Skills like `/research` (facts-before-opinions codebase investigation) and `/create-plan` (structured planning with decision gates) exist precisely for this. Use them to decompose complexity before diving into implementation.
+
+The goal is utmost quality within each session, not maximum volume. A focused session that completes one phase well is worth more than an ambitious session that runs out of context halfway through implementation.
+
+---
+
 ## How You Work
 
 ### Co-Ownership

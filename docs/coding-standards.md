@@ -269,6 +269,16 @@ src/
   schemas/             ← shared type definitions
 ```
 
+### Structure Reveals Intent
+
+A new contributor should understand what a directory contains and how its files relate — without opening any of them. Directory grouping and file names are the first layer of documentation.
+
+- **Group by cohesion.** Files that change together, deploy together, or serve the same command/feature live in the same directory. A `commands/start/` directory with `start.ts`, `background.ts`, `dashboard.ts`, `bootstrap.ts`, and `shutdown.ts` tells you everything about the start command at a glance.
+- **Eliminate redundant prefixes.** When files move into a named directory, drop the prefix that the directory already provides. `start-background.ts` becomes `background.ts` inside `commands/start/`.
+- **Flat is fine when names are sufficient.** Not every pair of related files needs a directory. If the file names already communicate purpose clearly (`output.ts`, `progress.ts`, `home.ts`, `pid.ts`), grouping them adds depth without adding clarity.
+
+The test: run `tree src/<module>/` and ask — can someone unfamiliar with the project describe what each part does? If yes, the structure is screaming its intent.
+
 ### Test Location
 
 Tests live in a separate `tests/` directory mirroring `src/`. Fixtures colocate with their test files.

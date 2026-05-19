@@ -5,15 +5,29 @@ The Engineer is operated through the `engineer` CLI — 6 commands covering dail
 ## Installing the CLI
 
 ```bash
-pnpm run build                    # Build to dist/
-pnpm setup                        # Configure PNPM_HOME (first time only)
-source ~/.zshrc                    # Reload shell (or restart terminal)
-pnpm link --global                 # Link `engineer` command globally
+pnpm run setup
 ```
 
-After this, `engineer` works from any directory. Rebuild (`pnpm run build`) after code changes.
+`pnpm run setup` installs dependencies, builds to `dist/`, and links the `engineer` command globally. It confirms before acting and is safe to re-run. If pnpm's own global bin directory has never been configured, the script offers to run `pnpm setup` for you, then tells you to restart your terminal.
 
-> **Dev mode:** Use `npx tsx src/index.ts <command>` to run without building or linking.
+After setup, `engineer` works from any directory. Re-run `pnpm run setup` (or just `pnpm run build`) after changing code.
+
+> **Dev mode:** use `pnpm dev <command>` to run the CLI without building or linking.
+
+## Development Resets
+
+`scripts/reset.sh` rebuilds from scratch for fast iteration — it stops the daemon, rebuilds, relinks the CLI, clears the data directory, and starts fresh.
+
+```bash
+./scripts/reset.sh                            # Full wipe, then interactive setup
+./scripts/reset.sh <seed-dir>                 # Full wipe, then seeded setup from <seed-dir>
+./scripts/reset.sh --persist-data             # Keep the database, workspaces, and .env
+./scripts/reset.sh --persist-data <seed-dir>  # Same, seeded from <seed-dir>
+```
+
+The seed directory is optional. With no seed, `engineer start` runs its interactive first-run setup; with a seed, setup is read from the directory's YAML files with no prompts (see [First Run](#first-run)). A seed argument that does not exist or cannot be read is a hard error.
+
+**Seed-directory convention:** `seed-example/` is tracked as a generic reference for the layout. Personal seeds live in gitignored `seed-example-<name>/` directories — copy `seed-example/`, fill in real values, and pass the directory to `reset.sh` or `engineer start --seed`.
 
 ## ENGINEER_HOME
 

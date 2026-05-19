@@ -6,23 +6,29 @@ Receives tasks, gathers requirements, researches codebases, plans, executes, sel
 
 ## Get Running
 
-**Prerequisites:** Node.js 22+, pnpm
+**Prerequisites:** Node.js 22+, [pnpm](https://pnpm.io/installation)
 
 ```bash
 git clone https://github.com/user/the-engineer.git && cd the-engineer
-pnpm install
+pnpm run setup    # install dependencies, build, link the `engineer` CLI
+engineer start    # first-run setup, then start the daemon
 ```
 
-**Start (and restart):**
+`pnpm run setup` confirms before it acts and is safe to re-run any time. If pnpm's global bin directory isn't configured yet, it offers to set that up and tells you what to do next. `engineer start` walks you through first-run configuration, then runs the daemon in the foreground — `Ctrl+C` to stop.
+
+> **Dev mode (without a global install):** use `pnpm dev <command>` in place of `engineer`.
+
+### Resetting
+
+For a clean rebuild during development:
 
 ```bash
-./scripts/reset.sh                    # Full wipe — rebuild, re-seed, start fresh
-./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — re-seed config & plugins
+./scripts/reset.sh                    # Full wipe — rebuild, relink, fresh interactive setup
+./scripts/reset.sh --persist-data     # Keep the database, workspaces, and .env
+./scripts/reset.sh <seed-dir>         # Wipe, then non-interactive setup from a seed directory
 ```
 
-The reset script builds, links the CLI globally, seeds configs/plugins from [`seed-example/`](seed-example/), and starts the daemon. `--persist-data` preserves your task history and database while rebuilding everything else. Fork `seed-example/` into your own seed directory with custom settings to make resets fast and repeatable.
-
-> **Dev mode (without global install):** Use `npx tsx src/index.ts` in place of `engineer` for any command.
+A seed directory holds saved configuration (`configs/` and `plugins/` YAML) so setup runs with no prompts. [`seed-example/`](seed-example/) shows the structure — copy it into a gitignored `seed-example-<name>/` and fill in your own values.
 
 ## Commands
 

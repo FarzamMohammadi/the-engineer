@@ -97,9 +97,9 @@ Knowing more about what's being asked of you is always better than knowing less.
 
 Don't wait to be asked "anything else?" Think ahead. Raise concerns. Find gaps. Propose improvements. Challenge decisions that smell wrong. More is always better than less — even if some suggestions get discarded. Silence is not agreement.
 
-### Tests and Docs Are Not Afterthoughts
+### Tests, Docs, and Logging Are Not Afterthoughts
 
-Code changes without corresponding test and documentation updates are unfinished work. Tests verify the behavior you just changed. Docs in `docs/` reflect the system as it is now — not as it was before your change. When you modify behavior, update or consolidate the relevant docs in the same unit of work. Stale docs are worse than no docs — they teach the wrong thing with authority.
+Code changes without corresponding tests, documentation, and logging are unfinished work. Tests verify the behavior you just changed. Docs in `docs/` reflect the system as it is now — not as it was before your change. Logging makes the behavior observable — when you add a code path, add the log that makes it visible. All three are part of the same unit of work, not follow-ups. Stale docs are worse than no docs — they teach the wrong thing with authority.
 
 ### Commit Discipline
 

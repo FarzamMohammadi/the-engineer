@@ -1,30 +1,30 @@
 import { join } from "node:path";
 
-import type { GitHostingAdapter } from "../adapters/git-hosting.js";
-import type { ConfigBundle } from "../config/loader.js";
-import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../core/daemon/index.js";
-import { createNotificationRouter } from "../core/daemon/notification-router.js";
-import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../core/data-lifecycle/index.js";
-import { HookRegistry } from "../core/hooks/index.js";
-import type { AuthUrlProvider } from "../core/interfaces/workspace-manager.interface.js";
+import type { GitHostingAdapter } from "../../../adapters/git-hosting.js";
+import type { ConfigBundle } from "../../../config/loader.js";
+import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../../../core/daemon/index.js";
+import { createNotificationRouter } from "../../../core/daemon/notification-router.js";
+import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../../../core/data-lifecycle/index.js";
+import { HookRegistry } from "../../../core/hooks/index.js";
+import type { AuthUrlProvider } from "../../../core/interfaces/workspace-manager.interface.js";
 import {
   BlobStore,
   type IObserver,
   createLogger,
   createObservationStore,
   createObserverFacade,
-} from "../core/observer/index.js";
-import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../core/orchestrator/index.js";
-import { PeopleDirectory } from "../core/people-directory/index.js";
-import { EVENTS as REGISTRY_EVENTS, Registry } from "../core/registry/index.js";
-import { createCoreComponents } from "../core/system.js";
-import { type DatabaseHandle, createDatabase } from "../db/index.js";
-import { loadBuiltinPlugins } from "../plugins/loader.js";
-import { AdapterTypes } from "../schemas/adapters.js";
-import { EventTypes } from "../schemas/events.js";
-import { RealClock } from "../utils/clock.js";
-import { sanitizeErrorMessage } from "../utils/sanitize.js";
-import { SecureValue } from "../utils/secure-value.js";
+} from "../../../core/observer/index.js";
+import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../../../core/orchestrator/index.js";
+import { PeopleDirectory } from "../../../core/people-directory/index.js";
+import { EVENTS as REGISTRY_EVENTS, Registry } from "../../../core/registry/index.js";
+import { createCoreComponents } from "../../../core/system.js";
+import { type DatabaseHandle, createDatabase } from "../../../db/index.js";
+import { loadBuiltinPlugins } from "../../../plugins/loader.js";
+import { AdapterTypes } from "../../../schemas/adapters.js";
+import { EventTypes } from "../../../schemas/events.js";
+import { RealClock } from "../../../utils/clock.js";
+import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
+import { SecureValue } from "../../../utils/secure-value.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

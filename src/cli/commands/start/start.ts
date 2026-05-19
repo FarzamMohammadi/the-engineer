@@ -1,21 +1,23 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { loadEnvFile, writeEnvFile } from "../../config/env.js";
-import { type ConfigBundle, loadConfigDir } from "../../config/loader.js";
-import { DaemonAlreadyRunningError } from "../../core/daemon/errors.js";
-import { discoverEnabledPlugins } from "../../plugins/loader.js";
-import { sanitizeErrorMessage } from "../../utils/sanitize.js";
-import { registerSecretEnvVars } from "../../utils/secret-registry.js";
+import { loadEnvFile, writeEnvFile } from "../../../config/env.js";
+import { type ConfigBundle, loadConfigDir } from "../../../config/loader.js";
+import { DaemonAlreadyRunningError } from "../../../core/daemon/errors.js";
+import { discoverEnabledPlugins } from "../../../plugins/loader.js";
+import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
+import { registerSecretEnvVars } from "../../../utils/secret-registry.js";
 
-import { type BootstrapResult, type ProgressCallback, bootstrap } from "../bootstrap.js";
-import { type EngineerDirectories, resolveDirectories } from "../home.js";
-import { getOutput } from "../output.js";
-import { Spinner } from "../progress.js";
-import { findResolvedEnvVars, needsSetup, runFirstTimeSetup } from "../setup/setup.js";
-import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "./doctor.js";
-import { spawnBackground } from "./start-background.js";
-import { DASHBOARD_PORT, launchDashboard } from "./start-dashboard.js";
+import type { EngineerDirectories } from "../../home.js";
+import { resolveDirectories } from "../../home.js";
+import { getOutput } from "../../output.js";
+import { Spinner } from "../../progress.js";
+import { findResolvedEnvVars, needsSetup, runFirstTimeSetup } from "../../setup/setup.js";
+import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "../doctor.js";
+import { spawnBackground } from "./background.js";
+import { type BootstrapResult, type ProgressCallback, bootstrap } from "./bootstrap.js";
+import { DASHBOARD_PORT, launchDashboard } from "./dashboard.js";
+import { registerShutdownHandlers } from "./shutdown.js";
 
 /**
  * Persist resolved env vars to .env so the daemon always has them (merge).
@@ -175,7 +177,7 @@ async function runForeground(
   engineerHome: string,
   bundle: ConfigBundle,
   dirs: EngineerDirectories,
-  preFlightResults: import("./doctor.js").DoctorCategory[],
+  preFlightResults: import("../doctor.js").DoctorCategory[],
   verbose: boolean,
 ): Promise<number> {
   const out = getOutput();
@@ -239,65 +241,17 @@ async function runForeground(
   // NOTE: Signal handlers are registered after bootstrap completes. If the process
   // receives SIGTERM/SIGINT during bootstrap, cleanup won't run. This is an accepted
   // gap — bootstrap is typically <2s, and the OS reclaims all resources on exit.
-
-  // ── APE-proof shutdown: survives rapid/repeated Ctrl+C ──────────────────────
-  // First signal  → graceful shutdown (drain tasks, close plugins, clean up)
-  // Second signal → immediate hard exit (kill everything, exit now)
-  // Timeout (10s) → forced exit if graceful shutdown hangs
-
-  const SHUTDOWN_TIMEOUT_MS = 10_000;
-  let shutdownInProgress = false;
-  let cleanedUp = false;
-
-  const runCleanup = () => {
-    if (cleanedUp) {
-      return;
-    }
-    cleanedUp = true;
-    try {
-      cleanupDashboard();
-    } finally {
-      cleanup();
-    }
-  };
-
-  const handleShutdownSignal = () => {
-    if (shutdownInProgress) {
-      // Second signal — user is mashing Ctrl+C. Hard exit immediately.
-      process.stderr.write("\nForced shutdown — exiting immediately.\n");
-      runCleanup();
-      process.exit(1);
-    }
-    shutdownInProgress = true;
-
-    // Hard timeout — if graceful shutdown hangs, force exit
-    const forceExitTimer = setTimeout(() => {
-      process.stderr.write("\nShutdown timed out — force exiting.\n");
-      runCleanup();
-      process.exit(1);
-    }, SHUTDOWN_TIMEOUT_MS);
-    forceExitTimer.unref(); // Don't keep process alive for the timer
-
-    observer?.info("Shutdown signal received, stopping daemon...");
-    daemon
-      .stop()
-      .catch((err) => {
-        try {
-          observer?.recordError(err, { operation: "shutdown", component: "cli" });
-        } catch {
-          // Observer transport may be broken during shutdown — stderr fallback below
-        }
-        process.stderr.write(`Shutdown error: ${sanitizeErrorMessage(err)}\n`);
-      })
-      .finally(() => {
-        clearTimeout(forceExitTimer);
-        runCleanup();
-        observer?.info("Shutdown complete");
-        process.exit(0);
-      });
-  };
-  process.on("SIGTERM", handleShutdownSignal);
-  process.on("SIGINT", handleShutdownSignal);
+  registerShutdownHandlers({
+    daemon,
+    observer,
+    cleanup() {
+      try {
+        cleanupDashboard();
+      } finally {
+        cleanup();
+      }
+    },
+  });
 
   try {
     // INVARIANT: Events published between bootstrap() return and daemon.start()
@@ -353,7 +307,7 @@ async function runForeground(
 function runDryRun(
   _engineerHome: string,
   dirs: EngineerDirectories,
-  preFlightResults: import("./doctor.js").DoctorCategory[],
+  preFlightResults: import("../doctor.js").DoctorCategory[],
 ): number {
   const out = getOutput();
   const totalChecks = preFlightResults.reduce((sum, category) => sum + category.checks.length, 0);

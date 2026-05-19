@@ -6,7 +6,7 @@ import { loadConfigDir } from "../config/loader.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
 import { runRetry } from "./commands/retry.js";
-import { runStart } from "./commands/start.js";
+import { runStart } from "./commands/start/index.js";
 import { runStatus } from "./commands/status.js";
 import { runStop } from "./commands/stop.js";
 import { runWhy } from "./commands/why.js";

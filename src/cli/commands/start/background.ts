@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { getOutput } from "../output.js";
+import { getOutput } from "../../output.js";
 
 /** Spawn the daemon as a detached background process. Returns exit code. */
 export function spawnBackground(engineerHome: string, verbose: boolean): number {

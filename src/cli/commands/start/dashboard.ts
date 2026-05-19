@@ -1,10 +1,10 @@
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { startDashboard } from "../../dashboard/index.js";
-import { sanitizeErrorMessage } from "../../utils/sanitize.js";
-import type { EngineerDirectories } from "../home.js";
-import { getOutput } from "../output.js";
+import { startDashboard } from "../../../dashboard/index.js";
+import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
+import type { EngineerDirectories } from "../../home.js";
+import { getOutput } from "../../output.js";
 
 export const DASHBOARD_PORT = 3847;
 

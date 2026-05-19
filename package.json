@@ -12,6 +12,7 @@
   },
   "main": "./dist/index.js",
   "scripts": {
+    "setup": "bash scripts/setup.sh",
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:integration": "vitest run -c vitest.integration.config.ts",

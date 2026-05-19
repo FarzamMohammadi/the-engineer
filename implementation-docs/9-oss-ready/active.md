@@ -22,16 +22,17 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 04-startup — Startup & Configuration
-**State:** Requirements, Research, Planning complete (Session 9). Implementation not started.
+**State:** Phase 1 (Simplification & Removals) complete (Session 10). Phases 2-5 remaining.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**Next step — Phase 1 (Simplification & Removals).** Read `slices/04-startup.md` and the plan,
-then: strip config-version machinery, remove `checkCliArtifacts`, delete `Output.table()` +
-`"quiet"` mode, consolidate `checkRequirementsMet`, fix the double config-scan, privatize
-`getNumberPaths`. Commit cohesively per task; the phase ends green (build + lint + tests).
+**Next step — Phase 2 (Getting-Started Path).** Read `slices/04-startup.md` and the plan,
+then: create `scripts/setup.sh` + wire `pnpm run setup` (confirm → install → build → link),
+rework `reset.sh` (no-arg interactive, with-arg seed, cross-platform `PNPM_HOME`), sanitize
+`seed-example/` to generic placeholders + add the `seed-example-*` `.gitignore` pattern,
+update README + `cli.md` getting-started. Commit cohesively per task; the phase ends green.
 
-**Remaining phases:** 2 Getting-Started Path → 3 OS Detection & Setup UX → 4 CLI Restructure
-(Screaming Architecture) → 5 Coding Standards Audit. One focused session each.
+**Remaining phases:** 3 OS Detection & Setup UX → 4 CLI Restructure (Screaming Architecture)
+→ 5 Coding Standards Audit. One focused session each.
 
 **Slice 4 decisions (Session 9):**
 - Getting-started: new `pnpm run setup` → `scripts/setup.sh` (confirm + install + build + link), then `engineer start`

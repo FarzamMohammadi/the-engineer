@@ -464,14 +464,14 @@ describe("runPreFlightChecks", () => {
 });
 
 describe("runAllChecks", () => {
-  it("runs 9 categories without bundle", () => {
+  it("runs 8 categories without bundle", () => {
     const results = runAllChecks(tempDir);
-    expect(results).toHaveLength(9);
+    expect(results).toHaveLength(8);
   });
 
-  it("runs 10 categories with bundle", () => {
+  it("runs 9 categories with bundle", () => {
     const results = runAllChecks(tempDir, makeSafeBundle());
-    expect(results).toHaveLength(10);
+    expect(results).toHaveLength(9);
   });
 });
 

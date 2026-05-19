@@ -1,6 +1,5 @@
 import { execSync } from "node:child_process";
-import { constants, accessSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { constants, accessSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { checkEnvFilePermissions, loadEnvFile } from "../../config/env.js";
@@ -553,74 +552,6 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
 // ── Aggregation ──────────────────────────────────────────────────────────────
 
 /** Run all doctor check categories (8 base + 1 conditional risky config). */
-/** Category: CLI session artifact accumulation (informational). */
-function checkCliArtifacts(): DoctorCategory {
-  const checks: DoctorCheck[] = [];
-  const claudeDir = join(homedir(), ".claude", "projects");
-
-  if (existsSync(claudeDir)) {
-    try {
-      // Quick size estimate: count files and sample a few for size
-      const entries = readdirSync(claudeDir);
-      let totalBytes = 0;
-      let fileCount = 0;
-
-      for (const entry of entries) {
-        const entryPath = join(claudeDir, entry);
-        try {
-          const stat = statSync(entryPath);
-          if (stat.isDirectory()) {
-            const subEntries = readdirSync(entryPath);
-            fileCount += subEntries.length;
-            for (const sub of subEntries) {
-              try {
-                totalBytes += statSync(join(entryPath, sub)).size;
-              } catch {
-                // Skip inaccessible files
-              }
-            }
-          } else {
-            fileCount++;
-            totalBytes += stat.size;
-          }
-        } catch {
-          // Skip inaccessible entries
-        }
-      }
-
-      const sizeMb = totalBytes / (1024 * 1024);
-      if (sizeMb > 500) {
-        checks.push({
-          label: "CLI session artifacts",
-          status: "warn",
-          message: `~/.claude/projects/ is ${sizeMb.toFixed(0)} MB (${String(fileCount)} files) — accumulated session history from CLI tools`,
-          remedy: "Consider pruning old session files: find ~/.claude/projects -name '*.jsonl' -mtime +30 -delete",
-        });
-      } else {
-        checks.push({
-          label: "CLI session artifacts",
-          status: "pass",
-          message: `~/.claude/projects/ is ${sizeMb.toFixed(0)} MB (${String(fileCount)} files)`,
-        });
-      }
-    } catch {
-      checks.push({
-        label: "CLI session artifacts",
-        status: "pass",
-        message: "Could not read ~/.claude/projects/",
-      });
-    }
-  } else {
-    checks.push({
-      label: "CLI session artifacts",
-      status: "pass",
-      message: "~/.claude/projects/ not found (no CLI sessions)",
-    });
-  }
-
-  return { category: "CLI Artifacts", checks };
-}
-
 export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
   const dirs = resolveDirectories(engineerHome);
   const categories: DoctorCategory[] = [
@@ -632,7 +563,6 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
     checkPluginManifests(engineerHome),
     checkWorkspace(engineerHome),
     checkExternalDependencies(),
-    checkCliArtifacts(),
   ];
 
   // Category 11 requires loaded config — if available

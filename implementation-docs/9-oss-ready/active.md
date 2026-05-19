@@ -22,19 +22,17 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 04-startup — Startup & Configuration
-**State:** Tangent session complete (Session 12). Both cleanup items done. Phase 3 is next.
+**State:** Phase 3 complete (Session 13). OS detection, setup gate, detection-summary confirm, messaging polish, future-considerations cleanup — all done. Phase 4 is next.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**Next step — Phase 3 (OS Detection & Setup UX).** Read `slices/04-startup.md`
-and the plan, then: add `detectOperatingSystem()` pure function + tests, wire the OS gate
-into first-run setup (macOS continues, Linux warns + confirms when interactive, Windows
-blocks), add the detection-summary confirmation before plugin selection, polish setup
-messaging, and update `future-considerations.md` (consolidate the OS-agnostic vision, remove
-stale Telegram entries). Commit cohesively per task; the phase ends green (build + lint +
-tests + E2E).
+**Next step — Phase 4 (CLI Restructure: Screaming Architecture).** Read `slices/04-startup.md`
+and the plan, then: agree the target `src/cli/` directory layout with the owner, extract
+the signal-handling block from `start.ts` into its own unit, move/regroup files per the
+agreed structure, add the "Structure Reveals Intent" coding standard. Commit cohesively per
+task; the phase ends green (build + lint + tests + `check:circular`).
 
-**Remaining slice phases:** 3 OS Detection & Setup UX → 4 CLI Restructure (Screaming
-Architecture) → 5 Coding Standards Audit. One focused session each.
+**Remaining slice phases:** 4 CLI Restructure (Screaming Architecture) → 5 Coding Standards
+Audit. One focused session each.
 
 **Slice 4 decisions (Session 9):**
 - Getting-started: new `pnpm run setup` → `scripts/setup.sh` (confirm + install + build + link), then `engineer start`

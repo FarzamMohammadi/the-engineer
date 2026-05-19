@@ -22,22 +22,10 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 04-startup — Startup & Configuration
-**State:** Phase 2 (Getting-Started Path) complete (Session 11). Phases 3-5 remaining —
-paused for a one-session tangent (see below) before Phase 3 resumes.
+**State:** Tangent session complete (Session 12). Both cleanup items done. Phase 3 is next.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**Next step — Tangent session (before Phase 3).** Two cleanup items surfaced during
-Session 11 testing; do both in one focused session that ends green, wrap it, then resume
-the slice. Full detail in `sessions/11.md` ("Post-Wrap").
-1. **Remove the dead ToolAdapter.** The `ToolAdapter` type and its only implementation, the
-   `bash-tool` plugin, are never retrieved or invoked at runtime — orphaned by the
-   CLI-native pivot. Removal spans ~12 source files, the tool schemas, the `AdapterTypes`
-   enum, both seed dirs, architecture docs ("5 adapter types" → 4), tests, and project memory.
-2. **Upgrade tsdown.** The build prints an internal `define` schema-mismatch warning;
-   tsdown is on 0.12.9 (latest 0.22.0). Bump to a version that clears it; verify build
-   output + full tests + a daemon smoke.
-
-**Resumes after the tangent — Phase 3 (OS Detection & Setup UX).** Read `slices/04-startup.md`
+**Next step — Phase 3 (OS Detection & Setup UX).** Read `slices/04-startup.md`
 and the plan, then: add `detectOperatingSystem()` pure function + tests, wire the OS gate
 into first-run setup (macOS continues, Linux warns + confirms when interactive, Windows
 blocks), add the detection-summary confirmation before plugin selection, polish setup

@@ -12,37 +12,43 @@ This file teaches you **how** to work and **when** to load context. It does not 
 
 ---
 
-## Understand the Project
+## Context Loading
 
-Read [`README.md`](README.md) for what this project is, how it's structured, its architecture, available commands, and where documentation lives.
+Context is expensive. Load deliberately — only what serves the task at hand.
 
-## Understand the Principles
+### Always Read
 
-Read [`docs/philosophy.md`](docs/philosophy.md) — but conditionally:
+These apply to every session, regardless of task:
 
-- **Always read "How We Work"** (the first half). It governs mindset, collaboration, quality bar, definition of done, observability, documentation standards, and trust model. This applies to every session regardless of task.
-- **Read "How the System Is Built"** when your task involves writing code, making architecture decisions, or modifying system behavior. If the task is brainstorming, docs-only, or research — treat it as background context, not required reading.
+| File | What it gives you |
+|------|-------------------|
+| [`README.md`](README.md) | What this project is, architecture, commands, where docs live |
+| [`docs/philosophy.md`](docs/philosophy.md) § "How We Work" | Mindset, collaboration, quality bar, definition of done, trust model |
 
-## Understand the Standards
+### Conditional Reads
 
-When your task involves writing or reviewing code, read [`docs/coding-standards.md`](docs/coding-standards.md) in full before writing a single line. If the task isn't clear yet — skip this and come back once you know you're coding.
+Everything below is loaded **only when your task requires it.** You may already know the task from the user's prompt, or you may need to ask first — either way, don't load these until you know what you're doing and why.
 
-Know what to avoid: read [`docs/anti-patterns.md`](docs/anti-patterns.md) alongside the standards.
+**When writing or reviewing code:**
 
-## Domain-Specific References
+| File | What it gives you |
+|------|-------------------|
+| [`docs/coding-standards.md`](docs/coding-standards.md) | The law for all code — read in full before writing a single line |
+| [`docs/anti-patterns.md`](docs/anti-patterns.md) | What to avoid — YAGNI, cargo culting, scope creep, silent decisions |
+| [`docs/philosophy.md`](docs/philosophy.md) § "How the System Is Built" | Architecture principles, plugin blindness, boundaries, fail loud |
 
-These docs exist in `docs/` and should be read **only when your task touches their domain** — not upfront:
+**When touching a specific domain:**
 
-| Domain | Reference | When to read |
-|--------|-----------|-------------|
-| Architecture | [`docs/architecture/overview.md`](docs/architecture/overview.md), [`three-tier-model.md`](docs/architecture/three-tier-model.md) | Modifying system structure, adding modules, changing boundaries |
-| CLI | [`docs/cli.md`](docs/cli.md) | Working on CLI commands, flags, output |
-| Configuration | [`docs/configuration/`](docs/configuration/) | Changing config schemas, validation, env resolution |
-| Plugins | [`docs/plugins/`](docs/plugins/) | Modifying or creating plugins, changing adapter contracts |
-| User flows | [`docs/user-flows/`](docs/user-flows/) | Changing end-to-end behavior a user would experience |
-| Contributing | [`docs/contribution-docs/`](docs/contribution-docs/) | Onboarding, setup flows, contribution guides |
+| File | When |
+|------|------|
+| [`docs/architecture/overview.md`](docs/architecture/overview.md), [`three-tier-model.md`](docs/architecture/three-tier-model.md) | Modifying system structure, adding modules, changing boundaries |
+| [`docs/cli.md`](docs/cli.md) | Working on CLI commands, flags, output |
+| [`docs/configuration/`](docs/configuration/) | Changing config schemas, validation, env resolution |
+| [`docs/plugins/`](docs/plugins/) | Modifying or creating plugins, changing adapter contracts |
+| [`docs/user-flows/`](docs/user-flows/) | Changing end-to-end behavior a user would experience |
+| [`docs/contribution-docs/`](docs/contribution-docs/) | Onboarding, setup flows, contribution guides |
 
-Don't load docs speculatively. Read what your task needs, when it needs it.
+**When the task is unclear:** don't load anything beyond the always-read files. Clarify with the user first, then load what's relevant.
 
 ---
 
@@ -78,16 +84,3 @@ Don't wait to be asked "anything else?" Think ahead. Raise concerns. Find gaps. 
 ### Commit Discipline
 
 Use cohesive, grouped commits throughout your work — not one giant commit at the end. Group changes by logical concern: a refactor is one commit, a feature addition is another, a doc update is another. Each commit is green (builds, passes lint, passes tests). Write clear titles and descriptions that explain the why, not just the what.
-
----
-
-## Starting a Session
-
-This file is always your first read. After this, context comes from the user — in one of several forms:
-
-- **A file reference** — the user points you to a file (e.g., `active.md`, a slice plan, a ticket). Read it and proceed.
-- **A direct task** — the user describes what to do in the prompt. Clarify if needed, then proceed.
-- **A brainstorm** — the user wants to explore ideas. No implementation until alignment is reached.
-- **No direction** — ask. Don't guess what the user wants.
-
-The pattern: learn agent.md → receive context from user → work.

@@ -56,7 +56,14 @@ Everything below is loaded **only when your task requires it.** You may already 
 
 Each session operates within a finite context window (~200k tokens). Treat it as a budget — loading context, reading code, and producing output all draw from it. Running out mid-task means lost continuity and degraded quality.
 
-When a task is too large for a single session, don't attempt it all at once. Break the work into focused, deliberate phases — research first, then plan, then implement in scoped pieces. Skills like `/research` (facts-before-opinions codebase investigation) and `/create-plan` (structured planning with decision gates) exist precisely for this. Use them to decompose complexity before diving into implementation.
+When a task is too large for a single session, don't attempt it all at once. Break the work into focused, deliberate phases that follow a natural progression:
+
+1. **Requirements Gathering** (`/requirements-gathering`) — Always first. Align with the user on intent, constraints, edge cases, and acceptance criteria before touching anything. Never skip this.
+2. **Research** (`/research`) — Once requirements are clear, investigate the codebase. Facts before opinions — build a complete picture of what exists before deciding what to change.
+3. **Planning** (`/create-plan`) — With requirements and research in hand, synthesize a plan with clear decisions, sequenced tasks, and verification steps.
+4. **Implementation** — Execute the plan in scoped pieces. Each session focuses on a subset, not the whole.
+
+These phases may span multiple sessions. That's the point — each phase gets full attention and full context rather than competing for space in a single overloaded session.
 
 The goal is utmost quality within each session, not maximum volume. A focused session that completes one phase well is worth more than an ambitious session that runs out of context halfway through implementation.
 

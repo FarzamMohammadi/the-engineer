@@ -22,18 +22,31 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 04-startup — Startup & Configuration
-**State:** Phase 2 (Getting-Started Path) complete (Session 11). Phases 3-5 remaining.
+**State:** Phase 2 (Getting-Started Path) complete (Session 11). Phases 3-5 remaining —
+paused for a one-session tangent (see below) before Phase 3 resumes.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**Next step — Phase 3 (OS Detection & Setup UX).** Read `slices/04-startup.md` and the plan,
-then: add `detectOperatingSystem()` pure function + tests, wire the OS gate into first-run
-setup (macOS continues, Linux warns + confirms when interactive, Windows blocks), add the
-detection-summary confirmation before plugin selection, polish setup messaging, and update
-`future-considerations.md` (consolidate the OS-agnostic vision, remove stale Telegram
-entries). Commit cohesively per task; the phase ends green (build + lint + tests + E2E).
+**Next step — Tangent session (before Phase 3).** Two cleanup items surfaced during
+Session 11 testing; do both in one focused session that ends green, wrap it, then resume
+the slice. Full detail in `sessions/11.md` ("Post-Wrap").
+1. **Remove the dead ToolAdapter.** The `ToolAdapter` type and its only implementation, the
+   `bash-tool` plugin, are never retrieved or invoked at runtime — orphaned by the
+   CLI-native pivot. Removal spans ~12 source files, the tool schemas, the `AdapterTypes`
+   enum, both seed dirs, architecture docs ("5 adapter types" → 4), tests, and project memory.
+2. **Upgrade tsdown.** The build prints an internal `define` schema-mismatch warning;
+   tsdown is on 0.12.9 (latest 0.22.0). Bump to a version that clears it; verify build
+   output + full tests + a daemon smoke.
 
-**Remaining phases:** 4 CLI Restructure (Screaming Architecture) → 5 Coding Standards Audit.
-One focused session each.
+**Resumes after the tangent — Phase 3 (OS Detection & Setup UX).** Read `slices/04-startup.md`
+and the plan, then: add `detectOperatingSystem()` pure function + tests, wire the OS gate
+into first-run setup (macOS continues, Linux warns + confirms when interactive, Windows
+blocks), add the detection-summary confirmation before plugin selection, polish setup
+messaging, and update `future-considerations.md` (consolidate the OS-agnostic vision, remove
+stale Telegram entries). Commit cohesively per task; the phase ends green (build + lint +
+tests + E2E).
+
+**Remaining slice phases:** 3 OS Detection & Setup UX → 4 CLI Restructure (Screaming
+Architecture) → 5 Coding Standards Audit. One focused session each.
 
 **Slice 4 decisions (Session 9):**
 - Getting-started: new `pnpm run setup` → `scripts/setup.sh` (confirm + install + build + link), then `engineer start`

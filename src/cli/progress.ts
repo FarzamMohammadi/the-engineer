@@ -9,7 +9,7 @@ const CLEAR_LINE = "\x1B[2K\r";
 /**
  * Spinner for indeterminate progress.
  * Writes to stderr so stdout remains clean for piping/JSON.
- * No-op if not a TTY or in json/quiet mode.
+ * No-op if not a TTY or in json mode.
  */
 export class Spinner {
   private message: string;

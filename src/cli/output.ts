@@ -2,7 +2,7 @@ import chalk from "chalk";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type OutputMode = "human" | "json" | "quiet";
+export type OutputMode = "human" | "json";
 
 export interface OutputOptions {
   /** Force a specific mode. Default: "human". */
@@ -18,8 +18,7 @@ export interface OutputOptions {
  *
  * Mode detection (in order of precedence):
  * 1. --json flag → "json" mode
- * 2. --quiet flag → "quiet" mode
- * 3. Default → "human" mode
+ * 2. Default → "human" mode
  *
  * Color detection:
  * 1. NO_COLOR env var (any value) → colors off (https://no-color.org/)
@@ -64,7 +63,7 @@ export class Output {
     process.stdout.write(`${this.clr(chalk.yellow, "⚠")} ${message}\n`);
   }
 
-  /** Print an error with red prefix. Works in human + quiet modes. JSON mode outputs structured error. */
+  /** Print an error with red prefix (human mode). JSON mode outputs structured error. */
   error(message: string): void {
     if (this.mode === "json") {
       process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -91,53 +90,8 @@ export class Output {
     process.stdout.write(`  ${this.clr(chalk.dim, padded)} ${value}\n`);
   }
 
-  /** Print a table from an array of objects (human mode). */
-  table(rows: Record<string, string | number | boolean>[]): void {
-    if (this.mode !== "human" || rows.length === 0) {
-      return;
-    }
-
-    const firstRow = rows[0];
-    if (!firstRow) {
-      return;
-    }
-    const keys = Object.keys(firstRow);
-    const widths = new Map<string, number>();
-
-    // Calculate column widths (header + all values)
-    for (const key of keys) {
-      let max = key.length;
-      for (const row of rows) {
-        const len = String(row[key] ?? "").length;
-        if (len > max) {
-          max = len;
-        }
-      }
-      widths.set(key, max);
-    }
-
-    const w = (k: string) => widths.get(k) ?? 0;
-
-    // Header
-    const header = keys.map((k) => this.clr(chalk.bold, k.padEnd(w(k)))).join("  ");
-    process.stdout.write(`  ${header}\n`);
-
-    // Separator
-    const sep = keys.map((k) => "─".repeat(w(k))).join("──");
-    process.stdout.write(`  ${this.clr(chalk.dim, sep)}\n`);
-
-    // Rows
-    for (const row of rows) {
-      const line = keys.map((k) => String(row[k] ?? "").padEnd(w(k))).join("  ");
-      process.stdout.write(`  ${line}\n`);
-    }
-  }
-
-  /** Output structured data. JSON mode: prints JSON. Human mode: prints formatted. */
+  /** Output structured data as JSON (both human and json modes). */
   data(obj: unknown): void {
-    if (this.mode === "quiet") {
-      return;
-    }
     process.stdout.write(`${JSON.stringify(obj, null, 2)}\n`);
   }
 

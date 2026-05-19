@@ -41,11 +41,6 @@ describe("mode detection", () => {
     const out = new Output({ mode: "json" });
     expect(out.mode).toBe("json");
   });
-
-  it("respects explicit quiet mode", () => {
-    const out = new Output({ mode: "quiet" });
-    expect(out.mode).toBe("quiet");
-  });
 });
 
 // ── Color Detection ──────────────────────────────────────────────────────────
@@ -198,78 +193,6 @@ describe("json mode", () => {
     const output = stdoutWrites.join("");
     const parsed = JSON.parse(output);
     expect(parsed).toEqual({ running: true, pid: 1234 });
-  });
-
-  it("table is no-op", () => {
-    const out = new Output({ mode: "json" });
-    out.table([{ a: "1", b: "2" }]);
-    expect(stdoutWrites).toHaveLength(0);
-  });
-});
-
-// ── Quiet Mode Output ────────────────────────────────────────────────────────
-
-describe("quiet mode", () => {
-  it("log is no-op", () => {
-    const out = new Output({ mode: "quiet" });
-    out.log("hello");
-    expect(stdoutWrites).toHaveLength(0);
-  });
-
-  it("success is no-op", () => {
-    const out = new Output({ mode: "quiet" });
-    out.success("done");
-    expect(stdoutWrites).toHaveLength(0);
-  });
-
-  it("warn is no-op", () => {
-    const out = new Output({ mode: "quiet" });
-    out.warn("caution");
-    expect(stdoutWrites).toHaveLength(0);
-  });
-
-  it("error writes to stderr", () => {
-    const out = new Output({ mode: "quiet", color: false });
-    out.error("failed");
-    const output = stderrWrites.join("");
-    expect(output).toContain("failed");
-  });
-
-  it("data is no-op", () => {
-    const out = new Output({ mode: "quiet" });
-    out.data({ key: "value" });
-    expect(stdoutWrites).toHaveLength(0);
-  });
-
-  it("blank is no-op", () => {
-    const out = new Output({ mode: "quiet" });
-    out.blank();
-    expect(stdoutWrites).toHaveLength(0);
-  });
-});
-
-// ── Table Formatting ─────────────────────────────────────────────────────────
-
-describe("table", () => {
-  it("formats aligned columns", () => {
-    const out = new Output({ mode: "human", color: false });
-    out.table([
-      { name: "alice", score: 100 },
-      { name: "bob", score: 42 },
-    ]);
-    const output = stdoutWrites.join("");
-    expect(output).toContain("name");
-    expect(output).toContain("score");
-    expect(output).toContain("alice");
-    expect(output).toContain("bob");
-    expect(output).toContain("100");
-    expect(output).toContain("42");
-  });
-
-  it("handles empty rows", () => {
-    const out = new Output({ mode: "human", color: false });
-    out.table([]);
-    expect(stdoutWrites).toHaveLength(0);
   });
 });
 

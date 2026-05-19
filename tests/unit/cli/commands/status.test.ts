@@ -12,7 +12,9 @@ let tempDir: string;
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "status-test-"));
   mkdirSync(join(tempDir, "run"), { recursive: true });
-  createOutput({ mode: "quiet" });
+  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  createOutput({ mode: "json" });
 });
 
 afterEach(() => {

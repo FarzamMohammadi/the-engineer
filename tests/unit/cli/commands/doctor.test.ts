@@ -25,7 +25,7 @@ let tempDir: string;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "doctor-test-"));
-  createOutput({ mode: "quiet" });
+  createOutput({ mode: "json" });
 });
 
 afterEach(() => {

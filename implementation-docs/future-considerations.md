@@ -380,3 +380,17 @@ Without measurement, we can't tell whether fixes to these problems actually work
 6. Add `scripts/compare-runs.ts` — side-by-side comparison of two benchmark runs
 
 ---
+
+## Config Schema Versioning
+
+**Current state (v1):** Config files (`daemon.yaml`, `orchestrator.yaml`, `workspace.yaml`, `safety.yaml`, `people.yaml`) carry no schema version. There is one latest schema per config file, defined by the Zod schemas in `src/schemas/config.ts`. When a schema changes, users update their YAML manually to match. Plugin config templates are similarly unversioned — one latest version per plugin/OS.
+
+**Why the earlier machinery was removed:** A `version` field and `detectConfigVersion()` existed but did nothing useful — no template ever wrote a `version:` field, so detection always returned `1`, and nothing read `ConfigBundle.version`. It was scaffolding that did not do what real versioning needs: no upgrade prompt, no migration path. For a pre-v1 project with zero backward-compatibility guarantees, it was dead weight.
+
+**When it becomes relevant:** Post-v1, once real users have config files on disk and a schema change would otherwise silently break their setup — i.e. when an upgrade must *migrate* an existing config rather than just expect the user to match the new shape.
+
+**What it enables:** Explicit config-schema versioning — a `version:` field per config file, a current-version constant, and a migration step at startup that detects an older version and either migrates it automatically or prompts the user. Could extend to startup version selection when multiple schema versions must coexist.
+
+**Migration path:** Reintroduce a `CURRENT_CONFIG_VERSION` constant and a `version` field in the relevant schemas. Add a migration registry (version N → N+1 transforms) invoked by `loadConfigDir`. Design the prompt/auto-migrate UX as part of the same work — the field alone is not versioning.
+
+---

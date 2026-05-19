@@ -16,6 +16,8 @@ This file teaches you **how** to work and **when** to load context. It does not 
 
 Context is expensive. Load deliberately — only what serves the task at hand.
 
+> **Stop point.** This section ends with a **mandatory two-stage checkpoint** ([Before You Start Working](#before-you-start-working)) that you must produce as visible text. Stage 1 fires after you finish this file. Stage 2 fires before you start the task. Skipping the checkpoint is a project-quality violation.
+
 ### Always Read
 
 These apply to every session, regardless of task:
@@ -52,7 +54,55 @@ Everything below is loaded **only when your task requires it.** You may already 
 
 ### Before You Start Working
 
-After you understand the task but before your first change, revisit the conditional reads table above and state which docs you loaded and why. If none apply, say so explicitly. This checkpoint makes your context loading visible — both to you and to the user.
+Two visible-text checkpoints, both produced in first person, both required. They are not formatting flourishes — producing them honestly requires doing the work behind them.
+
+#### Checkpoint 1 — After reading this file, before any non-survey tool call
+
+```
+I have read AGENT-README and have done the following:
+
+- I have read docs/the-engineer-persona.md in full and have taken on this persona for the session. In my own words: <one or two sincere sentences — who you now are and the bar you hold yourself to>.
+- I have read the always-required files: README.md, docs/philosophy.md § "How We Work".
+- Persistence layer status: <"present in my auto-loaded context (memory/plugins/equivalent)" | "absent from my auto-loaded context — pausing after this block to ask whether to save the checkpoint to that layer; no further tool calls until the user answers">.
+- Task at this point: <one sentence — or "awaiting user direction" if not stated yet>.
+- I will return with Checkpoint 2 once I have full task context and have loaded any conditional reads it requires.
+```
+
+If the persistence-layer bullet reads "absent", your immediate next output is the question to the user. No other tool call until they answer.
+
+#### Checkpoint 2 — Before starting the task (and before any mutating tool call)
+
+Before you make any change — code, config, docs, or otherwise — **assess which conditional reads relate to this task and load them.**
+
+Defaults:
+- **Any code work** → load `docs/coding-standards.md` and `docs/anti-patterns.md`. They apply almost always.
+- **Architecture / plugin / configuration / user-flow / contribution work** → load the corresponding row in the [Conditional Reads](#conditional-reads) table when the task touches that surface.
+- When uncertain, load. A wrong assumption from missing context is more expensive than reading a doc.
+
+Then output:
+
+```
+AGENT-README checkpoint before continuing:
+
+- In Checkpoint 1 I confirmed: identity, always-reads, initial task framing.
+- Now, based on full understanding of the task, I have additionally read:
+  - <file path> — because <one-line reason tied to the task>
+  - <file path> — because <one-line reason tied to the task>
+  (or: "none — the task does not require additional conditional reads")
+- Ready to proceed.
+```
+
+#### Single-checkpoint exception
+
+When the user's opening message states the task fully and unambiguously **and** every applicable conditional read has already been loaded, the two checkpoints may merge into a single block. When in doubt, do two.
+
+#### Re-issuing
+
+If the task pivots mid-session, or if you realize partway through that you need another conditional file, **pause, load it, and re-issue Checkpoint 2** with the updated list before resuming the task.
+
+#### Mutating vs. read-only
+
+Read-only exploration (`Read`, `Grep`, `ls`, search) is permitted between checkpoints — it's how you load the context needed to fill the block honestly. Anything that changes the world — `Edit`, `Write`, `Bash` that mutates, commits, branch operations — comes **after** the relevant checkpoint.
 
 ---
 

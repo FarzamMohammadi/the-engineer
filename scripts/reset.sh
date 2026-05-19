@@ -82,8 +82,8 @@ readonly ENGINEER_HOME="$HOME/.engineer"
 printf '\n%s%s  The Engineer%s %s· reset%s\n' "$BOLD" "$CYAN" "$RESET" "$DIM" "$RESET"
 
 section "Stopping the daemon (if running)"
-if [ -f dist/index.js ]; then
-  node dist/index.js stop >/dev/null 2>&1 || true
+if [ -f dist/index.mjs ]; then
+  node dist/index.mjs stop >/dev/null 2>&1 || true
 fi
 success "Daemon stopped"
 
@@ -117,8 +117,8 @@ fi
 section "Starting The Engineer"
 if [ -n "$SEED_DIR" ]; then
   printf '  Seeding setup from %s\n' "$SEED_DIR"
-  exec node dist/index.js start --seed "$SEED_DIR"
+  exec node dist/index.mjs start --seed "$SEED_DIR"
 else
   printf '  Running interactive first-run setup\n'
-  exec node dist/index.js start
+  exec node dist/index.mjs start
 fi

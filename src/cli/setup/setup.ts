@@ -11,6 +11,7 @@ import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 import { ALL_PLUGIN_DOCS } from "../plugin-docs.js";
 import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../templates.js";
+import { detectOperatingSystem } from "./os-detection.js";
 import type { DetectionResult } from "./types.js";
 import type { AdapterTypeConfig } from "./types.js";
 
@@ -373,6 +374,42 @@ export interface SetupOptions {
 }
 
 /**
+ * Display the OS detection result and gate on unsupported platforms.
+ * Returns false if the user declines to proceed; true otherwise.
+ */
+async function showOperatingSystemGate(isInteractive: boolean): Promise<boolean> {
+  const out = getOutput();
+  const osInfo = detectOperatingSystem(process.platform);
+  out.blank();
+
+  if (osInfo.support === "full") {
+    out.log(`  ${osInfo.message}`);
+    out.blank();
+    return true;
+  }
+
+  if (!isInteractive) {
+    out.warn(osInfo.message);
+    out.blank();
+    return true;
+  }
+
+  out.log(`  ${osInfo.message}`);
+  out.blank();
+  const { confirm } = await import("@inquirer/prompts");
+  const proceed = await confirm({
+    message: osInfo.support === "preview" ? "Proceed?" : "Proceed with unsupported platform?",
+    default: osInfo.support === "preview",
+  });
+  if (!proceed) {
+    return false;
+  }
+
+  out.blank();
+  return true;
+}
+
+/**
  * Run first-time setup. Returns true if completed, false if user cancelled.
  * Orchestrates: detect → guide → prompt → generate → write.
  */
@@ -388,14 +425,19 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
     }
   }
 
+  // OS gate — before anything else
+  const shouldContinue = await showOperatingSystemGate(!seedPath);
+  if (!shouldContinue) {
+    return false;
+  }
+
   // Non-interactive mode: copy provided plugin configs
   if (seedPath) {
     return runNonInteractiveSetup(engineerHome, seedPath, dryRun ?? false);
   }
 
   // Interactive mode
-  out.blank();
-  out.log("  First run — auto-configuring from environment...");
+  out.log("  First run — detecting environment...");
   out.blank();
 
   // Write plugin docs before prompts so paths are clickable during selection

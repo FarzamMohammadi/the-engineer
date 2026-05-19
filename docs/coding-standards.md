@@ -1,6 +1,8 @@
 # Coding Standards
 
-These standards govern all code in this project. Every contributor — human or agent — must adhere to them. They are the law for all slices, all sessions, no exceptions.
+These standards govern all code in this project. Every contributor — human or agent — must adhere to them. No exceptions.
+
+Biome automates what it can: formatting, import ordering, file naming, complexity limits, block statements. Run `pnpm lint` after every change. These standards cover everything biome cannot enforce — structure, naming intent, function design, type discipline, and the philosophical foundations behind every decision.
 
 ---
 
@@ -79,19 +81,12 @@ Strict separation. If a function makes a **decision**, it must be pure — take 
 
 ```typescript
 // PURE — decision logic, trivially testable
-function decideNextPhase(task: Task, config: PipelineConfig): PhaseDecision {
-  if (task.phase === Phases.review && task.approval_status === "approved") {
-    return { next: Phases.demo_prep, reason: "review approved" };
-  }
-  return { next: task.phase, reason: "not ready to advance" };
-}
+function decideNextPhase(task: Task, config: PipelineConfig): PhaseDecision { /* ... */ }
 
 // SHELL — performs effects, minimal logic
 async function advanceTask(taskId: TaskId, db: Database, eventBus: EventBus): Promise<void> {
   const task = await db.getTask(taskId);
-  const config = await db.getPipelineConfig();
-  const decision = decideNextPhase(task, config);
-
+  const decision = decideNextPhase(task, await db.getPipelineConfig());
   if (decision.next !== task.phase) {
     await db.updatePhase(taskId, decision.next);
     await eventBus.publish("task.phase_changed", { taskId, phase: decision.next });
@@ -172,22 +167,16 @@ function buildPriorityQueue(config: SchedulerConfig): PriorityQueue {
 - **Unexpected failures** (invariant violations, bugs, unreachable states): throw an Error subclass. These should never happen in correct code.
 
 ```typescript
-// Expected failure — Result type
-type ParseResult =
-  | { success: true; config: DaemonConfig }
-  | { success: false; error: string };
-
+// Expected failure — Result type (caller handles both outcomes)
 function parseConfig(raw: unknown): ParseResult {
   const result = DaemonConfigSchema.safeParse(raw);
   if (!result.success) return { success: false, error: result.error.message };
   return { success: true, config: result.data };
 }
 
-// Unexpected failure — throw
+// Unexpected failure — throw (invariant violation, should never happen in correct code)
 function getActiveSession(task: Task): Session {
-  if (!task.session_id) {
-    throw new InvariantError("Task in active state must have a session");
-  }
+  if (!task.session_id) throw new InvariantError("Task in active state must have a session");
   return sessions.get(task.session_id);
 }
 ```
@@ -368,19 +357,9 @@ Mock only at system boundaries — network, filesystem, time, external services.
 
 ## 10. Code Layout & Formatting
 
-### Formatter
+### Automated by Biome
 
-Biome. Zero config debates. One correct way.
-
-### Rules
-
-| Setting | Value |
-|---------|-------|
-| Line length | 120 characters |
-| Indent | 2 spaces |
-| Semicolons | Always |
-| Trailing commas | Always |
-| Quotes | Double |
+Biome enforces formatting (120-char lines, 2-space indent, double quotes, semicolons, trailing commas), import ordering, file naming (kebab-case), complexity limits, and block statements. Run `pnpm lint` after every change — biome catches what these standards automate. The standards below cover what biome cannot.
 
 ### Visual Principles
 
@@ -394,18 +373,18 @@ Biome. Zero config debates. One correct way.
 
 ## Philosophical Foundations
 
-These standards draw from an eclectic mix of sources, taking the best from each:
+These are the mental models behind the standards. Internalize them before coding — they guide decisions the rules don't cover.
 
-- **Uncle Bob** — Newspaper metaphor, step-down rule, guard clauses
-- **John Ousterhout** — Deep modules, pragmatic function length, comments for WHY
-- **Rich Hickey** — Simple over easy, immutable values, avoid complecting
-- **Gary Bernhardt** — Functional Core / Imperative Shell
-- **Alexis King** — Parse don't validate, branded types, make illegal states unrepresentable
-- **Sandi Metz** — Duplication over wrong abstraction, shameless green
-- **Casey Muratori** — Don't pre-design abstractions, semantic compression
-- **Kent Beck** — Make the change easy then make the easy change, test desiderata
-- **Knuth** — Code as narrative, literate ordering
-- **DDD** — Ubiquitous language, domain-first naming
-- **Unix Philosophy** — Do one thing well, compose, standard interfaces
-- **Gestalt Psychology** — Proximity, similarity, chunking for readability
-- **Deno/Google Style Guides** — Explicit error messages, no default exports, strict TypeScript
+- **Newspaper metaphor** (Uncle Bob) — A file reads top-to-bottom: headline first, details last. Caller above callee. The reader should never scroll up to understand what they just read.
+- **Deep modules** (Ousterhout) — A good module does a lot behind a simple interface. Don't split for the sake of splitting — splitting multiplies interfaces and forces readers to bounce. Pragmatic function length follows from this.
+- **Simple over easy** (Hickey) — Easy means familiar. Simple means fewer entanglements. Choose simple — even when it requires learning something new. Avoid complecting (braiding together) separate concerns.
+- **Functional Core / Imperative Shell** (Bernhardt) — Decisions are pure functions. Effects are thin wrappers. This makes the hard parts trivially testable and the effectful parts trivially simple.
+- **Parse, don't validate** (King) — Transform unstructured input into typed, branded values at the boundary. Once parsed, the type system guarantees correctness — no runtime checks needed downstream.
+- **Duplication over wrong abstraction** (Metz) — Three similar functions are better than one premature abstraction. Wait until the pattern is clear. The cost of the wrong abstraction compounds; duplication is cheap to fix later.
+- **Semantic compression** (Muratori) — Don't design abstractions upfront. Write the code, see the patterns emerge, then compress. Abstraction is the last step, not the first.
+- **Make the change easy, then make the easy change** (Beck) — Refactor first to make the feature trivial to add, then add it. Two small steps beat one complex step.
+- **Code as narrative** (Knuth) — Code is read far more than written. Ordering, naming, and structure serve the reader's comprehension, not the writer's convenience.
+- **Ubiquitous language** (DDD) — Names mirror the business domain. `TaskEngine`, `PipelineStage`, `TriggerEvent` — not `ItemProcessor`, `StepExecutor`, `IncomingData`.
+- **Do one thing well, compose** (Unix) — Small, focused modules with standard interfaces. Composition over inheritance. Pipelines over monoliths.
+- **Proximity and chunking** (Gestalt) — Related code stays together. Visual grouping (blank lines, sections) guides the eye. The reader's brain chunks what's close — use that.
+- **Explicit over implicit** (Deno/Google) — No default exports, strict TypeScript, explicit error messages. If a reader has to guess, the code is unclear.

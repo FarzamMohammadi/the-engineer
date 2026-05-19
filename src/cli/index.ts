@@ -1,7 +1,12 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { Command } from "commander";
 import ms from "ms";
 
 import { loadEnvFile } from "../config/env.js";
+import type { ConfigBundle } from "../config/loader.js";
 import { loadConfigDir } from "../config/loader.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
@@ -11,9 +16,36 @@ import { runStatus } from "./commands/status.js";
 import { runStop } from "./commands/stop.js";
 import { runWhy } from "./commands/why.js";
 import { resolveDirectories, resolveEngineerHome } from "./home.js";
-import { type OutputMode, createOutput, getOutput } from "./output.js";
+import type { OutputMode } from "./output.js";
+import { createOutput, getOutput } from "./output.js";
 
-export const VERSION = "0.0.1";
+/**
+ * Resolve the CLI version from package.json. Single source of truth — never duplicate.
+ * Walks up from this module's directory until it finds the project's own package.json,
+ * which works for both source (`src/cli/index.ts`) and bundled (`dist/index.mjs`) layouts.
+ */
+function resolveVersion(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 5; depth++) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
+        name?: string;
+        version?: string;
+      };
+      if (pkg.name === "the-engineer" && typeof pkg.version === "string") {
+        return pkg.version;
+      }
+    } catch {
+      // package.json not here (or unreadable) — keep walking
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return "unknown";
+}
 
 /** Parse a duration string ("30s", "1m") or raw millisecond number. */
 function parseDuration(value: string): number {
@@ -31,7 +63,7 @@ function parseDuration(value: string): number {
 export const program = new Command()
   .name("engineer")
   .description("The Engineer — Autonomous Software Engineering Agent")
-  .version(VERSION)
+  .version(resolveVersion())
   .option("--home <path>", "Override ENGINEER_HOME directory")
   .option("--config-dir <path>", "Override config directory (default: $ENGINEER_HOME/config)")
   .option("--verbose", "Enable debug logging")
@@ -137,7 +169,7 @@ program
     loadEnvFile(home);
 
     // Try to load config for risky config checks (category 9)
-    let bundle: import("../config/loader.js").ConfigBundle | undefined;
+    let bundle: ConfigBundle | undefined;
     try {
       const result = loadConfigDir(dirs.config);
       bundle = result.bundle;

@@ -1,5 +1,6 @@
 import type { BaseAdapter } from "../adapters/base.js";
-import { AdapterTypes, type PluginManifest, PluginManifestSchema } from "../schemas/adapters.js";
+import type { PluginManifest } from "../schemas/adapters.js";
+import { AdapterTypes, PluginManifestSchema } from "../schemas/adapters.js";
 import { GitHubCommPlugin } from "./communication/github-comm/github-comm.js";
 import { TelegramCommPlugin } from "./communication/telegram-comm/telegram-comm.js";
 import { GitHubHostingPlugin } from "./git-hosting/github-hosting/github-hosting.js";
@@ -10,6 +11,7 @@ import { GitHubTriggerPlugin } from "./trigger/github-trigger/github-trigger.js"
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+/** Registration record for a built-in plugin — its manifest, factory, and optional setup prompt. */
 export interface BuiltinPlugin {
   manifest: PluginManifest;
   create: () => BaseAdapter;
@@ -120,7 +122,7 @@ const manifests = [
 // Validate all manifests at import time
 const validatedManifests = manifests.map((manifest) => PluginManifestSchema.parse(manifest));
 
-// ── Setup Prompt Functions ───────────────────────��──────────────────────────
+// ── Setup Prompt Functions ───────────────────────────────────────────────────
 // Plugins that need interactive user input during guided setup declare a prompt
 // function here. Uses dynamic import so @inquirer/prompts is only loaded during setup.
 
@@ -152,6 +154,7 @@ const factories: Record<string, () => BaseAdapter> = {
 
 // ── Exports ─────────────────────────────────────────────────────────────────
 
+/** All built-in plugins, schema-validated at import time, ready to register. */
 export const BUILTIN_PLUGINS: BuiltinPlugin[] = validatedManifests.map((manifest) => {
   const base: BuiltinPlugin = {
     manifest,

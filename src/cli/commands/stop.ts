@@ -4,26 +4,6 @@ import { join } from "node:path";
 import { getOutput } from "../output.js";
 import { isProcessRunning, readPidFile } from "../pid.js";
 
-/**
- * Waits for a process to exit, polling every 200ms.
- * Returns true if the process exited, false on timeout.
- */
-export async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
-  const start = Date.now();
-  const pollInterval = 200;
-
-  while (Date.now() - start < timeoutMs) {
-    if (!isProcessRunning(pid)) {
-      return true;
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, pollInterval);
-    });
-  }
-
-  return !isProcessRunning(pid);
-}
-
 /** Shuts down the daemon and all subsidiary processes. Returns exit code. */
 export async function runStop(engineerHome: string, timeoutMs: number): Promise<number> {
   const out = getOutput();
@@ -59,7 +39,27 @@ export async function runStop(engineerHome: string, timeoutMs: number): Promise<
   return exited ? 0 : 1;
 }
 
-// ── Cleanup ─────────────────────────────────────────────────────────────────
+/**
+ * Waits for a process to exit, polling every 200ms.
+ * Returns true if the process exited, false on timeout.
+ */
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const start = Date.now();
+  const pollInterval = 200;
+
+  while (Date.now() - start < timeoutMs) {
+    if (!isProcessRunning(pid)) {
+      return true;
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, pollInterval);
+    });
+  }
+
+  return !isProcessRunning(pid);
+}
+
+// ── Cleanup ──────────────────────────────────────────────────────────────────
 // Add new subsidiary processes here as they're introduced.
 
 /** Stops all subsidiary processes (dashboard, future services). */

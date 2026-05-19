@@ -19,6 +19,7 @@ import { resolveDirectories } from "../home.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Result of a single health check: status, human-readable message, and optional remedy. */
 export interface DoctorCheck {
   label: string;
   status: "pass" | "fail" | "warn";
@@ -26,12 +27,119 @@ export interface DoctorCheck {
   remedy?: string;
 }
 
+/** A group of related health checks, named by the area of the system being verified. */
 export interface DoctorCategory {
   category: string;
   checks: DoctorCheck[];
 }
 
-// ── Check Functions ──────────────────────────────────────────────────────────
+// ── Aggregation ──────────────────────────────────────────────────────────────
+
+/** Run all doctor check categories (8 base + 1 conditional risky config). */
+export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
+  const dirs = resolveDirectories(engineerHome);
+  const categories: DoctorCategory[] = [
+    checkNodeRuntime(),
+    checkDataDirectory(engineerHome),
+    checkConfigFiles(dirs.config),
+    checkRequiredSecrets(dirs.config),
+    checkDatabase(engineerHome),
+    checkPluginManifests(engineerHome),
+    checkWorkspace(engineerHome),
+    checkExternalDependencies(),
+  ];
+
+  // Category 9 requires loaded config — only added when available
+  if (bundle) {
+    categories.push(checkRiskyConfig(bundle));
+  }
+
+  return categories;
+}
+
+/** Run pre-flight checks (categories 1-7 only). Used by `start` command. */
+export function runPreFlightChecks(engineerHome: string): DoctorCategory[] {
+  const dirs = resolveDirectories(engineerHome);
+  return [
+    checkNodeRuntime(),
+    checkDataDirectory(engineerHome),
+    checkConfigFiles(dirs.config),
+    checkRequiredSecrets(dirs.config),
+    checkDatabase(engineerHome),
+    checkPluginManifests(engineerHome),
+    checkExternalDependencies(),
+  ];
+}
+
+/** Compute exit code from doctor results: 0=pass, 1=fail, 2=warnings only. */
+export function computeExitCode(categories: DoctorCategory[]): number {
+  let hasFail = false;
+  let hasWarn = false;
+
+  for (const category of categories) {
+    for (const check of category.checks) {
+      if (check.status === "fail") {
+        hasFail = true;
+      }
+      if (check.status === "warn") {
+        hasWarn = true;
+      }
+    }
+  }
+
+  if (hasFail) {
+    return 1;
+  }
+  if (hasWarn) {
+    return 2;
+  }
+  return 0;
+}
+
+// ── Formatting ───────────────────────────────────────────────────────────────
+
+const STATUS_ICONS: Record<DoctorCheck["status"], string> = {
+  pass: "  ✓",
+  fail: "  ✗",
+  warn: "  ⚠",
+};
+
+/** Format doctor results for terminal output. */
+export function formatDoctorResults(categories: DoctorCategory[]): string {
+  const lines: string[] = [];
+
+  for (const category of categories) {
+    lines.push(`\n  ${category.category}`);
+    for (const check of category.checks) {
+      lines.push(...formatCheck(check));
+    }
+  }
+
+  lines.push(exitCodeSummary(computeExitCode(categories)));
+
+  return lines.join("\n");
+}
+
+function formatCheck(check: DoctorCheck): string[] {
+  const icon = STATUS_ICONS[check.status];
+  const lines = [`  ${icon} ${check.label}: ${check.message}`];
+  if (check.remedy) {
+    lines.push(`      → ${check.remedy}`);
+  }
+  return lines;
+}
+
+function exitCodeSummary(exitCode: number): string {
+  if (exitCode === 0) {
+    return "\n  All checks passed.";
+  }
+  if (exitCode === 1) {
+    return "\n  Some checks failed.";
+  }
+  return "\n  Warnings detected.";
+}
+
+// ── Check: Node Runtime ──────────────────────────────────────────────────────
 
 /** Category 1: Node.js runtime version check. */
 export function checkNodeRuntime(): DoctorCategory {
@@ -51,12 +159,13 @@ export function checkNodeRuntime(): DoctorCategory {
   return { category: "Node.js Runtime", checks };
 }
 
+// ── Check: Data Directory ────────────────────────────────────────────────────
+
 /** Category 2: Data directory existence and writability. */
 export function checkDataDirectory(engineerHome: string): DoctorCategory {
   const dirs = resolveDirectories(engineerHome);
   const checks: DoctorCheck[] = [];
 
-  // Check ENGINEER_HOME exists
   if (!existsSync(engineerHome)) {
     checks.push({
       label: "ENGINEER_HOME",
@@ -67,7 +176,6 @@ export function checkDataDirectory(engineerHome: string): DoctorCategory {
     return { category: "Data Directory", checks };
   }
 
-  // Check writability
   try {
     accessSync(engineerHome, constants.W_OK);
     checks.push({ label: "ENGINEER_HOME writable", status: "pass", message: engineerHome });
@@ -80,7 +188,6 @@ export function checkDataDirectory(engineerHome: string): DoctorCategory {
     });
   }
 
-  // Check subdirectories
   for (const [name, dirPath] of Object.entries(dirs)) {
     if (existsSync(dirPath)) {
       checks.push({ label: `${name}/ exists`, status: "pass", message: dirPath });
@@ -96,25 +203,7 @@ export function checkDataDirectory(engineerHome: string): DoctorCategory {
   return { category: "Data Directory", checks };
 }
 
-/** Check if people.yaml has an owner configured and push appropriate check result. */
-function checkPeopleOwner(config: unknown, filePath: string, checks: DoctorCheck[]): void {
-  const people = config as { people?: Array<{ role?: string }> };
-  const hasOwner = people.people?.some((p) => p.role === "owner") ?? false;
-  if (hasOwner) {
-    checks.push({
-      label: "People Directory — owner",
-      status: "pass",
-      message: "Owner configured",
-    });
-  } else {
-    checks.push({
-      label: "People Directory — owner",
-      status: "warn",
-      message: "No person with role 'owner' configured — outreach fallback will fail",
-      remedy: `Add a person with role: owner to ${filePath}`,
-    });
-  }
-}
+// ── Check: Config Files ──────────────────────────────────────────────────────
 
 /** Category 3: Config file validation. */
 export function checkConfigFiles(configDir: string): DoctorCategory {
@@ -159,6 +248,28 @@ export function checkConfigFiles(configDir: string): DoctorCategory {
   return { category: "Config Files", checks };
 }
 
+/** Check if people.yaml has an owner configured and push appropriate check result. */
+function checkPeopleOwner(config: unknown, filePath: string, checks: DoctorCheck[]): void {
+  const people = config as { people?: Array<{ role?: string }> };
+  const hasOwner = people.people?.some((p) => p.role === "owner") ?? false;
+  if (hasOwner) {
+    checks.push({
+      label: "People Directory — owner",
+      status: "pass",
+      message: "Owner configured",
+    });
+  } else {
+    checks.push({
+      label: "People Directory — owner",
+      status: "warn",
+      message: "No person with role 'owner' configured — outreach fallback will fail",
+      remedy: `Add a person with role: owner to ${filePath}`,
+    });
+  }
+}
+
+// ── Check: Required Secrets ──────────────────────────────────────────────────
+
 /** Category 4: Required secrets (env vars referenced in configs). */
 export function checkRequiredSecrets(configDir: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
@@ -177,7 +288,6 @@ export function checkRequiredSecrets(configDir: string): DoctorCategory {
   const engineerHome = join(configDir, "..");
   loadEnvFile(engineerHome);
 
-  // Check .env file permissions
   const permWarning = checkEnvFilePermissions(engineerHome);
   if (permWarning) {
     checks.push({
@@ -222,8 +332,21 @@ export function checkRequiredSecrets(configDir: string): DoctorCategory {
   return { category: "Required Secrets", checks };
 }
 
-function isYamlFile(name: string): boolean {
-  return name.endsWith(".yaml") || name.endsWith(".yml");
+function scanDirForEnvVars(dir: string, pattern: RegExp, missing: Set<string>, found: Set<string>): void {
+  if (!existsSync(dir)) {
+    return;
+  }
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      scanDirForEnvVars(join(dir, entry.name), pattern, missing, found);
+      continue;
+    }
+    if (!isYamlFile(entry.name)) {
+      continue;
+    }
+    extractEnvVarsFromFile(join(dir, entry.name), pattern, missing, found);
+  }
 }
 
 function extractEnvVarsFromFile(filePath: string, pattern: RegExp, missing: Set<string>, found: Set<string>): void {
@@ -245,22 +368,11 @@ function extractEnvVarsFromFile(filePath: string, pattern: RegExp, missing: Set<
   }
 }
 
-function scanDirForEnvVars(dir: string, pattern: RegExp, missing: Set<string>, found: Set<string>): void {
-  if (!existsSync(dir)) {
-    return;
-  }
-
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      scanDirForEnvVars(join(dir, entry.name), pattern, missing, found);
-      continue;
-    }
-    if (!isYamlFile(entry.name)) {
-      continue;
-    }
-    extractEnvVarsFromFile(join(dir, entry.name), pattern, missing, found);
-  }
+function isYamlFile(name: string): boolean {
+  return name.endsWith(".yaml") || name.endsWith(".yml");
 }
+
+// ── Check: Database ──────────────────────────────────────────────────────────
 
 /** Category 5: Database accessibility and schema version. */
 export function checkDatabase(engineerHome: string): DoctorCategory {
@@ -277,8 +389,6 @@ export function checkDatabase(engineerHome: string): DoctorCategory {
   }
 
   try {
-    // Dynamic import would be async; use require-like pattern
-    // Just check if the file exists and is readable
     accessSync(dbPath, constants.R_OK | constants.W_OK);
     checks.push({ label: "Database accessible", status: "pass", message: dbPath });
   } catch {
@@ -292,6 +402,8 @@ export function checkDatabase(engineerHome: string): DoctorCategory {
 
   return { category: "Database", checks };
 }
+
+// ── Check: Plugin Manifests ──────────────────────────────────────────────────
 
 /** Category 6: Plugin config validation — check which built-in plugins are enabled via config files. */
 export function checkPluginManifests(engineerHome: string): DoctorCategory {
@@ -327,33 +439,33 @@ export function checkPluginManifests(engineerHome: string): DoctorCategory {
   return { category: "Plugins", checks };
 }
 
+// ── Check: Workspace ─────────────────────────────────────────────────────────
+
 /** Category 7: Workspace & git availability. */
 export function checkWorkspace(engineerHome: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
-  const wsRoot = join(engineerHome, "workspaces");
+  const workspaceRoot = join(engineerHome, "workspaces");
 
-  // Check workspace dir
-  if (existsSync(wsRoot)) {
+  if (existsSync(workspaceRoot)) {
     try {
-      accessSync(wsRoot, constants.W_OK);
-      checks.push({ label: "Workspace directory", status: "pass", message: wsRoot });
+      accessSync(workspaceRoot, constants.W_OK);
+      checks.push({ label: "Workspace directory", status: "pass", message: workspaceRoot });
     } catch {
       checks.push({
         label: "Workspace directory",
         status: "fail",
-        message: `${wsRoot} is not writable`,
-        remedy: `chmod u+w ${wsRoot}`,
+        message: `${workspaceRoot} is not writable`,
+        remedy: `chmod u+w ${workspaceRoot}`,
       });
     }
   } else {
     checks.push({
       label: "Workspace directory",
       status: "warn",
-      message: `${wsRoot} does not exist — will be created on start`,
+      message: `${workspaceRoot} does not exist — will be created on start`,
     });
   }
 
-  // Check git binary
   try {
     const gitVersion = execSync("git --version", { encoding: "utf8" }).trim();
     checks.push({ label: "Git binary", status: "pass", message: gitVersion });
@@ -368,6 +480,8 @@ export function checkWorkspace(engineerHome: string): DoctorCategory {
 
   return { category: "Workspace", checks };
 }
+
+// ── Check: External Dependencies ─────────────────────────────────────────────
 
 /** Category 8: External dependency availability — derived from plugin manifests. */
 export function checkExternalDependencies(): DoctorCategory {
@@ -409,6 +523,83 @@ export function checkExternalDependencies(): DoctorCategory {
   }
 
   return { category: "External Dependencies", checks };
+}
+
+// ── Check: Risky Config ──────────────────────────────────────────────────────
+
+/** Category 9: Risky config warnings. */
+export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
+  const checks: DoctorCheck[] = [];
+
+  if (bundle.safety.merge.auto_merge_after_approval.default) {
+    checks.push({
+      label: "Auto-merge",
+      status: "warn",
+      message: "Auto-merge is enabled by default — PRs will merge without human review",
+      remedy:
+        "Set merge.auto_merge_after_approval.default: false in safety.yaml, use per-repo overrides for trusted repos",
+    });
+  }
+
+  for (const [repo, enabled] of Object.entries(bundle.safety.merge.auto_merge_after_approval.repos)) {
+    if (enabled) {
+      checks.push({
+        label: `Auto-merge: ${repo}`,
+        status: "warn",
+        message: `Auto-merge enabled for ${repo}`,
+      });
+    }
+  }
+
+  const { cost_limits } = bundle.safety;
+  if (cost_limits.daily.cost_usd === null && cost_limits.monthly.cost_usd === null) {
+    checks.push({
+      label: "Cost limits",
+      status: "warn",
+      message: "No daily or monthly cost limits set — spending is unbounded",
+      remedy: "Set daily cost_usd: 25.0 and monthly cost_usd: 250.0 in safety.yaml for safe starting defaults",
+    });
+  }
+
+  if (bundle.daemon.max_concurrent > 5) {
+    checks.push({
+      label: "High concurrency",
+      status: "warn",
+      message: `max_concurrent is ${bundle.daemon.max_concurrent} — high concurrency increases resource usage and LLM costs`,
+    });
+  }
+
+  if (bundle.daemon.stuck_threshold_ms >= bundle.daemon.max_active_duration_ms) {
+    checks.push({
+      label: "Stuck detection",
+      status: "warn",
+      message: `stuck_threshold_ms (${bundle.daemon.stuck_threshold_ms}ms) >= max_active_duration_ms (${bundle.daemon.max_active_duration_ms}ms) — stuck detection will never fire before the hard cap`,
+      remedy: "Set stuck_threshold_ms lower than max_active_duration_ms",
+    });
+  }
+
+  const reminderAfterMs = bundle.safety.response_timeout.review_pending.reminder_after_ms;
+  if (reminderAfterMs < 3_600_000) {
+    checks.push({
+      label: "Review reminders",
+      status: "warn",
+      message: `review_pending.reminder_after_ms is ${String(reminderAfterMs)}ms (${String(Math.round(reminderAfterMs / 60_000))}min) — reminders under 1 hour may overwhelm reviewers`,
+      remedy: "Set review_pending.reminder_after_ms to at least '1h' in safety.yaml",
+    });
+  }
+
+  checkDataLifecycleCoherence(bundle, checks);
+  checkEscalationCoherence(bundle.safety.response_timeout.blocked.stages, checks);
+
+  if (checks.length === 0) {
+    checks.push({
+      label: "Configuration",
+      status: "pass",
+      message: "No risky configuration detected",
+    });
+  }
+
+  return { category: "Risky Config Warnings", checks };
 }
 
 function checkDataLifecycleCoherence(bundle: ConfigBundle, checks: DoctorCheck[]): void {
@@ -466,189 +657,4 @@ function checkEscalationCoherence(
       remedy: "Add a stage with action: escalation_alert to response_timeout.blocked.stages in safety.yaml",
     });
   }
-}
-
-/** Category 11: Risky config warnings. */
-export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
-  const checks: DoctorCheck[] = [];
-
-  // Auto-merge enabled
-  if (bundle.safety.merge.auto_merge_after_approval.default) {
-    checks.push({
-      label: "Auto-merge",
-      status: "warn",
-      message: "Auto-merge is enabled by default — PRs will merge without human review",
-      remedy:
-        "Set merge.auto_merge_after_approval.default: false in safety.yaml, use per-repo overrides for trusted repos",
-    });
-  }
-
-  // Check for repos with auto-merge
-  for (const [repo, enabled] of Object.entries(bundle.safety.merge.auto_merge_after_approval.repos)) {
-    if (enabled) {
-      checks.push({
-        label: `Auto-merge: ${repo}`,
-        status: "warn",
-        message: `Auto-merge enabled for ${repo}`,
-      });
-    }
-  }
-
-  // No cost limits set
-  const { cost_limits } = bundle.safety;
-  if (cost_limits.daily.cost_usd === null && cost_limits.monthly.cost_usd === null) {
-    checks.push({
-      label: "Cost limits",
-      status: "warn",
-      message: "No daily or monthly cost limits set — spending is unbounded",
-      remedy: "Set daily cost_usd: 25.0 and monthly cost_usd: 250.0 in safety.yaml for safe starting defaults",
-    });
-  }
-
-  // High concurrency warning
-  if (bundle.daemon.max_concurrent > 5) {
-    checks.push({
-      label: "High concurrency",
-      status: "warn",
-      message: `max_concurrent is ${bundle.daemon.max_concurrent} — high concurrency increases resource usage and LLM costs`,
-    });
-  }
-
-  // Stuck detection never fires before the hard cap
-  if (bundle.daemon.stuck_threshold_ms >= bundle.daemon.max_active_duration_ms) {
-    checks.push({
-      label: "Stuck detection",
-      status: "warn",
-      message: `stuck_threshold_ms (${bundle.daemon.stuck_threshold_ms}ms) >= max_active_duration_ms (${bundle.daemon.max_active_duration_ms}ms) — stuck detection will never fire before the hard cap`,
-      remedy: "Set stuck_threshold_ms lower than max_active_duration_ms",
-    });
-  }
-
-  // Review reminder too aggressive
-  const reminderAfterMs = bundle.safety.response_timeout.review_pending.reminder_after_ms;
-  if (reminderAfterMs < 3_600_000) {
-    checks.push({
-      label: "Review reminders",
-      status: "warn",
-      message: `review_pending.reminder_after_ms is ${String(reminderAfterMs)}ms (${String(Math.round(reminderAfterMs / 60_000))}min) — reminders under 1 hour may overwhelm reviewers`,
-      remedy: "Set review_pending.reminder_after_ms to at least '1h' in safety.yaml",
-    });
-  }
-
-  checkDataLifecycleCoherence(bundle, checks);
-  checkEscalationCoherence(bundle.safety.response_timeout.blocked.stages, checks);
-
-  if (checks.length === 0) {
-    checks.push({
-      label: "Configuration",
-      status: "pass",
-      message: "No risky configuration detected",
-    });
-  }
-
-  return { category: "Risky Config Warnings", checks };
-}
-
-// ── Aggregation ──────────────────────────────────────────────────────────────
-
-/** Run all doctor check categories (8 base + 1 conditional risky config). */
-export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
-  const dirs = resolveDirectories(engineerHome);
-  const categories: DoctorCategory[] = [
-    checkNodeRuntime(),
-    checkDataDirectory(engineerHome),
-    checkConfigFiles(dirs.config),
-    checkRequiredSecrets(dirs.config),
-    checkDatabase(engineerHome),
-    checkPluginManifests(engineerHome),
-    checkWorkspace(engineerHome),
-    checkExternalDependencies(),
-  ];
-
-  // Category 11 requires loaded config — if available
-  if (bundle) {
-    categories.push(checkRiskyConfig(bundle));
-  }
-
-  return categories;
-}
-
-/** Run pre-flight checks (categories 1-7 only). Used by `start` command. */
-export function runPreFlightChecks(engineerHome: string): DoctorCategory[] {
-  const dirs = resolveDirectories(engineerHome);
-  return [
-    checkNodeRuntime(),
-    checkDataDirectory(engineerHome),
-    checkConfigFiles(dirs.config),
-    checkRequiredSecrets(dirs.config),
-    checkDatabase(engineerHome),
-    checkPluginManifests(engineerHome),
-    checkExternalDependencies(),
-  ];
-}
-
-/** Compute exit code from doctor results: 0=pass, 1=fail, 2=warnings only. */
-export function computeExitCode(categories: DoctorCategory[]): number {
-  let hasFail = false;
-  let hasWarn = false;
-
-  for (const category of categories) {
-    for (const check of category.checks) {
-      if (check.status === "fail") {
-        hasFail = true;
-      }
-      if (check.status === "warn") {
-        hasWarn = true;
-      }
-    }
-  }
-
-  if (hasFail) {
-    return 1;
-  }
-  if (hasWarn) {
-    return 2;
-  }
-  return 0;
-}
-
-const STATUS_ICONS: Record<DoctorCheck["status"], string> = {
-  pass: "  ✓",
-  fail: "  ✗",
-  warn: "  ⚠",
-};
-
-function formatCheck(check: DoctorCheck): string[] {
-  const icon = STATUS_ICONS[check.status];
-  const lines = [`  ${icon} ${check.label}: ${check.message}`];
-  if (check.remedy) {
-    lines.push(`      → ${check.remedy}`);
-  }
-  return lines;
-}
-
-function exitCodeSummary(exitCode: number): string {
-  if (exitCode === 0) {
-    return "\n  All checks passed.";
-  }
-  if (exitCode === 1) {
-    return "\n  Some checks failed.";
-  }
-  return "\n  Warnings detected.";
-}
-
-/** Format doctor results for terminal output. */
-export function formatDoctorResults(categories: DoctorCategory[]): string {
-  const lines: string[] = [];
-
-  for (const category of categories) {
-    lines.push(`\n  ${category.category}`);
-    for (const check of category.checks) {
-      lines.push(...formatCheck(check));
-    }
-  }
-
-  lines.push(exitCodeSummary(computeExitCode(categories)));
-
-  return lines.join("\n");
 }

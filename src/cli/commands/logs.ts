@@ -2,10 +2,34 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { getOutput } from "../output.js";
+
 interface LogsOptions {
   json: boolean;
   lines: number;
   follow: boolean;
+}
+
+/** Displays log output. Returns exit code. */
+export function runLogs(engineerHome: string, options: LogsOptions): number {
+  const out = getOutput();
+  const logFile = findLogFile(engineerHome);
+
+  if (!logFile) {
+    if (out.mode === "json") {
+      out.data({ logFile: null, logsDir: join(engineerHome, "logs") });
+    } else {
+      out.log("  No log file found.");
+      out.log(`  Logs are stored in ${join(engineerHome, "logs")}/`);
+    }
+    return 0;
+  }
+
+  if (options.follow) {
+    return runFollowMode(logFile, options);
+  }
+
+  return runStaticMode(logFile, options);
 }
 
 /**
@@ -40,30 +64,11 @@ function readLastLines(filePath: string, lineCount: number): string[] {
   return lines.slice(-lineCount);
 }
 
-/** Displays log output. Returns exit code. */
-export function runLogs(engineerHome: string, options: LogsOptions): number {
-  const logFile = findLogFile(engineerHome);
-
-  if (!logFile) {
-    console.log("  No log file found.");
-    console.log(`  Logs are stored in ${join(engineerHome, "logs")}/`);
-    return 0;
-  }
-
-  if (options.follow) {
-    return runFollowMode(logFile, options);
-  }
-
-  return runStaticMode(logFile, options);
-}
-
 function runStaticMode(logFile: string, options: LogsOptions): number {
   const lines = readLastLines(logFile, options.lines);
 
   if (options.json) {
-    for (const line of lines) {
-      console.log(line);
-    }
+    writeRawLines(lines);
     return 0;
   }
 
@@ -72,11 +77,52 @@ function runStaticMode(logFile: string, options: LogsOptions): number {
     formatWithPinoPretty(lines);
   } catch {
     // Fall back to raw output if pino-pretty is unavailable
-    for (const line of lines) {
-      console.log(line);
-    }
+    writeRawLines(lines);
   }
   return 0;
+}
+
+function runFollowMode(logFile: string, options: LogsOptions): number {
+  const out = getOutput();
+  const tailArgs = ["-f", "-n", String(options.lines), logFile];
+
+  if (options.json) {
+    // Raw JSON follow
+    const tail = spawn("tail", tailArgs, { stdio: "inherit" });
+    tail.on("error", (err) => {
+      out.error(`Failed to tail log file: ${err.message}`);
+    });
+    return 0;
+  }
+
+  // Pipe through pino-pretty
+  const tail = spawn("tail", tailArgs, { stdio: ["inherit", "pipe", "inherit"] });
+  const pretty = spawn("pino-pretty", [], { stdio: ["pipe", "inherit", "inherit"] });
+
+  if (tail.stdout) {
+    tail.stdout.pipe(pretty.stdin);
+  }
+
+  tail.on("error", (err) => {
+    out.error(`Failed to tail log file: ${err.message}`);
+  });
+  pretty.on("error", () => {
+    // pino-pretty not found — fall back to raw tail
+    const rawTail = spawn("tail", tailArgs, { stdio: "inherit" });
+    rawTail.on("error", (err) => {
+      out.error(`Failed to tail log file: ${err.message}`);
+    });
+  });
+
+  // Follow mode keeps the process running — return 0 (won't actually reach this)
+  return 0;
+}
+
+/** Write raw NDJSON log lines directly to stdout, preserving their existing encoding. */
+function writeRawLines(lines: string[]): void {
+  for (const line of lines) {
+    process.stdout.write(`${line}\n`);
+  }
 }
 
 function formatWithPinoPretty(lines: string[]): void {
@@ -89,38 +135,4 @@ function formatWithPinoPretty(lines: string[]): void {
     proc.stdin.write(`${line}\n`);
   }
   proc.stdin.end();
-}
-
-function runFollowMode(logFile: string, options: LogsOptions): number {
-  const tailArgs = ["-f", "-n", String(options.lines), logFile];
-
-  if (options.json) {
-    // Raw JSON follow
-    const tail = spawn("tail", tailArgs, { stdio: "inherit" });
-    tail.on("error", (err) => {
-      console.error(`  Failed to tail log file: ${err.message}`);
-    });
-  } else {
-    // Pipe through pino-pretty
-    const tail = spawn("tail", tailArgs, { stdio: ["inherit", "pipe", "inherit"] });
-    const pretty = spawn("pino-pretty", [], { stdio: ["pipe", "inherit", "inherit"] });
-
-    if (tail.stdout) {
-      tail.stdout.pipe(pretty.stdin);
-    }
-
-    tail.on("error", (err) => {
-      console.error(`  Failed to tail log file: ${err.message}`);
-    });
-    pretty.on("error", () => {
-      // pino-pretty not found — fall back to raw tail
-      const rawTail = spawn("tail", tailArgs, { stdio: "inherit" });
-      rawTail.on("error", (err) => {
-        console.error(`  Failed to tail log file: ${err.message}`);
-      });
-    });
-  }
-
-  // Follow mode keeps the process running — return 0 (won't actually reach this)
-  return 0;
 }

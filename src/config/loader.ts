@@ -1,6 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import ms from "ms";
 import YAML from "yaml";
@@ -18,8 +18,9 @@ import {
 } from "../schemas/config.js";
 import type { DaemonConfig, OrchestratorConfig, SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
 
-// ── Error Classes ────────────────────────────────────────────────────────────────
+// ── Error Classes ────────────────────────────────────────────────────────────
 
+/** Base error for config loading failures — carries the file path of the offending config. */
 export class ConfigError extends Error {
   readonly filePath: string;
 
@@ -30,6 +31,7 @@ export class ConfigError extends Error {
   }
 }
 
+/** Thrown when a config references an environment variable that isn't set in process.env. */
 export class EnvVarError extends ConfigError {
   readonly varName: string;
 
@@ -40,6 +42,7 @@ export class EnvVarError extends ConfigError {
   }
 }
 
+/** Thrown when a config fails Zod schema validation — wraps the underlying ZodError. */
 export class ValidationError extends ConfigError {
   readonly zodError: z.ZodError;
 
@@ -51,42 +54,19 @@ export class ValidationError extends ConfigError {
   }
 }
 
-/** Format a single Zod issue with contextual hints. */
-function formatZodIssue(issue: z.ZodIssue): string {
-  const path = issue.path.join(".");
-  let msg = `${path}: ${issue.message}`;
+// ── Result Types ─────────────────────────────────────────────────────────────
 
-  // For enum errors, show the valid options
-  if (issue.code === "invalid_enum_value") {
-    const enumIssue = issue as z.ZodIssue & { options?: unknown[] };
-    if (enumIssue.options) {
-      msg += ` (valid values: ${enumIssue.options.map((o) => String(o)).join(", ")})`;
-    }
-  }
-
-  // For type errors on _ms fields, hint about duration strings
-  if (issue.code === "invalid_type" && path.endsWith("_ms")) {
-    msg += ' (accepts duration strings like "30s", "5m", "8h", "1d")';
-  }
-
-  // For deeply nested paths, hint at the top-level section to check
-  if (issue.path.length > 2) {
-    msg += ` (in the "${String(issue.path[0])}" section)`;
-  }
-
-  return msg;
-}
-
-// ── Result Types ─────────────────────────────────────────────────────────────────
-
+/** Result of loading a single config file — the parsed value plus where it came from. */
 export interface ConfigLoadResult<T> {
   config: T;
   source: "file" | "defaults";
   filePath: string;
 }
 
+/** Result of a non-throwing reload: either a parsed config or a {@link ConfigError}. */
 export type ConfigReloadResult<T> = { ok: true; config: T } | { ok: false; error: ConfigError };
 
+/** The full set of validated config sections, loaded together for daemon startup. */
 export interface ConfigBundle {
   daemon: DaemonConfig;
   orchestrator: OrchestratorConfig;
@@ -95,188 +75,70 @@ export interface ConfigBundle {
   people: Person[];
 }
 
+/** Non-fatal note surfaced during config directory loading (e.g., missing optional file). */
 export interface ConfigWarning {
   file: string;
   message: string;
 }
 
+/** Output of {@link loadConfigDir} — the validated bundle plus any non-fatal warnings. */
 export interface ConfigDirResult {
   bundle: ConfigBundle;
   warnings: ConfigWarning[];
 }
 
-// ── Env Var Resolution ───────────────────────────────────────────────────────────
-
-const ENV_VAR_TEST = /\$\{[^}]+\}/;
-const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
+// ── Config Directory Loading ─────────────────────────────────────────────────
 
 /**
- * Recursively resolves `${ENV_VAR_NAME}` references in string values.
- * Throws `EnvVarError` if a referenced env var is undefined.
- *
- * Limitation: there is no escape syntax for literal `${...}` strings.
- * Any `${...}` pattern is always treated as an env var reference.
+ * Loads all core config files from a directory. Startup behavior: throws on
+ * invalid config. Returns warnings for notable conditions (e.g., missing
+ * safety.yaml using conservative defaults).
  */
-export function resolveEnvVars(obj: unknown, filePath: string): unknown {
-  if (typeof obj === "string") {
-    if (!ENV_VAR_TEST.test(obj)) {
-      return obj;
-    }
+export function loadConfigDir(configDir?: string): ConfigDirResult {
+  const explicit = configDir ?? process.env["ENGINEER_CONFIG_DIR"];
+  const dir = explicit ?? join(homedir(), ".engineer", "config");
 
-    return obj.replace(ENV_VAR_PATTERN, (_match, varName: string) => {
-      const value = process.env[varName];
-      if (value === undefined) {
-        throw new EnvVarError(varName, filePath);
-      }
-      return value;
+  // If a config dir was explicitly specified (argument or env var) and doesn't exist, fail loudly.
+  // Default path silently uses Zod defaults — that's expected on first run.
+  if (explicit !== undefined && !existsSync(dir)) {
+    throw new ConfigError(`Config directory does not exist: ${dir}`, dir);
+  }
+
+  const warnings: ConfigWarning[] = [];
+
+  const daemon = loadConfig(join(dir, "daemon.yaml"), DaemonConfigSchema);
+  const orchestrator = loadConfig(join(dir, "orchestrator.yaml"), OrchestratorConfigSchema);
+  const workspace = loadConfig(join(dir, "workspace.yaml"), WorkspaceConfigSchema);
+  const safety = loadConfig(join(dir, "safety.yaml"), SafetyConfigSchema);
+  const peopleResult = loadConfig(join(dir, "people.yaml"), PeopleConfigSchema);
+
+  // Warn on hot-reloadable configs using defaults — operators should configure these
+  if (safety.source === "defaults") {
+    warnings.push({
+      file: "safety.yaml",
+      message: "safety.yaml not found, using conservative defaults. Configure safety explicitly for production use.",
+    });
+  }
+  if (peopleResult.source === "defaults") {
+    warnings.push({
+      file: "people.yaml",
+      message: "people.yaml not found, no people configured.",
     });
   }
 
-  if (Array.isArray(obj)) {
-    return obj.map((item) => resolveEnvVars(item, filePath));
-  }
-
-  if (obj !== null && typeof obj === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      result[key] = resolveEnvVars(value, filePath);
-    }
-    return result;
-  }
-
-  // Numbers, booleans, null — pass through
-  return obj;
+  return {
+    bundle: {
+      daemon: daemon.config,
+      orchestrator: orchestrator.config,
+      workspace: workspace.config,
+      safety: safety.config,
+      people: peopleResult.config.people,
+    },
+    warnings,
+  };
 }
 
-// ── Duration Parsing (Schema Introspection) ──────────────────────────────────────
-
-/**
- * A node in the schema path tree. Either a leaf number field or an intermediate
- * object/record node with children.
- */
-type PathNode =
-  | { type: "number" }
-  | { type: "object"; children: Record<string, PathNode> }
-  | { type: "record"; valueNode: PathNode };
-
-/**
- * Walks a Zod schema to build a tree of paths where number fields exist.
- * Used to know which YAML string values should be parsed as durations.
- */
-function getNumberPaths(schema: z.ZodTypeAny): PathNode | null {
-  return walkSchema(schema);
-}
-
-function walkSchema(schema: z.ZodTypeAny): PathNode | null {
-  const def = schema._def as Record<string, unknown>;
-  const typeName = def["typeName"] as string | undefined;
-
-  switch (typeName) {
-    case "ZodObject": {
-      const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
-      const children: Record<string, PathNode> = {};
-      let hasChildren = false;
-
-      for (const [key, childSchema] of Object.entries(shape)) {
-        const childNode = walkSchema(childSchema as z.ZodTypeAny);
-        if (childNode) {
-          children[key] = childNode;
-          hasChildren = true;
-        }
-      }
-
-      return hasChildren ? { type: "object", children } : null;
-    }
-
-    case "ZodRecord": {
-      const valueSchema = def["valueType"] as z.ZodTypeAny;
-      const valueNode = walkSchema(valueSchema);
-      return valueNode ? { type: "record", valueNode } : null;
-    }
-
-    case "ZodDefault": {
-      const innerType = def["innerType"] as z.ZodTypeAny;
-      return walkSchema(innerType);
-    }
-
-    case "ZodOptional": {
-      const innerType = def["innerType"] as z.ZodTypeAny;
-      return walkSchema(innerType);
-    }
-
-    case "ZodNullable": {
-      const innerType = def["innerType"] as z.ZodTypeAny;
-      return walkSchema(innerType);
-    }
-
-    case "ZodNumber":
-      return { type: "number" };
-
-    // String, boolean, enum, array, literal, etc. — not number fields
-    default:
-      return null;
-  }
-}
-
-/**
- * Walks the data object and converts string values to milliseconds (via `ms`)
- * at paths where the Zod schema expects numbers.
- */
-export function parseDurations(obj: unknown, schema: z.ZodTypeAny): unknown {
-  const pathTree = getNumberPaths(schema);
-  if (!pathTree) {
-    return obj;
-  }
-  return applyDurations(obj, pathTree);
-}
-
-function applyNumberDuration(data: unknown): unknown {
-  if (typeof data === "string") {
-    const parsed = ms(data as ms.StringValue);
-    // ms() returns undefined for unrecognized strings at runtime,
-    // despite the type signature. Let Zod catch invalid values.
-    return typeof parsed === "number" ? parsed : data;
-  }
-  return data;
-}
-
-function applyRecordDurations(data: unknown, valueNode: PathNode): unknown {
-  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(data)) {
-      result[key] = applyDurations(value, valueNode);
-    }
-    return result;
-  }
-  return data;
-}
-
-function applyObjectDurations(data: unknown, children: Record<string, PathNode>): unknown {
-  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(data)) {
-      const childNode = children[key];
-      result[key] = childNode ? applyDurations(value, childNode) : value;
-    }
-    return result;
-  }
-  return data;
-}
-
-function applyDurations(data: unknown, node: PathNode): unknown {
-  switch (node.type) {
-    case "number":
-      return applyNumberDuration(data);
-    case "record":
-      return applyRecordDurations(data, node.valueNode);
-    case "object":
-      return applyObjectDurations(data, node.children);
-    default:
-      return data;
-  }
-}
-
-// ── Config Loading ───────────────────────────────────────────────────────────────
+// ── Single File Loading ──────────────────────────────────────────────────────
 
 /**
  * Loads a YAML config file, resolves env vars, parses durations, validates
@@ -288,14 +150,14 @@ export function loadConfig<S extends z.ZodTypeAny>(filePath: string, schema: S):
   type T = z.output<S>;
 
   // Missing file → use Zod defaults
-  if (!fs.existsSync(filePath)) {
+  if (!existsSync(filePath)) {
     const config = schema.parse({}) as T;
     return { config, source: "defaults", filePath };
   }
 
   let content: string;
   try {
-    content = fs.readFileSync(filePath, "utf8");
+    content = readFileSync(filePath, "utf8");
   } catch (error) {
     throw new ConfigError(`Failed to read config file: ${filePath}`, filePath, {
       cause: error,
@@ -356,53 +218,197 @@ export function loadConfigSafe<S extends z.ZodTypeAny>(filePath: string, schema:
   }
 }
 
-// ── Config Directory Loading ─────────────────────────────────────────────────────
+// ── Env Var Resolution ───────────────────────────────────────────────────────
+
+const ENV_VAR_TEST = /\$\{[^}]+\}/;
+const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
 
 /**
- * Loads all core config files from a directory. Startup behavior: throws on
- * invalid config. Returns warnings for notable conditions (e.g., missing
- * safety.yaml using conservative defaults).
+ * Recursively resolves `${ENV_VAR_NAME}` references in string values.
+ * Throws `EnvVarError` if a referenced env var is undefined.
+ *
+ * Limitation: there is no escape syntax for literal `${...}` strings.
+ * Any `${...}` pattern is always treated as an env var reference.
  */
-export function loadConfigDir(configDir?: string): ConfigDirResult {
-  const explicit = configDir ?? process.env["ENGINEER_CONFIG_DIR"];
-  const dir = explicit ?? path.join(os.homedir(), ".engineer", "config");
+export function resolveEnvVars(obj: unknown, filePath: string): unknown {
+  if (typeof obj === "string") {
+    if (!ENV_VAR_TEST.test(obj)) {
+      return obj;
+    }
 
-  // If a config dir was explicitly specified (argument or env var) and doesn't exist, fail loudly.
-  // Default path silently uses Zod defaults — that's expected on first run.
-  if (explicit !== undefined && !fs.existsSync(dir)) {
-    throw new ConfigError(`Config directory does not exist: ${dir}`, dir);
-  }
-
-  const warnings: ConfigWarning[] = [];
-
-  const daemon = loadConfig(path.join(dir, "daemon.yaml"), DaemonConfigSchema);
-  const orchestrator = loadConfig(path.join(dir, "orchestrator.yaml"), OrchestratorConfigSchema);
-  const workspace = loadConfig(path.join(dir, "workspace.yaml"), WorkspaceConfigSchema);
-  const safety = loadConfig(path.join(dir, "safety.yaml"), SafetyConfigSchema);
-  const peopleResult = loadConfig(path.join(dir, "people.yaml"), PeopleConfigSchema);
-
-  // Warn on hot-reloadable configs using defaults — operators should configure these
-  if (safety.source === "defaults") {
-    warnings.push({
-      file: "safety.yaml",
-      message: "safety.yaml not found, using conservative defaults. Configure safety explicitly for production use.",
-    });
-  }
-  if (peopleResult.source === "defaults") {
-    warnings.push({
-      file: "people.yaml",
-      message: "people.yaml not found, no people configured.",
+    return obj.replace(ENV_VAR_PATTERN, (_match, varName: string) => {
+      const value = process.env[varName];
+      if (value === undefined) {
+        throw new EnvVarError(varName, filePath);
+      }
+      return value;
     });
   }
 
-  return {
-    bundle: {
-      daemon: daemon.config,
-      orchestrator: orchestrator.config,
-      workspace: workspace.config,
-      safety: safety.config,
-      people: peopleResult.config.people,
-    },
-    warnings,
-  };
+  if (Array.isArray(obj)) {
+    return obj.map((item) => resolveEnvVars(item, filePath));
+  }
+
+  if (obj !== null && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = resolveEnvVars(value, filePath);
+    }
+    return result;
+  }
+
+  // Numbers, booleans, null — pass through
+  return obj;
+}
+
+// ── Duration Parsing (Schema Introspection) ──────────────────────────────────
+
+/**
+ * Walks the data object and converts string values to milliseconds (via `ms`)
+ * at paths where the Zod schema expects numbers.
+ */
+export function parseDurations(obj: unknown, schema: z.ZodTypeAny): unknown {
+  const pathTree = walkSchema(schema);
+  if (!pathTree) {
+    return obj;
+  }
+  return applyDurations(obj, pathTree);
+}
+
+/**
+ * A node in the schema path tree. Either a leaf number field or an intermediate
+ * object/record node with children.
+ */
+type PathNode =
+  | { type: "number" }
+  | { type: "object"; children: Record<string, PathNode> }
+  | { type: "record"; valueNode: PathNode };
+
+/**
+ * Walks a Zod schema to build a tree of paths where number fields exist.
+ * Used to know which YAML string values should be parsed as durations.
+ */
+function walkSchema(schema: z.ZodTypeAny): PathNode | null {
+  const def = schema._def as Record<string, unknown>;
+  const typeName = def["typeName"] as string | undefined;
+
+  switch (typeName) {
+    case "ZodObject": {
+      const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
+      const children: Record<string, PathNode> = {};
+      let hasChildren = false;
+
+      for (const [key, childSchema] of Object.entries(shape)) {
+        const childNode = walkSchema(childSchema as z.ZodTypeAny);
+        if (childNode) {
+          children[key] = childNode;
+          hasChildren = true;
+        }
+      }
+
+      return hasChildren ? { type: "object", children } : null;
+    }
+
+    case "ZodRecord": {
+      const valueSchema = def["valueType"] as z.ZodTypeAny;
+      const valueNode = walkSchema(valueSchema);
+      return valueNode ? { type: "record", valueNode } : null;
+    }
+
+    case "ZodDefault": {
+      const innerType = def["innerType"] as z.ZodTypeAny;
+      return walkSchema(innerType);
+    }
+
+    case "ZodOptional": {
+      const innerType = def["innerType"] as z.ZodTypeAny;
+      return walkSchema(innerType);
+    }
+
+    case "ZodNullable": {
+      const innerType = def["innerType"] as z.ZodTypeAny;
+      return walkSchema(innerType);
+    }
+
+    case "ZodNumber":
+      return { type: "number" };
+
+    // String, boolean, enum, array, literal, etc. — not number fields
+    default:
+      return null;
+  }
+}
+
+function applyDurations(data: unknown, node: PathNode): unknown {
+  switch (node.type) {
+    case "number":
+      return applyNumberDuration(data);
+    case "record":
+      return applyRecordDurations(data, node.valueNode);
+    case "object":
+      return applyObjectDurations(data, node.children);
+    default:
+      return data;
+  }
+}
+
+function applyNumberDuration(data: unknown): unknown {
+  if (typeof data === "string") {
+    const parsed = ms(data as ms.StringValue);
+    // ms() returns undefined for unrecognized strings at runtime,
+    // despite the type signature. Let Zod catch invalid values.
+    return typeof parsed === "number" ? parsed : data;
+  }
+  return data;
+}
+
+function applyRecordDurations(data: unknown, valueNode: PathNode): unknown {
+  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      result[key] = applyDurations(value, valueNode);
+    }
+    return result;
+  }
+  return data;
+}
+
+function applyObjectDurations(data: unknown, children: Record<string, PathNode>): unknown {
+  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      const childNode = children[key];
+      result[key] = childNode ? applyDurations(value, childNode) : value;
+    }
+    return result;
+  }
+  return data;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Format a single Zod issue with contextual hints. */
+function formatZodIssue(issue: z.ZodIssue): string {
+  const path = issue.path.join(".");
+  let formatted = `${path}: ${issue.message}`;
+
+  // For enum errors, show the valid options
+  if (issue.code === "invalid_enum_value") {
+    const enumIssue = issue as z.ZodIssue & { options?: unknown[] };
+    if (enumIssue.options) {
+      formatted += ` (valid values: ${enumIssue.options.map((o) => String(o)).join(", ")})`;
+    }
+  }
+
+  // For type errors on _ms fields, hint about duration strings
+  if (issue.code === "invalid_type" && path.endsWith("_ms")) {
+    formatted += ' (accepts duration strings like "30s", "5m", "8h", "1d")';
+  }
+
+  // For deeply nested paths, hint at the top-level section to check
+  if (issue.path.length > 2) {
+    formatted += ` (in the "${String(issue.path[0])}" section)`;
+  }
+
+  return formatted;
 }

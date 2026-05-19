@@ -381,6 +381,19 @@ Biome enforces formatting (120-char lines, 2-space indent, double quotes, semico
 
 ---
 
+## 11. Single Source of Truth
+
+Define every value once. Derive everywhere else. A constant that appears in two places will eventually disagree — every duplicate is a future bug. Choose one authoritative location, then read or compute from it.
+
+- **Versions and metadata.** The CLI reads its version from `package.json` at runtime — there is no hardcoded `VERSION` constant. Same applies to every consumer of project metadata.
+- **Schemas drive types.** Zod schemas are the runtime source of truth; TypeScript types are derived via `z.infer` / `z.output`. Never declare a schema and a type independently. See § 4 → Schema-First (Zod).
+- **Plugin and adapter requirements.** `doctor`'s external-binary checks and the setup wizard's environment detection both derive their lists from plugin manifests. Adding a new plugin requires no edits to either.
+- **No duplicate constants.** If a value (a path, a magic number, a default) needs to appear in two files, the second occurrence is a derived computation or an import — never a literal repeat.
+
+The test: when you change a value, do you have to remember every other place it lives? If yes, you have duplication. Centralize.
+
+---
+
 ## Philosophical Foundations
 
 These are the mental models behind the standards. Internalize them before coding — they guide decisions the rules don't cover.

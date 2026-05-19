@@ -300,7 +300,7 @@ On each poll cycle, the plugin iterates through configured repos and calls the G
 
 **Rate limiting**: If the API returns 429, the plugin records the \`Retry-After\` duration and skips all polling until that time passes.
 
-**Interactive setup**: Running \`engineer init\` prompts for the repo in \`owner/name\` format and generates the config file.
+**Interactive setup**: The first \`engineer start\` invocation prompts for the repo in \`owner/name\` format and generates the config file.
 
 ## Limitations
 

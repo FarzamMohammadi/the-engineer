@@ -684,6 +684,7 @@ cli_path: gemini                            # Path to gemini CLI binary (default
 
 // ── Template Manifest ───────────────────────────────────────────────────────
 
+/** A bundled template — relative path under ENGINEER_HOME and the file content to write. */
 export interface TemplateFile {
   relativePath: string;
   content: string;

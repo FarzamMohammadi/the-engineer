@@ -4,17 +4,24 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runLogs } from "../../../../src/cli/commands/logs.js";
+import { resetOutput } from "../../../../src/cli/output.js";
 
 let tempDir: string;
+let stdoutLines: string[];
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "logs-test-"));
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  stdoutLines = [];
+  vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+    stdoutLines.push(String(chunk));
+    return true;
+  });
 });
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
   vi.restoreAllMocks();
+  resetOutput();
 });
 
 describe("runLogs", () => {
@@ -33,17 +40,14 @@ describe("runLogs", () => {
     ];
     writeFileSync(join(logsDir, "engineer.log"), logLines.join("\n"), "utf8");
 
-    const logged: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
-      logged.push(String(args[0]));
-    });
-
     const code = runLogs(tempDir, { json: true, lines: 2, follow: false });
     expect(code).toBe(0);
-    // Should show last 2 lines
-    expect(logged).toHaveLength(2);
-    expect(logged[0]).toContain("line2");
-    expect(logged[1]).toContain("line3");
+
+    // Each raw line is written as `${line}\n` — should show last 2
+    const joined = stdoutLines.join("");
+    expect(joined).toContain("line2");
+    expect(joined).toContain("line3");
+    expect(joined).not.toContain("line1");
   });
 
   it("respects --lines option", () => {
@@ -52,12 +56,9 @@ describe("runLogs", () => {
     const lines = Array.from({ length: 10 }, (_, i) => `{"level":30,"msg":"line${i}"}`);
     writeFileSync(join(logsDir, "engineer.log"), lines.join("\n"), "utf8");
 
-    const logged: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
-      logged.push(String(args[0]));
-    });
-
     runLogs(tempDir, { json: true, lines: 3, follow: false });
-    expect(logged).toHaveLength(3);
+
+    const written = stdoutLines.filter((line) => line.includes('"msg":"line'));
+    expect(written).toHaveLength(3);
   });
 });

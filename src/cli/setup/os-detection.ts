@@ -1,7 +1,9 @@
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Support tier for the host OS: fully tested, preview (compatible but unverified), or unsupported. */
 export type OperatingSystemSupport = "full" | "preview" | "unsupported";
 
+/** Result of the OS detection gate — what was detected and what the user is told. */
 export interface OperatingSystemInfo {
   /** Raw Node.js platform value (e.g., "darwin", "linux", "win32"). */
   platform: NodeJS.Platform;

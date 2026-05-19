@@ -2,7 +2,8 @@ import { join } from "node:path";
 
 import type { GitHostingAdapter } from "../../../adapters/git-hosting.js";
 import type { ConfigBundle } from "../../../config/loader.js";
-import { EVENTS as DAEMON_EVENTS, type Daemon, createDaemon } from "../../../core/daemon/index.js";
+import type { Daemon } from "../../../core/daemon/index.js";
+import { EVENTS as DAEMON_EVENTS, createDaemon } from "../../../core/daemon/index.js";
 import { createNotificationRouter } from "../../../core/daemon/notification-router.js";
 import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../../../core/data-lifecycle/index.js";
 import { HookRegistry } from "../../../core/hooks/index.js";
@@ -18,7 +19,8 @@ import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../../../core/orche
 import { PeopleDirectory } from "../../../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../../../core/registry/index.js";
 import { createCoreComponents } from "../../../core/system.js";
-import { type DatabaseHandle, createDatabase } from "../../../db/index.js";
+import type { DatabaseHandle } from "../../../db/index.js";
+import { createDatabase } from "../../../db/index.js";
 import { loadBuiltinPlugins } from "../../../plugins/loader.js";
 import { AdapterTypes } from "../../../schemas/adapters.js";
 import { EventTypes } from "../../../schemas/events.js";

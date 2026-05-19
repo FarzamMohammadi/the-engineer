@@ -187,7 +187,7 @@ describe("checkWorkspace", () => {
   });
 });
 
-// ── Category 10: Risky Config ─────────────────────────────────────────────
+// ── Category 9: Risky Config ──────────────────────────────────────────────
 
 describe("checkRiskyConfig", () => {
   it("passes with safe defaults", () => {

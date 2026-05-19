@@ -45,8 +45,8 @@ export class Spinner {
     if (this.silent) {
       return;
     }
-    const msg = message ?? this.message;
-    process.stderr.write(`${CLEAR_LINE}  \x1B[32m✓\x1B[0m ${msg}\n`);
+    const displayMessage = message ?? this.message;
+    process.stderr.write(`${CLEAR_LINE}  \x1B[32m✓\x1B[0m ${displayMessage}\n`);
   }
 
   /** Stop with a failure message. */
@@ -55,8 +55,8 @@ export class Spinner {
     if (this.silent) {
       return;
     }
-    const msg = message ?? this.message;
-    process.stderr.write(`${CLEAR_LINE}  \x1B[31m✗\x1B[0m ${msg}\n`);
+    const displayMessage = message ?? this.message;
+    process.stderr.write(`${CLEAR_LINE}  \x1B[31m✗\x1B[0m ${displayMessage}\n`);
   }
 
   /** Stop the spinner without a status message. */

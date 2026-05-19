@@ -16,7 +16,7 @@ Plugin-specific configs live in `~/.engineer/config/plugins/` and are documented
 
 ## How Config Loading Works
 
-On `engineer start`, all config files are loaded from `~/.engineer/config/` (or the directory specified by `--config` flag / `ENGINEER_CONFIG_DIR` env var). Missing files are not errors — Zod defaults apply for every field.
+On `engineer start`, all config files are loaded from `~/.engineer/config/` (or the directory specified by the `--config-dir` flag / `ENGINEER_CONFIG_DIR` env var). Missing files are not errors — Zod defaults apply for every field.
 
 The load order:
 1. Read YAML file (if it exists)
@@ -48,9 +48,9 @@ Some fields accept human-readable duration strings that are parsed to millisecon
 
 Check individual field documentation for which fields support this.
 
-## First Run: `engineer init`
+## First Run
 
-Running `engineer init` or `engineer start --seed <dir>` creates the config directory with starter files. Example templates with full documentation for every field are written to `~/.engineer/example-templates/` for reference.
+The first `engineer start` invocation walks you through interactive setup and writes the config directory. Use `engineer start --seed <dir>` to seed configuration non-interactively from a saved seed directory. Either path also writes fully documented example templates to `~/.engineer/example-templates/` for reference.
 
 ## Source of Truth
 

@@ -2,7 +2,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadEnvFile, writeEnvFile } from "../../../config/env.js";
-import { type ConfigBundle, loadConfigDir } from "../../../config/loader.js";
+import type { ConfigBundle } from "../../../config/loader.js";
+import { loadConfigDir } from "../../../config/loader.js";
 import { DaemonAlreadyRunningError } from "../../../core/daemon/errors.js";
 import { discoverEnabledPlugins } from "../../../plugins/loader.js";
 import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
@@ -13,21 +14,17 @@ import { resolveDirectories } from "../../home.js";
 import { getOutput } from "../../output.js";
 import { Spinner } from "../../progress.js";
 import { findResolvedEnvVars, needsSetup, runFirstTimeSetup } from "../../setup/setup.js";
+import type { DoctorCategory } from "../doctor.js";
 import { computeExitCode, formatDoctorResults, runPreFlightChecks } from "../doctor.js";
 import { spawnBackground } from "./background.js";
-import { type BootstrapResult, type ProgressCallback, bootstrap } from "./bootstrap.js";
+import type { BootstrapResult, ProgressCallback } from "./bootstrap.js";
+import { bootstrap } from "./bootstrap.js";
 import { DASHBOARD_PORT, launchDashboard } from "./dashboard.js";
 import { registerShutdownHandlers } from "./shutdown.js";
 
-/**
- * Persist resolved env vars to .env so the daemon always has them (merge).
- */
-function captureEnvVarsToFile(engineerHome: string, vars: Record<string, string>): void {
-  if (Object.keys(vars).length > 0) {
-    writeEnvFile(engineerHome, vars);
-  }
-}
+// ── Types ────────────────────────────────────────────────────────────────────
 
+/** Options controlling how the daemon starts (foreground/background, dry-run, seeded setup). */
 interface StartOptions {
   daemon: boolean;
   verbose: boolean;
@@ -35,66 +32,7 @@ interface StartOptions {
   seedPath?: string;
 }
 
-/** Create all required directories. Throws on failure. */
-function ensureDirectories(dirs: EngineerDirectories): void {
-  for (const dirPath of Object.values(dirs)) {
-    try {
-      mkdirSync(dirPath, { recursive: true, mode: 0o700 });
-    } catch (error) {
-      const message = sanitizeErrorMessage(error);
-      throw new Error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`);
-    }
-  }
-}
-
-/** Handle first-run setup if needed. Returns exit code or null to continue. */
-async function handleFirstRunSetup(engineerHome: string, options: StartOptions): Promise<number | null> {
-  const out = getOutput();
-
-  if (!needsSetup(engineerHome)) {
-    return null;
-  }
-
-  if (!(options.seedPath || process.stdin.isTTY)) {
-    out.error("First-run setup requires an interactive terminal.");
-    out.log("  Run 'engineer start' in a terminal first, or provide --seed <path>.");
-    return 1;
-  }
-
-  const setupOpts: Parameters<typeof runFirstTimeSetup>[0] = { engineerHome };
-  if (options.seedPath) {
-    setupOpts.seedPath = options.seedPath;
-  }
-  if (options.dryRun) {
-    setupOpts.dryRun = true;
-  }
-  const completed = await runFirstTimeSetup(setupOpts);
-  if (!completed) {
-    out.log("Setup cancelled. Run 'engineer start' to try again.");
-    return 0;
-  }
-  if (options.dryRun) {
-    return 0;
-  }
-
-  return null;
-}
-
-/** Load config bundle from disk. Returns bundle or exit code on failure. */
-function loadConfig(dirs: EngineerDirectories): { bundle: ConfigBundle } | { exitCode: number } {
-  const out = getOutput();
-  try {
-    const result = loadConfigDir(dirs.config);
-    for (const warning of result.warnings) {
-      out.warn(`${warning.file}: ${warning.message}`);
-    }
-    return { bundle: result.bundle };
-  } catch (error) {
-    out.error(`Config error: ${sanitizeErrorMessage(error)}`);
-    out.log("  Run 'engineer doctor' to diagnose.");
-    return { exitCode: 1 };
-  }
-}
+// ── Main Entry Point ─────────────────────────────────────────────────────────
 
 /** Boots the daemon. Returns exit code. */
 export async function runStart(engineerHome: string, options: StartOptions): Promise<number> {
@@ -137,7 +75,7 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   const { bundle } = configResult;
 
   // 4. Run pre-flight checks
-  let preFlightResults: ReturnType<typeof runPreFlightChecks>;
+  let preFlightResults: DoctorCategory[];
   try {
     preFlightResults = runPreFlightChecks(engineerHome);
   } catch (error) {
@@ -157,27 +95,27 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
     out.log(formatDoctorResults(preFlightResults));
   }
 
-  // 4. Dry-run mode: show what would happen and exit
+  // 5. Dry-run mode: show what would happen and exit
   if (options.dryRun) {
     return runDryRun(engineerHome, dirs, preFlightResults);
   }
 
-  // 5. Background mode: re-spawn as detached child
+  // 6. Background mode: re-spawn as detached child
   if (options.daemon) {
     return spawnBackground(engineerHome, options.verbose);
   }
 
-  // 6. Foreground mode: bootstrap and start
+  // 7. Foreground mode: bootstrap and start
   return await runForeground(engineerHome, bundle, dirs, preFlightResults, options.verbose);
 }
 
-// ── Foreground ────────────────────────────────────────────────────────────────
+// ── Foreground ───────────────────────────────────────────────────────────────
 
 async function runForeground(
   engineerHome: string,
   bundle: ConfigBundle,
   dirs: EngineerDirectories,
-  preFlightResults: import("../doctor.js").DoctorCategory[],
+  preFlightResults: DoctorCategory[],
   verbose: boolean,
 ): Promise<number> {
   const out = getOutput();
@@ -304,11 +242,7 @@ async function runForeground(
 
 // ── Dry Run ──────────────────────────────────────────────────────────────────
 
-function runDryRun(
-  _engineerHome: string,
-  dirs: EngineerDirectories,
-  preFlightResults: import("../doctor.js").DoctorCategory[],
-): number {
+function runDryRun(_engineerHome: string, dirs: EngineerDirectories, preFlightResults: DoctorCategory[]): number {
   const out = getOutput();
   const totalChecks = preFlightResults.reduce((sum, category) => sum + category.checks.length, 0);
   const enabledPlugins = discoverEnabledPlugins(dirs.plugins);
@@ -349,4 +283,74 @@ function runDryRun(
   out.blank();
   out.success("Everything looks good. Run without --dry-run to start.");
   return 0;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Handle first-run setup if needed. Returns exit code or null to continue. */
+async function handleFirstRunSetup(engineerHome: string, options: StartOptions): Promise<number | null> {
+  const out = getOutput();
+
+  if (!needsSetup(engineerHome)) {
+    return null;
+  }
+
+  if (!(options.seedPath || process.stdin.isTTY)) {
+    out.error("First-run setup requires an interactive terminal.");
+    out.log("  Run 'engineer start' in a terminal first, or provide --seed <path>.");
+    return 1;
+  }
+
+  const setupOpts: Parameters<typeof runFirstTimeSetup>[0] = { engineerHome };
+  if (options.seedPath) {
+    setupOpts.seedPath = options.seedPath;
+  }
+  if (options.dryRun) {
+    setupOpts.dryRun = true;
+  }
+  const completed = await runFirstTimeSetup(setupOpts);
+  if (!completed) {
+    out.log("Setup cancelled. Run 'engineer start' to try again.");
+    return 0;
+  }
+  if (options.dryRun) {
+    return 0;
+  }
+
+  return null;
+}
+
+/** Load config bundle from disk. Returns bundle or exit code on failure. */
+function loadConfig(dirs: EngineerDirectories): { bundle: ConfigBundle } | { exitCode: number } {
+  const out = getOutput();
+  try {
+    const result = loadConfigDir(dirs.config);
+    for (const warning of result.warnings) {
+      out.warn(`${warning.file}: ${warning.message}`);
+    }
+    return { bundle: result.bundle };
+  } catch (error) {
+    out.error(`Config error: ${sanitizeErrorMessage(error)}`);
+    out.log("  Run 'engineer doctor' to diagnose.");
+    return { exitCode: 1 };
+  }
+}
+
+/** Create all required directories. Throws on failure. */
+function ensureDirectories(dirs: EngineerDirectories): void {
+  for (const dirPath of Object.values(dirs)) {
+    try {
+      mkdirSync(dirPath, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      const message = sanitizeErrorMessage(error);
+      throw new Error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`);
+    }
+  }
+}
+
+/** Persist resolved env vars to .env so the daemon always has them (merge). */
+function captureEnvVarsToFile(engineerHome: string, vars: Record<string, string>): void {
+  if (Object.keys(vars).length > 0) {
+    writeEnvFile(engineerHome, vars);
+  }
 }

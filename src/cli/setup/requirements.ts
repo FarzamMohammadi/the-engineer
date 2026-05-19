@@ -20,7 +20,6 @@ export function checkRequirementsMet(
         return false;
       }
     }
-    // Unknown requirement types: skip gracefully (future extensibility)
   }
   return true;
 }

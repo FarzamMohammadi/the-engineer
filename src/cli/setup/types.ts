@@ -2,6 +2,7 @@ import type { AdapterType } from "../../schemas/adapters.js";
 
 // ── Detection ────────────────────────────────────────────────────────────────
 
+/** Outcome of probing the host environment for binaries, env vars, and git context. */
 export interface DetectionResult {
   /** Binary name → resolved path or null if not found. */
   binaries: Record<string, string | null>;
@@ -13,6 +14,7 @@ export interface DetectionResult {
 
 // ── Adapter Type Config ──────────────────────────────────────────────────────
 
+/** How the guided setup prompts the user for one adapter slot (LLM, trigger, etc.). */
 export interface AdapterTypeConfig {
   type: AdapterType;
   label: string;
@@ -23,6 +25,7 @@ export interface AdapterTypeConfig {
 
 // ── Setup Result ─────────────────────────────────────────────────────────────
 
+/** A single person captured during guided setup, destined for the People Directory. */
 export interface PersonSetupEntry {
   id: string;
   name: string;
@@ -30,6 +33,7 @@ export interface PersonSetupEntry {
   contacts: Array<{ channel: string; handle: string }>;
 }
 
+/** Final output of the guided setup flow — selected plugins, configs, secrets, and people. */
 export interface GuidedSetupResult {
   selectedPlugins: string[];
   pluginConfigs: Record<string, Record<string, unknown>>;

@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import { existsSync, watch } from "node:fs";
 
 import type { z } from "zod";
 
@@ -12,6 +12,7 @@ const DEBOUNCE_MS = 500;
 
 // ── Config Watcher ───────────────────────────────────────────────────────────────
 
+/** Handle to a running config file watcher. Call `stop()` to detach and release file system resources. */
 export interface WatcherHandle {
   stop(): void;
 }
@@ -33,7 +34,7 @@ export function createConfigWatcher<S extends z.ZodTypeAny>(
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
 
-  const watcher = fs.watch(filePath, () => {
+  const watcher = watch(filePath, () => {
     if (stopped) {
       return;
     }
@@ -52,7 +53,7 @@ export function createConfigWatcher<S extends z.ZodTypeAny>(
 
       // File deletion should be treated as an error, not silently reset to defaults.
       // This prevents accidental safety config loosening if safety.yaml is deleted.
-      if (!fs.existsSync(filePath)) {
+      if (!existsSync(filePath)) {
         onChange({
           ok: false,
           error: new ConfigError(`Config file was deleted: ${filePath}. Keeping previous config.`, filePath),

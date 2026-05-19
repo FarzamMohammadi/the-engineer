@@ -2,8 +2,10 @@ import chalk from "chalk";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Output rendering mode: human-readable text or structured JSON. */
 export type OutputMode = "human" | "json";
 
+/** Construction options for the {@link Output} singleton. */
 export interface OutputOptions {
   /** Force a specific mode. Default: "human". */
   mode?: OutputMode;
@@ -35,7 +37,7 @@ export class Output {
   }
 
   /** Apply color function only when color is enabled. */
-  private clr(fn: (s: string) => string, text: string): string {
+  private colorize(fn: (s: string) => string, text: string): string {
     return this.color ? fn(text) : text;
   }
 
@@ -52,7 +54,7 @@ export class Output {
     if (this.mode !== "human") {
       return;
     }
-    process.stdout.write(`${this.clr(chalk.green, "✓")} ${message}\n`);
+    process.stdout.write(`${this.colorize(chalk.green, "✓")} ${message}\n`);
   }
 
   /** Print a warning with yellow prefix (human mode). */
@@ -60,7 +62,7 @@ export class Output {
     if (this.mode !== "human") {
       return;
     }
-    process.stdout.write(`${this.clr(chalk.yellow, "⚠")} ${message}\n`);
+    process.stdout.write(`${this.colorize(chalk.yellow, "⚠")} ${message}\n`);
   }
 
   /** Print an error with red prefix (human mode). JSON mode outputs structured error. */
@@ -69,7 +71,7 @@ export class Output {
       process.stderr.write(`${JSON.stringify({ error: message })}\n`);
       return;
     }
-    process.stderr.write(`${this.clr(chalk.red, "✗")} ${message}\n`);
+    process.stderr.write(`${this.colorize(chalk.red, "✗")} ${message}\n`);
   }
 
   /** Print a heading with bold/underline (human mode). */
@@ -87,7 +89,7 @@ export class Output {
       return;
     }
     const padded = `${key}:`.padEnd(16);
-    process.stdout.write(`  ${this.clr(chalk.dim, padded)} ${value}\n`);
+    process.stdout.write(`  ${this.colorize(chalk.dim, padded)} ${value}\n`);
   }
 
   /** Output structured data as JSON (both human and json modes). */

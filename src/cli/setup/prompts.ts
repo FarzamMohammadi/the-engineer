@@ -47,7 +47,7 @@ function buildChoiceDescription(plugin: BuiltinPlugin, engineerHome: string): st
 
 function showDetectionSummary(detection: DetectionResult): void {
   const out = getOutput();
-  out.log("  Detected:");
+  out.log("  Environment:");
   for (const [name, path] of Object.entries(detection.binaries)) {
     const status = path ? `found (${path})` : "not found";
     out.log(`    ${name.padEnd(22)} ${status}`);
@@ -345,6 +345,15 @@ export async function runGuidedSetup(
 
   try {
     showDetectionSummary(detection);
+
+    const proceedWithSetup = await confirm({
+      message: "Continue with plugin selection?",
+      default: true,
+    });
+    if (!proceedWithSetup) {
+      return null;
+    }
+    out.blank();
 
     // Per-adapter-type selection, sorted by setupOrder
     const sorted = [...adapterConfigs].sort((a, b) => a.setupOrder - b.setupOrder);

@@ -40,27 +40,21 @@ import {
   ReviewStatusSchema,
   ReviewerStateSchema,
   SendResultSchema,
-  SideEffectSchema,
-  SideEffectTypeSchema,
-  SideEffectTypes,
   SyncMetadataSchema,
   TargetSchema,
   TaskReconciliationInputSchema,
-  ToolDescriptionSchema,
-  ToolResultSchema,
   TriggerEventSchema,
 } from "../../../src/schemas/adapters.js";
-import { ActionClasses } from "../../../src/schemas/task.js";
 
 // ── Universal Adapter Contract ──────────────────────────────────────────────────
 
 describe("AdapterTypeSchema", () => {
-  it("has exactly 5 values", () => {
-    expect(AdapterTypeSchema.options).toHaveLength(5);
+  it("has exactly 4 values", () => {
+    expect(AdapterTypeSchema.options).toHaveLength(4);
   });
 
   it("accepts all valid values", () => {
-    for (const type of ["trigger", "communication", "llm", "tool", "git_hosting"]) {
+    for (const type of ["trigger", "communication", "llm", "git_hosting"]) {
       expect(AdapterTypeSchema.parse(type)).toBe(type);
     }
   });
@@ -502,70 +496,6 @@ describe("LLMCapabilitiesSchema", () => {
 
   it("rejects missing model_id", () => {
     expect(() => LLMCapabilitiesSchema.parse({})).toThrow();
-  });
-});
-
-// ── Tool Adapter ────────────────────────────────────────────────────────────────
-
-describe("ToolDescriptionSchema", () => {
-  it("parses valid description", () => {
-    const desc = ToolDescriptionSchema.parse({
-      name: "bash",
-      description: "Execute shell commands",
-      parameters: { type: "object" },
-      action_classes: [ActionClasses.read, ActionClasses.write, ActionClasses.test],
-    });
-    expect(desc.action_classes).toHaveLength(3);
-  });
-});
-
-describe("SideEffectTypeSchema", () => {
-  it("has exactly 5 values", () => {
-    expect(SideEffectTypeSchema.options).toHaveLength(5);
-  });
-
-  it("accepts all valid values", () => {
-    for (const type of ["file_written", "file_deleted", "command_run", "network_request", "process_spawned"]) {
-      expect(SideEffectTypeSchema.parse(type)).toBe(type);
-    }
-  });
-});
-
-describe("SideEffectSchema", () => {
-  it("parses valid data", () => {
-    const effect = SideEffectSchema.parse({
-      type: SideEffectTypes.file_written,
-      details: { path: "src/auth.ts", bytes: 1024 },
-    });
-    expect(effect.type).toBe("file_written");
-  });
-});
-
-describe("ToolResultSchema", () => {
-  it("parses successful result", () => {
-    const result = ToolResultSchema.parse({
-      success: true,
-      output: "File written",
-      side_effects: [{ type: SideEffectTypes.file_written, details: { path: "src/auth.ts" } }],
-      error: null,
-    });
-    expect(result.side_effects).toHaveLength(1);
-  });
-
-  it("parses failed result with AdapterError", () => {
-    const result = ToolResultSchema.parse({
-      success: false,
-      output: "",
-      side_effects: [],
-      error: {
-        code: "timeout",
-        message: "Command timed out",
-        retryable: true,
-        retry_after_ms: null,
-        severity: AdapterErrorSeverities.error,
-      },
-    });
-    expect(result.error?.code).toBe("timeout");
   });
 });
 

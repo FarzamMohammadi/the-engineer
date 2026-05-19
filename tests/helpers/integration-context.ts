@@ -30,7 +30,6 @@ import { FakeClock } from "./fake-clock.js";
 import type { FakeCommunicationPlugin } from "./fake-plugins/fake-comm/index.js";
 import type { FakeGitHostingPlugin } from "./fake-plugins/fake-git-hosting/index.js";
 import type { FakeLLMPlugin } from "./fake-plugins/fake-llm/index.js";
-import type { FakeToolPlugin } from "./fake-plugins/fake-tool/index.js";
 import type { FakeTriggerPlugin } from "./fake-plugins/fake-trigger/index.js";
 import { createTestDatabase } from "./test-database.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
@@ -42,7 +41,6 @@ export interface IntegrationContextFakes extends TestRegistryFakes {
   trigger: FakeTriggerPlugin;
   communication: FakeCommunicationPlugin;
   llm: FakeLLMPlugin;
-  tool: FakeToolPlugin;
   gitHosting: FakeGitHostingPlugin;
 }
 

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommunicationAdapter } from "../../src/adapters/communication.js";
 import { GitHostingAdapter } from "../../src/adapters/git-hosting.js";
 import { LLMAdapter } from "../../src/adapters/llm.js";
-import { ToolAdapter } from "../../src/adapters/tool.js";
 import { TriggerAdapter } from "../../src/adapters/trigger.js";
 import { AdapterTypes, MessageTypes } from "../../src/schemas/adapters.js";
 import { type TestEventBusHandle, createTestEventBus } from "./test-event-bus.js";
@@ -23,12 +22,11 @@ describe("createTestRegistry", () => {
     eventBusHandle.cleanup();
   });
 
-  it("registers all 5 fake plugins", () => {
+  it("registers all 4 fake plugins", () => {
     const { registry } = registryHandle;
     expect(registry.getPluginsByType(AdapterTypes.trigger)).toHaveLength(1);
     expect(registry.getPluginsByType(AdapterTypes.communication)).toHaveLength(1);
     expect(registry.getPluginsByType(AdapterTypes.llm)).toHaveLength(1);
-    expect(registry.getPluginsByType(AdapterTypes.tool)).toHaveLength(1);
     expect(registry.getPluginsByType(AdapterTypes.git_hosting)).toHaveLength(1);
   });
 
@@ -37,7 +35,6 @@ describe("createTestRegistry", () => {
     expect(fakes.trigger).toBeInstanceOf(TriggerAdapter);
     expect(fakes.communication).toBeInstanceOf(CommunicationAdapter);
     expect(fakes.llm).toBeInstanceOf(LLMAdapter);
-    expect(fakes.tool).toBeInstanceOf(ToolAdapter);
     expect(fakes.gitHosting).toBeInstanceOf(GitHostingAdapter);
   });
 
@@ -46,7 +43,6 @@ describe("createTestRegistry", () => {
     expect(fakes.trigger.manifest.id).toBe("fake-trigger");
     expect(fakes.communication.manifest.id).toBe("fake-comm");
     expect(fakes.llm.manifest.id).toBe("fake-llm");
-    expect(fakes.tool.manifest.id).toBe("fake-tool");
     expect(fakes.gitHosting.manifest.id).toBe("fake-git-hosting");
   });
 
@@ -97,9 +93,5 @@ describe("createTestRegistry", () => {
     });
     expect(result.content).toBe("Fake LLM response");
     expect(result.cost_usd).toBe(0.01);
-
-    // Tool: records actions
-    await fakes.tool.execute("test-action", {}, { workspace_path: "/tmp", task_id: "t1" });
-    expect(fakes.tool.getExecutedActions()).toHaveLength(1);
   });
 });

@@ -58,7 +58,7 @@ Full philosophy: [docs/philosophy.md](docs/philosophy.md) | Identity: [docs/the-
 
 ## Architecture
 
-Three tiers: **Core** (task engine, orchestrator, safety layer, event bus, daemon) → **Adapters** (5 contracts: trigger, communication, LLM, tool, git hosting) → **Plugins** (GitHub, Telegram, Claude, Bash — swappable). Core never knows which plugins exist — the adapter contract is the boundary.
+Three tiers: **Core** (task engine, orchestrator, safety layer, event bus, daemon) → **Adapters** (4 contracts: trigger, communication, LLM, git hosting) → **Plugins** (GitHub, Telegram, Claude — swappable). Core never knows which plugins exist — the adapter contract is the boundary.
 
 The daemon tick loop: poll triggers → create tasks → schedule by priority → dispatch to orchestrator → 7-phase pipeline → ship PR.
 

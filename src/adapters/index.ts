@@ -14,7 +14,6 @@ export { type AdapterObserver, BaseAdapter } from "./base.js";
 export { TriggerAdapter } from "./trigger.js";
 export { CommunicationAdapter } from "./communication.js";
 export { LLMAdapter } from "./llm.js";
-export { ToolAdapter } from "./tool.js";
 export { GitHostingAdapter } from "./git-hosting.js";
 
 // === Error Helpers ===
@@ -76,17 +75,6 @@ export {
   type QuotaStatus,
   type QuotaWindow,
   type TokenUsage,
-  // Tool
-  SideEffectSchema,
-  SideEffectTypeSchema,
-  ToolDescriptionSchema,
-  ToolExecutionContextSchema,
-  ToolResultSchema,
-  type SideEffect,
-  type SideEffectType,
-  type ToolDescription,
-  type ToolExecutionContext,
-  type ToolResult,
   // Git Hosting
   BranchProtectionSchema,
   CommentResultSchema,

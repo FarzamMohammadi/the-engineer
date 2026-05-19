@@ -129,14 +129,13 @@ describe("commitPushAndCreatePR", () => {
       return null;
     });
 
-    // Re-wire to keep original getPrimaryPlugin for "llm" and "tool"
+    // Re-wire to keep original getPrimaryPlugin for "llm"
     const originalImpl = createTestOrchestrator();
     const originalGetPrimary = originalImpl.registry.getPrimaryPlugin;
     h.registry.getPrimaryPlugin.mockImplementation((type: string) => {
       if (type === "git_hosting") {
         return fakeGitHosting;
       }
-      // Delegate llm/tool to the original mock's return values
       return originalGetPrimary(type);
     });
   });
@@ -272,7 +271,6 @@ describe("commitPushAndCreatePR", () => {
       if (type === "git_hosting") {
         return null; // No hosting plugin
       }
-      // Keep llm/tool working
       const orig = createTestOrchestrator();
       return orig.registry.getPrimaryPlugin(type);
     });

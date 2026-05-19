@@ -24,11 +24,6 @@ describe("SDK boundary (src/adapters/index.ts)", () => {
       expect(sdk.LLMAdapter.prototype).toBeInstanceOf(sdk.BaseAdapter);
     });
 
-    it("exports ToolAdapter", () => {
-      expect(sdk.ToolAdapter).toBeDefined();
-      expect(sdk.ToolAdapter.prototype).toBeInstanceOf(sdk.BaseAdapter);
-    });
-
     it("exports GitHostingAdapter", () => {
       expect(sdk.GitHostingAdapter).toBeDefined();
       expect(sdk.GitHostingAdapter.prototype).toBeInstanceOf(sdk.BaseAdapter);
@@ -77,12 +72,6 @@ describe("SDK boundary (src/adapters/index.ts)", () => {
       "InferenceRequestSchema",
       "InferenceResultSchema",
       "LLMCapabilitiesSchema",
-      // Tool
-      "ToolDescriptionSchema",
-      "ToolResultSchema",
-      "SideEffectSchema",
-      "SideEffectTypeSchema",
-      "ToolExecutionContextSchema",
       // Git Hosting
       "PROptionsSchema",
       "PRResultSchema",

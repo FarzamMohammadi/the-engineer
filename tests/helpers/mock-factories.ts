@@ -5,8 +5,6 @@ import {
   InferenceResultSchema,
   type PluginManifest,
   PluginManifestSchema,
-  type ToolResult,
-  ToolResultSchema,
   type TriggerEvent,
   TriggerEventSchema,
 } from "../../src/schemas/adapters.js";
@@ -151,21 +149,6 @@ export function createMockInferenceResult(overrides?: Partial<InferenceResult>):
     cost_usd: 0.01,
     duration_ms: 100,
     usage: null,
-    ...overrides,
-  });
-}
-
-// ── Tool Result ─────────────────────────────────────────────────────────────
-
-/**
- * Create a Zod-valid ToolResult with sensible defaults.
- */
-export function createMockToolResult(overrides?: Partial<ToolResult>): ToolResult {
-  return ToolResultSchema.parse({
-    success: true,
-    output: "Mock tool output",
-    side_effects: [],
-    error: null,
     ...overrides,
   });
 }

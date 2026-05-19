@@ -48,13 +48,6 @@ export const ADAPTER_TYPE_CONFIGS: AdapterTypeConfig[] = [
     setupOrder: 4,
     required: false,
   },
-  {
-    type: AdapterTypes.tool,
-    label: "Which tools should The Engineer use?",
-    selectionMode: "multi",
-    setupOrder: 5,
-    required: true,
-  },
 ];
 
 // ── Pure Detection Functions ─────────────────────────────────────────────────

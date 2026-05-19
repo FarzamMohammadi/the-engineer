@@ -309,16 +309,6 @@ export const GEMINI_CLI_LLM_TEMPLATE = `# Gemini CLI LLM plugin
 # cli_path: gemini                           # Path to gemini CLI binary
 `;
 
-export const BASH_TOOL_TEMPLATE = `# Bash tool plugin
-# Executes shell commands in task workspaces
-# Duration fields accept human-readable strings: "5s", "30m", "8h"
-
-# --- Optional settings ---
-# env_passthrough: []                     # Extra env vars to pass through
-# max_output_bytes: 10485760              # 10 MB output limit
-# command_timeout_ms: "5m"                # Command timeout (default: 5m)
-`;
-
 // ── Example Templates (fully documented reference files) ─────────────────────
 // Like .env.example — every field visible, documented, with defaults and valid options.
 // Written to ~/.engineer/example-templates/ during first-run setup.
@@ -692,19 +682,6 @@ model: gemini-2.5-pro                       # Model to use (default: gemini-2.5-
 cli_path: gemini                            # Path to gemini CLI binary (default: gemini)
 `;
 
-export const EXAMPLE_BASH_TOOL = `# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │  BASH TOOL PLUGIN — Full Reference                                       │
-# │  Copy to ~/.engineer/config/plugins/bash-tool.yaml and customize.        │
-# │  Executes shell commands in task workspaces.                              │
-# │  Duration fields accept human-readable strings: "5s", "30m", "8h"        │
-# └─────────────────────────────────────────────────────────────────────────────┘
-
-# All fields are optional — defaults shown below.
-env_passthrough: []                       # Extra env vars to pass through (default: [])
-max_output_bytes: 10485760                # Output limit — 10 MB (default: 10485760)
-command_timeout_ms: "5m"                  # Command timeout (default: 5m)
-`;
-
 // ── Template Manifest ───────────────────────────────────────────────────────
 
 export interface TemplateFile {
@@ -728,7 +705,6 @@ export const ALL_TEMPLATES: TemplateFile[] = [
   { relativePath: "config/plugins/claude-code-llm.yaml", content: CLAUDE_CODE_LLM_TEMPLATE },
   { relativePath: "config/plugins/opencode-llm.yaml", content: OPENCODE_LLM_TEMPLATE },
   { relativePath: "config/plugins/gemini-cli-llm.yaml", content: GEMINI_CLI_LLM_TEMPLATE },
-  { relativePath: "config/plugins/bash-tool.yaml", content: BASH_TOOL_TEMPLATE },
 ];
 
 /** Fully documented example templates — written to ~/.engineer/example-templates/. */
@@ -745,5 +721,4 @@ export const ALL_EXAMPLE_TEMPLATES: TemplateFile[] = [
   { relativePath: "example-templates/claude-code-llm.yaml", content: EXAMPLE_CLAUDE_CODE_LLM },
   { relativePath: "example-templates/opencode-llm.yaml", content: EXAMPLE_OPENCODE_LLM },
   { relativePath: "example-templates/gemini-cli-llm.yaml", content: EXAMPLE_GEMINI_CLI_LLM },
-  { relativePath: "example-templates/bash-tool.yaml", content: EXAMPLE_BASH_TOOL },
 ];

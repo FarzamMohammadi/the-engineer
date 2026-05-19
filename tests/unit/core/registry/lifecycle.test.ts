@@ -4,7 +4,6 @@ import { createLifecycleManager } from "../../../../src/core/registry/lifecycle.
 import type { AdapterType, PluginManifest } from "../../../../src/schemas/adapters.js";
 import { PluginHealthStates } from "../../../../src/schemas/adapters.js";
 import { FakeLLMPlugin } from "../../../helpers/fake-plugins/fake-llm/index.js";
-import { FakeToolPlugin } from "../../../helpers/fake-plugins/fake-tool/index.js";
 import { FakeTriggerPlugin } from "../../../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../../../helpers/mock-factories.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
@@ -211,7 +210,7 @@ describe("createLifecycleManager", () => {
   describe("getAllRecords", () => {
     it("returns all registered records", () => {
       lifecycle.register(createManifest("trigger", "t1"), new FakeTriggerPlugin());
-      lifecycle.register(createManifest("tool", "tool1"), new FakeToolPlugin());
+      lifecycle.register(createManifest("llm", "llm1"), new FakeLLMPlugin());
 
       const records = lifecycle.getAllRecords();
 

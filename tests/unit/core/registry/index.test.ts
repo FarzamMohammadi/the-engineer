@@ -178,7 +178,7 @@ describe("Registry", () => {
     });
 
     it("returns empty array for a type with no plugins", () => {
-      expect(registry.getPluginsByType("tool")).toEqual([]);
+      expect(registry.getPluginsByType("git_hosting")).toEqual([]);
     });
   });
 

@@ -4,7 +4,6 @@ import { AdapterTypes } from "../../src/schemas/adapters.js";
 import { FakeCommunicationPlugin } from "./fake-plugins/fake-comm/index.js";
 import { FakeGitHostingPlugin } from "./fake-plugins/fake-git-hosting/index.js";
 import { FakeLLMPlugin } from "./fake-plugins/fake-llm/index.js";
-import { FakeToolPlugin } from "./fake-plugins/fake-tool/index.js";
 import { FakeTriggerPlugin } from "./fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "./mock-factories.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
@@ -13,7 +12,6 @@ export interface TestRegistryFakes {
   trigger: FakeTriggerPlugin;
   communication: FakeCommunicationPlugin;
   llm: FakeLLMPlugin;
-  tool: FakeToolPlugin;
   gitHosting: FakeGitHostingPlugin;
 }
 
@@ -24,7 +22,7 @@ export interface TestRegistryHandle {
 }
 
 /**
- * Creates a Registry pre-loaded with all 5 fake plugins.
+ * Creates a Registry pre-loaded with all 4 fake plugins.
  *
  * Used by consuming phase tests (Task Engine, Safety Layer, etc.) to get
  * a working registry with controllable fake plugins.
@@ -44,7 +42,6 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
   const trigger = new FakeTriggerPlugin();
   const communication = new FakeCommunicationPlugin();
   const llm = new FakeLLMPlugin();
-  const tool = new FakeToolPlugin();
   const gitHosting = new FakeGitHostingPlugin();
 
   registry.register(
@@ -85,18 +82,6 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
 
   registry.register(
     createMockManifest({
-      id: "fake-tool",
-      type: AdapterTypes.tool,
-      name: "Fake Tool Plugin",
-      description: "Test tool plugin",
-      critical: false,
-      adapter_meta: { action_classes: ["read", "write"] },
-    }),
-    tool,
-  );
-
-  registry.register(
-    createMockManifest({
       id: "fake-git-hosting",
       type: AdapterTypes.git_hosting,
       name: "Fake Git Hosting Plugin",
@@ -109,7 +94,7 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
 
   return {
     registry,
-    fakes: { trigger, communication, llm, tool, gitHosting },
+    fakes: { trigger, communication, llm, gitHosting },
     cleanup() {
       registry.stopHealthCheckLoop();
     },

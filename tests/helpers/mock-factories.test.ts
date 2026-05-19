@@ -4,7 +4,6 @@ import {
   InferenceRequestSchema,
   InferenceResultSchema,
   PluginManifestSchema,
-  ToolResultSchema,
   TriggerEventSchema,
 } from "../../src/schemas/adapters.js";
 import { EventSchema } from "../../src/schemas/events.js";
@@ -15,7 +14,6 @@ import {
   createMockInferenceResult,
   createMockManifest,
   createMockTask,
-  createMockToolResult,
   createMockTriggerEvent,
 } from "./mock-factories.js";
 
@@ -118,19 +116,6 @@ describe("mock-factories", () => {
       const result = createMockInferenceResult();
       expect(result).toHaveProperty("cost_usd");
       expect(result.duration_ms).toBeGreaterThanOrEqual(0);
-    });
-  });
-
-  describe("createMockToolResult", () => {
-    it("produces a Zod-valid ToolResult", () => {
-      const result = createMockToolResult();
-      expect(() => ToolResultSchema.parse(result)).not.toThrow();
-    });
-
-    it("applies overrides", () => {
-      const result = createMockToolResult({ success: false, output: "error" });
-      expect(result.success).toBe(false);
-      expect(result.output).toBe("error");
     });
   });
 });

@@ -372,27 +372,10 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     getQuotaStatus: vi.fn().mockResolvedValue(null),
   };
 
-  const fakeTool = {
-    execute: vi.fn(async () => ({
-      success: true,
-      output: "Tool executed",
-      side_effects: [],
-    })),
-    describe: vi.fn().mockReturnValue({
-      name: "fake-tool",
-      description: "A fake tool",
-      parameters: {},
-      action_classes: ["write"],
-    }),
-  };
-
   const registry = {
     getPrimaryPlugin: vi.fn((type: string) => {
       if (type === "llm") {
         return fakeLlm;
-      }
-      if (type === "tool") {
-        return fakeTool;
       }
       return null;
     }),

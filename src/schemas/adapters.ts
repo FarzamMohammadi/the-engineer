@@ -4,7 +4,7 @@ import { ExternalRefSchema } from "./task.js";
 
 // ── Universal Adapter Contract ──────────────────────────────────────────────────
 
-export const AdapterTypeSchema = z.enum(["trigger", "communication", "llm", "tool", "git_hosting"]);
+export const AdapterTypeSchema = z.enum(["trigger", "communication", "llm", "git_hosting"]);
 export type AdapterType = z.infer<typeof AdapterTypeSchema>;
 
 /** Constant enum values for AdapterType. Use instead of raw strings. */
@@ -255,48 +255,6 @@ export const LLMCapabilitiesSchema = z.object({
   context_window: z.number().int().positive().nullable().default(null),
 });
 export type LLMCapabilities = z.infer<typeof LLMCapabilitiesSchema>;
-
-// ── Tool Adapter ────────────────────────────────────────────────────────────────
-
-export const ToolExecutionContextSchema = z.object({
-  workspace_path: z.string(),
-  task_id: z.string(),
-});
-export type ToolExecutionContext = z.infer<typeof ToolExecutionContextSchema>;
-
-export const ToolDescriptionSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  parameters: z.record(z.unknown()),
-  action_classes: z.array(z.string()),
-});
-export type ToolDescription = z.infer<typeof ToolDescriptionSchema>;
-
-export const SideEffectTypeSchema = z.enum([
-  "file_written",
-  "file_deleted",
-  "command_run",
-  "network_request",
-  "process_spawned",
-]);
-export type SideEffectType = z.infer<typeof SideEffectTypeSchema>;
-
-/** Constant enum values for SideEffectType. Use instead of raw strings. */
-export const SideEffectTypes = SideEffectTypeSchema.enum;
-
-export const SideEffectSchema = z.object({
-  type: SideEffectTypeSchema,
-  details: z.record(z.unknown()),
-});
-export type SideEffect = z.infer<typeof SideEffectSchema>;
-
-export const ToolResultSchema = z.object({
-  success: z.boolean(),
-  output: z.string(),
-  side_effects: z.array(SideEffectSchema),
-  error: AdapterErrorSchema.nullable(),
-});
-export type ToolResult = z.infer<typeof ToolResultSchema>;
 
 // ── Git Hosting Adapter ─────────────────────────────────────────────────────────
 

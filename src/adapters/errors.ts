@@ -4,7 +4,7 @@ import type { AdapterError, AdapterErrorSeverity } from "../schemas/adapters.js"
  * Factory for creating `AdapterError` data objects.
  *
  * Returns a plain object (not a thrown Error). Use in return values like
- * `SendResult.error`, `ToolResult.error`, `MergeResult.error`.
+ * `SendResult.error`, `MergeResult.error`.
  *
  * Sensible defaults: not retryable, no retry delay, severity "error".
  */

@@ -82,7 +82,6 @@ taskEngine.getTasksByState(TaskStates.queued);
 | `adapters.ts` | `MessageTypeSchema` | `MessageType` | `MessageTypes` |
 | `adapters.ts` | `MergeStrategySchema` | `MergeStrategy` | `MergeStrategies` |
 | `adapters.ts` | `NotificationLevelSchema` | `NotificationLevel` | `NotificationLevels` |
-| `adapters.ts` | `SideEffectTypeSchema` | `SideEffectType` | `SideEffectTypes` |
 | `adapters.ts` | `PluginHealthStateSchema` | `PluginHealthState` | `PluginHealthStates` |
 | `session-memory.ts` | `SessionEndReasonSchema` | `SessionEndReason` | `SessionEndReasons` |
 | `session-memory.ts` | `JournalEntryTypeSchema` | `JournalEntryType` | `JournalEntryTypes` |

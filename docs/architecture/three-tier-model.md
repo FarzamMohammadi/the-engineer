@@ -12,14 +12,14 @@ Part of **Layer 1** — see [`../layers.md`](../layers.md) for where this fits. 
 ┌─────────────────────────────────────────────────────┐
 │                     PLUGINS                         │
 │  GitHubTriggerPlugin  TelegramCommPlugin            │
-│  ClaudeCodeLLMPlugin  BashToolPlugin                │
-│  GitHubHostingPlugin  GitHubCommPlugin  ...         │
+│  ClaudeCodeLLMPlugin  GitHubHostingPlugin           │
+│  GitHubCommPlugin  ...                              │
 │                                                     │
 │  ┌─────────────────────────────────────────────┐    │
 │  │               ADAPTERS                      │    │
 │  │  TriggerAdapter    CommunicationAdapter     │    │
-│  │  LLMAdapter        ToolAdapter              │    │
-│  │  GitHostingAdapter ...                      │    │
+│  │  LLMAdapter        GitHostingAdapter        │    │
+│  │  ...                                        │    │
 │  │                                             │    │
 │  │  ┌─────────────────────────────────────┐    │    │
 │  │  │              CORE                   │    │    │
@@ -69,14 +69,13 @@ Nine components that are always present, invariant across all configurations.
 
 The adapter tier is **open-ended** — the list below captures today's known integration boundaries, but new adapter types can be added as The Engineer's capabilities evolve. Adding a new adapter type means defining a new contract that extends the Universal Adapter Contract and registering a new type in the Registry. No changes to Core logic, existing adapters, or existing plugins are required.
 
-Five adapter types are currently defined, each representing a category of external integration where technologies vary. Full contract specifications live in [`adapter-contracts.md`](../3-interactions/adapter-contracts.md).
+Four adapter types are currently defined, each representing a category of external integration where technologies vary. Full contract specifications live in [`adapter-contracts.md`](../3-interactions/adapter-contracts.md).
 
 | Adapter | Core Consumer | What It Abstracts |
 |---------|--------------|-------------------|
 | **TriggerAdapter** | Daemon | Work discovery from any external source. Daemon polls via `poll()` at the adapter's declared interval. |
 | **CommunicationAdapter** | Orchestrator, Daemon | Human interaction — sending notifications, asking questions, receiving responses, syncing state to external platforms. |
 | **LLMAdapter** | Orchestrator | All LLM-powered reasoning, code generation, and analysis. Unifies CLI-based (subscription) and API-based (pay-per-token) providers behind one contract. |
-| **ToolAdapter** | Orchestrator | Executing actions on the world — file operations, shell commands, web searches. Follows PI-Inspired Minimalism: few broad tools. |
 | **GitHostingAdapter** | Workspace Manager | PR lifecycle via hosting platform APIs — create, update, merge, close PRs. Branch protection queries. Review status. |
 | **...** | | New adapter types as needs emerge (see § Future Adapter Types and § Extensibility by Design). |
 
@@ -136,7 +135,6 @@ Plugins are concrete implementations that satisfy an adapter contract. One plugi
 | TriggerAdapter | GitHubTriggerPlugin, _(future: JiraTriggerPlugin, LinearTriggerPlugin)_ | Switch from GitHub Issues to Jira for work intake |
 | CommunicationAdapter | TelegramCommPlugin, GitHubCommPlugin, _(future: SlackCommPlugin, TeamsCommPlugin)_ | Add Slack alongside Telegram, or replace both with Teams |
 | LLMAdapter | ClaudeCodeLLMPlugin, _(future: OpenRouterLLMPlugin, OllamaLLMPlugin)_ | Switch from Claude to a local Ollama model |
-| ToolAdapter | BashToolPlugin, _(future: FileOpsToolPlugin, WebSearchToolPlugin)_ | Add web search capability, self-extend at runtime |
 | GitHostingAdapter | GitHubHostingPlugin, _(future: GitLabHostingPlugin, GiteaHostingPlugin)_ | Switch from GitHub to self-hosted Gitea |
 
 **The accessibility promise:** A contributor building a new plugin (say, a Slack communication plugin) needs only the CommunicationAdapter contract from [`adapter-contracts.md`](../3-interactions/adapter-contracts.md). They don't need to understand the Orchestrator, Task Engine, Event Bus, or any Core internals. The adapter boundary is all they need.
@@ -228,4 +226,4 @@ Two plugin categories from [`overview.md`](overview.md) are acknowledged but do 
 
 These are deferred to Layer 4 (Implementation Design), when the implementation details are clearer. See Decision #64.
 
-Beyond these known types, **The Engineer's needs will evolve in ways we cannot fully predict today.** The architecture explicitly accommodates this — adding a new adapter type is a well-defined, low-impact operation that follows the same pattern as the five existing types. The question for any future integration boundary is simple: "Does technology vary here across different users' stacks?" If yes, it's an adapter.
+Beyond these known types, **The Engineer's needs will evolve in ways we cannot fully predict today.** The architecture explicitly accommodates this — adding a new adapter type is a well-defined, low-impact operation that follows the same pattern as the four existing types. The question for any future integration boundary is simple: "Does technology vary here across different users' stacks?" If yes, it's an adapter.

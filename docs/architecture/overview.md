@@ -38,7 +38,6 @@ graph TB
         TA[TriggerAdapter]
         CA[CommunicationAdapter]
         LA[LLMAdapter]
-        TOA[ToolAdapter]
         GHA[GitHostingAdapter]
     end
 
@@ -48,7 +47,6 @@ graph TB
         GHC[GitHub Comm]
         TG[Telegram Comm]
         CL[Claude Code LLM]
-        BT[Bash Tool]
         GHH[GitHub Hosting]
     end
 
@@ -59,7 +57,6 @@ graph TB
     GHC -.->|implements| CA
     TG -.->|implements| CA
     CL -.->|implements| LA
-    BT -.->|implements| TOA
     GHH -.->|implements| GHA
 ```
 
@@ -188,7 +185,7 @@ contributes:
 
 1. **Discover** — Scan configured directories for `engineer.plugin.yaml` manifests
 2. **Validate** — Check unique IDs, type validity, entry point existence
-3. **Order** — Sort by adapter type (Communication > LLM > Tool > GitHosting > Trigger)
+3. **Order** — Sort by adapter type (Communication > LLM > GitHosting > Trigger)
 4. **Load** — Dynamic import, call `createPlugin()` factory function
 5. **Initialize** — Validate config, resolve env vars, call `plugin.initialize(config)`
 

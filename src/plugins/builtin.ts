@@ -6,7 +6,6 @@ import { GitHubHostingPlugin } from "./git-hosting/github-hosting/github-hosting
 import { ClaudeCodeLLMPlugin } from "./llm/claude-code-llm/claude-code-llm.js";
 import { GeminiCliLLMPlugin } from "./llm/gemini-cli-llm/gemini-cli-llm.js";
 import { OpenCodeLLMPlugin } from "./llm/opencode-llm/opencode-llm.js";
-import { BashToolPlugin } from "./tool/bash-tool/bash-tool.js";
 import { GitHubTriggerPlugin } from "./trigger/github-trigger/github-trigger.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -74,18 +73,6 @@ const manifests = [
     entry: "builtin",
     adapter_meta: { provider_type: "cli" },
     contributes: { events: ["cost.incurred"] },
-  },
-  {
-    id: "bash-tool",
-    type: AdapterTypes.tool,
-    version: "1.0.0",
-    name: "Bash Shell Tool",
-    description: "Execute shell commands in task workspace",
-    critical: true,
-    requirements: [{ type: "binary", name: "bash" }],
-    entry: "builtin",
-    adapter_meta: { action_classes: ["read", "write", "test", "git-local"] },
-    contributes: { config_keys: ["bash_tool"] },
   },
   {
     id: "github-comm",
@@ -158,7 +145,6 @@ const factories: Record<string, () => BaseAdapter> = {
   "claude-code-llm": () => new ClaudeCodeLLMPlugin(),
   "opencode-llm": () => new OpenCodeLLMPlugin(),
   "gemini-cli-llm": () => new GeminiCliLLMPlugin(),
-  "bash-tool": () => new BashToolPlugin(),
   "github-comm": () => new GitHubCommPlugin(),
   "telegram-comm": () => new TelegramCommPlugin(),
   "github-hosting": () => new GitHubHostingPlugin(),

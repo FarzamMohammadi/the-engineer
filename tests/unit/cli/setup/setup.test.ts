@@ -20,9 +20,8 @@ import { AdapterTypeSchema } from "../../../../src/schemas/adapters.js";
 
 describe("detectEnvironment", () => {
   it("detects all binaries found", () => {
-    const result = detectEnvironment({}, { claude: "/usr/bin/claude", bash: "/bin/bash" }, null);
+    const result = detectEnvironment({}, { claude: "/usr/bin/claude" }, null);
     expect(result.binaries["claude"]).toBe("/usr/bin/claude");
-    expect(result.binaries["bash"]).toBe("/bin/bash");
   });
 
   it("detects no binaries found", () => {
@@ -127,11 +126,11 @@ describe("generateConfigFiles", () => {
   });
 
   it("generates plugin config for selected plugins", () => {
-    const files = generateConfigFiles(["claude-code-llm", "bash-tool"], {});
+    const files = generateConfigFiles(["claude-code-llm", "github-trigger"], {});
     const pluginFiles = files.filter((f) => f.relativePath.startsWith("config/plugins/"));
     const pluginPaths = pluginFiles.map((f) => f.relativePath);
     expect(pluginPaths).toContain("config/plugins/claude-code-llm.yaml");
-    expect(pluginPaths).toContain("config/plugins/bash-tool.yaml");
+    expect(pluginPaths).toContain("config/plugins/github-trigger.yaml");
   });
 
   it("does not generate plugin config for unselected plugins", () => {
@@ -177,14 +176,14 @@ describe("generateConfigFiles", () => {
   it("generates plugin documentation files", () => {
     const files = generateConfigFiles([], {});
     const docs = files.filter((f) => f.relativePath.startsWith("docs/plugins/"));
-    // 5 adapter READMEs + 8 plugin docs = 13
-    expect(docs.length).toBe(13);
+    // 4 adapter READMEs + 7 plugin docs = 11
+    expect(docs.length).toBe(11);
   });
 
   it("generates plugin docs for every adapter type", () => {
     const files = generateConfigFiles([], {});
     const docs = files.filter((f) => f.relativePath.startsWith("docs/plugins/"));
-    const types = ["trigger", "llm", "communication", "git-hosting", "tool"];
+    const types = ["trigger", "llm", "communication", "git-hosting"];
     for (const type of types) {
       const readme = docs.find((f) => f.relativePath === `docs/plugins/${type}/README.md`);
       expect(readme, `missing README for ${type}`).toBeDefined();
@@ -314,7 +313,7 @@ describe("promptForConfig on builtin plugins", () => {
   });
 
   it("plugins with all-default configs do not have promptForConfig", () => {
-    const allDefaultPlugins = ["claude-code-llm", "bash-tool", "opencode-llm", "gemini-cli-llm"];
+    const allDefaultPlugins = ["claude-code-llm", "opencode-llm", "gemini-cli-llm"];
     for (const id of allDefaultPlugins) {
       const plugin = BUILTIN_PLUGINS.find((p) => p.manifest.id === id);
       expect(plugin?.promptForConfig).toBeUndefined();
@@ -484,9 +483,9 @@ describe("writePluginDocs", () => {
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it("writes all 13 plugin doc files", () => {
+  it("writes all 11 plugin doc files", () => {
     writePluginDocs(tmpHome);
-    const types = ["trigger", "llm", "communication", "git-hosting", "tool"];
+    const types = ["trigger", "llm", "communication", "git-hosting"];
     for (const type of types) {
       expect(existsSync(join(tmpHome, `docs/plugins/${type}/README.md`))).toBe(true);
     }

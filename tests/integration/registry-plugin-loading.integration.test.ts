@@ -6,7 +6,6 @@ import { AdapterTypes, PluginHealthStates } from "../../src/schemas/adapters.js"
 import { FakeCommunicationPlugin } from "../helpers/fake-plugins/fake-comm/index.js";
 import { FakeGitHostingPlugin } from "../helpers/fake-plugins/fake-git-hosting/index.js";
 import { FakeLLMPlugin } from "../helpers/fake-plugins/fake-llm/index.js";
-import { FakeToolPlugin } from "../helpers/fake-plugins/fake-tool/index.js";
 import { FakeTriggerPlugin } from "../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../helpers/mock-factories.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
@@ -37,7 +36,7 @@ describe("Registry plugin loading (integration)", () => {
   });
 
   describe("registration and retrieval", () => {
-    it("registers all 5 fake plugin types and retrieves them", () => {
+    it("registers all 4 fake plugin types and retrieves them", () => {
       setup();
 
       registry.register(
@@ -49,7 +48,6 @@ describe("Registry plugin loading (integration)", () => {
         new FakeCommunicationPlugin(),
       );
       registry.register(createMockManifest({ id: "l1", type: AdapterTypes.llm, name: "LLM" }), new FakeLLMPlugin());
-      registry.register(createMockManifest({ id: "o1", type: AdapterTypes.tool, name: "Tool" }), new FakeToolPlugin());
       registry.register(
         createMockManifest({ id: "g1", type: AdapterTypes.git_hosting, name: "Git" }),
         new FakeGitHostingPlugin(),
@@ -58,7 +56,6 @@ describe("Registry plugin loading (integration)", () => {
       expect(registry.getPlugin("trigger", "t1")).toBeInstanceOf(FakeTriggerPlugin);
       expect(registry.getPlugin("communication", "c1")).toBeInstanceOf(FakeCommunicationPlugin);
       expect(registry.getPlugin("llm", "l1")).toBeInstanceOf(FakeLLMPlugin);
-      expect(registry.getPlugin("tool", "o1")).toBeInstanceOf(FakeToolPlugin);
       expect(registry.getPlugin("git_hosting", "g1")).toBeInstanceOf(FakeGitHostingPlugin);
     });
 

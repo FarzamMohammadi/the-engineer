@@ -6,7 +6,7 @@ import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 import { loadEnvFile, writeEnvFile } from "../../config/env.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
-import { AdapterTypes, type PluginRequirement } from "../../schemas/adapters.js";
+import { AdapterTypes } from "../../schemas/adapters.js";
 import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
 import { ALL_PLUGIN_DOCS } from "../plugin-docs.js";
@@ -85,26 +85,6 @@ export function detectEnvironment(
     envVars,
     gitRemote: gitRemoteOutput ? parseGitRemote(gitRemoteOutput) : null,
   };
-}
-
-/** Check if all of a plugin's requirements are met by the detection result. */
-export function checkRequirementsMet(
-  plugin: { requirements: readonly PluginRequirement[] },
-  detection: DetectionResult,
-): boolean {
-  for (const req of plugin.requirements) {
-    if (req.type === "binary") {
-      if (!detection.binaries[req.name]) {
-        return false;
-      }
-    } else if (req.type === "env") {
-      if (!detection.envVars.has(req.name)) {
-        return false;
-      }
-    }
-    // Unknown requirement types: skip gracefully (future extensibility)
-  }
-  return true;
 }
 
 const WHITESPACE_RE = /\s+/;

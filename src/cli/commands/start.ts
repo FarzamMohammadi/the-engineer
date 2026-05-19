@@ -18,11 +18,9 @@ import { spawnBackground } from "./start-background.js";
 import { DASHBOARD_PORT, launchDashboard } from "./start-dashboard.js";
 
 /**
- * Persist env vars from the current shell to .env so the daemon always has them.
- * Scans config files for ${VAR} refs, writes any found in process.env to .env (merge).
+ * Persist resolved env vars to .env so the daemon always has them (merge).
  */
-function captureEnvVarsToFile(engineerHome: string, configDir: string): void {
-  const vars = findResolvedEnvVars(configDir);
+function captureEnvVarsToFile(engineerHome: string, vars: Record<string, string>): void {
   if (Object.keys(vars).length > 0) {
     writeEnvFile(engineerHome, vars);
   }
@@ -110,13 +108,15 @@ export async function runStart(engineerHome: string, options: StartOptions): Pro
   // 1. Load .env before config resolution (existing env vars take precedence)
   loadEnvFile(engineerHome);
 
-  // 1b. Capture env vars from shell into .env so daemon always has them.
-  captureEnvVarsToFile(engineerHome, dirs.config);
-
-  // 1c. Register all env vars referenced in plugin configs as secrets for sanitization.
-  //     Replaces the former hardcoded SECRET_ENV_VARS list — Core discovers secrets
-  //     dynamically from what plugins declare in their ${VAR} config references.
+  // 1b. Scan config files once for ${VAR} refs already resolvable from the shell env.
   const discoveredVars = findResolvedEnvVars(dirs.config);
+
+  // 1c. Persist them to .env so the daemon always has them, even without the shell export.
+  captureEnvVarsToFile(engineerHome, discoveredVars);
+
+  // 1d. Register them as secrets for sanitization. Replaces the former hardcoded
+  //     SECRET_ENV_VARS list — Core discovers secrets dynamically from what plugins
+  //     declare in their ${VAR} config references.
   registerSecretEnvVars(Object.keys(discoveredVars));
 
   // 2. Auto-create directories (idempotent — may already exist after setup)

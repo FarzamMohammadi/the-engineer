@@ -9,7 +9,6 @@ import {
   ConfigError,
   EnvVarError,
   ValidationError,
-  getNumberPaths,
   loadConfig,
   loadConfigDir,
   loadConfigSafe,
@@ -98,123 +97,6 @@ describe("resolveEnvVars", () => {
     vi.stubEnv("MIX_VAR", "x");
     const result = resolveEnvVars({ arr: [{ val: "${MIX_VAR}" }], num: 5 }, "test.yaml");
     expect(result).toEqual({ arr: [{ val: "x" }], num: 5 });
-  });
-});
-
-// ── getNumberPaths ───────────────────────────────────────────────────────────────
-
-describe("getNumberPaths", () => {
-  it("returns null for string-only schema", () => {
-    const schema = z.object({ name: z.string() });
-    expect(getNumberPaths(schema)).toBeNull();
-  });
-
-  it("finds top-level number fields", () => {
-    const schema = z.object({
-      count: z.number(),
-      name: z.string(),
-    });
-    const result = getNumberPaths(schema);
-    expect(result).toEqual({
-      type: "object",
-      children: { count: { type: "number" } },
-    });
-  });
-
-  it("unwraps ZodDefault to find numbers", () => {
-    const schema = z.object({
-      timeout_ms: z.number().default(5000),
-      label: z.string().default("hi"),
-    });
-    const result = getNumberPaths(schema);
-    expect(result).toEqual({
-      type: "object",
-      children: { timeout_ms: { type: "number" } },
-    });
-  });
-
-  it("unwraps ZodNullable to find numbers", () => {
-    const schema = z.object({
-      limit: z.number().nullable(),
-    });
-    const result = getNumberPaths(schema);
-    expect(result).toEqual({
-      type: "object",
-      children: { limit: { type: "number" } },
-    });
-  });
-
-  it("finds nested number fields", () => {
-    const schema = z.object({
-      logging: z.object({
-        max_size: z.number(),
-        level: z.string(),
-      }),
-    });
-    const result = getNumberPaths(schema);
-    expect(result).toEqual({
-      type: "object",
-      children: {
-        logging: {
-          type: "object",
-          children: { max_size: { type: "number" } },
-        },
-      },
-    });
-  });
-
-  it("handles ZodRecord with number values", () => {
-    const schema = z.object({
-      limits: z.record(z.number()),
-    });
-    const result = getNumberPaths(schema);
-    expect(result).toEqual({
-      type: "object",
-      children: {
-        limits: { type: "record", valueNode: { type: "number" } },
-      },
-    });
-  });
-
-  it("handles ZodRecord with object values containing numbers", () => {
-    const schema = z.object({
-      providers: z.record(
-        z.object({
-          timeout_ms: z.number(),
-          name: z.string(),
-        }),
-      ),
-    });
-    const result = getNumberPaths(schema);
-    expect(result).toEqual({
-      type: "object",
-      children: {
-        providers: {
-          type: "record",
-          valueNode: {
-            type: "object",
-            children: { timeout_ms: { type: "number" } },
-          },
-        },
-      },
-    });
-  });
-
-  it("works with DaemonConfigSchema (real schema)", () => {
-    const result = getNumberPaths(DaemonConfigSchema);
-    expect(result).not.toBeNull();
-    // Should find tick_interval_ms as a number path
-    if (result && result.type === "object") {
-      expect(result.children["tick_interval_ms"]).toEqual({ type: "number" });
-      // logging.max_size_bytes should be nested
-      const logging = result.children["logging"];
-      expect(logging).toBeDefined();
-      if (logging && logging.type === "object") {
-        expect(logging.children["max_size_bytes"]).toEqual({ type: "number" });
-        // logging.level is a string (enum) — should NOT be in the tree
-        expect(logging.children["level"]).toBeUndefined();
-      }
-    }
   });
 });
 

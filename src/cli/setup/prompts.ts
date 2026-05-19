@@ -4,27 +4,10 @@ import type { BuiltinPlugin } from "../../plugins/builtin.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { getOutput } from "../output.js";
 import { ALL_TEMPLATES } from "../templates.js";
+import { checkRequirementsMet } from "./requirements.js";
 import type { AdapterTypeConfig, DetectionResult, GuidedSetupResult, PersonSetupEntry } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function checkRequirementsMet(
-  plugin: { requirements: ReadonlyArray<{ type: string; name: string }> },
-  detection: DetectionResult,
-): boolean {
-  for (const req of plugin.requirements) {
-    if (req.type === "binary") {
-      if (!detection.binaries[req.name]) {
-        return false;
-      }
-    } else if (req.type === "env") {
-      if (!detection.envVars.has(req.name)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
 
 function isCombinedWith(plugin: BuiltinPlugin, alreadySelected: readonly string[]): boolean {
   const combinedWith = plugin.manifest.combined_with;

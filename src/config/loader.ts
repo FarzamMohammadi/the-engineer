@@ -163,7 +163,7 @@ type PathNode =
  * Walks a Zod schema to build a tree of paths where number fields exist.
  * Used to know which YAML string values should be parsed as durations.
  */
-export function getNumberPaths(schema: z.ZodTypeAny): PathNode | null {
+function getNumberPaths(schema: z.ZodTypeAny): PathNode | null {
   return walkSchema(schema);
 }
 

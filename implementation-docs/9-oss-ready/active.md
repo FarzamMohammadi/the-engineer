@@ -22,17 +22,18 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 04-startup — Startup & Configuration
-**State:** Phase 1 (Simplification & Removals) complete (Session 10). Phases 2-5 remaining.
+**State:** Phase 2 (Getting-Started Path) complete (Session 11). Phases 3-5 remaining.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**Next step — Phase 2 (Getting-Started Path).** Read `slices/04-startup.md` and the plan,
-then: create `scripts/setup.sh` + wire `pnpm run setup` (confirm → install → build → link),
-rework `reset.sh` (no-arg interactive, with-arg seed, cross-platform `PNPM_HOME`), sanitize
-`seed-example/` to generic placeholders + add the `seed-example-*` `.gitignore` pattern,
-update README + `cli.md` getting-started. Commit cohesively per task; the phase ends green.
+**Next step — Phase 3 (OS Detection & Setup UX).** Read `slices/04-startup.md` and the plan,
+then: add `detectOperatingSystem()` pure function + tests, wire the OS gate into first-run
+setup (macOS continues, Linux warns + confirms when interactive, Windows blocks), add the
+detection-summary confirmation before plugin selection, polish setup messaging, and update
+`future-considerations.md` (consolidate the OS-agnostic vision, remove stale Telegram
+entries). Commit cohesively per task; the phase ends green (build + lint + tests + E2E).
 
-**Remaining phases:** 3 OS Detection & Setup UX → 4 CLI Restructure (Screaming Architecture)
-→ 5 Coding Standards Audit. One focused session each.
+**Remaining phases:** 4 CLI Restructure (Screaming Architecture) → 5 Coding Standards Audit.
+One focused session each.
 
 **Slice 4 decisions (Session 9):**
 - Getting-started: new `pnpm run setup` → `scripts/setup.sh` (confirm + install + build + link), then `engineer start`

@@ -8,13 +8,8 @@ import { createNotificationRouter } from "../../../core/daemon/notification-rout
 import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../../../core/data-lifecycle/index.js";
 import { HookRegistry } from "../../../core/hooks/index.js";
 import type { AuthUrlProvider } from "../../../core/interfaces/workspace-manager.interface.js";
-import {
-  BlobStore,
-  type IObserver,
-  createLogger,
-  createObservationStore,
-  createObserverFacade,
-} from "../../../core/observer/index.js";
+import type { IObserver } from "../../../core/observer/index.js";
+import { BlobStore, createLogger, createObservationStore, createObserverFacade } from "../../../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../../../core/orchestrator/index.js";
 import { PeopleDirectory } from "../../../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../../../core/registry/index.js";

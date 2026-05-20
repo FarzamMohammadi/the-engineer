@@ -2,8 +2,8 @@ import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 
 import type { BuiltinPlugin } from "../../plugins/builtin.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
+import { ALL_TEMPLATES } from "../bundled/templates.js";
 import { getOutput } from "../output.js";
-import { ALL_TEMPLATES } from "../templates.js";
 import { checkRequirementsMet } from "./requirements.js";
 import type { AdapterTypeConfig, DetectionResult, GuidedSetupResult, PersonSetupEntry } from "./types.js";
 

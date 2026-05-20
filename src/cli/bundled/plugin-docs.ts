@@ -1,6 +1,7 @@
 // ── Plugin Documentation ──────────────────────────────────────────────────────
-// Auto-bundled from docs/plugins/**/*.md
-// Escape rules: backticks (` → \`) and ${} (${ → \${)
+// Bundled markdown — mirrors docs/plugins/**/*.md so first-run setup can write
+// per-plugin docs into ~/.engineer/docs/. Keep in sync manually when docs change.
+// Escape rules when copying from .md: backticks (` → \`) and ${} (${ → \${).
 
 export interface PluginDoc {
   relativePath: string;

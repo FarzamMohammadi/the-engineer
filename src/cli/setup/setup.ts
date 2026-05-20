@@ -7,10 +7,10 @@ import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { loadEnvFile, writeEnvFile } from "../../config/env.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
+import { ALL_PLUGIN_DOCS } from "../bundled/plugin-docs.js";
+import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../bundled/templates.js";
 import { resolveDirectories } from "../home.js";
 import { getOutput } from "../output.js";
-import { ALL_PLUGIN_DOCS } from "../plugin-docs.js";
-import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../templates.js";
 import { detectOperatingSystem } from "./os-detection.js";
 import type { AdapterTypeConfig, DetectionResult, PersonSetupEntry } from "./types.js";
 

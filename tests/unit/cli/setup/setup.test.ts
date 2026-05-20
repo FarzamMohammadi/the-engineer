@@ -536,7 +536,7 @@ describe("doc path conventions", () => {
   });
 
   it("every builtin plugin has a matching doc in ALL_PLUGIN_DOCS", async () => {
-    const { ALL_PLUGIN_DOCS } = await import("../../../../src/cli/plugin-docs.js");
+    const { ALL_PLUGIN_DOCS } = await import("../../../../src/cli/bundled/plugin-docs.js");
     for (const plugin of BUILTIN_PLUGINS) {
       const type = plugin.manifest.type.replace(/_/g, "-");
       const expectedPath = `docs/plugins/${type}/${plugin.manifest.id}.md`;

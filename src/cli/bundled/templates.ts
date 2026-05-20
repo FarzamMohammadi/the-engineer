@@ -1,4 +1,6 @@
 // ── Core Config Templates ────────────────────────────────────────────────────
+// Default YAML configs written to ~/.engineer/config/ on first-run setup.
+// Source-of-truth for shipped defaults — edit here, not the generated files.
 
 export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # All fields are optional — defaults shown as comments

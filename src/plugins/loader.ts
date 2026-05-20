@@ -17,11 +17,11 @@ const YAML_EXTENSION = /\.yaml$/;
 /** Summary of a plugin load pass — which plugins loaded, which failed, and any startup hints to surface. */
 export interface PluginLoadResult {
   /** Plugin IDs that loaded successfully. */
-  loaded: string[];
+  readonly loaded: string[];
   /** Plugin IDs that failed to load, with reasons. */
-  failed: Array<{ id: string; reason: string }>;
+  readonly failed: Array<{ id: string; reason: string }>;
   /** Startup hints from loaded plugins. */
-  hints: Array<{ pluginName: string; message: string }>;
+  readonly hints: Array<{ pluginName: string; message: string }>;
 }
 
 // ── Plugin Loading ───────────────────────────────────────────────────────────
@@ -42,29 +42,36 @@ export async function loadBuiltinPlugins(
   observer: IObserver,
   sharedConfigByType?: Record<string, Record<string, unknown>>,
 ): Promise<PluginLoadResult> {
-  const plugins = discoverEnabledPlugins(pluginConfigDir);
-  const result: PluginLoadResult = { loaded: [], failed: [], hints: [] };
+  const span = observer.startSpan("lifecycle", "load-builtin-plugins", { pluginConfigDir });
+  try {
+    const plugins = discoverEnabledPlugins(pluginConfigDir);
+    const result: PluginLoadResult = { loaded: [], failed: [], hints: [] };
 
-  for (const plugin of plugins) {
-    // Critical plugin failures throw from loadSinglePlugin — let them propagate
-    const loaded = await loadSinglePlugin(plugin, registry, pluginConfigDir, observer, sharedConfigByType);
-    if (loaded) {
-      result.loaded.push(plugin.manifest.id);
-      // Collect startup hints from successfully loaded plugins
-      for (const hint of plugin.manifest.startup_hints) {
-        result.hints.push({ pluginName: plugin.manifest.name, message: hint });
+    for (const plugin of plugins) {
+      // Critical plugin failures throw from loadSinglePlugin — let them propagate
+      const loaded = await loadSinglePlugin(plugin, registry, pluginConfigDir, observer, sharedConfigByType);
+      if (loaded) {
+        result.loaded.push(plugin.manifest.id);
+        // Collect startup hints from successfully loaded plugins
+        for (const hint of plugin.manifest.startup_hints) {
+          result.hints.push({ pluginName: plugin.manifest.name, message: hint });
+        }
+      } else {
+        result.failed.push({ id: plugin.manifest.id, reason: "initialization failed" });
       }
-    } else {
-      result.failed.push({ id: plugin.manifest.id, reason: "initialization failed" });
     }
-  }
 
-  observer.info("Plugin loading complete", {
-    loaded: result.loaded.length,
-    failed: result.failed.length,
-    total: plugins.length,
-  });
-  return result;
+    observer.info("Plugin loading complete", {
+      loaded: result.loaded.length,
+      failed: result.failed.length,
+      total: plugins.length,
+    });
+    span.end({ loaded: result.loaded.length, failed: result.failed.length, total: plugins.length });
+    return result;
+  } catch (error) {
+    span.setError(error);
+    throw error;
+  }
 }
 
 // ── Plugin Discovery ─────────────────────────────────────────────────────────
@@ -126,9 +133,8 @@ async function loadSinglePlugin(
   }
 
   const configPath = join(pluginConfigDir, `${pluginId}.yaml`);
-  const pluginConfig = loadPluginConfig(configPath, pluginId, plugin.manifest.critical);
+  const pluginConfig = loadPluginConfig(configPath, pluginId, plugin.manifest.critical, observer, plugin.manifest.type);
   if (pluginConfig === null) {
-    observer.warn("Plugin config load failed, skipping", { pluginId });
     registry.deregister(pluginId);
     return false;
   }
@@ -174,13 +180,24 @@ function createPluginInstance(plugin: BuiltinPlugin, observer: IObserver): Retur
         cause: error,
       });
     }
-    observer.warn("Plugin creation failed, skipping", { pluginId, error: errorMessage });
+    observer.warn("Plugin creation failed — adapter capability unavailable until next daemon start", {
+      pluginId,
+      adapterType: plugin.manifest.type,
+      capability: `${plugin.manifest.type}_adapter`,
+      error: errorMessage,
+    });
     return null;
   }
 }
 
 /** Load plugin config from YAML file, resolving env vars. Returns null on error for non-critical plugins. */
-function loadPluginConfig(configPath: string, pluginId: string, critical: boolean): Record<string, unknown> | null {
+function loadPluginConfig(
+  configPath: string,
+  pluginId: string,
+  critical: boolean,
+  observer: IObserver,
+  adapterType: string,
+): Record<string, unknown> | null {
   if (!existsSync(configPath)) {
     return {};
   }
@@ -195,6 +212,12 @@ function loadPluginConfig(configPath: string, pluginId: string, critical: boolea
         cause: error,
       });
     }
+    observer.warn("Plugin config load failed — adapter capability unavailable until next daemon start", {
+      pluginId,
+      adapterType,
+      capability: `${adapterType}_adapter`,
+      error: errorMessage,
+    });
     return null;
   }
 }

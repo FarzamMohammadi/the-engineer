@@ -13,15 +13,15 @@ import { GitHubTriggerPlugin } from "./trigger/github-trigger/github-trigger.js"
 
 /** Registration record for a built-in plugin — its manifest, factory, and optional setup prompt. */
 export interface BuiltinPlugin {
-  manifest: PluginManifest;
-  create: () => BaseAdapter;
+  readonly manifest: PluginManifest;
+  readonly create: () => BaseAdapter;
   /**
    * Optional interactive config prompt for guided setup.
    * Called during first-run setup for plugins that need user-specific values
    * beyond secrets (${VAR} refs handled by promptForSecrets).
    * Returns config key-value pairs to merge INTO the template.
    */
-  promptForConfig?: () => Promise<Record<string, unknown>>;
+  readonly promptForConfig?: () => Promise<Record<string, unknown>>;
 }
 
 // ── Manifests ───────────────────────────────────────────────────────────────
@@ -156,13 +156,10 @@ const factories: Record<string, () => BaseAdapter> = {
 
 /** All built-in plugins, schema-validated at import time, ready to register. */
 export const BUILTIN_PLUGINS: BuiltinPlugin[] = validatedManifests.map((manifest) => {
-  const base: BuiltinPlugin = {
+  const promptFn = promptFunctions[manifest.id];
+  return {
     manifest,
     create: factories[manifest.id] as () => BaseAdapter,
+    ...(promptFn ? { promptForConfig: promptFn } : {}),
   };
-  const promptFn = promptFunctions[manifest.id];
-  if (promptFn) {
-    base.promptForConfig = promptFn;
-  }
-  return base;
 });

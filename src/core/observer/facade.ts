@@ -95,6 +95,9 @@ export interface IObserver {
   // ── Child creation ──────────────────────────────────────────────────
   child(component: ComponentTag): IObserver;
 
+  /** Return a child observer with trace_id bound into every pino log line. */
+  withTrace(traceId: string): IObserver;
+
   // ── Escape hatch (for code that needs raw pino, e.g. pino-pretty) ──
   readonly pino: Logger;
 }
@@ -194,6 +197,10 @@ export class Observer implements IObserver {
     return new Observer(this.ctx, component);
   }
 
+  withTrace(traceId: string): IObserver {
+    return new TracedObserver(this.ctx, this.pino, traceId);
+  }
+
   // ── Lifecycle (only called on the root instance from bootstrap) ─────
 
   /**
@@ -203,6 +210,107 @@ export class Observer implements IObserver {
    */
   upgrade(store: IObservationStore): void {
     this.ctx.store = store;
+  }
+}
+
+// ── TracedObserver ───────────────────────────────────────────────────────
+
+/** Observer with a bound trace_id — every pino log line and span inherits it. */
+class TracedObserver implements IObserver {
+  readonly pino: Logger;
+  private readonly ctx: SharedContext;
+  private readonly traceId: string;
+
+  constructor(ctx: SharedContext, parentPino: Logger, traceId: string) {
+    this.ctx = ctx;
+    this.traceId = traceId;
+    this.pino = parentPino.child({ trace_id: traceId });
+  }
+
+  info(msg: string, data?: Record<string, unknown>): void {
+    if (data) {
+      this.pino.info(data, msg);
+    } else {
+      this.pino.info(msg);
+    }
+  }
+
+  warn(msg: string, data?: Record<string, unknown>): void {
+    if (data) {
+      this.pino.warn(data, msg);
+    } else {
+      this.pino.warn(msg);
+    }
+  }
+
+  error(msg: string, data?: Record<string, unknown>): void {
+    if (data) {
+      this.pino.error(data, msg);
+    } else {
+      this.pino.error(msg);
+    }
+  }
+
+  debug(msg: string, data?: Record<string, unknown>): void {
+    if (data) {
+      this.pino.debug(data, msg);
+    } else {
+      this.pino.debug(msg);
+    }
+  }
+
+  private mergeTrace(options?: SpanOptions): SpanOptions {
+    return { ...options, trace_id: options?.trace_id ?? this.traceId };
+  }
+
+  startSpan(
+    type: ObservationTypeValue,
+    name: string,
+    input?: Record<string, unknown>,
+    options?: SpanOptions,
+  ): ObservationSpan {
+    return this.ctx.store?.startSpan(type, name, input, this.mergeTrace(options)) ?? NO_OP_SPAN;
+  }
+
+  observe(type: ObservationTypeValue, name: string, data: Record<string, unknown>, options?: SpanOptions): string {
+    return this.ctx.store?.observe(type, name, data, this.mergeTrace(options)) ?? "";
+  }
+
+  recordDecision(
+    name: string,
+    context: string,
+    options: ReadonlyArray<{ id: string; description: string }>,
+    chosen: string,
+    reasoning: string,
+    confidence: number,
+    opts?: SpanOptions,
+  ): string {
+    return (
+      this.ctx.store?.recordDecision(name, context, options, chosen, reasoning, confidence, this.mergeTrace(opts)) ?? ""
+    );
+  }
+
+  recordError(
+    error: unknown,
+    context: { operation: string; component: string },
+    recovery?: { action: string; success: boolean },
+    opts?: SpanOptions,
+  ): string {
+    const sanitizedMsg = sanitizeErrorMessage(error);
+    this.pino.error(
+      { err: sanitizedMsg, operation: context.operation, component: context.component },
+      `Error in ${context.operation}`,
+    );
+    return this.ctx.store?.recordError(error, context, recovery, this.mergeTrace(opts)) ?? "";
+  }
+
+  child(component: ComponentTag): IObserver {
+    const childPino = this.ctx.rootPino.child({ component, trace_id: this.traceId });
+    return new TracedObserver({ ...this.ctx }, childPino, this.traceId);
+  }
+
+  withTrace(traceId: string): IObserver {
+    return new TracedObserver(this.ctx, this.pino.child({}), traceId);
   }
 }
 

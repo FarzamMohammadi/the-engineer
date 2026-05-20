@@ -153,9 +153,10 @@ export class Orchestrator {
     const isResume = !!dispatch.resume_from;
     const isRework = (dispatch.task.review?.feedback_rounds ?? []).some((r) => !r.applied) ?? false;
 
-    this.ctx.observer.info("Task execution starting", {
+    const tracedObserver = this.ctx.observer.withTrace(traceId);
+
+    tracedObserver.info("Task execution starting", {
       taskId,
-      traceId,
       title: dispatch.task.title,
       isResume,
       resumeFromPhase: dispatch.resume_from?.phase ?? null,
@@ -166,7 +167,7 @@ export class Orchestrator {
     const session = this.workspaceLifecycle.createSession(dispatch);
     const sessionId = session.id;
     this.ctx.taskEngine.updateTaskField(taskId, "session_id", sessionId);
-    this.ctx.observer.debug("Session created", { taskId, traceId, sessionId });
+    tracedObserver.debug("Session created", { taskId, sessionId });
 
     // ── Workspace setup (D144) ──────────────────────────────────────────
     // If workspace creation fails (git failure, disk full, auth error), close the
@@ -194,7 +195,7 @@ export class Orchestrator {
     // Gather repo context once — avoids 5 sync I/O ops × 7 phases per task.
     // Re-gathered after execution phase (the only phase that modifies files).
     const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath, this.ctx.observer);
+    const repoContext = gatherRepoContextSafe(worktreePath, tracedObserver);
 
     // Read thoughtsDir from the workspace record (set during workspace creation)
     // to avoid midnight-boundary date mismatch with workspace-manager.
@@ -213,8 +214,9 @@ export class Orchestrator {
     };
 
     // ── Run phase pipeline ─────────────────────────────────────────────────
+    const tracedCtx: OrchestratorContext = { ...this.ctx, observer: tracedObserver };
     return runPhasePipeline(dispatch, state, {
-      ctx: this.ctx,
+      ctx: tracedCtx,
       handlers: this.phaseHandlers,
       prManager: this.prManager,
       decompositionHandler: this.decompositionHandler,

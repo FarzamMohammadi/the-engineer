@@ -85,7 +85,10 @@ export abstract class BaseAdapter {
       const message = error instanceof Error ? error.message : String(error);
       obs?.error(`Plugin "${this.manifest.id}" failed to initialize after ${String(elapsed)}ms: ${message}`, {
         pluginId: this.manifest.id,
+        adapterType: this.manifest.type,
+        capability: `${this.manifest.type}_adapter`,
         elapsedMs: elapsed,
+        critical: this.manifest.critical,
         error: message,
       });
       return { success: false, message };

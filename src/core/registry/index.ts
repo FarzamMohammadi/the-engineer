@@ -152,8 +152,13 @@ export class Registry implements IPluginLookup {
       return;
     }
     this.healthCheckTimer = setInterval(() => {
-      this.healthCheckAll().catch(() => {
-        /* health check errors are handled internally */
+      this.healthCheckAll().catch((error: unknown) => {
+        // Per-plugin failures are handled inside healthCheckAll. A throw here means
+        // the loop machinery itself failed (e.g., DB lock, scheduler crash) — surface
+        // it so degradation is visible instead of silent.
+        this.observer.error("Plugin health check loop failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
     }, this.healthCheckIntervalMs);
   }

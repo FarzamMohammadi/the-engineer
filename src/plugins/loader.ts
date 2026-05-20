@@ -113,7 +113,12 @@ async function loadSinglePlugin(
 
   const registrationResult = registry.register(plugin.manifest, instance);
   if (!registrationResult.success) {
-    observer.warn("Plugin registration failed", { pluginId, reason: registrationResult.message });
+    observer.warn("Plugin registration failed — adapter capability unavailable", {
+      pluginId,
+      adapterType: plugin.manifest.type,
+      capability: `${plugin.manifest.type}_adapter`,
+      reason: registrationResult.message,
+    });
     if (plugin.manifest.critical) {
       throw new Error(`Critical plugin "${pluginId}" failed to register: ${registrationResult.message}`);
     }
@@ -139,8 +144,10 @@ async function loadSinglePlugin(
     if (plugin.manifest.critical) {
       throw new Error(`Critical plugin "${pluginId}" failed to initialize: ${initializationResult.message}`);
     }
-    observer.warn("Plugin init failed, deregistering", {
+    observer.warn("Plugin init failed — adapter capability unavailable until next daemon start", {
       pluginId,
+      adapterType: plugin.manifest.type,
+      capability: `${plugin.manifest.type}_adapter`,
       reason: initializationResult.message,
     });
     registry.deregister(pluginId);

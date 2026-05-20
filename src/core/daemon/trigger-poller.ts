@@ -82,7 +82,13 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     } catch (error) {
       const failures = (triggerFailures.get(pluginId) ?? 0) + 1;
       triggerFailures.set(pluginId, failures);
-      observer.warn("Trigger poll failed", { pluginId, failures, error });
+      observer.warn("Trigger poll failed — no new events from this source until next tick", {
+        pluginId,
+        capability: "trigger_polling",
+        failures,
+        retryInMs: effectiveInterval,
+        error,
+      });
 
       if (failures >= config.plugins.consecutive_failures_threshold) {
         emitHealthTriggerFailure(pluginId, failures, error);

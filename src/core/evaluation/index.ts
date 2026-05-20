@@ -50,10 +50,19 @@ export function createEvaluationManager(ctx: EvaluationManagerContext): Evaluati
       evaluationDir: snapshot.evaluationDir,
     });
 
-    // Fire-and-forget: run async, track promise for shutdown drain
-    const promise = runEvaluation(snapshot, ctx).finally(() => {
-      activeEvaluations.delete(taskId);
-    });
+    // Fire-and-forget: run async, track promise for shutdown drain.
+    // runEvaluation catches internally, but guard against an escape so the
+    // promise never goes unhandled.
+    const promise = runEvaluation(snapshot, ctx)
+      .catch((err: unknown) => {
+        ctx.observer.error("Evaluation runner threw unexpectedly", {
+          taskId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => {
+        activeEvaluations.delete(taskId);
+      });
 
     activeEvaluations.set(taskId, promise);
   }

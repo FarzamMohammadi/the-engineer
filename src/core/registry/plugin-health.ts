@@ -55,7 +55,12 @@ export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): Plugin
 
     if (previousState !== PluginHealthStates.healthy) {
       health.state = PluginHealthStates.healthy;
-      observer.info("Plugin recovered", { pluginId: manifest.id, previousState });
+      observer.info("Plugin recovered — capability restored", {
+        pluginId: manifest.id,
+        adapterType: manifest.type,
+        capability: `${manifest.type}_adapter`,
+        previousState,
+      });
       eventBus.publish({
         type: EventTypes["health.plugin_recovered"],
         source: "registry",
@@ -77,8 +82,10 @@ export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): Plugin
     if (previousState === PluginHealthStates.healthy) {
       // healthy → unhealthy
       health.state = PluginHealthStates.unhealthy;
-      observer.warn("Plugin is unhealthy", {
+      observer.warn("Plugin is unhealthy — capability degraded, retrying on next health check", {
         pluginId: manifest.id,
+        adapterType: manifest.type,
+        capability: `${manifest.type}_adapter`,
         consecutiveFailures: health.consecutive_failures,
         error: errorMessage,
       });
@@ -99,8 +106,10 @@ export function createPluginHealthMonitor(deps: PluginHealthMonitorDeps): Plugin
     ) {
       // unhealthy → failed
       health.state = PluginHealthStates.failed;
-      observer.error("Plugin has FAILED", {
+      observer.error("Plugin has FAILED — capability disabled until manual intervention or self-recovery", {
         pluginId: manifest.id,
+        adapterType: manifest.type,
+        capability: `${manifest.type}_adapter`,
         consecutiveFailures: health.consecutive_failures,
         threshold: consecutiveFailuresThreshold,
         error: errorMessage,

@@ -4,6 +4,8 @@ These standards govern all code in this project. Every contributor — human or 
 
 Biome automates what it can: formatting, import ordering, file naming, complexity limits, block statements. Run `pnpm lint` after every change. These standards cover everything biome cannot enforce — structure, naming intent, function design, type discipline, and the philosophical foundations behind every decision.
 
+> **Apply with judgment, never mechanically.** No rule justifies code that reads badly. When a rule and clarity collide, the application is wrong, not the rule. Find what an experienced engineer would naturally write that still honors the intent.
+
 ---
 
 ## 1. File Structure & Vertical Ordering

@@ -1,11 +1,13 @@
 /** Base class for all task-engine errors. Tagged for discriminated matching. */
 export abstract class TaskEngineError extends Error {
   abstract readonly tag: string;
+  abstract readonly retryable: boolean;
 }
 
 /** Task was not found by ID. */
 export class TaskNotFoundError extends TaskEngineError {
   readonly tag = "TaskNotFound" as const;
+  readonly retryable = false;
   readonly taskId: string;
 
   constructor(taskId: string) {
@@ -18,6 +20,7 @@ export class TaskNotFoundError extends TaskEngineError {
 /** State transition is not valid per the state machine. */
 export class InvalidTransitionError extends TaskEngineError {
   readonly tag = "InvalidTransition" as const;
+  readonly retryable = false;
   readonly taskId: string;
   readonly fromLabel: string;
   readonly toLabel: string;
@@ -34,6 +37,7 @@ export class InvalidTransitionError extends TaskEngineError {
 /** Optimistic locking conflict — task was modified by another writer. */
 export class VersionConflictError extends TaskEngineError {
   readonly tag = "VersionConflict" as const;
+  readonly retryable = true;
   readonly taskId: string;
   readonly expectedVersion: number;
   readonly actualVersion: number;
@@ -50,6 +54,7 @@ export class VersionConflictError extends TaskEngineError {
 /** Unknown field passed to updateTaskField. */
 export class UnknownFieldError extends TaskEngineError {
   readonly tag = "UnknownField" as const;
+  readonly retryable = false;
   readonly field: string;
 
   constructor(field: string) {

@@ -36,8 +36,8 @@ export function createAdapterError(
 export class AdapterMethodError extends Error {
   readonly adapterError: AdapterError;
 
-  constructor(adapterError: AdapterError) {
-    super(adapterError.message);
+  constructor(adapterError: AdapterError, options?: { cause?: unknown }) {
+    super(adapterError.message, options);
     this.name = "AdapterMethodError";
     this.adapterError = adapterError;
   }

@@ -314,6 +314,7 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       throw new LlmUnavailableError(
         MAX_LLM_RETRIES,
         lastError instanceof Error ? lastError.message : String(lastError),
+        { cause: lastError },
       );
     }
     throw lastError;

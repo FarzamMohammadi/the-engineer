@@ -27,6 +27,7 @@ export abstract class TriggerAdapter extends BaseAdapter {
         createAdapterError("internal_error", error instanceof Error ? error.message : String(error), {
           severity: AdapterErrorSeverities.fatal,
         }),
+        { cause: error },
       );
     }
   }

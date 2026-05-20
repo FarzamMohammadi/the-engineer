@@ -471,6 +471,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       }
       throw new WorkspaceCreationError(
         `Failed to reset git remote after clone — removed clone to prevent token persistence: ${setUrlError instanceof Error ? setUrlError.message : String(setUrlError)}`,
+        { cause: setUrlError },
       );
     }
 

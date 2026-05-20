@@ -47,6 +47,7 @@ export abstract class LLMAdapter extends BaseAdapter {
         createAdapterError("internal_error", error instanceof Error ? error.message : String(error), {
           severity: AdapterErrorSeverities.fatal,
         }),
+        { cause: error },
       );
     }
   }

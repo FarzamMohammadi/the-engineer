@@ -30,6 +30,7 @@ async function wrapAsync<T>(fn: () => Promise<T>): Promise<T> {
       createAdapterError("internal_error", error instanceof Error ? error.message : String(error), {
         severity: AdapterErrorSeverities.fatal,
       }),
+      { cause: error },
     );
   }
 }

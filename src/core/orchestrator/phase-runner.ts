@@ -149,7 +149,7 @@ function resolveStartState(
     ctx.workspaceManager.verifyWorkspace(taskId);
   } catch (verifyErr) {
     const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
-    throw new WorkspaceVerificationError(msg);
+    throw new WorkspaceVerificationError(msg, { cause: verifyErr });
   }
 
   ctx.sessionMemory.addJournalEntry({

@@ -22,33 +22,37 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 04-startup — Startup & Configuration
-**State:** Phase 4 complete (Session 14). CLI restructured — `commands/start/` groups 6 files, shutdown handler extracted, "Structure Reveals Intent" standard added. Phase 5 is next.
+**State:** Phase 4 + Infrastructure Gap Fixes complete (Session 15). Phase 5 audit is next.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**What just happened (current session):**
-- Reviewed all four governance docs (AGENT-README, philosophy.md, coding-standards.md, anti-patterns.md)
-- Full review saved to `docs-review-notes.md` (root, uncommitted) — findings on redundancy,
-  aspirational vs. current-state tension, cross-document gaps. Come back to this later.
-- Added 7 new subsections to `docs/coding-standards.md`:
-  - Section 4: Immutability by Default, Parse Don't Validate
-  - Section 5: Propagation Through Boundaries, Cause Chains, Error Categorization (expanded)
-  - Section 7: Modularity framing (opening paragraph)
-  - New sections 12-15: Logging, Async Discipline, Observability & Tracing, Graceful Degradation
-- Research identified infrastructure gaps (logging/tracing/error handling) — see gap list below
+**What just happened (current session — Infrastructure Gap Fixes):**
+All six gaps between the new coding standards and existing infrastructure are now closed:
 
-**Next step — Session N+1: Infrastructure Gap Fixes (one session).**
-Address gaps found between the new standards and the existing observability/error infrastructure.
-Read `docs-review-notes.md` (root) for full gap analysis from the Explore agent research.
+- **Gap 1 + 5 — Log-to-trace + Span-to-log correlation:** Added `withTrace(traceId)` to `IObserver`
+  and a `TracedObserver` class in `src/core/observer/facade.ts`. Pino child loggers now carry
+  `trace_id` automatically; span calls inherit it via `SpanOptions`. Orchestrator's `executeTask`
+  uses `tracedObserver` for the pipeline run. 5 new tests in `tests/unit/core/observer/facade.test.ts`.
+- **Gap 2 — Error cause chains:** Adapter `wrapAsync` patterns in `communication.ts`, `git-hosting.ts`,
+  `trigger.ts`, `llm.ts` now pass `{ cause: error }` to `AdapterMethodError`. `AdapterMethodError`,
+  `LlmUnavailableError`, `WorkspaceVerificationError`, `WorkspaceCreationError` accept `cause`.
+  Phase-runner `WorkspaceVerificationError` and workspace-manager `WorkspaceCreationError` propagate
+  cause. Other catch blocks audited — most either don't re-throw or already preserve the original error.
+- **Gap 3 — Error categorization:** Every domain error class now has a `readonly retryable: boolean`.
+  Updated bases: `TaskEngineError`, `OrchestratorError`, `DaemonError`, `EventBusError`, `SafetyError`,
+  `WorkspaceError`, `SessionMemoryError`. Updated all 17 concrete subclasses with appropriate values
+  (`VersionConflictError` and `WorkspaceNotReadyError` and `LlmUnavailableError` retryable; others not).
+- **Gap 4 — Floating promises:** Registry `healthCheckAll().catch(() => {})` now logs failures via
+  `observer.error`. Evaluation manager's fire-and-forget promise wraps `runEvaluation` with `.catch()`
+  so escaped rejections are visible. All other `.catch()` patterns audited — already log appropriately.
+- **Gap 6 — Graceful degradation:** Trigger-poller, adapter `base.ts` init failure, plugin loader,
+  and plugin-health monitor (`unhealthy`, `failed`, `recovered`) log messages now include
+  `adapterType`, `capability`, and explicit recovery context per coding standard §15.
 
-Specific gaps to fix:
-- Log-to-trace correlation: thread `trace_id` into every pino log message via observer facade
-- Error cause chains: audit catch blocks, ensure `cause` is always preserved (not just message)
-- Error categorization: add `retryable` boolean to domain error hierarchies
-- Floating promise audit: find and fix unhandled async calls across the codebase
-- Span-to-log correlation: embed span context in pino output
-- Graceful degradation: verify plugin failures don't crash daemon, add recovery logging
+Build status: typecheck clean, lint clean (only pre-existing warnings), all 2463 unit tests pass.
 
-**Session N+2: Phase 5 — New Standards Audit (one session).**
+**Next step — Session N+2: Phase 5 — New Standards Audit (one session).**
+
+**Session N+2 → next session: Phase 5 — New Standards Audit (one session).**
 The original coding standards (sections 1-11) were already applied across all slice 4 in-scope
 files during Phases 1-4 (Sessions 10-14): newspaper order, `function` declarations, return-type
 annotations, JSDoc on exports, guard clauses, `import type` separation, abbreviation renames,
@@ -71,7 +75,7 @@ This final audit is exclusively for the **new standards added this session**:
   code. `src/plugins/loader.ts` and `src/plugins/builtin.ts` run post-bootstrap — all standards apply.
 - Final green sweep (build + lint + tests)
 
-**Remaining:** Infrastructure gaps (1 session) + New Standards Audit (1 session).
+**Remaining:** New Standards Audit (1 session).
 
 **Slice 4 decisions (Session 9):**
 - Getting-started: new `pnpm run setup` → `scripts/setup.sh` (confirm + install + build + link), then `engineer start`

@@ -157,6 +157,52 @@ function buildPriorityQueue(config: SchedulerConfig): PriorityQueue {
 }
 ```
 
+### Immutability by Default
+
+Treat mutability as the exception that requires justification. Immutable data eliminates accidental mutation, stale references, and shared-state corruption.
+
+- **`readonly` on properties.** Interface and type properties are `readonly` unless mutation is the explicit purpose of the field.
+- **`as const` for literal collections.** Enum-like objects and fixed arrays use `as const` to narrow types and prevent accidental modification.
+- **Never mutate function parameters.** If a function needs a modified version of its input, create a new object. The caller's data is not yours to change.
+
+```typescript
+// Good — immutable by default
+interface TaskSnapshot {
+  readonly id: TaskId;
+  readonly state: TaskState;
+  readonly phase: Phase;
+}
+
+const Outcomes = {
+  Success: "success",
+  Failure: "failure",
+  Skipped: "skipped",
+} as const;
+
+// Good — new object, input untouched
+function withUpdatedPhase(task: TaskSnapshot, phase: Phase): TaskSnapshot {
+  return { ...task, phase };
+}
+```
+
+### Parse, Don't Validate
+
+At system boundaries (user input, config files, API responses, plugin returns), transform raw data into typed values. After the boundary, trust the types — no defensive checks deep in the codebase.
+
+This defines where validation lives: at the edges, once, producing typed guarantees that flow inward. Code inside the boundary never re-checks what the boundary already proved.
+
+```typescript
+// Boundary — parse raw input into a typed, validated value
+function parseTaskInput(raw: unknown): CreateTaskInput {
+  return CreateTaskInputSchema.parse(raw);
+}
+
+// Interior — receives CreateTaskInput, trusts the type, no re-validation
+function scheduleTask(input: CreateTaskInput, queue: PriorityQueue): ScheduledTask {
+  return queue.enqueue(input.priority, input);
+}
+```
+
 ---
 
 ## 5. Error Handling
@@ -198,6 +244,58 @@ throw new Error(`invalid value: ${value}`);
 ### Where to Catch
 
 Let errors bubble unless you can meaningfully handle them (retry, fallback, translate for a different boundary). Never catch just to log and rethrow. Boundary layers (CLI handlers, daemon loop, API routes) are the natural catch-all points.
+
+### Propagation Through Boundaries
+
+Errors travel outward through the three-tier model. Each boundary translates for its consumer — never swallows, never exposes internals upward.
+
+- **Plugin → Adapter boundary:** The adapter catches plugin-specific errors and translates them into a uniform adapter-level error. Core never sees a GitHub API error — it sees an `AdapterMethodError` with context.
+- **Adapter → Core boundary:** Core handles adapter errors at the orchestrator or daemon loop level. Retry logic, fallback decisions, and user-facing messages live here.
+- **Core → CLI/API boundary:** The outermost shell catches, formats for the consumer (human-readable for CLI, structured for API), and exits or responds.
+
+```typescript
+// Adapter boundary — translate, preserve cause
+try {
+  return await this.plugin.poll();
+} catch (error) {
+  throw createAdapterError("poll", this.pluginId, error);
+}
+```
+
+### Cause Chains
+
+Always preserve the original error via the standard `cause` property. Never destructure into just the message — the stack trace, cause chain, and error class are all diagnostic information.
+
+```typescript
+// Good — cause chain preserved, each layer adds context
+throw new OrchestratorError(`Phase "${phase}" failed for task "${taskId}"`, { cause: error });
+
+// Bad — original error discarded, stack trace lost
+throw new OrchestratorError(`Phase failed: ${error.message}`);
+```
+
+### Error Categorization
+
+Domain error classes must signal whether the caller should retry or give up. This is critical for a long-running daemon — the orchestrator's response to "network timeout" and "invalid task state" must be fundamentally different.
+
+```typescript
+export abstract class TaskEngineError extends Error {
+  abstract readonly tag: string;
+  abstract readonly retryable: boolean;
+}
+
+export class TaskNotFoundError extends TaskEngineError {
+  readonly tag = "TaskNotFound" as const;
+  readonly retryable = false;  // permanent — retrying won't help
+}
+
+export class WorkspaceNotReadyError extends OrchestratorError {
+  readonly tag = "WorkspaceNotReady" as const;
+  readonly retryable = true;   // transient — workspace may become ready
+}
+```
+
+The categorization drives behavior at the boundary: retryable errors get backoff and retry. Permanent errors get logged, reported, and the task moves to a failed state. No guessing.
 
 ---
 
@@ -243,6 +341,8 @@ import { TaskStates, CascadePolicies } from "../../schemas/task.js";
 ---
 
 ## 7. Module Boundaries
+
+A well-bounded module is one where a contributor — human or agent — can load its full context, understand it, modify it, and verify the change without needing to understand anything beyond its contract with the outside world. That is the test of modularity. If working on a module requires reading three other modules to form a mental model, the boundaries are wrong.
 
 ### One Concept per File
 
@@ -391,6 +491,135 @@ Define every value once. Derive everywhere else. A constant that appears in two 
 - **No duplicate constants.** If a value (a path, a magic number, a default) needs to appear in two files, the second occurrence is a derived computation or an import — never a literal repeat.
 
 The test: when you change a value, do you have to remember every other place it lives? If yes, you have duplication. Centralize.
+
+---
+
+## 12. Logging
+
+### Philosophy
+
+Log at decision points, not I/O points. The question a log answers is **why did the system do what it did** — not what functions were called or what data flowed through.
+
+### Levels
+
+- **`debug`** — Developer investigating a specific issue. High volume, disabled in production. Variable values, branch conditions taken, intermediate results.
+- **`info`** — Operator watching the system run. Lifecycle events: daemon started, task dispatched, phase transitioned, plugin loaded.
+- **`warn`** — Something unexpected but non-fatal. A retry that succeeded, a deprecated config key, a plugin returning empty results. Deserves attention, not broken yet.
+- **`error`** — Something broke and a human needs to know. Failed transitions, unhandled exceptions, invariant violations. Every `error` log must be actionable — if the reader can't respond to it, it's not an error.
+
+### Rules
+
+- **Structured data, always.** Every log call passes a data object alongside the message. `observer.info("Task dispatched", { taskId, phase, priority })` — not string interpolation. Structured data is queryable.
+- **Log decisions, not actions.** "Chose retry because rate limit resets in 12s" is useful. "Called GitHub API" is noise — the action is visible in the span; the log captures *reasoning*.
+- **One log per decision, not per step.** Don't log entry and exit of every function. Log the meaningful choice points.
+- **Uniform across the three-tier boundary.** Adapter-level logging has a consistent format regardless of which plugin is behind it. The operator's experience must not change when a plugin is swapped.
+
+---
+
+## 13. Async Discipline
+
+A long-running daemon cannot tolerate loose async hygiene. In Node.js 15+, an unhandled promise rejection crashes the process. Even when it doesn't crash, it's a silent failure that compounds.
+
+### No Floating Promises
+
+Every `async` call is either `await`ed or explicitly handled with `.catch()`. No fire-and-forget without deliberate acknowledgment.
+
+```typescript
+// Good — awaited
+await eventBus.publish("task.created", payload);
+
+// Good — explicitly fire-and-forget with error handling
+cleanup().catch((error) => observer.warn("Cleanup failed", { error }));
+
+// Bad — floating promise, silent failure
+eventBus.publish("task.created", payload);
+```
+
+If you intentionally fire-and-forget, the `.catch()` handler is the documentation that it was deliberate.
+
+### Parallel vs. Sequential
+
+Default to sequential `await`. Use `Promise.all()` only when parallelism is intentional, bounded, and the operations are independent. Unbounded `Promise.all()` over a large array risks resource exhaustion.
+
+```typescript
+// Good — bounded parallel
+const results = await Promise.all(plugins.map((p) => p.healthCheck()));
+
+// Bad — unbounded parallel over unknown-size collection
+const results = await Promise.all(allTasks.map((t) => processTask(t)));
+```
+
+### Cleanup
+
+Long-running async operations use `AbortController` for cancellation. Resource cleanup lives in `finally` blocks — not in the success path only.
+
+```typescript
+const controller = new AbortController();
+try {
+  await longRunningOperation({ signal: controller.signal });
+} finally {
+  releaseResources();
+}
+```
+
+---
+
+## 14. Observability & Tracing
+
+Logging captures *reasoning*. Tracing captures *structure* — the shape of an operation, its duration, its nesting, and its outcome. Together they make any behavior diagnosable after the fact.
+
+### Span Lifecycle
+
+Every non-trivial operation gets a span: start, annotate, end with success or error. Spans nest — a task execution span contains phase spans, which contain LLM call spans.
+
+```typescript
+const span = observer.startSpan("phase_transition", `execute-${phase}`, { taskId });
+try {
+  const result = await runPhase(task, phase);
+  span.end({ output: result });
+} catch (error) {
+  span.setError(error);
+  throw error;
+}
+```
+
+### Trace Correlation
+
+Every log entry carries `trace_id` for correlation with observation spans. This is the bridge between logging and tracing — filter logs by trace ID to see every log line for a specific task execution, across all component boundaries. The observer facade threads this automatically; components don't manage it.
+
+### Record Decisions Explicitly
+
+Non-obvious choices (retry vs. fail, plugin selection, safety verdicts) use `observer.recordDecision()` — not a log line. Decisions are first-class observations: context, options considered, chosen option, reasoning, confidence.
+
+### Structured Events Over Free Text
+
+"What happened" lives in typed `type` and `name` fields. "Why and how" lives in structured `input`/`output`/`metadata`. Free-text messages are for humans scanning logs — structured fields are for querying, dashboards, and automated analysis.
+
+---
+
+## 15. Graceful Degradation
+
+The daemon must survive any single component failure. A plugin crash, a temporary DB lock, an LLM timeout — none of these should take down the system.
+
+### Degrade, Don't Crash
+
+When a dependency fails, reduce capability instead of terminating. A failed trigger plugin means no new events from that source — not a dead daemon. A failed LLM call means the current phase retries or pauses — not an orphaned task.
+
+### Log the Degradation
+
+Every degradation emits a `warn`-level log and a health event. The log captures: what failed, what capability is reduced, and when recovery will be attempted. Silent degradation is invisible degradation — and invisible degradation is a bug.
+
+```typescript
+observer.warn("Plugin health check failed — disabling until recovery", {
+  pluginId,
+  capability: "trigger polling",
+  retryIn: backoff.nextAttemptMs,
+});
+```
+
+### Auto-Recover
+
+When the failed dependency returns, the system resumes full capability without manual intervention. Health checks drive recovery — when a plugin's `healthCheck()` succeeds again, re-enable it and log the recovery at `info` level.
 
 ---
 

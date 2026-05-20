@@ -25,15 +25,53 @@ This file answers one question: **where are we right now?** Nothing more.
 **State:** Phase 4 complete (Session 14). CLI restructured — `commands/start/` groups 6 files, shutdown handler extracted, "Structure Reveals Intent" standard added. Phase 5 is next.
 **Plan:** `.claude/temp/create-plan/slice-04-startup.md` — 5 phases, panel-reviewed, 11 decisions.
 
-**Next step — Phase 5 (Coding Standards Audit).** Read `slices/04-startup.md` and the plan,
-then: full standards sweep of all in-scope files (restructured `src/cli/`, `src/config/`,
-`src/plugins/loader.ts`, `src/plugins/builtin.ts`). Newspaper order, `function` declarations,
-return-type annotations, JSDoc on exports, guard clauses, `import type` separation. Rename
-abbreviations (`clr`→`colorize`, `wsRoot`→`workspaceRoot`). Fix doctor.ts orphaned JSDoc +
-stale numbering. CLI version from `package.json` + "Single Source of Truth" standard. Fix
-stale docs (`configuration/README.md`, `github-trigger.md`). Final green sweep.
+**What just happened (current session):**
+- Reviewed all four governance docs (AGENT-README, philosophy.md, coding-standards.md, anti-patterns.md)
+- Full review saved to `docs-review-notes.md` (root, uncommitted) — findings on redundancy,
+  aspirational vs. current-state tension, cross-document gaps. Come back to this later.
+- Added 7 new subsections to `docs/coding-standards.md`:
+  - Section 4: Immutability by Default, Parse Don't Validate
+  - Section 5: Propagation Through Boundaries, Cause Chains, Error Categorization (expanded)
+  - Section 7: Modularity framing (opening paragraph)
+  - New sections 12-15: Logging, Async Discipline, Observability & Tracing, Graceful Degradation
+- Research identified infrastructure gaps (logging/tracing/error handling) — see gap list below
 
-**Remaining slice phases:** 5 Coding Standards Audit. One focused session.
+**Next step — Session N+1: Infrastructure Gap Fixes (one session).**
+Address gaps found between the new standards and the existing observability/error infrastructure.
+Read `docs-review-notes.md` (root) for full gap analysis from the Explore agent research.
+
+Specific gaps to fix:
+- Log-to-trace correlation: thread `trace_id` into every pino log message via observer facade
+- Error cause chains: audit catch blocks, ensure `cause` is always preserved (not just message)
+- Error categorization: add `retryable` boolean to domain error hierarchies
+- Floating promise audit: find and fix unhandled async calls across the codebase
+- Span-to-log correlation: embed span context in pino output
+- Graceful degradation: verify plugin failures don't crash daemon, add recovery logging
+
+**Session N+2: Phase 5 — New Standards Audit (one session).**
+The original coding standards (sections 1-11) were already applied across all slice 4 in-scope
+files during Phases 1-4 (Sessions 10-14): newspaper order, `function` declarations, return-type
+annotations, JSDoc on exports, guard clauses, `import type` separation, abbreviation renames,
+doctor.ts fixes, CLI version from `package.json`, stale doc fixes — all addressed.
+
+This final audit is exclusively for the **new standards added this session**:
+- Section 4 additions: immutability by default (`readonly`, `as const`, no parameter mutation),
+  parse-don't-validate (validation at boundaries, trust types inward)
+- Section 5 additions: error propagation through three-tier boundaries, cause chains always
+  preserved, error categorization with `retryable` flag
+- Section 7 addition: modularity framing (module understandable without external context)
+- Section 12: logging — decisions not actions, structured data, level discipline
+- Section 13: async discipline — no floating promises, bounded parallel, cleanup
+- Section 14: observability — span lifecycle, trace correlation, record decisions explicitly
+- Section 15: graceful degradation — degrade don't crash, log it, auto-recover
+- In-scope files: `src/cli/`, `src/config/`, `src/plugins/loader.ts`, `src/plugins/builtin.ts`
+- **Bootstrap boundary matters:** `src/cli/` and `src/config/` run before the observer exists —
+  logging (§12), tracing (§14), and span lifecycle do NOT apply there. Focus on error handling,
+  immutability, async discipline, parse-don't-validate, and graceful degradation for pre-bootstrap
+  code. `src/plugins/loader.ts` and `src/plugins/builtin.ts` run post-bootstrap — all standards apply.
+- Final green sweep (build + lint + tests)
+
+**Remaining:** Infrastructure gaps (1 session) + New Standards Audit (1 session).
 
 **Slice 4 decisions (Session 9):**
 - Getting-started: new `pnpm run setup` → `scripts/setup.sh` (confirm + install + build + link), then `engineer start`

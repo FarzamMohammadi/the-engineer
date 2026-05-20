@@ -26,10 +26,10 @@ import { registerShutdownHandlers } from "./shutdown.js";
 
 /** Options controlling how the daemon starts (foreground/background, dry-run, seeded setup). */
 interface StartOptions {
-  daemon: boolean;
-  verbose: boolean;
-  dryRun: boolean;
-  seedPath?: string;
+  readonly daemon: boolean;
+  readonly verbose: boolean;
+  readonly dryRun: boolean;
+  readonly seedPath?: string | undefined;
 }
 
 // ── Main Entry Point ─────────────────────────────────────────────────────────
@@ -301,14 +301,11 @@ async function handleFirstRunSetup(engineerHome: string, options: StartOptions):
     return 1;
   }
 
-  const setupOpts: Parameters<typeof runFirstTimeSetup>[0] = { engineerHome };
-  if (options.seedPath) {
-    setupOpts.seedPath = options.seedPath;
-  }
-  if (options.dryRun) {
-    setupOpts.dryRun = true;
-  }
-  const completed = await runFirstTimeSetup(setupOpts);
+  const completed = await runFirstTimeSetup({
+    engineerHome,
+    seedPath: options.seedPath,
+    dryRun: options.dryRun,
+  });
   if (!completed) {
     out.log("Setup cancelled. Run 'engineer start' to try again.");
     return 0;
@@ -343,7 +340,9 @@ function ensureDirectories(dirs: EngineerDirectories): void {
       mkdirSync(dirPath, { recursive: true, mode: 0o700 });
     } catch (error) {
       const message = sanitizeErrorMessage(error);
-      throw new Error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`);
+      throw new Error(`Cannot create directory "${dirPath}": ${message}. Check file permissions.`, {
+        cause: error,
+      });
     }
   }
 }

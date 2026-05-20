@@ -6,13 +6,13 @@ export type OperatingSystemSupport = "full" | "preview" | "unsupported";
 /** Result of the OS detection gate — what was detected and what the user is told. */
 export interface OperatingSystemInfo {
   /** Raw Node.js platform value (e.g., "darwin", "linux", "win32"). */
-  platform: NodeJS.Platform;
+  readonly platform: NodeJS.Platform;
   /** Human-friendly label (e.g., "macOS", "Linux", "Windows"). */
-  label: string;
+  readonly label: string;
   /** Support classification for the gate logic. */
-  support: OperatingSystemSupport;
+  readonly support: OperatingSystemSupport;
   /** One-line message shown to the user during setup. */
-  message: string;
+  readonly message: string;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────

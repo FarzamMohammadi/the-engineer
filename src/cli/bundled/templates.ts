@@ -688,12 +688,12 @@ cli_path: gemini                            # Path to gemini CLI binary (default
 
 /** A bundled template — relative path under ENGINEER_HOME and the file content to write. */
 export interface TemplateFile {
-  relativePath: string;
-  content: string;
+  readonly relativePath: string;
+  readonly content: string;
 }
 
 /** All template files in the order they should be created. */
-export const ALL_TEMPLATES: TemplateFile[] = [
+export const ALL_TEMPLATES: readonly TemplateFile[] = [
   // Core configs
   { relativePath: "config/daemon.yaml", content: DAEMON_TEMPLATE },
   { relativePath: "config/orchestrator.yaml", content: ORCHESTRATOR_TEMPLATE },
@@ -711,7 +711,7 @@ export const ALL_TEMPLATES: TemplateFile[] = [
 ];
 
 /** Fully documented example templates — written to ~/.engineer/example-templates/. */
-export const ALL_EXAMPLE_TEMPLATES: TemplateFile[] = [
+export const ALL_EXAMPLE_TEMPLATES: readonly TemplateFile[] = [
   { relativePath: "example-templates/daemon.yaml", content: EXAMPLE_DAEMON },
   { relativePath: "example-templates/orchestrator.yaml", content: EXAMPLE_ORCHESTRATOR },
   { relativePath: "example-templates/safety.yaml", content: EXAMPLE_SAFETY },

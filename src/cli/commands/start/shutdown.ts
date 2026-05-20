@@ -2,12 +2,12 @@ import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
 
 /** Dependencies required for shutdown signal handling. */
 interface ShutdownDependencies {
-  daemon: { stop(): Promise<void> };
-  observer?: {
+  readonly daemon: { stop(): Promise<void> };
+  readonly observer?: {
     info(message: string, data?: Record<string, unknown>): void;
     recordError(error: unknown, context: Record<string, unknown>): void;
   };
-  cleanup(): void;
+  readonly cleanup: () => void;
 }
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;

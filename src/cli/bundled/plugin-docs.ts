@@ -4,8 +4,8 @@
 // Escape rules when copying from .md: backticks (` → \`) and ${} (${ → \${).
 
 export interface PluginDoc {
-  relativePath: string;
-  content: string;
+  readonly relativePath: string;
+  readonly content: string;
 }
 
 const TRIGGER_README = `# Trigger Adapter
@@ -1930,7 +1930,7 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 | \`github-comm\` | Posts comments and manages labels on the same issues/PRs. Shares \`GITHUB_TOKEN\`. |
 `;
 
-export const ALL_PLUGIN_DOCS: PluginDoc[] = [
+export const ALL_PLUGIN_DOCS: readonly PluginDoc[] = [
   { relativePath: "docs/plugins/trigger/README.md", content: TRIGGER_README },
   { relativePath: "docs/plugins/trigger/github-trigger.md", content: TRIGGER_GITHUB_TRIGGER },
   { relativePath: "docs/plugins/llm/README.md", content: LLM_README },

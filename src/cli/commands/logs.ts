@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { getOutput } from "../output.js";
 
 interface LogsOptions {
-  json: boolean;
-  lines: number;
-  follow: boolean;
+  readonly json: boolean;
+  readonly lines: number;
+  readonly follow: boolean;
 }
 
 /** Displays log output. Returns exit code. */

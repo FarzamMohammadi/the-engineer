@@ -9,12 +9,12 @@ import { getOutput } from "../output.js";
 // ── Row Types ────────────────────────────────────────────────────────────────
 
 interface TaskRow {
-  id: string;
-  state: string;
-  sub_state: string | null;
-  title: string;
-  blocked: string | null;
-  not_before: string | null;
+  readonly id: string;
+  readonly state: string;
+  readonly sub_state: string | null;
+  readonly title: string;
+  readonly blocked: string | null;
+  readonly not_before: string | null;
 }
 
 // ── Command ──────────────────────────────────────────────────────────────────

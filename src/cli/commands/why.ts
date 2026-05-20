@@ -8,47 +8,47 @@ import { getOutput } from "../output.js";
 // ── Row Types ────────────────────────────────────────────────────────────────
 
 interface TaskRow {
-  id: string;
-  state: string;
-  sub_state: string | null;
-  priority: number;
-  title: string;
-  description: string | null;
-  repo: string | null;
-  created_at: string;
-  llm_tokens: number;
-  llm_cost_usd: number;
+  readonly id: string;
+  readonly state: string;
+  readonly sub_state: string | null;
+  readonly priority: number;
+  readonly title: string;
+  readonly description: string | null;
+  readonly repo: string | null;
+  readonly created_at: string;
+  readonly llm_tokens: number;
+  readonly llm_cost_usd: number;
 }
 
 interface TransitionRow {
-  from_state: string;
-  to_state: string;
-  reason: string | null;
-  triggered_by: string | null;
-  timestamp: string;
+  readonly from_state: string;
+  readonly to_state: string;
+  readonly reason: string | null;
+  readonly triggered_by: string | null;
+  readonly timestamp: string;
 }
 
 interface EventRow {
-  type: string;
-  source: string | null;
-  timestamp: string;
-  payload: string | null;
+  readonly type: string;
+  readonly source: string | null;
+  readonly timestamp: string;
+  readonly payload: string | null;
 }
 
 interface JournalRow {
-  type: string;
-  summary: string;
-  detail: string | null;
-  phase: string;
-  timestamp: string;
+  readonly type: string;
+  readonly summary: string;
+  readonly detail: string | null;
+  readonly phase: string;
+  readonly timestamp: string;
 }
 
 // ── Timeline Entry ───────────────────────────────────────────────────────────
 
 interface TimelineEntry {
-  timestamp: string;
-  kind: "transition" | "event";
-  summary: string;
+  readonly timestamp: string;
+  readonly kind: "transition" | "event";
+  readonly summary: string;
 }
 
 // ── Command ──────────────────────────────────────────────────────────────────

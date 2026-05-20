@@ -21,16 +21,16 @@ import { resolveDirectories } from "../home.js";
 
 /** Result of a single health check: status, human-readable message, and optional remedy. */
 export interface DoctorCheck {
-  label: string;
-  status: "pass" | "fail" | "warn";
-  message: string;
-  remedy?: string;
+  readonly label: string;
+  readonly status: "pass" | "fail" | "warn";
+  readonly message: string;
+  readonly remedy?: string;
 }
 
 /** A group of related health checks, named by the area of the system being verified. */
 export interface DoctorCategory {
-  category: string;
-  checks: DoctorCheck[];
+  readonly category: string;
+  readonly checks: DoctorCheck[];
 }
 
 // ── Aggregation ──────────────────────────────────────────────────────────────

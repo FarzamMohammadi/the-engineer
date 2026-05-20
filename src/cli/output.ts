@@ -8,9 +8,9 @@ export type OutputMode = "human" | "json";
 /** Construction options for the {@link Output} singleton. */
 export interface OutputOptions {
   /** Force a specific mode. Default: "human". */
-  mode?: OutputMode;
+  readonly mode?: OutputMode;
   /** Force color on/off. Auto-detected if not set. */
-  color?: boolean;
+  readonly color?: boolean;
 }
 
 // ── Output Class ─────────────────────────────────────────────────────────────

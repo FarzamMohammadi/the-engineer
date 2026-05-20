@@ -27,11 +27,11 @@ import { SecureValue } from "../../../utils/secure-value.js";
 
 /** Result of bootstrapping all components. */
 export interface BootstrapResult {
-  daemon: Daemon;
-  observer: IObserver;
-  cleanup: () => void;
+  readonly daemon: Daemon;
+  readonly observer: IObserver;
+  readonly cleanup: () => void;
   /** Startup hints collected from loaded plugins. */
-  hints: Array<{ pluginName: string; message: string }>;
+  readonly hints: Array<{ readonly pluginName: string; readonly message: string }>;
 }
 
 /** Progress callback for startup spinners. */
@@ -39,10 +39,10 @@ export type ProgressCallback = (step: string, status: "start" | "done" | "error"
 
 /** Options for the bootstrap function. */
 export interface BootstrapOptions {
-  engineerHome: string;
-  config: ConfigBundle;
-  verbose?: boolean;
-  progress?: ProgressCallback;
+  readonly engineerHome: string;
+  readonly config: ConfigBundle;
+  readonly verbose?: boolean;
+  readonly progress?: ProgressCallback;
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────

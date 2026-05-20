@@ -7,8 +7,8 @@ import { getOutput } from "../output.js";
 import { isProcessRunning, readPidFile } from "../pid.js";
 
 interface TaskCountRow {
-  state: string;
-  count: number;
+  readonly state: string;
+  readonly count: number;
 }
 
 /** Shows daemon status and task queue info. Returns exit code. */

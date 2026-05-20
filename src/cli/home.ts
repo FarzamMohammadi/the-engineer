@@ -18,14 +18,14 @@ export function resolveEngineerHome(flagValue?: string): string {
 
 /** Standard subdirectory paths under ENGINEER_HOME. */
 export interface EngineerDirectories {
-  config: string;
-  plugins: string;
-  data: string;
-  logs: string;
-  run: string;
-  workspaces: string;
-  traces: string;
-  examples: string;
+  readonly config: string;
+  readonly plugins: string;
+  readonly data: string;
+  readonly logs: string;
+  readonly run: string;
+  readonly workspaces: string;
+  readonly traces: string;
+  readonly examples: string;
 }
 
 /** Returns all standard subdirectory paths under ENGINEER_HOME. */

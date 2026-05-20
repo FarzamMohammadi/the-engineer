@@ -58,33 +58,35 @@ export class ValidationError extends ConfigError {
 
 /** Result of loading a single config file — the parsed value plus where it came from. */
 export interface ConfigLoadResult<T> {
-  config: T;
-  source: "file" | "defaults";
-  filePath: string;
+  readonly config: T;
+  readonly source: "file" | "defaults";
+  readonly filePath: string;
 }
 
 /** Result of a non-throwing reload: either a parsed config or a {@link ConfigError}. */
-export type ConfigReloadResult<T> = { ok: true; config: T } | { ok: false; error: ConfigError };
+export type ConfigReloadResult<T> =
+  | { readonly ok: true; readonly config: T }
+  | { readonly ok: false; readonly error: ConfigError };
 
 /** The full set of validated config sections, loaded together for daemon startup. */
 export interface ConfigBundle {
-  daemon: DaemonConfig;
-  orchestrator: OrchestratorConfig;
-  workspace: WorkspaceConfig;
-  safety: SafetyConfig;
-  people: Person[];
+  readonly daemon: DaemonConfig;
+  readonly orchestrator: OrchestratorConfig;
+  readonly workspace: WorkspaceConfig;
+  readonly safety: SafetyConfig;
+  readonly people: Person[];
 }
 
 /** Non-fatal note surfaced during config directory loading (e.g., missing optional file). */
 export interface ConfigWarning {
-  file: string;
-  message: string;
+  readonly file: string;
+  readonly message: string;
 }
 
 /** Output of {@link loadConfigDir} — the validated bundle plus any non-fatal warnings. */
 export interface ConfigDirResult {
-  bundle: ConfigBundle;
-  warnings: ConfigWarning[];
+  readonly bundle: ConfigBundle;
+  readonly warnings: ConfigWarning[];
 }
 
 // ── Config Directory Loading ─────────────────────────────────────────────────
@@ -280,9 +282,9 @@ export function parseDurations(obj: unknown, schema: z.ZodTypeAny): unknown {
  * object/record node with children.
  */
 type PathNode =
-  | { type: "number" }
-  | { type: "object"; children: Record<string, PathNode> }
-  | { type: "record"; valueNode: PathNode };
+  | { readonly type: "number" }
+  | { readonly type: "object"; readonly children: Record<string, PathNode> }
+  | { readonly type: "record"; readonly valueNode: PathNode };
 
 /**
  * Walks a Zod schema to build a tree of paths where number fields exist.

@@ -20,15 +20,15 @@ export type { AdapterTypeConfig, DetectionResult } from "./types.js";
 
 /** A config file to be written to ENGINEER_HOME — a relative path and its content. */
 export interface GeneratedFile {
-  relativePath: string;
-  content: string;
+  readonly relativePath: string;
+  readonly content: string;
 }
 
 /** Options for {@link runFirstTimeSetup} — target home directory, optional seed path, optional dry-run mode. */
 export interface SetupOptions {
-  engineerHome: string;
-  seedPath?: string;
-  dryRun?: boolean;
+  readonly engineerHome: string;
+  readonly seedPath?: string | undefined;
+  readonly dryRun?: boolean | undefined;
 }
 
 // ── Adapter Type Configuration ───────────────────────────────────────────────
@@ -197,7 +197,7 @@ async function showOperatingSystemGate(isInteractive: boolean): Promise<boolean>
 // ── Non-Interactive Setup ────────────────────────────────────────────────────
 
 /** Known placeholder values that indicate people.yaml was never configured. */
-const PEOPLE_PLACEHOLDERS = ["your_telegram_username", "your-github-username", "Your Name"];
+const PEOPLE_PLACEHOLDERS = ["your_telegram_username", "your-github-username", "Your Name"] as const;
 
 function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: boolean): boolean {
   const out = getOutput();

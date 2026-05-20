@@ -90,15 +90,12 @@ program
   .action(async (options: { daemon?: boolean; dryRun?: boolean; seed?: string }) => {
     const globals = program.opts<{ home?: string; verbose?: boolean }>();
     const home = resolveEngineerHome(globals.home);
-    const startOptions: Parameters<typeof runStart>[1] = {
+    const code = await runStart(home, {
       daemon: options.daemon ?? false,
       verbose: globals.verbose ?? false,
       dryRun: options.dryRun ?? false,
-    };
-    if (options.seed) {
-      startOptions.seedPath = options.seed;
-    }
-    const code = await runStart(home, startOptions);
+      seedPath: options.seed,
+    });
     if (code !== 0) {
       process.exitCode = code;
     }
@@ -174,7 +171,11 @@ program
       const result = loadConfigDir(dirs.config);
       bundle = result.bundle;
     } catch {
-      // Config loading failed — skip category 9, other checks still run
+      // Config loading failed — other checks still run, but the user should know
+      // category 9 (risky config warnings) was skipped.
+      if (out.mode !== "json") {
+        out.warn("Config loading failed — skipping risky-config checks. Other categories still run.");
+      }
     }
 
     const categories = runAllChecks(home, bundle);

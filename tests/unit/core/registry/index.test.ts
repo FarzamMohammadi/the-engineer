@@ -10,6 +10,7 @@ import { FakeTriggerPlugin } from "../../../helpers/fake-plugins/fake-trigger/in
 import { createMockManifest } from "../../../helpers/mock-factories.js";
 import { type TestEventBusHandle, createTestEventBus } from "../../../helpers/test-event-bus.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
+import { createTestStateStoreFactory } from "../../../helpers/test-state-store.js";
 
 // ── Test Helpers ──────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ function createTestRegistry(
   return new Registry({
     eventBus: handle.eventBus,
     observer: createTestObserverFacade("registry"),
+    createStateStore: createTestStateStoreFactory(),
     healthCheckIntervalMs: 60_000,
     healthCheckTimeoutMs: 1_000,
     consecutiveFailuresThreshold: 3,

@@ -95,6 +95,13 @@ export interface IObserver {
   // ── Child creation ──────────────────────────────────────────────────
   child(component: ComponentTag): IObserver;
 
+  /**
+   * Return a child observer for a plugin, tagged `component: "plugin"` with
+   * `plugin_id` bound into every log line. Core stamps the id — the plugin
+   * never self-tags — so plugin logs are always attributable and queryable.
+   */
+  childPlugin(pluginId: string): IObserver;
+
   /** Return a child observer with trace_id bound into every pino log line. */
   withTrace(traceId: string): IObserver;
 
@@ -108,9 +115,9 @@ export class Observer implements IObserver {
   readonly pino: Logger;
   private readonly ctx: SharedContext;
 
-  constructor(ctx: SharedContext, component: ComponentTag) {
+  constructor(ctx: SharedContext, component: ComponentTag, bindings?: Record<string, unknown>) {
     this.ctx = ctx;
-    this.pino = ctx.rootPino.child({ component });
+    this.pino = ctx.rootPino.child(bindings ? { component, ...bindings } : { component });
   }
 
   // ── Logging ─────────────────────────────────────────────────────────
@@ -195,6 +202,10 @@ export class Observer implements IObserver {
 
   child(component: ComponentTag): IObserver {
     return new Observer(this.ctx, component);
+  }
+
+  childPlugin(pluginId: string): IObserver {
+    return new Observer(this.ctx, "plugin", { plugin_id: pluginId });
   }
 
   withTrace(traceId: string): IObserver {
@@ -306,6 +317,11 @@ class TracedObserver implements IObserver {
 
   child(component: ComponentTag): IObserver {
     const childPino = this.ctx.rootPino.child({ component, trace_id: this.traceId });
+    return new TracedObserver({ ...this.ctx }, childPino, this.traceId);
+  }
+
+  childPlugin(pluginId: string): IObserver {
+    const childPino = this.ctx.rootPino.child({ component: "plugin", plugin_id: pluginId, trace_id: this.traceId });
     return new TracedObserver({ ...this.ctx }, childPino, this.traceId);
   }
 

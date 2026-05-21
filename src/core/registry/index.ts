@@ -1,4 +1,4 @@
-import type { BaseAdapter } from "../../adapters/base.js";
+import type { BaseAdapter, StateStore } from "../../adapters/base.js";
 import type {
   AdapterType,
   InitResult,
@@ -49,6 +49,8 @@ export const EVENTS: EventDeclaration[] = [
 export interface RegistryOptions {
   eventBus: IEventBus;
   observer: IObserver;
+  /** Builds a per-plugin state store. Injected so the Registry stays decoupled from the database. */
+  createStateStore: (pluginId: string) => StateStore;
   healthCheckIntervalMs?: number;
   healthCheckTimeoutMs?: number;
   consecutiveFailuresThreshold?: number;
@@ -68,11 +70,13 @@ export class Registry implements IPluginLookup {
   private readonly lifecycle;
   private readonly healthMonitor;
   private readonly observer: IObserver;
+  private readonly createStateStore: (pluginId: string) => StateStore;
   private readonly healthCheckIntervalMs: number;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: RegistryOptions) {
     this.observer = options.observer;
+    this.createStateStore = options.createStateStore;
     this.lifecycle = createLifecycleManager(options.observer);
     this.healthCheckIntervalMs = options.healthCheckIntervalMs ?? 60_000;
     this.healthMonitor = createPluginHealthMonitor({
@@ -88,7 +92,10 @@ export class Registry implements IPluginLookup {
   // ── Registration ───────────────────────────────────────────────────────
 
   register(manifest: PluginManifest, instance: BaseAdapter): RegistrationResult {
-    instance.observer = this.observer.child("plugin-loader");
+    instance.context = {
+      logger: this.observer.childPlugin(manifest.id),
+      stateStore: this.createStateStore(manifest.id),
+    };
     return this.lifecycle.register(manifest, instance);
   }
 

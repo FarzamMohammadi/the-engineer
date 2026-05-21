@@ -12,6 +12,7 @@ import {
   ReviewStatusSchema,
 } from "../../../src/schemas/adapters.js";
 import { SecureValue } from "../../../src/utils/secure-value.js";
+import { createTestPluginContext } from "../test-plugin-context.js";
 
 export interface GitHostingContractFixtures {
   validConfig: Record<string, unknown>;
@@ -36,6 +37,7 @@ export function runGitHostingContractSuite(
     beforeEach(() => {
       adapter = factory();
       adapter.manifest = fixtures.manifest;
+      adapter.context = createTestPluginContext(fixtures.manifest.id);
     });
 
     // ── Lifecycle ────────────────────────────────────────────────────────

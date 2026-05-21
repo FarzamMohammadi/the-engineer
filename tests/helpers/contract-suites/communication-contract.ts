@@ -7,6 +7,7 @@ import {
   SendResultSchema,
   type Target,
 } from "../../../src/schemas/adapters.js";
+import { createTestPluginContext } from "../test-plugin-context.js";
 
 export interface CommunicationContractFixtures {
   validConfig: Record<string, unknown>;
@@ -31,6 +32,7 @@ export function runCommunicationContractSuite(
     beforeEach(() => {
       adapter = factory();
       adapter.manifest = fixtures.manifest;
+      adapter.context = createTestPluginContext(fixtures.manifest.id);
     });
 
     // ── Lifecycle ────────────────────────────────────────────────────────

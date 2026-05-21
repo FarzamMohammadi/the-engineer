@@ -9,6 +9,7 @@ import {
 import type { FormattedMessage, PluginManifest, Target } from "../../../../../src/schemas/adapters.js";
 import { MessageTypes } from "../../../../../src/schemas/adapters.js";
 import { runCommunicationContractSuite } from "../../../../helpers/contract-suites/communication-contract.js";
+import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
 // ── Mock Bot ─────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ describe("TelegramCommPlugin", () => {
   beforeEach(async () => {
     plugin = new TelegramCommPlugin();
     plugin.manifest = MANIFEST;
+    plugin.context = createTestPluginContext();
     mockBot = createMockBot();
     await plugin.initialize(VALID_CONFIG);
     (plugin as unknown as { bot: unknown }).bot = mockBot;
@@ -159,6 +161,7 @@ describe("TelegramCommPlugin", () => {
     it("formats with HTML when parse_mode is HTML", async () => {
       const htmlPlugin = new TelegramCommPlugin();
       htmlPlugin.manifest = MANIFEST;
+      htmlPlugin.context = createTestPluginContext();
       await htmlPlugin.initialize({
         ...VALID_CONFIG,
         parse_mode: "HTML",
@@ -171,6 +174,7 @@ describe("TelegramCommPlugin", () => {
     it("formats with legacy Markdown when parse_mode is Markdown", async () => {
       const mdPlugin = new TelegramCommPlugin();
       mdPlugin.manifest = MANIFEST;
+      mdPlugin.context = createTestPluginContext();
       await mdPlugin.initialize({
         ...VALID_CONFIG,
         parse_mode: "Markdown",
@@ -288,6 +292,7 @@ describe("TelegramCommPlugin", () => {
     it("rejects missing bot_token", async () => {
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const result = await p.initialize({});
       expect(result.success).toBe(false);
     });
@@ -295,6 +300,7 @@ describe("TelegramCommPlugin", () => {
     it("applies default parse_mode (MarkdownV2)", async () => {
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       await p.initialize(VALID_CONFIG);
       expect((p as unknown as { config: { parse_mode: string } }).config.parse_mode).toBe("MarkdownV2");
     });
@@ -302,6 +308,7 @@ describe("TelegramCommPlugin", () => {
     it("applies default disable_link_preview (true)", async () => {
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       await p.initialize(VALID_CONFIG);
       expect((p as unknown as { config: { disable_link_preview: boolean } }).config.disable_link_preview).toBe(true);
     });
@@ -309,6 +316,7 @@ describe("TelegramCommPlugin", () => {
     it("accepts custom parse_mode", async () => {
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const result = await p.initialize({ ...VALID_CONFIG, parse_mode: "HTML" });
       expect(result.success).toBe(true);
       expect((p as unknown as { config: { parse_mode: string } }).config.parse_mode).toBe("HTML");
@@ -339,6 +347,7 @@ describe("TelegramCommPlugin", () => {
       // Create a fresh plugin and load
       const p2 = new TelegramCommPlugin();
       p2.manifest = MANIFEST;
+      p2.context = createTestPluginContext();
       (p2 as unknown as { loadChatMap: () => void }).loadChatMap();
 
       const map = (p2 as unknown as { userChatMap: Map<string, string> }).userChatMap;
@@ -350,6 +359,7 @@ describe("TelegramCommPlugin", () => {
 
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       // Should not throw
       (p as unknown as { loadChatMap: () => void }).loadChatMap();
       const map = (p as unknown as { userChatMap: Map<string, string> }).userChatMap;
@@ -374,6 +384,7 @@ describe("TelegramCommPlugin", () => {
     it("captures username → chat_id from /start during init", async () => {
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
 
       // Mock Bot constructor to inject our mock before init runs
       const mock = createMockBot();
@@ -409,6 +420,7 @@ describe("TelegramCommPlugin", () => {
       // Re-init with people data
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const mock = createMockBot();
       (mock.api as unknown as { getUpdates: ReturnType<typeof vi.fn> }).getUpdates = vi.fn().mockResolvedValue([]);
 

@@ -10,6 +10,7 @@ import type { FormattedMessage, PluginManifest, Target } from "../../../../../sr
 import { MessageTypes } from "../../../../../src/schemas/adapters.js";
 import { TaskStates } from "../../../../../src/schemas/task.js";
 import { runCommunicationContractSuite } from "../../../../helpers/contract-suites/communication-contract.js";
+import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
 // ── Mock Octokit ────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ describe("GitHubCommPlugin", () => {
   beforeEach(async () => {
     plugin = new GitHubCommPlugin();
     plugin.manifest = MANIFEST;
+    plugin.context = createTestPluginContext();
     mockOctokit = createMockOctokit();
     await plugin.initialize(VALID_CONFIG);
     (plugin as unknown as { octokit: unknown }).octokit = mockOctokit;
@@ -327,6 +329,7 @@ describe("GitHubCommPlugin", () => {
     it("rejects missing github_token", async () => {
       const p = new GitHubCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const result = await p.initialize({});
       expect(result.success).toBe(false);
     });
@@ -334,6 +337,7 @@ describe("GitHubCommPlugin", () => {
     it("applies default label_prefix", async () => {
       const p = new GitHubCommPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       await p.initialize(VALID_CONFIG);
       expect((p as unknown as { config: { label_prefix: string } }).config.label_prefix).toBe("engineer:");
     });

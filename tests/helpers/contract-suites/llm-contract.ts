@@ -6,6 +6,7 @@ import {
   LLMCapabilitiesSchema,
   type PluginManifest,
 } from "../../../src/schemas/adapters.js";
+import { createTestPluginContext } from "../test-plugin-context.js";
 
 export interface LLMContractFixtures {
   validConfig: Record<string, unknown>;
@@ -27,6 +28,7 @@ export function runLLMContractSuite(factory: () => LLMAdapter, fixtures: LLMCont
     beforeEach(() => {
       adapter = factory();
       adapter.manifest = fixtures.manifest;
+      adapter.context = createTestPluginContext(fixtures.manifest.id);
     });
 
     // ── Lifecycle ────────────────────────────────────────────────────────

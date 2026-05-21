@@ -19,7 +19,7 @@ export type ComponentTag =
   | "config"
   | "cli"
   | "action-pipeline"
-  | "hooks"
+  | "plugin"
   | "observer"
   | "pr-manager"
   | "phase-runner"

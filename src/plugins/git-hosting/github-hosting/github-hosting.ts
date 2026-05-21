@@ -1,7 +1,6 @@
 import { Octokit } from "@octokit/rest";
 import { AdapterMethodError } from "../../../adapters/errors.js";
 import {
-  type AdapterObserver,
   type BranchProtection,
   type CommentResult,
   GitHostingAdapter,
@@ -21,22 +20,6 @@ import { injectAuth } from "../../../utils/git-url.js";
 import { SecureValue } from "../../../utils/secure-value.js";
 import { type GitHubHostingConfig, GitHubHostingConfigSchema } from "./config.js";
 
-/** No-op observer for when the real observer is not injected. */
-const SILENT: AdapterObserver = {
-  debug() {
-    /* no-op */
-  },
-  info() {
-    /* no-op */
-  },
-  warn() {
-    /* no-op */
-  },
-  error() {
-    /* no-op */
-  },
-};
-
 /**
  * GitHubHostingPlugin — PR lifecycle management via GitHub API.
  *
@@ -47,14 +30,9 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
   private config!: GitHubHostingConfig;
   protected octokit!: Octokit;
 
-  /** Typed observer accessor — safe even when observer is not injected. */
-  private get obs(): AdapterObserver {
-    return (this.observer as AdapterObserver | undefined) ?? SILENT;
-  }
-
   protected async doCreatePR(options: PROptions): Promise<PRResult> {
     const [owner, repo] = splitRepo(options.repo);
-    this.obs.info("Creating PR", {
+    this.context.logger.info("Creating PR", {
       repo: options.repo,
       branch: options.branch,
       base: options.base,
@@ -91,7 +69,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       });
     }
 
-    this.obs.info("PR created", {
+    this.context.logger.info("PR created", {
       repo: options.repo,
       prNumber: data.number,
       url: data.html_url,
@@ -104,7 +82,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 
   protected async doUpdatePR(repo: string, prNumber: number, updates: PRUpdates): Promise<void> {
     const [owner, repoName] = splitRepo(repo);
-    this.obs.info("Updating PR", {
+    this.context.logger.info("Updating PR", {
       repo,
       prNumber,
       hasTitle: updates.title !== null,
@@ -159,7 +137,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 
   protected async doMergePR(repo: string, prNumber: number, strategy: MergeStrategy): Promise<MergeResult> {
     const [owner, repoName] = splitRepo(repo);
-    this.obs.info("Merging PR", { repo, prNumber, strategy });
+    this.context.logger.info("Merging PR", { repo, prNumber, strategy });
 
     try {
       const { data } = await this.octokit.pulls.merge({
@@ -168,7 +146,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         pull_number: prNumber,
         merge_method: strategy,
       });
-      this.obs.info("PR merged", { repo, prNumber, sha: data.sha });
+      this.context.logger.info("PR merged", { repo, prNumber, sha: data.sha });
       return {
         merge_sha: data.sha,
         success: true,
@@ -176,7 +154,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       };
     } catch (error) {
       const code = classifyMergeError(error);
-      this.obs.warn("PR merge failed", {
+      this.context.logger.warn("PR merge failed", {
         repo,
         prNumber,
         errorCode: code,
@@ -194,14 +172,14 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 
   protected async doClosePR(repo: string, prNumber: number): Promise<void> {
     const [owner, repoName] = splitRepo(repo);
-    this.obs.info("Closing PR", { repo, prNumber });
+    this.context.logger.info("Closing PR", { repo, prNumber });
     await this.octokit.pulls.update({
       owner,
       repo: repoName,
       pull_number: prNumber,
       state: "closed",
     });
-    this.obs.info("PR closed", { repo, prNumber });
+    this.context.logger.info("PR closed", { repo, prNumber });
   }
 
   protected async doGetPRStatus(repo: string, prNumber: number): Promise<PRStatus> {
@@ -215,7 +193,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha);
     const state = mapPRState(pr.state, pr.merged);
 
-    this.obs.debug("PR status fetched", {
+    this.context.logger.debug("PR status fetched", {
       repo,
       prNumber,
       state,
@@ -243,7 +221,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     });
 
     const status = aggregateReviews(reviews);
-    this.obs.debug("Review status fetched", {
+    this.context.logger.debug("Review status fetched", {
       repo,
       prNumber,
       approved: status.approved,
@@ -271,7 +249,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         comment_id: Number.parseInt(replyTo, 10),
         body: comment,
       });
-      this.obs.debug("Review reply posted", { repo, prNumber, commentId: data.id, replyTo });
+      this.context.logger.debug("Review reply posted", { repo, prNumber, commentId: data.id, replyTo });
       return { comment_id: String(data.id), url: data.html_url };
     }
 
@@ -282,7 +260,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       issue_number: prNumber,
       body: comment,
     });
-    this.obs.debug("PR comment posted", { repo, prNumber, commentId: data.id });
+    this.context.logger.debug("PR comment posted", { repo, prNumber, commentId: data.id });
     return { comment_id: String(data.id), url: data.html_url };
   }
 
@@ -322,7 +300,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       }));
 
     const total = conversation.length + inline.length;
-    this.obs.debug("PR comments fetched", {
+    this.context.logger.debug("PR comments fetched", {
       repo,
       prNumber,
       conversation: conversation.length,
@@ -343,7 +321,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     const approvedReviews = reviews.filter((r) => r.state.toUpperCase() === "APPROVED");
 
     if (approvedReviews.length === 0) {
-      this.obs.debug("No approvals to dismiss", { repo, prNumber });
+      this.context.logger.debug("No approvals to dismiss", { repo, prNumber });
       return;
     }
 
@@ -357,7 +335,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       });
     }
 
-    this.obs.info("Stale approvals dismissed", {
+    this.context.logger.info("Stale approvals dismissed", {
       repo,
       prNumber,
       dismissed: approvedReviews.length,
@@ -379,7 +357,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         required_checks: data.required_status_checks?.contexts ?? [],
         restrictions: data.restrictions ? { users: data.restrictions.users, teams: data.restrictions.teams } : null,
       };
-      this.obs.debug("Branch protection fetched", {
+      this.context.logger.debug("Branch protection fetched", {
         repo,
         branch,
         isProtected: true,
@@ -390,7 +368,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     } catch (error) {
       // 404 means no protection rules set
       if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 404) {
-        this.obs.debug("Branch protection fetched", { repo, branch, isProtected: false });
+        this.context.logger.debug("Branch protection fetched", { repo, branch, isProtected: false });
         return {
           protected: false,
           required_reviews: 0,
@@ -405,7 +383,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
   protected async doGetDefaultBranch(repo: string): Promise<string> {
     const [owner, repoName] = splitRepo(repo);
     const { data } = await this.octokit.repos.get({ owner, repo: repoName });
-    this.obs.debug("Default branch resolved", { repo, branch: data.default_branch });
+    this.context.logger.debug("Default branch resolved", { repo, branch: data.default_branch });
     return data.default_branch;
   }
 

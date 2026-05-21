@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubTriggerPlugin } from "../../../../../src/plugins/trigger/github-trigger/github-trigger.js";
 import type { PluginManifest } from "../../../../../src/schemas/adapters.js";
 import { runTriggerContractSuite } from "../../../../helpers/contract-suites/trigger-contract.js";
+import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
 // ── Mock Octokit ────────────────────────────────────────────────────────────
 
@@ -91,6 +92,7 @@ describe("GitHubTriggerPlugin", () => {
   beforeEach(async () => {
     plugin = new GitHubTriggerPlugin();
     plugin.manifest = MANIFEST;
+    plugin.context = createTestPluginContext();
     mockOctokit = createMockOctokit();
 
     await plugin.initialize(VALID_CONFIG);
@@ -189,6 +191,7 @@ describe("GitHubTriggerPlugin", () => {
       const configWithLabels = { ...VALID_CONFIG, labels: ["bug", "urgent"] };
       const labelPlugin = new GitHubTriggerPlugin();
       labelPlugin.manifest = MANIFEST;
+      labelPlugin.context = createTestPluginContext();
       await labelPlugin.initialize(configWithLabels);
       (labelPlugin as unknown as { octokit: unknown }).octokit = mockOctokit;
 
@@ -208,6 +211,7 @@ describe("GitHubTriggerPlugin", () => {
       };
       const multiPlugin = new GitHubTriggerPlugin();
       multiPlugin.manifest = MANIFEST;
+      multiPlugin.context = createTestPluginContext();
       await multiPlugin.initialize(multiConfig);
       (multiPlugin as unknown as { octokit: unknown }).octokit = mockOctokit;
 
@@ -358,6 +362,7 @@ describe("GitHubTriggerPlugin", () => {
     it("rejects missing github_token", async () => {
       const p = new GitHubTriggerPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const result = await p.initialize({ repos: [{ owner: "a", name: "b" }] });
       expect(result.success).toBe(false);
     });
@@ -365,6 +370,7 @@ describe("GitHubTriggerPlugin", () => {
     it("rejects empty repos array", async () => {
       const p = new GitHubTriggerPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const result = await p.initialize({ github_token: "ghp_xxx", repos: [] });
       expect(result.success).toBe(false);
     });
@@ -372,6 +378,7 @@ describe("GitHubTriggerPlugin", () => {
     it("applies default poll_interval_ms", async () => {
       const p = new GitHubTriggerPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const mock = createMockOctokit();
       await p.initialize(VALID_CONFIG);
       (p as unknown as { octokit: unknown }).octokit = mock;

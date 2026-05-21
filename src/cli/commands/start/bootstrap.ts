@@ -12,6 +12,7 @@ import { BlobStore, createLogger, createObservationStore, createObserverFacade }
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../../../core/orchestrator/index.js";
 import { PeopleDirectory } from "../../../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../../../core/registry/index.js";
+import { createStateStore as createPluginStateStore } from "../../../core/state-store/index.js";
 import { createCoreComponents } from "../../../core/system.js";
 import type { DatabaseHandle } from "../../../db/index.js";
 import { createDatabase } from "../../../db/index.js";
@@ -118,11 +119,13 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       "Core components created: EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager",
     );
 
-    // 4. Registry (needs eventBus + health config)
+    // 4. Registry (needs eventBus + health config + per-plugin state store factory)
     eventTopology.registerPublisher("registry", REGISTRY_EVENTS);
+    const db = dbHandle.db;
     registry = new Registry({
       eventBus,
       observer: observer.child("registry"),
+      createStateStore: (pluginId) => createPluginStateStore(db, pluginId),
       healthCheckIntervalMs: config.daemon.plugins.health_check_interval_ms,
       healthCheckTimeoutMs: config.daemon.plugins.health_check_timeout_ms,
       consecutiveFailuresThreshold: config.daemon.plugins.consecutive_failures_threshold,

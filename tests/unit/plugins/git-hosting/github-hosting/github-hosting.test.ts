@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubHostingPlugin } from "../../../../../src/plugins/git-hosting/github-hosting/github-hosting.js";
 import type { PROptions, PluginManifest } from "../../../../../src/schemas/adapters.js";
 import { runGitHostingContractSuite } from "../../../../helpers/contract-suites/git-hosting-contract.js";
+import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
 // ── Mock Octokit ────────────────────────────────────────────────────────────
 
@@ -133,6 +134,7 @@ describe("GitHubHostingPlugin", () => {
   beforeEach(async () => {
     plugin = new GitHubHostingPlugin();
     plugin.manifest = MANIFEST;
+    plugin.context = createTestPluginContext();
     mockOctokit = createMockOctokit();
     await plugin.initialize(VALID_CONFIG);
     (plugin as unknown as { octokit: unknown }).octokit = mockOctokit;
@@ -493,6 +495,7 @@ describe("GitHubHostingPlugin", () => {
     it("rejects missing github_token", async () => {
       const p = new GitHubHostingPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       const result = await p.initialize({});
       expect(result.success).toBe(false);
     });
@@ -500,6 +503,7 @@ describe("GitHubHostingPlugin", () => {
     it("applies default merge strategy", async () => {
       const p = new GitHubHostingPlugin();
       p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
       await p.initialize(VALID_CONFIG);
       expect((p as unknown as { config: { default_merge_strategy: string } }).config.default_merge_strategy).toBe(
         "squash",

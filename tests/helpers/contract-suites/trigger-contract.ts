@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { TriggerAdapter } from "../../../src/adapters/trigger.js";
 import { type PluginManifest, TriggerEventSchema } from "../../../src/schemas/adapters.js";
+import { createTestPluginContext } from "../test-plugin-context.js";
 
 export interface TriggerContractFixtures {
   validConfig: Record<string, unknown>;
@@ -23,6 +24,7 @@ export function runTriggerContractSuite(factory: () => TriggerAdapter, fixtures:
     beforeEach(() => {
       adapter = factory();
       adapter.manifest = fixtures.manifest;
+      adapter.context = createTestPluginContext(fixtures.manifest.id);
     });
 
     // ── Lifecycle ────────────────────────────────────────────────────────

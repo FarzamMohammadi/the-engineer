@@ -11,6 +11,7 @@ import {
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runLLMContractSuite } from "../../../../helpers/contract-suites/llm-contract.js";
 import { createMockInferenceRequest } from "../../../../helpers/mock-factories.js";
+import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
 // ── Mock CLI Scripts (created synchronously at module level) ────────────────
 
@@ -117,6 +118,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("parses NDJSON output with cost data correctly", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliPath });
     const result = await plugin.infer(createMockInferenceRequest());
     expect(result.content).toBe("Mock LLM response");
@@ -133,6 +135,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("CLI exit code non-zero throws AdapterMethodError with cli_error", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliErrorPath });
     try {
       await plugin.infer(createMockInferenceRequest());
@@ -146,6 +149,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("CLI not found (bad path) throws AdapterMethodError with spawn_error", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: "/nonexistent/claude" });
     try {
       await plugin.infer(createMockInferenceRequest());
@@ -159,6 +163,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("getCapabilities returns model from config", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliPath, model: "claude-opus-4-20250514" });
     const caps = plugin.getCapabilities();
     expect(caps.model_id).toBe("claude-opus-4-20250514");
@@ -167,6 +172,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("healthCheck with mock --version succeeds", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliVersionPath });
     const status = await plugin.healthCheck();
     expect(status.healthy).toBe(true);
@@ -176,6 +182,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("healthCheck with bad path returns unhealthy", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: "/nonexistent/claude" });
     const status = await plugin.healthCheck();
     expect(status.healthy).toBe(false);
@@ -184,6 +191,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("invalid config returns success: false from initialize", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     const result = await plugin.initialize({ max_tokens: -1 });
     expect(result.success).toBe(false);
     expect(result.message).not.toBeNull();
@@ -192,6 +200,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("passes --system-prompt flag when system_prompt is provided", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliArgsPath });
     const result = await plugin.infer({
       prompt: "test prompt",
@@ -207,6 +216,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("omits --system-prompt flag when system_prompt is null", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliArgsPath });
     const result = await plugin.infer({
       prompt: "test prompt",
@@ -222,6 +232,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("salvages valid output when CLI exits with non-zero code", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliExitOneWithOutputPath });
     const result = await plugin.infer(createMockInferenceRequest());
     expect(result.content).toBe("Salvaged output");
@@ -231,6 +242,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("rejects with retryable=true when CLI exits 1 with no valid output", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliExitOneNoOutputPath });
     try {
       await plugin.infer(createMockInferenceRequest());
@@ -246,6 +258,7 @@ describe("ClaudeCodeLLMPlugin", () => {
   it("truncates error message to 2000 chars when stderr is huge", async () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliHugeStderrPath });
     try {
       await plugin.infer(createMockInferenceRequest());

@@ -31,6 +31,18 @@ export interface StateStore {
 }
 
 /**
+ * Everything Core provides to a plugin, injected by the Registry before
+ * `initialize()` runs. Identity (`manifest`) is separate — this carries
+ * the capabilities a plugin uses to do its work.
+ */
+export interface PluginContext {
+  /** Structured logger scoped to this plugin (every line carries its `plugin_id`). */
+  readonly logger: AdapterObserver;
+  /** Per-plugin key-value store for durable state. */
+  readonly stateStore: StateStore;
+}
+
+/**
  * Base class for all adapter implementations.
  *
  * Provides shared infrastructure: manifest storage (injected by Registry),
@@ -48,14 +60,11 @@ export abstract class BaseAdapter {
   manifest!: PluginManifest;
 
   /**
-   * Observer facade, injected by the Registry before initialize() is called.
-   * Provides structured logging (info/error/warn/debug) and tracing.
-   * Typed as `unknown` to avoid tier import violations (adapters cannot import core).
-   * Internally cast to `AdapterObserver` for safe usage.
-   *
-   * When not set, lifecycle logging is silently skipped.
+   * Core-provided capabilities (logger, state store), injected by the Registry
+   * before `initialize()` is called. Plugins read `this.context.logger` and
+   * `this.context.stateStore`; they never set it.
    */
-  observer?: unknown;
+  context!: PluginContext;
 
   /**
    * Check whether this adapter supports a named capability.
@@ -78,27 +87,27 @@ export abstract class BaseAdapter {
    * If `doInitialize()` throws, returns `{ success: false, message }`.
    */
   async initialize(config: Record<string, unknown>): Promise<InitResult> {
-    const obs = this.observer as AdapterObserver | undefined;
     const start = Date.now();
     try {
       const result = await this.doInitialize(config);
       const elapsed = Date.now() - start;
-      obs?.info(`Plugin "${this.manifest.id}" initialized in ${String(elapsed)}ms`, {
-        pluginId: this.manifest.id,
+      this.context.logger.info(`Plugin "${this.manifest.id}" initialized in ${String(elapsed)}ms`, {
         elapsedMs: elapsed,
       });
       return result;
     } catch (error) {
       const elapsed = Date.now() - start;
       const message = error instanceof Error ? error.message : String(error);
-      obs?.error(`Plugin "${this.manifest.id}" failed to initialize after ${String(elapsed)}ms: ${message}`, {
-        pluginId: this.manifest.id,
-        adapterType: this.manifest.type,
-        capability: `${this.manifest.type}_adapter`,
-        elapsedMs: elapsed,
-        critical: this.manifest.critical,
-        error: message,
-      });
+      this.context.logger.error(
+        `Plugin "${this.manifest.id}" failed to initialize after ${String(elapsed)}ms: ${message}`,
+        {
+          adapterType: this.manifest.type,
+          capability: `${this.manifest.type}_adapter`,
+          elapsedMs: elapsed,
+          critical: this.manifest.critical,
+          error: message,
+        },
+      );
       return { success: false, message };
     }
   }
@@ -109,13 +118,11 @@ export abstract class BaseAdapter {
    * Wraps `doShutdown()` with error swallowing — shutdown must never throw.
    */
   async shutdown(): Promise<void> {
-    const obs = this.observer as AdapterObserver | undefined;
     try {
       await this.doShutdown();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      obs?.error(`Plugin "${this.manifest.id}" shutdown error (non-fatal): ${message}`, {
-        pluginId: this.manifest.id,
+      this.context.logger.error(`Plugin "${this.manifest.id}" shutdown error (non-fatal): ${message}`, {
         error: message,
       });
     }

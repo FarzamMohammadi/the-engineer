@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { BaseAdapter } from "../../../src/adapters/base.js";
+import { type AdapterObserver, BaseAdapter, type PluginContext } from "../../../src/adapters/base.js";
 import type { HealthStatus, InitResult, PluginManifest } from "../../../src/schemas/adapters.js";
+import { createTestStateStoreFactory } from "../../helpers/test-state-store.js";
+
+/** A logger mock with all four AdapterObserver methods spied. */
+function createLoggerSpy(): AdapterObserver {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+/** Build a PluginContext the Registry would inject before initialize(). */
+function createContext(logger: AdapterObserver = createLoggerSpy()): PluginContext {
+  return { logger, stateStore: createTestStateStoreFactory()("test-plugin") };
+}
 
 /** Minimal concrete subclass for testing BaseAdapter. */
 class TestAdapter extends BaseAdapter {
@@ -99,6 +110,7 @@ describe("BaseAdapter", () => {
     it("returns InitResult from doInitialize on success", async () => {
       const adapter = new TestAdapter();
       adapter.manifest = createManifest();
+      adapter.context = createContext();
       const result = await adapter.initialize({});
       expect(result).toEqual({ success: true, message: null });
     });
@@ -106,43 +118,36 @@ describe("BaseAdapter", () => {
     it("catches thrown error and returns { success: false }", async () => {
       const adapter = new TestAdapter();
       adapter.manifest = createManifest();
+      adapter.context = createContext();
       adapter.initError = new Error("Connection refused");
       const result = await adapter.initialize({});
       expect(result.success).toBe(false);
       expect(result.message).toBe("Connection refused");
     });
 
-    it("calls observer.info on success", async () => {
-      const obs = { info: vi.fn(), error: vi.fn() };
+    it("logs at info on success", async () => {
+      const logger = createLoggerSpy();
       const adapter = new TestAdapter();
       adapter.manifest = createManifest({ id: "my-plugin" });
-      adapter.observer = obs;
+      adapter.context = createContext(logger);
       await adapter.initialize({});
-      expect(obs.info).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining("my-plugin"),
-        expect.objectContaining({ pluginId: "my-plugin" }),
+        expect.objectContaining({ elapsedMs: expect.any(Number) }),
       );
     });
 
-    it("calls observer.error on failure", async () => {
-      const obs = { info: vi.fn(), error: vi.fn() };
+    it("logs at error on failure", async () => {
+      const logger = createLoggerSpy();
       const adapter = new TestAdapter();
       adapter.manifest = createManifest({ id: "broken-plugin" });
-      adapter.observer = obs;
+      adapter.context = createContext(logger);
       adapter.initError = new Error("Oops");
       await adapter.initialize({});
-      expect(obs.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining("broken-plugin"),
-        expect.objectContaining({ pluginId: "broken-plugin", error: "Oops" }),
+        expect.objectContaining({ error: "Oops" }),
       );
-    });
-
-    it("does not throw when observer is not set", async () => {
-      const adapter = new TestAdapter();
-      adapter.manifest = createManifest({ id: "no-observer" });
-      // No observer set — should silently skip logging
-      const result = await adapter.initialize({});
-      expect(result.success).toBe(true);
     });
   });
 
@@ -150,28 +155,21 @@ describe("BaseAdapter", () => {
     it("completes normally on success", async () => {
       const adapter = new TestAdapter();
       adapter.manifest = createManifest();
+      adapter.context = createContext();
       await expect(adapter.shutdown()).resolves.toBeUndefined();
     });
 
-    it("swallows errors and calls observer.error", async () => {
-      const obs = { info: vi.fn(), error: vi.fn() };
+    it("swallows errors and logs at error", async () => {
+      const logger = createLoggerSpy();
       const adapter = new TestAdapter();
       adapter.manifest = createManifest();
-      adapter.observer = obs;
+      adapter.context = createContext(logger);
       adapter.shutdownError = new Error("Shutdown failed");
       await expect(adapter.shutdown()).resolves.toBeUndefined();
-      expect(obs.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining("shutdown error"),
         expect.objectContaining({ error: "Shutdown failed" }),
       );
-    });
-
-    it("swallows errors silently when observer is not set", async () => {
-      const adapter = new TestAdapter();
-      adapter.manifest = createManifest();
-      adapter.shutdownError = new Error("Shutdown failed");
-      // No observer — should not throw
-      await expect(adapter.shutdown()).resolves.toBeUndefined();
     });
   });
 

@@ -13,6 +13,7 @@ import type { PluginManifest } from "../../../src/schemas/adapters.js";
 import { PluginManifestSchema } from "../../../src/schemas/adapters.js";
 import { FakeTriggerPlugin } from "../../helpers/fake-plugins/fake-trigger/index.js";
 import { createTestObserverFacade } from "../../helpers/test-observer-facade.js";
+import { createTestStateStoreFactory } from "../../helpers/test-state-store.js";
 
 // Mock BUILTIN_PLUGINS so we control what plugins are "discovered"
 vi.mock("../../../src/plugins/builtin.js", () => ({
@@ -64,6 +65,7 @@ describe("loadBuiltinPlugins", () => {
     registry = new Registry({
       eventBus,
       observer: createTestObserverFacade("registry"),
+      createStateStore: createTestStateStoreFactory(),
       healthCheckIntervalMs: 60_000,
       healthCheckTimeoutMs: 1_000,
       consecutiveFailuresThreshold: 3,

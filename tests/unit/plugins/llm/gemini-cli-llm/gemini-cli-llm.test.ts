@@ -10,6 +10,7 @@ import {
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runLLMContractSuite } from "../../../../helpers/contract-suites/llm-contract.js";
 import { createMockInferenceRequest } from "../../../../helpers/mock-factories.js";
+import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
 // ── Mock CLI Scripts ─────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("parses stream-json output with tokens", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliPath });
     const result = await plugin.infer({
       prompt: "Hello",
@@ -94,6 +96,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("throws AdapterMethodError on CLI error", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliErrorPath });
     await expect(
       plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null, trace_output_path: null }),
@@ -103,6 +106,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("throws AdapterMethodError when CLI not found", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: "/nonexistent/gemini" });
     await expect(
       plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null, trace_output_path: null }),
@@ -112,6 +116,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("healthCheck succeeds with mock version", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliVersionPath });
     const health = await plugin.healthCheck();
     expect(health.healthy).toBe(true);
@@ -121,6 +126,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("healthCheck fails with bad path", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: "/nonexistent/gemini" });
     const health = await plugin.healthCheck();
     expect(health.healthy).toBe(false);
@@ -129,6 +135,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("getCapabilities returns model from config", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ model: "gemini-2.5-flash" });
     const caps = plugin.getCapabilities();
     expect(caps.model_id).toBe("gemini-2.5-flash");
@@ -139,6 +146,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("getQuotaStatus returns null (no quota API)", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliPath });
     const quota = await plugin.getQuotaStatus();
     expect(quota).toBeNull();
@@ -147,6 +155,7 @@ describe("GeminiCliLLMPlugin", () => {
   it("invalid config returns success: false", async () => {
     const plugin = new GeminiCliLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     const result = await plugin.initialize({ command_timeout_ms: -1 });
     expect(result.success).toBe(false);
   });

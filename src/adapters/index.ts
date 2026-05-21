@@ -8,7 +8,7 @@
  */
 
 // === Adapter Base ===
-export { type AdapterObserver, BaseAdapter, type StateStore } from "./base.js";
+export { type AdapterObserver, BaseAdapter, type PluginContext, type StateStore } from "./base.js";
 
 // === Adapter Contracts ===
 export { TriggerAdapter } from "./trigger.js";

@@ -9,6 +9,7 @@ import { FakeTriggerPlugin } from "../helpers/fake-plugins/fake-trigger/index.js
 import { createMockManifest } from "../helpers/mock-factories.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
 import { createTestObserverFacade } from "../helpers/test-observer-facade.js";
+import { createTestStateStoreFactory } from "../helpers/test-state-store.js";
 
 describe("Health state machine (integration)", () => {
   let dbHandle: TestDatabaseHandle;
@@ -22,6 +23,7 @@ describe("Health state machine (integration)", () => {
     registry = new Registry({
       eventBus,
       observer: createTestObserverFacade("registry"),
+      createStateStore: createTestStateStoreFactory(),
       healthCheckIntervalMs: 60_000,
       healthCheckTimeoutMs: 5_000,
       consecutiveFailuresThreshold: 3,

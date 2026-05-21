@@ -7,6 +7,7 @@ import { OpenCodeLLMPlugin, parseOpenCodeOutput } from "../../../../../src/plugi
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runLLMContractSuite } from "../../../../helpers/contract-suites/llm-contract.js";
 import { createMockInferenceRequest } from "../../../../helpers/mock-factories.js";
+import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
 // ── Mock CLI Scripts ─────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("parses NDJSON output with cost and tokens", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliPath });
     const result = await plugin.infer({
       prompt: "Hello",
@@ -88,6 +90,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("throws AdapterMethodError on CLI error", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliErrorPath });
     await expect(
       plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null, trace_output_path: null }),
@@ -97,6 +100,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("throws AdapterMethodError when CLI not found", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: "/nonexistent/opencode" });
     await expect(
       plugin.infer({ prompt: "Hello", system_prompt: null, cwd: null, trace_output_path: null }),
@@ -106,6 +110,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("healthCheck succeeds with mock version", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliVersionPath });
     const health = await plugin.healthCheck();
     expect(health.healthy).toBe(true);
@@ -115,6 +120,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("healthCheck fails with bad path", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: "/nonexistent/opencode" });
     const health = await plugin.healthCheck();
     expect(health.healthy).toBe(false);
@@ -123,6 +129,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("getCapabilities returns model from config", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ model: "openai/gpt-4o" });
     const caps = plugin.getCapabilities();
     expect(caps.model_id).toBe("openai/gpt-4o");
@@ -133,6 +140,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("getQuotaStatus returns null (no quota API)", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     await plugin.initialize({ cli_path: mockCliPath });
     const quota = await plugin.getQuotaStatus();
     expect(quota).toBeNull();
@@ -141,6 +149,7 @@ describe("OpenCodeLLMPlugin", () => {
   it("invalid config returns success: false", async () => {
     const plugin = new OpenCodeLLMPlugin();
     plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
     const result = await plugin.initialize({ command_timeout_ms: -1 });
     expect(result.success).toBe(false);
   });

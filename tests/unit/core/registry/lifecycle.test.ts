@@ -7,6 +7,7 @@ import { FakeLLMPlugin } from "../../../helpers/fake-plugins/fake-llm/index.js";
 import { FakeTriggerPlugin } from "../../../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../../../helpers/mock-factories.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
+import { createTestPluginContext } from "../../../helpers/test-plugin-context.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,7 @@ describe("createLifecycleManager", () => {
     it("calls initialize on the plugin with the given config", async () => {
       const instance = new FakeTriggerPlugin();
       lifecycle.register(createManifest("trigger", "t1"), instance);
+      instance.context = createTestPluginContext("t1");
 
       const result = await lifecycle.initializePlugin("t1", { key: "value" });
 

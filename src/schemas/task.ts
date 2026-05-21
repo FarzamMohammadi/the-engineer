@@ -187,6 +187,9 @@ export const TaskSchema = z.object({
   // Identity
   id: z.string(),
   external_ref: ExternalRefSchema.nullable(),
+  /** Stable dedup identity. Every task carries one; uniqueness is enforced among
+   *  non-terminal tasks (a completed/failed task frees its key for re-triggering). */
+  idempotency_key: z.string(),
 
   // State
   state: TaskStateSchema,

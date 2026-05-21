@@ -128,6 +128,7 @@ describe("TaskCreatedPayloadSchema", () => {
       parent_id: null,
       title: "Fix auth bug",
       external_ref: { type: "github_issue", repo: "owner/repo", id: "42" },
+      idempotency_key: "github:issue:owner/repo:42",
       source: "trigger.github",
       priority: 50,
       repo: "owner/repo",

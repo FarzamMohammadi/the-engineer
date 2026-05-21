@@ -102,10 +102,10 @@ describe("createInMemoryDatabase", () => {
     const now = new Date().toISOString();
     handle.db
       .prepare(
-        `INSERT INTO tasks (id, state, title, created_at, last_transition_at)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run("01TEST", TaskStates.requirements_gathering, "Test task", now, now);
+      .run("01TEST", "test:01TEST", TaskStates.requirements_gathering, "Test task", now, now);
 
     const row = handle.db.prepare("SELECT * FROM tasks WHERE id = ?").get("01TEST") as {
       title: string;
@@ -217,6 +217,7 @@ describe("table structure", () => {
     const expected = [
       "id",
       "external_ref",
+      "idempotency_key",
       "state",
       "sub_state",
       "phase",
@@ -296,8 +297,10 @@ describe("table structure", () => {
 
     expect(() =>
       handle.db
-        .prepare("INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)")
-        .run("01TEST", "invalid_state", "Test", now, now),
+        .prepare(
+          "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run("01TEST", "test:check", "invalid_state", "Test", now, now),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
@@ -308,9 +311,9 @@ describe("table structure", () => {
     expect(() =>
       handle.db
         .prepare(
-          "INSERT INTO tasks (id, state, cascade_policy, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO tasks (id, idempotency_key, state, cascade_policy, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .run("01TEST", TaskStates.requirements_gathering, "invalid_policy", "Test", now, now),
+        .run("01TEST", "test:check", TaskStates.requirements_gathering, "invalid_policy", "Test", now, now),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
@@ -321,9 +324,9 @@ describe("table structure", () => {
     expect(() =>
       handle.db
         .prepare(
-          "INSERT INTO tasks (id, state, priority, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO tasks (id, idempotency_key, state, priority, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .run("01TEST", TaskStates.requirements_gathering, 101, "Test", now, now),
+        .run("01TEST", "test:check", TaskStates.requirements_gathering, 101, "Test", now, now),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
@@ -408,8 +411,10 @@ describe("table structure", () => {
     const now = new Date().toISOString();
 
     handle.db
-      .prepare("INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)")
-      .run("01TEST", TaskStates.requirements_gathering, "Test task", now, now);
+      .prepare(
+        "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run("01TEST", "test:01TEST", TaskStates.requirements_gathering, "Test task", now, now);
 
     const row = handle.db
       .prepare("SELECT children, team, related, decisions FROM tasks WHERE id = ?")
@@ -462,8 +467,8 @@ describe("table structure", () => {
       "idx_knowledge_natural_key",
       "idx_knowledge_active",
       "idx_knowledge_domain",
-      // external_ref dedup (010)
-      "idx_tasks_external_ref_active",
+      // idempotency_key dedup (active-scoped, unique)
+      "idx_tasks_idempotency_key_active",
       // observations (003_observer)
       "idx_obs_task",
       "idx_obs_trace",
@@ -487,8 +492,10 @@ describe("table structure", () => {
 
     // Insert a task first (FK reference)
     handle.db
-      .prepare("INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)")
-      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
+      .prepare(
+        "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run("t1", "test:t1", TaskStates.requirements_gathering, "Test", now, now);
 
     // Valid transition
     handle.db
@@ -562,8 +569,10 @@ describe("foreign key enforcement", () => {
 
     // Create task
     handle.db
-      .prepare("INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)")
-      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
+      .prepare(
+        "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run("t1", "test:t1", TaskStates.requirements_gathering, "Test", now, now);
 
     // Create session referencing task
     handle.db.prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)").run("s1", "t1", now);
@@ -594,8 +603,10 @@ describe("JSON default completeness", () => {
     const now = new Date().toISOString();
 
     handle.db
-      .prepare("INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)")
-      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
+      .prepare(
+        "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run("t1", "test:t1", TaskStates.requirements_gathering, "Test", now, now);
 
     const row = handle.db
       .prepare(
@@ -617,8 +628,10 @@ describe("JSON default completeness", () => {
 
     // Create parent task and session for FK
     handle.db
-      .prepare("INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)")
-      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
+      .prepare(
+        "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run("t1", "test:t1", TaskStates.requirements_gathering, "Test", now, now);
     handle.db.prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)").run("s1", "t1", now);
 
     handle.db
@@ -639,8 +652,10 @@ describe("JSON default completeness", () => {
     const now = new Date().toISOString();
 
     handle.db
-      .prepare("INSERT INTO tasks (id, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?)")
-      .run("t1", TaskStates.requirements_gathering, "Test", now, now);
+      .prepare(
+        "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run("t1", "test:t1", TaskStates.requirements_gathering, "Test", now, now);
     handle.db.prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)").run("s1", "t1", now);
 
     handle.db
@@ -794,9 +809,9 @@ describe("foreign key enforcement during migrations", () => {
     expect(() =>
       handle.db
         .prepare(
-          "INSERT INTO tasks (id, state, title, session_id, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO tasks (id, idempotency_key, state, title, session_id, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .run("t1", TaskStates.requirements_gathering, "Test", "no-such-session", now, now),
+        .run("t1", "test:t1", TaskStates.requirements_gathering, "Test", "no-such-session", now, now),
     ).toThrow(FK_CONSTRAINT_PATTERN);
   });
 

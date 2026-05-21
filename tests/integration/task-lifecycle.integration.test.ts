@@ -33,6 +33,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Test task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:happy",
         description: "A test task",
       });
       expect(task.state).toBe(TaskStates.requirements_gathering);
@@ -77,6 +78,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Review task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:review",
         description: "",
       });
 
@@ -103,6 +105,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Blocked task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:blocked",
         description: "",
       });
 
@@ -128,6 +131,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Failing task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:failed",
         description: "",
       });
 
@@ -147,6 +151,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Invalid task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:invalid",
         description: "",
       });
 
@@ -161,6 +166,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Completed task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:completed",
         description: "",
       });
 
@@ -181,6 +187,7 @@ describe("Task lifecycle (integration)", () => {
         title: "History task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:history",
         description: "",
       });
 
@@ -213,6 +220,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Parent task",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:parent",
         description: "",
       });
 
@@ -220,6 +228,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Child 1",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:child1",
         description: "",
         parent_id: parent.id,
       });
@@ -228,6 +237,7 @@ describe("Task lifecycle (integration)", () => {
         title: "Child 2",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "lifecycle:child2",
         description: "",
         parent_id: parent.id,
       });
@@ -243,8 +253,20 @@ describe("Task lifecycle (integration)", () => {
     it("getTasksByState returns tasks in the requested state", () => {
       setup();
 
-      const t1 = taskEngine.createTask({ title: "T1", repo: "r", source: "s", description: "" });
-      const t2 = taskEngine.createTask({ title: "T2", repo: "r", source: "s", description: "" });
+      const t1 = taskEngine.createTask({
+        title: "T1",
+        repo: "r",
+        source: "s",
+        idempotency_key: "lifecycle:t1",
+        description: "",
+      });
+      const t2 = taskEngine.createTask({
+        title: "T2",
+        repo: "r",
+        source: "s",
+        idempotency_key: "lifecycle:t2",
+        description: "",
+      });
       taskEngine.requestTransition(t1.id, TaskStates.queued, null, "go", "daemon");
       taskEngine.requestTransition(t2.id, TaskStates.queued, null, "go", "daemon");
       taskEngine.requestTransition(t1.id, TaskStates.active, SubStates.working, "go", "daemon");

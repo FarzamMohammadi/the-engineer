@@ -85,6 +85,7 @@ export const TaskCreatedPayloadSchema = z.object({
   parent_id: z.string().nullable(),
   title: z.string(),
   external_ref: ExternalRefSchema.nullable(),
+  idempotency_key: z.string(),
   source: z.string(),
   priority: z.number().int(),
   repo: z.string(),

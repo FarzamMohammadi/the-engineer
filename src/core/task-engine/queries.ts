@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-import type { ExternalRef, StateTransition, Task, TaskState } from "../../schemas/task.js";
+import type { StateTransition, Task, TaskState } from "../../schemas/task.js";
 import { type StateTransitionRow, type TaskRow, rowToStateTransition, rowToTask } from "./row-mapper.js";
 
 /**
@@ -13,7 +13,7 @@ export class TaskQueries {
   private readonly getQueuedStmt: Database.Statement;
   private readonly getChildrenStmt: Database.Statement;
   private readonly getStateHistoryStmt: Database.Statement;
-  private readonly findByExternalRefStmt: Database.Statement;
+  private readonly findByIdempotencyKeyStmt: Database.Statement;
 
   constructor(db: Database.Database) {
     this.getTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?");
@@ -28,11 +28,9 @@ export class TaskQueries {
 
     this.getStateHistoryStmt = db.prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp ASC");
 
-    this.findByExternalRefStmt = db.prepare(`
+    this.findByIdempotencyKeyStmt = db.prepare(`
       SELECT 1 FROM tasks
-      WHERE json_extract(external_ref, '$.type') = ?
-        AND json_extract(external_ref, '$.repo') = ?
-        AND json_extract(external_ref, '$.id') = ?
+      WHERE idempotency_key = ?
         AND state NOT IN ('completed', 'failed')
       LIMIT 1
     `);
@@ -69,12 +67,12 @@ export class TaskQueries {
   }
 
   /**
-   * Check if a non-terminal task exists with the given external ref.
-   * Type-aware matching (type + repo + id) for dedup purposes.
-   * Deliberately different from externalRefsMatch() which is type-agnostic for unblock.
+   * Check if a non-terminal task exists with the given idempotency key.
+   * The durable half of trigger dedup: survives restarts (the in-memory seen-key
+   * cache does not). Active-scoped — a completed/failed task frees its key.
    */
-  findByExternalRef(ref: ExternalRef): boolean {
-    const row = this.findByExternalRefStmt.get(ref.type, ref.repo, ref.id);
+  findByIdempotencyKey(key: string): boolean {
+    const row = this.findByIdempotencyKeyStmt.get(key);
     return row !== undefined;
   }
 }

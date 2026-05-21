@@ -25,7 +25,7 @@ describe("TaskQueries", () => {
     dbHandle.db
       .prepare(
         `INSERT INTO tasks (
-        id, external_ref, state, sub_state, phase,
+        id, external_ref, idempotency_key, state, sub_state, phase,
         parent_id, children, cascade_policy,
         title, description, source_text, acceptance_criteria,
         team, related, decisions, child_summaries,
@@ -34,7 +34,7 @@ describe("TaskQueries", () => {
         created_at, started_at, completed_at, last_transition_at,
         session_id, version
       ) VALUES (
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -47,6 +47,7 @@ describe("TaskQueries", () => {
       .run(
         id,
         (overrides["external_ref"] as string) ?? null,
+        (overrides["idempotency_key"] as string) ?? `test:${id}`,
         (overrides["state"] as string) ?? TaskStates.requirements_gathering,
         (overrides["sub_state"] as string) ?? null,
         (overrides["phase"] as string) ?? null,
@@ -194,6 +195,24 @@ describe("TaskQueries", () => {
     it("returns empty for task with no transitions", () => {
       const id = insertTask();
       expect(queries.getStateHistory(id)).toEqual([]);
+    });
+  });
+
+  describe("findByIdempotencyKey", () => {
+    it("returns false when no task has the key", () => {
+      expect(queries.findByIdempotencyKey("never:seen")).toBe(false);
+    });
+
+    it("returns true for a non-terminal task with the key", () => {
+      insertTask({ idempotency_key: "github:issue:owner/repo:42", state: TaskStates.queued });
+      expect(queries.findByIdempotencyKey("github:issue:owner/repo:42")).toBe(true);
+    });
+
+    it("ignores completed and failed tasks (active-scoped)", () => {
+      insertTask({ idempotency_key: "done:key", state: TaskStates.completed });
+      insertTask({ idempotency_key: "dead:key", state: TaskStates.failed });
+      expect(queries.findByIdempotencyKey("done:key")).toBe(false);
+      expect(queries.findByIdempotencyKey("dead:key")).toBe(false);
     });
   });
 });

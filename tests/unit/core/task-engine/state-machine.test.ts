@@ -25,7 +25,7 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO tasks (
-      id, external_ref, state, sub_state, phase,
+      id, external_ref, idempotency_key, state, sub_state, phase,
       parent_id, children, cascade_policy,
       title, description, source_text, acceptance_criteria,
       team, related, decisions, child_summaries,
@@ -34,7 +34,7 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
       created_at, started_at, completed_at, last_transition_at,
       session_id, version
     ) VALUES (
-      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -46,6 +46,7 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
   ).run(
     id,
     null,
+    (overrides["idempotency_key"] as string) ?? `test:${id}`,
     (overrides["state"] as string) ?? TaskStates.requirements_gathering,
     (overrides["sub_state"] as string) ?? null,
     null,

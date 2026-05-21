@@ -67,11 +67,14 @@ export function createDecompositionHandler(
     // Guard against partial child creation: if any child fails to create or
     // transition, log the orphaned IDs and skip decomposition (graceful degradation).
     try {
-      for (const childSpec of plan.children) {
+      for (const [index, childSpec] of plan.children.entries()) {
         const childTask = ctx.taskEngine.createTask({
           title: childSpec.title,
           repo: dispatch.task.repo ?? "",
           source: "decomposition",
+          // Deterministic identity: "child #index of parent taskId". A re-run after a
+          // crash collides on the active dedup index, so children are never duplicated.
+          idempotency_key: `decomposition:${taskId}:${String(index)}`,
           description: childSpec.description,
           parent_id: taskId,
           acceptance_criteria: childSpec.acceptance_criteria,

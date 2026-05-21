@@ -55,10 +55,11 @@ function insertTask(db: import("better-sqlite3").Database, id: string, overrides
     ...overrides,
   };
   db.prepare(
-    `INSERT INTO tasks (id, state, sub_state, priority, title, description, repo, created_at, last_transition_at, llm_tokens, llm_cost_usd)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (id, idempotency_key, state, sub_state, priority, title, description, repo, created_at, last_transition_at, llm_tokens, llm_cost_usd)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
+    `test:${id}`,
     defaults.state,
     defaults.sub_state ?? null,
     defaults.priority,

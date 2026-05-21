@@ -30,11 +30,15 @@ function assertDefined<T>(value: T | null | undefined, label = "value"): T {
   return value;
 }
 
+let idempotencyKeySeq = 0;
+
 function makeInput(overrides?: Partial<CreateTaskInput>): CreateTaskInput {
   return {
     title: "Test task",
     repo: "owner/test-repo",
     source: "test",
+    // Unique by default so multiple tasks don't collide on the active dedup index.
+    idempotency_key: `test:${String(idempotencyKeySeq++)}`,
     ...overrides,
   };
 }
@@ -258,7 +262,7 @@ describe("TaskEngine", () => {
     });
 
     it("emits task.created event with correct payload", () => {
-      const task = engine.createTask(makeInput({ priority: 75 }));
+      const task = engine.createTask(makeInput({ priority: 75, idempotency_key: "evt:key" }));
       handle.assertEventEmitted(EventTypes["task.created"], (payload) => {
         const p = payload as Record<string, unknown>;
         return (
@@ -266,6 +270,7 @@ describe("TaskEngine", () => {
           p["title"] === "Test task" &&
           p["repo"] === "owner/test-repo" &&
           p["source"] === "test" &&
+          p["idempotency_key"] === "evt:key" &&
           p["priority"] === 75 &&
           p["parent_id"] === null
         );
@@ -308,6 +313,40 @@ describe("TaskEngine", () => {
       const parent = engine.createTask(makeInput({ title: "Parent task" }));
       const child = engine.createTask(makeInput({ title: "Child task", parent_id: parent.id }));
       expect(child.parent_id).toBe(parent.id);
+    });
+
+    it("stores and round-trips the idempotency_key", () => {
+      const task = engine.createTask(makeInput({ idempotency_key: "github:issue:owner/repo:42" }));
+      expect(task.idempotency_key).toBe("github:issue:owner/repo:42");
+      expect(engine.getTask(task.id)?.idempotency_key).toBe("github:issue:owner/repo:42");
+    });
+
+    it("rejects a second non-terminal task with the same idempotency_key", () => {
+      engine.createTask(makeInput({ idempotency_key: "dup:key" }));
+      expect(() => engine.createTask(makeInput({ idempotency_key: "dup:key" }))).toThrow();
+    });
+  });
+
+  // ── findByIdempotencyKey (durable, active-scoped dedup) ──────────────────────
+
+  describe("findByIdempotencyKey", () => {
+    it("returns false for an unknown key", () => {
+      expect(engine.findByIdempotencyKey("never:seen")).toBe(false);
+    });
+
+    it("returns true while a task with the key is non-terminal (round-trip)", () => {
+      engine.createTask(makeInput({ idempotency_key: "rt:active" }));
+      expect(engine.findByIdempotencyKey("rt:active")).toBe(true);
+    });
+
+    it("frees the key once the task is completed (active-scoped)", () => {
+      createTaskInState(engine, TaskStates.completed, null, { idempotency_key: "rt:completed" });
+      expect(engine.findByIdempotencyKey("rt:completed")).toBe(false);
+    });
+
+    it("frees the key once the task is failed (active-scoped)", () => {
+      createTaskInState(engine, TaskStates.failed, null, { idempotency_key: "rt:failed" });
+      expect(engine.findByIdempotencyKey("rt:failed")).toBe(false);
     });
   });
 

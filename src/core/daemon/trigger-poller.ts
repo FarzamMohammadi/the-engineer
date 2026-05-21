@@ -103,8 +103,10 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       return; // Already seen and not expired
     }
 
-    // 2. DB check (cold path — only on cache miss with structured external_ref)
-    if (event.external_ref && taskEngine.findByExternalRef(event.external_ref)) {
+    // 2. DB check (cold path — durable dedup on idempotency_key). Runs for every
+    // event regardless of external_ref, so a restart that wiped the hot cache still
+    // suppresses duplicates — the crash-safe guarantee for all trigger plugins.
+    if (taskEngine.findByIdempotencyKey(event.idempotency_key)) {
       seenTriggerKeys.set(event.idempotency_key, now + config.seen_keys_ttl_ms);
       observer.debug("Duplicate trigger suppressed by DB dedup", {
         idempotencyKey: event.idempotency_key,
@@ -141,6 +143,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       title: event.title,
       repo: event.repo,
       source: event.source,
+      idempotency_key: event.idempotency_key,
       description: event.body ?? "",
       external_ref: event.external_ref,
       clone_url: event.clone_url,

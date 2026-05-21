@@ -220,7 +220,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     checkPermission: vi.fn().mockReturnValue({ allowed: true }),
     getChildren: vi.fn().mockReturnValue([]),
     getStateHistory: vi.fn().mockReturnValue([]),
-    findByExternalRef: vi.fn().mockReturnValue(false),
+    findByIdempotencyKey: vi.fn().mockReturnValue(false),
   };
 
   // ── Orchestrator mock ─────────────────────────────────────────────────

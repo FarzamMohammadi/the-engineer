@@ -212,6 +212,7 @@ describe("DispatchSchema", () => {
   const minimalTask = {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     external_ref: null,
+    idempotency_key: "test:dispatch",
     state: TaskStates.active,
     sub_state: SubStates.working,
     phase: Phases.execution,

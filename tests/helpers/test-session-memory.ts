@@ -29,12 +29,12 @@ export function createTestSessionMemory(): TestSessionMemoryHandle {
 
   const insertTaskStmt = testDb.db.prepare(`
     INSERT INTO tasks (
-      id, state, cascade_policy, title, description, source_text,
+      id, idempotency_key, state, cascade_policy, title, description, source_text,
       acceptance_criteria, children, team, related, decisions, child_summaries,
       priority, llm_tokens, llm_cost_usd, compute_time_ms,
       created_at, last_transition_at
     ) VALUES (
-      ?, 'requirements_gathering', 'pause_siblings', ?, '', '',
+      ?, ?, 'requirements_gathering', 'pause_siblings', ?, '', '',
       '[]', '[]', '[]', '[]', '[]', '[]',
       50, 0, 0.0, 0,
       ?, ?
@@ -48,7 +48,7 @@ export function createTestSessionMemory(): TestSessionMemoryHandle {
     insertTask(title?: string): string {
       const id = ulid();
       const now = new Date().toISOString();
-      insertTaskStmt.run(id, title ?? "Test task", now, now);
+      insertTaskStmt.run(id, `test:${id}`, title ?? "Test task", now, now);
       return id;
     },
 

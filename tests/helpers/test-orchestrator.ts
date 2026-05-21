@@ -150,6 +150,7 @@ export function createMockTask(overrides?: Partial<Task>): Task {
   return {
     id: "task-001",
     external_ref: null,
+    idempotency_key: "mock:task-001",
     state: TaskStates.active,
     sub_state: "working",
     phase: null,

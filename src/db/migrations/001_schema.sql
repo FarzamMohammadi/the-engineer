@@ -7,6 +7,7 @@ CREATE TABLE tasks (
   -- Identity
   id                      TEXT PRIMARY KEY,
   external_ref            TEXT,
+  idempotency_key         TEXT NOT NULL,
 
   -- State
   state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
@@ -76,12 +77,12 @@ CREATE INDEX idx_tasks_parent_id ON tasks(parent_id);
 CREATE INDEX idx_tasks_session_id ON tasks(session_id);
 CREATE INDEX idx_tasks_priority ON tasks(priority DESC);
 CREATE INDEX idx_tasks_state_priority ON tasks(state, priority DESC);
-CREATE INDEX idx_tasks_external_ref_active
-  ON tasks(
-    json_extract(external_ref, '$.type'),
-    json_extract(external_ref, '$.repo'),
-    json_extract(external_ref, '$.id')
-  )
+-- Active-scoped dedup: no two non-terminal tasks may share an idempotency_key.
+-- A terminal task (completed/failed) frees its key, so a re-triggered source
+-- (e.g. a reopened GitHub issue) can spawn a fresh task. Identity/dedup rides on
+-- idempotency_key; external_ref is descriptive only.
+CREATE UNIQUE INDEX idx_tasks_idempotency_key_active
+  ON tasks(idempotency_key)
   WHERE state NOT IN ('completed', 'failed');
 
 -- ── state_transitions ────────────────────────────────────────────────────────────

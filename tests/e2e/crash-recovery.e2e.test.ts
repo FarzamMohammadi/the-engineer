@@ -76,6 +76,7 @@ function createOrphanedTask(ctx: IntegrationContext, options?: { title?: string;
     title,
     repo: "test/repo",
     source: "test",
+    idempotency_key: `e2e:${title}`,
   });
 
   // Transition: intake → queued → active.working

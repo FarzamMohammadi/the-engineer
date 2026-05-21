@@ -72,7 +72,7 @@ function createMockContext(overrides?: Partial<TriggerPollerContext>): TriggerPo
       requestTransition: vi.fn().mockReturnValue({ success: true }),
       getTasksByState: vi.fn().mockReturnValue([]),
       updateTaskField: vi.fn(),
-      findByExternalRef: vi.fn().mockReturnValue(false),
+      findByIdempotencyKey: vi.fn().mockReturnValue(false),
     },
     clock: { now: () => 1000 },
     observer: createTestObserverFacade("daemon"),
@@ -123,6 +123,7 @@ describe("TriggerPoller", () => {
         title: "Test issue",
         repo: "test/repo",
         source: "test",
+        idempotency_key: "key-1",
       }),
     );
     expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
@@ -132,6 +133,22 @@ describe("TriggerPoller", () => {
       "new_trigger_event",
       "daemon",
     );
+  });
+
+  it("suppresses an event when the DB already has a non-terminal task for its key (crash-safe cold path)", async () => {
+    // Fresh poller with an empty hot cache simulates a post-restart daemon. The event
+    // carries no external_ref, so the old external_ref-based dedup would have missed it —
+    // the idempotency_key DB lookup is what makes every trigger crash-safe.
+    const event = { ...makeTriggerEvent("persisted-key"), external_ref: null };
+    const trigger = makeTriggerPlugin([event]);
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+    (ctx.taskEngine.findByIdempotencyKey as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+    const poller = createTriggerPoller(ctx);
+    await poller.poll(100_000);
+
+    expect(ctx.taskEngine.findByIdempotencyKey).toHaveBeenCalledWith("persisted-key");
+    expect(ctx.taskEngine.createTask).not.toHaveBeenCalled();
   });
 
   it("deduplicates events by idempotency_key within TTL", async () => {

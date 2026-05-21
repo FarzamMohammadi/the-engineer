@@ -15,6 +15,9 @@ export interface CreateTaskInput {
   repo: string;
   /** Who created this task: "github-trigger", "manual", "decomposition", etc. */
   source: string;
+  /** Stable dedup identity (e.g. "github:issue:owner/repo:42"). Required — every task
+   *  carries one. Uniqueness is enforced among non-terminal tasks. */
+  idempotency_key: string;
   external_ref?: ExternalRef | null;
   parent_id?: string | null;
   description?: string;
@@ -86,6 +89,6 @@ export interface ITaskEngine {
   getStateHistory(taskId: string): StateTransition[];
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void;
   updateTracking(taskId: string, tokens: number, costUsd: number, computeMs: number): void;
-  /** Check if a non-terminal task exists with the given external ref (type-aware dedup). */
-  findByExternalRef(ref: ExternalRef): boolean;
+  /** Check if a non-terminal task exists with the given idempotency key (durable dedup). */
+  findByIdempotencyKey(key: string): boolean;
 }

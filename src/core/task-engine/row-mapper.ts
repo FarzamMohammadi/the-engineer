@@ -21,6 +21,7 @@ import type {
 export interface TaskRow {
   id: string;
   external_ref: string | null;
+  idempotency_key: string;
   state: string;
   sub_state: string | null;
   phase: string | null;
@@ -78,6 +79,7 @@ export function rowToTask(row: TaskRow): Task {
   return {
     id: row.id,
     external_ref: fromSqliteJson<ExternalRef>(row.external_ref),
+    idempotency_key: row.idempotency_key,
     state: row.state as TaskState,
     sub_state: row.sub_state as SubState | null,
     phase: row.phase,

@@ -380,6 +380,7 @@ describe("TaskSchema", () => {
   const minimalTask = {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     external_ref: null,
+    idempotency_key: "test:minimal",
     state: TaskStates.requirements_gathering,
     sub_state: null,
     phase: null,

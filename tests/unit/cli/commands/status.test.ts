@@ -50,8 +50,8 @@ describe("runStatus", () => {
     // Insert a test task
     handle.db
       .prepare(`
-      INSERT INTO tasks (id, title, priority, state, sub_state, created_at, last_transition_at)
-      VALUES ('task_1', 'Test task', 50, 'queued', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+      INSERT INTO tasks (id, idempotency_key, title, priority, state, sub_state, created_at, last_transition_at)
+      VALUES ('task_1', 'test:task_1', 'Test task', 50, 'queued', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
     `)
       .run();
     handle.close();

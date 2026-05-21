@@ -88,6 +88,7 @@ export function createMockTask(overrides?: Partial<Task>): Task {
   return TaskSchema.parse({
     id: "01MOCK000000000000000000000",
     external_ref: null,
+    idempotency_key: "mock:01MOCK",
     state: TaskStates.requirements_gathering,
     sub_state: null,
     phase: null,

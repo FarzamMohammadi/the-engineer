@@ -3,7 +3,7 @@ import { ulid } from "ulid";
 import { type SqliteColumnType, toSqlite, toSqliteJson } from "../../db/serialize.js";
 
 import { EventTypes, TaskCreatedPayloadSchema, TaskStateChangedPayloadSchema } from "../../schemas/events.js";
-import type { ActionClass, ExternalRef, StateTransition, SubState, Task, TaskState } from "../../schemas/task.js";
+import type { ActionClass, StateTransition, SubState, Task, TaskState } from "../../schemas/task.js";
 import { CascadePolicies, TaskStates } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
@@ -140,7 +140,7 @@ export class TaskEngine implements ITaskEngine {
 
     this.insertTaskStmt = db.prepare(`
       INSERT INTO tasks (
-        id, external_ref, state, sub_state, phase,
+        id, external_ref, idempotency_key, state, sub_state, phase,
         parent_id, children, cascade_policy,
         title, description, source_text, acceptance_criteria,
         team, related, decisions, child_summaries,
@@ -151,7 +151,7 @@ export class TaskEngine implements ITaskEngine {
         not_before, consecutive_crash_count,
         session_id, version
       ) VALUES (
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -197,6 +197,7 @@ export class TaskEngine implements ITaskEngine {
     this.insertTaskStmt.run(
       id,
       toSqliteJson(externalRef),
+      input.idempotency_key,
       TaskStates.requirements_gathering,
       null, // sub_state
       null, // phase
@@ -241,6 +242,7 @@ export class TaskEngine implements ITaskEngine {
         parent_id: parentId,
         title: input.title,
         external_ref: externalRef,
+        idempotency_key: input.idempotency_key,
         source: input.source,
         priority,
         repo: input.repo,
@@ -250,6 +252,7 @@ export class TaskEngine implements ITaskEngine {
     const task: Task = {
       id,
       external_ref: externalRef,
+      idempotency_key: input.idempotency_key,
       state: TaskStates.requirements_gathering,
       sub_state: null,
       phase: null,
@@ -392,7 +395,8 @@ export class TaskEngine implements ITaskEngine {
     }
   }
 
-  findByExternalRef(ref: ExternalRef): boolean {
-    return this.queries.findByExternalRef(ref);
+  /** Check if a non-terminal task exists with the given idempotency key (durable dedup). */
+  findByIdempotencyKey(key: string): boolean {
+    return this.queries.findByIdempotencyKey(key);
   }
 }

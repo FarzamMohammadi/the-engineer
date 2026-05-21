@@ -2,7 +2,7 @@
 
 **Date**: 2026-05-21 | **Stakes**: Full (touches the universal adapter contract — the moat)
 **Upstream**: `.claude/temp/research/slice-05-trigger.md` | `docs/archived/implementation-docs/9-oss-ready/slices/05-trigger.md`
-**Status**: Draft — expert-panel stress-test pending (run as first action of the implementation session, see Panel Review)
+**Status**: Panel-Reviewed (Session 18) — expert-panel findings incorporated
 
 ## Intent
 
@@ -23,6 +23,9 @@ exactly-once. Every event already carries a required `idempotency_key`.
 Blindness smell); keep both + "at least one" (institutionalizes the confusing split).
 **Consequence**: Every trigger gets crash-safe exactly-once for free. Adds an `idempotency_key` column +
 `findByIdempotencyKey` to `001_schema.sql`.
+**Panel refinement**: Query/index on `idempotency_key` alone (not composite with `source`). Keys are
+globally unique by convention (`github:issue:owner/repo:123` encodes source). Simpler index, same
+correctness. Partial unique index on active tasks mirrors `idx_tasks_external_ref_active` pattern.
 
 ### D2: One Core `StateStore`, delivered via PluginContext (req #4)
 **Choice**: Minimal opaque KV (`get`/`set`/`delete`, string keys, JSON values, namespaced per plugin),
@@ -34,6 +37,11 @@ guesses that ignore `--home`.
 pattern only (each author still hand-rolls it wrong); stateless (burns API quota, the capable plugins
 reinvent persistence anyway).
 **Consequence**: github-trigger AND telegram-comm (D5, Gate 1) delete their file I/O.
+**Panel refinements**: (1) `get()` returns `unknown | null` (`null` for missing key) — parse-don't-validate;
+plugin parses/asserts at its own boundary. No generics on get (that's a cast with different spelling).
+(2) Error contract: `get`/`set`/`delete` throw on DB errors (standard SQLite propagation). `BaseAdapter`
+lifecycle methods already catch at the boundary (`base.ts:72-96`), so plugin authors don't need explicit
+try/catch around StateStore calls. Document in authoring guide.
 
 ### D3: PluginContext — principled split (req #7, Gate 2)
 **Choice**: Keep `this.manifest` (identity) as-is. Introduce one typed `this.context: PluginContext`
@@ -47,6 +55,9 @@ trusts the plugin to self-tag.
 gain; additive-without-a-context-object — leaves the `unknown` typing.
 **Consequence**: The reusable foundation for Slices 8/10/12 and the npm SDK (`adapters/index.ts` is the
 extraction point). Touches `base.ts`, both injection sites, all 7 plugins.
+**Panel refinement**: Member name `logger` is correct (it's what plugin authors see); type remains
+`AdapterObserver` (established, renaming is churn). Document rationale in authoring guide: "The `logger`
+member provides structured logging scoped to your plugin. Typed as `AdapterObserver`."
 
 ### D4: Delete vestigial `trigger.pr_review` scaffolding (req #3)
 **Choice**: Remove the dead event + payload + manifest contribution + lying JSDoc/description + doc
@@ -159,6 +170,7 @@ doc, `docs/constraints.md`).
 | Lint clean | Auto | `pnpm run lint` (no new warnings) |
 | Tests pass | Auto | `pnpm test` (new behavior covered) |
 | Crash-safe dedup | Manual | Null-`external_ref` event survives daemon restart with no dup task |
+| Dedup round-trip | Auto | Event → task → same event → suppressed by `idempotency_key` lookup |
 | State persists | Manual | Watermark + chat-map survive restart via StateStore |
 | Plugin logs tagged | Manual | Degradation logs carry `plugin_id` + plugin-origin marker |
 | Doctor channel check | Manual | Misconfigured owner channel warns at `engineer doctor` |
@@ -176,11 +188,19 @@ doc, `docs/constraints.md`).
 
 ## Panel Review
 
-**Status**: PENDING. Run `/expert-panel-review` on this plan as the **first action of the implementation
-session** — deferred deliberately so the panel runs in fresh context, not at the tail of the planning
-session (a context-starved panel is worse than a fresh one). Panelists should pressure-test: the
-PluginContext contract shape (moat), StateStore minimalism, the dedup migration's crash-safety, and
-Session 1 sizing. Incorporate findings before writing Session 1 code.
+**Status**: COMPLETED (Session 18). Five-perspective review (Torvalds, Hipp, Pike, Engineer Persona,
+Technical Architect). Pressure-tested: PluginContext contract shape, StateStore minimalism, dedup
+migration crash-safety, Session 1 sizing. All panelists converge: core design is sound.
+
+**Findings incorporated above** (marked `Panel refinement` / `Panel refinements` on D1, D2, D3):
+1. `findByIdempotencyKey` queries key alone (not composite with `source`) — keys globally unique by convention.
+2. `StateStore.get()` returns `unknown | null`; error contract: methods throw on DB errors, lifecycle catches.
+3. `logger` member name correct; `AdapterObserver` type stays; document rationale in authoring guide.
+4. Dedup round-trip test added to verification contract.
+5. Session 1 sizing confirmed feasible with T1.5+T1.6 as escape valve.
+
+**Scored assessment**: boundary clarity 9/10, contract quality 8/10, simplicity 9/10, operational
+readiness 7/10, extensibility 9/10, error model 7→8/10 (after incorporating Issue 1), data model 8/10.
 
 ## References
 - Requirements + decisions: `docs/archived/implementation-docs/9-oss-ready/slices/05-trigger.md`

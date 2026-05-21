@@ -22,23 +22,29 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 05-trigger — Trigger & Requirements (Contacts) Flow
-**State:** RRPIR planning complete (Session 17). Requirements + research + plan all written. **No code yet.** Implementation begins next session.
-**Plan:** `.claude/temp/create-plan/slice-05-trigger.md` — Status: **Draft, expert-panel pending**. 9 decisions, 4-session task breakdown.
+**State:** Session 18 complete. Expert panel done (findings incorporated, plan → Panel-Reviewed). **Plan Session 1 COMPLETE** — PluginContext + StateStore foundation shipped, all gates green (typecheck, lint, 2459 tests). Next: Plan Session 2 (dedup → Core).
+**Plan:** `.claude/temp/create-plan/slice-05-trigger.md` — Status: **Panel-Reviewed**. 9 decisions, 4-session task breakdown. Panel scored core design 8-9/10.
 
-**Where Session 17 left us:**
-Full requirements → research → planning pass for Slice 5. Scope = audit/refactor/complete ("fix everything"), under a new **single-user v1 constraint**. Artifacts produced:
-- `slices/05-trigger.md` — 13 decisions, single-user constraint, verified scope boundary, cross-slice handoffs, session breakdown.
-- `.claude/temp/research/slice-05-trigger.md` — implementation-surface research (DB layer, config knobs, registry injection, doctor, bootstrap, deletion sets).
-- `.claude/temp/create-plan/slice-05-trigger.md` — 4-session plan (Draft — panel pending).
-- Memory: `feedback_single_user_constraint.md`.
+**What Session 18 shipped (Plan Session 1 — the foundation):**
+5 commits, all green increments:
+- **StateStore foundation** (`72f4fe5`) — `plugin_state` table; adapter-side `StateStore` interface; Core impl (per-plugin namespaced, prepared statements; `get` returns `unknown|null`).
+- **Deleted dead HookRegistry** (`193f947`) — fully unwired system (zero producers/consumers), −387 net. Cleared the last `unknown`-typed injected field.
+- **PluginContext** (`c1a1897`) — consolidated scattered injected fields into one typed `{ logger, stateStore }`; `manifest` stays separate (identity vs capabilities). `logger` = `observer.childPlugin(id)` auto-binding `plugin_id`; new `"plugin"` ComponentTag. Registry injects via a DB-decoupled `createStateStore` factory.
+- **StateStore migration** (`3432fe1`) — github-trigger watermarks + telegram chat-map off hand-rolled file I/O (which ignored `--home` — now fixed); deleted bare `catch {}`; malformed state → typed `warn` + fresh.
+- **Docs** (`eccae34`) — new `docs/plugins/plugin-context.md` (canonical contract reference); corrected stale file-persistence docs; per-type READMEs link it.
 
-Headline decisions: dedup → Core via `idempotency_key` (Option A); Core **StateStore** + consolidated **PluginContext** (the centerpiece foundation — principled split keeping `this.manifest`); delete vestigial `trigger.pr_review`; per-plugin poll cadence (numeric ms, no override map); configurable work selection; Core-owned backoff; single-user constraint → new `docs/constraints.md` (referenced from README + AGENT-README). Discovered telegram-comm independently reinvented plugin-state persistence (2nd StateStore consumer — migrating in Slice 5). Corrected an earlier wrong finding (#6c: plugins DO have an injected observer, just `unknown`-typed).
+Panel refinements folded into plan: `findByIdempotencyKey` keyed on key alone; StateStore error contract (throws → lifecycle catches); dedup round-trip test added to verification contract.
 
-Cross-slice handoffs designed-but-deferred: #9 reply-token correlation + #10 unblock sender check → Slice 12; trivial-skip handoff → Slice 8; review polling → Slice 10.
+**Cross-slice handoffs (unchanged):** #9 reply-token + #10 unblock check → Slice 12; trivial-skip → Slice 8; review polling → Slice 10.
 
-**Next step — Slice 5 implementation:**
-1. Run `/expert-panel-review` on `.claude/temp/create-plan/slice-05-trigger.md` FIRST (deferred from Session 17 for fresh context). Incorporate findings.
-2. Begin **Session 1 of the plan** — PluginContext + StateStore foundation (the centerpiece everything builds on). Docs are first-class at every step. No sub-agents — work directly.
+**Next step — Plan Session 2 (dedup → Core + delete review scaffolding, D1 + D4):**
+- `idempotency_key` column + **unique** partial index on active tasks (key alone, per panel) in `001_schema.sql`.
+- `findByIdempotencyKey` in task-engine queries (mirror `findByExternalRef`); store key on `createTask`.
+- Rewire `trigger-poller` dedup to key on `idempotency_key`; demote `external_ref` to descriptive.
+- Delete dead `trigger.pr_review` across `events.ts`, `builtin.ts`, JSDoc, `plugin-docs.ts`.
+- Trigger-flow doc + dedup round-trip test. Each task: code + tests + docs + standards pass.
+
+**Known issue:** `orchestrator/index.test.ts > resolveStartState — feedback rework` is flaky (returns `blocked` vs `review_pending` intermittently; passes on rerun). Unrelated to Session 18 changes — likely test-ordering/state-leakage. Worth a separate look.
 
 ## Completed Slices
 

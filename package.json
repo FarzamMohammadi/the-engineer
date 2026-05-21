@@ -1,8 +1,29 @@
 {
   "name": "the-engineer",
-  "version": "0.0.1",
-  "description": "Autonomous software engineering agent",
+  "version": "0.1.0-preview",
+  "description": "An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code, OpenCode, and other CLI agents through the full engineering lifecycle — from task intake to merge — with safety rails, a full audit trail, and a swappable plugin architecture.",
   "type": "module",
+  "license": "MIT",
+  "author": "Farzam Mohammadi <farzamm.oss@gmail.com> (https://github.com/FarzamMohammadi)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FarzamMohammadi/the-engineer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FarzamMohammadi/the-engineer/issues"
+  },
+  "homepage": "https://github.com/FarzamMohammadi/the-engineer#readme",
+  "keywords": [
+    "autonomous-agent",
+    "ai-agent",
+    "software-engineering",
+    "llm",
+    "claude",
+    "codex",
+    "plugin-architecture",
+    "cli",
+    "developer-tools"
+  ],
   "packageManager": "pnpm@10.32.0",
   "engines": {
     "node": ">=22.0.0"

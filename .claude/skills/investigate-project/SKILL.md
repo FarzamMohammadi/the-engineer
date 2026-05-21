@@ -6,7 +6,7 @@ argument-hint: <github-url>
 
 # Investigate Project
 
-Perform a thorough, multi-perspective investigation of an external open-source project and produce a comparative analysis document against The Engineer. The output matches the established format in `implementation-docs/considered-projects/`.
+Perform a thorough, multi-perspective investigation of an external open-source project and produce a comparative analysis document against The Engineer. The output matches the established format in `docs/archived/implementation-docs/considered-projects/`.
 
 The goal is an honest, thorough analysis — not marketing. We want to understand what the project actually is (not what it claims to be), what it does well, what The Engineer does better, and what patterns are worth adopting. The document should be useful months later as a reference for architectural decisions.
 
@@ -14,7 +14,7 @@ The goal is an honest, thorough analysis — not marketing. We want to understan
 
 ## Step 1: Understand the Format
 
-Read 1-2 existing analyses from `implementation-docs/considered-projects/` to internalize the established structure and tone. These are the gold standard — match their depth, honesty, and table-driven comparison style.
+Read 1-2 existing analyses from `docs/archived/implementation-docs/considered-projects/` to internalize the established structure and tone. These are the gold standard — match their depth, honesty, and table-driven comparison style.
 
 The standard structure is:
 1. **What [Project] Is** — honest description of what's actually built (not what the README claims)
@@ -112,7 +112,7 @@ Once all agents return, synthesize their findings into a single comprehensive do
 
 ## Step 4: Write the Document
 
-Write the final document to `implementation-docs/considered-projects/<project-name>.md`.
+Write the final document to `docs/archived/implementation-docs/considered-projects/<project-name>.md`.
 
 Use kebab-case for the filename derived from the project name (e.g., `bmad-method.md`, `openclaw.md`).
 
@@ -138,4 +138,4 @@ Before finishing, verify:
 - [ ] Patterns worth adopting include concrete integration paths (component names, file references)
 - [ ] The categorical relationship is clearly stated upfront
 - [ ] Both strengths and limitations of The Engineer are acknowledged where relevant
-- [ ] Format matches existing analyses in `implementation-docs/considered-projects/`
+- [ ] Format matches existing analyses in `docs/archived/implementation-docs/considered-projects/`

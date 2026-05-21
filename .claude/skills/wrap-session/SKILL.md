@@ -11,9 +11,9 @@ End the current session cleanly so the next one picks up without losing a beat.
 
 ---
 
-## Step 1: Update `implementation-docs/active.md`
+## Step 1: Update `docs/archived/implementation-docs/9-oss-ready/active.md`
 
-Read `implementation-docs/active.md`, then update the **Status** section to reflect:
+Read `docs/archived/implementation-docs/9-oss-ready/active.md`, then update the **Status** section to reflect:
 - What was just completed this session
 - What we're doing next session
 - Current state of the overall work
@@ -24,7 +24,7 @@ Keep the rest of active.md intact (Current Focus, What We're Doing, Deliverables
 
 ## Step 2: Log the Session
 
-1. Check `implementation-docs/sessions/` for the latest session number
+1. Check `docs/archived/implementation-docs/9-oss-ready/sessions/` for the latest session number
 2. Create the next sequential file (e.g., `002.md`, `003.md`)
 
 Format:
@@ -58,7 +58,7 @@ Run `/commit` to stage and commit all changes from this session.
 Generate a starter prompt for the next session. This is a self-contained message the user can paste into a fresh chat to pick up exactly where this session ended.
 
 The prompt should:
-- Tell the agent which files to read first (always start with `implementation-docs/active.md`, then the latest session log)
+- Tell the agent which files to read first (always start with `docs/archived/implementation-docs/9-oss-ready/active.md`, then the latest session log)
 - Include any phase-specific files relevant to the current work (read active.md to determine these)
 - State the project context in one sentence
 - State the working mode based on what we're actually doing (read active.md — it may be code, testing, design, review, etc.). Always include: collaborate deeply, use Q&A tool, never assume, never rush.

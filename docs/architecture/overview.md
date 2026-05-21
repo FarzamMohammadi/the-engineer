@@ -213,8 +213,5 @@ The SafetyLayer tracks cost across configurable time windows and can escalate to
 ## Further Reading
 
 - [Plugin Documentation](../plugins/) — Adapter contracts, per-plugin references, development guides
-- [Philosophy](philosophy.md) — Core beliefs driving every decision
-- `implementation-docs/1-system/` — Detailed system design
-- `implementation-docs/2-components/` — Component-level architecture
-- `implementation-docs/3-interactions/` — Event catalog, protocols, adapter contracts
-- `implementation-docs/4-implementation/` — Technology stack, schemas, testing strategy
+- [Philosophy](../philosophy.md) — Core beliefs driving every decision
+- [Build Journal — Archive](../archived/) — Phase-by-phase development history (not authoritative; read code and `docs/` for ground truth)

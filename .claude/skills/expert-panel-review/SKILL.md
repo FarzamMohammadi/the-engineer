@@ -147,7 +147,7 @@ Search for and read these files (in order of priority). Include their content as
 
 1. **Philosophy / principles:** `docs/philosophy.md`, `PHILOSOPHY.md`, `docs/principles.md`
 2. **Architecture:** `docs/architecture/`, `ARCHITECTURE.md`, `docs/architecture.md`
-3. **Active status / constraints:** `implementation-docs/8-refinement-v2/status.md` (look for "Mandatory Principles" or similar sections)
+3. **Active status / constraints:** `docs/archived/implementation-docs/9-oss-ready/active.md`, `docs/archived/implementation-docs/8-refinement-v2/status.md` (look for "Mandatory Principles" or similar sections)
 
 If any of these files exist, extract the key principles and include them verbatim in every subagent prompt under a `## PROJECT PRINCIPLES (non-negotiable)` header. These are not suggestions — they are hard constraints the panelists must evaluate against.
 

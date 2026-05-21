@@ -40,12 +40,13 @@ src/
   db/           # SQLite database layer + migrations
   dashboard/    # War room dashboard (Hono + SSE)
   utils/        # Shared utilities
-test/
-  helpers/      # Mock factories, fake plugins, contract suites, test utilities
-  fixtures/     # Test fixture data
-  integration/  # Cross-component integration tests
+tests/
+  unit/         # Component logic, schemas, state machines (mirrors src/)
+  integration/  # Cross-component integration tests with fake plugins
   e2e/          # Full daemon lifecycle tests
   boundary/     # Architecture tier enforcement tests
+  helpers/      # Mock factories, fake plugins, contract suites, test utilities
+  fixtures/     # Test fixture data
   setup.ts      # Global test setup
 ```
 

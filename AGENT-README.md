@@ -10,6 +10,8 @@ This is the entry point for any agent working on this project — regardless of 
 
 This file teaches you **how** to work and **when** to load context. It does not contain task assignments, progress state, or session history — those come from the user or from files the user points you to.
 
+**Always read [`README.md`](README.md) too — every session, by default.** It's the first entry in [Always Read](#always-read) below. This guide tells you *how* to work on the project; README tells you *what* the project is and how it's built. You need both, every time — neither substitutes for the other.
+
 ---
 
 ## Context Loading

@@ -4,7 +4,7 @@ Trigger adapters discover new work by polling external sources. The Daemon calls
 
 ## Contract
 
-`TriggerAdapter` extends `BaseAdapter`. All lifecycle methods (`initialize`, `shutdown`, `healthCheck`) are inherited from `BaseAdapter` as template methods -- you implement the `do*` variants.
+`TriggerAdapter` extends `BaseAdapter`. All lifecycle methods (`initialize`, `shutdown`, `healthCheck`) are inherited from `BaseAdapter` as template methods -- you implement the `do*` variants. Like every adapter, it receives a [PluginContext](../plugin-context.md) (`this.context.logger`, `this.context.stateStore`) injected before `initialize()`.
 
 | Method | Signature | Required | Description |
 |--------|-----------|----------|-------------|
@@ -100,6 +100,19 @@ export class MyTriggerPlugin extends TriggerAdapter {
   }
 }
 ```
+
+### Core capabilities: logging and state
+
+Core injects a [PluginContext](../plugin-context.md) onto every plugin before `initialize()` runs. Use `this.context.logger` for structured logging (your `plugin_id` is stamped automatically) and `this.context.stateStore` to persist a cursor across restarts. A trigger that tracks "what have I already seen" stores its watermark there:
+
+```typescript
+protected doShutdown(): Promise<void> {
+  this.context.stateStore.set("watermark", this.latestSeen);
+  return Promise.resolve();
+}
+```
+
+See [Plugin Context](../plugin-context.md) for the full contract, the parse-don't-trust pattern for reading state back, and error handling. Watermarks are an efficiency optimization — Core deduplicates tasks itself, so losing one only means re-fetching.
 
 ### Config schema pattern
 

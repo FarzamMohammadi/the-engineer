@@ -22,11 +22,11 @@ Telegram bots cannot initiate conversations. Each person who should receive mess
 2. Set `TELEGRAM_BOT_TOKEN` in `~/.engineer/.env`.
 3. Each user opens the bot in Telegram and sends `/start`.
 4. The plugin captures the `username -> chat_id` mapping automatically.
-5. The mapping is persisted to `~/.engineer/state/telegram-comm/chat-map.json`.
+5. The mapping is persisted through the Core StateStore, keyed per plugin.
 
 The `handle` field in People Directory contacts must match the Telegram username (case-insensitive, without the `@` prefix). If no mapping exists when the Engineer tries to send a message, the error is clear: "they need to /start the bot first."
 
-**Persistence.** The chat map is written atomically (write to `.tmp`, then rename) to survive crashes. Mappings persist across restarts. Once a user has `/start`-ed, they never need to do it again unless the state file is deleted.
+**Persistence.** The chat map is stored through the Core [StateStore](../plugin-context.md#statestore), which writes atomically to the `--home`-aware database. Mappings persist across restarts. Once a user has `/start`-ed, they never need to do it again unless that state is cleared.
 
 **Capture timing.** Handshakes are captured both during initialization (drains all pending updates received while offline) and during live polling. A `/start` sent while the Engineer is stopped will be picked up on next startup.
 
@@ -83,7 +83,7 @@ disable_link_preview: true            # Disable link previews in messages (defau
 - Polling is non-blocking (`timeout: 0`). The plugin does not use long-polling or webhooks. Message delivery latency depends on the Daemon's poll interval.
 - No group chat support. The plugin is designed for 1:1 bot-to-user messaging. Group messages are not filtered or handled specially.
 - Message length limits. Telegram caps messages at 4096 characters. The plugin does not split long messages -- oversized messages will fail at the API level.
-- The chat map file (`chat-map.json`) is the single source of truth for username-to-chat mappings. If deleted, all users must `/start` again.
+- The chat map (held in the Core StateStore) is the single source of truth for username-to-chat mappings. If cleared, all users must `/start` again.
 
 ## Related Plugins
 

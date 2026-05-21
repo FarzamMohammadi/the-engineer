@@ -10,7 +10,7 @@ A core safety invariant: never force-merge. If branch protection rules are not s
 
 ## Contract
 
-The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors implement the `do*` protected methods. The public methods wrap them with error handling -- unknown errors become `AdapterMethodError` with `internal_error` code.
+The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors implement the `do*` protected methods. The public methods wrap them with error handling -- unknown errors become `AdapterMethodError` with `internal_error` code. Like every adapter, it receives a [PluginContext](../plugin-context.md) (`this.context.logger`, `this.context.stateStore`) injected before `initialize()`.
 
 | Public Method | Signature | Returns |
 |---|---|---|

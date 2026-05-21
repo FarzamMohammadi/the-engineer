@@ -4,7 +4,7 @@ LLM adapters are inference-only providers. The Engineer is the agent -- LLM plug
 
 ## Contract
 
-`LLMAdapter` extends `BaseAdapter`. All lifecycle methods are inherited as template methods.
+`LLMAdapter` extends `BaseAdapter`. All lifecycle methods are inherited as template methods. Like every adapter, it receives a [PluginContext](../plugin-context.md) (`this.context.logger`, `this.context.stateStore`) injected before `initialize()`.
 
 | Method | Signature | Required | Description |
 |--------|-----------|----------|-------------|

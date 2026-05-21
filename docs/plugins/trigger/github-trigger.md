@@ -20,7 +20,7 @@ The plugin is marked `critical: true` -- if it fails to initialize, the Daemon w
 - Per-repo watermark tracking -- only returns issues updated since the last poll
 - ETag caching for conditional requests (304 Not Modified skips processing)
 - Rate limit handling with Retry-After backoff (429 responses pause polling)
-- Watermark persistence to disk -- survives restarts without re-processing old issues
+- Watermark persistence via the Core StateStore -- survives restarts without re-processing old issues
 - Idempotency keys prevent duplicate task creation for the same issue
 - Filters out pull requests (only issues are returned)
 
@@ -63,7 +63,7 @@ poll_interval_ms: 30000
 
 On each poll cycle, the plugin iterates through configured repos and calls the GitHub Issues API (`GET /repos/{owner}/{repo}/issues`) with `state=open`, `sort=updated`, `direction=asc`, and `per_page=30`.
 
-**Watermarks**: After processing issues from a repo, the plugin records the latest `updated_at` timestamp. On subsequent polls, it passes this as the `since` parameter so the API only returns issues updated after that point. Watermarks are persisted to `~/.engineer/state/github-trigger/watermarks.json` on shutdown (atomic write via temp file + rename) and loaded on startup.
+**Watermarks**: After processing issues from a repo, the plugin records the latest `updated_at` timestamp. On subsequent polls, it passes this as the `since` parameter so the API only returns issues updated after that point. Watermarks are persisted through the Core [StateStore](../plugin-context.md#statestore) on shutdown and restored on startup — Core owns where and how state is stored, so the plugin holds no file paths of its own.
 
 **ETag caching**: Each request includes an `If-None-Match` header with the ETag from the previous response. If the API returns 304 (no changes), the plugin skips processing entirely. This saves API quota on quiet repos.
 

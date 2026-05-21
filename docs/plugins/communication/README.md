@@ -4,7 +4,7 @@ Communication adapters are the Engineer's voice -- how it talks to humans throug
 
 ## Contract
 
-`CommunicationAdapter` extends `BaseAdapter`. Methods are split into required and capability-gated optional groups.
+`CommunicationAdapter` extends `BaseAdapter`. Methods are split into required and capability-gated optional groups. Like every adapter, it receives a [PluginContext](../plugin-context.md) (`this.context.logger`, `this.context.stateStore`) injected before `initialize()`.
 
 ### Required methods
 

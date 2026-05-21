@@ -21,24 +21,24 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice:** 05-trigger — Trigger & Requirements Flow
-**State:** Not yet started. No slice file written yet. Begin with `/requirements-gathering`.
-**Plan:** Will be created during the planning phase, after requirements + research.
+**Slice:** 05-trigger — Trigger & Requirements (Contacts) Flow
+**State:** RRPIR planning complete (Session 17). Requirements + research + plan all written. **No code yet.** Implementation begins next session.
+**Plan:** `.claude/temp/create-plan/slice-05-trigger.md` — Status: **Draft, expert-panel pending**. 9 decisions, 4-session task breakdown.
 
-**Where slice 4 left us:**
-Slice 4 (Startup & Configuration) is fully complete. Phases 1–5 all done:
-- Phase 1 (Session 10): simplification & removals
-- Phase 2 (Session 11): getting-started path, `pnpm run setup`, seed sanitization
-- Phase 3 (Session 12): OS detection gate, setup UX polish
-- Phase 4 (Session 13): CLI restructure (Screaming Architecture)
-- Phase 4 (Session 14): expanded coding standards (§4, §5, §7, §12–§15) added to `docs/coding-standards.md`
-- Session 15: closed 6 infrastructure gaps the new standards exposed in post-bootstrap code (retryable flag, cause chains, trace_id correlation, floating promises, span/log correlation, graceful degradation logs)
-- Phase 5 (Session 16): swept the slice 4 in-scope files (`src/cli/`, `src/config/`, `src/plugins/loader.ts`, `src/plugins/builtin.ts`) against the new standards. Added `readonly` to ~30 interfaces/types, threaded observer + adapterType into `loadPluginConfig` for richer degradation logs, wrapped `loadBuiltinPlugins` in a lifecycle span, fixed missing cause chain in `ensureDirectories`, added a doctor warn for category 9 skip on config failure. Codified "Apply with judgment, never mechanically" as a callout in coding-standards.md after a readability incident with conditional spreads.
+**Where Session 17 left us:**
+Full requirements → research → planning pass for Slice 5. Scope = audit/refactor/complete ("fix everything"), under a new **single-user v1 constraint**. Artifacts produced:
+- `slices/05-trigger.md` — 13 decisions, single-user constraint, verified scope boundary, cross-slice handoffs, session breakdown.
+- `.claude/temp/research/slice-05-trigger.md` — implementation-surface research (DB layer, config knobs, registry injection, doctor, bootstrap, deletion sets).
+- `.claude/temp/create-plan/slice-05-trigger.md` — 4-session plan (Draft — panel pending).
+- Memory: `feedback_single_user_constraint.md`.
 
-Build status at slice 4 close: typecheck clean, lint clean (only pre-existing warnings), 2463/2463 tests pass.
+Headline decisions: dedup → Core via `idempotency_key` (Option A); Core **StateStore** + consolidated **PluginContext** (the centerpiece foundation — principled split keeping `this.manifest`); delete vestigial `trigger.pr_review`; per-plugin poll cadence (numeric ms, no override map); configurable work selection; Core-owned backoff; single-user constraint → new `docs/constraints.md` (referenced from README + AGENT-README). Discovered telegram-comm independently reinvented plugin-state persistence (2nd StateStore consumer — migrating in Slice 5). Corrected an earlier wrong finding (#6c: plugins DO have an injected observer, just `unknown`-typed).
 
-**Next step — Slice 5 kickoff:**
-Begin with `/requirements-gathering`. Probe scope: which trigger plugin behaviors need rework, the dedup story end-to-end (idempotency keys, watermarks, what happens on plugin crash mid-poll), how requirements gathering hands off to research, how the contacts/people directory feeds into outreach. No assumptions — every question one at a time. Once requirements feel solid, write `slices/05-trigger.md` capturing them, then `/research`, then `/create-plan`, then implement.
+Cross-slice handoffs designed-but-deferred: #9 reply-token correlation + #10 unblock sender check → Slice 12; trivial-skip handoff → Slice 8; review polling → Slice 10.
+
+**Next step — Slice 5 implementation:**
+1. Run `/expert-panel-review` on `.claude/temp/create-plan/slice-05-trigger.md` FIRST (deferred from Session 17 for fresh context). Incorporate findings.
+2. Begin **Session 1 of the plan** — PluginContext + StateStore foundation (the centerpiece everything builds on). Docs are first-class at every step. No sub-agents — work directly.
 
 ## Completed Slices
 

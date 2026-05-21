@@ -12,7 +12,6 @@ import {
   HealthPluginUnhealthyPayloadSchema,
 } from "../../schemas/events.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
-import type { HookRegistry } from "../hooks/index.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { IObserver } from "../observer/index.js";
@@ -53,7 +52,6 @@ export interface RegistryOptions {
   healthCheckIntervalMs?: number;
   healthCheckTimeoutMs?: number;
   consecutiveFailuresThreshold?: number;
-  hookRegistry?: HookRegistry | undefined;
 }
 
 // ── Registry Facade ────────────────────────────────────────────────────────
@@ -70,13 +68,11 @@ export class Registry implements IPluginLookup {
   private readonly lifecycle;
   private readonly healthMonitor;
   private readonly observer: IObserver;
-  private readonly hookRegistry?: HookRegistry | undefined;
   private readonly healthCheckIntervalMs: number;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: RegistryOptions) {
     this.observer = options.observer;
-    this.hookRegistry = options.hookRegistry;
     this.lifecycle = createLifecycleManager(options.observer);
     this.healthCheckIntervalMs = options.healthCheckIntervalMs ?? 60_000;
     this.healthMonitor = createPluginHealthMonitor({
@@ -92,9 +88,6 @@ export class Registry implements IPluginLookup {
   // ── Registration ───────────────────────────────────────────────────────
 
   register(manifest: PluginManifest, instance: BaseAdapter): RegistrationResult {
-    if (this.hookRegistry) {
-      instance.hookRegistry = this.hookRegistry;
-    }
     instance.observer = this.observer.child("plugin-loader");
     return this.lifecycle.register(manifest, instance);
   }

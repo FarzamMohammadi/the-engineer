@@ -6,7 +6,6 @@ import type { Daemon } from "../../../core/daemon/index.js";
 import { EVENTS as DAEMON_EVENTS, createDaemon } from "../../../core/daemon/index.js";
 import { createNotificationRouter } from "../../../core/daemon/notification-router.js";
 import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../../../core/data-lifecycle/index.js";
-import { HookRegistry } from "../../../core/hooks/index.js";
 import type { AuthUrlProvider } from "../../../core/interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../../../core/observer/index.js";
 import { BlobStore, createLogger, createObservationStore, createObserverFacade } from "../../../core/observer/index.js";
@@ -119,10 +118,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       "Core components created: EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager",
     );
 
-    // 4. Hook Registry (after core components so it can observe them)
-    const hookRegistry = new HookRegistry(observer.child("hooks"));
-
-    // 5. Registry (needs eventBus + health config + hook registry)
+    // 4. Registry (needs eventBus + health config)
     eventTopology.registerPublisher("registry", REGISTRY_EVENTS);
     registry = new Registry({
       eventBus,
@@ -130,10 +126,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       healthCheckIntervalMs: config.daemon.plugins.health_check_interval_ms,
       healthCheckTimeoutMs: config.daemon.plugins.health_check_timeout_ms,
       consecutiveFailuresThreshold: config.daemon.plugins.consecutive_failures_threshold,
-      hookRegistry,
     });
 
-    // 6. Observability (BlobStore + ObservationStore for dashboard)
+    // 5. Observability (BlobStore + ObservationStore for dashboard)
     const tracesDir = join(engineerHome, "traces");
     const blobStore = new BlobStore(tracesDir);
     const observationStore = createObservationStore(dbHandle.db, blobStore);
@@ -141,10 +136,10 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     milestones["observability"] = Date.now() - bootstrapStartMs;
     observer.info("Observer upgraded — tracing enabled");
 
-    // 7. People Directory
+    // 6. People Directory
     const peopleDirectory = new PeopleDirectory({ people: config.people });
 
-    // 7b. Notification Router (shared by Orchestrator + Daemon)
+    // 6b. Notification Router (shared by Orchestrator + Daemon)
     const notifications = createNotificationRouter({
       registry,
       taskEngine,
@@ -155,7 +150,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       clock: new RealClock(),
     });
 
-    // 8. Orchestrator
+    // 7. Orchestrator
     eventTopology.registerPublisher("orchestrator", ORCHESTRATOR_EVENTS);
     const orchestrator = new Orchestrator({
       config: config.orchestrator,
@@ -174,7 +169,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       tracesDir,
     });
 
-    // 9. Data Lifecycle Manager
+    // 8. Data Lifecycle Manager
     eventTopology.registerPublisher("data-lifecycle", DATA_LIFECYCLE_EVENTS);
     const dataLifecycleManager = createDataLifecycleManager({
       db: dbHandle.db,
@@ -185,7 +180,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       observer: observer.child("data-lifecycle"),
     });
 
-    // 10. Daemon
+    // 9. Daemon
     eventTopology.registerPublisher("daemon", DAEMON_EVENTS);
     const daemon = createDaemon({
       config: config.daemon,
@@ -208,7 +203,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     // ── Event Topology: Subscribers ──────────────────────────────────────────
 
-    // 11. Register event topology subscriptions
+    // 10. Register event topology subscriptions
     eventTopology.registerSubscriber("orchestrator", EventTypes["preemption.requested"]);
     eventTopology.registerSubscriber("safety_layer", EventTypes["cost.incurred"]);
     eventTopology.registerSubscriber("safety_layer:cleanup", EventTypes["task.state_changed"]);
@@ -235,7 +230,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     // ── Plugin Loading ───────────────────────────────────────────────────────
 
-    // 12. Load built-in plugins
+    // 11. Load built-in plugins
     // Note: Plugin instances created via create() are lightweight — no OS resources
     // are allocated until initialize(). If config loading fails for a non-critical
     // plugin, the instance is deregistered without calling shutdown(), which is safe.

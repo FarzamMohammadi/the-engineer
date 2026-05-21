@@ -29,7 +29,6 @@ graph TB
         R[Registry]
         PD[PeopleDirectory]
         OB[Observer]
-        HR[HookRegistry]
         DLM[DataLifecycleManager]
     end
 
@@ -93,7 +92,6 @@ graph LR
 | **Registry** | Plugin discovery, five-phase loading, health monitoring, lifecycle management |
 | **PeopleDirectory** | Config-driven contact resolution for notifications and escalations |
 | **Observer** | Structured tracing facade — spans, observations, blob storage for the dashboard |
-| **HookRegistry** | Lifecycle hook system for plugin-injected callbacks at key system events |
 | **DataLifecycleManager** | Retention cleanup, blob orphan pruning, incremental vacuum |
 
 ## Task Lifecycle

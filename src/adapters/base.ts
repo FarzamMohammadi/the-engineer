@@ -48,14 +48,6 @@ export abstract class BaseAdapter {
   manifest!: PluginManifest;
 
   /**
-   * Hook registry, injected by the Registry if available.
-   * Plugins can use this to register lifecycle hooks during initialization.
-   * Typed as `unknown` to avoid tier import violations (adapters cannot import core).
-   * Plugins should cast to `HookRegistry` from `../core/hooks/index.js` if needed.
-   */
-  hookRegistry?: unknown;
-
-  /**
    * Observer facade, injected by the Registry before initialize() is called.
    * Provides structured logging (info/error/warn/debug) and tracing.
    * Typed as `unknown` to avoid tier import violations (adapters cannot import core).

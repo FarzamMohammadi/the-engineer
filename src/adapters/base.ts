@@ -15,6 +15,22 @@ export interface AdapterObserver {
 }
 
 /**
+ * Opaque key-value store for plugin-owned state (watermarks, cursors, mappings).
+ *
+ * Namespaced per plugin by Core — a plugin can only access its own keys.
+ * Values are JSON-serializable; the plugin decides what to store and parses
+ * what it reads back. Backed by the database, atomic, `--home`-aware.
+ */
+export interface StateStore {
+  /** Get a value by key. Returns `null` if the key does not exist. */
+  get(key: string): unknown;
+  /** Set a value by key. Overwrites any existing value. */
+  set(key: string, value: unknown): void;
+  /** Delete a key. No-op if the key does not exist. */
+  delete(key: string): void;
+}
+
+/**
  * Base class for all adapter implementations.
  *
  * Provides shared infrastructure: manifest storage (injected by Registry),

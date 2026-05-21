@@ -203,3 +203,13 @@ CREATE TABLE knowledge (
 CREATE INDEX idx_knowledge_natural_key ON knowledge(scope, repo_scope, key);
 CREATE INDEX idx_knowledge_active ON knowledge(scope, repo_scope, superseded_by);
 CREATE INDEX idx_knowledge_domain ON knowledge(domain);
+
+-- ── plugin_state ────────────────────────────────────────────────────────────────
+
+CREATE TABLE plugin_state (
+  plugin_id       TEXT NOT NULL,
+  key             TEXT NOT NULL,
+  value           TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  PRIMARY KEY (plugin_id, key)
+);

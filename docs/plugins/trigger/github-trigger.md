@@ -75,7 +75,7 @@ On each poll cycle, the plugin iterates through configured repos and calls the G
 
 - Polling only -- no webhook support. There is an inherent delay between issue creation and task pickup (up to `poll_interval_ms`).
 - Fetches at most 30 issues per repo per poll cycle. Repos with many simultaneous new issues may need multiple cycles.
-- No PR review trigger events in the current implementation (idempotency key format exists for reviews but `pollIssues` filters out PRs).
+- Issues only -- pull requests are filtered out (`pollIssues` skips anything with a `pull_request` field). There is no PR-review trigger.
 - Label filtering is applied at the API level (comma-joined), so an issue must have all listed labels to match.
 - Watermark loss (corrupt file, first run) causes re-fetching from the beginning. The Daemon's idempotency key deduplication prevents duplicate tasks.
 

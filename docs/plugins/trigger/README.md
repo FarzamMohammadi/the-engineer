@@ -25,7 +25,7 @@ Defined in `src/schemas/adapters.ts` (`TriggerEventSchema`).
 |-------|------|-------------|
 | `idempotency_key` | `string` | Stable key for deduplication (e.g. `github:issue:owner/repo:42`). Must be deterministic -- same event must produce the same key across polls. |
 | `source` | `string` | Plugin ID that produced this event. |
-| `event_type` | `string` | Classification (e.g. `issue_assigned`, `pr_review_requested`). |
+| `event_type` | `string` | Classification (e.g. `issue_assigned`). |
 | `external_ref` | `ExternalRef \| null` | Link back to the external system (type, repo, id, url, pr_decorations). Plugins can optionally set `pr_decorations` to provide platform-formatted strings for PR title/description decoration. Core treats all decoration values as opaque. See `pr_decorations` fields: `title_prefix` (e.g. `"#42:"` — plugin owns delimiter), `title_suffix`, `description_prefix`, `description_suffix` (e.g. `"Closes #42"`). |
 | `title` | `string` | Human-readable title for the task. |
 | `body` | `string \| null` | Full description/body text. |

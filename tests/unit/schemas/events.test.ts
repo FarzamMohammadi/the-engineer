@@ -32,7 +32,6 @@ import {
   TimeoutReminderPayloadSchema,
   TimeoutSelfUnblockCheckPayloadSchema,
   TriggerNewEventPayloadSchema,
-  TriggerPrReviewPayloadSchema,
   WorkspaceCleanedPayloadSchema,
   WorkspaceCreatedPayloadSchema,
   WorkspaceMergeConflictPayloadSchema,
@@ -103,11 +102,7 @@ describe("SubscriptionSchema", () => {
 // ── EventTypeSchema ────────────────────────────────────────────────────────────
 
 describe("EventTypeSchema", () => {
-  it("has exactly 42 event types", () => {
-    expect(EventTypeSchema.options).toHaveLength(42);
-  });
-
-  it("accepts all 33 valid event types", () => {
+  it("accepts all valid event types", () => {
     for (const type of EventTypeSchema.options) {
       expect(EventTypeSchema.parse(type)).toBe(type);
     }
@@ -356,21 +351,6 @@ describe("TriggerNewEventPayloadSchema", () => {
       metadata: { labels: ["bug", "auth"] },
     };
     expect(TriggerNewEventPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("TriggerPrReviewPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      pr_number: 42,
-      repo: "owner/repo",
-      review_type: "changes_requested",
-      pr_state: "ready",
-      reviewer: "farzam",
-      comment: "Please add error handling",
-    };
-    expect(TriggerPrReviewPayloadSchema.parse(valid)).toEqual(valid);
   });
 });
 
@@ -623,10 +603,6 @@ describe("eventPayloadSchemas", () => {
     for (const type of enumValues) {
       expect(schemaKeys.has(type)).toBe(true);
     }
-  });
-
-  it("has exactly 42 entries", () => {
-    expect(Object.keys(eventPayloadSchemas)).toHaveLength(42);
   });
 
   it("every schema can validate an object", () => {

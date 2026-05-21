@@ -14,11 +14,10 @@ import { type GitHubTriggerConfig, GitHubTriggerConfigSchema } from "./config.js
 const WATERMARKS_KEY = "watermarks";
 
 /**
- * GitHubTriggerPlugin — polls GitHub for assigned issues and PR reviews.
+ * GitHubTriggerPlugin — polls GitHub for open issues.
  *
- * Produces stable idempotency keys for deduplication:
- * - Issues: `github:issue:{owner}/{repo}:{number}`
- * - Reviews: `github:review:{owner}/{repo}:{pr}:{review_id}`
+ * Produces a stable idempotency key per issue for deduplication:
+ * `github:issue:{owner}/{repo}:{number}`.
  *
  * Tracks per-repo watermarks (ISO timestamp) to return only new events.
  * Decision #74: polling-only, no webhooks, ~30s intervals.

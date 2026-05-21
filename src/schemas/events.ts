@@ -43,7 +43,6 @@ export const EventTypeSchema = z.enum([
   "timeout.self_unblock_check",
   "timeout.alert",
   "trigger.new_event",
-  "trigger.pr_review",
   "workspace.created",
   "workspace.verified",
   "workspace.cleaned",
@@ -236,17 +235,6 @@ export const TriggerNewEventPayloadSchema = z.object({
   metadata: z.record(z.unknown()).nullable(),
 });
 export type TriggerNewEventPayload = z.infer<typeof TriggerNewEventPayloadSchema>;
-
-export const TriggerPrReviewPayloadSchema = z.object({
-  task_id: z.string(),
-  pr_number: z.number().int().positive(),
-  repo: z.string(),
-  review_type: z.enum(["approved", "changes_requested", "comment"]),
-  pr_state: z.literal("ready"),
-  reviewer: z.string(),
-  comment: z.string().nullable(),
-});
-export type TriggerPrReviewPayload = z.infer<typeof TriggerPrReviewPayloadSchema>;
 
 // workspace.*
 
@@ -521,7 +509,6 @@ export type EventPayloads = {
   "timeout.self_unblock_check": TimeoutSelfUnblockCheckPayload;
   "timeout.alert": TimeoutAlertPayload;
   "trigger.new_event": TriggerNewEventPayload;
-  "trigger.pr_review": TriggerPrReviewPayload;
   "workspace.created": WorkspaceCreatedPayload;
   "workspace.verified": WorkspaceVerifiedPayload;
   "workspace.cleaned": WorkspaceCleanedPayload;
@@ -575,7 +562,6 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "timeout.self_unblock_check": TimeoutSelfUnblockCheckPayloadSchema,
   "timeout.alert": TimeoutAlertPayloadSchema,
   "trigger.new_event": TriggerNewEventPayloadSchema,
-  "trigger.pr_review": TriggerPrReviewPayloadSchema,
   "workspace.created": WorkspaceCreatedPayloadSchema,
   "workspace.verified": WorkspaceVerifiedPayloadSchema,
   "workspace.cleaned": WorkspaceCleanedPayloadSchema,

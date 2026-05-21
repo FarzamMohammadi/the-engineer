@@ -15,7 +15,6 @@
     "pino-roll",
     "@types/node-fetch",
     "tailwindcss",
-    "react-router",
     "recharts",
     "lucide-react",
     "class-variance-authority",

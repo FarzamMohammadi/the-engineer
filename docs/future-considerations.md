@@ -53,35 +53,6 @@ packages/
 
 ---
 
-## CI Pipeline
-
-**Current state (v1):** Enforcement via local git hooks only (lefthook: pre-commit Biome + tsc, pre-push unit tests).
-
-**When it becomes relevant:** When the project is hosted on GitHub and automated PR validation is needed.
-
-**What it enables:** Full test pipeline on every PR:
-1. `pnpm biome check` (lint + format)
-2. `pnpm tsc --noEmit` (type check)
-3. `pnpm test:coverage` (unit tests + coverage enforcement)
-4. `pnpm test:integration` (integration tests)
-5. `pnpm test:e2e` (e2e tests)
-
-**Migration path:** The three-tier Vitest configs (Decision #119) and coverage thresholds (Decision #121) are ready for CI. Just needs a workflow file (GitHub Actions or equivalent).
-
----
-
-## Event Bus Runtime Payload Validation
-
-**Current state (v1):** The Event Bus does not validate event payloads at runtime. Publishers are trusted internal components; type safety is enforced at compile time via `PublishInput<T>`. Per event-catalog.md (L3): "Schema validation is a development-time concern (tests), not a runtime concern."
-
-**When it becomes relevant:** When third-party plugins can publish events, or when debugging payload mismatches becomes a recurring issue.
-
-**What it enables:** Optional runtime validation using the `eventPayloadSchemas` registry (already exists in `src/schemas/events.ts`). Could be enabled per-environment (e.g., development mode only) or as a constructor option on `EventBus`.
-
-**Migration path:** The `eventPayloadSchemas` record maps every `EventType` to its Zod schema. Adding validation to `publish()` is a single `safeParse()` call. Performance impact is negligible for development mode; production can skip it.
-
----
-
 ## Monorepo Test Configuration
 
 **Current state (v1):** Single `vitest.config.ts` at project root. All tests in one package.
@@ -142,22 +113,6 @@ packages/
 
 ---
 
-## Enum Constants from Zod Schemas
-
-**Current state (v1):** Zod enum schemas (`TaskStateSchema`, `SubStateSchema`, `PluginHealthStateSchema`, `ActionClassSchema`, etc.) define the valid values, and TypeScript types are derived via `z.infer<>`. However, consuming code references values as raw strings — `"queued"`, `"healthy"`, `"working"`, etc. — scattered across `src/core/task-engine/`, `src/core/registry/`, `src/schemas/task.ts`, and tests.
-
-**When it becomes relevant:** As the codebase grows beyond the current phases and more components reference state values. Raw strings become harder to track, refactor, and autocomplete.
-
-**What it enables:** Zod's `.enum` property provides a const object for free. Exporting `const TaskState = TaskStateSchema.enum` alongside the existing `type TaskState` (TypeScript allows a type and const to share the same name) gives typed constants: `TaskState.intake`, `TaskState.queued`, `TaskState.active`, etc. Zero runtime overhead, full autocomplete, and typo-proof. Same pattern applies to `SubState`, `ActionClass`, `PluginHealthState`, `AdapterType`, `CascadePolicy`, and all other Zod enums in `src/schemas/`.
-
-**Migration path:** Mechanical refactor — no logic changes:
-1. In each schema file, add `export const X = XSchema.enum` for each Zod enum (e.g., `export const TaskState = TaskStateSchema.enum`)
-2. Replace all raw string references with the const (e.g., `"queued"` → `TaskState.queued`)
-3. Covers: `src/schemas/task.ts`, `src/schemas/adapters.ts`, `src/schemas/events.ts`, `src/core/task-engine/`, `src/core/registry/`, and all corresponding test files
-4. The `ValidTransitions` and `PermissionTable` const arrays in `task.ts` benefit the most — currently ~80 raw string references
-
----
-
 ## GitHubCommPlugin `receive` Capability
 
 **Current state (v1):** GitHubCommPlugin supports `send`, `sync`, and `issue_management` capabilities. The `receive` capability is omitted.
@@ -176,28 +131,6 @@ packages/
 2. Filter out The Engineer's own comments and non-directory authors
 3. Emit `comm.message_received` events (the Daemon subscription already exists from Phase 14b)
 4. Design interrupt routing in the Orchestrator (see "Mid-Phase Communication Interrupt Handling")
-
----
-
-## TelegramCommPlugin `receive` Capability
-
-**Current state (v1):** TelegramCommPlugin supports `send` capability only. The `receive` capability is omitted.
-
-**What `receive` enables:** People in the People Directory communicating *with* The Engineer via Telegram messages mid-flow. Same use case as GitHub `receive` — interrupts, questions, direction, feedback — but via Telegram's real-time chat interface.
-
-**Why it's deferred:** Same unresolved design questions as the GitHub `receive` capability:
-1. **People Directory auth check** — inbound messages must be authenticated against the directory. Only recognized people can communicate with The Engineer.
-2. **Message routing** — how inbound messages reach the Daemon/Orchestrator during active task execution (mid-phase interrupt handling).
-3. **Polling lifecycle** — grammy's `bot.start()` runs long-polling in the background. Managing this alongside the Daemon's tick loop requires careful coordination (start on init, stop on shutdown, error recovery).
-
-**When it becomes relevant:** When bidirectional Telegram communication is needed — people wanting to steer, interrupt, or query The Engineer through the same chat where it sends notifications.
-
-**Migration path:** The `CommunicationAdapter` base class already defines `receive` as an optional capability with `doStartListening()`/`doStopListening()`. Adding it to TelegramCommPlugin requires:
-1. Implement `doStartListening()` — call `bot.start()` with grammy's long-polling, wrap inbound messages in `InboundMessage`
-2. Implement `doStopListening()` — call `bot.stop()`
-3. Authenticate inbound messages against People Directory (match Telegram user ID to directory entries)
-4. Emit `comm.message_received` events (the Daemon subscription already exists from Phase 14b)
-5. Design interrupt routing in the Orchestrator (shared with GitHub — see "Mid-Phase Communication Interrupt Handling")
 
 ---
 
@@ -242,16 +175,15 @@ packages/
 
 ## Plugin How-To Guides
 
-Each adapter type needs a "How to build a plugin" guide so contributors can add new integrations without reading Core code. One guide per adapter type (4 adapter types):
+Each adapter type needs an agent-executable "How to build a plugin" guide so contributors can add new integrations without reading Core code. The **LLMAdapter** guide exists at `docs/contribution-docs/how-tos/plugins/llm-adapter/` and is the reference pattern. Three remain:
 
-- **TriggerAdapter** — How to build a trigger plugin (poll for events, produce `TriggerEvent[]` with `external_ref`, idempotency keys, watermarks). Example: building a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
-- **CommunicationAdapter** — How to build a comm plugin (send messages, format for your platform, capability gates for send/receive/sync/issue_management). Example: building a Slack plugin, a Discord plugin, an email plugin.
-- **LLMAdapter** — How to build an LLM plugin (spawn CLI process, pipe prompt via stdin, parse output, report cost/tokens, detect rate limits). Example: building a plugin for a new CLI tool.
-- **GitHostingAdapter** — How to build a git hosting plugin (PR lifecycle: create, update, merge, get status, list comments). Example: building a GitLab hosting plugin.
+- **TriggerAdapter** — poll for events, produce `TriggerEvent[]` with a stable `idempotency_key` (identity/dedup) and optional `external_ref` (descriptive), plus watermarks. Example: a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
+- **CommunicationAdapter** — send messages, format for your platform, capability gates for send/receive/sync/issue_management. Example: a Slack, Discord, or email plugin.
+- **GitHostingAdapter** — PR lifecycle (create, update, merge, get status, list comments). Example: a GitLab hosting plugin.
 
-**Format:** Each guide should include the adapter interface, required vs optional methods, capability gates, manifest format (`engineer.plugin.yaml`), config schema, a minimal working example, and how to register/test.
+**Format:** follow the llm-adapter guide — adapter interface, required vs optional methods, capability gates, manifest format, config schema, a minimal working example, and how to register/test, written as an agent-executable prompt.
 
-**Location:** `docs/plugins/` or `implementation-docs/plugin-guides/`
+**Location:** `docs/contribution-docs/how-tos/plugins/<adapter>/`
 
 ---
 

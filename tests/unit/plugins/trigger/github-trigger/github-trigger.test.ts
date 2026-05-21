@@ -459,7 +459,7 @@ describe("GitHubTriggerPlugin", () => {
       await plugin.poll();
       await plugin.shutdown();
 
-      // Re-init and poll — watermarks should be restored from disk
+      // Re-init and poll — watermarks should be restored from the state store
       await plugin.initialize(VALID_CONFIG);
       (plugin as unknown as { octokit: unknown }).octokit = mockOctokit;
       mockOctokit.issues.listForRepo.mockResolvedValueOnce({

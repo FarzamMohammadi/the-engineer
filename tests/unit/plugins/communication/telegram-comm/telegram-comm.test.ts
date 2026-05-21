@@ -1,6 +1,4 @@
-import { rmSync } from "node:fs";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TelegramCommPlugin } from "../../../../../src/plugins/communication/telegram-comm/telegram-comm.js";
 import {
   classifyTelegramError,
@@ -10,6 +8,7 @@ import type { FormattedMessage, PluginManifest, Target } from "../../../../../sr
 import { MessageTypes } from "../../../../../src/schemas/adapters.js";
 import { runCommunicationContractSuite } from "../../../../helpers/contract-suites/communication-contract.js";
 import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
+import { createTestStateStoreFactory } from "../../../../helpers/test-state-store.js";
 
 // ── Mock Bot ─────────────────────────────────────────────────────────────────
 
@@ -323,50 +322,36 @@ describe("TelegramCommPlugin", () => {
     });
   });
   describe("chat map persistence", () => {
-    const savedHome = process.env["ENGINEER_HOME"];
-    let tmpDir: string;
+    it("persists the mapping across a restart (save, then load on a fresh instance)", () => {
+      // A shared store models the same database across two runs.
+      const stateStore = createTestStateStoreFactory()("telegram-comm");
 
-    afterEach(() => {
-      if (tmpDir) {
-        rmSync(tmpDir, { recursive: true, force: true });
-      }
-      if (savedHome === undefined) {
-        delete process.env["ENGINEER_HOME"];
-      } else {
-        process.env["ENGINEER_HOME"] = savedHome;
-      }
-    });
+      const p1 = new TelegramCommPlugin();
+      p1.manifest = MANIFEST;
+      p1.context = createTestPluginContext("telegram-comm", stateStore);
+      (p1 as unknown as { userChatMap: Map<string, string> }).userChatMap.set("farzammohammadi", "-1001234567890");
+      (p1 as unknown as { saveChatMap: () => void }).saveChatMap();
 
-    it("saveChatMap + loadChatMap round-trips the mapping", () => {
-      tmpDir = join(process.cwd(), `tmp-test-state-${Date.now()}`);
-      process.env["ENGINEER_HOME"] = tmpDir;
-
-      // Save current map (pre-populated in beforeEach)
-      (plugin as unknown as { saveChatMap: () => void }).saveChatMap();
-
-      // Create a fresh plugin and load
       const p2 = new TelegramCommPlugin();
       p2.manifest = MANIFEST;
-      p2.context = createTestPluginContext();
+      p2.context = createTestPluginContext("telegram-comm", stateStore);
       (p2 as unknown as { loadChatMap: () => void }).loadChatMap();
 
       const map = (p2 as unknown as { userChatMap: Map<string, string> }).userChatMap;
       expect(map.get("farzammohammadi")).toBe("-1001234567890");
     });
 
-    it("loadChatMap handles missing file gracefully", () => {
-      process.env["ENGINEER_HOME"] = `/tmp/nonexistent-engineer-${Date.now()}`;
-
+    it("loadChatMap starts fresh when no state is persisted", () => {
       const p = new TelegramCommPlugin();
       p.manifest = MANIFEST;
       p.context = createTestPluginContext();
-      // Should not throw
+      // Should not throw on an empty store
       (p as unknown as { loadChatMap: () => void }).loadChatMap();
       const map = (p as unknown as { userChatMap: Map<string, string> }).userChatMap;
       expect(map.size).toBe(0);
     });
 
-    it("captureHandshake skips disk write when mapping already exists", async () => {
+    it("captureHandshake skips persistence when mapping already exists", async () => {
       const saveSpy = vi.spyOn(plugin as unknown as { saveChatMap: () => void }, "saveChatMap");
 
       // Call with same data that's already in the map

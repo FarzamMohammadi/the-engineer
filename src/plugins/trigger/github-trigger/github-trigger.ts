@@ -1,6 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { Octokit } from "@octokit/rest";
 import { AdapterMethodError } from "../../../adapters/errors.js";
 import {
@@ -12,6 +9,9 @@ import {
 } from "../../../adapters/index.js";
 import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import { type GitHubTriggerConfig, GitHubTriggerConfigSchema } from "./config.js";
+
+/** StateStore key under which per-repo watermarks are persisted. */
+const WATERMARKS_KEY = "watermarks";
 
 /**
  * GitHubTriggerPlugin — polls GitHub for assigned issues and PR reviews.
@@ -58,23 +58,25 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
     }
     this.config = parsed.data;
     this.octokit = new Octokit({ auth: this.config.github_token });
-    this.watermarks.clear();
-
-    // Load persisted watermarks
-    try {
-      const watermarkPath = this.getWatermarkPath();
-      if (existsSync(watermarkPath)) {
-        const data = readFileSync(watermarkPath, "utf-8");
-        const stored = JSON.parse(data) as Record<string, string>;
-        for (const [key, value] of Object.entries(stored)) {
-          this.watermarks.set(key, value);
-        }
-      }
-    } catch {
-      // First run or corrupt — start fresh
-    }
+    this.loadWatermarks();
 
     return Promise.resolve({ success: true, message: null });
+  }
+
+  /** Restore per-repo watermarks from the state store. Malformed state starts fresh, loudly. */
+  private loadWatermarks(): void {
+    this.watermarks.clear();
+    const stored = this.context.stateStore.get(WATERMARKS_KEY);
+    if (stored === null) {
+      return; // first run
+    }
+    if (!isStringRecord(stored)) {
+      this.context.logger.warn("Persisted watermarks are malformed — starting fresh");
+      return;
+    }
+    for (const [key, value] of Object.entries(stored)) {
+      this.watermarks.set(key, value);
+    }
   }
 
   protected async doHealthCheck(): Promise<HealthStatus> {
@@ -100,25 +102,11 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
   }
 
   protected doShutdown(): Promise<void> {
-    // Persist watermarks BEFORE clearing — save state after processing
-    try {
-      const watermarkPath = this.getWatermarkPath();
-      const stateDir = join(watermarkPath, "..");
-      mkdirSync(stateDir, { recursive: true });
-      const tempPath = `${watermarkPath}.tmp`;
-      writeFileSync(tempPath, JSON.stringify(Object.fromEntries(this.watermarks)), "utf-8");
-      renameSync(tempPath, watermarkPath);
-    } catch {
-      // Best effort — watermark loss means re-fetching on next startup
-    }
+    // Persist watermarks BEFORE clearing — save state after processing.
+    this.context.stateStore.set(WATERMARKS_KEY, Object.fromEntries(this.watermarks));
     this.watermarks.clear();
     this.etags.clear();
     return Promise.resolve();
-  }
-
-  private getWatermarkPath(): string {
-    const engineerHome = process.env["ENGINEER_HOME"] ?? join(homedir(), ".engineer");
-    return join(engineerHome, "state", this.manifest.id, "watermarks.json");
   }
 
   // ── Private Helpers ──────────────────────────────────────────────────
@@ -249,6 +237,13 @@ function mapIssueToEvent(owner: string, repo: string, issue: GitHubIssue, plugin
       assignees: (issue.assignees ?? []).map((a) => a.login),
     },
   };
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((entry) => typeof entry === "string");
 }
 
 function getErrorStatus(error: unknown): number | null {

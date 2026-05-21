@@ -1,6 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { Bot } from "grammy";
 import {
   CommunicationAdapter,
@@ -14,6 +11,9 @@ import {
   createAdapterError,
 } from "../../../adapters/index.js";
 import { type TelegramCommConfig, TelegramCommConfigSchema } from "./config.js";
+
+/** StateStore key under which the username → chat_id map is persisted. */
+const CHAT_MAP_KEY = "chat-map";
 
 // ── MarkdownV2 escaping ──────────────────────────────────────────────────────
 
@@ -106,6 +106,13 @@ function getRetryAfterMs(error: unknown): number | undefined {
   return undefined;
 }
 
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((entry) => typeof entry === "string");
+}
+
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 /**
@@ -125,8 +132,7 @@ function getRetryAfterMs(error: unknown): number | undefined {
  * 2. Set TELEGRAM_BOT_TOKEN in ~/.engineer/.env
  * 3. Each user opens the bot in Telegram and sends `/start`
  * 4. The plugin captures the username → chat_id mapping automatically
- * 5. Mapping is persisted to ~/.engineer/state/telegram-comm/chat-map.json
- *    (crash-safe atomic write via rename)
+ * 5. Mapping is persisted via the Core StateStore, keyed per plugin
  *
  * The `handle` field in People Directory contacts must match the user's
  * Telegram username (case-insensitive). If no mapping exists for a handle,
@@ -393,38 +399,35 @@ export class TelegramCommPlugin extends CommunicationAdapter {
     return this.telegramNameMap.get(username.toLowerCase()) ?? `@${username}`;
   }
 
-  // ── Persistent chat map (same pattern as github-trigger watermarks) ───
+  // ── Persistent chat map (username → chat_id, via Core StateStore) ─────
 
-  private getStatePath(): string {
-    const engineerHome = process.env["ENGINEER_HOME"] ?? join(homedir(), ".engineer");
-    return join(engineerHome, "state", this.manifest.id, "chat-map.json");
-  }
-
+  /** Restore the username → chat_id map from the state store. Malformed state starts fresh, loudly. */
   private loadChatMap(): void {
-    try {
-      const path = this.getStatePath();
-      if (existsSync(path)) {
-        const data = readFileSync(path, "utf-8");
-        const stored = JSON.parse(data) as Record<string, string>;
-        for (const [key, value] of Object.entries(stored)) {
-          this.userChatMap.set(key, value);
-        }
-      }
-    } catch {
-      // First run or corrupt — start fresh
+    const stored = this.context.stateStore.get(CHAT_MAP_KEY);
+    if (stored === null) {
+      return; // first run
+    }
+    if (!isStringRecord(stored)) {
+      this.context.logger.warn("Persisted chat map is malformed — starting fresh");
+      return;
+    }
+    for (const [key, value] of Object.entries(stored)) {
+      this.userChatMap.set(key, value);
     }
   }
 
+  /**
+   * Persist the chat map. Best-effort: called on every handshake at runtime, so a
+   * failure must not break message handling — it is logged, not thrown. A lost write
+   * only means the user re-runs `/start` after a restart.
+   */
   private saveChatMap(): void {
     try {
-      const path = this.getStatePath();
-      const stateDir = join(path, "..");
-      mkdirSync(stateDir, { recursive: true });
-      const tempPath = `${path}.tmp`;
-      writeFileSync(tempPath, JSON.stringify(Object.fromEntries(this.userChatMap)), "utf-8");
-      renameSync(tempPath, path);
-    } catch {
-      // Best effort — mapping loss means users need to /start again
+      this.context.stateStore.set(CHAT_MAP_KEY, Object.fromEntries(this.userChatMap));
+    } catch (error) {
+      this.context.logger.warn("Failed to persist chat map — handshake may need repeating after restart", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

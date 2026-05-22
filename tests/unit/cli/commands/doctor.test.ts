@@ -9,6 +9,7 @@ import {
   checkDataDirectory,
   checkDatabase,
   checkNodeRuntime,
+  checkPeopleDirectory,
   checkPluginManifests,
   checkRequiredSecrets,
   checkRiskyConfig,
@@ -399,6 +400,51 @@ describe("checkRiskyConfig", () => {
   });
 });
 
+// ── People Directory ──────────────────────────────────────────────────────
+
+describe("checkPeopleDirectory", () => {
+  function makeOwner(contacts: Array<{ channel: string; handle: string }>) {
+    return {
+      id: "owner",
+      name: "Owner",
+      roles: ["owner"],
+      contacts,
+      preferences: { notification_level: "milestones" as const, quiet_hours: null },
+    };
+  }
+
+  function enableCommPlugin(id: string): void {
+    const pluginDir = join(tempDir, "config", "plugins");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, `${id}.yaml`), "# enabled", "utf8");
+  }
+
+  it("warns when no owner is configured", () => {
+    const result = checkPeopleDirectory([], tempDir);
+    expect(result.category).toBe("People Directory");
+    expect(result.checks.find((c) => c.label === "Owner")?.status).toBe("warn");
+  });
+
+  it("passes when the owner's channels are all deliverable", () => {
+    enableCommPlugin("telegram-comm");
+    const result = checkPeopleDirectory([makeOwner([{ channel: "telegram", handle: "@o" }])], tempDir);
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0]?.status).toBe("pass");
+  });
+
+  it("warns that only the owner is reached when extra people are configured", () => {
+    enableCommPlugin("telegram-comm");
+    const reviewer = { ...makeOwner([]), id: "alice", roles: ["reviewer"] };
+    const result = checkPeopleDirectory([makeOwner([{ channel: "telegram", handle: "@o" }]), reviewer], tempDir);
+    expect(result.checks.some((c) => c.label === "Single-user" && c.status === "warn")).toBe(true);
+  });
+
+  it("warns when an owner channel has no installed comm plugin", () => {
+    const result = checkPeopleDirectory([makeOwner([{ channel: "telegram", handle: "@o" }])], tempDir);
+    expect(result.checks.find((c) => c.label === 'Channel "telegram"')?.status).toBe("warn");
+  });
+});
+
 // ── Aggregation ───────────────────────────────────────────────────────────
 
 describe("computeExitCode", () => {
@@ -464,14 +510,16 @@ describe("runPreFlightChecks", () => {
 });
 
 describe("runAllChecks", () => {
-  it("runs 8 categories without bundle", () => {
-    const results = runAllChecks(tempDir);
-    expect(results).toHaveLength(8);
+  it("omits config-dependent categories without a bundle", () => {
+    const names = runAllChecks(tempDir).map((c) => c.category);
+    expect(names).not.toContain("People Directory");
+    expect(names).not.toContain("Risky Config Warnings");
   });
 
-  it("runs 9 categories with bundle", () => {
-    const results = runAllChecks(tempDir, makeSafeBundle());
-    expect(results).toHaveLength(9);
+  it("adds People Directory and Risky Config categories with a bundle", () => {
+    const names = runAllChecks(tempDir, makeSafeBundle()).map((c) => c.category);
+    expect(names).toContain("People Directory");
+    expect(names).toContain("Risky Config Warnings");
   });
 });
 

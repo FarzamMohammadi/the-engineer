@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { checkEnvFilePermissions, loadEnvFile } from "../../config/env.js";
 import { loadConfigSafe } from "../../config/loader.js";
 import type { ConfigBundle } from "../../config/loader.js";
+import type { PeopleDirectoryWarning } from "../../core/people-directory/index.js";
+import { inspectPeopleDirectory } from "../../core/people-directory/index.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+import { AdapterTypes } from "../../schemas/adapters.js";
 import { TimeoutStageActions } from "../../schemas/config.js";
 import {
   DaemonConfigSchema,
@@ -35,7 +38,7 @@ export interface DoctorCategory {
 
 // ── Aggregation ──────────────────────────────────────────────────────────────
 
-/** Run all doctor check categories (8 base + 1 conditional risky config). */
+/** Run every doctor check category. Categories needing loaded config are added only when a bundle is provided. */
 export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): DoctorCategory[] {
   const dirs = resolveDirectories(engineerHome);
   const categories: DoctorCategory[] = [
@@ -49,15 +52,16 @@ export function runAllChecks(engineerHome: string, bundle?: ConfigBundle): Docto
     checkExternalDependencies(),
   ];
 
-  // Category 9 requires loaded config — only added when available
+  // These categories read loaded config — only added when a bundle is available
   if (bundle) {
+    categories.push(checkPeopleDirectory(bundle.people, engineerHome));
     categories.push(checkRiskyConfig(bundle));
   }
 
   return categories;
 }
 
-/** Run pre-flight checks (categories 1-7 only). Used by `start` command. */
+/** Run the pre-flight checks `engineer start` uses before bootstrap — the subset that needs no loaded config bundle. */
 export function runPreFlightChecks(engineerHome: string): DoctorCategory[] {
   const dirs = resolveDirectories(engineerHome);
   return [
@@ -141,7 +145,7 @@ function exitCodeSummary(exitCode: number): string {
 
 // ── Check: Node Runtime ──────────────────────────────────────────────────────
 
-/** Category 1: Node.js runtime version check. */
+/** Node.js runtime version check. */
 export function checkNodeRuntime(): DoctorCategory {
   const version = process.version;
   const major = Number.parseInt(version.slice(1).split(".")[0] ?? "0", 10);
@@ -161,7 +165,7 @@ export function checkNodeRuntime(): DoctorCategory {
 
 // ── Check: Data Directory ────────────────────────────────────────────────────
 
-/** Category 2: Data directory existence and writability. */
+/** Data directory existence and writability. */
 export function checkDataDirectory(engineerHome: string): DoctorCategory {
   const dirs = resolveDirectories(engineerHome);
   const checks: DoctorCheck[] = [];
@@ -205,7 +209,7 @@ export function checkDataDirectory(engineerHome: string): DoctorCategory {
 
 // ── Check: Config Files ──────────────────────────────────────────────────────
 
-/** Category 3: Config file validation. */
+/** Config file validation — every core YAML parses and passes its schema. */
 export function checkConfigFiles(configDir: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
 
@@ -230,11 +234,6 @@ export function checkConfigFiles(configDir: string): DoctorCategory {
     const result = loadConfigSafe(filePath, schema);
     if (result.ok) {
       checks.push({ label: name, status: "pass", message: "Valid" });
-
-      // Owner-must-exist check for people config
-      if (name === "people.yaml" && result.config) {
-        checkPeopleOwner(result.config, filePath, checks);
-      }
     } else {
       checks.push({
         label: name,
@@ -248,29 +247,9 @@ export function checkConfigFiles(configDir: string): DoctorCategory {
   return { category: "Config Files", checks };
 }
 
-/** Check if people.yaml has an owner configured and push appropriate check result. */
-function checkPeopleOwner(config: unknown, filePath: string, checks: DoctorCheck[]): void {
-  const people = config as { people?: Array<{ role?: string }> };
-  const hasOwner = people.people?.some((p) => p.role === "owner") ?? false;
-  if (hasOwner) {
-    checks.push({
-      label: "People Directory — owner",
-      status: "pass",
-      message: "Owner configured",
-    });
-  } else {
-    checks.push({
-      label: "People Directory — owner",
-      status: "warn",
-      message: "No person with role 'owner' configured — outreach fallback will fail",
-      remedy: `Add a person with role: owner to ${filePath}`,
-    });
-  }
-}
-
 // ── Check: Required Secrets ──────────────────────────────────────────────────
 
-/** Category 4: Required secrets (env vars referenced in configs). */
+/** Required secrets — env vars referenced in configs resolve, and .env permissions are safe. */
 export function checkRequiredSecrets(configDir: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
   const envVarPattern = /\$\{([^}]+)\}/g;
@@ -374,7 +353,7 @@ function isYamlFile(name: string): boolean {
 
 // ── Check: Database ──────────────────────────────────────────────────────────
 
-/** Category 5: Database accessibility and schema version. */
+/** Database accessibility check. */
 export function checkDatabase(engineerHome: string): DoctorCategory {
   const dbPath = join(engineerHome, "data", "engineer.db");
   const checks: DoctorCheck[] = [];
@@ -405,7 +384,7 @@ export function checkDatabase(engineerHome: string): DoctorCategory {
 
 // ── Check: Plugin Manifests ──────────────────────────────────────────────────
 
-/** Category 6: Plugin config validation — check which built-in plugins are enabled via config files. */
+/** Plugin config validation — which built-in plugins are enabled via config files. */
 export function checkPluginManifests(engineerHome: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
   const pluginConfigDir = join(engineerHome, "config", "plugins");
@@ -441,7 +420,7 @@ export function checkPluginManifests(engineerHome: string): DoctorCategory {
 
 // ── Check: Workspace ─────────────────────────────────────────────────────────
 
-/** Category 7: Workspace & git availability. */
+/** Workspace & git availability. */
 export function checkWorkspace(engineerHome: string): DoctorCategory {
   const checks: DoctorCheck[] = [];
   const workspaceRoot = join(engineerHome, "workspaces");
@@ -483,7 +462,7 @@ export function checkWorkspace(engineerHome: string): DoctorCategory {
 
 // ── Check: External Dependencies ─────────────────────────────────────────────
 
-/** Category 8: External dependency availability — derived from plugin manifests. */
+/** External dependency availability — derived from plugin manifests. */
 export function checkExternalDependencies(): DoctorCategory {
   const checks: DoctorCheck[] = [];
 
@@ -525,9 +504,93 @@ export function checkExternalDependencies(): DoctorCategory {
   return { category: "External Dependencies", checks };
 }
 
+// ── Check: People Directory ──────────────────────────────────────────────────
+
+/** People Directory category: single-user health — owner presence, extra people, owner-channel reachability. */
+export function checkPeopleDirectory(people: ConfigBundle["people"], engineerHome: string): DoctorCategory {
+  const warnings = inspectPeopleDirectory(people, availableCommChannels(engineerHome));
+
+  if (warnings.length === 0) {
+    return {
+      category: "People Directory",
+      checks: [{ label: "Owner", status: "pass", message: "Owner configured; all owner channels are deliverable" }],
+    };
+  }
+
+  const peopleYamlPath = join(resolveDirectories(engineerHome).config, "people.yaml");
+  return {
+    category: "People Directory",
+    checks: warnings.map((warning) => renderPeopleWarning(warning, peopleYamlPath)),
+  };
+}
+
+/** Map a people-directory warning to a doctor check with a kind-specific label and remedy. */
+function renderPeopleWarning(warning: PeopleDirectoryWarning, peopleYamlPath: string): DoctorCheck {
+  switch (warning.kind) {
+    case "no_owner":
+      return {
+        label: "Owner",
+        status: "warn",
+        message: warning.message,
+        remedy: `Add a person with role: owner to ${peopleYamlPath}`,
+      };
+    case "multiple_people":
+      return {
+        label: "Single-user",
+        status: "warn",
+        message: warning.message,
+        remedy: "v1 contacts only the owner — see docs/constraints.md",
+      };
+    case "unreachable_owner_channel":
+      return {
+        label: `Channel "${String(warning.data["channel"])}"`,
+        status: "warn",
+        message: warning.message,
+        remedy:
+          "Enable a communication plugin for this channel, or change the owner's contact in people.yaml — see docs/plugins/",
+      };
+    default: {
+      const unhandled: never = warning.kind;
+      throw new Error(`Unhandled people-directory warning kind "${String(unhandled)}"`);
+    }
+  }
+}
+
+/**
+ * Channels that enabled, send-capable built-in communication plugins can deliver.
+ * Doctor sees bundled plugins only; the daemon validates the live registry at startup.
+ */
+function availableCommChannels(engineerHome: string): Set<string> {
+  const enabled = enabledPluginIds(engineerHome);
+  const channels = new Set<string>();
+  for (const { manifest } of BUILTIN_PLUGINS) {
+    if (manifest.type !== AdapterTypes.communication || !enabled.has(manifest.id)) {
+      continue;
+    }
+    const capabilities = manifest.adapter_meta["capabilities"];
+    const channel = manifest.adapter_meta["channel"];
+    if (Array.isArray(capabilities) && capabilities.includes("send") && typeof channel === "string") {
+      channels.add(channel);
+    }
+  }
+  return channels;
+}
+
+/** IDs of plugins enabled by the presence of a config file under config/plugins/. */
+function enabledPluginIds(engineerHome: string): Set<string> {
+  const pluginConfigDir = join(engineerHome, "config", "plugins");
+  if (!existsSync(pluginConfigDir)) {
+    return new Set();
+  }
+  const ids = readdirSync(pluginConfigDir)
+    .filter((filename) => filename.endsWith(".yaml"))
+    .map((filename) => filename.replace(YAML_EXTENSION_PATTERN, ""));
+  return new Set(ids);
+}
+
 // ── Check: Risky Config ──────────────────────────────────────────────────────
 
-/** Category 9: Risky config warnings. */
+/** Risky config category: warnings for dangerous or incoherent settings. */
 export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
   const checks: DoctorCheck[] = [];
 

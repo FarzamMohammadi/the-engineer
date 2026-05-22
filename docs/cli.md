@@ -159,7 +159,7 @@ Source: [`src/cli/commands/logs.ts`](../src/cli/commands/logs.ts)
 
 ### doctor
 
-Runs 9 independent health check categories. No daemon required — works standalone.
+Runs independent health check categories. No daemon required — works standalone.
 
 ```bash
 engineer doctor
@@ -167,19 +167,22 @@ engineer doctor
 
 **Exit codes:** `0` = all pass, `1` = failures found, `2` = warnings only.
 
-| # | Category | What it checks |
-|---|----------|----------------|
-| 1 | Node.js Runtime | `process.version >= 22.0.0` |
-| 2 | Data Directory | ENGINEER_HOME exists, writable, subdirs present |
-| 3 | Config Files | All 5 YAML configs parse and pass Zod validation |
-| 4 | Required Secrets | All `${ENV_VAR}` references in configs resolve + `.env` file permissions |
-| 5 | Database | SQLite file accessible |
-| 6 | Plugin Manifests | Plugin config files parse correctly |
-| 7 | Workspace | Git binary available, workspace dir exists |
-| 8 | External Dependencies | LLM CLIs on PATH |
-| 9 | Risky Config | Warnings for auto-merge enabled, missing cost limits, high concurrency |
+| Category | What it checks |
+|----------|----------------|
+| Node.js Runtime | `process.version >= 22.0.0` |
+| Data Directory | ENGINEER_HOME exists, writable, subdirs present |
+| Config Files | Every core YAML config parses and passes Zod validation |
+| Required Secrets | All `${ENV_VAR}` references in configs resolve + `.env` file permissions |
+| Database | SQLite file accessible |
+| Plugin Manifests | Plugin config files parse correctly |
+| Workspace | Git binary available, workspace dir exists |
+| External Dependencies | LLM CLIs on PATH |
+| People Directory | An owner is configured, the single-user constraint is respected, and the owner's channels have an installed communication plugin (needs loaded config) |
+| Risky Config | Warnings for auto-merge enabled, missing cost limits, high concurrency (needs loaded config) |
 
-Categories 1-7 also run automatically as pre-flight checks on `engineer start`.
+The People Directory and Risky Config categories need a loaded config bundle, so they run only when
+config loads. On `engineer start`, a pre-flight subset runs automatically before the daemon boots —
+every category above except Workspace, People Directory, and Risky Config.
 
 Source: [`src/cli/commands/doctor.ts`](../src/cli/commands/doctor.ts)
 

@@ -10,7 +10,7 @@ The Engineer uses YAML configuration files stored in `~/.engineer/config/`. All 
 | [orchestrator.yaml](orchestrator.md) | RRPIR pipeline, notifications, decomposition, phases | No |
 | [safety.yaml](safety.md) | Cost limits, scope boundaries, autonomy, merge policy | **Yes** |
 | [workspace.yaml](workspace.md) | Git operations, branch naming, PR settings, cleanup | No |
-| [people.yaml](people.md) | People directory: roles, contacts, notification preferences | **Yes** |
+| [people.yaml](people.md) | People directory: roles, contacts, notification preferences | No |
 
 Plugin-specific configs live in `~/.engineer/config/plugins/` and are documented in [docs/plugins/](../plugins/).
 
@@ -27,7 +27,7 @@ If a config directory is explicitly specified but doesn't exist, the daemon fail
 
 ## Hot-Reloadable Configs
 
-**safety.yaml** and **people.yaml** are hot-reloadable — changes take effect without restarting the daemon. A file watcher detects changes with a 500ms debounce. All other config files require a daemon restart.
+**safety.yaml** is hot-reloadable — changes take effect without restarting the daemon, detected by a file watcher with a 500ms debounce. All other config files, including **people.yaml**, take effect on a daemon restart.
 
 ## Environment Variable References
 

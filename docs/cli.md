@@ -75,7 +75,7 @@ That's it. On first run, `start` detects there's no config and launches guided s
 1. **Environment detection** — scans PATH for LLM CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars
 2. **Plugin selection** — one prompt per adapter type (LLM, trigger, hosting, communication, tools), grouped by category, with detection status shown
 3. **Per-plugin config** — prompts for required fields (repos to watch, etc.)
-4. **People Directory** — configures owner (required) and optional additional people. For each person: name, identifier, roles, and a handle for each selected communication channel (derived from plugin manifests). Generates `people.yaml` with real values instead of placeholders.
+4. **People Directory** — configures the owner (the single person The Engineer reaches) and optional additional people. For each person: name, identifier, roles, and a handle for each selected communication channel (derived from plugin manifests). Generates `people.yaml` with real values instead of placeholders.
 5. **Secret collection** — prompts for token values with masked input (e.g., `GITHUB_TOKEN`). Tokens already set in your shell are captured and persisted to `~/.engineer/.env` automatically. Permissions: `0o600`.
 6. **Confirmation** — summary of selections, Y/n
 7. **Config written** — YAML files to `~/.engineer/config/`, secrets to `~/.engineer/.env`
@@ -206,7 +206,7 @@ Config files live in `~/.engineer/config/`. Generated on first run with conserva
 - `orchestrator.yaml` — RRPIR phases, notifications, decomposition
 - `safety.yaml` — cost limits, autonomy level, merge policy
 - `workspace.yaml` — worktree root, branch prefix, PR defaults, cleanup
-- `people.yaml` — contacts for communication (hot-reloadable)
+- `people.yaml` — the owner and their contact channels for communication
 
 **Plugin configs** (`config/plugins/`):
 - One YAML file per enabled plugin (e.g., `github-trigger.yaml`, `claude-code-llm.yaml`)

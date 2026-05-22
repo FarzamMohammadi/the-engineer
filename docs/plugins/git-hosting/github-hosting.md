@@ -81,5 +81,5 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 | Plugin | Relationship |
 |--------|-------------|
-| `github-trigger` | Watches repos for assigned issues and PR review requests. Shares `GITHUB_TOKEN`. |
+| `github-trigger` | Watches repos for open issues filtered by label and/or assignee. Shares `GITHUB_TOKEN`. |
 | `github-comm` | Posts comments and manages labels on the same issues/PRs. Shares `GITHUB_TOKEN`. |

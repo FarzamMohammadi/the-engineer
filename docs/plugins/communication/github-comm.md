@@ -75,6 +75,6 @@ label_prefix: "engineer:"          # Prefix for state labels (default: "engineer
 
 | Plugin | Relationship |
 |--------|-------------|
-| `github-trigger` | Watches the same repos for new issues/PR reviews. Shares `GITHUB_TOKEN`. |
+| `github-trigger` | Watches the same repos for new issues. Shares `GITHUB_TOKEN`. |
 | `github-hosting` | Manages PR lifecycle (create, merge, review). Shares `GITHUB_TOKEN`. |
 | `telegram-comm` | Alternative communication channel for personal notifications. |

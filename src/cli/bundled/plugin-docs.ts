@@ -10,11 +10,13 @@ export interface PluginDoc {
 
 const TRIGGER_README = `# Trigger Adapter
 
-Trigger adapters discover new work by polling external sources. The Daemon calls \`poll()\` on a configurable interval, and the adapter returns zero or more \`TriggerEvent\` objects representing new tasks. Each event carries an idempotency key so the Daemon can deduplicate across polls. This is the simplest adapter type -- one abstract method (\`doPoll()\`) beyond the standard lifecycle.
+Trigger adapters discover new work by polling external sources. The Daemon calls \`poll()\` on each plugin's declared interval, and the adapter returns zero or more \`TriggerEvent\` objects representing new tasks. Each event carries an idempotency key so the Daemon can deduplicate across polls. This is the simplest adapter type -- one abstract method (\`doPoll()\`) beyond the standard lifecycle.
+
+**Polling and backoff:** A plugin declares its preferred poll cadence via \`poll_interval_ms\` on its manifest. The Daemon honors it (falling back to the global \`trigger_poll_interval_ms\` config if absent). On consecutive failures, the Daemon applies exponential backoff (2^n * base, capped at 5 minutes). If the plugin throws an \`AdapterMethodError\` with \`retry_after_ms\` set (e.g. from a 429 rate-limit response), the Daemon honors that delay instead -- and does not count the rate-limit toward the consecutive-failure threshold.
 
 ## Contract
 
-\`TriggerAdapter\` extends \`BaseAdapter\`. All lifecycle methods (\`initialize\`, \`shutdown\`, \`healthCheck\`) are inherited from \`BaseAdapter\` as template methods -- you implement the \`do*\` variants.
+\`TriggerAdapter\` extends \`BaseAdapter\`. All lifecycle methods (\`initialize\`, \`shutdown\`, \`healthCheck\`) are inherited from \`BaseAdapter\` as template methods -- you implement the \`do*\` variants. Like every adapter, it receives a [PluginContext](../plugin-context.md) (\`this.context.logger\`, \`this.context.stateStore\`) injected before \`initialize()\`.
 
 | Method | Signature | Required | Description |
 |--------|-----------|----------|-------------|
@@ -36,7 +38,7 @@ Defined in \`src/schemas/adapters.ts\` (\`TriggerEventSchema\`).
 | \`idempotency_key\` | \`string\` | Stable key for deduplication (e.g. \`github:issue:owner/repo:42\`). Must be deterministic -- same event must produce the same key across polls. |
 | \`source\` | \`string\` | Plugin ID that produced this event. |
 | \`event_type\` | \`string\` | Classification (e.g. \`issue\`). |
-| \`external_ref\` | \`ExternalRef \\| null\` | Link back to the external system (type, repo, id, url). |
+| \`external_ref\` | \`ExternalRef \\| null\` | Link back to the external system (type, repo, id, url, pr_decorations). Plugins can optionally set \`pr_decorations\` to provide platform-formatted strings for PR title/description decoration. Core treats all decoration values as opaque. See \`pr_decorations\` fields: \`title_prefix\` (e.g. \`"#42:"\` — plugin owns delimiter), \`title_suffix\`, \`description_prefix\`, \`description_suffix\` (e.g. \`"Closes #42"\`). |
 | \`title\` | \`string\` | Human-readable title for the task. |
 | \`body\` | \`string \\| null\` | Full description/body text. |
 | \`repo\` | \`string\` | Repository identifier (\`owner/name\`). |
@@ -111,6 +113,19 @@ export class MyTriggerPlugin extends TriggerAdapter {
 }
 \`\`\`
 
+### Core capabilities: logging and state
+
+Core injects a [PluginContext](../plugin-context.md) onto every plugin before \`initialize()\` runs. Use \`this.context.logger\` for structured logging (your \`plugin_id\` is stamped automatically) and \`this.context.stateStore\` to persist a cursor across restarts. A trigger that tracks "what have I already seen" stores its watermark there:
+
+\`\`\`typescript
+protected doShutdown(): Promise<void> {
+  this.context.stateStore.set("watermark", this.latestSeen);
+  return Promise.resolve();
+}
+\`\`\`
+
+See [Plugin Context](../plugin-context.md) for the full contract, the parse-don't-trust pattern for reading state back, and error handling. Watermarks are an efficiency optimization — Core deduplicates tasks itself, so losing one only means re-fetching.
+
 ### Config schema pattern
 
 Use Zod with \`z.output\` for the type (resolves defaults, required for \`exactOptionalPropertyTypes\`).
@@ -121,12 +136,13 @@ import { z } from "zod";
 
 export const MyTriggerConfigSchema = z.object({
   api_token: z.string().min(1),
-  poll_interval_ms: z.number().int().positive().default(30_000),
   project_id: z.string().min(1),
 });
 
 export type MyTriggerConfig = z.output<typeof MyTriggerConfigSchema>;
 \`\`\`
+
+Note: poll interval is declared on the manifest (\`poll_interval_ms\`), not in plugin config. The Daemon manages poll timing -- plugins do not need to track it themselves.
 
 ### Registration in builtin.ts
 
@@ -150,7 +166,8 @@ import { MyTriggerPlugin } from "./trigger/my-trigger/my-trigger.js";
   critical: true,
   requirements: [{ type: "env", name: "MY_API_TOKEN" }],
   entry: "builtin",
-  adapter_meta: { poll_interval: "30s" },
+  poll_interval_ms: 30_000,
+  adapter_meta: {},
   contributes: { events: ["trigger.new_event"] },
 },
 
@@ -211,9 +228,9 @@ The contract suite validates:
 
 | Plugin | Source | Polls | Idempotency Key Pattern | Watermarks | Requirements |
 |--------|--------|-------|-------------------------|------------|--------------|
-| **GitHub Trigger** | GitHub Issues | Issues assigned to user, filtered by labels | \`github:issue:{owner}/{repo}:{number}\` | Per-repo ISO timestamp, persisted to \`~/.engineer/state/github-trigger/watermarks.json\` | \`GITHUB_TOKEN\` env var |
+| **GitHub Trigger** | GitHub Issues | Open issues filtered by label and/or assignee | \`github:issue:{owner}/{repo}:{number}\` | Per-repo ISO timestamp, persisted via Core StateStore | \`GITHUB_TOKEN\` env var |
 
-The GitHub Trigger plugin also handles ETag-based conditional requests (304 Not Modified), Retry-After from 429 responses, and error classification (\`auth_failed\`, \`not_found\`, \`rate_limited\`, \`network_error\`).
+The GitHub Trigger plugin also handles ETag-based conditional requests (304 Not Modified), rate-limit reporting via \`retry_after_ms\` (Core-owned backoff), and error classification (\`auth_failed\`, \`not_found\`, \`rate_limited\`, \`network_error\`).
 
 ## Reference
 
@@ -248,11 +265,11 @@ The plugin is marked \`critical: true\` -- if it fails to initialize, the Daemon
 ## Capabilities
 
 - Polls open issues from one or more repositories
-- Filters by label (optional)
+- Configurable work selection: filter by label, assignee, or both (defaults to the \`engineer\` label)
 - Per-repo watermark tracking -- only returns issues updated since the last poll
 - ETag caching for conditional requests (304 Not Modified skips processing)
-- Rate limit handling with Retry-After backoff (429 responses pause polling)
-- Watermark persistence to disk -- survives restarts without re-processing old issues
+- Rate limit reporting via \`retry_after_ms\` -- the Daemon honors the delay (Core-owned backoff)
+- Watermark persistence via the Core StateStore -- survives restarts without re-processing old issues
 - Idempotency keys prevent duplicate task creation for the same issue
 - Filters out pull requests (only issues are returned)
 
@@ -266,10 +283,14 @@ Config file: \`~/.engineer/config/plugins/github-trigger.yaml\`
 | \`repos\` | \`array\` | -- | Yes | At least one repository to watch. Each entry needs \`owner\` and \`name\`. |
 | \`repos[].owner\` | \`string\` | -- | Yes | GitHub username or organization. |
 | \`repos[].name\` | \`string\` | -- | Yes | Repository name. |
-| \`labels\` | \`string[]\` | \`[]\` | No | Only trigger on issues with these labels. Empty means all issues. |
-| \`poll_interval_ms\` | \`number\` | \`30000\` | No | Polling interval in milliseconds. |
+| \`labels\` | \`string[]\` | \`["engineer"]\` | No | Only trigger on issues with these labels. Defaults to the \`engineer\` label when omitted. |
+| \`assignee\` | \`string\` | -- | No | GitHub username to filter by assignee. |
 
-### Minimal config
+**Work selection:** By default the plugin triggers on issues carrying the \`engineer\` label, so it works out of the box with no extra configuration. Set \`labels\` to your own list to change which labels match, set \`assignee\` to filter by who an issue is assigned to, or set both (the GitHub API then returns issues matching **both** criteria — an AND). To select **only** by assignee, set \`labels: []\` alongside \`assignee\`. The one configuration the plugin rejects is an explicit \`labels: []\` with no assignee — that would match every open issue, which is almost never intended, so it fails loud at startup.
+
+**Poll interval:** Declared on the plugin manifest (\`poll_interval_ms: 30000\`) and honored by the Daemon. The Daemon's global \`trigger_poll_interval_ms\` config serves as the fallback for plugins that do not declare one. Plugin config does not include a poll interval field.
+
+### Minimal config (uses the default \`engineer\` label)
 
 \`\`\`yaml
 repos:
@@ -279,7 +300,19 @@ repos:
 github_token: "\${GITHUB_TOKEN}"
 \`\`\`
 
-### Full config
+### Assignee-based selection
+
+\`\`\`yaml
+repos:
+  - owner: your-github-username
+    name: your-repo-name
+
+github_token: "\${GITHUB_TOKEN}"
+labels: []                       # clear the default label...
+assignee: "your-github-username" # ...and select by assignee only
+\`\`\`
+
+### Full config (label + assignee)
 
 \`\`\`yaml
 repos:
@@ -288,28 +321,28 @@ repos:
 
 github_token: "\${GITHUB_TOKEN}"
 labels: ["engineer"]
-poll_interval_ms: 30000
+assignee: "the-engineer-bot"
 \`\`\`
 
 ## How It Works
 
 On each poll cycle, the plugin iterates through configured repos and calls the GitHub Issues API (\`GET /repos/{owner}/{repo}/issues\`) with \`state=open\`, \`sort=updated\`, \`direction=asc\`, and \`per_page=30\`.
 
-**Watermarks**: After processing issues from a repo, the plugin records the latest \`updated_at\` timestamp. On subsequent polls, it passes this as the \`since\` parameter so the API only returns issues updated after that point. Watermarks are persisted to \`~/.engineer/state/github-trigger/watermarks.json\` on shutdown (atomic write via temp file + rename) and loaded on startup.
+**Watermarks**: After processing issues from a repo, the plugin records the latest \`updated_at\` timestamp. On subsequent polls, it passes this as the \`since\` parameter so the API only returns issues updated after that point. Watermarks are persisted through the Core [StateStore](../plugin-context.md#statestore) on shutdown and restored on startup — Core owns where and how state is stored, so the plugin holds no file paths of its own.
 
 **ETag caching**: Each request includes an \`If-None-Match\` header with the ETag from the previous response. If the API returns 304 (no changes), the plugin skips processing entirely. This saves API quota on quiet repos.
 
-**Rate limiting**: If the API returns 429, the plugin records the \`Retry-After\` duration and skips all polling until that time passes.
+**Rate limiting**: If the API returns 429, the plugin throws an \`AdapterMethodError\` with \`retry_after_ms\` set (parsed from the \`Retry-After\` header, defaulting to 60 seconds). The Daemon honors this delay before the next poll -- the plugin does not self-throttle. Rate-limit responses do not count toward the consecutive-failure threshold.
 
 **Interactive setup**: The first \`engineer start\` invocation prompts for the repo in \`owner/name\` format and generates the config file.
 
 ## Limitations
 
-- Polling only -- no webhook support. There is an inherent delay between issue creation and task pickup (up to \`poll_interval_ms\`).
+- Polling only -- no webhook support. There is an inherent delay between issue creation and task pickup (up to the poll interval).
 - Fetches at most 30 issues per repo per poll cycle. Repos with many simultaneous new issues may need multiple cycles.
 - Issues only -- pull requests are filtered out (\`pollIssues\` skips anything with a \`pull_request\` field). There is no PR-review trigger.
-- Label filtering is applied at the API level (comma-joined), so an issue must have all listed labels to match.
-- Watermark loss (corrupt file, first run) causes re-fetching from the beginning. The Daemon's idempotency key deduplication prevents duplicate tasks.
+- Label filtering is applied at the API level (comma-joined), so an issue must have all listed labels to match. Assignee filtering is likewise applied at the API level.
+- Watermark loss (corrupt state, first run) causes re-fetching from the beginning. The Daemon's idempotency key deduplication prevents duplicate tasks.
 
 ## Related Plugins
 
@@ -1041,7 +1074,7 @@ Communication adapters are the Engineer's voice -- how it talks to humans throug
 
 ## Contract
 
-\`CommunicationAdapter\` extends \`BaseAdapter\`. Methods are split into required and capability-gated optional groups.
+\`CommunicationAdapter\` extends \`BaseAdapter\`. Methods are split into required and capability-gated optional groups. Like every adapter, it receives a [PluginContext](../plugin-context.md) (\`this.context.logger\`, \`this.context.stateStore\`) injected before \`initialize()\`.
 
 ### Required methods
 
@@ -1371,7 +1404,7 @@ The contract suite validates:
 - **send**: Sends messages via \`bot.api.sendMessage()\` with configurable parse mode (MarkdownV2/Markdown/HTML).
 - **receive**: Polls for inbound messages via \`bot.api.getUpdates()\`. Captures \`/start\` handshake messages for username-to-chat_id mapping.
 - **formatMessage**: Escapes content for the configured parse mode. MarkdownV2 requires special character escaping; HTML escapes \`<\`, \`>\`, \`&\`.
-- **Setup requirement**: Users must send \`/start\` to the bot before it can message them. The plugin persists username-to-chat_id mappings to \`~/.engineer/state/telegram-comm/chat-map.json\` (atomic write via rename). Mappings are captured during initialization (drains pending updates) and during polling.
+- **Setup requirement**: Users must send \`/start\` to the bot before it can message them. The plugin persists username-to-chat_id mappings through the Core StateStore, keyed per plugin. Mappings are captured during initialization (drains pending updates) and during polling.
 - Config: \`bot_token\` (required), \`parse_mode\` (default \`"MarkdownV2"\`), \`disable_link_preview\` (default \`true\`).
 
 ## Reference
@@ -1469,7 +1502,7 @@ label_prefix: "engineer:"          # Prefix for state labels (default: "engineer
 
 | Plugin | Relationship |
 |--------|-------------|
-| \`github-trigger\` | Watches the same repos for new issues/PR reviews. Shares \`GITHUB_TOKEN\`. |
+| \`github-trigger\` | Watches the same repos for new issues. Shares \`GITHUB_TOKEN\`. |
 | \`github-hosting\` | Manages PR lifecycle (create, merge, review). Shares \`GITHUB_TOKEN\`. |
 | \`telegram-comm\` | Alternative communication channel for personal notifications. |
 `;
@@ -1498,11 +1531,11 @@ Telegram bots cannot initiate conversations. Each person who should receive mess
 2. Set \`TELEGRAM_BOT_TOKEN\` in \`~/.engineer/.env\`.
 3. Each user opens the bot in Telegram and sends \`/start\`.
 4. The plugin captures the \`username -> chat_id\` mapping automatically.
-5. The mapping is persisted to \`~/.engineer/state/telegram-comm/chat-map.json\`.
+5. The mapping is persisted through the Core StateStore, keyed per plugin.
 
 The \`handle\` field in People Directory contacts must match the Telegram username (case-insensitive, without the \`@\` prefix). If no mapping exists when the Engineer tries to send a message, the error is clear: "they need to /start the bot first."
 
-**Persistence.** The chat map is written atomically (write to \`.tmp\`, then rename) to survive crashes. Mappings persist across restarts. Once a user has \`/start\`-ed, they never need to do it again unless the state file is deleted.
+**Persistence.** The chat map is stored through the Core [StateStore](../plugin-context.md#statestore), which writes atomically to the \`--home\`-aware database. Mappings persist across restarts. Once a user has \`/start\`-ed, they never need to do it again unless that state is cleared.
 
 **Capture timing.** Handshakes are captured both during initialization (drains all pending updates received while offline) and during live polling. A \`/start\` sent while the Engineer is stopped will be picked up on next startup.
 
@@ -1559,7 +1592,7 @@ disable_link_preview: true            # Disable link previews in messages (defau
 - Polling is non-blocking (\`timeout: 0\`). The plugin does not use long-polling or webhooks. Message delivery latency depends on the Daemon's poll interval.
 - No group chat support. The plugin is designed for 1:1 bot-to-user messaging. Group messages are not filtered or handled specially.
 - Message length limits. Telegram caps messages at 4096 characters. The plugin does not split long messages -- oversized messages will fail at the API level.
-- The chat map file (\`chat-map.json\`) is the single source of truth for username-to-chat mappings. If deleted, all users must \`/start\` again.
+- The chat map (held in the Core StateStore) is the single source of truth for username-to-chat mappings. If cleared, all users must \`/start\` again.
 
 ## Related Plugins
 
@@ -1848,7 +1881,7 @@ The GitHub implementation uses Octokit for all API calls. It parses \`"owner/rep
 
 const GIT_HOSTING_GITHUB_HOSTING = `# GitHub Hosting
 
-Manages the full pull request lifecycle on GitHub via the Octokit REST API. Creates PRs, updates metadata, merges, closes, checks review status, reads comments, and queries branch protection. All 9 \`GitHostingAdapter\` methods are implemented.
+Manages the full pull request lifecycle on GitHub via the Octokit REST API. Creates PRs, updates metadata, merges, closes, checks review status, dismisses stale approvals, reads comments, and queries branch protection. All 10 \`GitHostingAdapter\` methods are implemented.
 
 Use this plugin whenever the Engineer needs to open PRs, respond to review feedback, or merge completed work.
 
@@ -1862,7 +1895,7 @@ The token needs sufficient permissions for the target repositories: create/updat
 
 ## Capabilities
 
-All 9 adapter methods are implemented:
+All 10 adapter methods are implemented:
 
 | Method | Description |
 |--------|-------------|
@@ -1872,6 +1905,7 @@ All 9 adapter methods are implemented:
 | \`closePR\` | Closes a PR without merging |
 | \`getPRStatus\` | Returns PR state (open/closed/merged), draft flag, mergeability, CI check status, and URL |
 | \`getReviewStatus\` | Aggregates review state per reviewer (approved/changes_requested/commented/pending) |
+| \`dismissApprovals\` | Dismisses all current approvals on a PR with a message explaining why |
 | \`commentOnPR\` | Posts a conversation comment or replies to an inline review comment |
 | \`getPRComments\` | Fetches both conversation-level and inline review comments (filters out bot comments) |
 | \`getBranchProtection\` | Returns protection rules: required reviews, required checks, push restrictions |
@@ -1899,9 +1933,11 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 **Merging.** Calls \`pulls.merge\` with the configured merge strategy (\`squash\`, \`merge\`, or \`rebase\`). The plugin never force-merges. If branch protection requirements are not satisfied (required reviews, status checks), the merge returns an error with \`pr_not_mergeable\` or \`merge_conflict\` -- it does not bypass protections.
 
-**PR status.** Fetches the PR and resolves CI state by querying both the Status API (\`repos.getCombinedStatusForRef\`) and the Checks API (\`checks.listForRef\`). Worst state wins across both sources. Maps GitHub's state to a simplified \`open | closed | merged\` enum. CI check state is a tri-state (\`passing | failing | pending | none\`).
+**PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified \`open | closed | merged\` enum. CI check status is determined by the combined status API (\`repos.getCombinedStatusForRef\`).
 
 **Review aggregation.** Fetches all reviews chronologically and tracks the latest meaningful state per reviewer (\`APPROVED\`, \`CHANGES_REQUESTED\`, \`COMMENTED\`). A PR is considered approved only when at least one reviewer approved AND no reviewer has \`changes_requested\` as their latest state. Review body text is collected as feedback comments.
+
+**Approval dismissal.** \`dismissApprovals\` lists all reviews on the PR via \`pulls.listReviews\`, filters for those with state \`APPROVED\`, and calls \`pulls.dismissReview\` for each one with the provided message. No-ops when no approvals exist. Called by the PR manager after rework pushes new code — the old approval was for different code and must not authorize the changed PR.
 
 **Comments.** \`commentOnPR\` handles two cases: if \`replyTo\` is provided, it creates a reply to an inline review comment; otherwise, it posts a regular issue comment (PRs are issues in the GitHub API). \`getPRComments\` fetches both conversation-level (\`issues.listComments\`) and inline review comments (\`pulls.listReviewComments\`) in parallel, filtering out \`github-actions[bot]\`.
 
@@ -1926,7 +1962,7 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 | Plugin | Relationship |
 |--------|-------------|
-| \`github-trigger\` | Watches repos for assigned issues and PR review requests. Shares \`GITHUB_TOKEN\`. |
+| \`github-trigger\` | Watches repos for open issues filtered by label and/or assignee. Shares \`GITHUB_TOKEN\`. |
 | \`github-comm\` | Posts comments and manages labels on the same issues/PRs. Shares \`GITHUB_TOKEN\`. |
 `;
 

@@ -334,7 +334,7 @@ The contract suite validates:
 - **send**: Sends messages via `bot.api.sendMessage()` with configurable parse mode (MarkdownV2/Markdown/HTML).
 - **receive**: Polls for inbound messages via `bot.api.getUpdates()`. Captures `/start` handshake messages for username-to-chat_id mapping.
 - **formatMessage**: Escapes content for the configured parse mode. MarkdownV2 requires special character escaping; HTML escapes `<`, `>`, `&`.
-- **Setup requirement**: Users must send `/start` to the bot before it can message them. The plugin persists username-to-chat_id mappings to `~/.engineer/state/telegram-comm/chat-map.json` (atomic write via rename). Mappings are captured during initialization (drains pending updates) and during polling.
+- **Setup requirement**: Users must send `/start` to the bot before it can message them. The plugin persists username-to-chat_id mappings through the Core StateStore, keyed per plugin. Mappings are captured during initialization (drains pending updates) and during polling.
 - Config: `bot_token` (required), `parse_mode` (default `"MarkdownV2"`), `disable_link_preview` (default `true`).
 
 ## Reference

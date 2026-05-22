@@ -86,8 +86,10 @@ export function createDashboardApp(config: DashboardConfig): {
     return c.json({ ok: true });
   });
 
-  // Serve built React SPA from dist/dashboard/
-  const spaDir = resolve(import.meta.dirname, "../../dist/dashboard");
+  // Serve built React SPA. The dashboard is built to dist/dashboard, co-located
+  // with the bundled server entry (dist/index.mjs) — same convention as migrations
+  // (see db/database.ts). Resolves relative to the running module, not the source tree.
+  const spaDir = resolve(import.meta.dirname, "dashboard");
 
   app.get("/*", (c) => {
     const urlPath = c.req.path;

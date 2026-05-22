@@ -24,7 +24,9 @@ import { checkPermission as checkPermissionPure } from "./permissions.js";
 import { TaskQueries } from "./queries.js";
 import { StateMachine } from "./state-machine.js";
 
-// Re-export interface types so existing consumers don't break
+// Public API of the task-engine module, re-exported through this barrel. The types
+// live in the interface file and the functions in internal modules; consumers import
+// them from here so the module has a single entry point.
 export type {
   CreateTaskInput,
   TransitionResult,
@@ -32,7 +34,6 @@ export type {
   UpdatableField,
 } from "../interfaces/task-engine.interface.js";
 
-// Re-export extracted modules for backward compatibility
 export { isValidTransition, subStateMatches } from "./state-machine.js";
 export { rowToTask } from "./row-mapper.js";
 export { checkPermission } from "./permissions.js";

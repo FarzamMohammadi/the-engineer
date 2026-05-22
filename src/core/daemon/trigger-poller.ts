@@ -60,7 +60,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   async function poll(now: number): Promise<void> {
     const triggers = registry.getPluginsByType<TriggerAdapter>(AdapterTypes.trigger);
 
-    // N+1 batch fetch: poll all triggers in parallel
+    // Poll every trigger in parallel; allSettled so one plugin's failure never blocks the others.
     await Promise.allSettled(triggers.map((t) => pollSingleTrigger(t, now)));
   }
 

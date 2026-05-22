@@ -197,5 +197,81 @@ Sized so each session finishes completely: code + tests + docs + standards/anti-
    backoff via `retry_after_ms`, watermark/ETag rewritten through `StateStore`; github-trigger docs.
 4. **Contacts: single-user constraint (#11, #12, #13)** — `docs/constraints.md` + README/AGENT-README
    references; people-directory load-warn; owner-channel validation at load/`doctor`.
+5. **Closing standards sweep** — a full audit/refine pass over every file the slice created or changed
+   (Sessions 17–21), against `coding-standards.md`, `anti-patterns.md`, and `philosophy.md`. This is the
+   slice's quality gate, mirroring how Slice 4 closed. Detailed below.
 
 (Session ordering may adjust during planning. #9/#10 are designed here but executed in Slices 8/12.)
+
+## Closing Standards Sweep (Plan Session 5)
+
+**Why this exists.** A slice is not "done done" when the feature works — it is done when every file it
+touched meets our standards *in full*. Plan Sessions 1–4 delivered the behavior; this session reads
+every in-scope file line-by-line, assesses it against the standards, and refactors where it falls
+short. Slice 4 closed exactly this way. Without it, Slice 5 has a gap.
+
+**Scope.** Only files Slice 5 created or changed across Sessions 17–21 (`git diff ad7b400 HEAD`).
+**Not** other slices. **Excluded** as process/meta, not deliverables: the build journal
+(`active.md`, `sessions/*.md`, `slices/05-trigger.md`), the plan and research under `.claude/temp/`.
+The two deleted files (`src/core/hooks/index.ts`, its test) need no audit — verify nothing dangles.
+
+**Per-file audit checklist** (apply with judgment — a rule that produces worse code is misapplied):
+
+- **coding-standards.md** — newspaper order + `function` decls (§1); naming: full names, no vague
+  `-ER`, no `utils`/`helpers`, boolean prefixes, domain language (§2); function design: guard clauses,
+  FCIS, params (§3); types: `interface` vs `type`, branded IDs, schema-first, explicit return types,
+  `readonly`/immutability, parse-don't-validate (§4); errors: Result vs throw, Deno-style messages,
+  cause chains, retryable categorization (§5); imports: barrels, `import type`, no default exports
+  (§6); module boundaries: one concept/file, structure reveals intent (§7); comments/JSDoc minimal
+  (§8); tests: behavior-as-fact naming, ≤2 `describe` levels, mock only at boundaries, don't test the
+  trivial (§9); single source of truth (§11); logging: decisions not actions, structured, right level
+  (§12); async: no floating promises, parallel vs sequential, `finally` cleanup (§13);
+  observability/tracing (§14); graceful degradation (§15).
+- **anti-patterns.md** — YAGNI, gold-plating, cargo culting, scope creep, dogmatic rule-following,
+  silent decisions. Delete speculative or dead code; collapse premature abstractions.
+- **philosophy.md** — Plugin Blindness (no hardcoded plugin IDs/tokens in Core); Fail Loud (no swallowed
+  errors/silent fallbacks); Universal Audience + Docs as Product (docs accurate, plain, in sync with
+  code); Design Every Output for Its Consumer.
+
+**Inventory (tiered by depth — every file is read; tier sets how hard we push on refactor):**
+
+*Source — Tier 1 (central to Slice 5; deep audit + refactor as needed):*
+`src/core/state-store/index.ts`, `src/core/people-directory/inspect.ts`,
+`src/core/people-directory/index.ts`, `src/adapters/base.ts`, `src/adapters/index.ts`,
+`src/core/registry/index.ts`, `src/core/daemon/trigger-poller.ts`, `src/core/task-engine/index.ts`,
+`src/core/task-engine/queries.ts`, `src/core/task-engine/row-mapper.ts`,
+`src/cli/commands/doctor.ts`, `src/cli/commands/start/bootstrap.ts`, `src/plugins/builtin.ts`,
+`src/plugins/trigger/github-trigger/github-trigger.ts`,
+`src/plugins/trigger/github-trigger/config.ts`,
+`src/plugins/communication/telegram-comm/telegram-comm.ts`, `src/schemas/adapters.ts`,
+`src/schemas/events.ts`, `src/schemas/task.ts`, `src/db/migrations/001_schema.sql`,
+`src/cli/bundled/plugin-docs.ts`, `src/cli/bundled/templates.ts`.
+
+*Source — Tier 2 (touched mechanically by rewires; verify the changed surface, refactor only on a real smell):*
+`src/core/interfaces/task-engine.interface.ts`, `src/core/observer/facade.ts`,
+`src/core/observer/logging.ts`, `src/core/orchestrator/decomposition-handler.ts`,
+`src/plugins/git-hosting/github-hosting/github-hosting.ts`, `src/dashboard/server.ts`.
+
+*Tests (audit against §9; new files deep):* new — `tests/unit/core/state-store/index.test.ts`,
+`tests/unit/core/people-directory/inspect.test.ts`, `tests/helpers/test-state-store.ts`,
+`tests/helpers/test-plugin-context.ts`. Modified (verify the changed surface) — the remaining ~36
+under `tests/unit/**`, `tests/integration/**`, `tests/e2e/**`, `tests/helpers/**` touched by the slice.
+
+*Docs (Universal Audience + Docs as Product + accuracy):* new — `docs/constraints.md`,
+`docs/plugins/plugin-context.md`, `docs/user-flows/task-intake/overview.md`. Modified —
+`AGENT-README.md`, `README.md`, `docs/philosophy.md`, `docs/cli.md`,
+`docs/configuration/{daemon,people,README}.md`, `docs/architecture/overview.md`,
+`docs/future-considerations.md`, `docs/plugins/communication/README.md`,
+`docs/plugins/communication/telegram-comm.md`, `docs/plugins/git-hosting/README.md`,
+`docs/plugins/llm/README.md`, `docs/plugins/trigger/github-trigger.md`,
+`docs/plugins/trigger/README.md`. Seed — `seed-example/plugins/{claude-code-llm,github-trigger}.yaml`.
+
+**Carried finding to resolve (or explicitly defer) in this sweep:** config hot-reload is unwired —
+`createConfigWatcher`, `PeopleDirectory.updateConfig`, `SafetyLayer.updateConfig` are used only by
+tests. people.yaml docs already say "on restart"; the `configuration/README.md` safety.yaml claim is
+still inaccurate. Decide: wire the watcher into bootstrap, or delete the dead infra and correct the
+docs. (`src/config/watcher.ts` is *outside* the Slice 5 changeset — flag the cross-cutting decision.)
+
+**Execution.** Batch by area (schemas → core → plugins → cli → tests → docs) to keep each commit
+coherent and green. Re-run `pnpm run typecheck && pnpm run lint && pnpm test` per batch. Close the
+slice (move it to `active.md` → Completed Slices) only after the full sweep lands green.

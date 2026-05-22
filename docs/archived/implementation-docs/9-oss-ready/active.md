@@ -21,11 +21,18 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice:** 06-scheduling — Scheduling & Dispatch (priority, eligibility, slot management, concurrency)
-**State:** **Not started.** Slice 5 (Trigger & Requirements Flow) **CLOSED** in Session 21 — all four plan sessions done and green. Begin Slice 6 with requirements gathering → research → plan (no plan file yet).
-**Plan:** none yet — create during the slice.
+**Slice:** 05-trigger — Trigger & Requirements (Contacts) Flow
+**State:** Plan Sessions 1–4 COMPLETE and green (PluginContext + StateStore, dedup → Core, trigger refinement, single-user contacts). **Slice NOT closed** — the closing **standards sweep** remains (the same way Slice 4 ended with a full standards pass over its in-scope files). All gates green (typecheck, lint, 2497 tests).
+**Plan:** `.claude/temp/create-plan/slice-05-trigger.md`. Sweep inventory + checklist: `slices/05-trigger.md` → "Closing Standards Sweep".
 
-**What Session 21 shipped (Plan Session 4 — Contacts: single-user constraint, D9 — CLOSES Slice 5):**
+**Next — Plan Session 5: Closing Standards Sweep (Slice 5 only).** A full audit/refine pass over every
+file Slice 5 created or changed across Sessions 17–21, against `docs/coding-standards.md`,
+`docs/anti-patterns.md`, and `docs/philosophy.md`. Each in-scope file read line-by-line, assessed, and
+refactored where it falls short. Inventory + tiering live in the slice file. Excludes other slices and
+process/meta docs (session logs, plan, research, build journal). The slice closes only after the sweep
+lands and all gates are green — then advance to Slice 6 (Scheduling & Dispatch).
+
+**What Session 21 shipped (Plan Session 4 — Contacts: single-user constraint, D9):**
 - **T4.1 — `docs/constraints.md`:** new home for deliberate v1 scope narrowings; documents the single-user constraint (the human side is one person — the owner), the owner being **assumed, not required** (missing → warn naming the consequence, never fail), and the two non-relaxations (one user ≠ one task, one user ≠ one plugin). Referenced from the always-read AGENT-README table, the README docs list, and philosophy.md's "Every Decision Earned".
 - **T4.2 — `inspectPeopleDirectory(people, availableChannels)`:** pure function in the people-directory module returning typed warnings (`no_owner`, `multiple_people`, `unreachable_owner_channel`). Warnings only — never throws/blocks. Daemon bootstrap logs them once comm plugins load (channels from the live registry). `PeopleDirectory` stays pure; `getOwner()` reuses the new `OWNER_ROLE` constant.
 - **T4.3 — `engineer doctor` "People Directory" category:** renders the same warnings; fixes a latent bug (old owner check read singular `role` vs schema `roles[]` → always reported "no owner"). Stripped positional "Category N:" labels from check JSDocs, the "8 base + 1 conditional" comment, the "categories 1-7" pre-flight note, and the "9 categories" cli.md table (no-stale-counts). Tests assert categories by name.
@@ -45,4 +52,7 @@ This file answers one question: **where are we right now?** Nothing more.
 - **Slice 2 — Repo Readiness:** Biome aligned, lint split, CI parallelized, tests restructured (`tests/unit/` mirrors `src/`), migrations consolidated, hardcoded paths fixed.
 - **Slice 3 — Dashboard:** 5-page React SPA rewrite (Overview, Tasks, Activity, Metrics, Errors), all features working, coding standards audited. Sessions 4–8 — detail in `slices/03-dashboard.md`.
 - **Slice 4 — Startup & Configuration:** Getting-started path (`pnpm run setup` → `engineer start`), OS detection gate, seed-example sanitization + dogfooding, removals (checkCliArtifacts, config-version machinery, Output.table, quiet mode), CLI restructure (Screaming Architecture), original coding standards audit (1–11), new coding standards added (§4 expanded, §5 expanded, §7 framing, §12–§15), six post-bootstrap infrastructure gaps closed (retryable flag, cause chains, trace_id correlation, floating promises, span/log correlation, graceful degradation logs), and new standards applied across slice 4 in-scope files. "Apply with judgment, never mechanically" principle codified. Sessions 9–16 — detail in `slices/04-startup.md`.
-- **Slice 5 — Trigger & Requirements (Contacts) Flow:** PluginContext + Core `StateStore` foundation, dedup moved to Core on `idempotency_key`, dead `trigger.pr_review` scaffolding deleted, per-plugin poll cadence + configurable work selection + Core-owned backoff, and the single-user contacts guardrails (`docs/constraints.md`, pure `inspectPeopleDirectory` load-warn, `engineer doctor` People Directory category). Sessions 17–21 — decisions in `slices/05-trigger.md`, plan in `.claude/temp/create-plan/slice-05-trigger.md`.
+
+> **Slice 5 — Trigger & Requirements (Contacts) Flow** is **not** listed here yet: its feature work
+> (Plan Sessions 1–4) is done and green, but the closing standards sweep (Plan Session 5) is still
+> pending. It moves here once that sweep lands. See **Current** above.

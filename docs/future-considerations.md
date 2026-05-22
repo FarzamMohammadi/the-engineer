@@ -313,3 +313,15 @@ Without measurement, we can't tell whether fixes to these problems actually work
 3. PR-staleness reactions belong with review polling in `src/core/daemon/review-handler.ts` (Slice 10).
 
 ---
+
+## Smart Reply Correlation
+
+**Current state (v1):** When The Engineer blocks on a question, it appends the full task id to the outbound message with a plain instruction to keep the reference in the reply, and parses that token back to route the answer to the right task. Metadata-rich channels (GitHub issue/PR comments) correlate for free via `task_id` / `external_ref`. There is no inference: on a metadata-less channel (Telegram), a free-form reply that drops the token cannot be matched when more than one task is blocked at once.
+
+**When it becomes relevant:** When the owner routinely replies without the token on a metadata-less channel while several tasks are blocked simultaneously, so the explicit-token fallback starts misrouting or discarding answers.
+
+**What it enables:** A subagent that infers which blocked task a token-less reply belongs to — from the reply's content, the recency and content of each outstanding question, and conversation context — replacing the naive token requirement with a best-effort match (and still asking the owner to disambiguate when confidence is low).
+
+**Migration path:** The naive token approach is designed in Slice 5 and executed across the send side (`outreach-sender`, Slice 8) and the receive/parse side (`response-poller`, Slice 12). The inference layer slots in at the `response-poller` routing step as a fallback that runs only when no token is present — the deterministic path stays the default, so smart correlation is purely additive.
+
+---

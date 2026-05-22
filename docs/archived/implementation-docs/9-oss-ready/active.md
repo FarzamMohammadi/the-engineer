@@ -22,28 +22,29 @@ This file answers one question: **where are we right now?** Nothing more.
 ## Current
 
 **Slice:** 05-trigger — Trigger & Requirements (Contacts) Flow
-**State:** Session 19 complete. **Plan Session 2 COMPLETE** — dedup → Core + review-scaffolding deletion shipped, all gates green (typecheck, lint, 2466 tests). Next: Plan Session 3 (trigger plugin refinement, D6 + D7 + D8).
+**State:** Session 20 complete. **Plan Session 3 COMPLETE** — trigger plugin refinement (D6 + D7 + D8) shipped, plus the config-path gap D7 exposed and a dashboard path-bug fix. All gates green (typecheck, lint, 2481 tests). Next: Plan Session 4 (Contacts: single-user constraint, D9).
 **Plan:** `.claude/temp/create-plan/slice-05-trigger.md` — Status: **Panel-Reviewed**. 9 decisions, 4-session task breakdown.
 
-**What Session 19 shipped (Plan Session 2 — dedup → Core, D1 + D4):**
-6 commits, all green:
-- **Dedup → Core** (`3ba2dc5`) — `idempotency_key` is now a first-class `NOT NULL` task field with an active-scoped unique partial index (`idx_tasks_idempotency_key_active`). `trigger-poller`'s DB cold path keys on it for *every* event regardless of `external_ref` → crash-safe exactly-once for all triggers. Deleted dead `findByExternalRef` + its index; `external_ref` is descriptive-only. Decomposition mints deterministic child keys (`decomposition:{parentId}:{index}`).
-- **Delete `trigger.pr_review`** (`62b4842`) — dead event removed end-to-end (schema/maps/manifest/JSDoc/live docs + bundled mirrors); `grep pr_review` clean. Dropped two brittle "exactly 42" count tests.
-- **Task-intake flow doc** (`90e73e5`) — `docs/user-flows/task-intake/overview.md`: polling loop, two-tier dedup, idempotency_key (identity) vs external_ref (descriptive) contract, re-trigger walkthrough.
-- **`seen_keys_ttl_ms` doc fix** (`9926667`) — now a hot-cache perf knob, not a correctness one.
-- **future-considerations promoted + synced** (`1ead92d`, `a4d5963`) — brought the rich doc out of archived to live (`docs/future-considerations.md`), repointed links, consolidated the trigger-reversal entry, pruned 4 already-shipped entries (CI, event-bus validation, enum consts, telegram receive).
+**What Session 20 shipped (Plan Session 3 — trigger plugin refinement, D6 + D7 + D8):**
+- **D6 — per-plugin poll cadence:** added typed optional `poll_interval_ms` to `PluginManifestSchema`; `trigger-poller` honors `trigger.manifest.poll_interval_ms` as the per-plugin base with global `trigger_poll_interval_ms` as fallback; backoff multiplies the per-plugin base. Set `poll_interval_ms: 30_000` on github-trigger's manifest; deleted the dead Zod `poll_interval_ms` from its config.
+- **D7 — configurable work selection:** added `assignee` to github-trigger config; **`labels` defaults to `["engineer"]`** (the refinement — see below); passed `assignee` to the GitHub API; renamed `event_type` from the misnomer `"issue_assigned"` → static `"issue"`.
+- **D8 — Core-owned backoff:** removed the plugin's `retryAfterUntil` field + its silent-suppress guard; 429s now throw `AdapterMethodError` with `retry_after_ms` set. `trigger-poller` reads `retry_after_ms` off the caught error, sets a per-plugin `triggerRateLimitUntil`, and does **not** count rate-limits toward consecutive failures; clears the deadline on success; falls back to exponential backoff for errors without `retry_after_ms`.
+- **Config-path gap (D7 fallout):** the original "reject if neither labels nor assignee" broke bootstrap for every criterion-less config (seeds, setup template, interactive prompt). Closed by making `labels` default to `["engineer"]` — frictionless default over fail-loud wall. Kept a guard that only fires on *explicit* `labels: []` + no assignee (the deliberate match-everything footgun). Reverted the prompt to repo-only; templates/seeds show the default + assignee/`labels: []` paths. Verified all parse cases via tsx.
+- **Dashboard path bug:** `dashboard/server.ts:90` used `../../dist/dashboard` (calibrated for source location), which resolved *outside the repo* when bundled into `dist/index.mjs` → "Dashboard not built" at `localhost:3847`. Fixed to `resolve(import.meta.dirname, "dashboard")`, matching the migrations convention (`db/database.ts:42`). Verified post-build: resolves to `dist/dashboard`, `index.html` present.
+- **Docs:** github-trigger.md (default behavior, work-selection paragraph, examples), trigger README (manifest poll interval + Core backoff), daemon.md (global = fallback), plugin-docs.ts (`event_type` example), slice 05 decision #6 (records the default-over-reject refinement).
+- ~14 new tests across trigger-poller + github-trigger; all green.
 
-**Key decisions:** active-scoped (not global) uniqueness so reopened issues re-trigger cleanly; strict `NOT NULL` identity over nullable placeholder fills; deterministic decomposition keys.
+**Key decisions:** `labels` defaults to `["engineer"]` (overrides the planned "reject neither" — frictionless defaults beat fail-loud); `event_type` is the static `"issue"` (match criteria is config, not classification); rate-limits don't count as failures; dashboard SPA path follows the migrations convention. **NOT committed yet** at session-log time — committing as part of this wrap.
 
 **Cross-slice handoffs (unchanged):** #9 reply-token + #10 unblock check → Slice 12; trivial-skip → Slice 8; review polling → Slice 10.
 
-**Next step — Plan Session 3 (trigger plugin refinement, D6 + D7 + D8):**
-- **D6** — per-plugin poll cadence: formalize numeric `poll_interval_ms` as a typed manifest field, daemon honors it as the plugin default with global `trigger_poll_interval_ms` fallback; delete the dead Zod `poll_interval_ms` from github-trigger config.
-- **D7** — configurable work selection: assignee OR label OR both, require ≥1 via Zod, rename `event_type` to reflect what matched.
-- **D8** — Core-owned backoff: plugin reports rate-limit via `AdapterError.retry_after_ms`, daemon honors it (else exponential backoff); remove the plugin's `retryAfterUntil`.
-- Plus github-trigger docs refresh. Each task: code + tests + docs + standards pass.
+**Next step — Plan Session 4 (Contacts: single-user constraint, D9):**
+- **T4.1** — `docs/constraints.md` (single-user, two non-relaxations, until-modified) + references in README, AGENT-README (always-read), philosophy.md.
+- **T4.2** — PeopleDirectory load-warn (>1 person; no owner) — owner-typo becomes fail-loud.
+- **T4.3** — `engineer doctor` owner-channel validation category (validate owner's channels against installed comm plugins).
+- **T4.4** — people-directory + contacts flow docs. Each task: code + tests + docs + standards pass.
 
-**Known issue:** `orchestrator/index.test.ts > resolveStartState — feedback rework` is flaky (passes on rerun). Pre-existing, unrelated. Worth a separate look.
+**Known issue:** `orchestrator/index.test.ts > resolveStartState — feedback rework` is flaky (passes on isolated rerun — confirmed again this session, 49/49). Pre-existing, unrelated. Worth a separate look.
 
 ## Completed Slices
 

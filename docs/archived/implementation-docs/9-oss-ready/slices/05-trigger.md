@@ -275,3 +275,25 @@ docs. (`src/config/watcher.ts` is *outside* the Slice 5 changeset — flag the c
 **Execution.** Batch by area (schemas → core → plugins → cli → tests → docs) to keep each commit
 coherent and green. Re-run `pnpm run typecheck && pnpm run lint && pnpm test` per batch. Close the
 slice (move it to `active.md` → Completed Slices) only after the full sweep lands green.
+
+### Sweep Outcome (Session 22 — CLOSED)
+
+The line-by-line audit found the core logic already high quality; the defects clustered in dead code and
+stale docs. Landed green:
+
+- **Carried finding resolved — config hot-reload was unwired dead scaffolding.** Decision (Farzam):
+  delete over wire. Removed `src/config/watcher.ts`, the `updateConfig`/`updateLimits` methods
+  (SafetyLayer/PolicyEngine/CostTracker/PeopleDirectory), and the `health.config_reload_failed` event +
+  all their tests; corrected every doc/template/seed claim to "takes effect on restart."
+- **Bundled `plugin-docs.ts` re-synced with corrected source** — it had drifted behind the StateStore /
+  removed-`poll_interval_ms` / `labels`-default / no-`pr_review` source updates. Also fixed stale
+  "PR reviews" cross-refs (source + bundled, per Farzam) and the lagging github-hosting `dismissApprovals`.
+- **Dead `max_tokens` field removed** (claude-code-llm config parsed it but never used it).
+- **Smart reply correlation (#9 deferral) captured** in `future-considerations.md`.
+- **Chronic orchestrator test flake fixed** — `createTestOrchestrator` shared a fixed `/tmp/worktree`
+  path that parallel test files clobbered; made it unique per worker. 5× consecutive green.
+- Misc source-comment clarifications (trigger-poller "N+1", task-engine "backward compat").
+
+**Out-of-scope finding logged for a dedicated session:** the **e2e suite is broken** (5 `task-happy-path`
++ `crash-recovery` tests — daemon happy path never reaches the LLM). Predates Slice 5 (identical at
+`ad7b400`), was masked by the unit flake short-circuiting `test:all`. See `active.md` → Current.

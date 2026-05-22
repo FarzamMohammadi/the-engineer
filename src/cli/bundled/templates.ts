@@ -247,15 +247,18 @@ people:
 // ── Plugin Config Templates ─────────────────────────────────────────────────
 
 export const GITHUB_TRIGGER_TEMPLATE = `# GitHub Issues trigger plugin
-# Polls GitHub Issues API for new and assigned issues
+# Polls GitHub Issues API for open issues
 
 repos:
   - owner: your-github-username            # <-- replace
     name: your-repo-name                   # <-- replace
-    # poll_interval: "30s"                 # Override default polling interval
-    # labels: ["engineer"]                 # Only trigger on issues with these labels
 
 github_token: "\${GITHUB_TOKEN}"           # <-- set env var
+
+# Work selection defaults to labels: ["engineer"]. Override below to customize.
+# labels: ["engineer", "bug"]              # only trigger on issues with these labels
+# assignee: "your-github-username"         # only trigger on issues assigned to this user
+#   (to select by assignee ONLY, set labels: [] alongside assignee)
 `;
 
 export const TELEGRAM_COMM_TEMPLATE = `# Telegram communication plugin
@@ -604,10 +607,14 @@ export const EXAMPLE_GITHUB_TRIGGER = `# ┌────────────
 repos:                                    # REQUIRED — at least one repo to watch
   - owner: FarzamMohammadi                # REQUIRED — GitHub username or org
     name: my-project                      # REQUIRED — repository name
-    # poll_interval: "30s"                # optional — override default polling interval
-    # labels: ["engineer"]                # optional — only trigger on issues with these labels
 
 github_token: "\${GITHUB_TOKEN}"           # REQUIRED — GitHub personal access token (env var)
+
+# ── Work selection — defaults to labels: ["engineer"] ────────────────────────
+# labels: ["engineer", "bug"]             # trigger only on issues with these labels
+# assignee: "the-engineer-bot"            # trigger only on issues assigned to this user
+#   (to select by assignee ONLY, set labels: [] alongside assignee)
+# Poll cadence is set on the plugin manifest (poll_interval_ms), not here.
 `;
 
 export const EXAMPLE_TELEGRAM_COMM = `# ┌─────────────────────────────────────────────────────────────────────────────┐

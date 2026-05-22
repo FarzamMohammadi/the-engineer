@@ -16,10 +16,10 @@ The plugin is marked `critical: true` -- if it fails to initialize, the Daemon w
 ## Capabilities
 
 - Polls open issues from one or more repositories
-- Filters by label (optional)
+- Configurable work selection: filter by label, assignee, or both (defaults to the `engineer` label)
 - Per-repo watermark tracking -- only returns issues updated since the last poll
 - ETag caching for conditional requests (304 Not Modified skips processing)
-- Rate limit handling with Retry-After backoff (429 responses pause polling)
+- Rate limit reporting via `retry_after_ms` -- the Daemon honors the delay (Core-owned backoff)
 - Watermark persistence via the Core StateStore -- survives restarts without re-processing old issues
 - Idempotency keys prevent duplicate task creation for the same issue
 - Filters out pull requests (only issues are returned)
@@ -34,10 +34,14 @@ Config file: `~/.engineer/config/plugins/github-trigger.yaml`
 | `repos` | `array` | -- | Yes | At least one repository to watch. Each entry needs `owner` and `name`. |
 | `repos[].owner` | `string` | -- | Yes | GitHub username or organization. |
 | `repos[].name` | `string` | -- | Yes | Repository name. |
-| `labels` | `string[]` | `[]` | No | Only trigger on issues with these labels. Empty means all issues. |
-| `poll_interval_ms` | `number` | `30000` | No | Polling interval in milliseconds. |
+| `labels` | `string[]` | `["engineer"]` | No | Only trigger on issues with these labels. Defaults to the `engineer` label when omitted. |
+| `assignee` | `string` | -- | No | GitHub username to filter by assignee. |
 
-### Minimal config
+**Work selection:** By default the plugin triggers on issues carrying the `engineer` label, so it works out of the box with no extra configuration. Set `labels` to your own list to change which labels match, set `assignee` to filter by who an issue is assigned to, or set both (the GitHub API then returns issues matching **both** criteria — an AND). To select **only** by assignee, set `labels: []` alongside `assignee`. The one configuration the plugin rejects is an explicit `labels: []` with no assignee — that would match every open issue, which is almost never intended, so it fails loud at startup.
+
+**Poll interval:** Declared on the plugin manifest (`poll_interval_ms: 30000`) and honored by the Daemon. The Daemon's global `trigger_poll_interval_ms` config serves as the fallback for plugins that do not declare one. Plugin config does not include a poll interval field.
+
+### Minimal config (uses the default `engineer` label)
 
 ```yaml
 repos:
@@ -47,7 +51,19 @@ repos:
 github_token: "${GITHUB_TOKEN}"
 ```
 
-### Full config
+### Assignee-based selection
+
+```yaml
+repos:
+  - owner: your-github-username
+    name: your-repo-name
+
+github_token: "${GITHUB_TOKEN}"
+labels: []                       # clear the default label...
+assignee: "your-github-username" # ...and select by assignee only
+```
+
+### Full config (label + assignee)
 
 ```yaml
 repos:
@@ -56,7 +72,7 @@ repos:
 
 github_token: "${GITHUB_TOKEN}"
 labels: ["engineer"]
-poll_interval_ms: 30000
+assignee: "the-engineer-bot"
 ```
 
 ## How It Works
@@ -67,17 +83,17 @@ On each poll cycle, the plugin iterates through configured repos and calls the G
 
 **ETag caching**: Each request includes an `If-None-Match` header with the ETag from the previous response. If the API returns 304 (no changes), the plugin skips processing entirely. This saves API quota on quiet repos.
 
-**Rate limiting**: If the API returns 429, the plugin records the `Retry-After` duration and skips all polling until that time passes.
+**Rate limiting**: If the API returns 429, the plugin throws an `AdapterMethodError` with `retry_after_ms` set (parsed from the `Retry-After` header, defaulting to 60 seconds). The Daemon honors this delay before the next poll -- the plugin does not self-throttle. Rate-limit responses do not count toward the consecutive-failure threshold.
 
 **Interactive setup**: The first `engineer start` invocation prompts for the repo in `owner/name` format and generates the config file.
 
 ## Limitations
 
-- Polling only -- no webhook support. There is an inherent delay between issue creation and task pickup (up to `poll_interval_ms`).
+- Polling only -- no webhook support. There is an inherent delay between issue creation and task pickup (up to the poll interval).
 - Fetches at most 30 issues per repo per poll cycle. Repos with many simultaneous new issues may need multiple cycles.
 - Issues only -- pull requests are filtered out (`pollIssues` skips anything with a `pull_request` field). There is no PR-review trigger.
-- Label filtering is applied at the API level (comma-joined), so an issue must have all listed labels to match.
-- Watermark loss (corrupt file, first run) causes re-fetching from the beginning. The Daemon's idempotency key deduplication prevents duplicate tasks.
+- Label filtering is applied at the API level (comma-joined), so an issue must have all listed labels to match. Assignee filtering is likewise applied at the API level.
+- Watermark loss (corrupt state, first run) causes re-fetching from the beginning. The Daemon's idempotency key deduplication prevents duplicate tasks.
 
 ## Related Plugins
 

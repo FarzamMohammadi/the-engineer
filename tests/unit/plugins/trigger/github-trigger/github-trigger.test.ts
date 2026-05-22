@@ -56,7 +56,7 @@ const MANIFEST: PluginManifest = {
 const VALID_CONFIG = {
   github_token: "ghp_testtoken123",
   repos: [{ owner: "acme", name: "webapp" }],
-  labels: [],
+  labels: ["engineer"],
 };
 
 const INVALID_CONFIG = {
@@ -106,9 +106,9 @@ describe("GitHubTriggerPlugin", () => {
       expect(events[0]?.idempotency_key).toBe("github:issue:acme/webapp:42");
     });
 
-    it("sets correct event_type for issues", async () => {
+    it("sets event_type to 'issue'", async () => {
       const events = await plugin.poll();
-      expect(events[0]?.event_type).toBe("issue_assigned");
+      expect(events[0]?.event_type).toBe("issue");
     });
 
     it("sets correct source from manifest id", async () => {
@@ -199,6 +199,30 @@ describe("GitHubTriggerPlugin", () => {
 
       const callArgs = mockOctokit.issues.listForRepo.mock.calls[0]?.[0] as Record<string, unknown>;
       expect(callArgs["labels"]).toBe("bug,urgent");
+    });
+
+    it("passes assignee filter to API when configured", async () => {
+      const configWithAssignee = {
+        ...VALID_CONFIG,
+        assignee: "the-engineer-bot",
+      };
+      const assigneePlugin = new GitHubTriggerPlugin();
+      assigneePlugin.manifest = MANIFEST;
+      assigneePlugin.context = createTestPluginContext();
+      await assigneePlugin.initialize(configWithAssignee);
+      (assigneePlugin as unknown as { octokit: unknown }).octokit = mockOctokit;
+
+      await assigneePlugin.poll();
+
+      const callArgs = mockOctokit.issues.listForRepo.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs["assignee"]).toBe("the-engineer-bot");
+    });
+
+    it("does not pass assignee to API when not configured", async () => {
+      await plugin.poll();
+
+      const callArgs = mockOctokit.issues.listForRepo.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs["assignee"]).toBeUndefined();
     });
 
     it("polls multiple repos", async () => {
@@ -375,15 +399,65 @@ describe("GitHubTriggerPlugin", () => {
       expect(result.success).toBe(false);
     });
 
-    it("applies default poll_interval_ms", async () => {
+    it("does not include poll_interval_ms in plugin config (owned by manifest)", async () => {
       const p = new GitHubTriggerPlugin();
       p.manifest = MANIFEST;
       p.context = createTestPluginContext();
       const mock = createMockOctokit();
       await p.initialize(VALID_CONFIG);
       (p as unknown as { octokit: unknown }).octokit = mock;
-      // If it initialized, the config was parsed with defaults
-      expect((p as unknown as { config: { poll_interval_ms: number } }).config.poll_interval_ms).toBe(30_000);
+      expect("poll_interval_ms" in (p as unknown as { config: Record<string, unknown> }).config).toBe(false);
+    });
+
+    it("defaults labels to ['engineer'] when work selection is omitted", async () => {
+      const p = new GitHubTriggerPlugin();
+      p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
+      const result = await p.initialize({
+        github_token: "ghp_xxx",
+        repos: [{ owner: "a", name: "b" }],
+      });
+      expect(result.success).toBe(true);
+      expect((p as unknown as { config: { labels: string[] } }).config.labels).toEqual(["engineer"]);
+    });
+
+    it("rejects explicit empty labels with no assignee (deliberate match-everything footgun)", async () => {
+      const p = new GitHubTriggerPlugin();
+      p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
+      const result = await p.initialize({
+        github_token: "ghp_xxx",
+        repos: [{ owner: "a", name: "b" }],
+        labels: [],
+      });
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("match every open issue");
+    });
+
+    it("accepts assignee-only selection (explicit empty labels + assignee)", async () => {
+      const p = new GitHubTriggerPlugin();
+      p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
+      const result = await p.initialize({
+        github_token: "ghp_xxx",
+        repos: [{ owner: "a", name: "b" }],
+        labels: [],
+        assignee: "the-engineer-bot",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts config with both labels and assignee", async () => {
+      const p = new GitHubTriggerPlugin();
+      p.manifest = MANIFEST;
+      p.context = createTestPluginContext();
+      const result = await p.initialize({
+        github_token: "ghp_xxx",
+        repos: [{ owner: "a", name: "b" }],
+        labels: ["engineer"],
+        assignee: "the-engineer-bot",
+      });
+      expect(result.success).toBe(true);
     });
   });
 
@@ -418,38 +492,47 @@ describe("GitHubTriggerPlugin", () => {
     });
   });
 
-  describe("rate limit backoff", () => {
-    it("skips API call when within Retry-After window", async () => {
-      // Trigger a 429 with Retry-After: 60
+  describe("rate limit reporting", () => {
+    it("throws AdapterMethodError with retry_after_ms on 429", async () => {
       mockOctokit.issues.listForRepo.mockRejectedValueOnce({
         status: 429,
         response: { headers: { "retry-after": "60" } },
       });
 
-      // First poll hits 429 — error propagates through adapter
-      await expect(plugin.poll()).rejects.toThrow();
+      try {
+        await plugin.poll();
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        const adapterError = (error as { adapterError: { retry_after_ms: number; code: string } }).adapterError;
+        expect(adapterError.code).toBe("rate_limited");
+        expect(adapterError.retry_after_ms).toBe(60_000);
+      }
+    });
 
-      // Reset mock for second call
-      mockOctokit.issues.listForRepo.mockResolvedValueOnce({
-        status: 200,
-        headers: { etag: '"mock-etag"' },
-        data: [
-          {
-            number: 99,
-            title: "Should be suppressed",
-            html_url: "https://github.com/acme/webapp/issues/99",
-            updated_at: "2026-03-11T12:00:00Z",
-            labels: [],
-            assignees: [],
-          },
-        ],
+    it("defaults to 60s retry_after_ms when Retry-After header is missing", async () => {
+      mockOctokit.issues.listForRepo.mockRejectedValueOnce({
+        status: 429,
       });
 
-      // Second poll immediately — should be suppressed by retryAfterUntil
-      const events = await plugin.poll();
-      expect(events).toHaveLength(0);
-      // listForRepo should NOT have been called again (still within retry window)
-      expect(mockOctokit.issues.listForRepo).toHaveBeenCalledTimes(1);
+      try {
+        await plugin.poll();
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        const adapterError = (error as { adapterError: { retry_after_ms: number } }).adapterError;
+        expect(adapterError.retry_after_ms).toBe(60_000);
+      }
+    });
+
+    it("does not set retry_after_ms for non-429 errors", async () => {
+      mockOctokit.issues.listForRepo.mockRejectedValueOnce(Object.assign(new Error("Server error"), { status: 500 }));
+
+      try {
+        await plugin.poll();
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        const adapterError = (error as { adapterError: { retry_after_ms: number | null } }).adapterError;
+        expect(adapterError.retry_after_ms).toBeNull();
+      }
     });
   });
 

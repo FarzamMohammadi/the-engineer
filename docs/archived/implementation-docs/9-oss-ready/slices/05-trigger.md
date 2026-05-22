@@ -99,6 +99,12 @@ Make selection configurable: assignee (add the bot's GitHub identity), label, or
 least one** criterion via Zod (neither = matches every open issue = dangerous). Rename `event_type`
 to reflect what actually matched.
 
+**Implementation refinement (Session 20):** Shipped a **default** rather than a hard-reject-on-omission.
+`labels` defaults to `["engineer"]`, so the common case works out of the box (frictionless defaults beat
+fail-loud walls — see philosophy "defaults handle everything"). The Zod guard remains, but now only fires
+on an *explicit* `labels: []` with no assignee — the deliberate match-everything footgun. `event_type`
+renamed to the static `"issue"` (the match criteria is a config concern, not an event classification).
+
 ### #7 — PluginContext: the canonical plugin-context contract (centerpiece)
 The Registry already injects three scattered, `unknown`-typed fields onto adapters — `manifest`
 (`lifecycle.ts:56`), `observer` and `hookRegistry` (`registry/index.ts:96-98`). The observer is

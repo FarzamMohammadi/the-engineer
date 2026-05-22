@@ -1,3 +1,4 @@
+import { AdapterMethodError } from "../../adapters/errors.js";
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import { AdapterTypes, type TriggerEvent } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
@@ -37,19 +38,20 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
   // ── Internal State ──────────────────────────────────────────────────────
   const triggerLastPoll = new Map<string, number>();
   const triggerFailures = new Map<string, number>();
+  const triggerRateLimitUntil = new Map<string, number>();
   const seenTriggerKeys = new Map<string, number>();
 
   // ── Adaptive Polling ────────────────────────────────────────────────────
 
   /** Compute effective poll interval with exponential backoff on failures. */
-  function getEffectivePollInterval(pluginId: string): number {
+  function getEffectivePollInterval(pluginId: string, baseIntervalMs: number): number {
     const failures = triggerFailures.get(pluginId) ?? 0;
 
     if (failures === 0) {
-      return config.trigger_poll_interval_ms;
+      return baseIntervalMs;
     }
 
-    const backoff = config.trigger_poll_interval_ms * 2 ** Math.min(failures, MAX_BACKOFF_EXPONENT);
+    const backoff = baseIntervalMs * 2 ** Math.min(failures, MAX_BACKOFF_EXPONENT);
     return Math.min(backoff, MAX_BACKOFF_MS);
   }
 
@@ -64,8 +66,15 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
 
   async function pollSingleTrigger(trigger: TriggerAdapter, now: number): Promise<void> {
     const pluginId = trigger.manifest.id;
+
+    const rateLimitUntil = triggerRateLimitUntil.get(pluginId) ?? 0;
+    if (now < rateLimitUntil) {
+      return;
+    }
+
     const lastPoll = triggerLastPoll.get(pluginId) ?? 0;
-    const effectiveInterval = getEffectivePollInterval(pluginId);
+    const baseInterval = trigger.manifest.poll_interval_ms ?? config.trigger_poll_interval_ms;
+    const effectiveInterval = getEffectivePollInterval(pluginId, baseInterval);
 
     if (now - lastPoll < effectiveInterval) {
       return;
@@ -74,15 +83,26 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     try {
       const events = await trigger.poll();
       triggerLastPoll.set(pluginId, now);
-      triggerFailures.set(pluginId, 0); // Reset on success
+      triggerFailures.set(pluginId, 0);
+      triggerRateLimitUntil.delete(pluginId);
 
       for (const event of events) {
         processNewTriggerEvent(event, now);
       }
     } catch (error) {
+      if (error instanceof AdapterMethodError && error.adapterError.retry_after_ms !== null) {
+        triggerRateLimitUntil.set(pluginId, now + error.adapterError.retry_after_ms);
+        triggerLastPoll.set(pluginId, now);
+        observer.warn("Trigger rate-limited — honoring retry_after_ms", {
+          pluginId,
+          retryAfterMs: error.adapterError.retry_after_ms,
+        });
+        return;
+      }
+
       const failures = (triggerFailures.get(pluginId) ?? 0) + 1;
       triggerFailures.set(pluginId, failures);
-      observer.warn("Trigger poll failed — no new events from this source until next tick", {
+      observer.warn("Trigger poll failed — backing off", {
         pluginId,
         capability: "trigger_polling",
         failures,

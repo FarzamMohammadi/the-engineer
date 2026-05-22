@@ -5,3 +5,8 @@ repos:
     name: your-repo-name
 
 github_token: "${GITHUB_TOKEN}"
+
+# Work selection. labels defaults to ["engineer"] when omitted.
+labels: ["engineer"]                     # trigger on issues with these labels
+# assignee: "your-github-username"       # also trigger on issues assigned to this user
+#   (to select by assignee ONLY, set labels: [] alongside assignee)

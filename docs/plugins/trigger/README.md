@@ -1,6 +1,8 @@
 # Trigger Adapter
 
-Trigger adapters discover new work by polling external sources. The Daemon calls `poll()` on a configurable interval, and the adapter returns zero or more `TriggerEvent` objects representing new tasks. Each event carries an idempotency key so the Daemon can deduplicate across polls. This is the simplest adapter type -- one abstract method (`doPoll()`) beyond the standard lifecycle.
+Trigger adapters discover new work by polling external sources. The Daemon calls `poll()` on each plugin's declared interval, and the adapter returns zero or more `TriggerEvent` objects representing new tasks. Each event carries an idempotency key so the Daemon can deduplicate across polls. This is the simplest adapter type -- one abstract method (`doPoll()`) beyond the standard lifecycle.
+
+**Polling and backoff:** A plugin declares its preferred poll cadence via `poll_interval_ms` on its manifest. The Daemon honors it (falling back to the global `trigger_poll_interval_ms` config if absent). On consecutive failures, the Daemon applies exponential backoff (2^n * base, capped at 5 minutes). If the plugin throws an `AdapterMethodError` with `retry_after_ms` set (e.g. from a 429 rate-limit response), the Daemon honors that delay instead -- and does not count the rate-limit toward the consecutive-failure threshold.
 
 ## Contract
 
@@ -25,7 +27,7 @@ Defined in `src/schemas/adapters.ts` (`TriggerEventSchema`).
 |-------|------|-------------|
 | `idempotency_key` | `string` | Stable key for deduplication (e.g. `github:issue:owner/repo:42`). Must be deterministic -- same event must produce the same key across polls. |
 | `source` | `string` | Plugin ID that produced this event. |
-| `event_type` | `string` | Classification (e.g. `issue_assigned`). |
+| `event_type` | `string` | Classification (e.g. `issue`). |
 | `external_ref` | `ExternalRef \| null` | Link back to the external system (type, repo, id, url, pr_decorations). Plugins can optionally set `pr_decorations` to provide platform-formatted strings for PR title/description decoration. Core treats all decoration values as opaque. See `pr_decorations` fields: `title_prefix` (e.g. `"#42:"` — plugin owns delimiter), `title_suffix`, `description_prefix`, `description_suffix` (e.g. `"Closes #42"`). |
 | `title` | `string` | Human-readable title for the task. |
 | `body` | `string \| null` | Full description/body text. |
@@ -124,12 +126,13 @@ import { z } from "zod";
 
 export const MyTriggerConfigSchema = z.object({
   api_token: z.string().min(1),
-  poll_interval_ms: z.number().int().positive().default(30_000),
   project_id: z.string().min(1),
 });
 
 export type MyTriggerConfig = z.output<typeof MyTriggerConfigSchema>;
 ```
+
+Note: poll interval is declared on the manifest (`poll_interval_ms`), not in plugin config. The Daemon manages poll timing -- plugins do not need to track it themselves.
 
 ### Registration in builtin.ts
 
@@ -153,7 +156,8 @@ import { MyTriggerPlugin } from "./trigger/my-trigger/my-trigger.js";
   critical: true,
   requirements: [{ type: "env", name: "MY_API_TOKEN" }],
   entry: "builtin",
-  adapter_meta: { poll_interval: "30s" },
+  poll_interval_ms: 30_000,
+  adapter_meta: {},
   contributes: { events: ["trigger.new_event"] },
 },
 
@@ -214,9 +218,9 @@ The contract suite validates:
 
 | Plugin | Source | Polls | Idempotency Key Pattern | Watermarks | Requirements |
 |--------|--------|-------|-------------------------|------------|--------------|
-| **GitHub Trigger** | GitHub Issues | Issues assigned to user, filtered by labels | `github:issue:{owner}/{repo}:{number}` | Per-repo ISO timestamp, persisted to `~/.engineer/state/github-trigger/watermarks.json` | `GITHUB_TOKEN` env var |
+| **GitHub Trigger** | GitHub Issues | Open issues filtered by label and/or assignee | `github:issue:{owner}/{repo}:{number}` | Per-repo ISO timestamp, persisted via Core StateStore | `GITHUB_TOKEN` env var |
 
-The GitHub Trigger plugin also handles ETag-based conditional requests (304 Not Modified), Retry-After from 429 responses, and error classification (`auth_failed`, `not_found`, `rate_limited`, `network_error`).
+The GitHub Trigger plugin also handles ETag-based conditional requests (304 Not Modified), rate-limit reporting via `retry_after_ms` (Core-owned backoff), and error classification (`auth_failed`, `not_found`, `rate_limited`, `network_error`).
 
 ## Reference
 

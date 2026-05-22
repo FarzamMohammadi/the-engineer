@@ -37,7 +37,8 @@ const manifests = [
     requirements: [{ type: "env", name: "GITHUB_TOKEN" }],
     combined_with: ["github-comm", "github-hosting"],
     entry: "builtin",
-    adapter_meta: { poll_interval: "30s" },
+    poll_interval_ms: 30_000,
+    adapter_meta: {},
     contributes: { events: ["trigger.new_event"] },
   },
   {

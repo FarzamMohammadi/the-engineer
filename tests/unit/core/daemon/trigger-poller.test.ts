@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdapterMethodError, createAdapterError } from "../../../../src/adapters/errors.js";
 import { createTriggerPoller } from "../../../../src/core/daemon/trigger-poller.js";
 import type { TriggerPollerContext } from "../../../../src/core/daemon/types.js";
 import { externalRefsMatch } from "../../../../src/core/daemon/unblock-resolver.js";
@@ -96,7 +97,12 @@ function makeTriggerEvent(key: string, title = "Test issue") {
 
 function makeTriggerPlugin(events: unknown[] = [makeTriggerEvent("key-1")]) {
   return {
-    manifest: { id: "test-trigger", type: "trigger", version: "1.0.0", name: "Test Trigger" },
+    manifest: {
+      id: "test-trigger",
+      type: "trigger",
+      version: "1.0.0",
+      name: "Test Trigger",
+    } as { id: string; type: string; version: string; name: string; poll_interval_ms?: number },
     poll: vi.fn().mockResolvedValue(events),
     hasCapability: vi.fn().mockReturnValue(false),
   };
@@ -198,6 +204,72 @@ describe("TriggerPoller", () => {
     // Poll after interval has elapsed
     await poller.poll(100_000 + 30_001);
     expect(trigger.poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("honors per-plugin poll_interval_ms from manifest over global default", async () => {
+    const trigger = makeTriggerPlugin([]);
+    trigger.manifest.poll_interval_ms = 10_000;
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+    const poller = createTriggerPoller(ctx);
+
+    await poller.poll(100_000);
+    expect(trigger.poll).toHaveBeenCalledTimes(1);
+
+    // Before per-plugin interval (10s) — skipped
+    await poller.poll(100_000 + 9_999);
+    expect(trigger.poll).toHaveBeenCalledTimes(1);
+
+    // After per-plugin interval (10s) but before global (30s) — polls
+    await poller.poll(100_000 + 10_001);
+    expect(trigger.poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to global trigger_poll_interval_ms when manifest has no poll_interval_ms", async () => {
+    const trigger = makeTriggerPlugin([]);
+    // No poll_interval_ms on manifest — relies on global 30_000
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+    const poller = createTriggerPoller(ctx);
+
+    await poller.poll(100_000);
+    expect(trigger.poll).toHaveBeenCalledTimes(1);
+
+    // Before global interval (30s) — skipped
+    await poller.poll(100_000 + 29_999);
+    expect(trigger.poll).toHaveBeenCalledTimes(1);
+
+    // After global interval — polls
+    await poller.poll(100_000 + 30_001);
+    expect(trigger.poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("backoff multiplies the per-plugin base, not the global default", async () => {
+    const trigger = makeTriggerPlugin([]);
+    trigger.manifest.poll_interval_ms = 5_000;
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+    const poller = createTriggerPoller(ctx);
+
+    // Success at t=100_000
+    await poller.poll(100_000);
+    expect(trigger.poll).toHaveBeenCalledTimes(1);
+
+    // Switch to failures
+    trigger.poll.mockRejectedValue(new Error("fail"));
+
+    // After per-plugin base (5_000) — polls and fails
+    await poller.poll(105_001);
+    expect(trigger.poll).toHaveBeenCalledTimes(2);
+    // Failure 1: effective = 5_000 * 2^1 = 10_000
+
+    // 9_999 after lastPoll (100_000) < 10_000 — skipped
+    await poller.poll(109_999);
+    expect(trigger.poll).toHaveBeenCalledTimes(2);
+
+    // 10_001 after lastPoll — polls
+    await poller.poll(110_001);
+    expect(trigger.poll).toHaveBeenCalledTimes(3);
   });
 
   it("tracks failures and resets on success", async () => {
@@ -318,6 +390,101 @@ describe("TriggerPoller", () => {
     // At 1_300_001: 1_300_001 - 1_000_000 = 300_001 >= 300_000, polls
     await poller.poll(1_300_001);
     expect(trigger.poll).toHaveBeenCalledTimes(6);
+  });
+
+  it("honors retry_after_ms from AdapterMethodError — delays next poll", async () => {
+    const trigger = makeTriggerPlugin([]);
+    const rateLimitError = new AdapterMethodError(
+      createAdapterError("rate_limited", "Too many requests", { retryable: true, retry_after_ms: 120_000 }),
+    );
+    trigger.poll.mockRejectedValueOnce(rateLimitError);
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+    const poller = createTriggerPoller(ctx);
+
+    // First poll at t=100_000 — rate-limited
+    await poller.poll(100_000);
+    expect(trigger.poll).toHaveBeenCalledTimes(1);
+
+    // Failure counter should NOT increment for rate-limits
+    expect(poller.getTriggerFailures()).toEqual({});
+
+    // Poll before retry_after_ms expires (100_000 + 120_000 = 220_000)
+    trigger.poll.mockResolvedValue([]);
+    await poller.poll(219_999);
+    expect(trigger.poll).toHaveBeenCalledTimes(1); // Skipped
+
+    // Poll after retry_after_ms expires
+    await poller.poll(220_001);
+    expect(trigger.poll).toHaveBeenCalledTimes(2); // Allowed
+  });
+
+  it("does not count rate-limit errors toward consecutive failures", async () => {
+    const trigger = makeTriggerPlugin([]);
+    const rateLimitError = new AdapterMethodError(
+      createAdapterError("rate_limited", "Too many requests", { retryable: true, retry_after_ms: 10_000 }),
+    );
+    trigger.poll.mockRejectedValue(rateLimitError);
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+    const poller = createTriggerPoller(ctx);
+
+    // Trigger rate-limit 3 times (threshold is 3)
+    await poller.poll(100_000);
+    await poller.poll(200_000);
+    await poller.poll(300_000);
+
+    // No health event should be emitted (rate-limits don't count as failures)
+    const publishCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls;
+    const healthEvents = publishCalls.filter(
+      (call: unknown[]) => (call[0] as { type: string }).type === "health.trigger_failure",
+    );
+    expect(healthEvents.length).toBe(0);
+    expect(poller.getTriggerFailures()).toEqual({});
+  });
+
+  it("clears rate-limit deadline on success", async () => {
+    const trigger = makeTriggerPlugin([]);
+    const rateLimitError = new AdapterMethodError(
+      createAdapterError("rate_limited", "Too many requests", { retryable: true, retry_after_ms: 60_000 }),
+    );
+    trigger.poll.mockRejectedValueOnce(rateLimitError);
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+    const poller = createTriggerPoller(ctx);
+
+    // Rate-limited at t=100_000
+    await poller.poll(100_000);
+    expect(trigger.poll).toHaveBeenCalledTimes(1);
+
+    // Success after deadline (100_000 + 60_000 = 160_000)
+    trigger.poll.mockResolvedValue([]);
+    await poller.poll(160_001);
+    expect(trigger.poll).toHaveBeenCalledTimes(2);
+
+    // Next poll should use normal interval (30_000), not rate-limit deadline
+    await poller.poll(160_001 + 30_001);
+    expect(trigger.poll).toHaveBeenCalledTimes(3);
+  });
+
+  it("falls back to exponential backoff for errors without retry_after_ms", async () => {
+    const trigger = makeTriggerPlugin([]);
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
+
+    const poller = createTriggerPoller(ctx);
+
+    // Success at t=100_000
+    await poller.poll(100_000);
+
+    // Non-rate-limit AdapterMethodError (retry_after_ms is null)
+    const authError = new AdapterMethodError(
+      createAdapterError("auth_failed", "Bad credentials", { retryable: false }),
+    );
+    trigger.poll.mockRejectedValue(authError);
+
+    // Poll at t=130_001 — fails, increments counter
+    await poller.poll(130_001);
+    expect(poller.getTriggerFailures()).toEqual({ "test-trigger": 1 });
   });
 
   it("polls multiple triggers in parallel via Promise.allSettled", async () => {

@@ -27,6 +27,7 @@ export const PluginManifestSchema = z.object({
   requirements: z.array(PluginRequirementSchema).default([]),
   combined_with: z.array(z.string()).default([]),
   entry: z.string().default("index.ts"),
+  poll_interval_ms: z.number().int().positive().optional(),
   adapter_meta: z.record(z.unknown()).default({}),
   contributes: z
     .object({

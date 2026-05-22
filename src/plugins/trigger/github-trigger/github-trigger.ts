@@ -27,7 +27,6 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
   protected octokit!: Octokit;
   private watermarks = new Map<string, string>();
   private etags = new Map<string, string>();
-  private retryAfterUntil = 0;
 
   protected async doPoll(): Promise<TriggerEvent[]> {
     const events: TriggerEvent[] = [];
@@ -111,11 +110,6 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
   // ── Private Helpers ──────────────────────────────────────────────────
 
   private async pollIssues(owner: string, name: string, since: string | undefined): Promise<TriggerEvent[]> {
-    // Respect Retry-After from previous 429
-    if (Date.now() < this.retryAfterUntil) {
-      return [];
-    }
-
     try {
       const repoKey = `${owner}/${name}`;
       const params: Record<string, unknown> = {
@@ -131,6 +125,9 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
       }
       if (this.config.labels.length > 0) {
         params["labels"] = this.config.labels.join(",");
+      }
+      if (this.config.assignee) {
+        params["assignee"] = this.config.assignee;
       }
 
       // ETag conditional request — skip if no changes since last poll
@@ -165,19 +162,18 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
       return [];
     }
 
-    // Handle 429 with Retry-After
-    if (getErrorStatus(error) === 429) {
-      const retryAfter = Number(
-        (error as { response?: { headers?: Record<string, string> } }).response?.headers?.["retry-after"] ?? 60,
-      );
-      this.retryAfterUntil = Date.now() + retryAfter * 1000;
-    }
+    const retryAfterMs =
+      getErrorStatus(error) === 429
+        ? Number(
+            (error as { response?: { headers?: Record<string, string> } }).response?.headers?.["retry-after"] ?? 60,
+          ) * 1000
+        : null;
 
     throw new AdapterMethodError(
       createAdapterError(
         classifyGitHubError(error),
         `Failed to poll ${owner}/${name}: ${error instanceof Error ? error.message : String(error)}`,
-        { retryable: isRetryable(error), severity: AdapterErrorSeverities.error },
+        { retryable: isRetryable(error), retry_after_ms: retryAfterMs, severity: AdapterErrorSeverities.error },
       ),
     );
   }
@@ -213,7 +209,7 @@ function mapIssueToEvent(owner: string, repo: string, issue: GitHubIssue, plugin
   return {
     idempotency_key: `github:issue:${owner}/${repo}:${String(issue.number)}`,
     source: pluginId,
-    event_type: "issue_assigned",
+    event_type: "issue",
     external_ref: {
       type: "github_issue",
       repo: `${owner}/${repo}`,

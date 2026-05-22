@@ -38,7 +38,7 @@ Each concurrent task spawns a CLI agent process. Memory usage scales linearly â€
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `trigger_poll_interval_ms` | integer (ms) | `30000` (30s) | How often the daemon polls trigger adapters for new work. |
+| `trigger_poll_interval_ms` | integer (ms) | `30000` (30s) | Global fallback for how often the daemon polls trigger adapters. Plugins can declare their own `poll_interval_ms` on their manifest, which takes precedence. |
 | `response_poll_interval_ms` | integer (ms) | `5000` (5s) | How often the daemon polls communication adapters for responses. |
 | `seen_keys_ttl_ms` | integer (ms) | `86400000` (1d) | How long a seen trigger key stays in the in-memory hot-cache fast path. Performance only â€” durable dedup uses the task's `idempotency_key` in the database, so an event is not re-triggered while its task is still live, even after this expires. |
 

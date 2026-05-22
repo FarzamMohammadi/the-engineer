@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import type { CommunicationAdapter } from "../../../adapters/communication.js";
 import type { GitHostingAdapter } from "../../../adapters/git-hosting.js";
 import type { ConfigBundle } from "../../../config/loader.js";
 import type { Daemon } from "../../../core/daemon/index.js";
@@ -10,7 +11,7 @@ import type { AuthUrlProvider } from "../../../core/interfaces/workspace-manager
 import type { IObserver } from "../../../core/observer/index.js";
 import { BlobStore, createLogger, createObservationStore, createObserverFacade } from "../../../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../../../core/orchestrator/index.js";
-import { PeopleDirectory } from "../../../core/people-directory/index.js";
+import { PeopleDirectory, inspectPeopleDirectory } from "../../../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../../../core/registry/index.js";
 import { createStateStore as createPluginStateStore } from "../../../core/state-store/index.js";
 import { createCoreComponents } from "../../../core/system.js";
@@ -254,6 +255,13 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       total: pluginResult.loaded.length + pluginResult.failed.length,
     });
 
+    // Warn now that comm plugins are loaded: their channels decide whether the owner is reachable.
+    warnPeopleDirectoryHealth(
+      config.people,
+      registry.getPluginsByType<CommunicationAdapter>(AdapterTypes.communication),
+      observer,
+    );
+
     const bootstrapElapsedMs = Date.now() - bootstrapStartMs;
     observer.info("Bootstrap complete", {
       elapsedMs: bootstrapElapsedMs,
@@ -293,5 +301,27 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     dbHandle?.close();
     loggerHandle.close();
     throw error;
+  }
+}
+
+/**
+ * Log single-user people-directory warnings at startup (no owner, extra people, unreachable
+ * owner channels). Warnings only — never blocks startup. See docs/constraints.md.
+ */
+function warnPeopleDirectoryHealth(
+  people: ConfigBundle["people"],
+  commPlugins: CommunicationAdapter[],
+  observer: IObserver,
+): void {
+  const availableChannels = new Set<string>();
+  for (const plugin of commPlugins) {
+    const channel = plugin.manifest.adapter_meta["channel"];
+    if (plugin.hasCapability("send") && typeof channel === "string") {
+      availableChannels.add(channel);
+    }
+  }
+
+  for (const warning of inspectPeopleDirectory(people, availableChannels)) {
+    observer.warn(warning.message, { kind: warning.kind, ...warning.data });
   }
 }

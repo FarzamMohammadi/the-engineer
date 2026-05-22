@@ -2,6 +2,14 @@ import type { ContactInfo, Person } from "../../schemas/adapters.js";
 import type { PeopleConfig } from "../../schemas/config.js";
 import { TeamMemberRoles } from "../../schemas/task.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
+import { OWNER_ROLE } from "./inspect.js";
+
+export {
+  type PeopleDirectoryWarning,
+  type PeopleDirectoryWarningKind,
+  inspectPeopleDirectory,
+  OWNER_ROLE,
+} from "./inspect.js";
 
 // ── PeopleDirectory ──────────────────────────────────────────────────────────
 // Config-driven contact resolution for notifications and escalation.
@@ -32,7 +40,7 @@ export class PeopleDirectory implements IPeopleDirectory {
 
   /** Convenience: first person with role "owner", or null. */
   getOwner(): Person | null {
-    return this.getByRole("owner")[0] ?? null;
+    return this.getByRole(OWNER_ROLE)[0] ?? null;
   }
 
   /** Convenience: all people with role "reviewer". */

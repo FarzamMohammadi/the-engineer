@@ -51,6 +51,12 @@ Each slice is "done done" when:
 - Permanent documentation exists in `docs/` for that area
 - A stranger could read that slice's docs, understand it, and contribute to it
 - All three lenses pass (see below)
+- **A closing standards sweep has run.** As the final step before the slice is marked done, every file
+  the slice created or changed is audited line-by-line against [`coding-standards.md`](../../../coding-standards.md),
+  [`anti-patterns.md`](../../../anti-patterns.md), and [`philosophy.md`](../../../philosophy.md), and
+  refactored where it falls short. Feature work passing is not the finish line — this sweep is. It runs
+  as its own focused session (or sessions) so a clean context budget can do it justice. Never mark a
+  slice done without it.
 
 ### The Slices
 

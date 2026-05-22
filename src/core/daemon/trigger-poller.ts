@@ -90,29 +90,38 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
         processNewTriggerEvent(event, now);
       }
     } catch (error) {
-      if (error instanceof AdapterMethodError && error.adapterError.retry_after_ms !== null) {
-        triggerRateLimitUntil.set(pluginId, now + error.adapterError.retry_after_ms);
-        triggerLastPoll.set(pluginId, now);
-        observer.warn("Trigger rate-limited — honoring retry_after_ms", {
-          pluginId,
-          retryAfterMs: error.adapterError.retry_after_ms,
-        });
-        return;
-      }
+      handlePollFailure(pluginId, error, now, effectiveInterval);
+    }
+  }
 
-      const failures = (triggerFailures.get(pluginId) ?? 0) + 1;
-      triggerFailures.set(pluginId, failures);
-      observer.warn("Trigger poll failed — backing off", {
+  /**
+   * Route a failed poll. A reported rate-limit (retry_after_ms) sets a per-plugin
+   * deadline and is not counted as a failure — it is transient and self-resolving.
+   * Any other error increments the failure counter and feeds exponential backoff.
+   */
+  function handlePollFailure(pluginId: string, error: unknown, now: number, effectiveInterval: number): void {
+    if (error instanceof AdapterMethodError && error.adapterError.retry_after_ms !== null) {
+      triggerRateLimitUntil.set(pluginId, now + error.adapterError.retry_after_ms);
+      triggerLastPoll.set(pluginId, now);
+      observer.warn("Trigger rate-limited — honoring retry_after_ms", {
         pluginId,
-        capability: "trigger_polling",
-        failures,
-        retryInMs: effectiveInterval,
-        error,
+        retryAfterMs: error.adapterError.retry_after_ms,
       });
+      return;
+    }
 
-      if (failures >= config.plugins.consecutive_failures_threshold) {
-        emitHealthTriggerFailure(pluginId, failures, error);
-      }
+    const failures = (triggerFailures.get(pluginId) ?? 0) + 1;
+    triggerFailures.set(pluginId, failures);
+    observer.warn("Trigger poll failed — backing off", {
+      pluginId,
+      capability: "trigger_polling",
+      failures,
+      retryInMs: effectiveInterval,
+      error,
+    });
+
+    if (failures >= config.plugins.consecutive_failures_threshold) {
+      emitHealthTriggerFailure(pluginId, failures, error);
     }
   }
 

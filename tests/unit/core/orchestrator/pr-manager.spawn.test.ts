@@ -17,6 +17,7 @@ import type { WorkspaceRecord } from "../../../../src/core/interfaces/workspace-
 import { Phases } from "../../../../src/schemas/orchestrator.js";
 import { SessionEndReasons } from "../../../../src/schemas/session-memory.js";
 import {
+  TEST_WORKTREE_PATH,
   type TestOrchestratorHandle,
   createMockDispatch,
   createTestOrchestrator,
@@ -24,7 +25,7 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const WORKTREE_PATH = "/tmp/worktree/task-001";
+const WORKTREE_PATH = TEST_WORKTREE_PATH;
 
 const WORKSPACE_RECORD: WorkspaceRecord = {
   taskId: "task-001",

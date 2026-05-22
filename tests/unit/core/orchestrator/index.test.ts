@@ -5,6 +5,7 @@ import { Phases } from "../../../../src/schemas/orchestrator.js";
 import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../../../src/schemas/session-memory.js";
 import { ActionClasses, SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import {
+  TEST_WORKTREE_PATH,
   TRIVIAL_REQUIREMENTS_DATA,
   type TestOrchestratorHandle,
   createMockCheckpoint,
@@ -838,7 +839,7 @@ describe("Orchestrator", () => {
       const workspace = {
         repo: "org/repo",
         branch: "engineer/task-001-test",
-        worktree_path: "/tmp/worktree/task-001",
+        worktree_path: TEST_WORKTREE_PATH,
         thoughts_dir: null,
       };
       // Task already has a PR and workspace (rework scenario)
@@ -872,7 +873,7 @@ describe("Orchestrator", () => {
         repo: "org/repo",
         branch: "engineer/task-001-test",
         baseBranch: "main",
-        worktreePath: "/tmp/worktree/task-001",
+        worktreePath: TEST_WORKTREE_PATH,
         baseCommit: "abc123",
         thoughtsDir: "thoughts/2026-03-22-issue-1",
       });
@@ -882,7 +883,7 @@ describe("Orchestrator", () => {
         workspace: {
           repo: "org/repo",
           branch: "engineer/task-001-test",
-          worktree_path: "/tmp/worktree/task-001",
+          worktree_path: TEST_WORKTREE_PATH,
           thoughts_dir: null,
         },
         review: {
@@ -920,10 +921,10 @@ describe("Orchestrator", () => {
       const workspace = {
         repo: "org/repo",
         branch: "engineer/task-001-fix-bug",
-        worktree_path: "/tmp/worktree/task-001",
+        worktree_path: TEST_WORKTREE_PATH,
         thoughts_dir: null,
       };
-      handle.workspaceManager.getWorktreePath.mockReturnValue("/tmp/worktree/task-001");
+      handle.workspaceManager.getWorktreePath.mockReturnValue(TEST_WORKTREE_PATH);
 
       const dispatch = createMockDispatch({
         task: {

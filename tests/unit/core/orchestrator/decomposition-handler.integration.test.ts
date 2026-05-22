@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { SessionEndReasons } from "../../../../src/schemas/session-memory.js";
 import { CascadePolicies, SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import {
+  TEST_WORKTREE_PATH,
   type TestOrchestratorHandle,
   VALID_PHASE_DATA,
   createMockDispatch,
@@ -19,7 +20,7 @@ describe("Orchestrator — Decomposition", () => {
       repo: "test/repo",
       branch: "engineer/task-001-test-task",
       baseBranch: "main",
-      worktreePath: "/tmp/worktree/task-001",
+      worktreePath: TEST_WORKTREE_PATH,
     });
   });
 

@@ -1,7 +1,28 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Mock, vi } from "vitest";
+
+/**
+ * Worktree path for orchestrator tests, unique per worker process.
+ *
+ * The fake LLM writes `session-result.json` files here and the orchestrator reads
+ * them back, so the path must not be shared across the test files that vitest runs
+ * in parallel — a fixed path lets one file clobber another's phase results, which
+ * surfaced as intermittent "blocked"/wrong-phase failures. Computed once at module
+ * load: stable within a file (module-level fixtures can reference it), distinct
+ * across workers. Tests that need the path import this constant instead of hardcoding.
+ */
+export const TEST_WORKTREE_PATH = path.join(mkdtempSync(path.join(tmpdir(), "engineer-orch-")), "task-001");
+
+process.on("exit", () => {
+  try {
+    rmSync(path.dirname(TEST_WORKTREE_PATH), { recursive: true, force: true });
+  } catch {
+    // Best-effort cleanup of the temp worktree on process exit.
+  }
+});
 
 import type { ActionPipeline, ExecuteInput, PipelineResult } from "../../src/core/action-pipeline/index.js";
 import type { NotificationRouter } from "../../src/core/daemon/notification-router.js";
@@ -330,12 +351,14 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
 
   // ── Registry mock ──────────────────────────────────────────────────────
   // Returns a fake LLM that uses llmResponses array
-  const worktreePath = "/tmp/worktree/task-001";
+  const worktreePath = TEST_WORKTREE_PATH;
   const thoughtsDir = "thoughts/2026-03-22-issue-1";
 
   // Initialize worktree as a git repo so PR manager's real git operations succeed.
-  // Guard: skip when execFileSync is mocked (pr-manager.spawn.test.ts) or already initialized.
-  if (!existsSync(path.join(worktreePath, ".git", "HEAD"))) {
+  // Skip when execFileSync is mocked (pr-manager.spawn.test.ts): the mock records calls
+  // for assertions, so a git init here would pollute its call count. Also skip if already
+  // initialized (a worker may build multiple handles against the same per-worker path).
+  if (!(vi.isMockFunction(execFileSync) || existsSync(path.join(worktreePath, ".git", "HEAD")))) {
     try {
       mkdirSync(worktreePath, { recursive: true });
       execFileSync("git", ["init"], { cwd: worktreePath, stdio: "pipe" });

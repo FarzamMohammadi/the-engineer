@@ -1,4 +1,4 @@
-import type { ResponseTimeout, SafetyConfig } from "../../schemas/config.js";
+import type { ResponseTimeout } from "../../schemas/config.js";
 import type { ActionClass } from "../../schemas/task.js";
 
 /** Query for passive consultation (called by Orchestrator). */
@@ -35,7 +35,6 @@ export interface ISafetyLayer {
   consultJudgment(query: SafetyQuery): SafetyVerdict;
   getCostStatus(taskId?: string): CostStatus;
   getTimeoutPolicy(): ResponseTimeout;
-  updateConfig(newConfig: SafetyConfig): void;
   checkAutoMergeAllowed(repo: string): boolean;
   /** Whether /approve PR comments are treated as approval signals (solo-dev workflow). */
   isCommentApprovalEnabled(): boolean;

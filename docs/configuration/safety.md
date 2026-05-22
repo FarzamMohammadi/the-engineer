@@ -3,7 +3,7 @@
 Controls cost limits, scope boundaries, autonomy levels, response timeouts, and merge policy. This is the guardrail layer — it determines what The Engineer is allowed to do, how much it can spend, and how PRs are approved and merged.
 
 **File:** `~/.engineer/config/safety.yaml`
-**Hot-reload:** **Yes** — changes take effect without restarting the daemon.
+**Hot-reload:** No — requires daemon restart.
 
 ## Cost Limits
 

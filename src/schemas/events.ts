@@ -57,7 +57,6 @@ export const EventTypeSchema = z.enum([
   "git.branch_deleted",
   "health.stuck_detected",
   "health.trigger_failure",
-  "health.config_reload_failed",
   "health.plugin_unhealthy",
   "health.plugin_failed",
   "health.plugin_recovered",
@@ -369,14 +368,6 @@ export const HealthTriggerFailurePayloadSchema = z.object({
 });
 export type HealthTriggerFailurePayload = z.infer<typeof HealthTriggerFailurePayloadSchema>;
 
-export const HealthConfigReloadFailedPayloadSchema = z.object({
-  component: z.string(),
-  config_file: z.string(),
-  error: z.string(),
-  running_config: z.string(),
-});
-export type HealthConfigReloadFailedPayload = z.infer<typeof HealthConfigReloadFailedPayloadSchema>;
-
 export const HealthPluginUnhealthyPayloadSchema = z.object({
   plugin_id: z.string(),
   plugin_type: z.string(),
@@ -523,7 +514,6 @@ export type EventPayloads = {
   "git.branch_deleted": GitBranchDeletedPayload;
   "health.stuck_detected": HealthStuckDetectedPayload;
   "health.trigger_failure": HealthTriggerFailurePayload;
-  "health.config_reload_failed": HealthConfigReloadFailedPayload;
   "health.plugin_unhealthy": HealthPluginUnhealthyPayload;
   "health.plugin_failed": HealthPluginFailedPayload;
   "health.plugin_recovered": HealthPluginRecoveredPayload;
@@ -576,7 +566,6 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "git.branch_deleted": GitBranchDeletedPayloadSchema,
   "health.stuck_detected": HealthStuckDetectedPayloadSchema,
   "health.trigger_failure": HealthTriggerFailurePayloadSchema,
-  "health.config_reload_failed": HealthConfigReloadFailedPayloadSchema,
   "health.plugin_unhealthy": HealthPluginUnhealthyPayloadSchema,
   "health.plugin_failed": HealthPluginFailedPayloadSchema,
   "health.plugin_recovered": HealthPluginRecoveredPayloadSchema,

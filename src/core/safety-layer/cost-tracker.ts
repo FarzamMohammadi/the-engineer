@@ -73,7 +73,6 @@ export interface ICostTracker {
   getCostStatus(taskId?: string): CostStatus;
   checkCostLimits(taskId: string): CostLimitCheckResult;
   isAnyLimitBreached(taskId?: string): boolean;
-  updateLimits(newLimits: CostLimits): void;
   flush(): void;
 }
 
@@ -95,7 +94,7 @@ export interface CostTrackerDeps {
  */
 export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
   const { db, eventBus, observer } = deps;
-  let costLimits = deps.costLimits;
+  const costLimits = deps.costLimits;
 
   const getSnapshotStmt = db.prepare("SELECT value FROM _meta WHERE key = ?");
   const saveSnapshotStmt = db.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)");
@@ -229,10 +228,6 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
 
     return false;
-  }
-
-  function updateLimits(newLimits: CostLimits): void {
-    costLimits = newLimits;
   }
 
   function flush(): void {
@@ -563,5 +558,5 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
   }
 
-  return { getCostStatus, checkCostLimits, isAnyLimitBreached, updateLimits, flush };
+  return { getCostStatus, checkCostLimits, isAnyLimitBreached, flush };
 }

@@ -401,29 +401,6 @@ describe("CostTracker — paginated replay", () => {
   });
 });
 
-// ── CostTracker — Hot-Reload ─────────────────────────────────────────────────
-
-describe("CostTracker — updateLimits", () => {
-  it("new limits take effect immediately", () => {
-    const { tracker, eventBus: eb } = createTracker({
-      cost_limits: { per_task: { cost_usd: 1.0 } },
-    });
-    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.5 });
-
-    // Within $1.00 limit
-    expect(tracker.isAnyLimitBreached("task-1")).toBe(false);
-
-    // Lower limit to $0.40
-    const newConfig = SafetyConfigSchema.parse({
-      cost_limits: { per_task: { cost_usd: 0.4 } },
-    });
-    tracker.updateLimits(newConfig.cost_limits);
-
-    // Now breached
-    expect(tracker.isAnyLimitBreached("task-1")).toBe(true);
-  });
-});
-
 // ── CostTracker — getCostStatus warnings ─────────────────────────────────────
 
 describe("CostTracker — getCostStatus warnings", () => {

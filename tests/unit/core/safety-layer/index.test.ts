@@ -782,97 +782,6 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
 
 // ── Hot-Reload ───────────────────────────────────────────────────────────────
 
-describe("SafetyLayer — hot-reload", () => {
-  it("new scope rules apply immediately", () => {
-    handle = createTestSafetyLayer({
-      scope: { repos: { allowed: ["owner/repo-a"] } },
-    });
-
-    // Initially denied
-    let verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
-      repo: "owner/repo-b",
-    });
-    expect(verdict.allowed).toBe(false);
-
-    // Update config to allow repo-b
-    handle.safetyLayer.updateConfig(
-      SafetyConfigSchema.parse({
-        scope: { repos: { allowed: ["owner/repo-a", "owner/repo-b"] } },
-      }),
-    );
-
-    verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.write, {
-      repo: "owner/repo-b",
-    });
-    expect(verdict.allowed).toBe(true);
-  });
-
-  it("new cost limits take effect immediately", () => {
-    handle = createTestSafetyLayer({
-      cost_limits: { per_task: { cost_usd: 1.0 } },
-    });
-    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.5 });
-
-    // Still within $1.00 limit
-    let verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.read, {});
-    expect(verdict.allowed).toBe(true);
-
-    // Lower the limit to $0.40 — now breached
-    handle.safetyLayer.updateConfig(
-      SafetyConfigSchema.parse({
-        cost_limits: { per_task: { cost_usd: 0.4 } },
-      }),
-    );
-
-    verdict = handle.safetyLayer.evaluateAction("task-1", ActionClasses.read, {});
-    expect(verdict.allowed).toBe(false);
-    expect(verdict.reason).toContain("per-task cost limit");
-  });
-
-  it("new autonomy rules change verdicts", () => {
-    handle = createTestSafetyLayer({
-      autonomy: {
-        decisions: {
-          refactoring: { level: AutonomyLevels.always_decide, description: "" },
-        },
-      },
-    });
-
-    let verdict = handle.safetyLayer.consultJudgment({
-      type: "should_i_ask",
-      context: {
-        task_id: "task-1",
-        repo: "owner/repo",
-        decision_category: "refactoring",
-        details: {},
-      },
-    });
-    expect(verdict.action).toBe("proceed");
-
-    // Change to always_ask
-    handle.safetyLayer.updateConfig(
-      SafetyConfigSchema.parse({
-        autonomy: {
-          decisions: {
-            refactoring: { level: AutonomyLevels.always_ask, description: "" },
-          },
-        },
-      }),
-    );
-
-    verdict = handle.safetyLayer.consultJudgment({
-      type: "should_i_ask",
-      context: {
-        task_id: "task-1",
-        repo: "owner/repo",
-        decision_category: "refactoring",
-        details: {},
-      },
-    });
-    expect(verdict.action).toBe("ask_human");
-  });
-});
-
 // ── Input Validation (Security Hardening R8) ─────────────────────────────────
 
 describe("SafetyLayer — input validation", () => {
@@ -941,20 +850,5 @@ describe("SafetyLayer — getTimeoutPolicy", () => {
     expect(policy.blocked.stages).toHaveLength(3);
     expect(policy.blocked.stages[0]?.name).toBe("reminder");
     expect(policy.review_pending.reminder_after_ms).toBe(86_400_000);
-  });
-
-  it("reflects hot-reloaded config", () => {
-    handle = createTestSafetyLayer();
-
-    handle.safetyLayer.updateConfig(
-      SafetyConfigSchema.parse({
-        response_timeout: {
-          review_pending: { reminder_after_ms: 3_600_000 },
-        },
-      }),
-    );
-
-    const policy = handle.safetyLayer.getTimeoutPolicy();
-    expect(policy.review_pending.reminder_after_ms).toBe(3_600_000);
   });
 });

@@ -13,7 +13,7 @@ export {
 
 // ── PeopleDirectory ──────────────────────────────────────────────────────────
 // Config-driven contact resolution for notifications and escalation.
-// Pure lookup table — no DB, no EventBus. Hot-reloadable via updateConfig().
+// Pure lookup table — no DB, no EventBus. Built once from config at startup.
 
 export class PeopleDirectory implements IPeopleDirectory {
   private people: Map<string, Person>;
@@ -80,11 +80,6 @@ export class PeopleDirectory implements IPeopleDirectory {
   /** Return all people in the directory. */
   getAll(): Person[] {
     return [...this.people.values()];
-  }
-
-  /** Hot-reload: replace all people with a new config. */
-  updateConfig(newConfig: PeopleConfig): void {
-    this.people = PeopleDirectory.buildMap(newConfig);
   }
 
   // ── Private ──────────────────────────────────────────────────────────────────

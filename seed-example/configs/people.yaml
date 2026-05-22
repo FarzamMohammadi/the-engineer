@@ -1,5 +1,5 @@
 # People configuration
-# Hot-reloadable — changes take effect without restart.
+# Changes take effect on the next daemon restart.
 # Replace the placeholder values below with real people.
 
 people:

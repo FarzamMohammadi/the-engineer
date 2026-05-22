@@ -174,14 +174,6 @@ export class SafetyLayer implements ISafetyLayer {
     return this.policyEngine.getTimeoutPolicy();
   }
 
-  // ── Hot-Reload ─────────────────────────────────────────────────────────────
-
-  /** Replace the safety config. New rules take effect immediately. */
-  updateConfig(newConfig: SafetyConfig): void {
-    this.costTracker.updateLimits(newConfig.cost_limits);
-    this.policyEngine.updateConfig(newConfig);
-  }
-
   /** Flush pending cost tracker snapshot to DB. Call during graceful shutdown. */
   flushCostSnapshot(): void {
     this.costTracker.flush();

@@ -17,7 +17,6 @@ import {
   GitPrOpenedPayloadSchema,
   GitPrUpdatedPayloadSchema,
   GitPushedPayloadSchema,
-  HealthConfigReloadFailedPayloadSchema,
   HealthStuckDetectedPayloadSchema,
   HealthTriggerFailurePayloadSchema,
   PreemptionReadyPayloadSchema,
@@ -62,7 +61,7 @@ describe("EventSchema", () => {
     const systemEvent = {
       ...validEvent,
       task_id: null,
-      type: EventTypes["health.config_reload_failed"],
+      type: EventTypes["system.cleanup_completed"],
     };
     expect(EventSchema.parse(systemEvent)).toBeDefined();
   });
@@ -520,18 +519,6 @@ describe("HealthTriggerFailurePayloadSchema", () => {
       last_success: "2026-03-10T11:00:00.000Z",
     };
     expect(HealthTriggerFailurePayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("HealthConfigReloadFailedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      component: "safety_layer",
-      config_file: "safety.yaml",
-      error: "invalid YAML syntax",
-      running_config: "previous",
-    };
-    expect(HealthConfigReloadFailedPayloadSchema.parse(valid)).toEqual(valid);
   });
 });
 

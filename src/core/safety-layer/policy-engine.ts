@@ -157,7 +157,6 @@ function basename(path: string): string {
  * Evaluates safety policies: scope boundaries, autonomy decisions, merge policy.
  *
  * Pure logic — no database, no event bus. Takes config, returns verdicts.
- * Hot-reloadable via updateConfig().
  */
 export class PolicyEngine {
   private config: SafetyConfig;
@@ -287,11 +286,6 @@ export class PolicyEngine {
   /** Get response timeout policy. */
   getTimeoutPolicy(): ResponseTimeout {
     return this.config.response_timeout;
-  }
-
-  /** Hot-reload config. */
-  updateConfig(newConfig: SafetyConfig): void {
-    this.config = newConfig;
   }
 
   // ── Private: Scope Checks ──────────────────────────────────────────────────

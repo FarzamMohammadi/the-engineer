@@ -4,13 +4,13 @@ The Engineer uses YAML configuration files stored in `~/.engineer/config/`. All 
 
 ## Config Files
 
-| File | Purpose | Hot-Reload |
-|------|---------|------------|
-| [daemon.yaml](daemon.md) | Daemon runtime: concurrency, tick loop, logging, polling | No |
-| [orchestrator.yaml](orchestrator.md) | RRPIR pipeline, notifications, decomposition, phases | No |
-| [safety.yaml](safety.md) | Cost limits, scope boundaries, autonomy, merge policy | **Yes** |
-| [workspace.yaml](workspace.md) | Git operations, branch naming, PR settings, cleanup | No |
-| [people.yaml](people.md) | People directory: roles, contacts, notification preferences | No |
+| File | Purpose |
+|------|---------|
+| [daemon.yaml](daemon.md) | Daemon runtime: concurrency, tick loop, logging, polling |
+| [orchestrator.yaml](orchestrator.md) | RRPIR pipeline, notifications, decomposition, phases |
+| [safety.yaml](safety.md) | Cost limits, scope boundaries, autonomy, merge policy |
+| [workspace.yaml](workspace.md) | Git operations, branch naming, PR settings, cleanup |
+| [people.yaml](people.md) | People directory: roles, contacts, notification preferences |
 
 Plugin-specific configs live in `~/.engineer/config/plugins/` and are documented in [docs/plugins/](../plugins/).
 
@@ -25,9 +25,9 @@ The load order:
 
 If a config directory is explicitly specified but doesn't exist, the daemon fails loudly. If using the default `~/.engineer/config/` path, missing files silently use defaults.
 
-## Hot-Reloadable Configs
+## Applying Config Changes
 
-**safety.yaml** is hot-reloadable — changes take effect without restarting the daemon, detected by a file watcher with a 500ms debounce. All other config files, including **people.yaml**, take effect on a daemon restart.
+All config files are read once at startup. Edit a file, then run `engineer stop` and `engineer start` for the change to take effect. There is no runtime hot-reload.
 
 ## Environment Variable References
 

@@ -3,9 +3,8 @@ import type { ContactInfo, Person } from "../../schemas/adapters.js";
 /**
  * Read-only interface for contact resolution.
  *
- * The concrete PeopleDirectory also exposes updateConfig() for hot-reload,
- * but consumers should depend on this interface — only bootstrap owns the
- * mutable instance.
+ * Consumers depend on this interface; bootstrap owns the concrete instance,
+ * built once from config at startup.
  */
 export interface IPeopleDirectory {
   /** Look up a person by their unique ID. */

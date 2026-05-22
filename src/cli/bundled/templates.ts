@@ -132,7 +132,7 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 `;
 
 export const SAFETY_TEMPLATE = `# Safety configuration for The Engineer
-# Hot-reloadable — changes take effect without restart.
+# Changes take effect on the next daemon restart.
 # All fields are optional — conservative defaults applied when missing.
 # Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
@@ -227,7 +227,7 @@ export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
 `;
 
 export const PEOPLE_TEMPLATE = `# People configuration for The Engineer
-# Hot-reloadable — changes take effect without restart.
+# Changes take effect on the next daemon restart.
 # Defines contacts for communication (questions, notifications, reviews).
 
 people:
@@ -460,7 +460,7 @@ journal:
 export const EXAMPLE_SAFETY = `# ┌─────────────────────────────────────────────────────────────────────────────┐
 # │  SAFETY CONFIGURATION — Full Reference                                    │
 # │  Copy to ~/.engineer/config/safety.yaml and customize.                    │
-# │  HOT-RELOADABLE — changes take effect without restart.                    │
+# │  Changes take effect on the next daemon restart.                          │
 # │  All fields are optional — conservative defaults applied.                 │
 # │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
@@ -566,7 +566,7 @@ multi_repo:
 export const EXAMPLE_PEOPLE = `# ┌─────────────────────────────────────────────────────────────────────────────┐
 # │  PEOPLE CONFIGURATION — Full Reference                                    │
 # │  Copy to ~/.engineer/config/people.yaml and customize.                    │
-# │  HOT-RELOADABLE — changes take effect without restart.                    │
+# │  Changes take effect on the next daemon restart.                          │
 # │  Defines contacts for communication (questions, notifications, reviews).  │
 # └─────────────────────────────────────────────────────────────────────────────┘
 

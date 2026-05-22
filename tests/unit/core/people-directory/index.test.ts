@@ -150,19 +150,6 @@ describe("PeopleDirectory", () => {
     });
   });
 
-  describe("updateConfig", () => {
-    it("replaces all people with new config", () => {
-      const dir = new PeopleDirectory(makeConfig([farzam]));
-      expect(dir.getPerson("farzam")).toEqual(farzam);
-      expect(dir.getPerson("alice")).toBeNull();
-
-      dir.updateConfig(makeConfig([alice, bob]));
-      expect(dir.getPerson("farzam")).toBeNull();
-      expect(dir.getPerson("alice")).toEqual(alice);
-      expect(dir.getPerson("bob")).toEqual(bob);
-    });
-  });
-
   describe("empty config", () => {
     it("constructs without error and returns empty results", () => {
       const dir = new PeopleDirectory(makeConfig([]));

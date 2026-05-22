@@ -28,6 +28,7 @@ These apply to every session, regardless of task:
 |------|-------------------|
 | [`README.md`](README.md) | What this project is, architecture, commands, where docs live |
 | [`docs/philosophy.md`](docs/philosophy.md) § "How We Work" | Mindset, collaboration, quality bar, definition of done, trust model |
+| [`docs/constraints.md`](docs/constraints.md) | Deliberate v1 scope constraints (single-user) — a lens on every decision |
 
 ### Conditional Reads
 

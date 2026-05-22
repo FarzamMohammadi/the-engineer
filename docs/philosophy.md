@@ -166,6 +166,8 @@ The key word is *deliberate*. Every deviation is intentional, justified, and doc
 
 One exception: certain principles are architectural invariants — they are never overridden because the cost of violation is catastrophic. Plugin Blindness and Trust Through Restraint are invariants. Everything else is a strong default.
 
+Some deviations are larger than a single decision — deliberate narrowings of scope that hold across the whole of v1. Those are recorded in [`constraints.md`](constraints.md). The single-user constraint (the human side is one person — the owner) is the current example.
+
 ### Orchestrate, Don't Build
 
 The Engineer stays lean by orchestrating, not building. LLM CLI tools from providers like Anthropic (Claude Code), OpenAI (Codex), OpenCode, and others are full autonomous agents with native capabilities — code execution, file manipulation, web search, reasoning. They improve constantly without us lifting a finger. We capture that value by design.

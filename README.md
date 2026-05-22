@@ -125,6 +125,7 @@ Full philosophy: **[docs/philosophy.md](docs/philosophy.md)** · Identity: **[do
 User-facing documentation lives in [`docs/`](docs/) — the system blueprint. Anyone who never reads a line of source can understand how The Engineer works, what it does, and why, purely from these docs.
 
 - [Philosophy](docs/philosophy.md) — core beliefs and principles
+- [Constraints](docs/constraints.md) — deliberate v1 scope decisions (single-user)
 - [Architecture](docs/architecture/overview.md) — system design and data flow
 - [CLI Reference](docs/cli.md) — full command documentation
 - [Coding Standards](docs/coding-standards.md) — the law for all code

@@ -829,7 +829,6 @@ Config file: \`~/.engineer/config/plugins/claude-code-llm.yaml\`
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
 | \`model\` | \`string\` | \`claude-sonnet-4-20250514\` | No | Model identifier passed to \`--model\`. |
-| \`max_tokens\` | \`number\` | \`16384\` | No | Maximum output tokens per completion. |
 | \`cli_path\` | \`string\` | \`claude\` | No | Path to the Claude CLI binary. Change if it is not on your PATH. |
 | \`command_timeout_ms\` | \`number\` | \`7200000\` | No | Maximum time per CLI invocation (default 2 hours). |
 
@@ -846,7 +845,6 @@ All fields have defaults. An empty config file works:
 
 \`\`\`yaml
 model: claude-sonnet-4-20250514
-max_tokens: 16384
 cli_path: claude
 command_timeout_ms: 7200000
 \`\`\`
@@ -868,7 +866,6 @@ command_timeout_ms: 7200000
 - Requires the Claude CLI to be installed and authenticated separately -- the plugin does not handle login.
 - Quota API access depends on having valid OAuth credentials in the Claude Code credential store. API key users will not get quota percentages (only rate_limit_event fallback).
 - The 30-minute quota cache means utilization percentages can be stale during heavy usage.
-- \`max_tokens\` is defined in config but not currently passed as a CLI flag (the Claude CLI manages its own output limits).
 - Non-zero exit codes from the CLI are treated as retryable errors.
 
 ## Related Plugins

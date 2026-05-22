@@ -294,7 +294,6 @@ export const CLAUDE_CODE_LLM_TEMPLATE = `# Claude Code LLM plugin
 # Uses Claude CLI for LLM completions
 
 # model: claude-sonnet-4-20250514       # Model to use
-# max_tokens: 16384                       # Max output tokens per completion
 # cli_path: claude                        # Path to claude CLI binary
 `;
 
@@ -574,7 +573,7 @@ people:
   - id: farzam                            # REQUIRED — unique identifier
     name: Farzam Mohammadi                # REQUIRED — display name
     roles:                                # REQUIRED — at least one role
-      - owner                             #   owner | reviewer | contributor
+      - owner                             #   owner | reviewer (reviewer = /approve only, no outreach)
     contacts:                             # REQUIRED — at least one contact
       - channel: telegram                 #   REQUIRED — channel name
         handle: "farzam_tg"               #   REQUIRED — handle on that channel
@@ -584,18 +583,10 @@ people:
       notification_level: milestones      #   all | milestones | critical (default: milestones)
       quiet_hours: null                   #   null or: { start: "22:00", end: "08:00" }
 
-  # Add more people as needed:
-  # - id: reviewer1
-  #   name: Jane Smith
-  #   roles: [reviewer]
-  #   contacts:
-  #     - channel: github
-  #       handle: "janesmith"
-  #   preferences:
-  #     notification_level: critical
-  #     quiet_hours:
-  #       start: "23:00"
-  #       end: "07:00"
+# v1 is single-user: The Engineer reaches only the owner. The schema accepts more
+# entries, but extra people are never contacted — a startup/doctor warning fires when
+# more than one is configured. The "reviewer" role grants /approve authorization
+# without outreach. See docs/constraints.md.
 `;
 
 export const EXAMPLE_GITHUB_TRIGGER = `# ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -665,7 +656,6 @@ export const EXAMPLE_CLAUDE_CODE_LLM = `# ┌───────────�
 
 # All fields are optional — defaults shown below.
 model: claude-sonnet-4-20250514         # Model to use (default: claude-sonnet-4-20250514)
-max_tokens: 16384                         # Max output tokens per completion (default: 16384)
 cli_path: claude                          # Path to claude CLI binary (default: claude)
 `;
 

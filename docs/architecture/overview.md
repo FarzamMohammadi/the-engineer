@@ -172,8 +172,7 @@ requirements:
   - type: binary
     name: my-trigger-cli
 entry: index.ts
-adapter_meta:
-  poll_interval: "60s"
+poll_interval_ms: 60000      # daemon's per-plugin poll cadence (falls back to global config)
 contributes:
   events:
     - trigger.new_event

@@ -1,5 +1,4 @@
 # Claude Code LLM plugin
 
-model: claude-opus-4-6
-max_tokens: 200000
+model: claude-opus-4-7
 cli_path: /Users/farzammohammadi/.local/bin/claude

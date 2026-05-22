@@ -107,7 +107,7 @@ const manifest = PluginManifestSchema.parse({
 
 runLLMContractSuite(() => new ClaudeCodeLLMPlugin(), {
   validConfig: { cli_path: mockCliPath },
-  invalidConfig: { max_tokens: -1 },
+  invalidConfig: { command_timeout_ms: -1 },
   manifest,
   request: createMockInferenceRequest(),
 });
@@ -192,7 +192,7 @@ describe("ClaudeCodeLLMPlugin", () => {
     const plugin = new ClaudeCodeLLMPlugin();
     plugin.manifest = manifest;
     plugin.context = createTestPluginContext();
-    const result = await plugin.initialize({ max_tokens: -1 });
+    const result = await plugin.initialize({ command_timeout_ms: -1 });
     expect(result.success).toBe(false);
     expect(result.message).not.toBeNull();
   });

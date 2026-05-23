@@ -133,10 +133,14 @@ All public methods on `CommunicationAdapter` use `wrapAsync()` which rethrows `A
 
 ### Directory structure
 
+Source and tests live in mirrored trees — source under `src/`, tests under `tests/unit/` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
+
 ```
 src/plugins/communication/my-comm/
   my-comm.ts       # Plugin class extending CommunicationAdapter
   config.ts        # Zod config schema
+
+tests/unit/plugins/communication/my-comm/
   my-comm.test.ts  # Tests including contract suite
 ```
 
@@ -276,11 +280,11 @@ import { MyCommPlugin } from "./communication/my-comm/my-comm.js";
 
 ### Contract test suite
 
-Path: `test/helpers/contract-suites/communication-contract.ts`.
+Path: `tests/helpers/contract-suites/communication-contract.ts`.
 
 ```typescript
-// my-comm/my-comm.test.ts
-import { runCommunicationContractSuite } from "../../../../test/helpers/contract-suites/communication-contract.js";
+// tests/unit/plugins/communication/my-comm/my-comm.test.ts
+import { runCommunicationContractSuite } from "../../../../helpers/contract-suites/communication-contract.js";
 import { MyCommPlugin } from "./my-comm.js";
 
 const manifest = {
@@ -352,4 +356,4 @@ The contract suite validates:
 | `src/plugins/communication/telegram-comm/telegram-comm.ts` | Reference: send + receive, /start handshake, chat map persistence |
 | `src/plugins/communication/telegram-comm/config.ts` | Reference config schema |
 | `src/plugins/builtin.ts` | Plugin registration (manifests + factories) |
-| `test/helpers/contract-suites/communication-contract.ts` | Contract compliance test suite |
+| `tests/helpers/contract-suites/communication-contract.ts` | Contract compliance test suite |

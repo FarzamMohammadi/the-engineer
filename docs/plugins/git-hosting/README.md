@@ -216,12 +216,13 @@ Add your plugin to `src/plugins/builtin.ts`:
 
 ### Contract tests
 
-Use the reusable contract suite in `test/helpers/contract-suites/git-hosting-contract.ts`:
+Use the reusable contract suite in `tests/helpers/contract-suites/git-hosting-contract.ts`:
 
 ```typescript
+// tests/unit/plugins/git-hosting/your-hosting/your-hosting.test.ts
 import { describe } from "vitest";
-import { runGitHostingContractSuite, type GitHostingContractFixtures } from "../../helpers/contract-suites/git-hosting-contract.js";
-import { YourHostingPlugin } from "../../../src/plugins/git-hosting/your-hosting/your-hosting.js";
+import { runGitHostingContractSuite, type GitHostingContractFixtures } from "../../../../helpers/contract-suites/git-hosting-contract.js";
+import { YourHostingPlugin } from "../../../../../src/plugins/git-hosting/your-hosting/your-hosting.js";
 
 const fixtures: GitHostingContractFixtures = {
   validConfig: { api_token: "test-token" },
@@ -276,4 +277,4 @@ The GitHub implementation uses Octokit for all API calls. It parses `"owner/repo
 | `src/plugins/git-hosting/github-hosting/github-hosting.ts` | Reference implementation (GitHub via Octokit) |
 | `src/plugins/git-hosting/github-hosting/config.ts` | GitHub-specific config schema |
 | `src/plugins/builtin.ts` | Manifest definitions and factory registration |
-| `test/helpers/contract-suites/git-hosting-contract.ts` | Reusable contract compliance test suite |
+| `tests/helpers/contract-suites/git-hosting-contract.ts` | Reusable contract compliance test suite |

@@ -55,10 +55,14 @@ Defined in `src/schemas/adapters.ts` (`TriggerEventSchema`).
 
 ### Directory structure
 
+Source and tests live in mirrored trees — source under `src/`, tests under `tests/unit/` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
+
 ```
 src/plugins/trigger/my-trigger/
   my-trigger.ts       # Plugin class extending TriggerAdapter
   config.ts           # Zod config schema
+
+tests/unit/plugins/trigger/my-trigger/
   my-trigger.test.ts  # Tests including contract suite
 ```
 
@@ -178,11 +182,11 @@ If your plugin needs interactive setup (e.g. asking for a project ID), add a `pr
 
 ### Contract test suite
 
-Run the shared contract suite in your test file. Path: `test/helpers/contract-suites/trigger-contract.ts`.
+Run the shared contract suite in your test file. Path: `tests/helpers/contract-suites/trigger-contract.ts`.
 
 ```typescript
-// my-trigger/my-trigger.test.ts
-import { runTriggerContractSuite } from "../../../../test/helpers/contract-suites/trigger-contract.js";
+// tests/unit/plugins/trigger/my-trigger/my-trigger.test.ts
+import { runTriggerContractSuite } from "../../../../helpers/contract-suites/trigger-contract.js";
 import { MyTriggerPlugin } from "./my-trigger.js";
 
 const manifest = {
@@ -234,4 +238,4 @@ The GitHub Trigger plugin also handles ETag-based conditional requests (304 Not 
 | `src/plugins/trigger/github-trigger/github-trigger.ts` | Reference implementation |
 | `src/plugins/trigger/github-trigger/config.ts` | Reference config schema |
 | `src/plugins/builtin.ts` | Plugin registration (manifests + factories + promptForConfig) |
-| `test/helpers/contract-suites/trigger-contract.ts` | Contract compliance test suite |
+| `tests/helpers/contract-suites/trigger-contract.ts` | Contract compliance test suite |

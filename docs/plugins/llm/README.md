@@ -99,11 +99,15 @@ Each layer is optional. Core degrades gracefully when data is missing.
 
 ### Directory structure
 
+Source and tests live in mirrored trees — source under `src/`, tests under `tests/unit/` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
+
 ```
 src/plugins/llm/my-llm/
   my-llm.ts       # Plugin class extending LLMAdapter
-  config.ts        # Zod config schema
-  my-llm.test.ts   # Tests including contract suite
+  config.ts       # Zod config schema
+
+tests/unit/plugins/llm/my-llm/
+  my-llm.test.ts  # Tests including contract suite
 ```
 
 ### Minimal class skeleton
@@ -338,11 +342,11 @@ import { MyLLMPlugin } from "./llm/my-llm/my-llm.js";
 
 ### Contract test suite
 
-Path: `test/helpers/contract-suites/llm-contract.ts`.
+Path: `tests/helpers/contract-suites/llm-contract.ts`.
 
 ```typescript
-// my-llm/my-llm.test.ts
-import { runLLMContractSuite } from "../../../../test/helpers/contract-suites/llm-contract.js";
+// tests/unit/plugins/llm/my-llm/my-llm.test.ts
+import { runLLMContractSuite } from "../../../../helpers/contract-suites/llm-contract.js";
 import { MyLLMPlugin } from "./my-llm.js";
 
 const manifest = {
@@ -433,5 +437,5 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 | `src/plugins/llm/opencode-llm/opencode-llm.ts` | Reference: multi-provider, step_finish cost/tokens, stderr rate limit kill |
 | `src/plugins/llm/gemini-cli-llm/gemini-cli-llm.ts` | Reference: free tier, no cost, stdout+stderr rate limit detection |
 | `src/plugins/builtin.ts` | Plugin registration (manifests + factories) |
-| `test/helpers/contract-suites/llm-contract.ts` | Contract compliance test suite |
+| `tests/helpers/contract-suites/llm-contract.ts` | Contract compliance test suite |
 | `contribution-docs/how-tos/plugins/llm-adapter/prompt.md` | Interactive LLM-facing setup prompt |

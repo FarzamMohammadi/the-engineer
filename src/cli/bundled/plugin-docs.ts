@@ -65,10 +65,14 @@ Defined in \`src/schemas/adapters.ts\` (\`TriggerEventSchema\`).
 
 ### Directory structure
 
+Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\`:
+
 \`\`\`
 src/plugins/trigger/my-trigger/
   my-trigger.ts       # Plugin class extending TriggerAdapter
   config.ts           # Zod config schema
+
+tests/unit/plugins/trigger/my-trigger/
   my-trigger.test.ts  # Tests including contract suite
 \`\`\`
 
@@ -188,11 +192,11 @@ If your plugin needs interactive setup (e.g. asking for a project ID), add a \`p
 
 ### Contract test suite
 
-Run the shared contract suite in your test file. Path: \`test/helpers/contract-suites/trigger-contract.ts\`.
+Run the shared contract suite in your test file. Path: \`tests/helpers/contract-suites/trigger-contract.ts\`.
 
 \`\`\`typescript
-// my-trigger/my-trigger.test.ts
-import { runTriggerContractSuite } from "../../../../test/helpers/contract-suites/trigger-contract.js";
+// tests/unit/plugins/trigger/my-trigger/my-trigger.test.ts
+import { runTriggerContractSuite } from "../../../../helpers/contract-suites/trigger-contract.js";
 import { MyTriggerPlugin } from "./my-trigger.js";
 
 const manifest = {
@@ -244,7 +248,7 @@ The GitHub Trigger plugin also handles ETag-based conditional requests (304 Not 
 | \`src/plugins/trigger/github-trigger/github-trigger.ts\` | Reference implementation |
 | \`src/plugins/trigger/github-trigger/config.ts\` | Reference config schema |
 | \`src/plugins/builtin.ts\` | Plugin registration (manifests + factories + promptForConfig) |
-| \`test/helpers/contract-suites/trigger-contract.ts\` | Contract compliance test suite |
+| \`tests/helpers/contract-suites/trigger-contract.ts\` | Contract compliance test suite |
 `;
 
 const TRIGGER_GITHUB_TRIGGER = `# GitHub Trigger
@@ -455,11 +459,15 @@ Each layer is optional. Core degrades gracefully when data is missing.
 
 ### Directory structure
 
+Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\`:
+
 \`\`\`
 src/plugins/llm/my-llm/
   my-llm.ts       # Plugin class extending LLMAdapter
-  config.ts        # Zod config schema
-  my-llm.test.ts   # Tests including contract suite
+  config.ts       # Zod config schema
+
+tests/unit/plugins/llm/my-llm/
+  my-llm.test.ts  # Tests including contract suite
 \`\`\`
 
 ### Minimal class skeleton
@@ -694,11 +702,11 @@ import { MyLLMPlugin } from "./llm/my-llm/my-llm.js";
 
 ### Contract test suite
 
-Path: \`test/helpers/contract-suites/llm-contract.ts\`.
+Path: \`tests/helpers/contract-suites/llm-contract.ts\`.
 
 \`\`\`typescript
-// my-llm/my-llm.test.ts
-import { runLLMContractSuite } from "../../../../test/helpers/contract-suites/llm-contract.js";
+// tests/unit/plugins/llm/my-llm/my-llm.test.ts
+import { runLLMContractSuite } from "../../../../helpers/contract-suites/llm-contract.js";
 import { MyLLMPlugin } from "./my-llm.js";
 
 const manifest = {
@@ -789,7 +797,7 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 | \`src/plugins/llm/opencode-llm/opencode-llm.ts\` | Reference: multi-provider, step_finish cost/tokens, stderr rate limit kill |
 | \`src/plugins/llm/gemini-cli-llm/gemini-cli-llm.ts\` | Reference: free tier, no cost, stdout+stderr rate limit detection |
 | \`src/plugins/builtin.ts\` | Plugin registration (manifests + factories) |
-| \`test/helpers/contract-suites/llm-contract.ts\` | Contract compliance test suite |
+| \`tests/helpers/contract-suites/llm-contract.ts\` | Contract compliance test suite |
 | \`contribution-docs/how-tos/plugins/llm-adapter/prompt.md\` | Interactive LLM-facing setup prompt |
 `;
 
@@ -1200,10 +1208,14 @@ All public methods on \`CommunicationAdapter\` use \`wrapAsync()\` which rethrow
 
 ### Directory structure
 
+Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\`:
+
 \`\`\`
 src/plugins/communication/my-comm/
   my-comm.ts       # Plugin class extending CommunicationAdapter
   config.ts        # Zod config schema
+
+tests/unit/plugins/communication/my-comm/
   my-comm.test.ts  # Tests including contract suite
 \`\`\`
 
@@ -1343,11 +1355,11 @@ import { MyCommPlugin } from "./communication/my-comm/my-comm.js";
 
 ### Contract test suite
 
-Path: \`test/helpers/contract-suites/communication-contract.ts\`.
+Path: \`tests/helpers/contract-suites/communication-contract.ts\`.
 
 \`\`\`typescript
-// my-comm/my-comm.test.ts
-import { runCommunicationContractSuite } from "../../../../test/helpers/contract-suites/communication-contract.js";
+// tests/unit/plugins/communication/my-comm/my-comm.test.ts
+import { runCommunicationContractSuite } from "../../../../helpers/contract-suites/communication-contract.js";
 import { MyCommPlugin } from "./my-comm.js";
 
 const manifest = {
@@ -1419,7 +1431,7 @@ The contract suite validates:
 | \`src/plugins/communication/telegram-comm/telegram-comm.ts\` | Reference: send + receive, /start handshake, chat map persistence |
 | \`src/plugins/communication/telegram-comm/config.ts\` | Reference config schema |
 | \`src/plugins/builtin.ts\` | Plugin registration (manifests + factories) |
-| \`test/helpers/contract-suites/communication-contract.ts\` | Contract compliance test suite |
+| \`tests/helpers/contract-suites/communication-contract.ts\` | Contract compliance test suite |
 `;
 
 const COMMUNICATION_GITHUB_COMM = `# GitHub Communication
@@ -1813,12 +1825,13 @@ Add your plugin to \`src/plugins/builtin.ts\`:
 
 ### Contract tests
 
-Use the reusable contract suite in \`test/helpers/contract-suites/git-hosting-contract.ts\`:
+Use the reusable contract suite in \`tests/helpers/contract-suites/git-hosting-contract.ts\`:
 
 \`\`\`typescript
+// tests/unit/plugins/git-hosting/your-hosting/your-hosting.test.ts
 import { describe } from "vitest";
-import { runGitHostingContractSuite, type GitHostingContractFixtures } from "../../helpers/contract-suites/git-hosting-contract.js";
-import { YourHostingPlugin } from "../../../src/plugins/git-hosting/your-hosting/your-hosting.js";
+import { runGitHostingContractSuite, type GitHostingContractFixtures } from "../../../../helpers/contract-suites/git-hosting-contract.js";
+import { YourHostingPlugin } from "../../../../../src/plugins/git-hosting/your-hosting/your-hosting.js";
 
 const fixtures: GitHostingContractFixtures = {
   validConfig: { api_token: "test-token" },
@@ -1873,7 +1886,7 @@ The GitHub implementation uses Octokit for all API calls. It parses \`"owner/rep
 | \`src/plugins/git-hosting/github-hosting/github-hosting.ts\` | Reference implementation (GitHub via Octokit) |
 | \`src/plugins/git-hosting/github-hosting/config.ts\` | GitHub-specific config schema |
 | \`src/plugins/builtin.ts\` | Manifest definitions and factory registration |
-| \`test/helpers/contract-suites/git-hosting-contract.ts\` | Reusable contract compliance test suite |
+| \`tests/helpers/contract-suites/git-hosting-contract.ts\` | Reusable contract compliance test suite |
 `;
 
 const GIT_HOSTING_GITHUB_HOSTING = `# GitHub Hosting

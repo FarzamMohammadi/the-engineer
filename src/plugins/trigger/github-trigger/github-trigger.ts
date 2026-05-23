@@ -13,6 +13,9 @@ import { type GitHubTriggerConfig, GitHubTriggerConfigSchema } from "./config.js
 /** StateStore key under which per-repo watermarks are persisted. */
 const WATERMARKS_KEY = "watermarks";
 
+/** Remaining-request floor below which the GitHub API is considered unhealthy. */
+const GITHUB_API_HEALTHY_THRESHOLD = 100;
+
 /**
  * GitHubTriggerPlugin — polls GitHub for open issues.
  *
@@ -82,12 +85,12 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
       const { data } = await this.octokit.rateLimit.get();
       const remaining = data.resources.core.remaining;
       const limit = data.resources.core.limit;
+      const isHealthy = remaining > GITHUB_API_HEALTHY_THRESHOLD;
       return {
-        healthy: remaining > 100,
-        message:
-          remaining > 100
-            ? `GitHub API: ${String(remaining)}/${String(limit)} remaining`
-            : `GitHub API rate limit low: ${String(remaining)}/${String(limit)}`,
+        healthy: isHealthy,
+        message: isHealthy
+          ? `GitHub API: ${String(remaining)}/${String(limit)} remaining`
+          : `GitHub API rate limit low: ${String(remaining)}/${String(limit)}`,
         details: { remaining, limit, reset: data.resources.core.reset },
       };
     } catch (error) {

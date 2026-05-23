@@ -31,28 +31,20 @@ const SafetyQueryInputSchema = z.object({
   }),
 });
 
-// Re-export interface types so existing consumers don't break
-export type {
-  SafetyQuery,
-  SafetyVerdict,
-  CostStatus,
-} from "../interfaces/safety-layer.interface.js";
+// ── Public API ──────────────────────────────────────────────────────────────
+// The safety-layer module's exported surface. Consumers import from here;
+// internal files import from the sub-modules directly.
 
-// Re-export sub-module types and pure functions for backward compatibility
+export type { SafetyQuery, SafetyVerdict, CostStatus } from "../interfaces/safety-layer.interface.js";
+
 export type { ParsedThreshold } from "./policy-engine.js";
 export { matchesPathPattern, parseThreshold, evaluateThreshold } from "./policy-engine.js";
 export { getDailyWindowStart, getMonthlyWindowStart } from "./cost-tracker.js";
 
-// Re-export factory and types
 export { createCostTracker } from "./cost-tracker.js";
 export type { ICostTracker, CostLimitCheckResult, CostTrackerDeps } from "./cost-tracker.js";
 export { PolicyEngine } from "./policy-engine.js";
-export {
-  SafetyError,
-  CostLimitExceededError,
-  ScopeDeniedError,
-  CorruptSnapshotError,
-} from "./errors.js";
+export { SafetyError, CostLimitExceededError, ScopeDeniedError, CorruptSnapshotError } from "./errors.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 

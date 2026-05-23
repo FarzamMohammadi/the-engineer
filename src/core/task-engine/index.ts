@@ -18,7 +18,6 @@ import type {
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
 
-// Internal modules
 import { UnknownFieldError } from "./errors.js";
 import { checkPermission as checkPermissionPure } from "./permissions.js";
 import { TaskQueries } from "./queries.js";

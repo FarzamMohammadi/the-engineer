@@ -123,8 +123,7 @@ export class Registry implements IPluginLookup {
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
-  // biome-ignore lint/suspicious/useAwait: delegates to lifecycle manager which returns a Promise
-  async initializePlugin(pluginId: string, config: Record<string, unknown>): Promise<InitResult> {
+  initializePlugin(pluginId: string, config: Record<string, unknown>): Promise<InitResult> {
     return this.lifecycle.initializePlugin(pluginId, config);
   }
 

@@ -124,15 +124,17 @@ stateDiagram-v2
 
 ## Task State Machine
 
-Tasks follow a CPU-derived state machine:
+Tasks follow a CPU-derived state machine. The authoritative definitions live in `src/schemas/task.ts` (`TaskStateSchema`, `SubStateSchema`, `ValidTransitions`).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> intake
-    intake --> queued : Accepted
+    [*] --> requirements_gathering
+    requirements_gathering --> queued : Requirements gathered
+    requirements_gathering --> failed : Cannot proceed
     queued --> active : Scheduled
     active --> blocked : Waiting on external
     blocked --> active : Unblocked
+    blocked --> queued : Re-queue
     blocked --> failed : Escalation timeout
     active --> queued : Preempted
     active --> review_pending : PR created
@@ -143,15 +145,15 @@ stateDiagram-v2
     active --> failed : Unrecoverable error
 ```
 
-**States** (7 base states, 5 sub-states):
+**States:**
 
 | State | Sub-states | Description |
 |-------|------------|-------------|
-| `intake` | — | Task received, being analyzed |
+| `requirements_gathering` | — | Initial state. Clarifying intent before scheduling. |
 | `queued` | — | Ready for execution, waiting to be scheduled |
 | `active` | `working`, `supervising`, `integrating` | Currently being worked on by the Orchestrator |
 | `blocked` | — | Waiting on external input (human response, review feedback) |
-| `review_pending` | `demo`, `code` | PR created, awaiting review (draft → ready) |
+| `review_pending` | `code` | PR created, awaiting review |
 | `completed` | — | Successfully completed, PR merged |
 | `failed` | — | Failed after exhausting recovery options |
 

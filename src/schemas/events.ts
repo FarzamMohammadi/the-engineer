@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ZodType } from "zod";
 
+import { MessageTypeSchema } from "./adapters.js";
 import { ActionClassSchema, ExternalRefSchema, SubStateSchema, TaskStateSchema } from "./task.js";
 
 // ── Event Envelope ─────────────────────────────────────────────────────────────
@@ -407,7 +408,7 @@ export type CommMessageReceivedPayload = z.infer<typeof CommMessageReceivedPaylo
 export const CommMessageSentPayloadSchema = z.object({
   task_id: z.string().nullable(),
   target: z.string(),
-  message_type: z.enum(["notification", "question", "status_response", "milestone", "alert"]),
+  message_type: MessageTypeSchema,
   content_summary: z.string(),
   channel: z.string(),
 });

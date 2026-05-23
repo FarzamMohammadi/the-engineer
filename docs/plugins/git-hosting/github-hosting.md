@@ -1,6 +1,6 @@
 # GitHub Hosting
 
-Manages the full pull request lifecycle on GitHub via the Octokit REST API. Creates PRs, updates metadata, merges, closes, checks review status, dismisses stale approvals, reads comments, and queries branch protection. All 10 `GitHostingAdapter` methods are implemented.
+Manages the full pull request lifecycle on GitHub via the Octokit REST API. Creates PRs, updates metadata, merges, closes, checks review status, dismisses stale approvals, reads comments, and queries branch protection. Every `GitHostingAdapter` method is implemented.
 
 Use this plugin whenever the Engineer needs to open PRs, respond to review feedback, or merge completed work.
 
@@ -14,7 +14,7 @@ The token needs sufficient permissions for the target repositories: create/updat
 
 ## Capabilities
 
-All 10 adapter methods are implemented:
+Every adapter method is implemented:
 
 | Method | Description |
 |--------|-------------|

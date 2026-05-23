@@ -7,19 +7,19 @@
  * Does NOT export: Event Bus, Database, Config, or any Core internals.
  */
 
-// === Adapter Base ===
+// ── Adapter Base ────────────────────────────────────────────────────────────
 export { type AdapterObserver, BaseAdapter, type PluginContext, type StateStore } from "./base.js";
 
-// === Adapter Contracts ===
+// ── Adapter Contracts ───────────────────────────────────────────────────────
 export { TriggerAdapter } from "./trigger.js";
 export { CommunicationAdapter } from "./communication.js";
 export { LLMAdapter } from "./llm.js";
 export { GitHostingAdapter } from "./git-hosting.js";
 
-// === Error Helpers ===
+// ── Error Helpers ───────────────────────────────────────────────────────────
 export { AdapterMethodError, createAdapterError } from "./errors.js";
 
-// === Shared Types (from schemas) ===
+// ── Shared Types (from schemas) ─────────────────────────────────────────────
 export {
   // Universal
   AdapterErrorSchema,
@@ -100,5 +100,5 @@ export {
   type ReviewerState,
 } from "../schemas/adapters.js";
 
-// === Event Payload Types (for plugins that need them) ===
+// ── Event Payload Types (for plugins that need them) ──────────────────────
 export type { TaskStateChangedPayload } from "../schemas/events.js";

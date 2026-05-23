@@ -4,7 +4,7 @@ Git Hosting adapters manage the PR lifecycle on remote code hosting platforms. T
 
 This adapter type is fully separate from Communication adapters. PRs are code artifacts, not messages. GitHub needs three plugins (Trigger, Communication, Hosting) because each operates in a different capability domain.
 
-All 11 methods are required. There are no optional or capability-gated methods. Every implementation must handle the full PR lifecycle: create, update, merge, close, query status, query reviews, dismiss stale approvals, comment, fetch comments, check branch protection, and resolve default branch.
+Every method is required. There are no optional or capability-gated methods. Each implementation must handle the full PR lifecycle: create, update, merge, close, query status, query reviews, dismiss stale approvals, comment, fetch comments, check branch protection, and resolve default branch. The full method list is in the contract table below.
 
 A core safety invariant: never force-merge. If branch protection rules are not satisfied, return an error in `MergeResult` rather than bypassing them.
 

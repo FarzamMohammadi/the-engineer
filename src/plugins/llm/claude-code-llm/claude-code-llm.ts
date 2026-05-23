@@ -335,9 +335,10 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
         // Output size safety valve — kill process if stdout exceeds configured limit
         if (totalStdoutBytes > this.config.max_cli_output_bytes) {
-          console.error(
-            `[claude-code-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
-          );
+          this.context.logger.warn("CLI stdout exceeded byte limit — killing process", {
+            limitBytes: this.config.max_cli_output_bytes,
+            receivedBytes: totalStdoutBytes,
+          });
           killProcess(child);
           return;
         }
@@ -391,11 +392,12 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
         // ── Instrumentation: log CLI completion telemetry ──
         if (code !== 0) {
-          const durationMin = (durationMs / 60_000).toFixed(1);
-          console.error(
-            `[claude-code-llm] CLI exited code=${String(code)} after ${durationMin}min ` +
-              `(stdout=${String(totalStdoutBytes)}B, stderr=${String(stderrBuf.length)}B)`,
-          );
+          this.context.logger.warn("CLI exited with non-zero code", {
+            code,
+            durationMs,
+            stdoutBytes: totalStdoutBytes,
+            stderrBytes: stderrBuf.length,
+          });
         }
 
         if (code !== 0) {
@@ -403,7 +405,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
           // If we captured a result event during streaming, use it despite non-zero exit
           if (resultEvent && resultEvent["subtype"] !== "error") {
             this.lastRateLimits = rateLimits;
-            console.error(`[claude-code-llm] CLI exited code=${String(code)} but captured result event — salvaging`);
+            this.context.logger.info("CLI exited non-zero but result event captured — salvaging", { code });
             resolve(buildInferenceResult(resultEvent, rateLimits, durationMs));
             return;
           }

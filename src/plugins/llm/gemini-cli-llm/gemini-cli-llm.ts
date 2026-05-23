@@ -394,9 +394,10 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
 
         // Output size safety valve
         if (totalStdoutBytes > this.config.max_cli_output_bytes) {
-          console.error(
-            `[gemini-cli-llm] stdout exceeded ${String(this.config.max_cli_output_bytes)} bytes — killing process`,
-          );
+          this.context.logger.warn("CLI stdout exceeded byte limit — killing process", {
+            limitBytes: this.config.max_cli_output_bytes,
+            receivedBytes: totalStdoutBytes,
+          });
           killProcess(child);
           return;
         }

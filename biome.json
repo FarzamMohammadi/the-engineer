@@ -19,8 +19,8 @@
       },
       "suspicious": {
         "noExplicitAny": "error",
-        "noConsole": "off",
-        "noConsoleLog": "off"
+        "noConsole": "error",
+        "noConsoleLog": "error"
       },
       "performance": {
         "noBarrelFile": "off",
@@ -106,7 +106,9 @@
             "noNamespaceImport": "off"
           },
           "suspicious": {
-            "noReactSpecificProps": "off"
+            "noReactSpecificProps": "off",
+            "noConsole": "off",
+            "noConsoleLog": "off"
           },
           "correctness": {
             "useImportExtensions": "off",
@@ -125,13 +127,26 @@
           },
           "suspicious": {
             "noEmptyBlockStatements": "off",
-            "noExplicitAny": "off"
+            "noExplicitAny": "off",
+            "noConsole": "off",
+            "noConsoleLog": "off"
           },
           "style": {
             "noNonNullAssertion": "off",
             "noNamespaceImport": "off",
             "useNamingConvention": "off",
             "useThrowOnlyError": "off"
+          }
+        }
+      }
+    },
+    {
+      "include": ["scripts/**/*.ts", "scripts/**/*.js"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off",
+            "noConsoleLog": "off"
           }
         }
       }

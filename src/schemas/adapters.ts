@@ -39,7 +39,14 @@ export const PluginManifestSchema = z.object({
     .default({}),
   startup_hints: z.array(z.string()).default([]),
 });
-export type PluginManifest = z.infer<typeof PluginManifestSchema>;
+/**
+ * Plugin identity injected by the Registry. Shallowly `Readonly` so any plugin
+ * code that tries `this.manifest.X = ...` is a compile error rather than a
+ * runtime contract violation. The Zod schema itself stays mutable so internal
+ * parse-and-build code (e.g. `PluginManifestSchema.parse(...)` followed by
+ * one-time field defaulting) keeps working.
+ */
+export type PluginManifest = Readonly<z.infer<typeof PluginManifestSchema>>;
 
 export const InitResultSchema = z.object({
   success: z.boolean(),

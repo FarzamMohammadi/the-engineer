@@ -1,6 +1,26 @@
 # Future Considerations
 
-Decisions that are intentionally deferred — not because they're uncertain, but because the v1 design explicitly doesn't need them yet. Each item describes when it becomes relevant and what the migration path looks like.
+Decisions that are intentionally deferred — not because they're uncertain, but because the v1 design explicitly doesn't need them yet.
+
+> **Before adding or editing an entry, read this guide.**
+
+## How to Write an Entry
+
+This file stores ideas we might build months or years from now. The codebase will change underneath these entries constantly — file paths move, functions rename, phases renumber. **Write for durability, not precision.**
+
+**What matters most:** the *context* around the idea. Why does it exist? What problem does it solve? What signals tell us it's time to build it? What constraints or lessons should the future builder know? These rarely go stale.
+
+**What goes stale fast:** specific file paths, function names, phase/slice/decision numbers, migration steps that name concrete implementations. These rot within weeks of a refactor.
+
+**Entry structure** (flexible, not dogmatic):
+- **Current state** — what exists today, described conceptually (avoid specific file paths)
+- **Why deferred** — why we're not building it now (optional, when the reason isn't obvious)
+- **When it becomes relevant** — the signal that tells us it's time
+- **What it enables** — the capability, described by what it does, not how it's coded
+- **Key context** — lessons learned, incidents observed, constraints discovered, patterns worth referencing — anything that helps the future builder avoid our past mistakes or leverage our past thinking
+- **Migration path** — high-level approach (concepts, boundaries, architectural layers), not implementation steps with file names
+
+**The test:** if a refactor renames every file in `src/`, does the entry still make sense? If not, lift it higher.
 
 ---
 
@@ -29,15 +49,11 @@ packages/
     ...
 ```
 
-**Migration path:** The v1 source layout is designed so that this extraction is a move-and-rename, not a restructure:
-- `src/adapters/index.ts` already acts as the plugin-sdk re-export boundary → becomes `packages/plugin-sdk/src/index.ts`
-- `src/schemas/` contains all shared types → moves to `packages/plugin-sdk/src/schemas/`
-- `src/core/` → `packages/core/src/`
-- `src/plugins/` → individual packages or `packages/plugins/` workspace
+**Migration path:** The source layout is designed so that this extraction is a move-and-rename, not a restructure. The adapters barrel already acts as the plugin-sdk re-export boundary. Schemas are in their own directory. Core and plugins are separate directory trees. Each maps cleanly to a workspace package.
 
-**Tools needed:** pnpm workspaces (already chosen, Decision #67), separate tsconfig per package (tsconfig references), potentially separate Vitest configs per package.
+**Tools needed:** pnpm workspaces, separate tsconfig per package (tsconfig references), potentially separate Vitest configs per package.
 
-**Pattern reference:** OpenClaw uses `openclaw/plugin-sdk` as a curated re-export package for plugin authors. See [`openclaw-review.md`](archived/implementation-docs/4-implementation/openclaw-review.md) § Plugin SDK as curated re-export.
+**Pattern reference:** OpenClaw uses a curated re-export package for plugin authors — similar idea to what our adapters barrel does today.
 
 ---
 
@@ -61,7 +77,7 @@ packages/
 
 **What it enables:** Per-package Vitest configs with `vitest.workspace.ts` orchestration at the root. Each package runs its own unit tests. Integration tests that cross package boundaries live in a top-level `tests/integration/` directory.
 
-**Migration path:** The test directory structure (Decision #120) is designed for this — co-located unit tests move with their source files, cross-cutting tests stay in `test/`. Contract compliance suites (Decision #122) move into the `plugin-sdk` package.
+**Migration path:** The test directory structure is designed for this — co-located unit tests move with their source files, cross-cutting tests stay in a shared test directory. Contract compliance suites move into the plugin-sdk package.
 
 ---
 
@@ -71,7 +87,7 @@ packages/
 
 **When it becomes relevant:** When cross-task learning matures and the system needs to answer "what approach did we use for similar problems?" — queries that require semantic similarity, not exact field matching.
 
-**What it enables:** Hybrid vector (70%) + BM25 keyword (30%) search over knowledge entries and journal, with temporal decay and MMR diversity for result quality. Pattern reference: OpenClaw's memory system (see [`considered-projects/openclaw.md`](archived/implementation-docs/considered-projects/openclaw.md) § Memory & Learning).
+**What it enables:** Hybrid vector + keyword search over knowledge entries and journal, with temporal decay and diversity for result quality. The weighting (e.g. 70/30 vector/keyword) is a tuning decision at build time. Pattern reference: OpenClaw's memory system uses a similar hybrid approach.
 
 **Migration path:** Knowledge entries already have structured text fields. Add an embedding column, index with sqlite-vec (or equivalent), implement hybrid scoring. The knowledge table schema supports this without breaking changes.
 
@@ -79,13 +95,13 @@ packages/
 
 ## Context Budget Management
 
-**Current state (v1):** No context window management designed yet. Orchestrator (Phase 11) will invoke LLMs but context budgeting is not specified.
+**Current state:** The Orchestrator invokes LLMs per phase but has no context budget — every call gets whatever context is assembled, with no cap or optimization.
 
-**When it becomes relevant:** Immediately when the Orchestrator is built (Phase 11). Every LLM call burns tokens; context management is the primary cost lever.
+**When it becomes relevant:** When token costs become a real concern or when prompts grow large enough that context window limits are hit. Every LLM call burns tokens; context management is the primary cost lever.
 
-**What it enables:** Prompt caching (80-90% cost reduction on supported providers), file truncation caps, on-demand loading (only include what the current phase needs), compaction of stale context. Pattern reference: OpenClaw's context management philosophy — "smarter prompting routinely outperforms larger models with dumb prompting."
+**What it enables:** Prompt caching (significant cost reduction on supported providers), file truncation caps, on-demand loading (only include what the current phase needs), compaction of stale context. "Smarter prompting routinely outperforms larger models with dumb prompting."
 
-**Migration path:** Design into the Orchestrator from Phase 11, not as a bolt-on. LLMAdapter contract already supports token tracking; add context budget as an Orchestrator concern that assembles LLM input per-phase.
+**Migration path:** Context budgeting is an Orchestrator concern — it decides what goes into each LLM call per phase. The LLMAdapter contract supports token tracking; the budget layer sits between "what context is available" and "what gets sent."
 
 ---
 
@@ -95,7 +111,7 @@ packages/
 
 **When it becomes relevant:** When The Engineer handles operational side-tasks alongside engineering work — deploy sequences, CI/CD orchestration, repetitive multi-step procedures.
 
-**What it enables:** YAML/JSON-defined pipelines for deterministic work: step sequencing, approval gates, resume tokens, retry + error handling. LLM handles creative work; deterministic engine handles plumbing. Pattern reference: OpenClaw's Lobster workflow engine (see [`considered-projects/openclaw.md`](archived/implementation-docs/considered-projects/openclaw.md) § Lobster).
+**What it enables:** Declarative pipelines for deterministic work: step sequencing, approval gates, resume tokens, retry + error handling. LLM handles creative work; deterministic engine handles plumbing. Pattern reference: OpenClaw's Lobster workflow engine uses a similar split.
 
 **Migration path:** Implement as an optional ToolAdapter plugin. Orchestrator delegates deterministic sub-tasks to the engine; results feed back into the phase pipeline. Does not require Core changes.
 
@@ -107,9 +123,9 @@ packages/
 
 **When it becomes relevant:** When the Orchestrator is running real tasks and users send messages (Telegram, GitHub comments) during execution.
 
-**What it enables:** Defined interrupt modes: steer (inject into current phase), queue as followup (process after current phase), collect and coalesce (batch related messages), interrupt (abort current phase, process new input). Pattern reference: OpenClaw's Lane Queue modes (see [`considered-projects/openclaw.md`](archived/implementation-docs/considered-projects/openclaw.md) § Lane Queue).
+**What it enables:** Defined interrupt modes: steer (inject into current phase), queue as followup (process after current phase), collect and coalesce (batch related messages), interrupt (abort current phase, process new input). Pattern reference: OpenClaw's Lane Queue modes use a similar taxonomy.
 
-**Migration path:** Define as Orchestrator-level policy, configurable per communication channel. CommunicationAdapter already supports receive capability; add an interrupt routing layer between inbound messages and the active phase.
+**Migration path:** Interrupt handling is an Orchestrator-level policy, configurable per communication channel. The CommunicationAdapter contract supports receive; the missing piece is a routing layer between inbound messages and the active phase that decides which mode applies.
 
 ---
 
@@ -121,22 +137,22 @@ packages/
 
 **Why it's deferred:** The full inbound communication flow requires several pieces that haven't been collaboratively designed yet:
 1. **People Directory auth check** — inbound messages must be authenticated against the directory. Only recognized people can communicate with The Engineer.
-2. **Message routing** — how inbound messages reach the Daemon/Orchestrator. The Daemon subscribes to `comm.message_received` events (Phase 14b implemented the query handler for this), but routing mid-flow messages to the correct active Orchestrator phase is a deeper design question (see "Mid-Phase Communication Interrupt Handling" above).
-3. **Polling vs. webhooks** — receiving GitHub comments requires either polling issue/PR comment timelines or setting up GitHub webhooks. Decision #74 chose polling-only for triggers; the same question applies to inbound communication.
+2. **Message routing** — how inbound messages reach the Daemon/Orchestrator. The Daemon already handles some inbound events, but routing mid-flow messages to the correct active Orchestrator phase is a deeper design question (see "Mid-Phase Communication Interrupt Handling" above).
+3. **Polling vs. webhooks** — receiving GitHub comments requires either polling issue/PR comment timelines or setting up GitHub webhooks. Triggers use polling-only today; the same question applies to inbound communication.
 
 **When it becomes relevant:** When the system handles real tasks with human oversight — people wanting to steer, interrupt, or provide guidance to The Engineer through the same GitHub issues/PRs it's working on.
 
-**Migration path:** The `CommunicationAdapter` base class already defines `receive` as an optional capability with `doReceiveMessages()`. Adding it to GitHubCommPlugin requires:
-1. Implement `doReceiveMessages()` — poll issue/PR comment timelines for new comments from People Directory members
+**Migration path:** The CommunicationAdapter base class already defines `receive` as an optional capability. Adding it to GitHubCommPlugin requires:
+1. Poll issue/PR comment timelines for new comments from People Directory members
 2. Filter out The Engineer's own comments and non-directory authors
-3. Emit `comm.message_received` events (the Daemon subscription already exists from Phase 14b)
+3. Emit receive events so the Daemon can route them
 4. Design interrupt routing in the Orchestrator (see "Mid-Phase Communication Interrupt Handling")
 
 ---
 
 ## Full Cross-Platform Support
 
-**Current state (v1):** OS detection is built into first-run setup (`detectOperatingSystem()` in `src/cli/setup/os-detection.ts`). macOS is fully supported, Linux is preview (works but not thoroughly tested), and unsupported platforms warn but allow the user to proceed. All built-in plugins are developed and tested on macOS. Platform-specific functionality (macOS Keychain for credential access, `security` CLI for OAuth token reading) works on macOS only.
+**Current state (v1):** OS detection is built into first-run setup. macOS is fully supported, Linux is preview (works but not thoroughly tested), and unsupported platforms warn but allow the user to proceed. All built-in plugins are developed and tested on macOS. Platform-specific functionality (macOS Keychain for credential access, `security` CLI for OAuth token reading) works on macOS only.
 
 **When it becomes relevant:** When users on Linux or Windows want to run The Engineer with full plugin functionality, including credential access and quota tracking.
 
@@ -146,44 +162,51 @@ packages/
 3. Thorough Linux testing and promotion from "preview" to "full" support
 4. Windows support via POSIX compatibility layer or native adaptation
 
-**Current workaround:** The `contribution-docs/how-tos/plugins/` directory includes LLM-guided setup prompts. Users point their LLM CLI at the setup prompt, and the LLM detects their OS and guides them through platform-appropriate setup.
+**Current workaround:** The plugin how-to guides include LLM-guided setup prompts. Users point their LLM CLI at the setup prompt, and the LLM detects their OS and guides them through platform-appropriate setup.
 
 **Migration path:**
-1. Abstract credential access into a `CredentialProvider` interface with OS-specific implementations
-2. Add `supported_platforms` to plugin manifests; setup filters by `process.platform`
-3. Each plugin's `doInitialize()` validates platform compatibility and warns on unsupported OS
+1. Abstract credential access behind a provider interface with OS-specific implementations
+2. Add platform compatibility to plugin manifests so setup can filter by OS
+3. Plugin initialization validates platform compatibility and warns on unsupported OS
 4. Invest in Linux CI and testing to promote to full support
 5. Evaluate Windows POSIX options (WSL, Cygwin) for v2+ scope
 
 ---
 
-## Decomposition Detection from plan.md
+## Task Decomposition (Parent → Children)
 
-**Current state:** Decomposition triggers from `planningOutput.data.decomposition_plan` (agent loop structured output). With CLI-native planning (Session 070), this field is absent — CLI-native PhaseOutput contains `deliverable_path`, `status`, `next_phase`, `summary` instead.
+**Current state (v1):** Decomposition is **deliberately not in v1**. An earlier design wired a consumer surface across the scheduler, state machine, and event topology to handle a parent task splitting into children, but no producer was ever built — the CLI-native planning phase never emitted the structured decomposition plan the consumer expected. Rather than keep dead consumer code waiting on a producer that did not exist, v1 removes the whole subsystem.
 
-**When it becomes relevant:** When a task is complex enough to require decomposition into child tasks and planning is CLI-native.
+**Why deferred:**
+- **Never operational.** Zero real tasks have ever exercised decomposition. It only ever fired in unit and integration tests that injected the decomposition plan directly.
+- **Philosophy alignment.** "Single agent per task, full context" beats committees of specialists. Phase handoffs lose context; parallel children on a shared repo invite merge conflicts.
+- **YAGNI.** A meaningful slice of scheduler, state-machine, and event-bus code existed only to serve a feature that did not fire.
+- **Reversibility.** Pre-v1, no backward compatibility. When decomposition becomes valuable post-v1, the right shape will be informed by real demand — not pre-baked guesses from before any user has tried it.
 
-**What it enables:** The planning phase CLI writes a `## Decomposition` section in plan.md with a JSON code block containing the decomposition plan. The Orchestrator parses this and feeds it to the existing `handleDecomposition()` pipeline.
+**When it becomes relevant:** Post-v1, when parallel sub-task execution has a concrete user scenario — not a speculative one. Likely indicators: recurring tasks that genuinely span independent areas of change, demand for explicit sub-task tracking, or a sub-agent / parallel-CI pattern that benefits from per-child isolation.
 
-**Migration path:**
-1. Add `parseDecompositionFromPlanFile()` function to `decomposition-handler.ts` — reads plan.md, extracts `## Decomposition` section, parses JSON code block, validates against `LLMDecompositionPlanSchema`
-2. Update planning prompt (`prompts/planning.ts`) to include JSON template for the decomposition section
-3. In `phase-runner.ts` planning check: detect CLI-native output (has `deliverable_path`, no `decomposition_plan`), read plan.md, parse, inject into output before calling `handleDecomposition()`
-4. Existing `handleDecomposition()` stays unchanged — it still expects `decomposition_plan` in output data
+**What it would enable:** A parent task splits into N children. Each child runs the full RRPIR pipeline independently. When all children reach a terminal state, the parent resumes for integration — verifying the children compose and shipping coordinated output (one integrated PR, N coordinated PRs, or whatever the design lands on).
+
+**Migration path (high-level):**
+
+1. **Producer.** Decide how the planning phase emits a structured decomposition plan and teach the LLM when/how to produce one. Today there is no producer surface at all.
+2. **Consumer.** Re-introduce parent-aware scheduling: children gate on the parent's state, slot accounting distinguishes parent supervising vs child working, the parent resumes for integration when children finish, and re-queue paths land the parent back in the correct sub-state.
+3. **State machine.** Give the parent the sub-states it needs (supervising while children run, integrating while combining their work, or whatever shape the design lands on) and make sure every queue ↔ active transition exists so a re-queued parent can resume correctly.
+4. **Workspace boundary.** Decide whether each child gets its own isolated worktree or whether children serialize on a shared workspace. This is a workspace-layer decision; the scheduler should not pre-judge it.
+5. **Cascade policy.** Re-introduce only the policies that have concrete user scenarios. Each one added should be driven by real demand, not by enum symmetry.
+6. **Trigger thresholds.** If decomposition should auto-trigger above some complexity or time threshold, design the trigger surface deliberately. (The earlier `auto_threshold_ms` / `suggest_threshold_ms` config existed but was never read; treat that as a cautionary tale, not a starting point.)
 
 ---
 
 ## Plugin How-To Guides
 
-Each adapter type needs an agent-executable "How to build a plugin" guide so contributors can add new integrations without reading Core code. The **LLMAdapter** guide exists at `docs/contribution-docs/how-tos/plugins/llm-adapter/` and is the reference pattern. Three remain:
+Each adapter type needs an agent-executable "How to build a plugin" guide so contributors can add new integrations without reading Core code. The **LLMAdapter** guide exists and is the reference pattern. Three remain:
 
 - **TriggerAdapter** — poll for events, produce `TriggerEvent[]` with a stable `idempotency_key` (identity/dedup) and optional `external_ref` (descriptive), plus watermarks. Example: a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
 - **CommunicationAdapter** — send messages, format for your platform, capability gates for send/receive/sync/issue_management. Example: a Slack, Discord, or email plugin.
 - **GitHostingAdapter** — PR lifecycle (create, update, merge, get status, list comments). Example: a GitLab hosting plugin.
 
-**Format:** follow the llm-adapter guide — adapter interface, required vs optional methods, capability gates, manifest format, config schema, a minimal working example, and how to register/test, written as an agent-executable prompt.
-
-**Location:** `docs/contribution-docs/how-tos/plugins/<adapter>/`
+**Format:** follow the LLMAdapter guide — adapter interface, required vs optional methods, capability gates, manifest format, config schema, a minimal working example, and how to register/test, written as an agent-executable prompt. Guides live alongside the existing LLMAdapter guide in the contribution docs.
 
 ---
 
@@ -223,19 +246,14 @@ Each adapter type needs an agent-executable "How to build a plugin" guide so con
 5. `--dangerously-skip-permissions` enabled (safe because the container IS the sandbox)
 6. Network access scoped to git push/pull and LLM API calls
 
-**Architecture:**
-- Base Docker image: Node.js + Claude CLI + git (built/pulled once, cached)
-- The Engineer's WorkspaceManager creates the worktree on the host, then mounts it into the container
-- Container runs the Claude CLI command, streams NDJSON output back to the host via stdout
-- Container is ephemeral — destroyed after each CLI invocation
+**Architecture concept:**
+- Base Docker image: Node.js + CLI agent + git (built/pulled once, cached)
+- WorkspaceManager creates the worktree on the host, then mounts it into the container
+- Container runs the CLI command, streams output back to the host
+- Container is ephemeral — destroyed after each invocation
 - Fallback to direct spawn if Docker is unavailable (with a warning)
 
-**Migration path:**
-1. Abstract CLI spawning behind a `SpawnStrategy` interface (direct vs. containerized)
-2. Build a `DockerSpawnStrategy` that wraps the existing `spawnAndParse()` logic
-3. Add `sandbox.enabled` and `sandbox.image` to config
-4. `doctor` checks Docker availability when sandbox is enabled
-5. Existing `ClaudeCodeLLMPlugin.spawnAndParse()` delegates to the active strategy
+**Migration path:** Abstract CLI spawning behind a strategy interface (direct vs. containerized). The containerized strategy wraps the existing spawn logic. Config enables/disables sandboxing and specifies the image. Doctor checks Docker availability when sandbox is enabled.
 
 ---
 
@@ -243,7 +261,7 @@ Each adapter type needs an agent-executable "How to build a plugin" guide so con
 
 **Current state (v1):** No way to measure whether prompt or strategy changes improve or degrade session quality. Changes are evaluated by gut feel — run a task, eyeball the result, hope it's better.
 
-**Why this matters — observed problems (Session 069, April 2026):**
+**Why this matters — observed problems:**
 
 Trace analysis of real autonomous sessions revealed severe inefficiencies compared to interactive Claude Code sessions:
 
@@ -265,7 +283,7 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 1. **Frozen benchmark tasks** — 3 task definitions stored in the repo (not GitHub issues) at different complexity levels: simple (config flag addition), moderate (new feature touching 5–6 files), complex (cross-cutting change). Fixed descriptions, fixed codebase snapshot (git tag). Same input every time so the only variable is the prompt/strategy.
 
-2. **Metrics extraction** — a script that reads any trace directory (`~/.engineer/traces/sessions/`) and outputs a structured scorecard: turns, total tokens, output/turn ratio, file re-read count, cost estimate, peak context, files read list. The trace infrastructure already captures everything needed (NDJSON with full usage data per turn).
+2. **Metrics extraction** — a script that reads trace data and outputs a structured scorecard: turns, total tokens, output/turn ratio, file re-read count, cost estimate, peak context, files read list. The trace infrastructure already captures everything needed.
 
 3. **Results history** — each benchmark run appends to a log with: date, benchmark task, prompt/strategy version, the scorecard. This is the trend line — did the last change help or hurt?
 
@@ -273,27 +291,21 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 **Workflow:** Make a prompt change → run the simple benchmark → check the scorecard → check the deliverable → log it. ~10 minutes per iteration.
 
-**Migration path:**
-1. Create `test/benchmarks/tasks/` with 3 frozen task definitions (title, description, acceptance criteria)
-2. Tag a codebase snapshot (`git tag benchmark-v1`) as the fixed evaluation target
-3. Build `scripts/analyze-trace.ts` — reads trace NDJSON, outputs JSON scorecard (turns, tokens, output/turn, re-reads, cost, peak context, files list)
-4. Build `scripts/run-benchmark.sh` — runs a benchmark task through The Engineer against the tagged snapshot, captures trace
-5. Create `test/benchmarks/results/` — append-only log of run results with scorecard + human notes
-6. Add `scripts/compare-runs.ts` — side-by-side comparison of two benchmark runs
+**Migration path:** Frozen task definitions in the repo (not GitHub issues), a tagged codebase snapshot as the fixed evaluation target, a trace analysis script that produces a scorecard, and an append-only results log for trend tracking. The benchmark runner executes a task against the tagged snapshot; the comparison tool diffs two runs side-by-side.
 
 ---
 
 ## Config Schema Versioning
 
-**Current state (v1):** Config files (`daemon.yaml`, `orchestrator.yaml`, `workspace.yaml`, `safety.yaml`, `people.yaml`) carry no schema version. There is one latest schema per config file, defined by the Zod schemas in `src/schemas/config.ts`. When a schema changes, users update their YAML manually to match. Plugin config templates are similarly unversioned — one latest version per plugin/OS.
+**Current state (v1):** Config files carry no schema version. There is one latest schema per config file, defined by Zod schemas. When a schema changes, users update their YAML manually to match. Plugin config templates are similarly unversioned.
 
-**Why the earlier machinery was removed:** A `version` field and `detectConfigVersion()` existed but did nothing useful — no template ever wrote a `version:` field, so detection always returned `1`, and nothing read `ConfigBundle.version`. It was scaffolding that did not do what real versioning needs: no upgrade prompt, no migration path. For a pre-v1 project with zero backward-compatibility guarantees, it was dead weight.
+**Why the earlier machinery was removed:** A `version` field and version-detection existed but did nothing useful — no template ever wrote a version, detection always returned `1`, and nothing consumed it. It was scaffolding without the actual migration logic. For a pre-v1 project with zero backward-compatibility guarantees, it was dead weight.
 
 **When it becomes relevant:** Post-v1, once real users have config files on disk and a schema change would otherwise silently break their setup — i.e. when an upgrade must *migrate* an existing config rather than just expect the user to match the new shape.
 
-**What it enables:** Explicit config-schema versioning — a `version:` field per config file, a current-version constant, and a migration step at startup that detects an older version and either migrates it automatically or prompts the user. Could extend to startup version selection when multiple schema versions must coexist.
+**What it enables:** Explicit config-schema versioning — a version field per config file, a current-version constant, and a migration step at startup that detects an older version and either migrates it automatically or prompts the user.
 
-**Migration path:** Reintroduce a `CURRENT_CONFIG_VERSION` constant and a `version` field in the relevant schemas. Add a migration registry (version N → N+1 transforms) invoked by `loadConfigDir`. Design the prompt/auto-migrate UX as part of the same work — the field alone is not versioning.
+**Migration path:** Add a version field to config schemas, a migration registry (version N → N+1 transforms) invoked at config load time, and a prompt/auto-migrate UX. The field alone is not versioning — the migration path and UX must ship together.
 
 ---
 
@@ -308,9 +320,9 @@ Without measurement, we can't tell whether fixes to these problems actually work
 **What it enables:** Detection of trigger reversal plus a wind-down path — pause, abandon, or close the in-flight task and its PR when the source signal disappears or flips.
 
 **Migration path:**
-1. Trigger polling only surfaces `state: "open"` issues (`src/plugins/trigger/github-trigger/github-trigger.ts`), so a close is invisible to the trigger — detection needs a separate signal (issue-state poll, webhook, or a `CommunicationAdapter` reconciliation pass).
+1. Trigger polling only surfaces open issues, so a close is invisible to the trigger — detection needs a separate signal (issue-state poll, webhook, or a CommunicationAdapter reconciliation pass).
 2. A "stop through us" action does not exist yet; if added, it must move the task to a terminal state so active-scoped dedup frees the key for any future re-trigger.
-3. PR-staleness reactions belong with review polling in `src/core/daemon/review-handler.ts` (Slice 10).
+3. PR-staleness reactions belong with review polling in the Daemon.
 
 ---
 
@@ -322,6 +334,6 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 **What it enables:** A subagent that infers which blocked task a token-less reply belongs to — from the reply's content, the recency and content of each outstanding question, and conversation context — replacing the naive token requirement with a best-effort match (and still asking the owner to disambiguate when confidence is low).
 
-**Migration path:** The naive token approach is designed in Slice 5 and executed across the send side (`outreach-sender`, Slice 8) and the receive/parse side (`response-poller`, Slice 12). The inference layer slots in at the `response-poller` routing step as a fallback that runs only when no token is present — the deterministic path stays the default, so smart correlation is purely additive.
+**Migration path:** The naive token approach is implemented across the send side (outbound messages include the token) and the receive/parse side (inbound messages are matched by token). The inference layer slots in at the receive routing step as a fallback that runs only when no token is present — the deterministic path stays the default, so smart correlation is purely additive.
 
 ---

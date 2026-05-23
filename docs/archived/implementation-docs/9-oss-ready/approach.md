@@ -58,6 +58,45 @@ Each slice is "done done" when:
   as its own focused session (or sessions) so a clean context budget can do it justice. Never mark a
   slice done without it.
 
+  **The sweep is not just "read every file against the standards."** Line-by-line reading is necessary
+  but not sufficient — past sweeps have read carefully and still missed real defects. The principles
+  below are what a reader misses unless they actively hunt for them; treat each one as a deliberate
+  check, not a passive expectation:
+
+  - **Every documented reference must match the code as it is now.** Paths, filenames, config keys,
+    model identifiers, default values, function names, capability names — verified by grep against the
+    actual codebase, not by reading the doc and assuming. Bundled docs (`src/cli/bundled/plugin-docs.ts`)
+    must match their source under `docs/` *and* the source under `src/`. A doc that tells a contributor
+    to import from a path that does not exist is worse than no doc.
+  - **Every plugin manifest must match the implementation's behavior.** If an `override hasCapability`
+    or a `do*` method claims a capability, the manifest's `adapter_meta.capabilities` must include it.
+    The manifest is the source of truth Core reads — the override is a fallback for genuine dynamic
+    cases, not a substitute for fixing the manifest.
+  - **Every swallowed error must be logged.** A `try { ... } catch { /* non-fatal */ }` is a silent
+    degradation unless a `warn` or `info` line names what failed and what capability was reduced. Bare
+    catches without logs violate § 15 of the coding standards and § Fail Loud of the philosophy. The
+    comment explaining the swallow stays — the log makes the swallow *visible*.
+  - **`manifest` is read-only to the plugin.** Core injects it as identity; plugins read it and never
+    assign to fields on it. Any `this.manifest.X = ...` is a contract violation, even if the value is
+    only slightly customized at runtime — propose a Core-side setter instead.
+  - **Every constant value lives in one place.** A model id, a default port, a magic threshold — if it
+    appears in two files, the second must be a derived computation or an import, never a literal repeat.
+    Coding standards § 11.
+  - **No stale counts in docs.** "All N methods are implemented", "7 categories", "5 sub-states" — these
+    rot the moment the underlying enum grows. Enumerate by name or behavior, never by count. See
+    `feedback_no_stale_counts.md`.
+  - **No vestigial scaffolding.** A function exported but only used by tests, a config field parsed but
+    never read, an event type declared but never published or subscribed — delete it. Honest code over
+    tested-but-dead infrastructure.
+  - **Update memory when the sweep finds something new.** Any class of defect the line-by-line read
+    missed but the principle-driven check caught becomes a permanent addition to
+    `feedback_slice_closing_standards_sweep.md` so the next sweep starts from this baseline, not from
+    scratch.
+
+  These are derived from defects past sweeps missed and a later session caught. Every item below was
+  once "a line-by-line read should have caught it" — and didn't, because reading carefully is not the
+  same as hunting deliberately. The next sweep starts here, not from the standards files alone.
+
 ### The Slices
 
 1. **Standards Alignment** — Probe Farzam for coding style, naming, patterns, expectations. Establish the law for all subsequent slices.

@@ -67,7 +67,7 @@ label_prefix: "engineer:"          # Prefix for state labels (default: "engineer
 ## Limitations
 
 - No `receive` capability. The plugin cannot listen for incoming messages or webhook events. Polling for inbound communication is deferred.
-- Label management is best-effort. If a label removal fails (e.g., concurrent modification), the error is swallowed. Reconciliation can fix drift.
+- Label management is best-effort. If a label removal fails (e.g., concurrent modification), the error is logged at `warn` and treated as non-fatal. Reconciliation can fix any resulting drift.
 - Rate limit awareness is passive. The plugin checks remaining quota during health checks but does not throttle requests proactively. If you hit the rate limit, individual API calls will fail with `rate_limited` errors.
 - The `label_prefix` applies globally. All repos managed by this plugin share the same prefix.
 

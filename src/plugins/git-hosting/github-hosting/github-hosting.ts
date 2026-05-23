@@ -1,6 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { AdapterMethodError } from "../../../adapters/errors.js";
 import {
+  type AdapterObserver,
   type BranchProtection,
   type CommentResult,
   GitHostingAdapter,
@@ -120,17 +121,29 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       });
     }
     if (updates.labels_remove) {
-      for (const label of updates.labels_remove) {
-        try {
-          await this.octokit.issues.removeLabel({
-            owner,
-            repo: repoName,
-            issue_number: prNumber,
-            name: label,
-          });
-        } catch {
-          // Label may already be gone
-        }
+      await this.removeLabels(owner, repoName, repo, prNumber, updates.labels_remove);
+    }
+  }
+
+  private async removeLabels(
+    owner: string,
+    repoName: string,
+    repo: string,
+    prNumber: number,
+    labels: readonly string[],
+  ): Promise<void> {
+    for (const label of labels) {
+      try {
+        await this.octokit.issues.removeLabel({ owner, repo: repoName, issue_number: prNumber, name: label });
+      } catch (error) {
+        // Non-fatal — label may already be gone (concurrent removal, never set).
+        // Log so the degradation is visible to operators chasing label-state drift.
+        this.context.logger.warn("Label removal failed (non-fatal — may already be gone)", {
+          repo,
+          prNumber,
+          label,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -190,7 +203,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       pull_number: prNumber,
     });
 
-    const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha);
+    const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha, this.context.logger);
     const state = mapPRState(pr.state, pr.merged);
 
     this.context.logger.debug("PR status fetched", {
@@ -462,7 +475,13 @@ type ChecksState = "passing" | "failing" | "pending" | "none";
  *
  * Combining logic: worst state wins (failing > pending > passing > none).
  */
-async function getChecksState(octokit: Octokit, owner: string, repo: string, sha: string): Promise<ChecksState> {
+async function getChecksState(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  sha: string,
+  logger: AdapterObserver,
+): Promise<ChecksState> {
   try {
     const [statusResult, checksResult] = await Promise.all([
       octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha }),
@@ -476,7 +495,15 @@ async function getChecksState(octokit: Octokit, owner: string, repo: string, sha
     const checksState = resolveChecksApiState(checksResult.data.check_runs);
 
     return combineCheckStates(statusState, checksState);
-  } catch {
+  } catch (error) {
+    // Pessimistic fallback — treat a checks API failure as "failing" so we never
+    // claim CI is passing on bad data. Log so an operator can distinguish a real
+    // CI failure from an API outage.
+    logger.warn("Checks-state lookup failed — reporting CI as failing", {
+      repo: `${owner}/${repo}`,
+      sha,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return "failing";
   }
 }

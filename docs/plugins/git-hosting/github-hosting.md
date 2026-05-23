@@ -48,7 +48,7 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 **PR creation.** Calls `pulls.create` via Octokit. After creation, adds labels and requests reviewers in separate API calls if provided. Returns the PR number and URL.
 
-**PR updates.** Only sends API calls for fields that are non-null. Label additions and removals are handled separately. Label removal silently ignores 404s (label may already be gone).
+**PR updates.** Only sends API calls for fields that are non-null. Label additions and removals are handled separately. Label removal logs a `warn` and treats failure as non-fatal — the label may already be gone (concurrent removal, never set).
 
 **Merging.** Calls `pulls.merge` with the configured merge strategy (`squash`, `merge`, or `rebase`). The plugin never force-merges. If branch protection requirements are not satisfied (required reviews, status checks), the merge returns an error with `pr_not_mergeable` or `merge_conflict` -- it does not bypass protections.
 

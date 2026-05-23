@@ -342,8 +342,12 @@ function extractEnvVarsFromFile(filePath: string, pattern: RegExp, missing: Set<
         missing.add(varName);
       }
     }
-  } catch {
-    // Skip files that can't be read
+  } catch (error) {
+    // An unreadable config silently hides its env var references — and the doctor
+    // would then report all-green for a config the daemon can't actually load. Surface it.
+    process.stderr.write(
+      `doctor: could not read ${filePath} while scanning for env vars (${error instanceof Error ? error.message : String(error)})\n`,
+    );
   }
 }
 

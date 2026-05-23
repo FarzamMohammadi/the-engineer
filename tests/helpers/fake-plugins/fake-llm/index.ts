@@ -8,11 +8,15 @@ import type {
   QuotaStatus,
 } from "../../../../src/schemas/adapters.js";
 
+/** Callback invoked after each doInfer call (e.g., to write session-result.json in e2e tests). */
+export type InferSideEffect = (request: InferenceRequest, response: InferenceResult) => void;
+
 /**
  * Fake LLM plugin for testing.
  *
  * Test control surface:
  * - `setCannedResponses(responses)` — configure responses returned by `infer()`
+ * - `setInferSideEffect(fn)` — run a callback after each `infer()` (e.g., write session-result.json)
  * - `setUnhealthy(fail)` — make healthCheck return unhealthy
  * - `getCallCount()` — how many times `infer()` was called
  * - `getLastRequest()` — the most recent inference request
@@ -26,6 +30,7 @@ export class FakeLLMPlugin extends LLMAdapter {
   private shouldFailHealthCheck = false;
   private initConfig: Record<string, unknown> | null = null;
   private shutdownCalled = false;
+  private inferSideEffect: InferSideEffect | null = null;
 
   private static readonly DEFAULT_RESPONSE: InferenceResult = {
     content: "Fake LLM response",
@@ -39,6 +44,10 @@ export class FakeLLMPlugin extends LLMAdapter {
   setCannedResponses(responses: InferenceResult[]): void {
     this.cannedResponses = responses;
     this.callIndex = 0;
+  }
+
+  setInferSideEffect(fn: InferSideEffect | null): void {
+    this.inferSideEffect = fn;
   }
 
   setUnhealthy(fail: boolean): void {
@@ -67,6 +76,7 @@ export class FakeLLMPlugin extends LLMAdapter {
     this.lastRequest = request;
     const response = this.cannedResponses[this.callIndex] ?? FakeLLMPlugin.DEFAULT_RESPONSE;
     this.callIndex++;
+    this.inferSideEffect?.(request, response);
     return Promise.resolve(response);
   }
 

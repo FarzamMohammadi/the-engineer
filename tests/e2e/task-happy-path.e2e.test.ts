@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { InferenceResult, TriggerEvent } from "../../src/schemas/adapters.js";
 import type { Event } from "../../src/schemas/events.js";
-import { Complexities } from "../../src/schemas/orchestrator.js";
 import { TaskStates } from "../../src/schemas/task.js";
+import { writeSessionResultFromPrompt } from "../helpers/fake-cli-writer.js";
 import { type IntegrationContext, createIntegrationContext } from "../helpers/integration-context.js";
+import { type TestRepo, createTestRepo } from "../helpers/test-repo.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,77 +48,35 @@ function makeResponse(json: Record<string, unknown>): InferenceResult {
   };
 }
 
-/** Build 7 canned LLM responses for the full phase pipeline. */
+/**
+ * Build canned responses for one full happy-path pipeline run.
+ *
+ * The CLI-native pipeline makes 7 LLM calls in order: requirements, research, planning,
+ * execution, self-review (1 sub-phase + 1 refinement), demo-prep. After demo-prep the
+ * orchestrator commits/pushes and creates a PR — the pipeline exits at `review_pending`
+ * for human review. Integration runs later, only after the PR is merged.
+ */
 function makeFullPipelineResponses(): InferenceResult[] {
+  const ready = (extra: Record<string, unknown> = {}) => makeResponse({ status: "ready", ...extra });
   return [
-    makeResponse({
-      deliverable_path: "thoughts/test/requirements.md",
-      status: "ready",
-      contact: null,
-      question: null,
-      assessment: null,
-    }),
-    makeResponse({
-      deliverable_path: "thoughts/test/research.md",
-      status: "ready",
-      contact: null,
-      question: null,
-      complexity_hint: Complexities.moderate,
-    }),
-    makeResponse({
-      approach: "Modify the settings module to add dark mode toggle",
-      file_changes: [{ file: "src/settings.ts", change_type: "modify", description: "Add toggle" }],
-      risks: [],
-      decomposition_plan: null,
-    }),
-    makeResponse({
-      files_changed: ["src/settings.ts"],
-      tests_written: ["test/settings.test.ts"],
-      test_results: { passed: 5, failed: 0, skipped: 0 },
-      build_status: "passing",
-    }),
-    makeResponse({
-      findings: [],
-      refactoring_applied: [],
-      quality_assessment: "ship_it",
-    }),
-    makeResponse({
-      artifacts: [],
-      pr_number: 1,
-      pr_description: "Adds dark mode toggle to settings page",
-    }),
-    makeResponse({
-      children_verified: [],
-      integration_tests: { passed: 3, failed: 0 },
-      conflicts_found: [],
-      resolution_actions: [],
-    }),
+    ready(), // requirements_gathering
+    ready(), // research
+    ready({ decomposition_plan: null }), // planning
+    ready(), // execution
+    ready({ findings: [], quality_assessment: "ship_it" }), // self-review sub-phase
+    ready({ quality_assessment: "ship_it" }), // self-review refinement
+    ready(), // demo_prep
   ];
 }
 
-/** Run trigger → create → schedule → dispatch → completion cycle. */
-async function runFullLifecycle(ctx: IntegrationContext): Promise<void> {
-  await ctx.registry.initializePlugin("fake-trigger", {});
-  await ctx.registry.initializePlugin("fake-llm", {});
-
-  await ctx.daemon.start();
-
-  // Tick 1: poll trigger → create task (intake → queued)
-  ctx.clock.advance(1_000);
-  await ctx.daemon.tick();
-
-  // Tick 2: schedule queued task → dispatch to orchestrator
-  ctx.clock.advance(1_000);
-  await ctx.daemon.tick();
-
-  // Wait for orchestrator to finish (FakeLLM resolves instantly)
-  await waitForIdle(ctx);
-}
+/** Number of LLM calls in a full happy-path pipeline (see makeFullPipelineResponses). */
+const FULL_PIPELINE_LLM_CALLS = 7;
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("E2E: Task happy path", () => {
   let ctx: IntegrationContext;
+  let repo: TestRepo | null = null;
 
   function setup(options?: Parameters<typeof createIntegrationContext>[0]): IntegrationContext {
     ctx = createIntegrationContext(options);
@@ -133,78 +92,108 @@ describe("E2E: Task happy path", () => {
       }
       ctx.cleanup();
     }
+    if (repo) {
+      repo.cleanup();
+      repo = null;
+    }
   });
 
-  it("full lifecycle: trigger → 7 phases → completed", async () => {
+  // ── Smoke test ─────────────────────────────────────────────────────────────
+  // ONE end-to-end run with a real worktree (bare git repo on disk) and a FakeLLM
+  // that simulates the file-writing behavior of a real CLI agent. If anything in
+  // the daemon → orchestrator → phase pipeline wiring breaks, this alarms.
+
+  it("smoke: full pipeline runs green end-to-end", async () => {
+    repo = createTestRepo();
     setup();
 
-    ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Add dark mode" })]);
+    ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Smoke test", clone_url: repo.cloneUrl })]);
     ctx.fakes.llm.setCannedResponses(makeFullPipelineResponses());
+    ctx.fakes.llm.setInferSideEffect(writeSessionResultFromPrompt);
 
-    await runFullLifecycle(ctx);
+    await ctx.registry.initializePlugin("fake-trigger", {});
+    await ctx.registry.initializePlugin("fake-llm", {});
 
-    // Verify dispatch completed
+    await ctx.daemon.start();
+
+    // Tick 1: poll trigger → create task. Tick 2: schedule → dispatch.
+    ctx.clock.advance(1_000);
+    await ctx.daemon.tick();
+    ctx.clock.advance(1_000);
+    await ctx.daemon.tick();
+    await waitForIdle(ctx);
+
     expect(ctx.daemon.getState().tasksCompleted).toBe(1);
-    expect(ctx.fakes.llm.getCallCount()).toBe(7);
+    expect(ctx.fakes.llm.getCallCount()).toBe(FULL_PIPELINE_LLM_CALLS);
+
+    // After demo_prep the orchestrator created a PR via fake-git-hosting, so the
+    // task is waiting on human review. Integration runs later, post-merge.
+    const reviewPending = ctx.taskEngine.getTasksByState(TaskStates.review_pending);
+    expect(reviewPending.length).toBe(1);
+
+    const taskId = reviewPending[0]!.id;
+    const checkpoint = ctx.sessionMemory.getLatestCheckpoint(taskId);
+    expect(checkpoint).not.toBeNull();
+    expect(checkpoint?.phase).toBe("demo_prep");
   });
 
-  it("emits cost.incurred event for each LLM call", async () => {
+  // ── Dispatch and routing tests ─────────────────────────────────────────────
+  // These don't simulate a real CLI — they verify the daemon's orchestration
+  // behavior with a vanilla FakeLLM. The phase pipeline throws WorkspaceNotReadyError
+  // on the first phase (no clone_url → no workspace), so the orchestrator returns
+  // outcome=error and the scheduler transitions the task to `blocked`. That's the
+  // honest, deterministic thing to assert with these fakes.
+
+  it("trigger → task creation → dispatch → terminal state (blocked, no workspace)", async () => {
+    setup();
+
+    ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Routing test" })]);
+
+    await ctx.registry.initializePlugin("fake-trigger", {});
+    await ctx.registry.initializePlugin("fake-llm", {});
+
+    await ctx.daemon.start();
+
+    ctx.clock.advance(1_000);
+    await ctx.daemon.tick();
+    await waitForIdle(ctx);
+
+    // Task was created, dispatched, and reached a terminal state.
+    expect(ctx.daemon.getState().tasksCompleted).toBe(1);
+
+    // Workspace creation was skipped (empty clone_url) → first phase threw
+    // WorkspaceNotReadyError → orchestrator returned outcome=error → blocked.
+    const blocked = ctx.taskEngine.getTasksByState(TaskStates.blocked);
+    expect(blocked.length).toBe(1);
+    expect(blocked[0]?.title).toBe("Routing test");
+  });
+
+  it("emits cost.incurred event for each LLM call (smoke pipeline)", async () => {
+    repo = createTestRepo();
     setup();
 
     const costEvents: Event[] = [];
     ctx.eventBus.subscribe("test-cost", "cost.incurred", (e) => costEvents.push(e));
 
-    ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Cost tracking" })]);
+    ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Cost tracking", clone_url: repo.cloneUrl })]);
     ctx.fakes.llm.setCannedResponses(makeFullPipelineResponses());
+    ctx.fakes.llm.setInferSideEffect(writeSessionResultFromPrompt);
 
-    await runFullLifecycle(ctx);
+    await ctx.registry.initializePlugin("fake-trigger", {});
+    await ctx.registry.initializePlugin("fake-llm", {});
 
-    // One cost event per phase
-    expect(costEvents.length).toBe(7);
+    await ctx.daemon.start();
+    ctx.clock.advance(1_000);
+    await ctx.daemon.tick();
+    ctx.clock.advance(1_000);
+    await ctx.daemon.tick();
+    await waitForIdle(ctx);
+
+    expect(costEvents.length).toBe(FULL_PIPELINE_LLM_CALLS);
     for (const event of costEvents) {
-      const payload = event.payload as { spend_usd: number | null; duration_ms: number | null };
+      const payload = event.payload as { spend_usd: number | null };
       expect(payload.spend_usd).toBe(0.003);
     }
-  });
-
-  it("creates checkpoint at final phase boundary", async () => {
-    setup();
-
-    ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Checkpoint test" })]);
-    ctx.fakes.llm.setCannedResponses(makeFullPipelineResponses());
-
-    await runFullLifecycle(ctx);
-
-    // Find the task that was created
-    const completed = ctx.taskEngine.getTasksByState(TaskStates.completed);
-    const queued = ctx.taskEngine.getTasksByState(TaskStates.queued);
-    const active = ctx.taskEngine.getTasksByState(TaskStates.active);
-    const allTasks = [...completed, ...queued, ...active];
-
-    // At least 1 task should exist
-    expect(allTasks.length).toBeGreaterThanOrEqual(1);
-
-    // Get latest checkpoint for first task
-    const task = allTasks[0];
-    expect(task).toBeDefined();
-    const checkpoint = ctx.sessionMemory.getLatestCheckpoint(task!.id);
-    expect(checkpoint).not.toBeNull();
-    // Final checkpoint should be for integration (last phase)
-    expect(checkpoint?.phase).toBe("integration");
-  });
-
-  it("trivial task still runs all 7 phases (no fast path in v1)", async () => {
-    setup();
-
-    // All 7 phases run even for trivial tasks — fast path was removed
-    ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Fix typo" })]);
-    ctx.fakes.llm.setCannedResponses(makeFullPipelineResponses());
-
-    await runFullLifecycle(ctx);
-
-    // All 7 phases = 7 LLM calls
-    expect(ctx.fakes.llm.getCallCount()).toBe(7);
-    expect(ctx.daemon.getState().tasksCompleted).toBe(1);
   });
 
   it("trigger dedup prevents duplicate tasks", async () => {
@@ -215,7 +204,6 @@ describe("E2E: Task happy path", () => {
       title: "Dedup test",
     });
     ctx.fakes.trigger.setEvents([event]);
-    ctx.fakes.llm.setCannedResponses(makeFullPipelineResponses());
 
     await ctx.registry.initializePlugin("fake-trigger", {});
     await ctx.registry.initializePlugin("fake-llm", {});
@@ -225,22 +213,27 @@ describe("E2E: Task happy path", () => {
     // First tick — creates task
     ctx.clock.advance(1_000);
     await ctx.daemon.tick();
+    await waitForIdle(ctx);
 
-    // Count tasks after first tick
-    const queued1 = ctx.taskEngine.getTasksByState(TaskStates.queued);
-    const active1 = ctx.taskEngine.getTasksByState(TaskStates.active);
-    const taskCount1 = queued1.length + active1.length;
+    const allBefore = [
+      ...ctx.taskEngine.getTasksByState(TaskStates.queued),
+      ...ctx.taskEngine.getTasksByState(TaskStates.active),
+      ...ctx.taskEngine.getTasksByState(TaskStates.blocked),
+      ...ctx.taskEngine.getTasksByState(TaskStates.completed),
+    ];
 
     // Second tick — same event, should be deduped
     ctx.clock.advance(1_000);
     await ctx.daemon.tick();
+    await waitForIdle(ctx);
 
-    const queued2 = ctx.taskEngine.getTasksByState(TaskStates.queued);
-    const active2 = ctx.taskEngine.getTasksByState(TaskStates.active);
-    const completed2 = ctx.taskEngine.getTasksByState(TaskStates.completed);
-    const taskCount2 = queued2.length + active2.length + completed2.length;
+    const allAfter = [
+      ...ctx.taskEngine.getTasksByState(TaskStates.queued),
+      ...ctx.taskEngine.getTasksByState(TaskStates.active),
+      ...ctx.taskEngine.getTasksByState(TaskStates.blocked),
+      ...ctx.taskEngine.getTasksByState(TaskStates.completed),
+    ];
 
-    // Same total task count (may have been dispatched/completed, but no new task)
-    expect(taskCount2).toBe(taskCount1);
+    expect(allAfter.length).toBe(allBefore.length);
   });
 });

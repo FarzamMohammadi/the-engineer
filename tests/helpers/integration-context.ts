@@ -120,7 +120,11 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
 
   // 2-8. Core components via shared factory (mirrors bootstrap.ts wiring)
   const safetyConfig = SafetyConfigSchema.parse(options?.safetyConfig ?? {});
-  const workspaceConfig = WorkspaceConfigSchema.parse(options?.workspaceConfig ?? {});
+  // Default workspace_root inside engineerHome so tests never touch ~/.engineer.
+  const workspaceConfig = WorkspaceConfigSchema.parse({
+    workspace_root: join(engineerHome, "workspaces"),
+    ...(options?.workspaceConfig ?? {}),
+  });
   const {
     components: { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager },
   } = createCoreComponents({
@@ -152,7 +156,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   // 10. Orchestrator
   const orchestrator = new Orchestrator({
     config: OrchestratorConfigSchema.parse({}),
-    workspaceConfig: WorkspaceConfigSchema.parse({}),
+    workspaceConfig,
     eventBus,
     registry,
     taskEngine,

@@ -17,7 +17,7 @@ import {
 } from "../../../adapters/index.js";
 import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import { killProcess } from "../../../utils/process.js";
-import { type ClaudeCodeLLMConfig, ClaudeCodeLLMConfigSchema } from "./config.js";
+import { type ClaudeCodeLLMConfig, ClaudeCodeLLMConfigSchema, DEFAULT_CLAUDE_MODEL } from "./config.js";
 
 // ── LLM subprocess env isolation ─────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
 
   getCapabilities(): LLMCapabilities {
     return {
-      model_id: this.config?.model ?? "claude-sonnet-4-20250514",
+      model_id: this.config?.model ?? DEFAULT_CLAUDE_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: true,
       context_window: 200_000,

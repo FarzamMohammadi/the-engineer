@@ -293,7 +293,7 @@ github_token: "\${GITHUB_TOKEN}"           # <-- set env var
 export const CLAUDE_CODE_LLM_TEMPLATE = `# Claude Code LLM plugin
 # Uses Claude CLI for LLM completions
 
-# model: claude-sonnet-4-20250514       # Model to use
+# model: claude-sonnet-4-6              # Model to use
 # cli_path: claude                        # Path to claude CLI binary
 `;
 
@@ -655,7 +655,7 @@ export const EXAMPLE_CLAUDE_CODE_LLM = `# ┌───────────�
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # All fields are optional — defaults shown below.
-model: claude-sonnet-4-20250514         # Model to use (default: claude-sonnet-4-20250514)
+model: claude-sonnet-4-6                # Model to use (default: claude-sonnet-4-6)
 cli_path: claude                          # Path to claude CLI binary (default: claude)
 `;
 

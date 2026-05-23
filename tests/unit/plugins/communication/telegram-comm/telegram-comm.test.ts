@@ -40,7 +40,7 @@ const MANIFEST: PluginManifest = {
   config_schema: {},
   critical: false,
   entry: "index.ts",
-  adapter_meta: { capabilities: ["send"] },
+  adapter_meta: { capabilities: ["send", "receive"] },
   requirements: [],
   combined_with: [],
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },

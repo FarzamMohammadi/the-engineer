@@ -95,11 +95,11 @@ const manifests = [
     type: AdapterTypes.communication,
     version: "1.0.0",
     name: "Telegram Communication",
-    description: "Sends notifications via Telegram bot",
+    description: "Sends notifications and polls for replies via Telegram bot",
     critical: false,
     requirements: [{ type: "env", name: "TELEGRAM_BOT_TOKEN" }],
     entry: "builtin",
-    adapter_meta: { capabilities: ["send"], channel: "telegram" },
+    adapter_meta: { capabilities: ["send", "receive"], channel: "telegram" },
     contributes: { events: ["comm.message_sent"] },
     startup_hints: [
       "Each person in People Directory must send /start to the Telegram bot before The Engineer can reach them via Telegram.",

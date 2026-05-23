@@ -154,10 +154,6 @@ export class TelegramCommPlugin extends CommunicationAdapter {
   /** Lightweight lookup: lowercase telegram handle → person name (from People Directory). */
   private telegramNameMap = new Map<string, string>();
 
-  override hasCapability(capability: string): boolean {
-    return capability === "send" || capability === "receive";
-  }
-
   formatMessage(content: string, type: MessageType): string {
     const parseMode = this.config?.parse_mode ?? "MarkdownV2";
     return formatForParseMode(content, type, parseMode);
@@ -275,17 +271,6 @@ export class TelegramCommPlugin extends CommunicationAdapter {
     // Load persisted username → chat_id mapping
     this.loadChatMap();
 
-    // Fetch bot identity and update startup hint with actual bot username
-    try {
-      const me = await this.bot.api.getMe();
-      const botHandle = me.username ? `@${me.username}` : `bot ${me.id}`;
-      this.manifest.startup_hints = [
-        `Each person in People Directory must send /start to ${botHandle} before The Engineer can reach them via Telegram.`,
-      ];
-    } catch {
-      // Non-fatal — hint stays as default, healthCheck will catch auth issues
-    }
-
     // Drain pending updates, capturing /start handshakes along the way.
     try {
       const pending = await this.bot.api.getUpdates({
@@ -302,9 +287,15 @@ export class TelegramCommPlugin extends CommunicationAdapter {
           await this.captureHandshake(msg.from.username, String(msg.chat.id));
         }
       }
-    } catch {
-      // Non-fatal — if drain fails, first poll may return stale messages
-      // but the response poller's cursor mechanism provides a second safety net
+    } catch (error) {
+      // Non-fatal — first poll's cursor will recover. Log so the degradation
+      // (no offline /start capture this startup) is visible.
+      this.context.logger.warn(
+        "Telegram update drain failed — offline /start handshakes will be picked up on the next poll",
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
 
     return { success: true, message: null };
@@ -351,8 +342,12 @@ export class TelegramCommPlugin extends CommunicationAdapter {
         await this.bot.api.sendMessage(chatId, greeting, {
           parse_mode: this.config.parse_mode,
         });
-      } catch {
-        // Non-fatal
+      } catch (error) {
+        // Non-fatal: confirmation reply is best-effort; the chat_id is already known.
+        this.context.logger.warn("Telegram handshake confirmation reply failed", {
+          username,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
       return;
     }
@@ -366,8 +361,12 @@ export class TelegramCommPlugin extends CommunicationAdapter {
       await this.bot.api.sendMessage(chatId, greeting, {
         parse_mode: this.config.parse_mode,
       });
-    } catch {
-      // Non-fatal: handshake was captured, reply delivery is best-effort
+    } catch (error) {
+      // Non-fatal: handshake was captured and persisted; only the reply delivery failed.
+      this.context.logger.warn("Telegram handshake greeting failed (handshake itself captured)", {
+        username,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

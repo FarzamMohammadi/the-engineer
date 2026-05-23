@@ -28,7 +28,8 @@ export type ComponentTag =
   | "data-lifecycle"
   | "notifications"
   | "response-poller"
-  | "unblock-resolver";
+  | "unblock-resolver"
+  | "dashboard";
 
 /** Logging config shape from DaemonConfigSchema. */
 export interface LoggingConfig {

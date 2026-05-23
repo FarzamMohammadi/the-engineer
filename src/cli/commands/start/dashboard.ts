@@ -1,6 +1,7 @@
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import type { IObserver } from "../../../core/observer/facade.js";
 import { startDashboard } from "../../../dashboard/index.js";
 import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
 import type { EngineerDirectories } from "../../home.js";
@@ -9,7 +10,7 @@ import { getOutput } from "../../output.js";
 export const DASHBOARD_PORT = 3847;
 
 /** Launch the dashboard alongside the daemon. */
-export function launchDashboard(dirs: EngineerDirectories): { cleanup: () => void } {
+export function launchDashboard(dirs: EngineerDirectories, observer: IObserver): { cleanup: () => void } {
   const out = getOutput();
   const dbPath = join(dirs.data, "engineer.db");
   const pidPath = join(dirs.run, "dashboard.pid");
@@ -17,7 +18,10 @@ export function launchDashboard(dirs: EngineerDirectories): { cleanup: () => voi
 
   if (existsSync(dbPath)) {
     try {
-      dashboardHandle = startDashboard({ dbPath, tracesDir: dirs.traces, runDir: dirs.run }, DASHBOARD_PORT);
+      dashboardHandle = startDashboard(
+        { dbPath, tracesDir: dirs.traces, runDir: dirs.run, observer: observer.child("dashboard") },
+        DASHBOARD_PORT,
+      );
       writeFileSync(pidPath, String(process.pid), "utf8");
     } catch (error) {
       out.warn(`Dashboard failed to start: ${sanitizeErrorMessage(error)}`);

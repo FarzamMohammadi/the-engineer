@@ -13,6 +13,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
+import type { IObserver } from "../core/observer/facade.js";
 import { BlobStore } from "../core/observer/index.js";
 import { createObservationStore } from "../core/observer/index.js";
 import { errorRoutes } from "./api/errors.js";
@@ -30,6 +31,7 @@ export interface DashboardConfig {
   dbPath: string;
   tracesDir: string;
   runDir: string;
+  observer: IObserver;
 }
 
 /** Creates the Hono app with all API routes, static file serving, and database connections. */
@@ -80,7 +82,7 @@ export function createDashboardApp(config: DashboardConfig): {
     }
     execFile("code", [dirPath], (err) => {
       if (err) {
-        console.error("Failed to open in VS Code:", err.message);
+        config.observer.warn("Failed to open path in VS Code", { dirPath, error: err.message });
       }
     });
     return c.json({ ok: true });

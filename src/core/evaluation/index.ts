@@ -36,7 +36,14 @@ export function createEvaluationManager(ctx: EvaluationManagerContext): Evaluati
     // Capture snapshot synchronously while worktree is alive
     let snapshot: EvaluationSnapshot;
     try {
-      snapshot = captureSnapshot(taskId, worktreePath, thoughtsDir, task, record, ctx.engineerHome);
+      snapshot = captureSnapshot({
+        taskId,
+        worktreePath,
+        thoughtsDir,
+        task,
+        record,
+        engineerHome: ctx.engineerHome,
+      });
     } catch (error) {
       ctx.observer.warn("Evaluation skipped — snapshot capture failed", {
         taskId,

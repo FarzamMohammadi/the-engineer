@@ -76,10 +76,10 @@ export async function runEvaluation(snapshot: EvaluationSnapshot, ctx: Evaluatio
     const totalCost = (session1.costUsd ?? 0) + (session2.costUsd ?? 0) || null;
     const totalDuration = Date.now() - startTime;
 
-    writeMetadata(snapshot, session1, session2, totalCost, totalDuration, "completed");
+    writeMetadata({ snapshot, session1, session2, totalCost, totalDuration, status: "completed" });
     emitEvent(ctx, snapshot, totalCost, totalDuration, "completed");
   } catch (error) {
-    handleEvaluationError(error, snapshot, ctx, startTime, session1, session2);
+    handleEvaluationError({ error, snapshot, ctx, startTime, session1, session2 });
   }
 }
 
@@ -169,15 +169,19 @@ function serializeSession(session: SessionResult | null) {
   };
 }
 
-function writeMetadata(
-  snapshot: EvaluationSnapshot,
-  session1: SessionResult | null,
-  session2: SessionResult | null,
-  totalCost: number | null,
-  totalDuration: number,
-  status: "completed" | "failed",
-  error?: string,
-): void {
+/** Input for {@link writeMetadata}. */
+interface WriteMetadataInput {
+  readonly snapshot: EvaluationSnapshot;
+  readonly session1: SessionResult | null;
+  readonly session2: SessionResult | null;
+  readonly totalCost: number | null;
+  readonly totalDuration: number;
+  readonly status: "completed" | "failed";
+  readonly error?: string;
+}
+
+function writeMetadata(input: WriteMetadataInput): void {
+  const { snapshot, session1, session2, totalCost, totalDuration, status, error } = input;
   const metadata = {
     task_id: snapshot.taskId,
     task_title: snapshot.taskTitle,
@@ -217,14 +221,18 @@ function emitEvent(
   } satisfies PublishInput<"evaluation.completed">);
 }
 
-function handleEvaluationError(
-  error: unknown,
-  snapshot: EvaluationSnapshot,
-  ctx: EvaluationManagerContext,
-  startTime: number,
-  session1: SessionResult | null,
-  session2: SessionResult | null,
-): void {
+/** Input for {@link handleEvaluationError}. */
+interface HandleEvaluationErrorInput {
+  readonly error: unknown;
+  readonly snapshot: EvaluationSnapshot;
+  readonly ctx: EvaluationManagerContext;
+  readonly startTime: number;
+  readonly session1: SessionResult | null;
+  readonly session2: SessionResult | null;
+}
+
+function handleEvaluationError(input: HandleEvaluationErrorInput): void {
+  const { error, snapshot, ctx, startTime, session1, session2 } = input;
   const totalDuration = Date.now() - startTime;
   const errorMsg = error instanceof Error ? error.message : String(error);
 
@@ -237,7 +245,7 @@ function handleEvaluationError(
   const totalCost = (session1?.costUsd ?? 0) + (session2?.costUsd ?? 0) || null;
 
   try {
-    writeMetadata(snapshot, session1, session2, totalCost, totalDuration, "failed", errorMsg);
+    writeMetadata({ snapshot, session1, session2, totalCost, totalDuration, status: "failed", error: errorMsg });
   } catch {
     // Best effort — don't let metadata write failure mask the real error
   }

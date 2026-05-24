@@ -39,20 +39,24 @@ function collectMdFiles(dir: string, basePath: string, result: Map<string, strin
 
 // ── Snapshot Capture ────────────────────────────────────────────────────────
 
+/** Input for {@link captureSnapshot}. */
+export interface CaptureSnapshotInput {
+  readonly taskId: string;
+  readonly worktreePath: string;
+  readonly thoughtsDir: string;
+  readonly task: Task;
+  readonly record: WorkspaceRecord;
+  readonly engineerHome: string;
+}
+
 /**
  * Synchronously capture all data needed for evaluation from a live worktree.
  *
  * Must be called BEFORE worktree cleanup — the worktree must still exist.
  * Creates the evaluation output directory and writes snapshot.json for durability.
  */
-export function captureSnapshot(
-  taskId: string,
-  worktreePath: string,
-  thoughtsDir: string,
-  task: Task,
-  record: WorkspaceRecord,
-  engineerHome: string,
-): EvaluationSnapshot {
+export function captureSnapshot(input: CaptureSnapshotInput): EvaluationSnapshot {
+  const { taskId, worktreePath, thoughtsDir, task, record, engineerHome } = input;
   const evaluationDir = join(engineerHome, "evaluations", taskId);
   mkdirSync(evaluationDir, { recursive: true });
 

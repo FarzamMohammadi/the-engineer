@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
 - [approach.md](approach.md) — strategy, lenses, co-founder rules, 16-slice roadmap, session protocol
-- Current slice: `slices/06-scheduling.md` (not yet created — write during requirements gathering)
+- Current slice: `slices/06-scheduling.md` — requirements + research + plan all complete; ready to implement
 
 ## How This File Works
 
@@ -21,18 +21,62 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Starting Slice 6 — Scheduling & Dispatch.** Slice 5 closed; the carried-over e2e breakage was
-fixed (commit `f54ad8c`) — tests rewritten as one full-pipeline smoke test + honest dispatch/routing
-tests using a bare git repo + a FakeLLM session-result.json side-effect hook. First Slice 6 session
-is **requirements gathering** — Q&A to scope what we touch, what we cut, and what stays as-is.
+**Slice 6 — Scheduling & Dispatch — pre-implementation phase complete (Session 24).** All
+three RRPIR upstream deliverables landed in one focused session: thirteen decisions locked
+through Q&A, deep research saved to `.claude/temp/research/slice-06-scheduling.md` (two
+grounding rounds), multi-session implementation plan saved to
+`.claude/temp/create-plan/slice-06-scheduling.md`. Slice file `slices/06-scheduling.md`
+captures decisions and points at both artifacts. Next: **Session 1 — decomposition consumer
+delete**. Start by reading the plan file's Session 1 task list.
 
-**Gate status going in:** typecheck clean; lint clean (8 **pre-existing** complexity warnings in
-opencode/gemini/claude-code/notification-router — predate Slice 5, out of scope); unit **2482 passed**;
-integration **40 passed**; e2e **16 passed** (was 11+5).
+**Slice shape locked (13 decisions):**
+- D1: Delete the operationally-dead decomposition consumer in full (schema, sub-states,
+  ValidTransitions, permission table, event, scheduler/daemon logic, data-lifecycle reference,
+  bundled config, dashboard client `SubState` type). Cross-slice handoffs to Slice 8
+  (orchestrator-side deletion, integration phase re-evaluation) and Slice 15 (dashboard UI).
+- D2: New `src/core/retry-policy/` module — per-category (`crash`, `llm_unavailable`),
+  config-driven backoffs, per-category counter fields, single API.
+- D3: New `src/core/dispatch-tracker/` module — AbortController per dispatch, per-dispatch
+  identity for idempotent late callbacks, `terminate(taskId, reason)`, new
+  `Outcomes.terminated` with typed reason routing. Signal honoring through orchestrator
+  handed to Slice 8.
+- D4: `max_active_duration_ms` enforcement — subscribe to existing health event, terminate
+  → failed + alert. Wall-clock time accounting.
+- D5: Crash recovery unification — both boot recovery and per-task crash through retry-policy.
+  Closes the boot-loop hole.
+- D6: Preemption tightened — eligible filter before picking, priority bounded `[1, 100]`
+  (research correction matching DB CHECK), one-per-tick documented as deliberate, dead
+  `preemption.ready` event deleted, dead `abandonPending` deleted.
+- D7: Eligibility surfacing — minimal cleanup, doc paragraph, no new plumbing.
+- D8: Phase-runner adopts retry-policy in Slice 6 (avoids two writers in interim).
+- D9: Cost-limit-queue adopts terminate primitive in Slice 6 (notifications stay immediate).
+- D10: `drainForShutdown` adopts terminate primitive in Slice 6 (single shared timeout).
+- D11: Collapse `Outcomes.preempted` into `Outcomes.terminated`.
+- D12: `engineer retry` resets both per-category counters.
+- D13: Add `failed → queued` ValidTransitions edge so hard-cap victims have a recovery path
+  via `engineer retry` (research refinement to D4 + D12).
 
-**Cross-slice handoffs landing in Slice 6's lap:** none currently parked specifically for Slice 6.
-Inherited from Slice 5 (still parked for their target slices): #9 reply-token + #10 unblock check →
-Slice 12; trivial-skip → Slice 8; review polling → Slice 10.
+**Five-session implementation breakdown (in plan file, full detail):**
+1. Decomposition consumer delete (~250k)
+2. retry-policy + phase-runner adoption + crash recovery unification (~250k)
+3. dispatch-tracker primitive + Outcomes.terminated + preemption + drain + cost-limit (~350k, the centerpiece)
+4. Hard-cap enforcement + engineer retry + failed→queued + docs (~200k)
+5. Closing standards sweep (variable, mirrors Slice 5 Session 22 pattern)
+
+**Gate status going into implementation (unchanged from Slice 5 close):** typecheck clean;
+lint clean (8 pre-existing complexity warnings noted, predate Slice 5); unit **2482 passed**;
+integration **40 passed**; e2e **16 passed**.
+
+**Cross-slice handoffs landing in Slice 6's lap:** none currently parked specifically for
+Slice 6. Inherited from Slice 5 (still parked for their target slices): #9 reply-token +
+#10 unblock check → Slice 12; trivial-skip → Slice 8; review polling → Slice 10.
+
+**New cross-slice handoffs Slice 6 emits:**
+- → Slice 8: decomposition-handler.ts deletion + planning prompt instruction removal +
+  decomposition schemas deletion + integration phase re-evaluation + signal honoring through
+  phase-runner → llm-caller → LLM plugins.
+- → Slice 12: notification-kind enumeration audit when they own routing.
+- → Slice 15: dashboard UI cleanup for the simplified state machine (visual treatment).
 
 ## Completed Slices
 

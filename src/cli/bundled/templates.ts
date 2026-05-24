@@ -109,12 +109,6 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 #   batch_window_ms: "30s"            # Batch questions before asking (default: 30s)
 #   max_batch_size: 5
 
-# --- Task decomposition ---
-# decomposition:
-#   auto_threshold_ms: "4h"           # Auto-decompose above this (default: 4h)
-#   suggest_threshold_ms: "2h"        # Suggest decomposition (default: 2h)
-#   min_child_size_ms: "30m"          # Minimum child task size (default: 30m)
-
 # --- Demo gate ---
 # demo:
 #   always_create: true               # Always create demo artifact
@@ -433,12 +427,6 @@ question_batching:
   enabled: true                           # Batch questions before asking (default: true)
   batch_window_ms: "30s"                  # Batch window (default: 30s)
   max_batch_size: 5                       # Max questions per batch (default: 5)
-
-# ── Task Decomposition ──────────────────────────────────────────────────────
-decomposition:
-  auto_threshold_ms: "4h"                 # Auto-decompose above this (default: 4h)
-  suggest_threshold_ms: "2h"              # Suggest decomposition above this (default: 2h)
-  min_child_size_ms: "30m"                # Minimum child task size (default: 30m)
 
 # ── Demo Gate ────────────────────────────────────────────────────────────────
 demo:

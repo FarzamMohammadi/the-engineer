@@ -16,13 +16,11 @@ export interface WorkspaceLifecycle {
 
 /** Create WorkspaceLifecycle bound to the given context. */
 export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLifecycle {
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: workspace setup has inherent branching (new/rework/resume/child)
   function setupWorkspace(dispatch: Dispatch): void {
     const taskId = dispatch.task.id;
     const isResume = !!dispatch.resume_from;
-    const isChild = !!dispatch.task.parent_id;
 
-    ctx.observer.info("Setting up workspace", { taskId, isResume, isChild });
+    ctx.observer.info("Setting up workspace", { taskId, isResume });
 
     if (!dispatch.resume_from) {
       const repo = dispatch.task.repo;
@@ -38,21 +36,9 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
           });
           ctx.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
         } else {
-          // Child tasks branch from parent's branch
-          let parentBranch: string | undefined;
-          if (dispatch.task.parent_id) {
-            const parentTask = ctx.taskEngine.getTask(dispatch.task.parent_id);
-            parentBranch = parentTask?.workspace?.branch ?? undefined;
-            ctx.observer.debug("Workspace setup: child task branching from parent", {
-              taskId,
-              parentId: dispatch.task.parent_id,
-              parentBranch: parentBranch ?? null,
-            });
-          }
           const thoughtsId = dispatch.task.thoughts_id ?? undefined;
           const record = ctx.workspaceManager.createWorkspace(taskId, repo, {
             title: dispatch.task.title,
-            parentBranch,
             cloneUrl,
             thoughtsId,
           });

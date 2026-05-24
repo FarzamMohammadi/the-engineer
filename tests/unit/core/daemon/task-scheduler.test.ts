@@ -11,7 +11,7 @@ import type { ExecuteTaskResult } from "../../../../src/core/orchestrator/index.
 import type { DaemonConfig } from "../../../../src/schemas/config.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
-import { CascadePolicies, SubStates, type Task, TaskStates } from "../../../../src/schemas/task.js";
+import { SubStates, type Task, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -67,15 +67,12 @@ function makeMockTask(overrides?: Record<string, unknown>): Task {
     state: TaskStates.queued,
     sub_state: null,
     priority: 50,
-    parent_id: null,
     workspace: null,
     review: null,
     created_at: new Date(1_000_000).toISOString(),
     started_at: null,
     decisions: [],
-    cascade_policy: CascadePolicies.best_effort,
     description: "A test task",
-    children: [],
     external_ref: null,
     not_before: null,
     consecutive_crash_count: 0,
@@ -103,7 +100,6 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     getQueuedByPriority: vi.fn().mockReturnValue([]),
     getTask: vi.fn().mockReturnValue(null),
     getTasksByState: vi.fn().mockReturnValue([]),
-    getChildren: vi.fn().mockReturnValue([]),
     requestTransition: vi.fn().mockReturnValue({ success: true }),
     updateTaskField: vi.fn(),
   };
@@ -462,132 +458,6 @@ describe("TaskScheduler", () => {
     expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
   });
 
-  // 10. isTaskEligible: child requires parent in active.supervising
-  it("scheduleNext skips child task when parent is not in active.supervising", () => {
-    const { ctx, taskEngine, orchestrator } = makeContext({ max_concurrent: 1 });
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    taskEngine.getQueuedByPriority.mockReturnValue([child]);
-    taskEngine.getTask.mockReturnValue(
-      makeMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.working, // NOT supervising
-      }),
-    );
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.scheduleNext();
-
-    expect(orchestrator.executeTask).not.toHaveBeenCalled();
-  });
-
-  // 11. isTaskEligible: pause_siblings enforces one-at-a-time
-  it("scheduleNext enforces pause_siblings: skips child when sibling is active", () => {
-    const { ctx, taskEngine, orchestrator } = makeContext({ max_concurrent: 2 });
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child1 = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    const child2 = makeMockTask({ id: "child-2", parent_id: "parent-1" });
-    taskEngine.getQueuedByPriority.mockReturnValue([child1, child2]);
-
-    // Parent is supervising with pause_siblings
-    taskEngine.getTask.mockReturnValue(
-      makeMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.supervising,
-        cascade_policy: CascadePolicies.pause_siblings,
-      }),
-    );
-
-    // After child1 is dispatched, getChildren returns child1 as active
-    const activeSibling = makeMockTask({
-      id: "child-1",
-      parent_id: "parent-1",
-      state: TaskStates.active,
-    });
-    const queuedSibling = makeMockTask({
-      id: "child-2",
-      parent_id: "parent-1",
-      state: TaskStates.queued,
-    });
-    taskEngine.getChildren.mockReturnValue([activeSibling, queuedSibling]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.scheduleNext();
-
-    // Only the first child should be dispatched; second blocked by pause_siblings
-    expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
-  });
-
-  // 13. checkAndEmitChildrenAllDone emits when all siblings terminal
-  it("checkAndEmitChildrenAllDone emits event when all siblings are terminal", () => {
-    const { ctx, taskEngine, eventBus } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    taskEngine.getTask.mockReturnValue(child);
-
-    const sibling1 = makeMockTask({ id: "child-1", state: TaskStates.completed });
-    const sibling2 = makeMockTask({ id: "child-2", state: TaskStates.completed });
-    taskEngine.getChildren.mockReturnValue([sibling1, sibling2]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.checkAndEmitChildrenAllDone("child-1");
-
-    expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: EventTypes["task.children_all_done"],
-        source: "daemon",
-        task_id: "parent-1",
-        payload: expect.objectContaining({
-          parent_task_id: "parent-1",
-          child_ids: ["child-1", "child-2"],
-          all_succeeded: true,
-          failed_ids: [],
-        }),
-      }),
-    );
-  });
-
-  // 14. checkAndEmitChildrenAllDone skips for top-level tasks (no parent)
-  it("checkAndEmitChildrenAllDone skips for top-level tasks", () => {
-    const { ctx, taskEngine, eventBus } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", parent_id: null }));
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.checkAndEmitChildrenAllDone("t1");
-
-    expect(eventBus.publish).not.toHaveBeenCalled();
-  });
-
-  // 15. checkAndEmitChildrenAllDone does not emit when some siblings are non-terminal
-  it("checkAndEmitChildrenAllDone does not emit when siblings are not all terminal", () => {
-    const { ctx, taskEngine, eventBus } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    taskEngine.getTask.mockReturnValue(child);
-
-    const sibling1 = makeMockTask({ id: "child-1", state: TaskStates.completed });
-    const sibling2 = makeMockTask({ id: "child-2", state: TaskStates.active }); // not terminal
-    taskEngine.getChildren.mockReturnValue([sibling1, sibling2]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.checkAndEmitChildrenAllDone("child-1");
-
-    expect(eventBus.publish).not.toHaveBeenCalled();
-  });
-
   // 16. dispatchTask aborts when transition fails
   it("dispatchTask does not call orchestrator when transition fails", () => {
     const { ctx, taskEngine, orchestrator } = makeContext();
@@ -618,35 +488,6 @@ describe("TaskScheduler", () => {
     expect(scheduler.getActiveTaskIds()).toContain("t1");
 
     scheduler.removeActiveDispatch("t1");
-    expect(scheduler.getActiveTaskIds()).not.toContain("t1");
-  });
-
-  // 19. handleTaskCompletion on "decomposed" outcome logs but does not transition
-  it("handleTaskCompletion on decomposed outcome does not transition state", () => {
-    const { ctx, taskEngine } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Parent" }));
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task);
-
-    // Clear the transition call from dispatch
-    taskEngine.requestTransition.mockClear();
-
-    const result: ExecuteTaskResult = {
-      outcome: "decomposed",
-      childTaskIds: ["c1", "c2"],
-      phaseOutputs: new Map(),
-    };
-    scheduler.handleTaskCompletion("t1", result);
-
-    // No state transition for decomposed outcome
-    expect(taskEngine.requestTransition).not.toHaveBeenCalled();
-    // Still increments completion counter and removes from active
-    expect(scheduler.getTasksCompleted()).toBe(1);
     expect(scheduler.getActiveTaskIds()).not.toContain("t1");
   });
 
@@ -695,32 +536,6 @@ describe("TaskScheduler", () => {
     expect(callbacks.onTaskCompleted).toHaveBeenCalledWith("t1", completedResult);
   });
 
-  // 22. checkAndEmitChildrenAllDone reports failed_ids correctly
-  it("checkAndEmitChildrenAllDone reports failed child IDs", () => {
-    const { ctx, taskEngine, eventBus } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    taskEngine.getTask.mockReturnValue(child);
-
-    const sibling1 = makeMockTask({ id: "child-1", state: TaskStates.completed });
-    const sibling2 = makeMockTask({ id: "child-2", state: TaskStates.failed });
-    taskEngine.getChildren.mockReturnValue([sibling1, sibling2]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.checkAndEmitChildrenAllDone("child-1");
-
-    expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payload: expect.objectContaining({
-          all_succeeded: false,
-          failed_ids: ["child-2"],
-        }),
-      }),
-    );
-  });
-
   // 23. workspace cleanup failure does not prevent completion
   it("workspace cleanup failure is swallowed on completed outcome", () => {
     const { ctx, taskEngine, workspaceManager } = makeContext();
@@ -742,30 +557,6 @@ describe("TaskScheduler", () => {
     expect(() => scheduler.handleTaskCompletion("t1", result)).not.toThrow();
     // Notification should still be sent
     expect(notifications.notify).toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.completion }));
-  });
-
-  // 24. isTaskEligible: child of supervising parent with best_effort is eligible
-  it("scheduleNext dispatches child when parent is supervising with best_effort", () => {
-    const { ctx, taskEngine, orchestrator } = makeContext({ max_concurrent: 2 });
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    taskEngine.getQueuedByPriority.mockReturnValue([child]);
-    taskEngine.getTask.mockReturnValue(
-      makeMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.supervising,
-        cascade_policy: CascadePolicies.best_effort,
-      }),
-    );
-    taskEngine.getChildren.mockReturnValue([]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.scheduleNext();
-
-    expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
   });
 
   // SECURITY: handleTaskError sanitizes auth tokens in error messages before logging
@@ -878,54 +669,6 @@ describe("TaskScheduler", () => {
     );
     // Task must be removed from active dispatches regardless
     expect(scheduler.getActiveTaskIds()).not.toContain("t1");
-  });
-
-  // 28. F5: blocked child counts as terminal for children_all_done
-  it("checkAndEmitChildrenAllDone fires when a child is blocked (errored)", () => {
-    const { ctx, taskEngine, eventBus } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    taskEngine.getTask.mockReturnValue(child);
-
-    // One child completed, one blocked (errored via handleErrorOutcome)
-    const completedSibling = makeMockTask({ id: "child-1", state: TaskStates.completed });
-    const blockedSibling = makeMockTask({ id: "child-2", state: TaskStates.blocked });
-    taskEngine.getChildren.mockReturnValue([completedSibling, blockedSibling]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.checkAndEmitChildrenAllDone("child-1");
-
-    // Should fire because blocked counts as terminal
-    expect(eventBus.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: EventTypes["task.children_all_done"],
-        payload: expect.objectContaining({
-          all_succeeded: false,
-          failed_ids: ["child-2"], // blocked is included in failed_ids
-        }),
-      }),
-    );
-  });
-
-  // 29. F5: non-terminal sibling (active) still blocks children_all_done
-  it("checkAndEmitChildrenAllDone does not fire when a sibling is still active (not blocked)", () => {
-    const { ctx, taskEngine, eventBus } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    const child = makeMockTask({ id: "child-1", parent_id: "parent-1" });
-    taskEngine.getTask.mockReturnValue(child);
-
-    const completedSibling = makeMockTask({ id: "child-1", state: TaskStates.completed });
-    const activeSibling = makeMockTask({ id: "child-2", state: TaskStates.active }); // still running
-    taskEngine.getChildren.mockReturnValue([completedSibling, activeSibling]);
-
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
-    scheduler.checkAndEmitChildrenAllDone("child-1");
-
-    expect(eventBus.publish).not.toHaveBeenCalled();
   });
 
   // 30. F6: handleTaskError is resilient — catches inner errors and logs them

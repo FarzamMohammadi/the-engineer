@@ -11,7 +11,7 @@ export type TaskState =
   | "failed";
 
 /** Task sub-state when active. */
-export type SubState = "working" | "supervising" | "integrating" | "code";
+export type SubState = "working" | "code";
 
 /** RRPIR pipeline phase. */
 export type Phase =
@@ -38,8 +38,6 @@ export interface TaskListItem {
   started_at: string | null;
   completed_at: string | null;
   last_transition_at: string;
-  parent_id: string | null;
-  children_count: number;
   worktree_path: string | null;
   phases_ran: string[];
   blocked_reason: string | null;
@@ -61,8 +59,6 @@ export interface TaskDetail {
   started_at: string | null;
   completed_at: string | null;
   last_transition_at: string;
-  parent_id: string | null;
-  children: string[];
   acceptance_criteria: string[] | null;
   decisions: Record<string, unknown>[] | null;
   workspace: Record<string, unknown> | null;

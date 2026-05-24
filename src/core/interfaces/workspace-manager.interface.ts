@@ -35,8 +35,6 @@ export interface CreateWorkspaceOptions {
   title?: string | undefined;
   /** Branch to create from (defaults to config.default_base_branch). */
   baseBranch?: string | undefined;
-  /** Parent task's branch (for child tasks, takes precedence over baseBranch). */
-  parentBranch?: string | undefined;
   /** Unauthenticated clone URL (required if repo not yet cloned). */
   cloneUrl?: string | undefined;
   /** Identifier for the thoughts/ directory (e.g., "issue-42"). Derived from trigger events. */

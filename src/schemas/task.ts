@@ -17,17 +17,11 @@ export type TaskState = z.infer<typeof TaskStateSchema>;
 /** Constant enum values for TaskState. Use instead of raw strings. */
 export const TaskStates = TaskStateSchema.enum;
 
-export const SubStateSchema = z.enum(["working", "supervising", "integrating", "code"]);
+export const SubStateSchema = z.enum(["working", "code"]);
 export type SubState = z.infer<typeof SubStateSchema>;
 
 /** Constant enum values for SubState. Use instead of raw strings. */
 export const SubStates = SubStateSchema.enum;
-
-export const CascadePolicySchema = z.enum(["pause_siblings", "fail_fast", "best_effort", "manual"]);
-export type CascadePolicy = z.infer<typeof CascadePolicySchema>;
-
-/** Constant enum values for CascadePolicy. Use instead of raw strings. */
-export const CascadePolicies = CascadePolicySchema.enum;
 
 export const ActionClassSchema = z.enum([
   "read",
@@ -70,13 +64,6 @@ export const ExternalRefSchema = z.object({
 });
 export type ExternalRef = z.infer<typeof ExternalRefSchema>;
 
-export const ChildEntrySchema = z.object({
-  id: z.string(),
-  state: TaskStateSchema,
-  depends_on: z.array(z.string()),
-});
-export type ChildEntry = z.infer<typeof ChildEntrySchema>;
-
 export const TeamMemberRoleSchema = z.enum(["author", "reviewer", "domain_expert", "stakeholder"]);
 export type TeamMemberRole = z.infer<typeof TeamMemberRoleSchema>;
 
@@ -111,26 +98,6 @@ export const TaskDecisionSchema = z.object({
   timestamp: z.string().datetime(),
 });
 export type TaskDecision = z.infer<typeof TaskDecisionSchema>;
-
-export const ChildCompletionSummarySchema = z.object({
-  child_id: z.string(),
-  child_title: z.string(),
-  summary: z.string(),
-  key_outputs: z.array(
-    z.object({
-      type: z.enum(["file", "endpoint", "module", "config", "schema", "test"]),
-      path: z.string(),
-      description: z.string(),
-    }),
-  ),
-  patterns_introduced: z.array(z.string()),
-  gotchas: z.array(z.string()),
-  decisions_made: z.array(z.string()),
-  pr_number: z.number().int().positive().nullable(),
-  branch: z.string(),
-  test_status: z.enum(["passing", "failing", "no_tests"]),
-});
-export type ChildCompletionSummary = z.infer<typeof ChildCompletionSummarySchema>;
 
 export const TaskWorkspaceSchema = z.object({
   repo: z.string(),
@@ -196,11 +163,6 @@ export const TaskSchema = z.object({
   sub_state: SubStateSchema.nullable(),
   phase: z.string().nullable(),
 
-  // Hierarchy
-  parent_id: z.string().nullable(),
-  children: z.array(ChildEntrySchema),
-  cascade_policy: CascadePolicySchema,
-
   // Context
   title: z.string(),
   description: z.string(),
@@ -209,7 +171,6 @@ export const TaskSchema = z.object({
   team: z.array(TeamMemberSchema),
   related: z.array(RelatedItemSchema),
   decisions: z.array(TaskDecisionSchema),
-  child_summaries: z.array(ChildCompletionSummarySchema),
 
   // Workspace
   repo: z.string().nullable(),
@@ -286,37 +247,7 @@ export const ValidTransitions = [
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.completed },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.failed },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.queued },
-  {
-    from: TaskStates.active,
-    from_sub: SubStates.working,
-    to: TaskStates.active,
-    to_sub: SubStates.supervising,
-  },
-  {
-    from: TaskStates.active,
-    from_sub: SubStates.supervising,
-    to: TaskStates.active,
-    to_sub: SubStates.working,
-  },
-  { from: TaskStates.active, from_sub: SubStates.supervising, to: TaskStates.blocked },
-  {
-    from: TaskStates.active,
-    from_sub: SubStates.supervising,
-    to: TaskStates.active,
-    to_sub: SubStates.integrating,
-  },
-  { from: TaskStates.active, from_sub: SubStates.supervising, to: TaskStates.failed },
-  {
-    from: TaskStates.active,
-    from_sub: SubStates.integrating,
-    to: TaskStates.review_pending,
-    to_sub: SubStates.code,
-  },
-  { from: TaskStates.active, from_sub: SubStates.integrating, to: TaskStates.completed },
-  { from: TaskStates.active, from_sub: SubStates.integrating, to: TaskStates.failed },
-  { from: TaskStates.active, from_sub: SubStates.integrating, to: TaskStates.queued },
   { from: TaskStates.blocked, to: TaskStates.active, to_sub: SubStates.working },
-  { from: TaskStates.blocked, to: TaskStates.active, to_sub: SubStates.supervising },
   { from: TaskStates.blocked, to: TaskStates.failed },
   { from: TaskStates.blocked, to: TaskStates.queued },
   {
@@ -359,24 +290,6 @@ export const PermissionTable: readonly PermissionEntry[] = [
       ActionClasses.git_remote,
       ActionClasses.communicate,
       ActionClasses.task_manage,
-      ActionClasses.ask_human,
-    ],
-  },
-  {
-    state: TaskStates.active,
-    sub_state: SubStates.supervising,
-    allowed: [ActionClasses.read, ActionClasses.communicate, ActionClasses.task_manage, ActionClasses.ask_human],
-  },
-  {
-    state: TaskStates.active,
-    sub_state: SubStates.integrating,
-    allowed: [
-      ActionClasses.read,
-      ActionClasses.write,
-      ActionClasses.test,
-      ActionClasses.git_local,
-      ActionClasses.git_remote,
-      ActionClasses.communicate,
       ActionClasses.ask_human,
     ],
   },

@@ -25,7 +25,6 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
             <DetailRow label="Priority" value={String(task.priority)} />
             {task.repo && <DetailRow label="Repository" value={task.repo} />}
             {task.branch && <DetailRow label="Branch" value={task.branch} />}
-            {task.parent_id && <DetailRow label="Parent Task" value={task.parent_id} mono={true} />}
           </dl>
         </CardContent>
       </Card>
@@ -171,11 +170,11 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
   );
 }
 
-function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }): React.JSX.Element {
+function DetailRow({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="flex justify-between">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className={mono ? "font-mono text-xs" : ""}>{value}</dd>
+      <dd>{value}</dd>
     </div>
   );
 }

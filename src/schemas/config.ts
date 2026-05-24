@@ -266,13 +266,6 @@ export const QuestionBatchingConfigSchema = z.object({
 });
 export type QuestionBatchingConfig = z.infer<typeof QuestionBatchingConfigSchema>;
 
-export const DecompositionConfigSchema = z.object({
-  auto_threshold_ms: z.number().int().positive().default(14_400_000),
-  suggest_threshold_ms: z.number().int().positive().default(7_200_000),
-  min_child_size_ms: z.number().int().positive().default(1_800_000),
-});
-export type DecompositionConfig = z.infer<typeof DecompositionConfigSchema>;
-
 export const DemoConfigSchema = z.object({
   always_create: z.boolean().default(true),
   tui_base_project: z.string().nullable().default(null),
@@ -296,7 +289,6 @@ export const OrchestratorConfigSchema = z.object({
   rrpir: RrpirConfigSchema.default({}),
   notification: NotificationConfigSchema.default({}),
   question_batching: QuestionBatchingConfigSchema.default({}),
-  decomposition: DecompositionConfigSchema.default({}),
   demo: DemoConfigSchema.default({}),
   phases: PhasesConfigSchema.default({}),
   journal: JournalConfigSchema.default({}),

@@ -100,7 +100,6 @@ export const PlanningOutputSchema = z.object({
   approach: z.string(),
   file_changes: z.array(FileChangeSchema),
   risks: z.array(RiskSchema),
-  decomposition_plan: z.lazy(() => LLMDecompositionPlanSchema).nullable(),
 });
 export type PlanningOutput = z.infer<typeof PlanningOutputSchema>;
 
@@ -181,37 +180,6 @@ export const QuestionBatchSchema = z.object({
   batch_window_ms: z.number().int(),
 });
 export type QuestionBatch = z.infer<typeof QuestionBatchSchema>;
-
-// ── Decomposition ───────────────────────────────────────────────────────────────
-
-export const DecompositionChildSchema = z.object({
-  title: z.string().max(200),
-  description: z.string().max(5000),
-  estimated_time_ms: z.number().int(),
-  depends_on: z.array(z.number().int()),
-  acceptance_criteria: z.array(z.string().max(500)).max(20),
-});
-export type DecompositionChild = z.infer<typeof DecompositionChildSchema>;
-
-export const DecompositionPlanSchema = z.object({
-  parent_task_id: z.string(),
-  rationale: z.string(),
-  children: z.array(DecompositionChildSchema),
-  dependency_graph: z.string(),
-  total_estimated_ms: z.number().int(),
-  parallelizable: z.boolean(),
-});
-export type DecompositionPlan = z.infer<typeof DecompositionPlanSchema>;
-
-/** LLM-facing decomposition plan (parent_task_id excluded — set by Orchestrator). */
-export const LLMDecompositionPlanSchema = z.object({
-  rationale: z.string().max(2000),
-  children: z.array(DecompositionChildSchema).max(10),
-  dependency_graph: z.string(),
-  total_estimated_ms: z.number().int(),
-  parallelizable: z.boolean(),
-});
-export type LLMDecompositionPlan = z.infer<typeof LLMDecompositionPlanSchema>;
 
 // ── Safety Query / Verdict ──────────────────────────────────────────────────────
 

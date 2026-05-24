@@ -73,7 +73,7 @@ delete the whole consumer side. Future restoration roadmap is documented in
   `SubStateSchema` shrinks from `working | supervising | integrating | code` to
   `working | code`.
 - **ValidTransitions** — delete every entry involving `supervising` or `integrating`
-  sub-states (eight entries).
+  sub-states.
 - **Permission table** — delete entries for `supervising` and `integrating`.
 - **Database migration** — rewrite `001_schema.sql` to drop the dead columns and the
   removed sub-state values from CHECK constraints (per universal rule "consolidate
@@ -94,15 +94,40 @@ delete the whole consumer side. Future restoration roadmap is documented in
 
 **Cross-slice handoffs created by this deletion:**
 
-- **→ Slice 8 (RRPIR phases):** delete `decomposition-handler.ts` entirely, remove the
-  `handleDecomposition` call site in `phase-runner.ts`, remove `decomposition_plan`
-  from `PlanningOutputSchema`, delete `DecompositionChildSchema` /
-  `DecompositionPlanSchema` / `LLMDecompositionPlanSchema`, strip the decomposition
-  instruction from the planning prompt, and re-evaluate whether the `integration`
-  phase is itself dead (its prompt references decomposition as its reason to exist).
-- **→ Slice 15 (dashboard revisit):** the dashboard client declares a `SubState` type
-  and may render parent/child grouping or supervising/integrating states. Backend
-  deletes the data; UI cleanup is Slice 15.
+- **→ Slice 8 (RRPIR phases):**
+  - Strip the decomposition instruction from the planning prompt
+    (`prompts/planning.ts`) — cosmetic prose, separate from the schema deletion.
+  - Re-evaluate whether the `integration` phase itself is dead — its prompt
+    (`prompts/integration.ts`) and `prompts/demo-prep.ts` still cite decomposition as
+    its reason to exist; both references are prose only after Session 1.
+  - Re-evaluate `IntegrationOutputSchema` (`schemas/orchestrator.ts`) if the
+    integration phase is dropped.
+  - Re-evaluate `sessions.end_reason = 'decomposed'` (DB CHECK in `001_schema.sql`)
+    and `SessionEndReasons.decomposed` (`schemas/session-memory.ts`). After
+    `decomposition-handler.ts` was deleted in Session 1 these became unused — left in
+    place this session because no producer is left writing them and the call site is
+    gone, but they fail the no-vestigial-scaffolding check.
+  - Re-evaluate `Phases.integration` enum entry once the phase itself is dropped.
+- **→ Slice 15 (dashboard revisit):** the dashboard client `SubState` type now
+  matches the Core enum (`"working" | "code"`), the server stops sending
+  `parent_id`/`children`/`child_summaries`, and `task-overview-tab.tsx` no longer
+  renders Parent Task. Remaining UI cleanup for visual treatment of the simplified
+  state machine (badges, filters, parent/child grouping) stays in Slice 15.
+
+**Session 1 deviation from this list (recorded for the next session to absorb):**
+
+The plan deferred all orchestrator-side decomposition deletions to Slice 8, but
+typecheck against the deleted Task schema fields forced Session 1 to pull the
+mechanical deletions in: `decomposition-handler.ts` (entire file),
+`handleDecomposition` call site in `phase-runner.ts`, `DecompositionHandler` wiring
+in `orchestrator/index.ts`, `Outcomes.decomposed` enum entry + `ExecuteTaskResult`
+variant in `orchestrator/types.ts`, `decomposition_plan` in `PlanningOutputSchema`,
+and the `DecompositionChildSchema` / `DecompositionPlanSchema` /
+`LLMDecompositionPlanSchema` definitions in `schemas/orchestrator.ts`. The
+remaining Slice 8 items above (prompt prose, integration phase re-evaluation,
+session-end reason cleanup) stayed out of scope. The "8 ValidTransitions" count in
+D1's first paragraph also undercounted by two — the actual delete set was 10, all
+genuinely involving supervising/integrating.
 
 ### #2 — Single retry-policy module, per-category
 

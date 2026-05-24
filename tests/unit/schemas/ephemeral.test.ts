@@ -29,7 +29,7 @@ import {
   KnowledgeDomains,
   KnowledgeScopes,
 } from "../../../src/schemas/session-memory.js";
-import { CascadePolicies, SubStates, TaskStates } from "../../../src/schemas/task.js";
+import { SubStates, TaskStates } from "../../../src/schemas/task.js";
 
 // ── Daemon State ────────────────────────────────────────────────────────────────
 
@@ -216,9 +216,6 @@ describe("DispatchSchema", () => {
     state: TaskStates.active,
     sub_state: SubStates.working,
     phase: Phases.execution,
-    parent_id: null,
-    children: [],
-    cascade_policy: CascadePolicies.pause_siblings,
     title: "Fix auth bug",
     description: "Users can't log in",
     source_text: "Issue body",
@@ -226,7 +223,6 @@ describe("DispatchSchema", () => {
     team: [],
     related: [],
     decisions: [],
-    child_summaries: [],
     repo: null,
     workspace: null,
     review: null,

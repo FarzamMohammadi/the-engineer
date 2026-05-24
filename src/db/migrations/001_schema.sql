@@ -11,13 +11,8 @@ CREATE TABLE tasks (
 
   -- State
   state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
-  sub_state               TEXT CHECK(sub_state IN ('working','supervising','integrating','code')),
+  sub_state               TEXT CHECK(sub_state IN ('working','code')),
   phase                   TEXT,
-
-  -- Hierarchy
-  parent_id               TEXT REFERENCES tasks(id),
-  children                TEXT NOT NULL DEFAULT '[]',
-  cascade_policy          TEXT NOT NULL DEFAULT 'pause_siblings' CHECK(cascade_policy IN ('pause_siblings','fail_fast','best_effort','manual')),
 
   -- Context
   title                   TEXT NOT NULL,
@@ -27,7 +22,6 @@ CREATE TABLE tasks (
   team                    TEXT NOT NULL DEFAULT '[]',
   related                 TEXT NOT NULL DEFAULT '[]',
   decisions               TEXT NOT NULL DEFAULT '[]',
-  child_summaries         TEXT NOT NULL DEFAULT '[]',
 
   -- Workspace
   repo                    TEXT,
@@ -73,7 +67,6 @@ CREATE TABLE tasks (
 );
 
 CREATE INDEX idx_tasks_state ON tasks(state);
-CREATE INDEX idx_tasks_parent_id ON tasks(parent_id);
 CREATE INDEX idx_tasks_session_id ON tasks(session_id);
 CREATE INDEX idx_tasks_priority ON tasks(priority DESC);
 CREATE INDEX idx_tasks_state_priority ON tasks(state, priority DESC);
@@ -92,8 +85,8 @@ CREATE TABLE state_transitions (
   task_id         TEXT NOT NULL REFERENCES tasks(id),
   from_state      TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
   to_state        TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
-  from_sub        TEXT CHECK(from_sub IN ('working','supervising','integrating','code')),
-  to_sub          TEXT CHECK(to_sub IN ('working','supervising','integrating','code')),
+  from_sub        TEXT CHECK(from_sub IN ('working','code')),
+  to_sub          TEXT CHECK(to_sub IN ('working','code')),
   reason          TEXT NOT NULL,
   timestamp       TEXT NOT NULL,
   triggered_by    TEXT NOT NULL

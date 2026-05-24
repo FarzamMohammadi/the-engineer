@@ -19,10 +19,10 @@ function insertTask(title?: string): string {
   testDb.db
     .prepare(
       `INSERT INTO tasks (
-      id, idempotency_key, state, cascade_policy, title, description, source_text,
-      acceptance_criteria, children, team, related, decisions, child_summaries,
+      id, idempotency_key, state, title, description, source_text,
+      acceptance_criteria, team, related, decisions,
       priority, llm_tokens, llm_cost_usd, compute_time_ms, created_at, last_transition_at
-    ) VALUES (?, ?, 'requirements_gathering', 'pause_siblings', ?, '', '', '[]', '[]', '[]', '[]', '[]', '[]', 50, 0, 0.0, 0, ?, ?)`,
+    ) VALUES (?, ?, 'requirements_gathering', ?, '', '', '[]', '[]', '[]', '[]', 50, 0, 0.0, 0, ?, ?)`,
     )
     .run(id, `test:${id}`, title ?? "Test task", now, now);
   return id;

@@ -31,7 +31,6 @@ export type Subscription = z.infer<typeof SubscriptionSchema>;
 export const EventTypeSchema = z.enum([
   "task.created",
   "task.state_changed",
-  "task.children_all_done",
   "task.feedback_received",
   "action.rejected",
   "cost.incurred",
@@ -81,7 +80,6 @@ export const EventTypes = EventTypeSchema.enum;
 
 export const TaskCreatedPayloadSchema = z.object({
   task_id: z.string(),
-  parent_id: z.string().nullable(),
   title: z.string(),
   external_ref: ExternalRefSchema.nullable(),
   idempotency_key: z.string(),
@@ -101,14 +99,6 @@ export const TaskStateChangedPayloadSchema = z.object({
   triggered_by: z.string(),
 });
 export type TaskStateChangedPayload = z.infer<typeof TaskStateChangedPayloadSchema>;
-
-export const TaskChildrenAllDonePayloadSchema = z.object({
-  parent_task_id: z.string(),
-  child_ids: z.array(z.string()),
-  all_succeeded: z.boolean(),
-  failed_ids: z.array(z.string()),
-});
-export type TaskChildrenAllDonePayload = z.infer<typeof TaskChildrenAllDonePayloadSchema>;
 
 export const TaskFeedbackReceivedPayloadSchema = z.object({
   task_id: z.string(),
@@ -488,7 +478,6 @@ export type SystemCleanupCompletedPayload = z.infer<typeof SystemCleanupComplete
 export type EventPayloads = {
   "task.created": TaskCreatedPayload;
   "task.state_changed": TaskStateChangedPayload;
-  "task.children_all_done": TaskChildrenAllDonePayload;
   "task.feedback_received": TaskFeedbackReceivedPayload;
   "action.rejected": ActionRejectedPayload;
   "cost.incurred": CostIncurredPayload;
@@ -540,7 +529,6 @@ export type TypedEvent<T extends keyof EventPayloads> = Omit<Event, "payload" | 
 export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "task.created": TaskCreatedPayloadSchema,
   "task.state_changed": TaskStateChangedPayloadSchema,
-  "task.children_all_done": TaskChildrenAllDonePayloadSchema,
   "task.feedback_received": TaskFeedbackReceivedPayloadSchema,
   "action.rejected": ActionRejectedPayloadSchema,
   "cost.incurred": CostIncurredPayloadSchema,

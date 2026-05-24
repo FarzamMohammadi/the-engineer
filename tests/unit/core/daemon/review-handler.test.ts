@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
 import {
   type ReviewHandler,
-  type ReviewHandlerCallbacks,
   createReviewHandler,
   detectCommentApproval,
   evaluatePostApprovalChecks,
@@ -83,12 +82,6 @@ function createMockNotifications(): NotificationRouter {
   };
 }
 
-function createMockCallbacks(): ReviewHandlerCallbacks {
-  return {
-    onTaskCompletionFinalized: vi.fn(),
-  };
-}
-
 function createReviewTask(overrides?: Record<string, unknown>) {
   return {
     id: "task-1",
@@ -112,7 +105,6 @@ function createReviewTask(overrides?: Record<string, unknown>) {
 
 let hostingPlugin: ReturnType<typeof createMockHostingPlugin>;
 let notifications: NotificationRouter;
-let callbacks: ReviewHandlerCallbacks;
 let ctx: ReviewHandlerContext;
 let handler: ReviewHandler;
 let clockNow: number;
@@ -123,7 +115,6 @@ function buildContext(
 ) {
   hostingPlugin = createMockHostingPlugin();
   notifications = createMockNotifications();
-  callbacks = createMockCallbacks();
   clockNow = 1_000_000;
 
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
@@ -188,7 +179,7 @@ function buildContext(
     observer: createTestObserverFacade("daemon"),
   } as unknown as ReviewHandlerContext;
 
-  handler = createReviewHandler(ctx, notifications, callbacks);
+  handler = createReviewHandler(ctx, notifications);
 }
 
 /** Flush microtask queue so fire-and-forget promises resolve. */
@@ -233,16 +224,6 @@ describe("ReviewHandler", () => {
       await handler.checkMerges();
 
       expect(hostingPlugin.getPRStatus).not.toHaveBeenCalled();
-    });
-
-    it("calls onTaskCompletionFinalized callback after merge", async () => {
-      const task = createReviewTask();
-      buildContext([task]);
-      hostingPlugin.getPRStatus.mockResolvedValue({ state: "merged", draft: false });
-
-      await handler.checkMerges();
-
-      expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("sends completion notification and issue comment on merge", async () => {
@@ -476,7 +457,7 @@ describe("ReviewHandler", () => {
         max_failures_before_pause: 1,
       };
       // Re-create handler with the updated config
-      handler = createReviewHandler(ctx, notifications, callbacks);
+      handler = createReviewHandler(ctx, notifications);
 
       hostingPlugin.getReviewStatus.mockRejectedValue(new Error("API down"));
 
@@ -569,7 +550,6 @@ describe("ReviewHandler", () => {
       expect(notifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({ kind: NotificationKinds.completion, taskId: "task-1" }),
       );
-      expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("on approved/code with auto-merge + CI passing: merges PR and completes", async () => {
@@ -617,7 +597,6 @@ describe("ReviewHandler", () => {
         "review",
         expect.objectContaining({ pr_state: "merged" }),
       );
-      expect(callbacks.onTaskCompletionFinalized).toHaveBeenCalledWith("task-1");
     });
 
     it("on approved/code with auto-merge + CI pending: defers merge", async () => {

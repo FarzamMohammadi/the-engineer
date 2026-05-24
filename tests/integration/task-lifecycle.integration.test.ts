@@ -212,43 +212,6 @@ describe("Task lifecycle (integration)", () => {
     });
   });
 
-  describe("child task linkage", () => {
-    it("creates child tasks linked to parent via parent_id", () => {
-      setup();
-
-      const parent = taskEngine.createTask({
-        title: "Parent task",
-        repo: "test/repo",
-        source: "test",
-        idempotency_key: "lifecycle:parent",
-        description: "",
-      });
-
-      const child1 = taskEngine.createTask({
-        title: "Child 1",
-        repo: "test/repo",
-        source: "test",
-        idempotency_key: "lifecycle:child1",
-        description: "",
-        parent_id: parent.id,
-      });
-
-      const child2 = taskEngine.createTask({
-        title: "Child 2",
-        repo: "test/repo",
-        source: "test",
-        idempotency_key: "lifecycle:child2",
-        description: "",
-        parent_id: parent.id,
-      });
-
-      const children = taskEngine.getChildren(parent.id);
-      expect(children).toHaveLength(2);
-      expect(children.map((c) => c.id)).toContain(child1.id);
-      expect(children.map((c) => c.id)).toContain(child2.id);
-    });
-  });
-
   describe("query methods", () => {
     it("getTasksByState returns tasks in the requested state", () => {
       setup();

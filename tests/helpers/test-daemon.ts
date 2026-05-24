@@ -55,7 +55,6 @@ export interface TestDaemonHandle {
     updateTaskField: Mock;
     updateTracking: Mock;
     checkPermission: Mock;
-    getChildren: Mock;
     getStateHistory: Mock;
   };
   orchestrator: {
@@ -218,7 +217,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     updateTaskField: vi.fn(),
     updateTracking: vi.fn(),
     checkPermission: vi.fn().mockReturnValue({ allowed: true }),
-    getChildren: vi.fn().mockReturnValue([]),
     getStateHistory: vi.fn().mockReturnValue([]),
     findByIdempotencyKey: vi.fn().mockReturnValue(false),
   };

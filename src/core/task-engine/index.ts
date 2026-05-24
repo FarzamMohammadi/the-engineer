@@ -4,7 +4,7 @@ import { type SqliteColumnType, toSqlite, toSqliteJson } from "../../db/serializ
 
 import { EventTypes, TaskCreatedPayloadSchema, TaskStateChangedPayloadSchema } from "../../schemas/events.js";
 import type { ActionClass, StateTransition, SubState, Task, TaskState } from "../../schemas/task.js";
-import { CascadePolicies, TaskStates } from "../../schemas/task.js";
+import { TaskStates } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type {
@@ -72,7 +72,6 @@ export const EVENTS: EventDeclaration[] = [
 const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
   // TEXT columns
   phase: "text",
-  cascade_policy: "text",
   session_id: "text",
   description: "text",
   source_text: "text",
@@ -96,11 +95,9 @@ const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
   workspace: "json",
   review: "json",
   blocked: "json",
-  children: "json",
   team: "json",
   related: "json",
   decisions: "json",
-  child_summaries: "json",
   acceptance_criteria: "json",
 };
 
@@ -141,9 +138,8 @@ export class TaskEngine implements ITaskEngine {
     this.insertTaskStmt = db.prepare(`
       INSERT INTO tasks (
         id, external_ref, idempotency_key, state, sub_state, phase,
-        parent_id, children, cascade_policy,
         title, description, source_text, acceptance_criteria,
-        team, related, decisions, child_summaries,
+        team, related, decisions,
         repo, clone_url, thoughts_id, workspace, review, blocked,
         return_to_phase,
         priority, llm_tokens, llm_cost_usd, compute_time_ms,
@@ -152,9 +148,8 @@ export class TaskEngine implements ITaskEngine {
         session_id, version
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
         ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?,
         ?, ?, ?, ?,
@@ -188,8 +183,6 @@ export class TaskEngine implements ITaskEngine {
     const id = ulid();
     const now = new Date().toISOString();
     const priority = input.priority ?? 50;
-    const parentId = input.parent_id ?? null;
-    const cascadePolicy = input.cascade_policy ?? CascadePolicies.pause_siblings;
     const description = input.description ?? "";
     const sourceText = input.source_text ?? "";
     const acceptanceCriteria = input.acceptance_criteria ?? [];
@@ -201,9 +194,6 @@ export class TaskEngine implements ITaskEngine {
       TaskStates.requirements_gathering,
       null, // sub_state
       null, // phase
-      parentId,
-      "[]", // children
-      cascadePolicy,
       input.title,
       description,
       sourceText,
@@ -211,7 +201,6 @@ export class TaskEngine implements ITaskEngine {
       "[]", // team
       "[]", // related
       "[]", // decisions
-      "[]", // child_summaries
       input.repo, // repo
       input.clone_url ?? null, // clone_url
       input.thoughts_id ?? null, // thoughts_id
@@ -239,7 +228,6 @@ export class TaskEngine implements ITaskEngine {
       task_id: id,
       payload: {
         task_id: id,
-        parent_id: parentId,
         title: input.title,
         external_ref: externalRef,
         idempotency_key: input.idempotency_key,
@@ -256,9 +244,6 @@ export class TaskEngine implements ITaskEngine {
       state: TaskStates.requirements_gathering,
       sub_state: null,
       phase: null,
-      parent_id: parentId,
-      children: [],
-      cascade_policy: cascadePolicy,
       title: input.title,
       description,
       source_text: sourceText,
@@ -266,7 +251,6 @@ export class TaskEngine implements ITaskEngine {
       team: [],
       related: [],
       decisions: [],
-      child_summaries: [],
       repo: input.repo,
       clone_url: input.clone_url ?? null,
       thoughts_id: input.thoughts_id ?? null,
@@ -346,11 +330,6 @@ export class TaskEngine implements ITaskEngine {
     return this.queries.getQueuedByPriority();
   }
 
-  /** Get all children of a parent task, ordered by created_at ASC. */
-  getChildren(parentId: string): Task[] {
-    return this.queries.getChildren(parentId);
-  }
-
   /** Get the full state transition history for a task, ordered by timestamp ASC. */
   getStateHistory(taskId: string): StateTransition[] {
     return this.queries.getStateHistory(taskId);
@@ -361,10 +340,9 @@ export class TaskEngine implements ITaskEngine {
   /**
    * Update a single field on a task.
    *
-   * JSON fields (workspace, review, blocked, children, team, related, decisions,
-   * child_summaries, acceptance_criteria, external_ref) are automatically serialized.
-   * Scalar fields (phase, cascade_policy, session_id, description, source_text)
-   * are written directly.
+   * JSON fields (workspace, review, blocked, team, related, decisions,
+   * acceptance_criteria, external_ref) are automatically serialized.
+   * Scalar fields (phase, session_id, description, source_text) are written directly.
    */
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void {
     const stmt = this.updateFieldStmts.get(field);

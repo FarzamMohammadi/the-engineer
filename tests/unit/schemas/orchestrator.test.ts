@@ -3,13 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   CommEventSchema,
   Complexities,
-  DecompositionChildSchema,
-  DecompositionPlanSchema,
   DemoPrepOutputSchema,
   ExecutionOutputSchema,
   FileChangeSchema,
   IntegrationOutputSchema,
-  LLMDecompositionPlanSchema,
   PhaseOutputSchema,
   PhaseSchema,
   Phases,
@@ -175,34 +172,8 @@ describe("PlanningOutputSchema", () => {
       approach: "Add OAuth middleware",
       file_changes: [{ file: "src/auth.ts", change_type: "create", description: "OAuth handler" }],
       risks: [{ risk: "Token expiry", mitigation: "Refresh logic" }],
-      decomposition_plan: null,
     });
     expect(output.file_changes).toHaveLength(1);
-  });
-
-  it("accepts valid decomposition_plan", () => {
-    const output = PlanningOutputSchema.parse({
-      approach: "Complex task",
-      file_changes: [],
-      risks: [],
-      decomposition_plan: {
-        rationale: "Task has 3 independent areas",
-        children: [
-          {
-            title: "Subtask A",
-            description: "First area",
-            estimated_time_ms: 60000,
-            depends_on: [],
-            acceptance_criteria: ["Tests pass"],
-          },
-        ],
-        dependency_graph: "A → B",
-        total_estimated_ms: 120000,
-        parallelizable: false,
-      },
-    });
-    expect(output.decomposition_plan).toBeDefined();
-    expect(output.decomposition_plan?.children).toHaveLength(1);
   });
 });
 
@@ -393,175 +364,6 @@ describe("QuestionBatchSchema", () => {
       batch_window_ms: 30_000,
     });
     expect(batch.questions).toHaveLength(1);
-  });
-});
-
-// ── Decomposition ───────────────────────────────────────────────────────────────
-
-describe("DecompositionChildSchema", () => {
-  it("parses valid child", () => {
-    const child = DecompositionChildSchema.parse({
-      title: "Implement auth endpoint",
-      description: "POST /auth/login",
-      estimated_time_ms: 3_600_000,
-      depends_on: [0],
-      acceptance_criteria: ["Returns JWT", "Validates credentials"],
-    });
-    expect(child.depends_on).toEqual([0]);
-  });
-});
-
-describe("DecompositionPlanSchema", () => {
-  it("parses valid plan", () => {
-    const plan = DecompositionPlanSchema.parse({
-      parent_task_id: "01ABC",
-      rationale: "Too complex for single task",
-      children: [
-        {
-          title: "Sub-task 1",
-          description: "First part",
-          estimated_time_ms: 1_800_000,
-          depends_on: [],
-          acceptance_criteria: ["Compiles"],
-        },
-      ],
-      dependency_graph: "1->2->(3,4 parallel)->5",
-      total_estimated_ms: 7_200_000,
-      parallelizable: true,
-    });
-    expect(plan.children).toHaveLength(1);
-    expect(plan.parallelizable).toBe(true);
-  });
-});
-
-describe("LLMDecompositionPlanSchema", () => {
-  it("parses valid plan (no parent_task_id)", () => {
-    const plan = LLMDecompositionPlanSchema.parse({
-      rationale: "3 independent areas",
-      children: [
-        {
-          title: "Sub-task 1",
-          description: "First part",
-          estimated_time_ms: 60000,
-          depends_on: [],
-          acceptance_criteria: ["Tests pass"],
-        },
-      ],
-      dependency_graph: "A",
-      total_estimated_ms: 60000,
-      parallelizable: false,
-    });
-    expect(plan.children).toHaveLength(1);
-    expect(plan.rationale).toBe("3 independent areas");
-  });
-
-  it("rejects plan missing required fields", () => {
-    expect(() =>
-      LLMDecompositionPlanSchema.parse({
-        invalid: "no rationale or children",
-      }),
-    ).toThrow();
-  });
-
-  it("rejects plan with invalid children", () => {
-    expect(() =>
-      LLMDecompositionPlanSchema.parse({
-        rationale: "test",
-        children: [{ title: "missing fields" }],
-        dependency_graph: "",
-        total_estimated_ms: 0,
-        parallelizable: false,
-      }),
-    ).toThrow();
-  });
-
-  it("rejects plan with more than 10 children", () => {
-    const child = {
-      title: "t",
-      description: "d",
-      estimated_time_ms: 1000,
-      depends_on: [],
-      acceptance_criteria: [],
-    };
-    expect(() =>
-      LLMDecompositionPlanSchema.parse({
-        rationale: "too many",
-        children: Array.from({ length: 11 }, () => child),
-        dependency_graph: "",
-        total_estimated_ms: 0,
-        parallelizable: false,
-      }),
-    ).toThrow();
-  });
-
-  it("rejects plan with rationale exceeding 2000 chars", () => {
-    expect(() =>
-      LLMDecompositionPlanSchema.parse({
-        rationale: "x".repeat(2001),
-        children: [
-          {
-            title: "t",
-            description: "d",
-            estimated_time_ms: 1000,
-            depends_on: [],
-            acceptance_criteria: [],
-          },
-        ],
-        dependency_graph: "",
-        total_estimated_ms: 0,
-        parallelizable: false,
-      }),
-    ).toThrow();
-  });
-});
-
-describe("DecompositionChildSchema — security limits", () => {
-  it("rejects title exceeding 200 chars", () => {
-    expect(() =>
-      DecompositionChildSchema.parse({
-        title: "x".repeat(201),
-        description: "d",
-        estimated_time_ms: 1000,
-        depends_on: [],
-        acceptance_criteria: [],
-      }),
-    ).toThrow();
-  });
-
-  it("rejects description exceeding 5000 chars", () => {
-    expect(() =>
-      DecompositionChildSchema.parse({
-        title: "t",
-        description: "x".repeat(5001),
-        estimated_time_ms: 1000,
-        depends_on: [],
-        acceptance_criteria: [],
-      }),
-    ).toThrow();
-  });
-
-  it("rejects more than 20 acceptance criteria", () => {
-    expect(() =>
-      DecompositionChildSchema.parse({
-        title: "t",
-        description: "d",
-        estimated_time_ms: 1000,
-        depends_on: [],
-        acceptance_criteria: Array.from({ length: 21 }, (_, i) => `criterion ${i}`),
-      }),
-    ).toThrow();
-  });
-
-  it("rejects acceptance criterion exceeding 500 chars", () => {
-    expect(() =>
-      DecompositionChildSchema.parse({
-        title: "t",
-        description: "d",
-        estimated_time_ms: 1000,
-        depends_on: [],
-        acceptance_criteria: ["x".repeat(501)],
-      }),
-    ).toThrow();
   });
 });
 

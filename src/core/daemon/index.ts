@@ -16,13 +16,11 @@ import {
   PreemptionCompletedPayloadSchema,
   PreemptionRequestedPayloadSchema,
   ReviewPollCompletedPayloadSchema,
-  type TaskChildrenAllDonePayload,
-  TaskChildrenAllDonePayloadSchema,
   type TaskFeedbackReceivedPayload,
   TaskFeedbackReceivedPayloadSchema,
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
-import { SubStates, TaskStates } from "../../schemas/task.js";
+import { TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import { createEvaluationManager } from "../evaluation/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
@@ -62,13 +60,6 @@ export const EVENTS: EventDeclaration[] = [
     payloadSchema: HealthStuckDetectedPayloadSchema,
     publishers: ["daemon"],
     subscribers: ["daemon"],
-  },
-  {
-    type: EventTypes["task.children_all_done"],
-    description: "Emitted when all child tasks of a parent have completed",
-    payloadSchema: TaskChildrenAllDonePayloadSchema,
-    publishers: ["daemon"],
-    subscribers: [],
   },
   {
     type: EventTypes["preemption.requested"],
@@ -239,9 +230,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   const triggerPoller = createTriggerPoller(ctx);
   const responsePoller = createResponsePoller(ctx, unblockResolver);
 
-  const reviewHandler = createReviewHandler(ctx, notifications, {
-    onTaskCompletionFinalized: (taskId) => scheduler.checkAndEmitChildrenAllDone(taskId),
-  });
+  const reviewHandler = createReviewHandler(ctx, notifications);
 
   const healthMonitor = createDaemonHealthMonitor(ctx, notifications, () => scheduler.getActiveTaskIds());
 
@@ -260,98 +249,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
   function handleTaskError(taskId: string, error: unknown): void {
     scheduler.handleTaskError(taskId, error);
-  }
-
-  // ── Children All Done Handler ─────────────────────────────────────────
-
-  function handleChildrenAllDone(payload: TaskChildrenAllDonePayload): void {
-    const parent = taskEngine.getTask(payload.parent_task_id);
-    if (!parent) {
-      observer.warn("Parent task not found for children_all_done", {
-        parentTaskId: payload.parent_task_id,
-      });
-      return;
-    }
-
-    if (parent.state !== TaskStates.active || parent.sub_state !== SubStates.supervising) {
-      observer.warn("Parent not in supervising state for children_all_done", {
-        parentTaskId: payload.parent_task_id,
-        state: parent.state,
-        subState: parent.sub_state,
-      });
-      return;
-    }
-
-    // Populate child_summaries on parent before any dispatch
-    const children = taskEngine.getChildren(parent.id);
-    const summaries = children.map((child) => ({
-      child_id: child.id,
-      child_title: child.title,
-      summary: child.description,
-      key_outputs: [] as Array<{ type: "file"; path: string; description: string }>,
-      patterns_introduced: [] as string[],
-      gotchas: [] as string[],
-      decisions_made: child.decisions.map((d) => d.what),
-      pr_number: child.review?.pr_number ?? null,
-      branch: child.workspace?.branch ?? "",
-      test_status: (child.state === TaskStates.completed ? "passing" : "failing") as "passing" | "failing" | "no_tests",
-    }));
-    taskEngine.updateTaskField(parent.id, "child_summaries", summaries);
-
-    // Slot overrun check: if all slots are full, transition parent to queued
-    // for normal scheduling instead of bypassing the slot check.
-    const availableSlots = config.max_concurrent - scheduler.getActiveTaskIds().length;
-    if (availableSlots <= 0) {
-      const requeue = taskEngine.requestTransition(
-        parent.id,
-        TaskStates.queued,
-        null,
-        "slot_unavailable_after_children_done",
-        "daemon",
-      );
-      if (requeue.success) {
-        observer.info("Parent task queued (slot unavailable after children done)", {
-          parentTaskId: parent.id,
-        });
-      } else {
-        observer.error("Failed to requeue parent after slot overrun", {
-          parentTaskId: parent.id,
-          reason: requeue.reason,
-        });
-      }
-      return;
-    }
-
-    // Slots available — transition to active.integrating and dispatch
-    const transition = taskEngine.requestTransition(
-      parent.id,
-      TaskStates.active,
-      SubStates.integrating,
-      "children_all_done",
-      "daemon",
-    );
-
-    if (!transition.success) {
-      observer.error("Failed to transition parent to integrating", {
-        parentTaskId: parent.id,
-        reason: transition.reason,
-      });
-      return;
-    }
-
-    // Re-fetch parent with updated child_summaries for dispatch
-    const updatedParent = taskEngine.getTask(parent.id);
-    if (!updatedParent) {
-      observer.error("Parent task disappeared after update", { parentTaskId: parent.id });
-      return;
-    }
-    scheduler.dispatchTask(updatedParent);
-
-    observer.info("Parent task resumed for integration after all children completed", {
-      parentTaskId: parent.id,
-      allSucceeded: payload.all_succeeded,
-      failedIds: payload.failed_ids,
-    });
   }
 
   // ── PID File ───────────────────────────────────────────────────────────
@@ -420,11 +317,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       notifications.syncStateToCommPlugin(payload);
     });
 
-    eventBus.subscribe("daemon:children-done", EventTypes["task.children_all_done"], (event: Event) => {
-      const payload = event.payload as TaskChildrenAllDonePayload;
-      handleChildrenAllDone(payload);
-    });
-
     eventBus.subscribe("daemon:feedback", EventTypes["task.feedback_received"], (event: Event) => {
       const payload = event.payload as TaskFeedbackReceivedPayload;
       reviewHandler.handleFeedbackEvent(payload);
@@ -490,14 +382,13 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       });
     });
 
-    observer.debug("Event subscriptions registered", { count: 9 });
+    observer.debug("Event subscriptions registered");
   }
 
   function unregisterSubscriptions(): void {
     eventBus.unsubscribe("daemon:cost");
     eventBus.unsubscribe("daemon:comm");
     eventBus.unsubscribe("daemon:state-sync");
-    eventBus.unsubscribe("daemon:children-done");
     eventBus.unsubscribe("daemon:feedback");
     eventBus.unsubscribe("daemon:health-trigger");
     eventBus.unsubscribe("daemon:health-stuck");

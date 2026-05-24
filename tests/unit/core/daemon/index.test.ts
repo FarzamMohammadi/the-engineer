@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { deriveAggregateReviewState, isSlotConsuming, shouldPreempt } from "../../../../src/core/daemon/index.js";
 import type { ExecuteTaskResult } from "../../../../src/core/orchestrator/index.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
-import { CascadePolicies, SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import { createMockTriggerPlugin, createTestDaemon, createTestTriggerEvent } from "../../../helpers/test-daemon.js";
 import { createMockTask } from "../../../helpers/test-orchestrator.js";
 
@@ -14,14 +14,6 @@ import { createMockTask } from "../../../helpers/test-orchestrator.js";
 describe("isSlotConsuming", () => {
   it("returns true for active.working", () => {
     expect(isSlotConsuming(TaskStates.active, SubStates.working)).toBe(true);
-  });
-
-  it("returns true for active.integrating", () => {
-    expect(isSlotConsuming(TaskStates.active, SubStates.integrating)).toBe(true);
-  });
-
-  it("returns false for active.supervising", () => {
-    expect(isSlotConsuming(TaskStates.active, SubStates.supervising)).toBe(false);
   });
 
   it("returns false for queued", () => {
@@ -726,112 +718,6 @@ describe("Daemon", () => {
     });
   });
 
-  // ── Child Task Eligibility (isTaskEligible) ──────────────────────────
-
-  describe("child task eligibility", () => {
-    it("schedules top-level tasks (no parent_id)", async () => {
-      handle = createTestDaemon();
-      const task = createMockTask({
-        id: "top-level",
-        state: TaskStates.queued,
-        sub_state: null,
-        parent_id: null,
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
-
-      await handle.daemon.tick();
-
-      expect(handle.orchestrator.executeTask).toHaveBeenCalled();
-    });
-
-    it("skips child task when parent is not supervising", async () => {
-      handle = createTestDaemon();
-      const child = createMockTask({
-        id: "child-1",
-        state: TaskStates.queued,
-        sub_state: null,
-        parent_id: "parent-1",
-      });
-      const parent = createMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.working,
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
-      handle.taskEngine.getTask.mockReturnValue(parent);
-
-      await handle.daemon.tick();
-
-      expect(handle.orchestrator.executeTask).not.toHaveBeenCalled();
-    });
-
-    it("schedules child task when parent is supervising", async () => {
-      handle = createTestDaemon();
-      const child = createMockTask({
-        id: "child-1",
-        state: TaskStates.queued,
-        sub_state: null,
-        parent_id: "parent-1",
-      });
-      const parent = createMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.supervising,
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
-      handle.taskEngine.getTask.mockReturnValue(parent);
-
-      await handle.daemon.tick();
-
-      expect(handle.orchestrator.executeTask).toHaveBeenCalled();
-    });
-
-    it("blocks sibling when pause_siblings and another child is active", async () => {
-      handle = createTestDaemon();
-      const child = createMockTask({
-        id: "child-2",
-        state: TaskStates.queued,
-        sub_state: null,
-        parent_id: "parent-1",
-      });
-      const parent = createMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.supervising,
-        cascade_policy: CascadePolicies.pause_siblings,
-      });
-      const activeSibling = createMockTask({
-        id: "child-1",
-        state: TaskStates.active,
-        sub_state: SubStates.working,
-        parent_id: "parent-1",
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
-      handle.taskEngine.getTask.mockReturnValue(parent);
-      handle.taskEngine.getChildren.mockReturnValue([activeSibling, child]);
-
-      await handle.daemon.tick();
-
-      expect(handle.orchestrator.executeTask).not.toHaveBeenCalled();
-    });
-
-    it("allows child task with orphaned parent (parent not found)", async () => {
-      handle = createTestDaemon();
-      const child = createMockTask({
-        id: "child-orphan",
-        state: TaskStates.queued,
-        sub_state: null,
-        parent_id: "missing-parent",
-      });
-      handle.taskEngine.getQueuedByPriority.mockReturnValue([child]);
-      handle.taskEngine.getTask.mockReturnValue(null);
-
-      await handle.daemon.tick();
-
-      expect(handle.orchestrator.executeTask).toHaveBeenCalled();
-    });
-  });
-
   // ── Blocked Escalation ─────────────────────────────────────────────────
 
   describe("blocked escalation", () => {
@@ -1078,115 +964,6 @@ describe("Daemon", () => {
       handle.clock.advance(86_400_000 + 1000);
       await handle.daemon.tick();
       expect(mockComm.sendMessage).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  // ── Children All Done Handler ──────────────────────────────────────────
-
-  describe("children all done handler", () => {
-    it("transitions parent from supervising to integrating and re-dispatches", async () => {
-      handle = createTestDaemon();
-      await handle.daemon.start();
-
-      const parent = createMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.supervising,
-      });
-      handle.taskEngine.getTask.mockReturnValue(parent);
-
-      const callback = handle.getSubscriptionCallback(EventTypes["task.children_all_done"]);
-      expect(callback).toBeDefined();
-
-      callback?.({
-        id: "evt-1",
-        type: EventTypes["task.children_all_done"],
-        source: "task-engine",
-        task_id: "parent-1",
-        sequence: 1,
-        timestamp: new Date().toISOString(),
-        payload: {
-          parent_task_id: "parent-1",
-          child_ids: ["child-1", "child-2"],
-          all_succeeded: true,
-          failed_ids: [],
-        },
-      });
-
-      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
-        "parent-1",
-        TaskStates.active,
-        SubStates.integrating,
-        "children_all_done",
-        "daemon",
-      );
-    });
-
-    it("does nothing when parent is not in supervising state", async () => {
-      handle = createTestDaemon();
-      await handle.daemon.start();
-
-      const parent = createMockTask({
-        id: "parent-1",
-        state: TaskStates.active,
-        sub_state: SubStates.working,
-      });
-      handle.taskEngine.getTask.mockReturnValue(parent);
-
-      const callback = handle.getSubscriptionCallback(EventTypes["task.children_all_done"]);
-      callback?.({
-        id: "evt-2",
-        type: EventTypes["task.children_all_done"],
-        source: "task-engine",
-        task_id: "parent-1",
-        sequence: 2,
-        timestamp: new Date().toISOString(),
-        payload: {
-          parent_task_id: "parent-1",
-          child_ids: ["child-1"],
-          all_succeeded: true,
-          failed_ids: [],
-        },
-      });
-
-      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
-        "parent-1",
-        TaskStates.active,
-        SubStates.integrating,
-        expect.any(String),
-        expect.any(String),
-      );
-    });
-
-    it("does nothing when parent task not found", async () => {
-      handle = createTestDaemon();
-      await handle.daemon.start();
-
-      handle.taskEngine.getTask.mockReturnValue(null);
-
-      const callback = handle.getSubscriptionCallback(EventTypes["task.children_all_done"]);
-      callback?.({
-        id: "evt-3",
-        type: EventTypes["task.children_all_done"],
-        source: "task-engine",
-        task_id: "missing-parent",
-        sequence: 3,
-        timestamp: new Date().toISOString(),
-        payload: {
-          parent_task_id: "missing-parent",
-          child_ids: ["child-1"],
-          all_succeeded: false,
-          failed_ids: ["child-1"],
-        },
-      });
-
-      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
-        "missing-parent",
-        TaskStates.active,
-        SubStates.integrating,
-        expect.any(String),
-        expect.any(String),
-      );
     });
   });
 

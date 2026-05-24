@@ -174,8 +174,8 @@ export class WorkspaceManager implements IWorkspaceManager {
    * from the base, and sets up a git worktree. Emits `workspace.created`.
    */
   createWorkspace(taskId: string, repo: string, options?: CreateWorkspaceOptions): WorkspaceRecord {
-    const { title, baseBranch, parentBranch, cloneUrl, thoughtsId } = options ?? {};
-    const resolvedBase = parentBranch ?? baseBranch ?? this.config.default_base_branch;
+    const { title, baseBranch, cloneUrl, thoughtsId } = options ?? {};
+    const resolvedBase = baseBranch ?? this.config.default_base_branch;
     const slug = slugify(title ?? taskId, this.config.slug_max_length);
     const branch = branchName(this.config.branch_prefix, taskId, slug);
     const repoCloneDir = path.join(this.config.workspace_root, repo);
@@ -186,7 +186,6 @@ export class WorkspaceManager implements IWorkspaceManager {
       repo,
       branch,
       base: resolvedBase,
-      isChild: !!parentBranch,
     });
 
     // Clone repo if not present (D147)
@@ -202,7 +201,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     this.gitExecWithAuth(["fetch", "origin"], repoCloneDir);
 
     // Determine the ref to branch from
-    const fromRef = parentBranch ?? `origin/${resolvedBase}`;
+    const fromRef = `origin/${resolvedBase}`;
 
     // Create the branch
     this.observer.debug("Creating branch", { taskId, branch, fromRef });

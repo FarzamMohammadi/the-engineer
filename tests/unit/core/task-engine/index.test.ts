@@ -7,13 +7,7 @@ import { createInMemoryDatabase } from "../../../../src/db/database.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
 import { Phases } from "../../../../src/schemas/orchestrator.js";
 import type { ActionClass, SubState, Task, TaskState } from "../../../../src/schemas/task.js";
-import {
-  ActionClasses,
-  CascadePolicies,
-  SubStates,
-  TaskStates,
-  ValidTransitions,
-} from "../../../../src/schemas/task.js";
+import { ActionClasses, SubStates, TaskStates, ValidTransitions } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 import { type TestTaskEngineHandle, createTestTaskEngine } from "../../../helpers/test-task-engine.js";
 
@@ -86,21 +80,6 @@ function getPathToState(state: TaskState, subState: SubState | null): Transition
   if (state === TaskStates.active && subState === SubStates.working) {
     return [...base, { state: TaskStates.active, sub: SubStates.working, reason: "scheduled" }];
   }
-  if (state === TaskStates.active && subState === SubStates.supervising) {
-    return [
-      ...base,
-      { state: TaskStates.active, sub: SubStates.working, reason: "scheduled" },
-      { state: TaskStates.active, sub: SubStates.supervising, reason: "children created" },
-    ];
-  }
-  if (state === TaskStates.active && subState === SubStates.integrating) {
-    return [
-      ...base,
-      { state: TaskStates.active, sub: SubStates.working, reason: "scheduled" },
-      { state: TaskStates.active, sub: SubStates.supervising, reason: "children created" },
-      { state: TaskStates.active, sub: SubStates.integrating, reason: "all children done" },
-    ];
-  }
   if (state === TaskStates.blocked) {
     return [
       ...base,
@@ -148,34 +127,10 @@ describe("isValidTransition", () => {
     expect(isValidTransition(TaskStates.queued, null, TaskStates.active, SubStates.working)).toBe(true);
   });
 
-  it("accepts active.working to active.supervising", () => {
-    expect(isValidTransition(TaskStates.active, SubStates.working, TaskStates.active, SubStates.supervising)).toBe(
-      true,
-    );
-  });
-
   it("rejects requirements_gathering to active (no such transition)", () => {
     expect(isValidTransition(TaskStates.requirements_gathering, null, TaskStates.active, SubStates.working)).toBe(
       false,
     );
-  });
-
-  it("rejects active.integrating to active.supervising (not in table)", () => {
-    expect(isValidTransition(TaskStates.active, SubStates.integrating, TaskStates.active, SubStates.supervising)).toBe(
-      false,
-    );
-  });
-
-  it("rejects when from_sub is wrong", () => {
-    // active.supervising -> review_pending.code is NOT valid (only active.working can)
-    expect(isValidTransition(TaskStates.active, SubStates.supervising, TaskStates.review_pending, SubStates.code)).toBe(
-      false,
-    );
-  });
-
-  it("rejects when to_sub is wrong", () => {
-    // queued -> active.supervising is NOT valid (must go to active.working)
-    expect(isValidTransition(TaskStates.queued, null, TaskStates.active, SubStates.supervising)).toBe(false);
   });
 
   it("rejects completed to anything", () => {
@@ -229,12 +184,9 @@ describe("TaskEngine", () => {
     it("sets correct default values", () => {
       const task = engine.createTask(makeInput());
       expect(task.priority).toBe(50);
-      expect(task.cascade_policy).toBe(CascadePolicies.pause_siblings);
-      expect(task.children).toEqual([]);
       expect(task.team).toEqual([]);
       expect(task.related).toEqual([]);
       expect(task.decisions).toEqual([]);
-      expect(task.child_summaries).toEqual([]);
       expect(task.acceptance_criteria).toEqual([]);
       expect(task.description).toBe("");
       expect(task.source_text).toBe("");
@@ -242,7 +194,6 @@ describe("TaskEngine", () => {
       expect(task.workspace).toBeNull();
       expect(task.review).toBeNull();
       expect(task.blocked).toBeNull();
-      expect(task.parent_id).toBeNull();
       expect(task.phase).toBeNull();
       expect(task.session_id).toBeNull();
       expect(task.started_at).toBeNull();
@@ -271,8 +222,7 @@ describe("TaskEngine", () => {
           p["repo"] === "owner/test-repo" &&
           p["source"] === "test" &&
           p["idempotency_key"] === "evt:key" &&
-          p["priority"] === 75 &&
-          p["parent_id"] === null
+          p["priority"] === 75
         );
       });
     });
@@ -290,14 +240,12 @@ describe("TaskEngine", () => {
           source_text: "Original issue body",
           acceptance_criteria: ["Must pass all tests", "Must have docs"],
           priority: 80,
-          cascade_policy: CascadePolicies.fail_fast,
         }),
       );
       expect(task.description).toBe("A detailed description");
       expect(task.source_text).toBe("Original issue body");
       expect(task.acceptance_criteria).toEqual(["Must pass all tests", "Must have docs"]);
       expect(task.priority).toBe(80);
-      expect(task.cascade_policy).toBe(CascadePolicies.fail_fast);
     });
 
     it("accepts external_ref", () => {
@@ -307,12 +255,6 @@ describe("TaskEngine", () => {
         }),
       );
       expect(task.external_ref).toEqual({ type: "test_issue", repo: "owner/repo", id: "42" });
-    });
-
-    it("accepts parent_id", () => {
-      const parent = engine.createTask(makeInput({ title: "Parent task" }));
-      const child = engine.createTask(makeInput({ title: "Child task", parent_id: parent.id }));
-      expect(child.parent_id).toBe(parent.id);
     });
 
     it("stores and round-trips the idempotency_key", () => {
@@ -488,20 +430,6 @@ describe("TaskEngine", () => {
       expect(result.success).toBe(false);
     });
 
-    it("rejects wrong from_sub", () => {
-      // active.supervising → review_pending.code is NOT valid
-      const task = createTaskInState(engine, TaskStates.active, SubStates.supervising);
-      const result = engine.requestTransition(task.id, TaskStates.review_pending, SubStates.code, "test", "test");
-      expect(result.success).toBe(false);
-    });
-
-    it("rejects wrong to_sub", () => {
-      // queued → active.supervising is NOT valid (must be active.working)
-      const task = createTaskInState(engine, TaskStates.queued, null);
-      const result = engine.requestTransition(task.id, TaskStates.active, SubStates.supervising, "test", "test");
-      expect(result.success).toBe(false);
-    });
-
     it("returns failure for non-existent task", () => {
       const result = engine.requestTransition("nonexistent", TaskStates.queued, null, "test", "test");
       expect(result.success).toBe(false);
@@ -575,28 +503,6 @@ describe("TaskEngine", () => {
       expect(engine.checkPermission(task.id, ActionClasses.deploy).allowed).toBe(false);
     });
 
-    it("allows only read, communicate, task_manage, ask_human in active.supervising", () => {
-      const task = createTaskInState(engine, TaskStates.active, SubStates.supervising);
-      expect(engine.checkPermission(task.id, ActionClasses.read).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.communicate).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.task_manage).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.ask_human).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.write).allowed).toBe(false);
-      expect(engine.checkPermission(task.id, ActionClasses.test).allowed).toBe(false);
-      expect(engine.checkPermission(task.id, ActionClasses.git_local).allowed).toBe(false);
-    });
-
-    it("allows write/test/git in active.integrating but denies merge", () => {
-      const task = createTaskInState(engine, TaskStates.active, SubStates.integrating);
-      expect(engine.checkPermission(task.id, ActionClasses.write).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.test).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.git_local).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.git_remote).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.merge).allowed).toBe(false);
-      expect(engine.checkPermission(task.id, ActionClasses.deploy).allowed).toBe(false);
-      expect(engine.checkPermission(task.id, ActionClasses.task_manage).allowed).toBe(false);
-    });
-
     it("returns conditional for merge in review_pending.code", () => {
       const task = createTaskInState(engine, TaskStates.review_pending, SubStates.code);
       expect(engine.checkPermission(task.id, ActionClasses.read).allowed).toBe(true);
@@ -666,7 +572,6 @@ describe("TaskEngine", () => {
         id: "7",
       });
       expect(retrieved.acceptance_criteria).toEqual(["test1", "test2"]);
-      expect(retrieved.children).toEqual([]);
       expect(Array.isArray(retrieved.team)).toBe(true);
     });
 
@@ -682,7 +587,6 @@ describe("TaskEngine", () => {
           source_text: "source",
           acceptance_criteria: ["ac1"],
           priority: 80,
-          cascade_policy: CascadePolicies.best_effort,
           external_ref: { type: "jira", repo: "org/proj", id: "99" },
         }),
       );
@@ -692,7 +596,6 @@ describe("TaskEngine", () => {
       expect(retrieved.source_text).toBe("source");
       expect(retrieved.acceptance_criteria).toEqual(["ac1"]);
       expect(retrieved.priority).toBe(80);
-      expect(retrieved.cascade_policy).toBe(CascadePolicies.best_effort);
       expect(retrieved.external_ref).toEqual({ type: "jira", repo: "org/proj", id: "99" });
       expect(retrieved.created_at).toBe(task.created_at);
       expect(retrieved.last_transition_at).toBe(task.last_transition_at);
@@ -787,35 +690,6 @@ describe("TaskEngine", () => {
     it("returns empty when no queued tasks", () => {
       engine.createTask(makeInput());
       expect(engine.getQueuedByPriority()).toEqual([]);
-    });
-  });
-
-  // ── getChildren ────────────────────────────────────────────────────────────
-
-  describe("getChildren", () => {
-    it("returns children of a parent", () => {
-      const parent = engine.createTask(makeInput({ title: "Parent" }));
-      engine.createTask(makeInput({ title: "Child 1", parent_id: parent.id }));
-      engine.createTask(makeInput({ title: "Child 2", parent_id: parent.id }));
-
-      const children = engine.getChildren(parent.id);
-      expect(children).toHaveLength(2);
-      expect(children.map((c) => c.title)).toEqual(["Child 1", "Child 2"]);
-    });
-
-    it("returns empty array when no children", () => {
-      const task = engine.createTask(makeInput());
-      expect(engine.getChildren(task.id)).toEqual([]);
-    });
-
-    it("does not return grandchildren", () => {
-      const grandparent = engine.createTask(makeInput({ title: "Grandparent" }));
-      const parent = engine.createTask(makeInput({ title: "Parent", parent_id: grandparent.id }));
-      engine.createTask(makeInput({ title: "Grandchild", parent_id: parent.id }));
-
-      const children = engine.getChildren(grandparent.id);
-      expect(children).toHaveLength(1);
-      expect(children[0]!.title).toBe("Parent");
     });
   });
 

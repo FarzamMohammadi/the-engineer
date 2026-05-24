@@ -4,10 +4,6 @@ import {
   ActionClassSchema,
   ActionClasses,
   BlockedDetailsSchema,
-  CascadePolicies,
-  CascadePolicySchema,
-  ChildCompletionSummarySchema,
-  ChildEntrySchema,
   ExternalRefSchema,
   PermissionTable,
   RelatedItemSchema,
@@ -56,32 +52,15 @@ describe("TaskStateSchema", () => {
 });
 
 describe("SubStateSchema", () => {
-  const validSubStates = ["working", "supervising", "integrating", "code"];
-
-  it("accepts all 4 valid sub-states", () => {
-    for (const sub of validSubStates) {
+  it("accepts valid sub-states", () => {
+    for (const sub of ["working", "code"]) {
       expect(SubStateSchema.parse(sub)).toBe(sub);
     }
   });
 
-  it("has exactly 4 values", () => {
-    expect(SubStateSchema.options).toHaveLength(4);
-  });
-
   it("rejects invalid values", () => {
     expect(() => SubStateSchema.parse("review")).toThrow();
-  });
-});
-
-describe("CascadePolicySchema", () => {
-  it("has exactly 4 values", () => {
-    expect(CascadePolicySchema.options).toHaveLength(4);
-  });
-
-  it("accepts all valid values", () => {
-    for (const policy of ["pause_siblings", "fail_fast", "best_effort", "manual"]) {
-      expect(CascadePolicySchema.parse(policy)).toBe(policy);
-    }
+    expect(() => SubStateSchema.parse("supervising")).toThrow();
   });
 });
 
@@ -193,17 +172,6 @@ describe("ExternalRefSchema", () => {
   });
 });
 
-describe("ChildEntrySchema", () => {
-  it("parses valid data", () => {
-    const valid = { id: "01ABC", state: TaskStates.active, depends_on: ["01XYZ"] };
-    expect(ChildEntrySchema.parse(valid)).toEqual(valid);
-  });
-
-  it("validates state against TaskState enum", () => {
-    expect(() => ChildEntrySchema.parse({ id: "01ABC", state: "invalid", depends_on: [] })).toThrow();
-  });
-});
-
 describe("TeamMemberSchema", () => {
   it("parses valid data", () => {
     const valid = { person_id: "farzam", role: TeamMemberRoles.author, context: "project owner" };
@@ -260,40 +228,6 @@ describe("TaskDecisionSchema", () => {
         timestamp: "2026-03-10T12:00:00.000Z",
       }),
     ).toThrow();
-  });
-});
-
-describe("ChildCompletionSummarySchema", () => {
-  it("parses valid data with nested key_outputs", () => {
-    const valid = {
-      child_id: "01ABC",
-      child_title: "Add auth",
-      summary: "Implemented OAuth flow",
-      key_outputs: [{ type: "file" as const, path: "src/auth.ts", description: "OAuth handler" }],
-      patterns_introduced: ["middleware pattern"],
-      gotchas: ["rate limiting"],
-      decisions_made: ["chose OAuth over API key"],
-      pr_number: 42,
-      branch: "engineer/42-auth",
-      test_status: "passing" as const,
-    };
-    expect(ChildCompletionSummarySchema.parse(valid)).toEqual(valid);
-  });
-
-  it("accepts null pr_number", () => {
-    const valid = {
-      child_id: "01ABC",
-      child_title: "Research",
-      summary: "Done",
-      key_outputs: [],
-      patterns_introduced: [],
-      gotchas: [],
-      decisions_made: [],
-      pr_number: null,
-      branch: "engineer/43-research",
-      test_status: "no_tests" as const,
-    };
-    expect(ChildCompletionSummarySchema.parse(valid)).toEqual(valid);
   });
 });
 
@@ -384,9 +318,6 @@ describe("TaskSchema", () => {
     state: TaskStates.requirements_gathering,
     sub_state: null,
     phase: null,
-    parent_id: null,
-    children: [],
-    cascade_policy: CascadePolicies.pause_siblings,
     title: "Fix auth bug",
     description: "Users can't log in",
     source_text: "Issue body text",
@@ -394,7 +325,6 @@ describe("TaskSchema", () => {
     team: [],
     related: [],
     decisions: [],
-    child_summaries: [],
     repo: null,
     workspace: null,
     review: null,
@@ -474,10 +404,6 @@ describe("StateTransitionSchema", () => {
 // ── ValidTransitions ───────────────────────────────────────────────────────────
 
 describe("ValidTransitions", () => {
-  it("has exactly 24 entries", () => {
-    expect(ValidTransitions).toHaveLength(24);
-  });
-
   it("has no duplicate entries", () => {
     const keys = ValidTransitions.map(
       (t) =>
@@ -516,17 +442,11 @@ describe("ValidTransitions", () => {
 // ── PermissionTable ────────────────────────────────────────────────────────────
 
 describe("PermissionTable", () => {
-  it("has exactly 9 entries", () => {
-    expect(PermissionTable).toHaveLength(9);
-  });
-
   it("covers all valid (state, sub_state) pairs", () => {
     const expectedPairs = [
       [TaskStates.requirements_gathering, null],
       [TaskStates.queued, null],
       [TaskStates.active, SubStates.working],
-      [TaskStates.active, SubStates.supervising],
-      [TaskStates.active, SubStates.integrating],
       [TaskStates.review_pending, SubStates.code],
       [TaskStates.blocked, null],
       [TaskStates.completed, null],

@@ -2,9 +2,6 @@ import { fromSqliteBoolean, fromSqliteJson } from "../../db/serialize.js";
 import type { Phase } from "../../schemas/orchestrator.js";
 import type {
   BlockedDetails,
-  CascadePolicy,
-  ChildCompletionSummary,
-  ChildEntry,
   ExternalRef,
   RelatedItem,
   ReviewState,
@@ -25,9 +22,6 @@ export interface TaskRow {
   state: string;
   sub_state: string | null;
   phase: string | null;
-  parent_id: string | null;
-  children: string;
-  cascade_policy: string;
   title: string;
   description: string;
   source_text: string;
@@ -35,7 +29,6 @@ export interface TaskRow {
   team: string;
   related: string;
   decisions: string;
-  child_summaries: string;
   repo: string | null;
   clone_url: string | null;
   thoughts_id: string | null;
@@ -83,9 +76,6 @@ export function rowToTask(row: TaskRow): Task {
     state: row.state as TaskState,
     sub_state: row.sub_state as SubState | null,
     phase: row.phase,
-    parent_id: row.parent_id,
-    children: fromSqliteJson<ChildEntry[]>(row.children) ?? [],
-    cascade_policy: row.cascade_policy as CascadePolicy,
     title: row.title,
     description: row.description,
     source_text: row.source_text,
@@ -93,7 +83,6 @@ export function rowToTask(row: TaskRow): Task {
     team: fromSqliteJson<TeamMember[]>(row.team) ?? [],
     related: fromSqliteJson<RelatedItem[]>(row.related) ?? [],
     decisions: fromSqliteJson<TaskDecision[]>(row.decisions) ?? [],
-    child_summaries: fromSqliteJson<ChildCompletionSummary[]>(row.child_summaries) ?? [],
     repo: row.repo,
     clone_url: row.clone_url,
     thoughts_id: row.thoughts_id,

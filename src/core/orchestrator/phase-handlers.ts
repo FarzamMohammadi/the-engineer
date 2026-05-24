@@ -263,13 +263,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     state: PipelineState,
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
-    const childSummaries = (dispatch.task.child_summaries ?? []).map((cs) => ({
-      child_id: cs.child_id,
-      title: cs.child_title,
-      branch: cs.branch,
-      test_status: cs.test_status,
-      files_changed: cs.key_outputs.map((o) => o.path),
-    }));
 
     return llmCaller.runPhaseWithCli(
       Phases.integration,
@@ -280,7 +273,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
         repoContext: state.repoContext,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
         skillsDir,
-        childSummaries,
+        childSummaries: [],
       }),
       state,
       thoughtsDir,

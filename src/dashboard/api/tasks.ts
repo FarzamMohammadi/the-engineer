@@ -18,7 +18,7 @@ export interface TaskRoutesDeps {
 /** Columns for the lightweight task list. Avoids needing rowToTask. */
 const LIST_COLUMNS = `id, title, state, sub_state, phase, priority, repo,
   llm_cost_usd, llm_tokens, created_at, started_at, completed_at,
-  last_transition_at, parent_id, children, workspace`;
+  last_transition_at, workspace`;
 
 interface TaskListRow {
   id: string;
@@ -34,8 +34,6 @@ interface TaskListRow {
   started_at: string | null;
   completed_at: string | null;
   last_transition_at: string;
-  parent_id: string | null;
-  children: string;
   workspace: string | null;
 }
 
@@ -53,18 +51,10 @@ interface TaskListItem {
   started_at: string | null;
   completed_at: string | null;
   last_transition_at: string;
-  parent_id: string | null;
-  children_count: number;
   worktree_path: string | null;
 }
 
 function mapListRow(row: TaskListRow): TaskListItem {
-  let childrenCount = 0;
-  try {
-    childrenCount = (fromSqliteJson<unknown[]>(row.children) ?? []).length;
-  } catch {
-    /* empty */
-  }
   let worktreePath: string | null = null;
   if (row.workspace) {
     const ws = fromSqliteJson<Record<string, unknown>>(row.workspace);
@@ -84,8 +74,6 @@ function mapListRow(row: TaskListRow): TaskListItem {
     started_at: row.started_at,
     completed_at: row.completed_at,
     last_transition_at: row.last_transition_at,
-    parent_id: row.parent_id,
-    children_count: childrenCount,
     worktree_path: worktreePath,
   };
 }
@@ -94,12 +82,10 @@ function mapListRow(row: TaskListRow): TaskListItem {
 function mapFullTask(row: Record<string, unknown>): Record<string, unknown> {
   const jsonFields = [
     "external_ref",
-    "children",
     "acceptance_criteria",
     "team",
     "related",
     "decisions",
-    "child_summaries",
     "workspace",
     "review",
     "blocked",

@@ -1,30 +1,20 @@
-import type {
-  ActionClass,
-  CascadePolicy,
-  ExternalRef,
-  StateTransition,
-  SubState,
-  Task,
-  TaskState,
-} from "../../schemas/task.js";
+import type { ActionClass, ExternalRef, StateTransition, SubState, Task, TaskState } from "../../schemas/task.js";
 
 /** Input for createTask(). Only caller-provided fields. */
 export interface CreateTaskInput {
   title: string;
   /** Repository identifier (e.g. "owner/repo"). Stored on the task for workspace creation. */
   repo: string;
-  /** Who created this task: "github-trigger", "manual", "decomposition", etc. */
+  /** Who created this task: "github-trigger", "manual", etc. */
   source: string;
   /** Stable dedup identity (e.g. "github:issue:owner/repo:42"). Required — every task
    *  carries one. Uniqueness is enforced among non-terminal tasks. */
   idempotency_key: string;
   external_ref?: ExternalRef | null;
-  parent_id?: string | null;
   description?: string;
   source_text?: string;
   acceptance_criteria?: string[];
   priority?: number;
-  cascade_policy?: CascadePolicy;
   /** Git clone URL for the target repo (D148). */
   clone_url?: string | null;
   /** Trigger-provided identifier for the thoughts/ directory (e.g., "issue-42"). */
@@ -48,7 +38,6 @@ export interface PermissionResult {
 /** Fields that can be updated via updateTaskField(). */
 export type UpdatableField =
   | "phase"
-  | "cascade_policy"
   | "session_id"
   | "description"
   | "source_text"
@@ -56,11 +45,9 @@ export type UpdatableField =
   | "workspace"
   | "review"
   | "blocked"
-  | "children"
   | "team"
   | "related"
   | "decisions"
-  | "child_summaries"
   | "acceptance_criteria"
   | "priority"
   | "repo"
@@ -85,7 +72,6 @@ export interface ITaskEngine {
   getTask(id: string): Task | null;
   getTasksByState(state: TaskState): Task[];
   getQueuedByPriority(): Task[];
-  getChildren(parentId: string): Task[];
   getStateHistory(taskId: string): StateTransition[];
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void;
   updateTracking(taskId: string, tokens: number, costUsd: number, computeMs: number): void;

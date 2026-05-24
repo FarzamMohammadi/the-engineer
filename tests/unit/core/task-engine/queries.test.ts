@@ -2,7 +2,7 @@ import { ulid } from "ulid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { TaskQueries } from "../../../../src/core/task-engine/queries.js";
-import { CascadePolicies, TaskStates } from "../../../../src/schemas/task.js";
+import { TaskStates } from "../../../../src/schemas/task.js";
 import { createTestDatabase } from "../../../helpers/test-database.js";
 import type { TestDatabaseHandle } from "../../../helpers/test-database.js";
 
@@ -26,18 +26,16 @@ describe("TaskQueries", () => {
       .prepare(
         `INSERT INTO tasks (
         id, external_ref, idempotency_key, state, sub_state, phase,
-        parent_id, children, cascade_policy,
         title, description, source_text, acceptance_criteria,
-        team, related, decisions, child_summaries,
+        team, related, decisions,
         repo, clone_url, workspace, review, blocked,
         priority, llm_tokens, llm_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
         session_id, version
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
         ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -51,13 +49,9 @@ describe("TaskQueries", () => {
         (overrides["state"] as string) ?? TaskStates.requirements_gathering,
         (overrides["sub_state"] as string) ?? null,
         (overrides["phase"] as string) ?? null,
-        (overrides["parent_id"] as string) ?? null,
-        "[]",
-        CascadePolicies.pause_siblings,
         (overrides["title"] as string) ?? `Task ${id}`,
         "",
         "",
-        "[]",
         "[]",
         "[]",
         "[]",
@@ -101,7 +95,6 @@ describe("TaskQueries", () => {
       expect(task).not.toBeNull();
       expect(task?.id).toBe(id);
       expect(task?.title).toBe("Test Task");
-      expect(task?.children).toEqual([]);
       expect(task?.acceptance_criteria).toEqual([]);
     });
   });
@@ -153,30 +146,6 @@ describe("TaskQueries", () => {
       const result = queries.getQueuedByPriority();
       expect(result).toHaveLength(1);
       expect(result[0]?.state).toBe(TaskStates.queued);
-    });
-  });
-
-  describe("getChildren", () => {
-    it("returns children ordered by created_at", () => {
-      const parentId = insertTask();
-      const child1 = insertTask({
-        parent_id: parentId,
-        created_at: "2024-01-01T00:00:00.000Z",
-      });
-      const child2 = insertTask({
-        parent_id: parentId,
-        created_at: "2024-01-02T00:00:00.000Z",
-      });
-      insertTask(); // unrelated task
-
-      const children = queries.getChildren(parentId);
-      expect(children).toHaveLength(2);
-      expect(children.map((c) => c.id)).toEqual([child1, child2]);
-    });
-
-    it("returns empty for tasks with no children", () => {
-      const id = insertTask();
-      expect(queries.getChildren(id)).toEqual([]);
     });
   });
 

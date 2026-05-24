@@ -90,7 +90,6 @@ describe("mock-factories", () => {
       const task = createMockTask();
       expect(task.state).toBe(TaskStates.requirements_gathering);
       expect(task.priority).toBe(50);
-      expect(task.children).toEqual([]);
     });
   });
 

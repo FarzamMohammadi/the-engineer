@@ -23,7 +23,6 @@ import {
   PreemptionRequestedPayloadSchema,
   ReviewPollCompletedPayloadSchema,
   SubscriptionSchema,
-  TaskChildrenAllDonePayloadSchema,
   TaskCreatedPayloadSchema,
   TaskFeedbackReceivedPayloadSchema,
   TaskStateChangedPayloadSchema,
@@ -119,7 +118,6 @@ describe("TaskCreatedPayloadSchema", () => {
   it("parses valid data", () => {
     const valid = {
       task_id: "01TASK",
-      parent_id: null,
       title: "Fix auth bug",
       external_ref: { type: "github_issue", repo: "owner/repo", id: "42" },
       idempotency_key: "github:issue:owner/repo:42",
@@ -175,18 +173,6 @@ describe("TaskStateChangedPayloadSchema", () => {
         triggered_by: "test",
       }),
     ).toThrow();
-  });
-});
-
-describe("TaskChildrenAllDonePayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      parent_task_id: "01PARENT",
-      child_ids: ["01A", "01B"],
-      all_succeeded: true,
-      failed_ids: [],
-    };
-    expect(TaskChildrenAllDonePayloadSchema.parse(valid)).toEqual(valid);
   });
 });
 

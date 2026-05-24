@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { IEventBus } from "../../../../src/core/interfaces/event-bus.interface.js";
 import { StateMachine, isValidTransition, subStateMatches } from "../../../../src/core/task-engine/state-machine.js";
-import { CascadePolicies, SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestDatabase } from "../../../helpers/test-database.js";
 import type { TestDatabaseHandle } from "../../../helpers/test-database.js";
 
@@ -26,18 +26,16 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
   db.prepare(
     `INSERT INTO tasks (
       id, external_ref, idempotency_key, state, sub_state, phase,
-      parent_id, children, cascade_policy,
       title, description, source_text, acceptance_criteria,
-      team, related, decisions, child_summaries,
+      team, related, decisions,
       repo, clone_url, workspace, review, blocked,
       priority, llm_tokens, llm_cost_usd, compute_time_ms,
       created_at, started_at, completed_at, last_transition_at,
       session_id, version
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?,
       ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -50,13 +48,9 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
     (overrides["state"] as string) ?? TaskStates.requirements_gathering,
     (overrides["sub_state"] as string) ?? null,
     null,
-    null,
-    "[]",
-    CascadePolicies.pause_siblings,
     "Test Task",
     "",
     "",
-    "[]",
     "[]",
     "[]",
     "[]",

@@ -16,7 +16,6 @@ import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type AndonCord, createAndonCord } from "./andon-cord.js";
-import { type DecompositionHandler, createDecompositionHandler } from "./decomposition-handler.js";
 import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
 import { createPhaseHandlers } from "./phase-handlers.js";
 import { type PhaseHandlerRegistry, createPhaseHandlerRegistry, runPhasePipeline } from "./phase-runner.js";
@@ -86,7 +85,6 @@ function createPreemptionGate(): WritablePreemptionGate {
  * - WorkspaceLifecycle: workspace setup, session management
  * - NotificationRouter: centralized milestone notifications, issue comments, outreach
  * - PrManager: commit, push, PR creation
- * - DecompositionHandler: task decomposition
  * - PhaseRunner: phase pipeline orchestration
  *
  * Protocols implemented:
@@ -100,7 +98,6 @@ export class Orchestrator {
   private readonly workspaceLifecycle: WorkspaceLifecycle;
   private readonly notifications: NotificationRouter;
   private readonly prManager: PrManager;
-  private readonly decompositionHandler: DecompositionHandler;
   private readonly andonCord: AndonCord;
   private readonly preemption: WritablePreemptionGate;
   private shutdownRequested = false;
@@ -116,7 +113,6 @@ export class Orchestrator {
     this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
     this.notifications = this.ctx.notifications;
     this.prManager = createPrManager(this.ctx, this.notifications);
-    this.decompositionHandler = createDecompositionHandler(this.ctx, this.notifications);
     this.andonCord = createAndonCord();
 
     // Cooperative preemption state (Protocol P8)
@@ -145,7 +141,7 @@ export class Orchestrator {
    * Execute a task through the phase pipeline.
    *
    * Entry point called by the Daemon. Handles new tasks and resumed tasks.
-   * Returns when the pipeline completes, is preempted, decomposed, or encounters an error.
+   * Returns when the pipeline completes, is preempted, or encounters an error.
    */
   async executeTask(dispatch: Dispatch): Promise<ExecuteTaskResult> {
     const taskId = dispatch.task.id;
@@ -219,7 +215,6 @@ export class Orchestrator {
       ctx: tracedCtx,
       handlers: this.phaseHandlers,
       prManager: this.prManager,
-      decompositionHandler: this.decompositionHandler,
       andonCord: this.andonCord,
       preemption: this.preemption,
       shutdown: { isRequested: () => this.shutdownRequested },

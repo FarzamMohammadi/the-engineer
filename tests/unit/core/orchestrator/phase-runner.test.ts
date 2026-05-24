@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAndonCord } from "../../../../src/core/orchestrator/andon-cord.js";
-import type { DecompositionHandler } from "../../../../src/core/orchestrator/decomposition-handler.js";
 import {
   PHASE_SEQUENCE,
   type PhaseRunnerDeps,
@@ -163,9 +162,6 @@ function createDeps(
       commitAndPush: vi.fn().mockReturnValue({ outcome: "nothing_to_push" }),
       createPullRequest: vi.fn().mockResolvedValue({ outcome: "no_hosting_plugin" }),
     } as unknown as PrManager,
-    decompositionHandler: {
-      handleDecomposition: vi.fn().mockReturnValue(null),
-    } as unknown as DecompositionHandler,
     preemption: {
       isRequested: vi.fn().mockReturnValue(false),
       getPayload: vi.fn().mockReturnValue(null),
@@ -491,25 +487,6 @@ describe("PhaseRunner", () => {
         | undefined;
       expect(journalCall).toBeDefined();
       expect(journalCall!.summary.length).toBeLessThan(2300);
-    });
-
-    it("exits with decomposed when decomposition handler returns result", async () => {
-      const ctx = createMockContext();
-      const outputs = new Map<Phase, PhaseOutput>();
-      for (const phase of PHASE_SEQUENCE) {
-        outputs.set(phase, makeOutput(phase));
-      }
-      const handlers = createHandlersThatReturn(outputs);
-      const deps = createDeps(ctx, handlers);
-      (deps.decompositionHandler.handleDecomposition as ReturnType<typeof vi.fn>).mockReturnValue({
-        outcome: "decomposed",
-        childTaskIds: ["child-1", "child-2"],
-        phaseOutputs: new Map(),
-      });
-
-      const result = await runPhasePipeline(createDispatch(), createState(), deps);
-
-      expect(result.outcome).toBe("decomposed");
     });
 
     it("exits with review_pending when PR is created after demo_prep", async () => {

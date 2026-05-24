@@ -6,7 +6,7 @@ import type Database from "better-sqlite3";
 import { runIncrementalVacuum } from "../../db/database.js";
 import type { DataLifecycleConfig } from "../../schemas/config.js";
 import { SystemCleanupCompletedPayloadSchema } from "../../schemas/events.js";
-import { SubStates, TaskStates } from "../../schemas/task.js";
+import { TaskStates } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
@@ -66,7 +66,6 @@ const ACTIVE_STATES = [
   TaskStates.active,
   TaskStates.blocked,
   TaskStates.review_pending,
-  SubStates.supervising,
 ];
 
 // ── Table Definitions ─────────────────────────────────────────────────────────

@@ -11,7 +11,6 @@ export class TaskQueries {
   private readonly getTaskStmt: Database.Statement;
   private readonly getTasksByStateStmt: Database.Statement;
   private readonly getQueuedStmt: Database.Statement;
-  private readonly getChildrenStmt: Database.Statement;
   private readonly getStateHistoryStmt: Database.Statement;
   private readonly findByIdempotencyKeyStmt: Database.Statement;
 
@@ -23,8 +22,6 @@ export class TaskQueries {
     this.getQueuedStmt = db.prepare(
       "SELECT * FROM tasks WHERE state = 'queued' ORDER BY priority DESC, created_at ASC",
     );
-
-    this.getChildrenStmt = db.prepare("SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at ASC");
 
     this.getStateHistoryStmt = db.prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp ASC");
 
@@ -51,12 +48,6 @@ export class TaskQueries {
   /** Get all queued tasks, ordered by priority DESC, created_at ASC. */
   getQueuedByPriority(): Task[] {
     const rows = this.getQueuedStmt.all() as TaskRow[];
-    return rows.map(rowToTask);
-  }
-
-  /** Get all children of a parent task, ordered by created_at ASC. */
-  getChildren(parentId: string): Task[] {
-    const rows = this.getChildrenStmt.all(parentId) as TaskRow[];
     return rows.map(rowToTask);
   }
 

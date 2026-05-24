@@ -221,9 +221,6 @@ describe("table structure", () => {
       "state",
       "sub_state",
       "phase",
-      "parent_id",
-      "children",
-      "cascade_policy",
       "title",
       "description",
       "source_text",
@@ -231,7 +228,6 @@ describe("table structure", () => {
       "team",
       "related",
       "decisions",
-      "child_summaries",
       "repo",
       "clone_url",
       "thoughts_id",
@@ -301,19 +297,6 @@ describe("table structure", () => {
           "INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .run("01TEST", "test:check", "invalid_state", "Test", now, now),
-    ).toThrow(CHECK_CONSTRAINT_PATTERN);
-  });
-
-  it("tasks.cascade_policy CHECK constraint rejects invalid values", () => {
-    handle = createInMemoryDatabase();
-    const now = new Date().toISOString();
-
-    expect(() =>
-      handle.db
-        .prepare(
-          "INSERT INTO tasks (id, idempotency_key, state, cascade_policy, title, created_at, last_transition_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run("01TEST", "test:check", TaskStates.requirements_gathering, "invalid_policy", "Test", now, now),
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
@@ -416,15 +399,11 @@ describe("table structure", () => {
       )
       .run("01TEST", "test:01TEST", TaskStates.requirements_gathering, "Test task", now, now);
 
-    const row = handle.db
-      .prepare("SELECT children, team, related, decisions FROM tasks WHERE id = ?")
-      .get("01TEST") as {
-      children: string;
+    const row = handle.db.prepare("SELECT team, related, decisions FROM tasks WHERE id = ?").get("01TEST") as {
       team: string;
       related: string;
       decisions: string;
     };
-    expect(row.children).toBe("[]");
     expect(row.team).toBe("[]");
     expect(row.related).toBe("[]");
     expect(row.decisions).toBe("[]");
@@ -437,7 +416,6 @@ describe("table structure", () => {
     const expectedIndexes = [
       // tasks
       "idx_tasks_state",
-      "idx_tasks_parent_id",
       "idx_tasks_session_id",
       "idx_tasks_priority",
       "idx_tasks_state_priority",
@@ -609,17 +587,13 @@ describe("JSON default completeness", () => {
       .run("t1", "test:t1", TaskStates.requirements_gathering, "Test", now, now);
 
     const row = handle.db
-      .prepare(
-        "SELECT children, acceptance_criteria, team, related, decisions, child_summaries FROM tasks WHERE id = ?",
-      )
+      .prepare("SELECT acceptance_criteria, team, related, decisions FROM tasks WHERE id = ?")
       .get("t1") as Record<string, string>;
 
-    expect(row["children"]).toBe("[]");
     expect(row["acceptance_criteria"]).toBe("[]");
     expect(row["team"]).toBe("[]");
     expect(row["related"]).toBe("[]");
     expect(row["decisions"]).toBe("[]");
-    expect(row["child_summaries"]).toBe("[]");
   });
 
   it("journal_entries.tags defaults to '[]'", () => {

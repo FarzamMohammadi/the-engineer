@@ -9,7 +9,6 @@ import {
   CostLimitValueSchema,
   CostLimitsSchema,
   DaemonConfigSchema,
-  DecompositionConfigSchema,
   DemoConfigSchema,
   DigestConfigSchema,
   JournalConfigSchema,
@@ -158,15 +157,6 @@ describe("QuestionBatchingConfigSchema", () => {
   });
 });
 
-describe("DecompositionConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = DecompositionConfigSchema.parse({});
-    expect(config.auto_threshold_ms).toBe(14_400_000);
-    expect(config.suggest_threshold_ms).toBe(7_200_000);
-    expect(config.min_child_size_ms).toBe(1_800_000);
-  });
-});
-
 describe("DemoConfigSchema", () => {
   it("produces valid defaults from empty input", () => {
     const config = DemoConfigSchema.parse({});
@@ -197,7 +187,6 @@ describe("OrchestratorConfigSchema", () => {
     expect(config.rrpir.max_requirements_loops).toBe(5);
     expect(config.notification.milestone_based).toBe(true);
     expect(config.question_batching.enabled).toBe(true);
-    expect(config.decomposition.auto_threshold_ms).toBe(14_400_000);
     expect(config.demo.always_create).toBe(true);
     expect(config.phases.checkpoint_on_transition).toBe(true);
     expect(config.journal.aggregate_file_reads).toBe(true);

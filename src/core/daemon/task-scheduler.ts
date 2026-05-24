@@ -1,7 +1,7 @@
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { CascadePolicies, SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EvaluationManager } from "../evaluation/types.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
@@ -14,7 +14,7 @@ import type { TaskSchedulerContext } from "./types.js";
 
 /** Whether a task in the given state consumes a working slot. */
 export function isSlotConsuming(state: string, subState: string | null): boolean {
-  return state === TaskStates.active && (subState === SubStates.working || subState === SubStates.integrating);
+  return state === TaskStates.active && subState === SubStates.working;
 }
 
 // ── Retry Backoff ────────────────────────────────────────────────────────────
@@ -62,11 +62,6 @@ export interface TaskScheduler {
   handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void;
   /** Handle task error from orchestrator crash. */
   handleTaskError(taskId: string, error: unknown): void;
-  /**
-   * After a child task reaches a terminal state, check if all siblings are done.
-   * If so, emit task.children_all_done so the Daemon can resume the parent.
-   */
-  checkAndEmitChildrenAllDone(childTaskId: string): void;
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -112,43 +107,6 @@ export function createTaskScheduler(
       });
       return false;
     }
-
-    if (!task.parent_id) {
-      return true;
-    }
-
-    const parent = taskEngine.getTask(task.parent_id);
-    if (!parent) {
-      observer.debug("Task eligible: orphaned child (no parent record)", {
-        taskId: task.id,
-        parentId: task.parent_id,
-      });
-      return true; // Orphaned child — allow scheduling
-    }
-
-    if (parent.state !== TaskStates.active || parent.sub_state !== SubStates.supervising) {
-      observer.debug("Task not eligible: parent not in active.supervising", {
-        taskId: task.id,
-        parentId: task.parent_id,
-        parentState: parent.state,
-        parentSubState: parent.sub_state,
-      });
-      return false;
-    }
-
-    if (parent.cascade_policy === CascadePolicies.pause_siblings) {
-      const siblings = taskEngine.getChildren(task.parent_id);
-      const activeSibling = siblings.find((s) => s.id !== task.id && s.state === TaskStates.active);
-      if (activeSibling) {
-        observer.debug("Task not eligible: pause_siblings — sibling still active", {
-          taskId: task.id,
-          parentId: task.parent_id,
-          activeSiblingId: activeSibling.id,
-        });
-        return false;
-      }
-    }
-
     return true;
   }
 
@@ -274,7 +232,6 @@ export function createTaskScheduler(
       taskId,
       message: "Task completed successfully.",
     });
-    checkAndEmitChildrenAllDone(taskId);
     const completedTask = taskEngine.getTask(taskId);
     observer.info("Task completed", {
       taskId,
@@ -295,7 +252,6 @@ export function createTaskScheduler(
       });
       return;
     }
-    checkAndEmitChildrenAllDone(taskId);
     // Truncate reason for notifications — full error details are in logs and journal entries
     const notifyReason = reason.length > 2000 ? `${reason.slice(0, 2000)}... [see logs for full details]` : reason;
     notifications.notify({ kind: NotificationKinds.task_error, taskId, reason: notifyReason });
@@ -402,11 +358,6 @@ export function createTaskScheduler(
       handleCompletedOutcome(taskId);
     } else if (result.outcome === Outcomes.review_pending) {
       handleReviewPendingOutcome(taskId);
-    } else if (result.outcome === Outcomes.decomposed) {
-      observer.info("Task decomposed — children queued for scheduling", {
-        taskId,
-        childCount: result.childTaskIds.length,
-      });
     } else if (result.outcome === Outcomes.preempted) {
       handlePreemptedOutcome(taskId, result.lastPhase);
     } else if (result.outcome === Outcomes.blocked) {
@@ -517,49 +468,6 @@ export function createTaskScheduler(
     }
   }
 
-  // ── Child Completion Detection ──────────────────────────────────────────
-
-  function checkAndEmitChildrenAllDone(childTaskId: string): void {
-    const child = taskEngine.getTask(childTaskId);
-    if (!child?.parent_id) {
-      return;
-    }
-
-    const siblings = taskEngine.getChildren(child.parent_id);
-    // blocked counts as terminal: an errored child transitions to blocked, not failed.
-    // The parent must not wait forever for a child that cannot make progress.
-    const allTerminal = siblings.every(
-      (s) => s.state === TaskStates.completed || s.state === TaskStates.failed || s.state === TaskStates.blocked,
-    );
-
-    if (!allTerminal) {
-      return;
-    }
-
-    // Include blocked tasks alongside failed ones so the parent knows not all succeeded
-    const failedIds = siblings
-      .filter((s) => s.state === TaskStates.failed || s.state === TaskStates.blocked)
-      .map((s) => s.id);
-
-    eventBus.publish({
-      type: EventTypes["task.children_all_done"],
-      source: "daemon",
-      task_id: child.parent_id,
-      payload: {
-        parent_task_id: child.parent_id,
-        child_ids: siblings.map((s) => s.id),
-        all_succeeded: failedIds.length === 0,
-        failed_ids: failedIds,
-      },
-    } satisfies PublishInput<"task.children_all_done">);
-
-    observer.info("All children completed — emitting children_all_done", {
-      parentTaskId: child.parent_id,
-      allSucceeded: failedIds.length === 0,
-      failedIds,
-    });
-  }
-
   // ── Accessors ───────────────────────────────────────────────────────────
 
   function getActiveTaskIds(): string[] {
@@ -647,6 +555,5 @@ export function createTaskScheduler(
     drainForShutdown,
     handleTaskCompletion,
     handleTaskError,
-    checkAndEmitChildrenAllDone,
   };
 }

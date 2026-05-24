@@ -71,12 +71,6 @@ export interface ReviewHandler {
   clearTickCache(): void;
 }
 
-/** Callbacks for cross-subsystem coordination. */
-export interface ReviewHandlerCallbacks {
-  /** Called when a task reaches a terminal state (merged, approved, or completed). */
-  onTaskCompletionFinalized(taskId: string): void;
-}
-
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** Types of issues that can occur after PR approval, before merge. */
@@ -119,11 +113,7 @@ const SELF_COMMENT_PREFIXES = [
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createReviewHandler(
-  ctx: ReviewHandlerContext,
-  notifications: NotificationRouter,
-  callbacks: ReviewHandlerCallbacks,
-): ReviewHandler {
+export function createReviewHandler(ctx: ReviewHandlerContext, notifications: NotificationRouter): ReviewHandler {
   const { eventBus, registry, taskEngine, safetyLayer, workspaceManager, workspaceConfig, peopleDirectory, observer } =
     ctx;
 
@@ -648,7 +638,6 @@ export function createReviewHandler(
         message: commentMessage,
       });
     }
-    callbacks.onTaskCompletionFinalized(taskId);
   }
 
   /** Remove thoughts/ from the branch before merge if configured. Non-fatal. */

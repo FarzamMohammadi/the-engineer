@@ -8,7 +8,6 @@ import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../s
 import { TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
 import type { AndonCord } from "./andon-cord.js";
-import type { DecompositionHandler } from "./decomposition-handler.js";
 import { LlmUnavailableError, PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
 import { sendOutreach } from "./outreach-sender.js";
 import { PhaseNavigator } from "./phase-navigator.js";
@@ -95,7 +94,6 @@ export interface PhaseRunnerDeps {
   ctx: OrchestratorContext;
   handlers: PhaseHandlerRegistry;
   prManager: PrManager;
-  decompositionHandler: DecompositionHandler;
   /** Emergency halt mechanism (Toyota Production System). */
   andonCord: AndonCord;
   /** Cooperative preemption state (Protocol P8). */
@@ -536,7 +534,7 @@ async function handlePostPhaseActions(
   requirementsLoopCount: number;
   returnToPhase: Phase | null;
 }> {
-  const { ctx, prManager, decompositionHandler } = deps;
+  const { ctx, prManager } = deps;
   const phases = currentPhases;
   let loopbackCount = state.loopbackCount;
   let { requirementsLoopCount, returnToPhase } = state;
@@ -689,25 +687,6 @@ async function handlePostPhaseActions(
       ctx.observer.info("Trivial task — skipping research phase", { taskId });
       return {
         completion: { kind: "continue", phases: newPhases },
-        loopbackCount,
-        requirementsLoopCount,
-        returnToPhase,
-      };
-    }
-  }
-
-  // Decomposition: after planning, check if task should be split into children
-  if (phase === Phases.planning) {
-    const decompositionResult = decompositionHandler.handleDecomposition(
-      sessionId,
-      taskId,
-      output,
-      dispatch,
-      priorOutputs,
-    );
-    if (decompositionResult) {
-      return {
-        completion: { kind: "exit", result: decompositionResult },
         loopbackCount,
         requirementsLoopCount,
         returnToPhase,

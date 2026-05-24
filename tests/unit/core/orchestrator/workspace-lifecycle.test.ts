@@ -7,7 +7,7 @@ import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../../../src
 import type { Dispatch } from "../../../../src/schemas/ephemeral.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
 import { Phases } from "../../../../src/schemas/orchestrator.js";
-import { CascadePolicies, SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import type { Task } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
@@ -86,9 +86,6 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
       state: TaskStates.active,
       sub_state: SubStates.working,
       phase: null,
-      parent_id: null,
-      children: [],
-      cascade_policy: CascadePolicies.pause_siblings,
       title: "Test task",
       description: "A test task",
       source_text: "Test",
@@ -96,7 +93,6 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
       team: [],
       related: [],
       decisions: [],
-      child_summaries: [],
       workspace: null,
       review: null,
       blocked: null,
@@ -131,7 +127,6 @@ describe("WorkspaceLifecycle", () => {
 
       expect(ctx.workspaceManager.createWorkspace).toHaveBeenCalledWith("task-001", "owner/repo", {
         title: "Test task",
-        parentBranch: undefined,
         cloneUrl: "https://github.com/owner/repo.git",
       });
       expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
@@ -157,23 +152,6 @@ describe("WorkspaceLifecycle", () => {
         expect.objectContaining({ repo: "owner/repo" }),
       );
       expect(ctx.workspaceManager.createWorkspace).not.toHaveBeenCalled();
-    });
-
-    it("looks up parent branch for child tasks", () => {
-      const ctx = createMockContext();
-      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-        workspace: { branch: "engineer/parent-branch" },
-      });
-      const wl = createWorkspaceLifecycle(ctx);
-      const dispatch = createDispatch({ parent_id: "parent-001" } as Partial<Task>);
-
-      wl.setupWorkspace(dispatch);
-
-      expect(ctx.workspaceManager.createWorkspace).toHaveBeenCalledWith("task-001", "owner/repo", {
-        title: "Test task",
-        parentBranch: "engineer/parent-branch",
-        cloneUrl: "https://github.com/owner/repo.git",
-      });
     });
 
     it("registers existing workspace on resume", () => {

@@ -80,7 +80,6 @@ export interface PipelineState {
 export const Outcomes = {
   completed: "completed",
   review_pending: "review_pending",
-  decomposed: "decomposed",
   preempted: "preempted",
   blocked: "blocked",
   error: "error",
@@ -92,11 +91,6 @@ export type Outcome = (typeof Outcomes)[keyof typeof Outcomes];
 export type ExecuteTaskResult =
   | { outcome: typeof Outcomes.completed; phaseOutputs: Map<Phase, PhaseOutput> }
   | { outcome: typeof Outcomes.review_pending; phase: Phase; phaseOutputs: Map<Phase, PhaseOutput> }
-  | {
-      outcome: typeof Outcomes.decomposed;
-      childTaskIds: string[];
-      phaseOutputs: Map<Phase, PhaseOutput>;
-    }
   | { outcome: typeof Outcomes.preempted; lastPhase: Phase; checkpointId: string }
   | { outcome: typeof Outcomes.blocked; phase: Phase; reason: string }
   | { outcome: typeof Outcomes.error; phase: Phase; reason: string };

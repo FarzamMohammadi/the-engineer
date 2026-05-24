@@ -49,7 +49,7 @@ import { Complexities, Phases } from "../../src/schemas/orchestrator.js";
 import type { Checkpoint, Session } from "../../src/schemas/session-memory.js";
 import { CheckpointReasons } from "../../src/schemas/session-memory.js";
 import type { Task } from "../../src/schemas/task.js";
-import { CascadePolicies, TaskStates } from "../../src/schemas/task.js";
+import { TaskStates } from "../../src/schemas/task.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
 
 // ── Phase Directory Map (mirrors PHASE_DIR_MAP in llm-caller.ts) ─────────────
@@ -128,7 +128,6 @@ export const VALID_PHASE_DATA: Record<Phase, Record<string, unknown>> = {
     approach: "Implement the feature in src/index.ts",
     file_changes: [{ file: "src/index.ts", change_type: "modify", description: "Add feature" }],
     risks: [],
-    decomposition_plan: null,
   },
   execution: {
     files_changed: ["src/index.ts"],
@@ -175,9 +174,6 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     state: TaskStates.active,
     sub_state: "working",
     phase: null,
-    parent_id: null,
-    children: [],
-    cascade_policy: CascadePolicies.pause_siblings,
     title: "Test task",
     description: "A test task for orchestrator testing",
     source_text: "Test source",
@@ -185,7 +181,6 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     team: [],
     related: [],
     decisions: [],
-    child_summaries: [],
     workspace: null,
     review: null,
     blocked: null,

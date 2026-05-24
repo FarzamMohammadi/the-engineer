@@ -559,6 +559,11 @@ describe("TaskScheduler", () => {
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({ kind: NotificationKinds.alert, taskId: "t1" }),
     );
+    const alertCall = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as { message: string };
+    expect(alertCall.message).toContain("Runaway task");
+    expect(alertCall.message).toContain("minutes of total active time");
+    expect(alertCall.message).toContain("engineer retry t1");
+    expect(alertCall.message).toContain("root cause");
   });
 
   // 20c. handleTaskCompletion on terminated/cost_limit_reached transitions to blocked (notifications fired earlier by cost-limit-queue)

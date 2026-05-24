@@ -429,10 +429,15 @@ describe("ValidTransitions", () => {
     expect(unique.size).toBe(keys.length);
   });
 
-  it("terminal states (completed, failed) are never a 'from' state", () => {
+  it("completed is never a 'from' state", () => {
     const fromStates = new Set<string>(ValidTransitions.map((t) => t.from));
     expect(fromStates.has(TaskStates.completed)).toBe(false);
-    expect(fromStates.has(TaskStates.failed)).toBe(false);
+  });
+
+  it("failed can only transition to queued (owner retry)", () => {
+    const failedEdges = ValidTransitions.filter((t) => t.from === TaskStates.failed);
+    expect(failedEdges).toHaveLength(1);
+    expect(failedEdges[0]!.to).toBe(TaskStates.queued);
   });
 
   it("intake is never a 'to' state", () => {

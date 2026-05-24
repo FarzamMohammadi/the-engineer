@@ -370,6 +370,22 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       });
     });
 
+    eventBus.subscribe("daemon:hard-cap", EventTypes["health.stuck_detected"], (event: Event) => {
+      const p = event.payload as EventPayloads["health.stuck_detected"];
+      if (p.condition !== "no_state_transition") {
+        return;
+      }
+      if (!dispatchTracker.isInFlight(p.task_id)) {
+        return;
+      }
+      observer.warn("Hard-cap exceeded — terminating dispatch", {
+        taskId: p.task_id,
+        elapsedMs: p.elapsed_ms,
+        thresholdMs: p.threshold_ms,
+      });
+      dispatchTracker.terminate(p.task_id, "hard_cap_exceeded");
+    });
+
     eventBus.subscribe("daemon:health-plugin-failed", EventTypes["health.plugin_failed"], (event: Event) => {
       const p = event.payload as EventPayloads["health.plugin_failed"];
       if (!shouldNotifyHealth(`plugin:${p.plugin_id}`, clock.now())) {
@@ -404,6 +420,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     eventBus.unsubscribe("daemon:feedback");
     eventBus.unsubscribe("daemon:health-trigger");
     eventBus.unsubscribe("daemon:health-stuck");
+    eventBus.unsubscribe("daemon:hard-cap");
     eventBus.unsubscribe("daemon:health-plugin-failed");
     eventBus.unsubscribe("daemon:health-plugin-unhealthy");
   }

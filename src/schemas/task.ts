@@ -259,6 +259,7 @@ export const ValidTransitions = [
   },
   { from: TaskStates.review_pending, from_sub: SubStates.code, to: TaskStates.completed },
   { from: TaskStates.review_pending, from_sub: SubStates.code, to: TaskStates.queued },
+  { from: TaskStates.failed, to: TaskStates.queued },
 ] as const satisfies ReadonlyArray<{
   readonly from: TaskState;
   readonly from_sub?: SubState;

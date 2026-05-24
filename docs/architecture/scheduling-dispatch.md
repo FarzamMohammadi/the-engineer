@@ -51,8 +51,8 @@ The tracker also owns drain — see [Shutdown](#shutdown-drain) below.
 
 ### The reason routing table
 
-`Outcomes.terminated` carries one of five reasons. The scheduler routes each to
-exactly one recovery state:
+`Outcomes.terminated` carries a typed reason. The scheduler routes each to exactly
+one recovery state:
 
 | Reason                  | Recovery state | Notes |
 |-------------------------|----------------|-------|

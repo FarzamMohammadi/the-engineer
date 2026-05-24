@@ -31,7 +31,7 @@ Each concurrent task spawns a CLI agent process. Memory usage scales linearly �
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `stuck_threshold_ms` | integer (ms) | `1800000` (30m) | Duration of no progress after which a task is flagged as stuck. |
-| `max_active_duration_ms` | integer (ms) | `28800000` (8h) | Hard cap on total wall-clock time a task can remain active. |
+| `max_active_duration_ms` | integer (ms) | `28800000` (8h) | Hard cap on total wall-clock time a task can remain active. When exceeded, the dispatch is terminated, the task is marked `failed`, and the owner is alerted. Recover via `engineer retry <task-id>` after addressing the root cause. Wall-clock from `started_at`; blocked time counts. |
 | `shutdown_timeout_ms` | integer (ms) | `30000` (30s) | Single shared timeout for the shutdown drain — worst-case shutdown is `shutdown_timeout_ms`, not `shutdown_timeout_ms × active_count`. Any dispatch that cannot settle in time is re-queued as `graceful_shutdown` so the daemon exits cleanly. See [scheduling-dispatch.md](../architecture/scheduling-dispatch.md). |
 
 ## Retry Policy
@@ -45,7 +45,7 @@ applies before owner intervention is required.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `retry_policy.crash.backoff_minutes` | integer[] | `[1, 5, 15, 30, 30]` | Backoff schedule (in minutes) applied after each orchestrator crash. Index N is the wait before retry N+1. Past the array length, the last entry repeats until `max_attempts`. |
-| `retry_policy.crash.max_attempts` | integer | `5` | Crashes before the task is marked `failed`. Owner can recover via `engineer retry`. |
+| `retry_policy.crash.max_attempts` | integer | `5` | Crashes before the task is marked `failed`. Owner can recover via `engineer retry <task-id>` after addressing the root cause. |
 | `retry_policy.llm_unavailable.backoff_minutes` | integer[] | `[2, 5, 10, 15, 15]` | Backoff schedule applied each time the LLM adapter is unreachable, blocking the task. |
 | `retry_policy.llm_unavailable.max_attempts` | integer | `5` | LLM-unavailability cycles before the task stays blocked until the owner explicitly unblocks. |
 

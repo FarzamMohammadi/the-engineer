@@ -20,11 +20,11 @@ interface TaskRow {
 // ── Command ──────────────────────────────────────────────────────────────────
 
 /**
- * Retry a blocked task by transitioning it back to queued.
+ * Retry a blocked or failed task by transitioning it back to queued.
  *
- * This is a thin CLI entry point for the same unblock mechanism that the
- * ResponsePoller and dashboard use. Direct DB access (no full bootstrap)
- * keeps it fast and usable even when the daemon is stopped.
+ * Resets both per-category retry counters (crash, LLM-unavailable) and
+ * clears `not_before` so the retry cycle starts fresh. Direct DB access
+ * (no full bootstrap) keeps it fast and usable even when the daemon is stopped.
  */
 export function runRetry(engineerHome: string, taskId: string): number {
   const out = getOutput();
@@ -60,66 +60,77 @@ function retryTask(db: BetterSqlite3.Database, taskId: string): number {
     return 1;
   }
 
-  if (task.state !== TaskStates.blocked) {
-    out.error(`Task is in state "${task.state}", not "${TaskStates.blocked}". Only blocked tasks can be retried.`);
+  const retryableStates = new Set([TaskStates.blocked, TaskStates.failed]);
+  if (!retryableStates.has(task.state as typeof TaskStates.blocked)) {
+    out.error(`Task is in state "${task.state}". Only blocked or failed tasks can be retried.`);
     return 1;
   }
 
-  // Transition blocked → queued
+  const previousState = task.state;
   const now = new Date().toISOString();
 
   db.transaction(() => {
     db.prepare(
       `INSERT INTO state_transitions (task_id, from_state, to_state, reason, triggered_by, timestamp)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(taskId, TaskStates.blocked, TaskStates.queued, "cli_retry", "cli", now);
+    ).run(taskId, previousState, TaskStates.queued, "cli_retry", "cli", now);
 
     db.prepare("UPDATE tasks SET state = ?, sub_state = NULL, not_before = NULL WHERE id = ?").run(
       TaskStates.queued,
       taskId,
     );
 
-    // Clear blocked details but preserve contact history
-    const blockedRaw = task.blocked;
-    if (blockedRaw) {
-      try {
-        const blocked = JSON.parse(blockedRaw) as Record<string, unknown>;
-        const contacted = Array.isArray(blocked["contacted"]) ? blocked["contacted"] : [];
-        if (contacted.length > 0) {
-          db.prepare("UPDATE tasks SET blocked = ? WHERE id = ?").run(
-            JSON.stringify({
-              reason: "",
-              efforts_made: [],
-              contacted,
-              needed: "",
-              waiting_for: "",
-            }),
-            taskId,
-          );
-        } else {
-          db.prepare("UPDATE tasks SET blocked = NULL WHERE id = ?").run(taskId);
-        }
-      } catch {
-        db.prepare("UPDATE tasks SET blocked = NULL WHERE id = ?").run(taskId);
-      }
+    if (previousState === TaskStates.blocked) {
+      clearBlockedPreservingContacts(db, taskId, task.blocked);
     }
 
-    // Reset crash counter so retry cycle starts fresh
-    db.prepare("UPDATE tasks SET consecutive_crash_count = 0 WHERE id = ?").run(taskId);
+    db.prepare("UPDATE tasks SET consecutive_crash_count = 0, consecutive_llm_unavailable_count = 0 WHERE id = ?").run(
+      taskId,
+    );
   })();
 
   if (out.mode === "json") {
     out.data({
       taskId,
-      previousState: TaskStates.blocked,
+      previousState,
       newState: TaskStates.queued,
       retriedAt: now,
     });
   } else {
-    out.success(`Task ${taskId} retried — moved from blocked to queued.`);
+    out.success(`Task ${taskId} retried — moved from ${previousState} to queued.`);
     out.log(`  Title: ${task.title}`);
     out.log("  The daemon will pick it up on the next scheduling cycle.");
   }
 
   return 0;
+}
+
+/**
+ * Resets the `blocked` JSON column on a retried task. The `reason`, `needed`,
+ * `efforts_made`, and `waiting_for` fields are cleared, but the `contacted`
+ * array is preserved as history of outreach attempts. If the column is empty
+ * or the JSON is malformed, the column is set to NULL.
+ */
+function clearBlockedPreservingContacts(db: BetterSqlite3.Database, taskId: string, blockedRaw: string | null): void {
+  if (!blockedRaw) return;
+
+  const contacted = extractContactedHistory(blockedRaw);
+  if (contacted.length === 0) {
+    db.prepare("UPDATE tasks SET blocked = NULL WHERE id = ?").run(taskId);
+    return;
+  }
+
+  db.prepare("UPDATE tasks SET blocked = ? WHERE id = ?").run(
+    JSON.stringify({ reason: "", efforts_made: [], contacted, needed: "", waiting_for: "" }),
+    taskId,
+  );
+}
+
+function extractContactedHistory(blockedRaw: string): unknown[] {
+  try {
+    const parsed = JSON.parse(blockedRaw) as Record<string, unknown>;
+    return Array.isArray(parsed["contacted"]) ? parsed["contacted"] : [];
+  } catch {
+    return [];
+  }
 }

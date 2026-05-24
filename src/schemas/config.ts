@@ -80,7 +80,9 @@ export const DaemonConfigSchema = z.object({
     .int()
     .positive()
     .default(28_800_000)
-    .describe("Hard cap on total wall-clock time a task can remain active. Default: 8 hours."),
+    .describe(
+      "Hard cap on total wall-clock time a task can remain active. When exceeded, the dispatch is terminated, the task is marked failed, and the owner is alerted. Recover via `engineer retry <task-id>`. Default: 8 hours.",
+    ),
 
   // Shutdown
   shutdown_timeout_ms: z

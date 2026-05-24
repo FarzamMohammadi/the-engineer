@@ -168,7 +168,7 @@ let taskCounter = 0;
 export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestDaemonHandle {
   taskCounter = 0;
   const clock = new FakeClock();
-  const subscriptions = new Map<string, EventCallback>();
+  const subscriptions = new Map<string, { eventType: string; callback: EventCallback }>();
 
   // Temp directory for PID file operations
   const engineerHome = join(tmpdir(), `engineer-test-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`);
@@ -177,8 +177,8 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
   // ── EventBus mock ────────────────────────────────────────────────────
   const eventBus = {
     publish: vi.fn(),
-    subscribe: vi.fn((_subscriberId: string, eventType: string, callback: EventCallback) => {
-      subscriptions.set(eventType, callback);
+    subscribe: vi.fn((subscriberId: string, eventType: string, callback: EventCallback) => {
+      subscriptions.set(subscriberId, { eventType, callback });
     }),
     unsubscribe: vi.fn(),
     replay: vi.fn(),
@@ -360,7 +360,19 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     safetyLayer,
     workspaceManager,
     peopleDirectory,
-    getSubscriptionCallback: (eventType: string) => subscriptions.get(eventType),
+    getSubscriptionCallback: (key: string) => {
+      // Try subscriber ID first; fall back to first subscriber registered for that event type.
+      const bySubscriber = subscriptions.get(key);
+      if (bySubscriber) {
+        return bySubscriber.callback;
+      }
+      for (const entry of subscriptions.values()) {
+        if (entry.eventType === key) {
+          return entry.callback;
+        }
+      }
+      return undefined;
+    },
     getState: () => daemon.getState(),
     cleanup: () => {
       try {

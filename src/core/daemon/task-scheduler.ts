@@ -301,10 +301,11 @@ export function createTaskScheduler(
       }
       observer.error("Task exceeded max active duration — marking failed", { taskId, lastPhase });
       const title = taskEngine.getTask(taskId)?.title ?? taskId;
+      const thresholdMinutes = Math.round(config.max_active_duration_ms / 60_000);
       notifications.notify({
         kind: NotificationKinds.alert,
         taskId,
-        message: `Task "${title}" exceeded the maximum active duration and was marked failed. Run \`engineer retry ${taskId}\` after addressing the root cause.`,
+        message: `Task "${title}" exceeded ${String(thresholdMinutes)} minutes of total active time and was marked failed. Run \`engineer retry ${taskId}\` after addressing the root cause.`,
       });
       return;
     }

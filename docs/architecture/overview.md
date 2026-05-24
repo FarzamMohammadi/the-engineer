@@ -145,6 +145,7 @@ stateDiagram-v2
     review_pending --> completed : Approved + merged
     active --> completed : Direct completion
     active --> failed : Unrecoverable error
+    failed --> queued : engineer retry
 ```
 
 **States:**

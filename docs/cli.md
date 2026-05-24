@@ -1,6 +1,6 @@
 # CLI Reference
 
-The Engineer is operated through the `engineer` CLI — 6 commands covering daily use, diagnostics, and debugging.
+The Engineer is operated through the `engineer` CLI — daily-use commands (`start`, `stop`, `status`, `logs`), diagnostics (`doctor`), and per-task debugging (`why`, `retry`).
 
 ## Installing the CLI
 
@@ -196,6 +196,22 @@ engineer why <task-id> --json            # Machine-readable JSON output
 ```
 
 Source: [`src/cli/commands/why.ts`](../src/cli/commands/why.ts)
+
+### retry
+
+Re-queues a `blocked` or `failed` task so the daemon picks it up on the next scheduling cycle. Resets both per-category retry counters (crash, LLM-unavailable) and clears `not_before` so the retry cycle starts fresh. Direct database access — usable even when the daemon is stopped.
+
+```bash
+engineer retry <task-id>                 # Re-queue a blocked or failed task
+engineer retry <task-id> --json          # Machine-readable JSON output
+```
+
+Use this when:
+
+- A task is `blocked` because external input is now available (e.g., you answered a clarifying question outside the chat).
+- A task is `failed` because the [retry policy](configuration/daemon.md#retry-policy) exhausted its automatic budget, or because the [hard cap](configuration/daemon.md#stuck-detection) on total active time triggered. Address the root cause first, then retry.
+
+Source: [`src/cli/commands/retry.ts`](../src/cli/commands/retry.ts)
 
 ## Configuration
 

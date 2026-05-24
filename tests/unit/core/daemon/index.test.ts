@@ -387,6 +387,102 @@ describe("Daemon", () => {
     });
   });
 
+  // ── Hard-cap subscriber ───────────────────────────────────────────────
+
+  describe("hard-cap subscriber", () => {
+    it("registers a subscriber on health.stuck_detected for termination", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const callback = handle.getSubscriptionCallback("daemon:hard-cap");
+      expect(callback).toBeDefined();
+    });
+
+    it("terminates an in-flight dispatch when hard-cap is exceeded — routes to failed", async () => {
+      handle = createTestDaemon({ max_active_duration_ms: 28_800_000 });
+      await handle.daemon.start();
+
+      const task = createMockTask({ id: "task-cap", state: TaskStates.queued, sub_state: null });
+      handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
+
+      let resolveExecute: ((value: ExecuteTaskResult) => void) | undefined;
+      handle.orchestrator.executeTask.mockReturnValue(
+        new Promise<ExecuteTaskResult>((resolve) => {
+          resolveExecute = resolve;
+        }),
+      );
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({
+          id: "task-cap",
+          state: TaskStates.active,
+          sub_state: SubStates.working,
+          started_at: new Date(handle.clock.now()).toISOString(),
+        }),
+      );
+
+      await handle.daemon.tick();
+      handle.clock.advance(28_800_001);
+      await handle.daemon.tick();
+
+      // Health-monitor's tick publishes health.stuck_detected. Auto-dispatch
+      // is not wired in the mock — fire the hard-cap callback directly.
+      const hardCap = handle.getSubscriptionCallback("daemon:hard-cap");
+      expect(hardCap).toBeDefined();
+      hardCap?.({
+        id: "evt-cap",
+        type: EventTypes["health.stuck_detected"],
+        source: "health-monitor",
+        sequence: 1,
+        task_id: "task-cap",
+        timestamp: new Date(handle.clock.now()).toISOString(),
+        payload: {
+          task_id: "task-cap",
+          condition: "no_state_transition",
+          threshold_ms: 28_800_000,
+          elapsed_ms: 28_800_001,
+          last_activity: null,
+        },
+      });
+
+      // Settle the orchestrator promise so the late callback can route the outcome.
+      // The runner error is re-routed as terminated when the tracker has a recorded reason.
+      resolveExecute?.({ outcome: "error", error: new Error("aborted") } as unknown as ExecuteTaskResult);
+      await new Promise((r) => setImmediate(r));
+
+      const failedTransition = handle.taskEngine.requestTransition.mock.calls.find(
+        (c: unknown[]) => c[1] === TaskStates.failed && c[3] === "hard_cap_exceeded",
+      );
+      expect(failedTransition).toBeDefined();
+    });
+
+    it("ignores stuck events with conditions other than no_state_transition", async () => {
+      handle = createTestDaemon();
+      await handle.daemon.start();
+      const callback = handle.getSubscriptionCallback("daemon:hard-cap");
+      expect(callback).toBeDefined();
+
+      callback?.({
+        id: "evt-1",
+        type: EventTypes["health.stuck_detected"],
+        source: "health-monitor",
+        sequence: 1,
+        task_id: "task-stale",
+        timestamp: new Date(handle.clock.now()).toISOString(),
+        payload: {
+          task_id: "task-stale",
+          condition: "stale_journal",
+          threshold_ms: 1_800_000,
+          elapsed_ms: 2_000_000,
+          last_activity: null,
+        },
+      });
+
+      const failedTransitions = handle.taskEngine.requestTransition.mock.calls.filter(
+        (c: unknown[]) => c[1] === TaskStates.failed,
+      );
+      expect(failedTransitions).toHaveLength(0);
+    });
+  });
+
   // ── Preemption ────────────────────────────────────────────────────────
 
   describe("preemption", () => {

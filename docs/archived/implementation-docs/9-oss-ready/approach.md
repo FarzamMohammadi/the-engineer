@@ -24,6 +24,30 @@ Each slice follows The Engineer's own methodology:
 4. **Implementation** — Refactor, rewrite, test, document. Each commit is green.
 5. **Review** — Step back. Is it beautiful? Is it simple? Would a stranger understand it? Does it pass the lenses?
 
+### What Each RRP Must Hunt For
+
+The closing sweep at slice end enumerates defect classes to hunt for. The RRP at slice start has the same discipline applied to whatever the slice scopes. The slice is not cleanup or bug-fixing — it is refinement until every line earns its place. Bug-finding is a byproduct, not the goal.
+
+Active hunting list, applied to whatever the slice scopes:
+
+- **Dead surface.** Methods with zero callers. Enum values never written or read. Optional fields never populated. Branches no call path reaches. Query filters never passed. Re-exports labeled "for backwards compatibility." If it exists but no production code consumes it, name it.
+- **Dual sources of truth.** Data persisted in two places that must stay in sync. Maps mirroring DB state. Caches that diverge from canonical storage. Single-source it.
+- **Leaky module boundaries.** A module importing from a sibling at the same architectural layer when the dependency goes the wrong direction. Functions that do one module's job from inside another's. Cross-imports that bake in coupling.
+- **Misplaced concerns.** Helpers in a module only because the data they touch happens to colocate. Methods whose responsibilities belong to a different module. Brittle helpers that wouldn't exist if the concern lived where it belongs.
+- **Stale residue.** Comments referencing deleted features. JSDoc claiming behavior that no longer matches code. Imports once needed and no longer are.
+- **Over-engineered surface.** Interfaces wider than their callers ask for. Dynamic SQL builders called with no filters. Parameterized options always passed the same value. Configurability no caller exercises.
+
+When any of these surface, name them. Don't defer because "it's not actively bug-prone" — pre-v1, refinement is the point. The closing sweep catches what its principles call out; the RRP catches what those principles can't see because the structural shape itself is wrong.
+
+### Presenting Findings During RRP
+
+Co-owner discipline applies during the RRP, not just during implementation. The RRP is a high-decision-volume conversation — how findings get presented determines whether the user can engage with them at all.
+
+- **Lead with the recommendation.** For every choice — what to do, where something belongs, what to defer — name the call up front, in one sentence, with the reason. Do not present options neutrally; that offloads synthesis instead of doing the co-owner work.
+- **Tight first, depth on demand.** A 5-line recap with a "want more?" beats a 50-line dump. Surface the tension up front; let the user pull on threads.
+- **Batch the small.** When several sub-decisions follow the same principle (e.g., "all unused enum values get cut"), pack them into one yes/no, not five individual questions.
+- **Push back when right.** When the user frames a finding as "defer" but it has structural impact, surface why it belongs in the slice. Silence is not agreement.
+
 ### Tangents Are Welcome
 
 During any slice, discoveries will surface that belong to other slices or need immediate attention. When this happens:

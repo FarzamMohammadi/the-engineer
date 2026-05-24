@@ -6,7 +6,7 @@
 ## Key Files
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
-- [approach.md](approach.md) — strategy, lenses, co-founder rules, 16-slice roadmap, session protocol
+- [approach.md](approach.md) — strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
 - Current slice: `slices/07-workspace-session.md` — next up
 
 ## How This File Works

@@ -496,7 +496,7 @@ async function tryCommitPushAndCreatePR(
   };
 }
 
-/** Handle post-phase logic: decomposition, loopback, transitions, preemption, PR creation. */
+/** Handle post-phase logic: loopback, transitions, preemption, PR creation. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-branch pipeline orchestration
 async function handlePostPhaseActions(
   sessionId: string,
@@ -795,7 +795,7 @@ async function handlePostPhaseActions(
  * Execute a task through the phase pipeline.
  *
  * This is the main loop extracted from Orchestrator.executeTask().
- * Handles: phase sequence, loopback, preemption, decomposition,
+ * Handles: phase sequence, loopback, preemption,
  * PR creation, and phase transitions.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: main pipeline loop with extracted helpers
@@ -974,7 +974,7 @@ export async function runPhasePipeline(
       };
     }
 
-    // Post-phase processing: decomposition, PR creation, transitions, loopback, preemption.
+    // Post-phase processing: PR creation, transitions, loopback, preemption.
     // Wrapped separately so errors here (e.g. DB failure, PR creation exception) are caught
     // and routed through handlePhaseError, which also closes the session.
     let completion: PhaseCompletionResult;

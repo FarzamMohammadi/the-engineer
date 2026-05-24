@@ -113,21 +113,25 @@ interface SessionManifest {
   total_duration_ms: number;
 }
 
+/** Input for {@link updateManifest}. */
+interface UpdateManifestInput {
+  readonly tracesDir: string;
+  readonly taskId: string;
+  readonly phaseSequence: number;
+  readonly phase: Phase;
+  readonly stepName: string;
+  readonly traceFileName: string;
+  readonly startedAt: string;
+  readonly durationMs: number;
+  readonly costUsd: number | null;
+}
+
 /**
  * Update the session trace manifest.json with a completed step.
  * Creates the manifest if it doesn't exist. Best-effort — never throws.
  */
-function updateManifest(
-  tracesDir: string,
-  taskId: string,
-  phaseSequence: number,
-  phase: Phase,
-  stepName: string,
-  traceFileName: string,
-  startedAt: string,
-  durationMs: number,
-  costUsd: number | null,
-): void {
+function updateManifest(input: UpdateManifestInput): void {
+  const { tracesDir, taskId, phaseSequence, phase, stepName, traceFileName, startedAt, durationMs, costUsd } = input;
   try {
     const manifestPath = path.join(tracesDir, "sessions", taskId, "manifest.json");
     let manifest: SessionManifest;
@@ -521,18 +525,17 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
 
     // ── Update session trace manifest ────────────────────────────────────
     if (ctx.tracesDir && tracePath) {
-      const traceFileName = path.basename(tracePath);
-      updateManifest(
-        ctx.tracesDir,
+      updateManifest({
+        tracesDir: ctx.tracesDir,
         taskId,
-        state.phaseSequence,
+        phaseSequence: state.phaseSequence,
         phase,
-        resolvedStepName,
-        traceFileName,
+        stepName: resolvedStepName,
+        traceFileName: path.basename(tracePath),
         startedAt,
-        result.duration_ms,
-        result.cost_usd,
-      );
+        durationMs: result.duration_ms,
+        costUsd: result.cost_usd,
+      });
     }
 
     // ── End span ─────────────────────────────────────────────────────────

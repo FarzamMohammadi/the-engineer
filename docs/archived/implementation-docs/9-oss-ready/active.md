@@ -21,37 +21,57 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 6 — Scheduling & Dispatch — implementation Session 2 complete (global Session 26).**
-Single retry-policy module landed. Two task-level retry tracks (`BACKOFF_MINUTES` in
-scheduler, `LLM_RETRY_BACKOFF_MINUTES` in phase-runner) collapsed into one Core-owned
-module with per-category semantics; new `consecutive_llm_unavailable_count` field +
-`retry_policy` config block; phase-runner stops touching the counter / `not_before` /
-per-retry notification entirely; scheduler is the single `recordFailure` caller for
-both `crash` and `llm_unavailable`; boot recovery routes orphans through retry-policy
-and transitions to `failed` when the budget is exhausted — boot-loop hole closed. Live
-smoke run picked up the new column, executed an 11-minute end-to-end pipeline ending
-at `review_pending` with both counters correctly reset on success.
+**Slice 6 — Scheduling & Dispatch — implementation Session 3 complete (global Session 27).**
+The centerpiece landed in a single coherent commit (`c5ba7ec`). New
+`src/core/dispatch-tracker/` module owns in-flight dispatch lifecycle: per-dispatch
+ULID identity for idempotent late callbacks, one `AbortController` per dispatch
+(signal lives on the `Dispatch` contract; honoring lands in Slice 8), single
+`terminate(taskId, reason)` path, shared-timeout drain that synthesizes the late
+callback for stragglers so the daemon shuts down cleanly even without Slice 8's
+signal honoring. New `Outcomes.terminated` discriminated variant with typed reason
+collapses `Outcomes.preempted` and routes preemption/hard-cap/cost-limit/shutdown
+through one switch. Scheduler, preemption-manager, cost-limit-queue, and
+`drainForShutdown` all adopt the primitive in lockstep — `removeActiveDispatch`,
+`abandonPending`, and the dead `preemption.ready` event deleted (zero production
+callers). `priority` bounded `[1, 100]` in `TaskSchema` to match the DB CHECK.
 
-Design deviation from the plan (T2.5): phase-runner does NOT call retry-policy itself;
-scheduler is the sole `recordFailure` caller for `llm_unavailable`. Plan's literal text
-would have double-incremented on every LLM-unavailable event. The chosen design closes
-the cross-boundary import smell at the same time — phase-runner imports nothing from
-retry-policy or daemon. See commit message for full reasoning.
+Design notes from this session:
+- `isTaskEligible` extracted as a pure top-level function in `task-scheduler.ts`
+  (signature `(task: {id, not_before}, now: number)`). Scheduler and
+  preemption-manager both consume it; preemption-manager now filters ineligible
+  candidates before picking so it can't waste an eviction.
+- `Dispatch` split: `DispatchSchema` keeps the serializable shape (still
+  Zod-parsed by tests); the runtime `Dispatch` type extends it with
+  `signal: AbortSignal`. `AbortSignal` is runtime infrastructure, not parsed
+  input — Parse-Don't-Validate honored.
+- `dispatch-tracker.drain` synthesizes the late callback for stragglers after the
+  shared timeout — v1 best-effort: until Slice 8 plumbs the signal, in-flight
+  LLM calls won't honor abort, but the daemon must shut down anyway.
 
-Tangent parked for the Session 5 closing sweep: `docs/architecture/overview.md`'s
-state-machine table still lists `supervising` / `integrating` as active sub-states
-(stale post-Session 1 decomposition delete).
+Verification gate after Session 3: typecheck clean; lint clean (8 pre-existing
+complexity warnings + 3 new ones flagged by the pre-commit hook on the new module —
+drain at complexity 20 and an `Array<T>` syntax in the test; all fair candidates
+for the Session 5 closing sweep). Unit **2436 passed**; integration **39 passed**;
+e2e **16 passed**. Grep contract holds: `Outcomes.preempted`, `removeActiveDispatch`,
+`abandonPending`, `preemption.ready` all return zero matches in `src/`.
 
-Gap noted: Slice 6 Session 1 (decomposition delete, commit `6024492`) was committed
-without a `sessions/25.md` log file. Optional backfill from commit message if desired.
+Tangents parked for the Session 5 closing sweep:
+- `docs/architecture/overview.md`'s state-machine table still lists `supervising` /
+  `integrating` as active sub-states (stale post-Session 1 decomposition delete).
+- `dispatch-tracker.drain` cognitive complexity 20 > 15 (lint warning, not error).
+- `Array<T>` syntax in the dispatch-tracker test should be `T[]`.
 
-Next: **Session 3 — dispatch-tracker primitive + `Outcomes.terminated` + preemption
-tightening + drain + cost-limit** (the centerpiece, ~350k budget). Strict task ordering
-from the plan: T3.1 (Outcomes type) → T3.2 (phase-runner emits new variant) → T3.3
-(priority bounds) → T3.4 (dispatch-tracker module) → T3.5 (Dispatch signal contract) →
-T3.6 (scheduler adopts) → T3.7 (preemption adopts) → T3.8 (delete dead `preemption.ready`
-event) → T3.9 (cost-limit adopts) → T3.10 (drain rewrite) → T3.11 (docs) → T3.12 (commit).
-Start by reading `.claude/temp/create-plan/slice-06-scheduling.md` § Session 3.
+Gap noted (still): Slice 6 Session 1 (commit `6024492`) was committed without a
+`sessions/25.md` log file. Optional backfill from commit message if desired.
+
+Next: **Session 4 — hard-cap enforcement + `engineer retry` per-category reset +
+`failed → queued` transition + final docs** (~200k budget, smallest session). Strict
+task ordering from the plan: T4.1 (`failed → queued` ValidTransitions edge) → T4.2
+(`engineer retry` per-category reset + failed-state support) → T4.3 (hard-cap
+subscriber wired to `health.stuck_detected` → `dispatchTracker.terminate("hard_cap_exceeded")`)
+→ T4.4 (eligibility doc paragraph) → T4.5 (final doc sweep) → T4.6 (hard-cap alert
+wording) → T4.7 (commit). Start by reading `.claude/temp/create-plan/slice-06-scheduling.md`
+§ Session 4.
 
 **Slice shape locked (13 decisions):**
 
@@ -85,12 +105,13 @@ Start by reading `.claude/temp/create-plan/slice-06-scheduling.md` § Session 3.
 **Five-session implementation breakdown (in plan file, full detail):**
 1. ✅ Decomposition consumer delete (~250k) — commit `6024492`
 2. ✅ retry-policy + phase-runner adoption + crash recovery unification (~250k) — commit `ba0fae4`
-3. dispatch-tracker primitive + Outcomes.terminated + preemption + drain + cost-limit (~350k, the centerpiece)
+3. ✅ dispatch-tracker primitive + Outcomes.terminated + preemption + drain + cost-limit (~350k, the centerpiece) — commit `c5ba7ec`
 4. Hard-cap enforcement + engineer retry + failed→queued + docs (~200k)
 5. Closing standards sweep (variable, mirrors Slice 5 Session 22 pattern)
 
-**Gate status after Session 2:** typecheck clean; lint clean (8 pre-existing complexity
-warnings predate Slice 5); unit **2421 passed**; integration **39 passed**; e2e **16 passed**.
+**Gate status after Session 3:** typecheck clean; lint clean of errors (8 pre-existing
+complexity warnings predate Slice 5; 3 new warnings on the dispatch-tracker module to
+clean up in Session 5); unit **2436 passed**; integration **39 passed**; e2e **16 passed**.
 
 **Cross-slice handoffs landing in Slice 6's lap:** none currently parked specifically for
 Slice 6. Inherited from Slice 5 (still parked for their target slices): #9 reply-token +

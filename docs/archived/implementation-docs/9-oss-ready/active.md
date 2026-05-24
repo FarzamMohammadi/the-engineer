@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
 - [approach.md](approach.md) — strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: `slices/07-workspace-session.md` — RRP complete (Session 31), implementation Session 1 next
+- Current slice: `slices/07-workspace-session.md` — Sessions 1-2 complete, Session 3 next
 
 ## How This File Works
 
@@ -61,8 +61,8 @@ repo knowledge + preferences injected into the system prompt at session startup)
 folded into Slice 7. Reason: Slice 7 is shaped as cuts and reshapes — adding a new
 feature blurs that. Future-considerations entry captures the shape.
 
-**Plan deltas vs `slice-07-workspace-session.md`:** none. Session 1 executed the plan's
-task list exactly; remaining Sessions 2–5 unchanged.
+**Plan deltas vs `slice-07-workspace-session.md`:** none. Sessions 1-2 executed the
+plan's task lists exactly; remaining Sessions 3–5 unchanged.
 
 Methodology refinements (commits `b41aff7`, `adb6f66` from Session 31): `approach.md`
 codifies "What Each RRP Must Hunt For", "Presenting Findings During RRP", and

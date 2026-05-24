@@ -38,8 +38,9 @@ export function runRetry(engineerHome: string, taskId: string): number {
   let db: BetterSqlite3.Database;
   try {
     db = new BetterSqlite3(dbPath);
-  } catch {
-    out.error(`Failed to open database at ${dbPath}.`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    out.error(`Failed to open database at ${dbPath}: ${detail}`);
     return 1;
   }
 

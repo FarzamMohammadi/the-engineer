@@ -21,9 +21,9 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 7 — Workspace & Session** — Session 1 (knowledge layer cut +
-future-considerations consolidation) complete. Next: Session 2 — session-memory
-hygiene + facade-to-namespace refactor.
+**Slice 7 — Workspace & Session** — Session 2 (session-memory hygiene +
+facade-to-namespace refactor) complete. Next: Session 3 — workspace-manager
+surface audit + worktree lifecycle tightening.
 
 **Session 1 landed** (commits `7893cf9` doc-only + `a36a213` code cut):
 - `KnowledgeStore`, knowledge schemas, knowledge table + indexes, `Dispatch.knowledge`
@@ -37,6 +37,23 @@ hygiene + facade-to-namespace refactor.
   (distinct from the cut layer — pure static text into the system prompt, not a
   dynamic typed store).
 - Green at commit: 2401 unit + 39 integration + 16 e2e, lint clean, typecheck clean.
+
+**Session 2 landed** (commit `876b97a`):
+- Schema surface trimmed: SessionEndReason 7→5, JournalEntryType 7→3,
+  CheckpointReason 4→2. Dropped `previous_session_id`,
+  `resumed_from_checkpoint` from sessions; dropped `action_type`,
+  `finding_type`, `decision_key`, `comm_target` from journal entries.
+  Migration CHECK constraints updated to match.
+- SessionMemory facade → namespace: `ISessionMemory` interface deleted,
+  SessionMemory now exposes `sessions`, `journal`, `checkpoints` as
+  public readonly store fields. All call sites updated (38 files, net
+  −479 lines).
+- Dead code removed: `JournalQueryFilters` (dynamic SQL builder),
+  `CreateSessionInput`, `getSessionChain`, `SessionRow`, `rowToSession`.
+- Resume audit trail: journal entry at `phase-runner.ts:140` confirmed as
+  authoritative (captures phase, reason, next_action — no column dependency).
+- Green at commit: 2384 unit + 39 integration + 16 e2e, lint clean,
+  typecheck clean.
 
 **Mid-session decision recorded:** the standing system-prompt feature (owner-authored
 repo knowledge + preferences injected into the system prompt at session startup) is

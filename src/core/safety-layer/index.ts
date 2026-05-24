@@ -75,8 +75,10 @@ export const EVENTS: EventDeclaration[] = [
 export class SafetyLayer implements ISafetyLayer {
   private readonly costTracker: ICostTracker;
   private readonly policyEngine: PolicyEngine;
+  private readonly observer: IObserver;
 
   constructor(db: Database.Database, eventBus: IEventBus, config: SafetyConfig, observer: IObserver) {
+    this.observer = observer;
     this.costTracker = createCostTracker({
       db,
       eventBus,
@@ -95,6 +97,25 @@ export class SafetyLayer implements ISafetyLayer {
    * branches, files), merge policy, and cost limits. Returns a SafetyVerdict.
    */
   evaluateAction(taskId: string, actionClass: ActionClass, details: Record<string, unknown>): SafetyVerdict {
+    const verdict = this.computeVerdict(taskId, actionClass, details);
+    this.observer.recordDecision(
+      "safety_verdict",
+      `${actionClass} action for task ${taskId}`,
+      [
+        { id: "proceed", description: "Allow the action — within scope and cost limits" },
+        { id: "deny", description: "Block the action — scope or cost violation" },
+        { id: "ask_human", description: "Defer to the owner — autonomy policy requires approval" },
+      ],
+      verdict.action,
+      verdict.reason,
+      1,
+      { task_id: taskId },
+    );
+    return verdict;
+  }
+
+  /** Compute the verdict without recording it — extracted so callers can record once. */
+  private computeVerdict(taskId: string, actionClass: ActionClass, details: Record<string, unknown>): SafetyVerdict {
     // Input validation: deny on invalid input (never throw)
     const validationDeny = validateEvaluateInput(taskId, actionClass, details);
     if (validationDeny) {
@@ -136,13 +157,29 @@ export class SafetyLayer implements ISafetyLayer {
 
     switch (query.type) {
       case "can_i":
+        // evaluateAction records its own safety_verdict decision — no double-record here.
         return this.evaluateAction(query.context.task_id, query.context.action_class ?? ActionClasses.read, {
           ...query.context.details,
           repo: query.context.repo,
         });
 
-      case "should_i_ask":
-        return this.policyEngine.evaluateAutonomy(query);
+      case "should_i_ask": {
+        const verdict = this.policyEngine.evaluateAutonomy(query);
+        const category = query.context.decision_category ?? "unknown";
+        this.observer.recordDecision(
+          "autonomy_policy",
+          `should_i_ask "${category}" for repo ${query.context.repo}`,
+          [
+            { id: "proceed", description: "Decide autonomously — under threshold or always_decide" },
+            { id: "ask_human", description: "Defer to the owner — over threshold or always_ask" },
+          ],
+          verdict.action === "proceed" ? "proceed" : "ask_human",
+          verdict.reason,
+          1,
+          { task_id: query.context.task_id },
+        );
+        return verdict;
+      }
 
       case "cost_check":
         return this.evaluateCostStatus(query.context.task_id);

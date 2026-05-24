@@ -274,6 +274,12 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
     return pipelineResult.result;
   }
 
+  /** Alternatives recorded at each LLM retry decision point. */
+  const LLM_RETRY_OPTIONS = [
+    { id: "retry", description: "Retry with exponential backoff — error is transient" },
+    { id: "abort", description: "Stop retrying — error is permanent or budget exhausted" },
+  ];
+
   /** Call LLM with retry for transient failures. */
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: retry loop with observability logging — extraction would fragment the retry state
   async function callLlm(
@@ -289,6 +295,15 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
       } catch (error) {
         lastError = error;
         if (!isRetryableError(error)) {
+          ctx.observer.recordDecision(
+            "llm_retry",
+            `LLM attempt ${String(attempt + 1)} failed for task ${taskId}`,
+            LLM_RETRY_OPTIONS,
+            "abort",
+            `Error type "${error instanceof Error ? error.constructor.name : typeof error}" is not retryable`,
+            1,
+            { task_id: taskId },
+          );
           ctx.observer.warn("LLM call failed (non-retryable) — not retrying", {
             taskId,
             attempt: attempt + 1,
@@ -299,6 +314,15 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         }
         if (attempt < MAX_LLM_RETRIES - 1) {
           const delay = LLM_RETRY_BASE_MS * 2 ** attempt;
+          ctx.observer.recordDecision(
+            "llm_retry",
+            `LLM attempt ${String(attempt + 1)} failed for task ${taskId}`,
+            LLM_RETRY_OPTIONS,
+            "retry",
+            `Transient error — retrying after ${String(delay)}ms (${String(attempt + 1)}/${String(MAX_LLM_RETRIES)})`,
+            1,
+            { task_id: taskId },
+          );
           ctx.observer.warn("LLM call failed (transient) — retrying", {
             taskId,
             attempt: attempt + 1,
@@ -311,6 +335,15 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
         }
       }
     }
+    ctx.observer.recordDecision(
+      "llm_retry",
+      `LLM attempt ${String(MAX_LLM_RETRIES)} failed for task ${taskId}`,
+      LLM_RETRY_OPTIONS,
+      "abort",
+      `Retry budget exhausted (${String(MAX_LLM_RETRIES)} attempts)`,
+      1,
+      { task_id: taskId },
+    );
     ctx.observer.error("LLM retries exhausted", {
       taskId,
       attempts: MAX_LLM_RETRIES,

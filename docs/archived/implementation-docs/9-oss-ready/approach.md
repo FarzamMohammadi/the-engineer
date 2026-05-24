@@ -39,6 +39,17 @@ Active hunting list, applied to whatever the slice scopes:
 
 When any of these surface, name them. Don't defer because "it's not actively bug-prone" — pre-v1, refinement is the point. The closing sweep catches what its principles call out; the RRP catches what those principles can't see because the structural shape itself is wrong.
 
+**Coding-standards alignment is a planning concern, not a sweep concern.** Every section
+of [`coding-standards.md`](../../../coding-standards.md) applies to whatever the slice
+scopes — naming (§ 2), function design (§ 3), type system (§ 4), error handling (§ 5),
+imports (§ 6), module boundaries (§ 7), JSDoc (§ 8), testing (§ 9), single source of
+truth (§ 11), logging (§ 12), async discipline (§ 13), observability and tracing (§ 14),
+graceful degradation (§ 15). The RRP enumerates which sections actively apply to the
+slice's change set and folds them into per-session acceptance criteria. Catching a
+standards gap in the closing sweep is a process failure — the sweep is the final gate,
+not the first inspection. If a section applies, it is checked at planning time, applied
+during implementation, and re-verified during the sweep.
+
 ### Presenting Findings During RRP
 
 Co-owner discipline applies during the RRP, not just during implementation. The RRP is a high-decision-volume conversation — how findings get presented determines whether the user can engage with them at all.

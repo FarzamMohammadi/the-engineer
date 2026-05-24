@@ -42,6 +42,18 @@ export function createCostLimitQueue(
         continue;
       }
 
+      observer.recordDecision(
+        "cost_limit_terminate",
+        `Cost limit breached for active task ${taskId}`,
+        [
+          { id: "terminate_now", description: "Abort dispatch and notify owner immediately" },
+          { id: "let_finish", description: "Let the current LLM call finish before blocking" },
+        ],
+        "terminate_now",
+        "Owner must hear about the limit before the next LLM call accrues more spend",
+        1,
+        { task_id: taskId },
+      );
       observer.warn("Task hit cost limit — terminating dispatch", { taskId });
 
       // Termination is async via the dispatch-tracker — the scheduler's terminate

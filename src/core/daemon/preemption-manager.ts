@@ -96,6 +96,18 @@ export function createPreemptionManager(
       }
 
       if (shouldPreempt(activeTask.priority, candidate.priority, config.preemption_threshold)) {
+        observer.recordDecision(
+          "preemption_initiate",
+          `Higher-priority candidate ${candidate.id} (p=${String(candidate.priority)}) vs active ${activeTaskId} (p=${String(activeTask.priority)})`,
+          [
+            { id: "preempt", description: "Request cooperative yield from the active task" },
+            { id: "wait", description: "Let the active task finish naturally" },
+          ],
+          "preempt",
+          `Priority delta ${String(candidate.priority - activeTask.priority)} meets threshold ${String(config.preemption_threshold)}`,
+          1,
+          { task_id: activeTaskId },
+        );
         initiatePreemption(activeTaskId, candidate.id, candidate.priority - activeTask.priority, now);
         break;
       }
@@ -143,6 +155,18 @@ export function createPreemptionManager(
     if (pendingPreemption.retried) {
       // Second timeout: force-terminate via the dispatch-tracker. The terminate
       // routing in the scheduler transitions the task to queued.
+      observer.recordDecision(
+        "preemption_timeout",
+        `Preemption of ${pendingPreemption.targetTaskId} timed out twice (cooperative window: ${String(config.preemption_timeout_ms)}ms)`,
+        [
+          { id: "retry_request", description: "Re-emit the preemption.requested event and wait again" },
+          { id: "force_terminate", description: "Abort the dispatch via the dispatch-tracker" },
+        ],
+        "force_terminate",
+        "Second timeout — cooperative yield is not happening; reclaim the slot now",
+        1,
+        { task_id: pendingPreemption.targetTaskId },
+      );
       observer.error("Preemption double timeout — force-terminating dispatch", {
         targetTaskId: pendingPreemption.targetTaskId,
       });

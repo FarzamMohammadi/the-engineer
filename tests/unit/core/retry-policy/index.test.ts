@@ -36,6 +36,7 @@ function makeObserver(): IObserver {
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
+    recordDecision: vi.fn().mockReturnValue(""),
   } as unknown as IObserver;
 }
 

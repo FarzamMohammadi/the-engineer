@@ -438,6 +438,21 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     const disposition = retryPolicy.recordFailure("crash", task.id);
 
+    observer.recordDecision(
+      "crash_recovery",
+      `Orphaned active task ${task.id} found on boot — crash recovery (consecutive crash #${String(disposition.count)})`,
+      [
+        { id: "requeue", description: "Re-queue the task for normal scheduling" },
+        { id: "fail_terminal", description: "Mark task failed — crash budget exhausted (boot-loop guard)" },
+      ],
+      disposition.disposition === "terminal" ? "fail_terminal" : "requeue",
+      disposition.disposition === "terminal"
+        ? "Retry-policy returned terminal — re-queueing would loop the daemon on a poison task"
+        : "Under crash budget — re-queue with backoff for the next dispatch cycle",
+      1,
+      { task_id: task.id },
+    );
+
     if (disposition.disposition === "terminal") {
       const result = taskEngine.requestTransition(
         task.id,

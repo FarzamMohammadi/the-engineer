@@ -276,6 +276,28 @@ export function createTaskScheduler(
    * cost-limit blocks for owner unblock, shutdown re-queues for the next start.
    */
   function handleTerminatedOutcome(taskId: string, reason: TerminationReason, lastPhase: unknown): void {
+    const routingOptions = [
+      { id: "queued", description: "Return to queue for the next scheduling tick" },
+      { id: "failed", description: "Mark task failed — owner must retry manually" },
+      { id: "blocked", description: "Block for owner unblock action" },
+    ];
+    const routeForReason: Record<TerminationReason, string> = {
+      cooperative_preemption: "queued",
+      preemption_timeout: "queued",
+      graceful_shutdown: "queued",
+      hard_cap_exceeded: "failed",
+      cost_limit_reached: "blocked",
+    };
+    observer.recordDecision(
+      "termination_routing",
+      `Dispatch terminated for task ${taskId} (reason: ${reason}, lastPhase: ${String(lastPhase)})`,
+      routingOptions,
+      routeForReason[reason],
+      `Reason "${reason}" maps to ${routeForReason[reason]} per the terminate routing table`,
+      1,
+      { task_id: taskId },
+    );
+
     if (reason === "cooperative_preemption" || reason === "preemption_timeout" || reason === "graceful_shutdown") {
       const transition = taskEngine.requestTransition(taskId, TaskStates.queued, null, reason, "daemon");
       if (transition.success) {

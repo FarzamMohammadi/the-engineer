@@ -68,8 +68,22 @@ export function createRetryPolicy(deps: RetryPolicyDeps): RetryPolicy {
 
     taskEngine.updateTaskField(taskId, counterField, newCount);
 
+    const dispositionOptions = [
+      { id: "retry", description: "Schedule another attempt with backoff" },
+      { id: "terminal", description: `Move task to ${TERMINAL_STATES[category]} — budget exhausted` },
+    ];
+
     if (newCount >= categoryConfig.max_attempts) {
       const terminalState = TERMINAL_STATES[category];
+      observer.recordDecision(
+        "retry_policy",
+        `${category} failure #${String(newCount)} for task ${taskId}`,
+        dispositionOptions,
+        "terminal",
+        `Reached max_attempts (${String(categoryConfig.max_attempts)}) — no more retries; moving to ${terminalState}`,
+        1,
+        { task_id: taskId },
+      );
       observer.info("Retry budget exhausted — terminal disposition", {
         taskId,
         category,
@@ -84,6 +98,15 @@ export function createRetryPolicy(deps: RetryPolicyDeps): RetryPolicy {
     const notBefore = new Date(clock.now() + backoffMs).toISOString();
     taskEngine.updateTaskField(taskId, "not_before", notBefore);
 
+    observer.recordDecision(
+      "retry_policy",
+      `${category} failure #${String(newCount)} for task ${taskId}`,
+      dispositionOptions,
+      "retry",
+      `Under max_attempts (${String(newCount)}/${String(categoryConfig.max_attempts)}) — backoff ${String(backoffMs)}ms before next attempt`,
+      1,
+      { task_id: taskId },
+    );
     observer.info("Retry scheduled with backoff", {
       taskId,
       category,

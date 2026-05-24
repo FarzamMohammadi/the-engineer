@@ -196,7 +196,7 @@ export const TaskSchema = z.object({
   skip_research: z.boolean().default(false),
 
   // Tracking
-  priority: z.number().int(),
+  priority: z.number().int().min(1).max(100).default(50),
   llm_tokens: z.number().int(),
   llm_cost_usd: z.number(),
   compute_time_ms: z.number().int(),

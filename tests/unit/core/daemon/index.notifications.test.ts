@@ -162,7 +162,8 @@ describe("Daemon Notifications", () => {
         contacts: [{ channel: "telegram", handle: "@farzam" }],
       });
       setupTaskDispatch(handle, {
-        outcome: "preempted",
+        outcome: "terminated",
+        reason: "cooperative_preemption",
         lastPhase: "execution",
         checkpointId: "cp-1",
       });

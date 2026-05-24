@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createCostLimitQueue } from "../../../../src/core/daemon/cost-limit-queue.js";
 import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
+import type { DispatchTracker } from "../../../../src/core/dispatch-tracker/index.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
@@ -28,31 +29,44 @@ function makeNotifications(): NotificationRouter {
   };
 }
 
+function makeDispatchTracker(): DispatchTracker {
+  return {
+    register: vi.fn(),
+    terminate: vi.fn(),
+    isInFlight: vi.fn().mockReturnValue(true),
+    getActiveCount: vi.fn().mockReturnValue(0),
+    getActiveTaskIds: vi.fn().mockReturnValue([]),
+    drain: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe("CostLimitQueue", () => {
-  it("transitions active task to blocked and sends notification", () => {
+  it("terminates the in-flight dispatch with reason cost_limit_reached and notifies the owner immediately", () => {
     const taskEngine = {
       getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-1", state: TaskStates.active })),
-      requestTransition: vi.fn().mockReturnValue({ success: true }),
+      requestTransition: vi.fn(),
     };
     const notifications = makeNotifications();
+    const dispatchTracker = makeDispatchTracker();
     const observer = createTestObserverFacade("daemon");
 
     const queue = createCostLimitQueue(
       taskEngine as unknown as Parameters<typeof createCostLimitQueue>[0],
       notifications,
+      dispatchTracker,
       observer,
     );
 
     queue.add("cost-1");
     queue.process();
 
-    expect(taskEngine.requestTransition).toHaveBeenCalledWith(
-      "cost-1",
-      TaskStates.blocked,
-      null,
-      "cost_limit_reached",
-      "daemon",
-    );
+    // Termination goes through the dispatch-tracker — scheduler routes the eventual
+    // settle to `blocked` via the terminate routing.
+    expect(dispatchTracker.terminate).toHaveBeenCalledWith("cost-1", "cost_limit_reached");
+    // No direct state transition from cost-limit-queue anymore.
+    expect(taskEngine.requestTransition).not.toHaveBeenCalled();
+    // Notifications fire immediately — owner gets the signal *now*, not when the
+    // in-flight LLM call eventually settles.
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({ kind: NotificationKinds.cost_limit, taskId: "cost-1" }),
     );
@@ -60,7 +74,7 @@ describe("CostLimitQueue", () => {
       expect.objectContaining({
         kind: NotificationKinds.ticket_comment,
         taskId: "cost-1",
-        message: "Task blocked \u2014 cost limit reached.",
+        message: "Task blocked — cost limit reached.",
       }),
     );
   });
@@ -68,23 +82,25 @@ describe("CostLimitQueue", () => {
   it("drains the queue — subsequent process is a no-op", () => {
     const taskEngine = {
       getTask: vi.fn().mockReturnValue(makeTask({ id: "cost-2", state: TaskStates.active })),
-      requestTransition: vi.fn().mockReturnValue({ success: true }),
+      requestTransition: vi.fn(),
     };
     const notifications = makeNotifications();
+    const dispatchTracker = makeDispatchTracker();
     const observer = createTestObserverFacade("daemon");
 
     const queue = createCostLimitQueue(
       taskEngine as unknown as Parameters<typeof createCostLimitQueue>[0],
       notifications,
+      dispatchTracker,
       observer,
     );
 
     queue.add("cost-2");
     queue.process();
-    expect(taskEngine.requestTransition).toHaveBeenCalledOnce();
+    expect(dispatchTracker.terminate).toHaveBeenCalledOnce();
 
     queue.process();
-    expect(taskEngine.requestTransition).toHaveBeenCalledOnce();
+    expect(dispatchTracker.terminate).toHaveBeenCalledOnce();
   });
 
   it("skips non-active tasks in the queue", () => {
@@ -93,18 +109,20 @@ describe("CostLimitQueue", () => {
       requestTransition: vi.fn(),
     };
     const notifications = makeNotifications();
+    const dispatchTracker = makeDispatchTracker();
     const observer = createTestObserverFacade("daemon");
 
     const queue = createCostLimitQueue(
       taskEngine as unknown as Parameters<typeof createCostLimitQueue>[0],
       notifications,
+      dispatchTracker,
       observer,
     );
 
     queue.add("cost-3");
     queue.process();
 
-    expect(taskEngine.requestTransition).not.toHaveBeenCalled();
+    expect(dispatchTracker.terminate).not.toHaveBeenCalled();
     expect(notifications.notify).not.toHaveBeenCalled();
   });
 });

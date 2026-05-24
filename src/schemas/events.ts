@@ -37,7 +37,6 @@ export const EventTypeSchema = z.enum([
   "cost.limit_reached",
   "cost.quota_exhausted",
   "preemption.requested",
-  "preemption.ready",
   "preemption.completed",
   "timeout.reminder",
   "timeout.self_unblock_check",
@@ -167,14 +166,6 @@ export const PreemptionRequestedPayloadSchema = z.object({
   priority_delta: z.number().int(),
 });
 export type PreemptionRequestedPayload = z.infer<typeof PreemptionRequestedPayloadSchema>;
-
-export const PreemptionReadyPayloadSchema = z.object({
-  task_id: z.string(),
-  checkpoint_id: z.string(),
-  phase: z.string(),
-  atomic_op: z.string(),
-});
-export type PreemptionReadyPayload = z.infer<typeof PreemptionReadyPayloadSchema>;
 
 export const PreemptionCompletedPayloadSchema = z.object({
   target_task_id: z.string(),
@@ -484,7 +475,6 @@ export type EventPayloads = {
   "cost.limit_reached": CostLimitReachedPayload;
   "cost.quota_exhausted": CostQuotaExhaustedPayload;
   "preemption.requested": PreemptionRequestedPayload;
-  "preemption.ready": PreemptionReadyPayload;
   "preemption.completed": PreemptionCompletedPayload;
   "timeout.reminder": TimeoutReminderPayload;
   "timeout.self_unblock_check": TimeoutSelfUnblockCheckPayload;
@@ -535,7 +525,6 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "cost.limit_reached": CostLimitReachedPayloadSchema,
   "cost.quota_exhausted": CostQuotaExhaustedPayloadSchema,
   "preemption.requested": PreemptionRequestedPayloadSchema,
-  "preemption.ready": PreemptionReadyPayloadSchema,
   "preemption.completed": PreemptionCompletedPayloadSchema,
   "timeout.reminder": TimeoutReminderPayloadSchema,
   "timeout.self_unblock_check": TimeoutSelfUnblockCheckPayloadSchema,

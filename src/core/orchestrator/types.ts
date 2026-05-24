@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { OrchestratorConfig, WorkspaceConfig } from "../../schemas/config.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { Phases } from "../../schemas/orchestrator.js";
@@ -76,11 +77,24 @@ export interface PipelineState {
 
 // ── Phase Completion Outcome ──────────────────────────────────────────────
 
+/** Why a dispatch was forcibly ended, routed by the scheduler to the right terminal/recovery state. */
+export const TerminationReasonSchema = z.enum([
+  "cooperative_preemption",
+  "preemption_timeout",
+  "hard_cap_exceeded",
+  "cost_limit_reached",
+  "graceful_shutdown",
+]);
+export type TerminationReason = z.infer<typeof TerminationReasonSchema>;
+
+/** Constant enum values for TerminationReason. Use instead of raw strings. */
+export const TerminationReasons = TerminationReasonSchema.enum;
+
 /** Constant enum for executeTask outcome values. */
 export const Outcomes = {
   completed: "completed",
   review_pending: "review_pending",
-  preempted: "preempted",
+  terminated: "terminated",
   blocked: "blocked",
   error: "error",
 } as const;
@@ -91,7 +105,12 @@ export type Outcome = (typeof Outcomes)[keyof typeof Outcomes];
 export type ExecuteTaskResult =
   | { outcome: typeof Outcomes.completed; phaseOutputs: Map<Phase, PhaseOutput> }
   | { outcome: typeof Outcomes.review_pending; phase: Phase; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: typeof Outcomes.preempted; lastPhase: Phase; checkpointId: string }
+  | {
+      outcome: typeof Outcomes.terminated;
+      reason: TerminationReason;
+      lastPhase: Phase | null;
+      checkpointId: string | null;
+    }
   | { outcome: typeof Outcomes.blocked; phase: Phase; reason: string }
   | { outcome: typeof Outcomes.error; phase: Phase; reason: string };
 

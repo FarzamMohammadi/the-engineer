@@ -23,8 +23,8 @@ Each concurrent task spawns a CLI agent process. Memory usage scales linearly â€
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `preemption_threshold` | integer | `20` | Minimum priority gap to trigger preemption. A p70 task preempts a p50 task (gap=20) but not a p55 task (gap=15). |
-| `preemption_timeout_ms` | integer (ms) | `60000` | Grace period for a preempted task to checkpoint before forced swap. |
+| `preemption_threshold` | integer | `20` | Minimum priority gap to trigger preemption. A p70 task preempts a p50 task (gap=20) but not a p55 task (gap=15). Task `priority` is bounded to `[1, 100]` by the schema and the database CHECK constraint; the default priority for a new task is `50`. |
+| `preemption_timeout_ms` | integer (ms) | `60000` | Grace period for a preempted task to checkpoint cooperatively. If the cooperative cycle misses two deadlines, the daemon force-terminates the dispatch via the dispatch-tracker primitive â€” see [scheduling-dispatch.md](../architecture/scheduling-dispatch.md). One preemption per tick by design. |
 
 ## Stuck Detection
 
@@ -32,7 +32,7 @@ Each concurrent task spawns a CLI agent process. Memory usage scales linearly â€
 |-------|------|---------|-------------|
 | `stuck_threshold_ms` | integer (ms) | `1800000` (30m) | Duration of no progress after which a task is flagged as stuck. |
 | `max_active_duration_ms` | integer (ms) | `28800000` (8h) | Hard cap on total wall-clock time a task can remain active. |
-| `shutdown_timeout_ms` | integer (ms) | `30000` (30s) | Time to wait for active tasks to checkpoint during graceful shutdown. |
+| `shutdown_timeout_ms` | integer (ms) | `30000` (30s) | Single shared timeout for the shutdown drain â€” worst-case shutdown is `shutdown_timeout_ms`, not `shutdown_timeout_ms Ã— active_count`. Any dispatch that cannot settle in time is re-queued as `graceful_shutdown` so the daemon exits cleanly. See [scheduling-dispatch.md](../architecture/scheduling-dispatch.md). |
 
 ## Retry Policy
 

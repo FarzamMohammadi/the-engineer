@@ -7,7 +7,6 @@ import {
   CostIncurredPayloadSchema,
   type Event,
   EventTypes,
-  PreemptionReadyPayloadSchema,
 } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { SessionEndReasons } from "../../schemas/session-memory.js";
@@ -37,13 +36,6 @@ export const EVENTS: EventDeclaration[] = [
     type: EventTypes["cost.incurred"],
     description: "Emitted after each LLM call with token/cost details",
     payloadSchema: CostIncurredPayloadSchema,
-    publishers: ["orchestrator"],
-    subscribers: [],
-  },
-  {
-    type: EventTypes["preemption.ready"],
-    description: "Emitted when the orchestrator reaches a safe checkpoint for preemption",
-    payloadSchema: PreemptionReadyPayloadSchema,
     publishers: ["orchestrator"],
     subscribers: [],
   },

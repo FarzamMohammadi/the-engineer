@@ -199,10 +199,11 @@ export function createMockTask(overrides?: Partial<Task>): Task {
 
 // ── Mock Dispatch ─────────────────────────────────────────────────────────────
 
-/** Create a valid Dispatch object for testing. */
+/** Create a valid Dispatch object for testing. Signal defaults to a fresh, never-aborted AbortSignal. */
 export function createMockDispatch(overrides?: {
   task?: Partial<Task>;
   resume_from?: Checkpoint | null;
+  signal?: AbortSignal;
 }): Dispatch {
   return {
     task: createMockTask(overrides?.task),
@@ -211,6 +212,7 @@ export function createMockDispatch(overrides?: {
       repo: [],
       user: [],
     },
+    signal: overrides?.signal ?? new AbortController().signal,
   } as Dispatch;
 }
 

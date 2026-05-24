@@ -6,7 +6,6 @@ import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { ComplexitySchema, Phases } from "../../schemas/orchestrator.js";
 import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { TaskStates } from "../../schemas/task.js";
-import type { PublishInput } from "../event-bus/index.js";
 import type { AndonCord } from "./andon-cord.js";
 import { LlmUnavailableError, PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
 import { sendOutreach } from "./outreach-sender.js";
@@ -315,19 +314,12 @@ function handlePreemption(
 
   ctx.sessionMemory.endSession(sessionId, SessionEndReasons.preempted);
 
-  ctx.eventBus.publish({
-    type: "preemption.ready",
-    source: "orchestrator",
-    task_id: taskId,
-    payload: {
-      task_id: taskId,
-      checkpoint_id: checkpoint.id,
-      phase: currentPhase,
-      atomic_op: "phase_complete",
-    },
-  } satisfies PublishInput<"preemption.ready">);
-
-  return { outcome: "preempted", lastPhase: currentPhase, checkpointId: checkpoint.id };
+  return {
+    outcome: Outcomes.terminated,
+    reason: "cooperative_preemption",
+    lastPhase: currentPhase,
+    checkpointId: checkpoint.id,
+  };
 }
 
 /** Check if self-review output requires loopback to execution. */

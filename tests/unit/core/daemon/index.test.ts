@@ -468,7 +468,7 @@ describe("Daemon", () => {
       expect(preemptCalls).toHaveLength(0);
     });
 
-    it("completes preemption when orchestrator returns preempted", async () => {
+    it("completes preemption when orchestrator returns terminated/cooperative_preemption", async () => {
       handle = createTestDaemon({ preemption_threshold: 20 });
 
       const lowTask = createMockTask({
@@ -479,7 +479,7 @@ describe("Daemon", () => {
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([lowTask]);
 
-      // Orchestrator will return preempted
+      // Orchestrator will yield via Outcomes.terminated with reason cooperative_preemption.
       let resolveExecute: ((result: ExecuteTaskResult) => void) | undefined;
       handle.orchestrator.executeTask.mockReturnValueOnce(
         new Promise<ExecuteTaskResult>((resolve) => {
@@ -501,7 +501,12 @@ describe("Daemon", () => {
       await handle.daemon.tick();
 
       // Orchestrator yields
-      resolveExecute?.({ outcome: "preempted", lastPhase: "research", checkpointId: "cp-1" });
+      resolveExecute?.({
+        outcome: "terminated",
+        reason: "cooperative_preemption",
+        lastPhase: "research",
+        checkpointId: "cp-1",
+      });
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(handle.getState().pendingPreemption).toBeNull();
@@ -679,14 +684,17 @@ describe("Daemon", () => {
   // ── Event Handlers ────────────────────────────────────────────────────
 
   describe("event handlers", () => {
-    it("cost.limit_reached blocks the affected task on next tick", async () => {
+    it("cost.limit_reached terminates the in-flight dispatch and routes to blocked when it settles", async () => {
       handle = createTestDaemon();
-      await handle.daemon.start();
 
-      // Simulate cost.limit_reached event
-      const callback = handle.getSubscriptionCallback(EventTypes["cost.limit_reached"]);
-      expect(callback).toBeDefined();
-
+      // Dispatch a task — orchestrator will yield via the abort signal so the
+      // scheduler's late-callback path can route the terminate routing to `blocked`.
+      const task = createMockTask({
+        id: "task-costly",
+        state: TaskStates.queued,
+        sub_state: null,
+      });
+      handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({
           id: "task-costly",
@@ -695,6 +703,19 @@ describe("Daemon", () => {
         }),
       );
 
+      let executeSettle: ((result: ExecuteTaskResult) => void) | undefined;
+      handle.orchestrator.executeTask.mockReturnValueOnce(
+        new Promise<ExecuteTaskResult>((resolve) => {
+          executeSettle = resolve;
+        }),
+      );
+
+      await handle.daemon.start();
+      await handle.daemon.tick(); // Dispatch task-costly
+
+      // Simulate cost.limit_reached event
+      const callback = handle.getSubscriptionCallback(EventTypes["cost.limit_reached"]);
+      expect(callback).toBeDefined();
       callback?.({
         id: "evt-1",
         sequence: 1,
@@ -712,7 +733,18 @@ describe("Daemon", () => {
         },
       });
 
+      // Drain the cost-limit-queue — fires dispatchTracker.terminate + immediate notifications.
       await handle.daemon.tick();
+
+      // The orchestrator promise settles after the abort — drives the late callback,
+      // which routes the terminated outcome to `blocked` via the scheduler.
+      executeSettle?.({
+        outcome: "terminated",
+        reason: "cost_limit_reached",
+        lastPhase: null,
+        checkpointId: null,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "task-costly",

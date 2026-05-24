@@ -85,6 +85,7 @@ graph LR
 | **Orchestrator** | Seven-phase task execution pipeline, agent loop, workspace lifecycle |
 | **TaskEngine** | Task state machine, transitions, permissions, priority queries |
 | **RetryPolicy** | Single source of truth for task-level retry semantics — per-category backoff schedules, ceilings, and terminal disposition. Called by the scheduler (crash + LLM-unavailable) and by boot recovery |
+| **DispatchTracker** | Single owner of in-flight dispatch lifecycle. Mints a per-dispatch identity so late callbacks are idempotent across re-dispatch, owns the `AbortSignal` exposed to the orchestrator, and exposes one `terminate(taskId, reason)` path that routes preemption, cost-limit, hard-cap, and graceful-shutdown through `Outcomes.terminated`. Drains on shutdown with a single shared timeout. See [scheduling-dispatch.md](scheduling-dispatch.md). |
 | **EventBus** | Pub/sub with SQLite persistence, replay for state reconstruction, glob pattern subscriptions |
 | **SafetyLayer** | Policy evaluation, cost tracking, autonomy verdicts |
 | **ActionPipeline** | Authorization middleware: Gate 1 (state check) + Gate 2 (policy check) + Execute + Notify |

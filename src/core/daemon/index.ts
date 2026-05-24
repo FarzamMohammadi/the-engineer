@@ -22,6 +22,7 @@ import {
 } from "../../schemas/events.js";
 import { TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
+import { createDispatchTracker } from "../dispatch-tracker/index.js";
 import { createEvaluationManager } from "../evaluation/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
@@ -213,6 +214,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     observer: ctx.observer,
   });
 
+  const dispatchTracker = createDispatchTracker({ observer: ctx.observer });
+
   const scheduler = createTaskScheduler(
     ctx,
     notifications,
@@ -221,14 +224,11 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       onTaskError: (taskId, error) => handleTaskError(taskId, error),
     },
     retryPolicy,
+    dispatchTracker,
     evaluation,
   );
 
-  const preemption = createPreemptionManager(
-    ctx,
-    () => scheduler.getActiveTaskIds(),
-    (taskId) => scheduler.removeActiveDispatch(taskId),
-  );
+  const preemption = createPreemptionManager(ctx, () => scheduler.getActiveTaskIds(), dispatchTracker);
 
   const unblockResolver = createUnblockResolver({
     taskEngine: ctx.taskEngine,
@@ -243,15 +243,18 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
   const healthMonitor = createDaemonHealthMonitor(ctx, notifications, () => scheduler.getActiveTaskIds());
 
-  const costLimitQueue = createCostLimitQueue(taskEngine, notifications, observer);
+  const costLimitQueue = createCostLimitQueue(taskEngine, notifications, dispatchTracker, observer);
 
   // ── Cross-Subsystem Coordination ──────────────────────────────────────
 
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
     scheduler.handleTaskCompletion(taskId, result);
 
-    // Clear pending preemption on preempted outcome
-    if (result.outcome === Outcomes.preempted) {
+    // Clear pending preemption when the cooperative or forced preemption cycle settles.
+    if (
+      result.outcome === Outcomes.terminated &&
+      (result.reason === "cooperative_preemption" || result.reason === "preemption_timeout")
+    ) {
       preemption.clearPending();
     }
   }

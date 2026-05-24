@@ -228,7 +228,7 @@ describe("Orchestrator", () => {
       );
     });
 
-    it("returns preempted when preemption flag is set between phases", async () => {
+    it("returns terminated/cooperative_preemption when preemption flag is set between phases", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
@@ -237,7 +237,10 @@ describe("Orchestrator", () => {
 
       const result = await handle.orchestrator.executeTask(dispatch);
 
-      expect(result.outcome).toBe("preempted");
+      expect(result.outcome).toBe("terminated");
+      if (result.outcome === "terminated") {
+        expect(result.reason).toBe("cooperative_preemption");
+      }
     });
 
     it("creates checkpoint with reason 'preemption'", async () => {
@@ -252,20 +255,6 @@ describe("Orchestrator", () => {
         (call: unknown[]) => (call[0] as { reason: string }).reason === CheckpointReasons.preemption,
       );
       expect(preemptionCheckpoint).toBeDefined();
-    });
-
-    it("emits preemption.ready event", async () => {
-      handle.setAllPhaseResponses();
-      const dispatch = createMockDispatch();
-
-      handle.triggerPreemption("task-001", "task-high-priority");
-      await handle.orchestrator.executeTask(dispatch);
-
-      const readyEvent = handle.eventBus.publish.mock.calls.find(
-        (call: unknown[]) => (call[0] as { type: string }).type === "preemption.ready",
-      );
-      expect(readyEvent).toBeDefined();
-      expect((readyEvent![0] as { payload: { task_id: string } }).payload.task_id).toBe("task-001");
     });
 
     it("ends session with reason 'preempted'", async () => {

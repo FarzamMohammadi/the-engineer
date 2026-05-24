@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createPreemptionManager } from "../../../../src/core/daemon/preemption-manager.js";
 import type { PreemptionManagerContext } from "../../../../src/core/daemon/types.js";
+import type { DispatchTracker } from "../../../../src/core/dispatch-tracker/index.js";
 import type { DaemonConfig } from "../../../../src/schemas/config.js";
-import { TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,19 +83,34 @@ function makeContext(configOverrides?: Partial<DaemonConfig>): {
   return { ctx, eventBus, taskEngine };
 }
 
+function makeDispatchTracker(): DispatchTracker {
+  return {
+    register: vi.fn(),
+    terminate: vi.fn(),
+    isInFlight: vi.fn().mockReturnValue(true),
+    getActiveCount: vi.fn().mockReturnValue(0),
+    getActiveTaskIds: vi.fn().mockReturnValue([]),
+    drain: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function makeEligible(id: string, priority: number): { id: string; priority: number; not_before: string | null } {
+  return { id, priority, not_before: null };
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("PreemptionManager", () => {
   it("initiates preemption when priority delta exceeds threshold", () => {
     const { ctx, eventBus, taskEngine } = makeContext({ preemption_threshold: 20 });
 
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
+    taskEngine.getQueuedByPriority.mockReturnValue([makeEligible("queued-1", 80)]);
     taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
 
     const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
     pm.evaluate(1000);
 
     expect(pm.getPending()).not.toBeNull();
@@ -119,13 +134,13 @@ describe("PreemptionManager", () => {
   it("does not preempt when delta is below threshold", () => {
     const { ctx, eventBus, taskEngine } = makeContext({ preemption_threshold: 20 });
 
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 60 }]);
+    taskEngine.getQueuedByPriority.mockReturnValue([makeEligible("queued-1", 60)]);
     taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
 
     const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
     pm.evaluate(1000);
 
     expect(pm.getPending()).toBeNull();
@@ -138,19 +153,17 @@ describe("PreemptionManager", () => {
       preemption_timeout_ms: 30_000,
     });
 
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
+    taskEngine.getQueuedByPriority.mockReturnValue([makeEligible("queued-1", 80)]);
     taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
 
     const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
 
-    // Initiate preemption at t=1000
     pm.evaluate(1000);
     expect(eventBus.publish).toHaveBeenCalledOnce();
 
-    // First timeout at t=32000 (elapsed > 30_000)
     pm.evaluate(32_000);
 
     expect(eventBus.publish).toHaveBeenCalledTimes(2);
@@ -162,137 +175,135 @@ describe("PreemptionManager", () => {
       }),
     );
 
-    // Pending should still exist, with retried=true
     const pending = pm.getPending();
     expect(pending).not.toBeNull();
     expect(pending?.retried).toBe(true);
-    expect(removeActiveDispatch).not.toHaveBeenCalled();
+    expect(dispatchTracker.terminate).not.toHaveBeenCalled();
     expect(taskEngine.requestTransition).not.toHaveBeenCalled();
   });
 
-  it("force-transitions task to queued on double timeout", () => {
+  it("terminates the dispatch with reason preemption_timeout on double timeout", () => {
     const { ctx, taskEngine } = makeContext({
       preemption_threshold: 20,
       preemption_timeout_ms: 30_000,
     });
 
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
+    taskEngine.getQueuedByPriority.mockReturnValue([makeEligible("queued-1", 80)]);
     taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
 
     const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
 
-    // Initiate at t=0
     pm.evaluate(0);
-
-    // First timeout at t=31000
     pm.evaluate(31_000);
     expect(pm.getPending()?.retried).toBe(true);
 
-    // Second timeout at t=62000 (31000 + 31000)
     pm.evaluate(62_000);
 
-    expect(taskEngine.requestTransition).toHaveBeenCalledWith(
-      "active-1",
-      TaskStates.queued,
-      null,
-      "preemption_timeout",
-      "daemon",
-    );
-    expect(removeActiveDispatch).toHaveBeenCalledWith("active-1");
+    expect(dispatchTracker.terminate).toHaveBeenCalledWith("active-1", "preemption_timeout");
+    // The scheduler's terminate routing handles the queued transition — preemption-manager
+    // no longer issues it directly.
+    expect(taskEngine.requestTransition).not.toHaveBeenCalled();
     expect(pm.getPending()).toBeNull();
+  });
+
+  it("filters out ineligible candidates before picking — does not preempt for a not_before-blocked candidate", () => {
+    const { ctx, eventBus, taskEngine } = makeContext({ preemption_threshold: 20 });
+
+    const future = new Date(2000).toISOString();
+    taskEngine.getQueuedByPriority.mockReturnValue([
+      { id: "queued-blocked", priority: 80, not_before: future },
+      makeEligible("queued-eligible", 70),
+    ]);
+    taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
+
+    const getActiveTaskIds = vi.fn(() => ["active-1"]);
+    const dispatchTracker = makeDispatchTracker();
+
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
+    pm.evaluate(1000);
+
+    // The 80-priority candidate is ineligible; the eligible 70 should be picked instead.
+    expect(pm.getPending()?.replacementTaskId).toBe("queued-eligible");
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ preempting_task_id: "queued-eligible", priority_delta: 20 }),
+      }),
+    );
+  });
+
+  it("does not preempt when every queued candidate is ineligible", () => {
+    const { ctx, eventBus, taskEngine } = makeContext({ preemption_threshold: 20 });
+
+    const future = new Date(2000).toISOString();
+    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-blocked", priority: 90, not_before: future }]);
+    taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
+
+    const getActiveTaskIds = vi.fn(() => ["active-1"]);
+    const dispatchTracker = makeDispatchTracker();
+
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
+    pm.evaluate(1000);
+
+    expect(pm.getPending()).toBeNull();
+    expect(eventBus.publish).not.toHaveBeenCalled();
   });
 
   it("skips evaluation when a pending preemption already exists", () => {
     const { ctx, eventBus, taskEngine } = makeContext({
       preemption_threshold: 20,
-      preemption_timeout_ms: 300_000, // large timeout so no timeout triggers
+      preemption_timeout_ms: 300_000,
     });
 
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
+    taskEngine.getQueuedByPriority.mockReturnValue([makeEligible("queued-1", 80)]);
     taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
 
     const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
 
-    // Initiate preemption
     pm.evaluate(1000);
     expect(eventBus.publish).toHaveBeenCalledOnce();
 
-    // Second evaluate should not initiate new preemption (no timeout either)
     pm.evaluate(2000);
-    expect(eventBus.publish).toHaveBeenCalledOnce(); // still 1
-    expect(getActiveTaskIds).toHaveBeenCalledOnce(); // not called on second evaluate
+    expect(eventBus.publish).toHaveBeenCalledOnce();
+    expect(getActiveTaskIds).toHaveBeenCalledOnce();
   });
 
   it("skips evaluation when there are no active tasks", () => {
     const { ctx, eventBus, taskEngine } = makeContext();
 
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
+    taskEngine.getQueuedByPriority.mockReturnValue([makeEligible("queued-1", 80)]);
 
     const getActiveTaskIds = vi.fn(() => []);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
     pm.evaluate(1000);
 
     expect(pm.getPending()).toBeNull();
     expect(eventBus.publish).not.toHaveBeenCalled();
-    // Should not even check queued tasks since no active tasks
     expect(taskEngine.getQueuedByPriority).not.toHaveBeenCalled();
   });
 
   it("clearPending resets pending state", () => {
     const { ctx, taskEngine } = makeContext({ preemption_threshold: 20 });
 
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
+    taskEngine.getQueuedByPriority.mockReturnValue([makeEligible("queued-1", 80)]);
     taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
 
     const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
 
     pm.evaluate(1000);
     expect(pm.getPending()).not.toBeNull();
 
     pm.clearPending();
-    expect(pm.getPending()).toBeNull();
-  });
-
-  it("abandonPending removes active dispatch and clears pending", () => {
-    const { ctx, taskEngine } = makeContext({ preemption_threshold: 20 });
-
-    taskEngine.getQueuedByPriority.mockReturnValue([{ id: "queued-1", priority: 80 }]);
-    taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
-
-    const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
-
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
-
-    pm.evaluate(1000);
-    expect(pm.getPending()).not.toBeNull();
-
-    pm.abandonPending();
-    expect(removeActiveDispatch).toHaveBeenCalledWith("active-1");
-    expect(pm.getPending()).toBeNull();
-  });
-
-  it("abandonPending is a no-op when no pending preemption", () => {
-    const { ctx } = makeContext();
-
-    const getActiveTaskIds = vi.fn(() => []);
-    const removeActiveDispatch = vi.fn();
-
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
-
-    pm.abandonPending();
-    expect(removeActiveDispatch).not.toHaveBeenCalled();
     expect(pm.getPending()).toBeNull();
   });
 
@@ -303,9 +314,9 @@ describe("PreemptionManager", () => {
     taskEngine.getTask.mockReturnValue({ id: "active-1", priority: 50 });
 
     const getActiveTaskIds = vi.fn(() => ["active-1"]);
-    const removeActiveDispatch = vi.fn();
+    const dispatchTracker = makeDispatchTracker();
 
-    const pm = createPreemptionManager(ctx, getActiveTaskIds, removeActiveDispatch);
+    const pm = createPreemptionManager(ctx, getActiveTaskIds, dispatchTracker);
     pm.evaluate(1000);
 
     expect(pm.getPending()).toBeNull();

@@ -1,5 +1,6 @@
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { TaskStates } from "../../schemas/task.js";
+import type { DispatchTracker } from "../dispatch-tracker/index.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IObserver } from "../observer/index.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -10,7 +11,7 @@ import type { NotificationRouter } from "./notification-router.js";
 export interface CostLimitQueue {
   /** Register a task that breached a cost limit (called from EventBus subscription). */
   add(taskId: string): void;
-  /** Drain the queue: transition active tasks to blocked and notify. */
+  /** Drain the queue: terminate in-flight dispatches and notify the owner immediately. */
   process(): void;
 }
 
@@ -19,6 +20,7 @@ export interface CostLimitQueue {
 export function createCostLimitQueue(
   taskEngine: ITaskEngine,
   notifications: NotificationRouter,
+  dispatchTracker: DispatchTracker,
   observer: IObserver,
 ): CostLimitQueue {
   const pending: string[] = [];
@@ -36,22 +38,23 @@ export function createCostLimitQueue(
     const batch = pending.splice(0);
     for (const taskId of batch) {
       const task = taskEngine.getTask(taskId);
-      if (task && task.state === TaskStates.active) {
-        observer.warn("Task blocked due to cost limit", { taskId });
-        const result = taskEngine.requestTransition(taskId, TaskStates.blocked, null, "cost_limit_reached", "daemon");
-        if (!result.success) {
-          observer.warn("Cost limit transition failed — task may have already changed state", {
-            taskId,
-            reason: result.reason,
-          });
-        }
-        notifications.notify({ kind: NotificationKinds.cost_limit, taskId });
-        notifications.notify({
-          kind: NotificationKinds.ticket_comment,
-          taskId,
-          message: "Task blocked \u2014 cost limit reached.",
-        });
+      if (!task || task.state !== TaskStates.active) {
+        continue;
       }
+
+      observer.warn("Task hit cost limit — terminating dispatch", { taskId });
+
+      // Termination is async via the dispatch-tracker — the scheduler's terminate
+      // routing will transition the task to `blocked` when the in-flight dispatch
+      // settles. But the owner must hear about the limit *now*, not whenever the
+      // LLM call eventually finishes, so notifications fire immediately.
+      dispatchTracker.terminate(taskId, "cost_limit_reached");
+      notifications.notify({ kind: NotificationKinds.cost_limit, taskId });
+      notifications.notify({
+        kind: NotificationKinds.ticket_comment,
+        taskId,
+        message: "Task blocked — cost limit reached.",
+      });
     }
   }
 

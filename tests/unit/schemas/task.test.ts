@@ -365,6 +365,21 @@ describe("TaskSchema", () => {
   it("rejects invalid timestamp format", () => {
     expect(() => TaskSchema.parse({ ...minimalTask, created_at: "yesterday" })).toThrow();
   });
+
+  it("defaults priority to 50 when omitted", () => {
+    const { priority: _priority, ...noPriority } = minimalTask;
+    expect(TaskSchema.parse(noPriority).priority).toBe(50);
+  });
+
+  it("rejects priority below 1 (DB CHECK lower bound)", () => {
+    expect(() => TaskSchema.parse({ ...minimalTask, priority: 0 })).toThrow();
+    expect(() => TaskSchema.parse({ ...minimalTask, priority: -10 })).toThrow();
+  });
+
+  it("rejects priority above 100 (DB CHECK upper bound)", () => {
+    expect(() => TaskSchema.parse({ ...minimalTask, priority: 101 })).toThrow();
+    expect(() => TaskSchema.parse({ ...minimalTask, priority: 1000 })).toThrow();
+  });
 });
 
 // ── StateTransitionSchema ──────────────────────────────────────────────────────

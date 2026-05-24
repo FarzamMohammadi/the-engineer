@@ -125,6 +125,7 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
     } as Task,
     resume_from: null,
     knowledge: { repo: [], user: [] },
+    signal: new AbortController().signal,
   } as Dispatch;
 }
 
@@ -380,8 +381,10 @@ describe("PhaseRunner", () => {
 
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
-      expect(result.outcome).toBe("preempted");
-      expect(ctx.eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({ type: "preemption.ready" }));
+      expect(result.outcome).toBe("terminated");
+      if (result.outcome === "terminated") {
+        expect(result.reason).toBe("cooperative_preemption");
+      }
     });
 
     it("returns error result on phase handler failure", async () => {

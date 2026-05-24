@@ -19,7 +19,6 @@ import {
   GitPushedPayloadSchema,
   HealthStuckDetectedPayloadSchema,
   HealthTriggerFailurePayloadSchema,
-  PreemptionReadyPayloadSchema,
   PreemptionRequestedPayloadSchema,
   ReviewPollCompletedPayloadSchema,
   SubscriptionSchema,
@@ -36,7 +35,6 @@ import {
   WorkspaceVerifiedPayloadSchema,
   eventPayloadSchemas,
 } from "../../../src/schemas/events.js";
-import { Phases } from "../../../src/schemas/orchestrator.js";
 import { ActionClasses, TaskStates } from "../../../src/schemas/task.js";
 
 // ── Event Envelope ─────────────────────────────────────────────────────────────
@@ -269,18 +267,6 @@ describe("PreemptionRequestedPayloadSchema", () => {
       priority_delta: 20,
     };
     expect(PreemptionRequestedPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("PreemptionReadyPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      checkpoint_id: "01CHK",
-      phase: Phases.execution,
-      atomic_op: "llm_call",
-    };
-    expect(PreemptionReadyPayloadSchema.parse(valid)).toEqual(valid);
   });
 });
 

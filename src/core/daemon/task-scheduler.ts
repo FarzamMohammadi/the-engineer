@@ -3,9 +3,11 @@ import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
+import type { DispatchTracker } from "../dispatch-tracker/index.js";
 import type { EvaluationManager } from "../evaluation/types.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
+import type { TerminationReason } from "../orchestrator/types.js";
 import type { RetryPolicy } from "../retry-policy/index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { TaskSchedulerContext } from "./types.js";
@@ -15,6 +17,20 @@ import type { TaskSchedulerContext } from "./types.js";
 /** Whether a task in the given state consumes a working slot. */
 export function isSlotConsuming(state: string, subState: string | null): boolean {
   return state === TaskStates.active && subState === SubStates.working;
+}
+
+/**
+ * Whether a queued task is eligible to dispatch right now.
+ *
+ * The only gate is `not_before` — set by retry-policy after a crash or
+ * LLM-unavailable failure to defer the next attempt. Slot availability is a
+ * separate concern handled by the scheduler.
+ */
+export function isTaskEligible(task: { id: string; not_before: string | null }, now: number): boolean {
+  if (task.not_before && new Date(task.not_before).getTime() > now) {
+    return false;
+  }
+  return true;
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -33,20 +49,18 @@ export interface TaskScheduler {
   scheduleNext(queuedTasks?: Task[]): void;
   /** Dispatch a specific task to the Orchestrator. */
   dispatchTask(task: Task): void;
-  /** Get currently active dispatch task IDs. */
+  /** Get currently active dispatch task IDs (delegates to dispatch-tracker). */
   getActiveTaskIds(): string[];
   /** Get count of completed tasks. */
   getTasksCompleted(): number;
-  /** Remove an active dispatch (for preemption/shutdown). */
-  removeActiveDispatch(taskId: string): void;
   /**
-   * Drain all active dispatches during shutdown.
-   * Waits up to timeoutMs for each task, then transitions active tasks back to queued.
+   * Drain all active dispatches during shutdown via the dispatch-tracker primitive.
+   * Single shared timeout — worst case is `timeoutMs`, not `timeoutMs × N`.
    */
   drainForShutdown(timeoutMs: number): Promise<void>;
-  /** Handle task completion after orchestrator finishes. */
+  /** Handle task completion after orchestrator finishes (idempotency provided by dispatch-tracker). */
   handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void;
-  /** Handle task error from orchestrator crash. */
+  /** Handle task error from orchestrator crash (idempotency provided by dispatch-tracker). */
   handleTaskError(taskId: string, error: unknown): void;
 }
 
@@ -57,13 +71,13 @@ export function createTaskScheduler(
   notifications: NotificationRouter,
   callbacks: SchedulerCallbacks,
   retryPolicy: RetryPolicy,
+  dispatchTracker: DispatchTracker,
   evaluationManager?: EvaluationManager | null,
 ): TaskScheduler {
   const { config, eventBus, taskEngine, orchestrator, clock, observer } = ctx;
   const { sessionMemory, workspaceManager } = ctx;
 
   // ── Internal State ──────────────────────────────────────────────────────
-  const activeDispatches = new Map<string, Promise<ExecuteTaskResult>>();
   let tasksCompleted = 0;
 
   // ── Evaluation ─────────────────────────────────────────────────────────
@@ -82,19 +96,7 @@ export function createTaskScheduler(
   // ── Scheduling ──────────────────────────────────────────────────────────
 
   function getAvailableSlots(): number {
-    return config.max_concurrent - activeDispatches.size;
-  }
-
-  function isTaskEligible(task: Task): boolean {
-    // Retry backoff gate: skip tasks whose not_before is in the future
-    if (task.not_before && new Date(task.not_before).getTime() > clock.now()) {
-      observer.debug("Task not eligible: not_before gate", {
-        taskId: task.id,
-        notBefore: task.not_before,
-      });
-      return false;
-    }
-    return true;
+    return config.max_concurrent - dispatchTracker.getActiveCount();
   }
 
   function scheduleNext(prefetchedTasks?: Task[]): void {
@@ -103,8 +105,15 @@ export function createTaskScheduler(
       return;
     }
 
+    const now = clock.now();
     const queuedTasks = prefetchedTasks ?? taskEngine.getQueuedByPriority();
-    const eligible = queuedTasks.filter(isTaskEligible);
+    const eligible = queuedTasks.filter((t) => {
+      const ok = isTaskEligible(t, now);
+      if (!ok) {
+        observer.debug("Task not eligible: not_before gate", { taskId: t.id, notBefore: t.not_before });
+      }
+      return ok;
+    });
     const tasksToDispatch = eligible.slice(0, available);
 
     observer.debug("scheduleNext: slot evaluation", {
@@ -133,12 +142,6 @@ export function createTaskScheduler(
     const repoKnowledge = task.workspace ? sessionMemory.getKnowledge("repo", task.workspace.repo) : [];
     const userKnowledge = sessionMemory.getKnowledge("user");
 
-    const dispatch: Dispatch = {
-      task,
-      resume_from: checkpoint,
-      knowledge: { repo: repoKnowledge, user: userKnowledge },
-    };
-
     // Transition to active.working
     const transition = taskEngine.requestTransition(
       task.id,
@@ -164,30 +167,22 @@ export function createTaskScheduler(
       knowledgeEntries: { repo: repoKnowledge.length, user: userKnowledge.length },
     });
 
-    // Fire-and-forget dispatch
-    const promise = orchestrator.executeTask(dispatch);
-    activeDispatches.set(task.id, promise);
-
-    promise.then(
-      (result) => {
-        try {
-          callbacks.onTaskCompleted(task.id, result);
-        } catch (callbackError) {
-          observer.error("onTaskCompleted callback threw unexpectedly", {
-            taskId: task.id,
-            error: sanitizeErrorMessage(callbackError),
-          });
-        }
+    // dispatch-tracker owns the AbortController, mints the dispatchId, and routes
+    // late callbacks idempotently — the scheduler is purely the policy layer.
+    dispatchTracker.register(
+      task.id,
+      (signal) => {
+        const dispatch: Dispatch = {
+          task,
+          resume_from: checkpoint,
+          knowledge: { repo: repoKnowledge, user: userKnowledge },
+          signal,
+        };
+        return orchestrator.executeTask(dispatch);
       },
-      (error) => {
-        try {
-          callbacks.onTaskError(task.id, error);
-        } catch (callbackError) {
-          observer.error("onTaskError callback threw unexpectedly", {
-            taskId: task.id,
-            error: sanitizeErrorMessage(callbackError),
-          });
-        }
+      {
+        onCompleted: callbacks.onTaskCompleted,
+        onError: callbacks.onTaskError,
       },
     );
   }
@@ -275,16 +270,63 @@ export function createTaskScheduler(
     }
   }
 
-  function handlePreemptedOutcome(taskId: string, lastPhase: unknown): void {
-    const preemptTransition = taskEngine.requestTransition(taskId, TaskStates.queued, null, "preempted", "daemon");
-    if (preemptTransition.success) {
-      observer.info("Task preempted — returned to queue", { taskId, lastPhase });
-    } else {
-      observer.warn("Failed to transition preempted task back to queued", {
-        taskId,
-        reason: preemptTransition.reason,
-      });
+  /**
+   * Single routing surface for `Outcomes.terminated`. Each reason maps to one
+   * recovery state — preemption returns to the queue, hard-cap fails the task,
+   * cost-limit blocks for owner unblock, shutdown re-queues for the next start.
+   */
+  function handleTerminatedOutcome(taskId: string, reason: TerminationReason, lastPhase: unknown): void {
+    if (reason === "cooperative_preemption" || reason === "preemption_timeout" || reason === "graceful_shutdown") {
+      const transition = taskEngine.requestTransition(taskId, TaskStates.queued, null, reason, "daemon");
+      if (transition.success) {
+        observer.info("Task terminated — returned to queue", { taskId, reason, lastPhase });
+      } else {
+        observer.warn("Failed to transition terminated task back to queued", {
+          taskId,
+          reason,
+          transitionReason: transition.reason,
+        });
+      }
+      return;
     }
+
+    if (reason === "hard_cap_exceeded") {
+      const transition = taskEngine.requestTransition(taskId, TaskStates.failed, null, reason, "daemon");
+      if (!transition.success) {
+        observer.warn("Failed to transition hard-cap victim to failed", {
+          taskId,
+          transitionReason: transition.reason,
+        });
+        return;
+      }
+      observer.error("Task exceeded max active duration — marking failed", { taskId, lastPhase });
+      const title = taskEngine.getTask(taskId)?.title ?? taskId;
+      notifications.notify({
+        kind: NotificationKinds.alert,
+        taskId,
+        message: `Task "${title}" exceeded the maximum active duration and was marked failed. Run \`engineer retry ${taskId}\` after addressing the root cause.`,
+      });
+      return;
+    }
+
+    if (reason === "cost_limit_reached") {
+      // cost-limit-queue already fired the owner notifications immediately when the
+      // limit hit. The terminate routing just performs the deferred state transition.
+      const transition = taskEngine.requestTransition(taskId, TaskStates.blocked, null, reason, "daemon");
+      if (transition.success) {
+        observer.info("Task terminated by cost limit — blocked for owner unblock", { taskId, lastPhase });
+      } else {
+        observer.warn("Failed to block cost-limited task", {
+          taskId,
+          transitionReason: transition.reason,
+        });
+      }
+      return;
+    }
+
+    // Defensive — exhaustiveness check.
+    const exhaustive: never = reason;
+    observer.error("Unhandled termination reason", { taskId, reason: exhaustive });
   }
 
   function handleUnknownOutcome(taskId: string, outcome: string): void {
@@ -340,9 +382,10 @@ export function createTaskScheduler(
     });
   }
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: discriminated union routing over 7 outcome types — extraction would fragment related state handling
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: discriminated union routing over the outcome types — extraction would fragment related state handling
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
-    activeDispatches.delete(taskId);
+    // dispatch-tracker already removed the entry and verified dispatch identity
+    // before invoking this callback — no local cleanup needed.
     tasksCompleted++;
 
     // Reset both retry counters on any successful (non-crash, non-llm_unavailable) outcome.
@@ -359,8 +402,8 @@ export function createTaskScheduler(
       handleCompletedOutcome(taskId);
     } else if (result.outcome === Outcomes.review_pending) {
       handleReviewPendingOutcome(taskId);
-    } else if (result.outcome === Outcomes.preempted) {
-      handlePreemptedOutcome(taskId, result.lastPhase);
+    } else if (result.outcome === Outcomes.terminated) {
+      handleTerminatedOutcome(taskId, result.reason, result.lastPhase);
     } else if (result.outcome === Outcomes.blocked) {
       // Task already transitioned to blocked by the phase-runner.
       const blockedTask = taskEngine.getTask(taskId);
@@ -384,7 +427,8 @@ export function createTaskScheduler(
   }
 
   function handleTaskError(taskId: string, error: unknown): void {
-    activeDispatches.delete(taskId);
+    // dispatch-tracker already removed the entry and verified dispatch identity
+    // before invoking this callback — no local cleanup needed.
     try {
       observer.error("Orchestrator crash during task execution", {
         taskId,
@@ -464,79 +508,21 @@ export function createTaskScheduler(
   // ── Accessors ───────────────────────────────────────────────────────────
 
   function getActiveTaskIds(): string[] {
-    return [...activeDispatches.keys()];
+    return dispatchTracker.getActiveTaskIds();
   }
 
   function getTasksCompleted(): number {
     return tasksCompleted;
   }
 
-  function removeActiveDispatch(taskId: string): void {
-    activeDispatches.delete(taskId);
-  }
-
+  /**
+   * Drain on shutdown. The dispatch-tracker aborts every in-flight signal,
+   * waits one shared timeout for cooperative settle, and routes each settle
+   * through the late callback. Late callbacks see `Outcomes.terminated` with
+   * reason `graceful_shutdown` and re-queue the task via `handleTerminatedOutcome`.
+   */
   async function drainForShutdown(timeoutMs: number): Promise<void> {
-    const total = activeDispatches.size;
-    if (total === 0) {
-      return;
-    }
-
-    // Drain all dispatches in parallel — worst-case shutdown time is timeoutMs,
-    // not timeoutMs × activeDispatches.size.
-    const entries = [...activeDispatches.entries()];
-    const results = await Promise.allSettled(
-      entries.map(([taskId, promise], index) => {
-        observer.debug("Draining active dispatch for shutdown", {
-          taskId,
-          index: index + 1,
-          total,
-        });
-        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-        return Promise.race([
-          promise,
-          new Promise<never>((_, reject) => {
-            timeoutHandle = setTimeout(() => reject(new Error("shutdown_timeout")), timeoutMs);
-          }),
-        ]).finally(() => {
-          if (timeoutHandle !== undefined) {
-            clearTimeout(timeoutHandle);
-          }
-        });
-      }),
-    );
-
-    let drained = 0;
-    let transitioned = 0;
-
-    for (let i = 0; i < entries.length; i++) {
-      // biome-ignore lint/style/noNonNullAssertion: entries and results have same length
-      const [taskId] = entries[i]!;
-      // biome-ignore lint/style/noNonNullAssertion: entries and results have same length
-      const result = results[i]!;
-
-      if (result.status === "fulfilled") {
-        drained++;
-      } else {
-        observer.warn("Shutdown timeout waiting for task", { taskId });
-      }
-
-      // Transition active tasks back to queued so they resume on next start
-      const task = taskEngine.getTask(taskId);
-      if (task && task.state === TaskStates.active) {
-        const transition = taskEngine.requestTransition(taskId, TaskStates.queued, null, "graceful_shutdown", "daemon");
-        if (transition.success) {
-          transitioned++;
-        } else {
-          observer.warn("Shutdown: failed to transition task back to queued", {
-            taskId,
-            reason: transition.reason,
-          });
-        }
-      }
-    }
-    activeDispatches.clear();
-
-    observer.info("Active dispatches drained", { total, drained, transitioned });
+    await dispatchTracker.drain(timeoutMs);
   }
 
   return {
@@ -544,7 +530,6 @@ export function createTaskScheduler(
     dispatchTask,
     getActiveTaskIds,
     getTasksCompleted,
-    removeActiveDispatch,
     drainForShutdown,
     handleTaskCompletion,
     handleTaskError,

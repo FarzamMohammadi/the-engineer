@@ -1,6 +1,7 @@
 import { EventTypes } from "../../schemas/events.js";
-import { TaskStates } from "../../schemas/task.js";
+import type { DispatchTracker } from "../dispatch-tracker/index.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import { isTaskEligible } from "./task-scheduler.js";
 import type { PreemptionManagerContext } from "./types.js";
 
 // ── Pure Functions ────────────────────────────────────────────────────────────
@@ -19,10 +20,11 @@ export interface PendingPreemption {
   retried: boolean;
 }
 
-/** Minimal shape needed from queued tasks — decoupled from ITaskEngine. */
+/** Minimal shape needed from queued tasks — covers priority comparison + eligibility filter. */
 interface QueuedTaskEntry {
   id: string;
   priority: number;
+  not_before: string | null;
 }
 
 // ── PreemptionManager Interface ──────────────────────────────────────────────
@@ -33,10 +35,8 @@ export interface PreemptionManager {
   evaluate(now: number, queuedTasks?: QueuedTaskEntry[]): void;
   /** Get the current pending preemption (if any). */
   getPending(): PendingPreemption | null;
-  /** Clear the pending preemption (called after preemption completes). */
+  /** Clear the pending preemption (called after the cooperative or forced cycle settles). */
   clearPending(): void;
-  /** Give up on the pending preemption and remove the active dispatch. */
-  abandonPending(): void;
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -44,12 +44,18 @@ export interface PreemptionManager {
 export function createPreemptionManager(
   ctx: PreemptionManagerContext,
   getActiveTaskIds: () => string[],
-  removeActiveDispatch: (taskId: string) => void,
+  dispatchTracker: DispatchTracker,
 ): PreemptionManager {
   const { config, eventBus, taskEngine, observer } = ctx;
 
   let pendingPreemption: PendingPreemption | null = null;
 
+  /**
+   * Policy: one preemption per tick — the cooperative-then-forced timeout is
+   * inherently sequential. Multi-per-tick would either parallelize cooperation
+   * (complex) or queue multiple pending preemptions (changes `pendingPreemption`
+   * from singleton to map). v1 does not need this.
+   */
   function evaluate(now: number, prefetchedTasks?: QueuedTaskEntry[]): void {
     if (pendingPreemption) {
       checkPreemptionTimeout(now);
@@ -66,11 +72,19 @@ export function createPreemptionManager(
       return;
     }
 
-    findAndInitiatePreemption(queuedTasks, activeTaskIds, now);
+    // Filter ineligible candidates BEFORE picking — otherwise the preempter
+    // evicts an active task for a candidate that cannot dispatch (not_before
+    // in the future), leaving the slot empty.
+    const eligible = queuedTasks.filter((t) => isTaskEligible(t, now));
+    if (eligible.length === 0) {
+      return;
+    }
+
+    findAndInitiatePreemption(eligible, activeTaskIds, now);
   }
 
-  function findAndInitiatePreemption(queuedTasks: QueuedTaskEntry[], activeTaskIds: string[], now: number): void {
-    const candidate = queuedTasks[0];
+  function findAndInitiatePreemption(eligible: QueuedTaskEntry[], activeTaskIds: string[], now: number): void {
+    const candidate = eligible[0];
     if (!candidate) {
       return;
     }
@@ -83,7 +97,7 @@ export function createPreemptionManager(
 
       if (shouldPreempt(activeTask.priority, candidate.priority, config.preemption_threshold)) {
         initiatePreemption(activeTaskId, candidate.id, candidate.priority - activeTask.priority, now);
-        break; // One preemption per tick
+        break;
       }
     }
   }
@@ -127,23 +141,12 @@ export function createPreemptionManager(
     }
 
     if (pendingPreemption.retried) {
-      // Second timeout: force-transition
-      observer.error("Preemption double timeout — force-transitioning task to queued", {
+      // Second timeout: force-terminate via the dispatch-tracker. The terminate
+      // routing in the scheduler transitions the task to queued.
+      observer.error("Preemption double timeout — force-terminating dispatch", {
         targetTaskId: pendingPreemption.targetTaskId,
       });
-      const result = taskEngine.requestTransition(
-        pendingPreemption.targetTaskId,
-        TaskStates.queued,
-        null,
-        "preemption_timeout",
-        "daemon",
-      );
-      if (!result.success) {
-        observer.warn("Preemption force-transition failed — task may have already changed state", {
-          targetTaskId: pendingPreemption.targetTaskId,
-          reason: result.reason,
-        });
-      }
+      dispatchTracker.terminate(pendingPreemption.targetTaskId, "preemption_timeout");
       eventBus.publish({
         type: EventTypes["preemption.completed"],
         source: "daemon",
@@ -154,28 +157,28 @@ export function createPreemptionManager(
           method: "forced",
         },
       } satisfies PublishInput<"preemption.completed">);
-      removeActiveDispatch(pendingPreemption.targetTaskId);
       pendingPreemption = null;
-    } else {
-      // First timeout: re-request
-      observer.warn("Preemption timeout — re-requesting", {
-        targetTaskId: pendingPreemption.targetTaskId,
-      });
-      pendingPreemption.retried = true;
-      pendingPreemption.requestedAt = now;
-
-      eventBus.publish({
-        type: EventTypes["preemption.requested"],
-        source: "daemon",
-        task_id: pendingPreemption.targetTaskId,
-        payload: {
-          target_task_id: pendingPreemption.targetTaskId,
-          preempting_task_id: pendingPreemption.replacementTaskId,
-          reason: "preemption_timeout_retry",
-          priority_delta: 0,
-        },
-      } satisfies PublishInput<"preemption.requested">);
+      return;
     }
+
+    // First timeout: re-request — the orchestrator may have missed the first signal.
+    observer.warn("Preemption timeout — re-requesting", {
+      targetTaskId: pendingPreemption.targetTaskId,
+    });
+    pendingPreemption.retried = true;
+    pendingPreemption.requestedAt = now;
+
+    eventBus.publish({
+      type: EventTypes["preemption.requested"],
+      source: "daemon",
+      task_id: pendingPreemption.targetTaskId,
+      payload: {
+        target_task_id: pendingPreemption.targetTaskId,
+        preempting_task_id: pendingPreemption.replacementTaskId,
+        reason: "preemption_timeout_retry",
+        priority_delta: 0,
+      },
+    } satisfies PublishInput<"preemption.requested">);
   }
 
   function getPending(): PendingPreemption | null {
@@ -199,21 +202,9 @@ export function createPreemptionManager(
     pendingPreemption = null;
   }
 
-  function abandonPending(): void {
-    if (pendingPreemption) {
-      observer.warn("Preemption abandoned", {
-        targetTaskId: pendingPreemption.targetTaskId,
-        replacementTaskId: pendingPreemption.replacementTaskId,
-      });
-      removeActiveDispatch(pendingPreemption.targetTaskId);
-      pendingPreemption = null;
-    }
-  }
-
   return {
     evaluate,
     getPending,
     clearPending,
-    abandonPending,
   };
 }

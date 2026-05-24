@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
 - [approach.md](approach.md) — strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: `slices/07-workspace-session.md` — Sessions 1-2 complete, Session 3 next
+- Current slice: `slices/07-workspace-session.md` — Sessions 1-3 complete, Session 4 next
 
 ## How This File Works
 
@@ -21,9 +21,11 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 7 — Workspace & Session** — Session 2 (session-memory hygiene +
-facade-to-namespace refactor) complete. Next: Session 3 — workspace-manager
-surface audit + worktree lifecycle tightening.
+**Slice 7 — Workspace & Session** — Session 3 (workspace-manager extractions:
+session-result, skills, removeThoughtsAndPush) complete. Next: Session 4 —
+workspace-manager state simplification (persist `base_branch`, drop
+`baseCommit`, kill the in-memory `workspaces` Map, end-to-end resume flow
+verification).
 
 **Session 1 landed** (commits `7893cf9` doc-only + `a36a213` code cut):
 - `KnowledgeStore`, knowledge schemas, knowledge table + indexes, `Dispatch.knowledge`
@@ -55,14 +57,42 @@ surface audit + worktree lifecycle tightening.
 - Green at commit: 2384 unit + 39 integration + 16 e2e, lint clean,
   typecheck clean.
 
+**Session 3 landed** (commit `85afd55`):
+- `core/session-result/` extracted from orchestrator — three pure functions
+  (read/write template/backup) consumed by workspace-manager and llm-caller
+  as peers. Tests relocated.
+- `core/skills/` created with `SkillsManager` class (`sync()` + `getDir()`).
+  Wired through `CoreComponents` → `OrchestratorContext` → bootstrap;
+  orchestrator init calls `skillsManager.sync()`; phase-handlers call
+  `skillsManager.getDir()`. The walk-up `findRepoRoot()` replaced with a
+  fixed relative resolve from `import.meta.url` (same depth in src/ and dist/).
+- `removeThoughtsAndPush` moved to pr-manager as a standalone exported
+  function with narrow `{workspaceManager, observer}` deps; review-handler
+  imports and calls it directly. Span `remove_thoughts_and_push` +
+  `recordDecision` for the "no files to remove" early-return path.
+- Dead-surface cuts in workspace-manager: `injectAuth` re-export deleted;
+  `gitExecWithAuth` push branch (unreachable) dropped, helper simplified to
+  fetch-auth semantics.
+- SSOT refinement surfaced during planning: `workspace_root` tilde expansion
+  hoisted from WorkspaceManager's constructor into `system.ts` so both
+  SkillsManager and WorkspaceManager receive the canonical expanded path.
+- Observability: span `skills_sync` (lifecycle) added; "skills" added to
+  ComponentTag; bootstrap log + comment enumerate SkillsManager.
+- Green at commit: 2384 unit + 39 integration + 16 e2e, lint clean,
+  typecheck clean, build OK. Net −270 lines.
+
 **Mid-session decision recorded:** the standing system-prompt feature (owner-authored
 repo knowledge + preferences injected into the system prompt at session startup) is
 **deferred** to a later slice (likely Slice 8 or 14, which own prompt assembly), not
 folded into Slice 7. Reason: Slice 7 is shaped as cuts and reshapes — adding a new
 feature blurs that. Future-considerations entry captures the shape.
 
-**Plan deltas vs `slice-07-workspace-session.md`:** none. Sessions 1-2 executed the
-plan's task lists exactly; remaining Sessions 3–5 unchanged.
+**Plan deltas vs `slice-07-workspace-session.md`:** Sessions 1-3 executed the
+plan's task lists. One scope addition during Session 3: hoisted the
+`workspace_root` tilde expansion from WorkspaceManager into `system.ts` to
+avoid duplicating the expansion inside SkillsManager (single source of truth
+for the canonical path). ~6-line change, contained, preserves behavior. Remaining
+Sessions 4–5 unchanged.
 
 Methodology refinements (commits `b41aff7`, `adb6f66` from Session 31): `approach.md`
 codifies "What Each RRP Must Hunt For", "Presenting Findings During RRP", and

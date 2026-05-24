@@ -337,3 +337,36 @@ Without measurement, we can't tell whether fixes to these problems actually work
 **Migration path:** The naive token approach is implemented across the send side (outbound messages include the token) and the receive/parse side (inbound messages are matched by token). The inference layer slots in at the receive routing step as a fallback that runs only when no token is present — the deterministic path stays the default, so smart correlation is purely additive.
 
 ---
+
+## Live Agent Session Transparency
+
+**Current state (v1):** The CLI agent runs as a child process. Its output is consumed in two ways: (1) structured NDJSON events are parsed in real-time to extract the final result and rate-limit signals, and (2) raw output is optionally written to a trace file on disk via a configurable path. After execution, the observer stores structured observations (phase transitions, tool executions, LLM calls, safety verdicts) in the database, and the dashboard queries them for after-the-fact inspection. What does *not* exist is a live, real-time stream of the agent's full activity visible to the owner while work is happening — the equivalent of watching the agent work.
+
+**Why this matters — the transparency gap:**
+
+Every modern AI application surfaces what the agent is doing as it does it — tool calls, file reads, search queries, reasoning steps, progress indicators. The owner can tell at any moment what the agent is working on, whether it's stuck, and whether it's heading in the right direction. The Engineer has no equivalent. During execution, the owner sees nothing until the phase completes and results appear. For long-running phases (research that takes minutes, implementation that spans many tool calls), this is a black box — exactly what the Radical Observability principle exists to prevent.
+
+This is also a philosophical gap. The Engineer's philosophy demands that "every action, decision, and state change must be visible to the people who need to know — without requiring them to read logs, dig through code, or ask what happened." The structured observations satisfy the *after-the-fact* part of that promise. The *during-execution* part is unaddressed.
+
+**What it enables:** A real-time stream of the CLI agent's full output — every tool call, file read, search, code write, reasoning step — visible to the owner as it happens. Like watching television: a live window into the agent's progress at each moment. The owner can observe, assess, and (combined with future interrupt handling) steer the agent mid-flight.
+
+**Key considerations:**
+
+1. **We don't control the CLI agent's output format.** The CLI tool (Claude Code, Codex, etc.) decides what it emits and how. Our transparency layer works with whatever the tool provides — structured JSON events, raw text, or a mix. The stream-json output format already emits tool calls, results, and text as they happen; the gap is surfacing that to the owner, not capturing it.
+
+2. **Volume is a feature, not a problem.** Full transparency means full output. The owner should see everything the agent sees — not a filtered summary. Filtering, collapsing, or summarizing is a UI/UX concern for the consumer (dashboard, Telegram, etc.), not a capture concern. Capture everything; let the presentation layer decide what to foreground.
+
+3. **Latency is acceptable.** Real-time means "seconds behind," not "zero latency." A small buffer for batching, formatting, or transport is fine. The goal is live awareness, not frame-perfect synchronization.
+
+4. **Multi-task visibility.** When the Daemon runs concurrent tasks, each task's agent stream is independent. The owner should be able to watch one task, switch between tasks, or see an overview of all active sessions.
+
+**When it becomes relevant:** When the system runs real tasks autonomously and the owner needs to monitor, trust, and occasionally intervene in agent behavior during execution — not just review results after the fact.
+
+**Migration path:**
+
+1. **Stream capture layer.** The CLI plugin already reads the child process's stdout in real-time for NDJSON parsing. Extend this to also emit each raw event (or line) through the observer as a streamable observation, not just extract the final result. The trace-file mechanism proves the data is available; the missing piece is routing it to a live consumer instead of (or in addition to) a file.
+2. **Transport to the owner.** The dashboard or a communication channel (Telegram, a web socket endpoint) subscribes to the live stream for a given task. This is a new capability on the observer or dashboard layer — real-time event subscription, not just query-after-the-fact.
+3. **Presentation.** The consumer decides how to render: a scrolling terminal view in the dashboard, periodic digest messages on Telegram, a full-screen "watch mode." The capture layer is format-agnostic; presentation adapts to the channel.
+4. **Agent-agnostic design.** The stream capture works with any CLI tool's output format. When the plugin is swapped (Claude Code → Codex → another tool), the transparency layer adapts to whatever the new tool emits — the contract is "stream the child process output," not "parse Claude-specific events."
+
+---

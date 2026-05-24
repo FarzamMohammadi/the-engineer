@@ -222,39 +222,39 @@ export function createDispatchTracker(deps: DispatchTrackerDeps): DispatchTracke
     try {
       const outcome = await Promise.race([settled.then(() => "settled" as const), timeout]);
       if (outcome === "timeout") {
-        // v1 best-effort: until Slice 8 plumbs the signal through phase-runner →
-        // llm-caller → LLM plugins, the orchestrator promise may never settle on
-        // abort. Synthesize the late callback for stragglers so the scheduler can
-        // still transition them to queued — the daemon must shut down cleanly
-        // even when in-flight LLM calls refuse to die.
-        const stragglers = [...entries.entries()];
-        observer.warn("Drain timeout — synthesizing late callbacks for stragglers", {
-          stillInFlight: stragglers.length,
-          timeoutMs,
-        });
-        for (const [taskId, entry] of stragglers) {
-          entries.delete(taskId);
-          const synthetic: ExecuteTaskResult = {
-            outcome: "terminated",
-            reason: entry.terminationReason ?? "graceful_shutdown",
-            lastPhase: null,
-            checkpointId: null,
-          };
-          try {
-            entry.callbacks.onCompleted(taskId, synthetic);
-          } catch (callbackError) {
-            observer.error("Synthesized drain onCompleted callback threw", {
-              taskId,
-              error: sanitizeErrorMessage(callbackError),
-            });
-          }
-        }
+        synthesizeStragglerCallbacks(timeoutMs);
       } else {
         observer.info("Drain completed — all dispatches settled");
       }
     } finally {
       if (timeoutHandle !== undefined) {
         clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  /** Flush entries that outlived the drain timeout by synthesizing Outcomes.terminated callbacks. */
+  function synthesizeStragglerCallbacks(timeoutMs: number): void {
+    const stragglers = [...entries.entries()];
+    observer.warn("Drain timeout — synthesizing late callbacks for stragglers", {
+      stillInFlight: stragglers.length,
+      timeoutMs,
+    });
+    for (const [taskId, entry] of stragglers) {
+      entries.delete(taskId);
+      const synthetic: ExecuteTaskResult = {
+        outcome: "terminated",
+        reason: entry.terminationReason ?? "graceful_shutdown",
+        lastPhase: null,
+        checkpointId: null,
+      };
+      try {
+        entry.callbacks.onCompleted(taskId, synthetic);
+      } catch (callbackError) {
+        observer.error("Synthesized drain onCompleted callback threw", {
+          taskId,
+          error: sanitizeErrorMessage(callbackError),
+        });
       }
     }
   }

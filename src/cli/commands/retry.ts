@@ -112,7 +112,9 @@ function retryTask(db: BetterSqlite3.Database, taskId: string): number {
  * or the JSON is malformed, the column is set to NULL.
  */
 function clearBlockedPreservingContacts(db: BetterSqlite3.Database, taskId: string, blockedRaw: string | null): void {
-  if (!blockedRaw) return;
+  if (!blockedRaw) {
+    return;
+  }
 
   const contacted = extractContactedHistory(blockedRaw);
   if (contacted.length === 0) {

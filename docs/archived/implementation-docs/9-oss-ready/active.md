@@ -21,13 +21,39 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 6 — Scheduling & Dispatch — pre-implementation phase complete (Session 24).** All
-three RRPIR upstream deliverables landed in one focused session: thirteen decisions locked
-through Q&A, deep research saved to `.claude/temp/research/slice-06-scheduling.md` (two
-grounding rounds), multi-session implementation plan saved to
-`.claude/temp/create-plan/slice-06-scheduling.md`. Slice file `slices/06-scheduling.md`
-captures decisions and points at both artifacts. Next: **Session 1 — decomposition consumer
-delete**. Start by reading the plan file's Session 1 task list.
+**Slice 6 — Scheduling & Dispatch — implementation Session 2 complete (global Session 26).**
+Single retry-policy module landed. Two task-level retry tracks (`BACKOFF_MINUTES` in
+scheduler, `LLM_RETRY_BACKOFF_MINUTES` in phase-runner) collapsed into one Core-owned
+module with per-category semantics; new `consecutive_llm_unavailable_count` field +
+`retry_policy` config block; phase-runner stops touching the counter / `not_before` /
+per-retry notification entirely; scheduler is the single `recordFailure` caller for
+both `crash` and `llm_unavailable`; boot recovery routes orphans through retry-policy
+and transitions to `failed` when the budget is exhausted — boot-loop hole closed. Live
+smoke run picked up the new column, executed an 11-minute end-to-end pipeline ending
+at `review_pending` with both counters correctly reset on success.
+
+Design deviation from the plan (T2.5): phase-runner does NOT call retry-policy itself;
+scheduler is the sole `recordFailure` caller for `llm_unavailable`. Plan's literal text
+would have double-incremented on every LLM-unavailable event. The chosen design closes
+the cross-boundary import smell at the same time — phase-runner imports nothing from
+retry-policy or daemon. See commit message for full reasoning.
+
+Tangent parked for the Session 5 closing sweep: `docs/architecture/overview.md`'s
+state-machine table still lists `supervising` / `integrating` as active sub-states
+(stale post-Session 1 decomposition delete).
+
+Gap noted: Slice 6 Session 1 (decomposition delete, commit `6024492`) was committed
+without a `sessions/25.md` log file. Optional backfill from commit message if desired.
+
+Next: **Session 3 — dispatch-tracker primitive + `Outcomes.terminated` + preemption
+tightening + drain + cost-limit** (the centerpiece, ~350k budget). Strict task ordering
+from the plan: T3.1 (Outcomes type) → T3.2 (phase-runner emits new variant) → T3.3
+(priority bounds) → T3.4 (dispatch-tracker module) → T3.5 (Dispatch signal contract) →
+T3.6 (scheduler adopts) → T3.7 (preemption adopts) → T3.8 (delete dead `preemption.ready`
+event) → T3.9 (cost-limit adopts) → T3.10 (drain rewrite) → T3.11 (docs) → T3.12 (commit).
+Start by reading `.claude/temp/create-plan/slice-06-scheduling.md` § Session 3.
+
+**Slice shape locked (13 decisions):**
 
 **Slice shape locked (13 decisions):**
 - D1: Delete the operationally-dead decomposition consumer in full (schema, sub-states,
@@ -57,15 +83,14 @@ delete**. Start by reading the plan file's Session 1 task list.
   via `engineer retry` (research refinement to D4 + D12).
 
 **Five-session implementation breakdown (in plan file, full detail):**
-1. Decomposition consumer delete (~250k)
-2. retry-policy + phase-runner adoption + crash recovery unification (~250k)
+1. ✅ Decomposition consumer delete (~250k) — commit `6024492`
+2. ✅ retry-policy + phase-runner adoption + crash recovery unification (~250k) — commit `ba0fae4`
 3. dispatch-tracker primitive + Outcomes.terminated + preemption + drain + cost-limit (~350k, the centerpiece)
 4. Hard-cap enforcement + engineer retry + failed→queued + docs (~200k)
 5. Closing standards sweep (variable, mirrors Slice 5 Session 22 pattern)
 
-**Gate status going into implementation (unchanged from Slice 5 close):** typecheck clean;
-lint clean (8 pre-existing complexity warnings noted, predate Slice 5); unit **2482 passed**;
-integration **40 passed**; e2e **16 passed**.
+**Gate status after Session 2:** typecheck clean; lint clean (8 pre-existing complexity
+warnings predate Slice 5); unit **2421 passed**; integration **39 passed**; e2e **16 passed**.
 
 **Cross-slice handoffs landing in Slice 6's lap:** none currently parked specifically for
 Slice 6. Inherited from Slice 5 (still parked for their target slices): #9 reply-token +

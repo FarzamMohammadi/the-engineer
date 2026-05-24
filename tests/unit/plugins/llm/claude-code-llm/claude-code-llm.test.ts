@@ -3,11 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AdapterMethodError } from "../../../../../src/adapters/index.js";
-import {
-  ClaudeCodeLLMPlugin,
-  buildLlmEnv,
-  parseCliOutput,
-} from "../../../../../src/plugins/llm/claude-code-llm/claude-code-llm.js";
+import { ClaudeCodeLLMPlugin, parseCliOutput } from "../../../../../src/plugins/llm/claude-code-llm/claude-code-llm.js";
+import { buildLlmEnv } from "../../../../../src/plugins/llm/subprocess.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runLLMContractSuite } from "../../../../helpers/contract-suites/llm-contract.js";
 import { createMockInferenceRequest } from "../../../../helpers/mock-factories.js";

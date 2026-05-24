@@ -487,9 +487,9 @@ import {
 import { type MyLLMConfig, MyLLMConfigSchema } from "./config.js";
 
 // ── Environment isolation ─────────────────────────────────────────────────────
-// Copy the buildLlmEnv pattern from an existing plugin.
+// Shared subprocess discipline -- enforces env sanitization across all LLM plugins.
 // NEVER pass process.env directly to spawn() -- secrets will leak to the CLI.
-import { buildLlmEnv } from "../claude-code-llm/claude-code-llm.js";
+import { buildLlmEnv } from "../subprocess.js";
 
 export class MyLLMPlugin extends LLMAdapter {
   private config!: MyLLMConfig;
@@ -792,7 +792,8 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 | \`src/adapters/errors.ts\` | \`AdapterMethodError\`, \`createAdapterError()\` |
 | \`src/adapters/index.ts\` | Plugin SDK barrel -- single import point |
 | \`src/schemas/adapters.ts\` | All Zod schemas (\`InferenceRequest\`, \`InferenceResult\`, \`TokenUsage\`, \`QuotaStatus\`, \`LLMCapabilities\`) |
-| \`src/plugins/llm/claude-code-llm/claude-code-llm.ts\` | Reference: spawn, NDJSON parse, usage, quota API, env isolation |
+| \`src/plugins/llm/subprocess.ts\` | Shared subprocess discipline: env sanitization, stderr buffer cap |
+| \`src/plugins/llm/claude-code-llm/claude-code-llm.ts\` | Reference: spawn, NDJSON parse, usage, quota API |
 | \`src/plugins/llm/claude-code-llm/config.ts\` | Reference config schema |
 | \`src/plugins/llm/opencode-llm/opencode-llm.ts\` | Reference: multi-provider, step_finish cost/tokens, stderr rate limit kill |
 | \`src/plugins/llm/gemini-cli-llm/gemini-cli-llm.ts\` | Reference: free tier, no cost, stdout+stderr rate limit detection |

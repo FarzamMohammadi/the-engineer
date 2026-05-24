@@ -14,52 +14,8 @@ import {
 } from "../../../adapters/index.js";
 import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
 import { killProcess } from "../../../utils/process.js";
-import { appendStderr } from "../claude-code-llm/claude-code-llm.js";
+import { appendStderr, buildLlmEnv } from "../subprocess.js";
 import { type GeminiCliLLMConfig, GeminiCliLLMConfigSchema } from "./config.js";
-
-// ── LLM subprocess env isolation ─────────────────────────────────────────────
-// Canonical copy in claude-code-llm.ts — keep in sync across LLM plugins
-
-const LLM_ENV_ALLOWLIST = [
-  "HOME",
-  "PATH",
-  "USER",
-  "SHELL",
-  "LANG",
-  "TERM",
-  "TMPDIR",
-  "XDG_CONFIG_HOME",
-  "XDG_DATA_HOME",
-  "XDG_CACHE_HOME",
-  "NODE_OPTIONS",
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  "NODE_TLS_REJECT_UNAUTHORIZED",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-];
-
-const LLM_ENV_PREFIX_ALLOWLIST = ["LC_"];
-
-/** Build a sanitized environment for LLM child processes. */
-export function buildLlmEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  const result: Record<string, string> = {};
-  const allowed = new Set(LLM_ENV_ALLOWLIST);
-  for (const [key, value] of Object.entries(env)) {
-    if (value === undefined) {
-      continue;
-    }
-    if (allowed.has(key) || LLM_ENV_PREFIX_ALLOWLIST.some((p) => key.startsWith(p))) {
-      result[key] = value;
-    }
-  }
-  return result;
-}
 
 /** Rate limit patterns — hoisted for performance. */
 const RATE_LIMIT_STDERR_RE = /exhausted your capacity|rate.?limit|quota/i;

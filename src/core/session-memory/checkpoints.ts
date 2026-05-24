@@ -6,16 +6,13 @@ import type { Checkpoint } from "../../schemas/session-memory.js";
 import type { CreateCheckpointInput } from "../interfaces/session-memory.interface.js";
 import { type CheckpointRow, rowToCheckpoint } from "./row-mappers.js";
 
-/**
- * Named snapshots for crash recovery and session resume.
- * Ordered by rowid (insertion order) for latest-checkpoint queries.
- */
+/** Named snapshots for crash recovery and session resume. */
 export class CheckpointStore {
-  private readonly insertCheckpointStmt: Database.Statement;
-  private readonly getLatestCheckpointByTaskStmt: Database.Statement;
+  private readonly insertStmt: Database.Statement;
+  private readonly getLatestByTaskStmt: Database.Statement;
 
   constructor(db: Database.Database) {
-    this.insertCheckpointStmt = db.prepare(`
+    this.insertStmt = db.prepare(`
       INSERT INTO checkpoints (
         id, session_id, task_id, phase, phase_progress,
         context_summary, key_findings, open_questions, next_action,
@@ -23,16 +20,15 @@ export class CheckpointStore {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    this.getLatestCheckpointByTaskStmt = db.prepare(
-      "SELECT * FROM checkpoints WHERE task_id = ? ORDER BY rowid DESC LIMIT 1",
-    );
+    this.getLatestByTaskStmt = db.prepare("SELECT * FROM checkpoints WHERE task_id = ? ORDER BY rowid DESC LIMIT 1");
   }
 
-  createCheckpoint(input: CreateCheckpointInput): Checkpoint {
+  /** Create a checkpoint at a phase boundary or preemption point. */
+  create(input: CreateCheckpointInput): Checkpoint {
     const id = ulid();
     const now = new Date().toISOString();
 
-    this.insertCheckpointStmt.run(
+    this.insertStmt.run(
       id,
       input.sessionId,
       input.taskId,
@@ -67,8 +63,9 @@ export class CheckpointStore {
     };
   }
 
-  getLatestCheckpoint(taskId: string): Checkpoint | null {
-    const row = this.getLatestCheckpointByTaskStmt.get(taskId) as CheckpointRow | undefined;
+  /** Get the most recent checkpoint for a task, or null if none exists. */
+  getLatest(taskId: string): Checkpoint | null {
+    const row = this.getLatestByTaskStmt.get(taskId) as CheckpointRow | undefined;
     if (!row) {
       return null;
     }

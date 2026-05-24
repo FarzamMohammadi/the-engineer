@@ -61,14 +61,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
   }
 
   function createSession(dispatch: Dispatch): Session {
-    if (dispatch.resume_from) {
-      return ctx.sessionMemory.createSession({
-        taskId: dispatch.task.id,
-        previousSessionId: dispatch.resume_from.session_id,
-        resumedFromCheckpoint: dispatch.resume_from.id,
-      });
-    }
-    return ctx.sessionMemory.createSession({
+    return ctx.sessionMemory.sessions.create({
       taskId: dispatch.task.id,
     });
   }

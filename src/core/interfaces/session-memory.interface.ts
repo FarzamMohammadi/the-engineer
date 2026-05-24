@@ -1,20 +1,6 @@
-import type {
-  Checkpoint,
-  CheckpointReason,
-  JournalEntry,
-  JournalEntryType,
-  Session,
-  SessionEndReason,
-} from "../../schemas/session-memory.js";
+import type { CheckpointReason, JournalEntryType } from "../../schemas/session-memory.js";
 
-/** Input for createSession(). Only caller-provided fields. */
-export interface CreateSessionInput {
-  taskId: string;
-  previousSessionId?: string | null;
-  resumedFromCheckpoint?: string | null;
-}
-
-/** Input for addJournalEntry(). */
+/** Input for journal.addEntry(). */
 export interface AddJournalEntryInput {
   sessionId: string;
   taskId: string;
@@ -22,15 +8,11 @@ export interface AddJournalEntryInput {
   type: JournalEntryType;
   summary: string;
   detail?: string | null;
-  actionType?: string | null;
-  findingType?: string | null;
-  decisionKey?: string | null;
   errorDetail?: string | null;
-  commTarget?: string | null;
   tags?: string[];
 }
 
-/** Input for createCheckpoint(). */
+/** Input for checkpoints.create(). */
 export interface CreateCheckpointInput {
   sessionId: string;
   taskId: string;
@@ -44,24 +26,4 @@ export interface CreateCheckpointInput {
   workspaceRef: { branch: string; last_commit: string } | null;
   reason: CheckpointReason;
   journalOffset: number;
-}
-
-/** Filters for queryJournal(). All fields optional — omitted fields are not filtered. */
-export interface JournalQueryFilters {
-  type?: JournalEntryType;
-  phase?: string;
-  tags?: string[];
-  since?: string;
-}
-
-export interface ISessionMemory {
-  createSession(input: CreateSessionInput): Session;
-  endSession(id: string, reason: SessionEndReason): void;
-  addJournalEntry(input: AddJournalEntryInput): JournalEntry;
-  queryJournal(taskId: string, filters?: JournalQueryFilters): JournalEntry[];
-  /** Get the latest journal entry timestamp for a task (single MAX query, avoids loading all entries). */
-  getLatestJournalTimestamp(taskId: string): string | null;
-  createCheckpoint(input: CreateCheckpointInput): Checkpoint;
-  getLatestCheckpoint(taskId: string): Checkpoint | null;
-  getSessionChain(taskId: string): Session[];
 }

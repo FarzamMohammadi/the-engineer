@@ -5,12 +5,12 @@ import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { INotificationRouter } from "../interfaces/notification-router.interface.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
 import type { Orchestrator } from "../orchestrator/index.js";
 import type { Registry } from "../registry/index.js";
+import type { SessionMemory } from "../session-memory/index.js";
 
 // ── Canonical Daemon Context ────────────────────────────────────────────────
 
@@ -23,7 +23,7 @@ export interface DaemonContext {
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   orchestrator: Orchestrator;
-  sessionMemory: ISessionMemory;
+  sessionMemory: SessionMemory;
   workspaceManager: IWorkspaceManager;
   peopleDirectory: IPeopleDirectory;
   clock: Clock;

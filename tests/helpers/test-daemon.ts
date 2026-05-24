@@ -7,11 +7,11 @@ import { type Daemon, type DaemonState, createDaemon } from "../../src/core/daem
 import { createNotificationRouter } from "../../src/core/daemon/notification-router.js";
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "../../src/core/interfaces/session-memory.interface.js";
 import type { ITaskEngine, TransitionResult } from "../../src/core/interfaces/task-engine.interface.js";
 import type { ExecuteTaskResult, Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
+import type { SessionMemory } from "../../src/core/session-memory/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { TriggerEvent } from "../../src/schemas/adapters.js";
 import { type DaemonConfig, TimeoutStageActions, WorkspaceConfigSchema } from "../../src/schemas/config.js";
@@ -63,14 +63,9 @@ export interface TestDaemonHandle {
     requestShutdown: Mock;
   };
   sessionMemory: {
-    getLatestCheckpoint: Mock;
-    queryJournal: Mock;
-    getLatestJournalTimestamp: Mock;
-    createSession: Mock;
-    endSession: Mock;
-    addJournalEntry: Mock;
-    createCheckpoint: Mock;
-    getSessionChain: Mock;
+    sessions: { create: Mock; end: Mock };
+    journal: { addEntry: Mock; query: Mock; getLatestTimestamp: Mock };
+    checkpoints: { create: Mock; getLatest: Mock };
   };
   safetyLayer: {
     evaluateAction: Mock;
@@ -233,14 +228,16 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
 
   // ── SessionMemory mock ────────────────────────────────────────────────
   const sessionMemory = {
-    getLatestCheckpoint: vi.fn().mockReturnValue(null),
-    queryJournal: vi.fn().mockReturnValue([]),
-    getLatestJournalTimestamp: vi.fn().mockReturnValue(null),
-    createSession: vi.fn(),
-    endSession: vi.fn(),
-    addJournalEntry: vi.fn(),
-    createCheckpoint: vi.fn(),
-    getSessionChain: vi.fn().mockReturnValue([]),
+    sessions: { create: vi.fn(), end: vi.fn() },
+    journal: {
+      addEntry: vi.fn(),
+      query: vi.fn().mockReturnValue([]),
+      getLatestTimestamp: vi.fn().mockReturnValue(null),
+    },
+    checkpoints: {
+      create: vi.fn(),
+      getLatest: vi.fn().mockReturnValue(null),
+    },
   };
 
   // ── SafetyLayer mock ──────────────────────────────────────────────────
@@ -331,7 +328,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     taskEngine: taskEngine as unknown as ITaskEngine,
     safetyLayer: safetyLayer as unknown as ISafetyLayer,
     orchestrator: orchestrator as unknown as Orchestrator,
-    sessionMemory: sessionMemory as unknown as ISessionMemory,
+    sessionMemory: sessionMemory as unknown as SessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
     notifications,

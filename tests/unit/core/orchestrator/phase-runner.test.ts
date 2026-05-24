@@ -46,14 +46,15 @@ function createMockContext(
     safetyLayer: {} as OrchestratorContext["safetyLayer"],
     actionPipeline: { execute: vi.fn() } as unknown as OrchestratorContext["actionPipeline"],
     sessionMemory: {
-      addJournalEntry: vi.fn(),
-      endSession: vi.fn(),
-      createSession: vi.fn(),
-      createCheckpoint: vi.fn(() => {
-        checkpointCounter++;
-        return { id: `checkpoint-${String(checkpointCounter).padStart(3, "0")}` };
-      }),
-      getLatestCheckpoint: vi.fn().mockReturnValue(null),
+      sessions: { create: vi.fn(), end: vi.fn() },
+      journal: { addEntry: vi.fn(), query: vi.fn(), getLatestTimestamp: vi.fn() },
+      checkpoints: {
+        create: vi.fn(() => {
+          checkpointCounter++;
+          return { id: `checkpoint-${String(checkpointCounter).padStart(3, "0")}` };
+        }),
+        getLatest: vi.fn().mockReturnValue(null),
+      },
     } as unknown as OrchestratorContext["sessionMemory"],
     workspaceManager: {
       getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree"),
@@ -186,7 +187,7 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-001", SessionEndReasons.completed);
+      expect(ctx.sessionMemory.sessions.end).toHaveBeenCalledWith("session-001", SessionEndReasons.completed);
     });
 
     it("resumes from checkpoint, skipping completed phases", async () => {
@@ -247,7 +248,7 @@ describe("PhaseRunner", () => {
 
       expect(result.outcome).toBe("completed");
       // All 7 phases should have checkpoints (no fast-path)
-      const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock.calls;
+      const checkpointCalls = (ctx.sessionMemory.checkpoints.create as ReturnType<typeof vi.fn>).mock.calls;
       expect(checkpointCalls.length).toBe(7);
     });
 
@@ -430,7 +431,7 @@ describe("PhaseRunner", () => {
 
       await runPhasePipeline(createDispatch(), state, deps);
 
-      expect(ctx.sessionMemory.endSession).toHaveBeenCalledWith("session-abc", SessionEndReasons.crashed);
+      expect(ctx.sessionMemory.sessions.end).toHaveBeenCalledWith("session-abc", SessionEndReasons.crashed);
     });
 
     it("closes session with 'crashed' when handlePostPhaseActions throws (F7)", async () => {
@@ -484,7 +485,7 @@ describe("PhaseRunner", () => {
         expect(result.reason).toContain("[truncated from 5000 chars]");
       }
       // Journal entry summary should also be truncated
-      const journalCall = (ctx.sessionMemory.addJournalEntry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
+      const journalCall = (ctx.sessionMemory.journal.addEntry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
         | { summary: string }
         | undefined;
       expect(journalCall).toBeDefined();
@@ -668,7 +669,7 @@ describe("PhaseRunner", () => {
 
       expect(result.outcome).toBe("completed");
       // All 7 phases should have checkpoints
-      const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock.calls;
+      const checkpointCalls = (ctx.sessionMemory.checkpoints.create as ReturnType<typeof vi.fn>).mock.calls;
       expect(checkpointCalls.length).toBe(7);
     });
   });
@@ -947,7 +948,7 @@ describe("PhaseRunner", () => {
 
       expect(result.outcome).toBe("completed");
       // All 7 phases should run — requirements_gathering runs once, then advances normally
-      const checkpointCalls = (ctx.sessionMemory.createCheckpoint as ReturnType<typeof vi.fn>).mock.calls;
+      const checkpointCalls = (ctx.sessionMemory.checkpoints.create as ReturnType<typeof vi.fn>).mock.calls;
       expect(checkpointCalls.length).toBe(7);
     });
 

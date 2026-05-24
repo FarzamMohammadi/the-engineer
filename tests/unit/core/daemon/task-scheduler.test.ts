@@ -109,7 +109,9 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     executeTask: vi.fn().mockResolvedValue({ outcome: "completed", phaseOutputs: new Map() }),
   };
   const sessionMemory = {
-    getLatestCheckpoint: vi.fn().mockReturnValue(null),
+    checkpoints: {
+      getLatest: vi.fn().mockReturnValue(null),
+    },
   };
   const workspaceManager = {
     cleanupWorkspace: vi.fn(),
@@ -235,7 +237,7 @@ describe("TaskScheduler", () => {
     const callbacks = makeCallbacks();
 
     const checkpoint = { phase: "execution", data: { step: 3 } };
-    sessionMemory.getLatestCheckpoint.mockReturnValue(checkpoint);
+    sessionMemory.checkpoints.getLatest.mockReturnValue(checkpoint);
 
     const task = makeMockTask({ id: "t1" });
 

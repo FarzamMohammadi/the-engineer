@@ -101,7 +101,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       // 7 phases = 7 checkpoints
-      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(7);
+      expect(handle.sessionMemory.checkpoints.create).toHaveBeenCalledTimes(7);
     });
 
     it("checkpoints have reason 'phase_transition'", async () => {
@@ -110,7 +110,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      for (const call of handle.sessionMemory.createCheckpoint.mock.calls) {
+      for (const call of handle.sessionMemory.checkpoints.create.mock.calls) {
         expect(call[0].reason).toBe(CheckpointReasons.phase_transition);
       }
     });
@@ -121,7 +121,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      const checkpointPhases = handle.sessionMemory.createCheckpoint.mock.calls.map(
+      const checkpointPhases = handle.sessionMemory.checkpoints.create.mock.calls.map(
         (call: unknown[]) => (call[0] as { phase: string }).phase,
       );
       expect(checkpointPhases).toEqual(PHASE_SEQUENCE);
@@ -133,7 +133,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      const calls = handle.sessionMemory.createCheckpoint.mock.calls;
+      const calls = handle.sessionMemory.checkpoints.create.mock.calls;
       // First checkpoint (requirements_gathering) should reference research
       expect((calls[0]![0] as { nextAction: string }).nextAction).toContain("research");
       // Last checkpoint (integration) should say complete
@@ -150,7 +150,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      const phaseChangeCalls = handle.sessionMemory.addJournalEntry.mock.calls.filter(
+      const phaseChangeCalls = handle.sessionMemory.journal.addEntry.mock.calls.filter(
         (call: unknown[]) => (call[0] as { type: string }).type === JournalEntryTypes.phase_change,
       );
       // 7 phases = 7 phase_change entries
@@ -163,7 +163,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      const phaseChangeCalls = handle.sessionMemory.addJournalEntry.mock.calls.filter(
+      const phaseChangeCalls = handle.sessionMemory.journal.addEntry.mock.calls.filter(
         (call: unknown[]) => (call[0] as { type: string }).type === JournalEntryTypes.phase_change,
       );
       const journalPhases = phaseChangeCalls.map((call: unknown[]) => (call[0] as { phase: string }).phase);
@@ -176,7 +176,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      const phaseChangeCalls = handle.sessionMemory.addJournalEntry.mock.calls.filter(
+      const phaseChangeCalls = handle.sessionMemory.journal.addEntry.mock.calls.filter(
         (call: unknown[]) => (call[0] as { type: string }).type === JournalEntryTypes.phase_change,
       );
       for (const call of phaseChangeCalls) {
@@ -251,7 +251,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       // Find the preemption checkpoint
-      const preemptionCheckpoint = handle.sessionMemory.createCheckpoint.mock.calls.find(
+      const preemptionCheckpoint = handle.sessionMemory.checkpoints.create.mock.calls.find(
         (call: unknown[]) => (call[0] as { reason: string }).reason === CheckpointReasons.preemption,
       );
       expect(preemptionCheckpoint).toBeDefined();
@@ -264,7 +264,7 @@ describe("Orchestrator", () => {
       handle.triggerPreemption("task-001", "task-high-priority");
       await handle.orchestrator.executeTask(dispatch);
 
-      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.preempted);
+      expect(handle.sessionMemory.sessions.end).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.preempted);
     });
   });
 
@@ -290,18 +290,15 @@ describe("Orchestrator", () => {
       }
     });
 
-    it("creates linked session with previousSessionId", async () => {
+    it("creates a new session on resume (no linked fields)", async () => {
       handle.setAllPhaseResponses();
       const checkpoint = createMockCheckpoint({ session_id: "session-old" });
       const dispatch = createMockDispatch({ resume_from: checkpoint });
 
       await handle.orchestrator.executeTask(dispatch);
 
-      expect(handle.sessionMemory.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({
-          previousSessionId: "session-old",
-          resumedFromCheckpoint: checkpoint.id,
-        }),
+      expect(handle.sessionMemory.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "task-001" }),
       );
     });
 
@@ -312,7 +309,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      const resumeEntry = handle.sessionMemory.addJournalEntry.mock.calls.find((call: unknown[]) => {
+      const resumeEntry = handle.sessionMemory.journal.addEntry.mock.calls.find((call: unknown[]) => {
         const input = call[0] as { tags?: string[] };
         return input.tags?.includes("resume");
       });
@@ -499,7 +496,7 @@ describe("Orchestrator", () => {
       await handle.orchestrator.executeTask(dispatch);
 
       // 7 phases = 7 checkpoints (no fast-path reduction)
-      expect(handle.sessionMemory.createCheckpoint).toHaveBeenCalledTimes(7);
+      expect(handle.sessionMemory.checkpoints.create).toHaveBeenCalledTimes(7);
     });
   });
 
@@ -512,8 +509,10 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      expect(handle.sessionMemory.createSession).toHaveBeenCalledTimes(1);
-      expect(handle.sessionMemory.createSession).toHaveBeenCalledWith(expect.objectContaining({ taskId: "task-001" }));
+      expect(handle.sessionMemory.sessions.create).toHaveBeenCalledTimes(1);
+      expect(handle.sessionMemory.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "task-001" }),
+      );
     });
 
     it("ends session with 'completed' on success", async () => {
@@ -522,7 +521,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.completed);
+      expect(handle.sessionMemory.sessions.end).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.completed);
     });
   });
 
@@ -575,7 +574,7 @@ describe("Orchestrator", () => {
         "git clone failed: authentication required",
       );
 
-      expect(handle.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.crashed);
+      expect(handle.sessionMemory.sessions.end).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.crashed);
     });
   });
 
@@ -655,7 +654,7 @@ describe("Orchestrator", () => {
           },
         }),
       );
-      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.sessionMemory.journal.query.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
         outcome: "executed",
         result: {
@@ -674,7 +673,7 @@ describe("Orchestrator", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
-      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.sessionMemory.journal.query.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
         outcome: "executed",
         result: {
@@ -693,7 +692,7 @@ describe("Orchestrator", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
-      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.sessionMemory.journal.query.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
         outcome: "rejected",
         reason: "cost limit exceeded",
@@ -707,7 +706,7 @@ describe("Orchestrator", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
-      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.sessionMemory.journal.query.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
         outcome: "executed",
         result: {
@@ -739,7 +738,7 @@ describe("Orchestrator", () => {
           },
         }),
       );
-      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.sessionMemory.journal.query.mockReturnValue([]);
 
       let capturedPrompt = "";
       handle.actionPipeline.execute.mockImplementation(async (input: { executeFn: () => Promise<unknown> }) => {
@@ -770,7 +769,7 @@ describe("Orchestrator", () => {
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({ id: "task-1", state: TaskStates.blocked, sub_state: null }),
       );
-      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.sessionMemory.journal.query.mockReturnValue([]);
       handle.actionPipeline.execute.mockResolvedValue({
         outcome: "executed",
         result: {

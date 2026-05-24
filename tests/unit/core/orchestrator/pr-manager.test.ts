@@ -53,8 +53,9 @@ function createMockContext(): OrchestratorContext {
     safetyLayer: {} as OrchestratorContext["safetyLayer"],
     actionPipeline: { execute: vi.fn() } as unknown as OrchestratorContext["actionPipeline"],
     sessionMemory: {
-      addJournalEntry: vi.fn(),
-      endSession: vi.fn(),
+      sessions: { create: vi.fn(), end: vi.fn() },
+      journal: { addEntry: vi.fn(), query: vi.fn(), getLatestTimestamp: vi.fn() },
+      checkpoints: { create: vi.fn(), getLatest: vi.fn() },
     } as unknown as OrchestratorContext["sessionMemory"],
     workspaceManager: {
       getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree"),
@@ -178,7 +179,7 @@ describe("commitAndPush", () => {
 
     pm.commitAndPush("session-001", "task-001", createDispatch());
 
-    expect(ctx.sessionMemory.addJournalEntry).toHaveBeenCalledWith(
+    expect(ctx.sessionMemory.journal.addEntry).toHaveBeenCalledWith(
       expect.objectContaining({
         summary: expect.stringContaining("PR workflow failed at commit"),
         tags: ["pr_workflow", "commit"],

@@ -2,15 +2,7 @@ import { z } from "zod";
 
 // ── Session ────────────────────────────────────────────────────────────────────
 
-export const SessionEndReasonSchema = z.enum([
-  "completed",
-  "preempted",
-  "crashed",
-  "new_session",
-  "decomposed",
-  "review_pending",
-  "blocked",
-]);
+export const SessionEndReasonSchema = z.enum(["completed", "preempted", "crashed", "review_pending", "blocked"]);
 export type SessionEndReason = z.infer<typeof SessionEndReasonSchema>;
 
 /** Constant enum values for SessionEndReason. Use instead of raw strings. */
@@ -22,22 +14,12 @@ export const SessionSchema = z.object({
   started_at: z.string().datetime(),
   ended_at: z.string().datetime().nullable(),
   end_reason: SessionEndReasonSchema.nullable(),
-  previous_session_id: z.string().nullable(),
-  resumed_from_checkpoint: z.string().nullable(),
 });
 export type Session = z.infer<typeof SessionSchema>;
 
 // ── JournalEntry ───────────────────────────────────────────────────────────────
 
-export const JournalEntryTypeSchema = z.enum([
-  "action",
-  "finding",
-  "decision",
-  "error",
-  "communication",
-  "phase_change",
-  "checkpoint_marker",
-]);
+export const JournalEntryTypeSchema = z.enum(["error", "phase_change", "checkpoint_marker"]);
 export type JournalEntryType = z.infer<typeof JournalEntryTypeSchema>;
 
 /** Constant enum values for JournalEntryType. Use instead of raw strings. */
@@ -57,11 +39,7 @@ export const JournalEntrySchema = z.object({
   detail: z.string().nullable(),
 
   // Type-specific fields (nullable — only populated for matching type)
-  action_type: z.string().nullable(),
-  finding_type: z.string().nullable(),
-  decision_key: z.string().nullable(),
   error_detail: z.string().nullable(),
-  comm_target: z.string().nullable(),
 
   // Queryability
   tags: z.array(z.string()),
@@ -70,7 +48,7 @@ export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 
 // ── Checkpoint ─────────────────────────────────────────────────────────────────
 
-export const CheckpointReasonSchema = z.enum(["phase_transition", "preemption", "pre_costly_op", "periodic"]);
+export const CheckpointReasonSchema = z.enum(["phase_transition", "preemption"]);
 export type CheckpointReason = z.infer<typeof CheckpointReasonSchema>;
 
 /** Constant enum values for CheckpointReason. Use instead of raw strings. */

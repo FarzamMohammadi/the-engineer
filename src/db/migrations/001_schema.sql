@@ -122,9 +122,7 @@ CREATE TABLE sessions (
   task_id                 TEXT NOT NULL REFERENCES tasks(id),
   started_at              TEXT NOT NULL,
   ended_at                TEXT,
-  end_reason              TEXT CHECK(end_reason IN ('completed','preempted','crashed','new_session','decomposed','review_pending','blocked')),
-  previous_session_id     TEXT,
-  resumed_from_checkpoint TEXT
+  end_reason              TEXT CHECK(end_reason IN ('completed','preempted','crashed','review_pending','blocked'))
 );
 
 CREATE INDEX idx_sessions_task_id ON sessions(task_id);
@@ -137,14 +135,10 @@ CREATE TABLE journal_entries (
   task_id         TEXT NOT NULL REFERENCES tasks(id),
   timestamp       TEXT NOT NULL,
   phase           TEXT NOT NULL,
-  type            TEXT NOT NULL CHECK(type IN ('action','finding','decision','error','communication','phase_change','checkpoint_marker')),
+  type            TEXT NOT NULL CHECK(type IN ('error','phase_change','checkpoint_marker')),
   summary         TEXT NOT NULL,
   detail          TEXT,
-  action_type     TEXT,
-  finding_type    TEXT,
-  decision_key    TEXT,
   error_detail    TEXT,
-  comm_target     TEXT,
   tags            TEXT NOT NULL DEFAULT '[]'
 );
 
@@ -168,7 +162,7 @@ CREATE TABLE checkpoints (
   next_action     TEXT NOT NULL,
   last_event_id   TEXT NOT NULL,
   workspace_ref   TEXT,
-  reason          TEXT NOT NULL CHECK(reason IN ('phase_transition','preemption','pre_costly_op','periodic')),
+  reason          TEXT NOT NULL CHECK(reason IN ('phase_transition','preemption')),
   timestamp       TEXT NOT NULL,
   journal_offset  INTEGER NOT NULL
 );

@@ -132,7 +132,7 @@ describe("E2E: Task happy path", () => {
     expect(reviewPending.length).toBe(1);
 
     const taskId = reviewPending[0]!.id;
-    const checkpoint = ctx.sessionMemory.getLatestCheckpoint(taskId);
+    const checkpoint = ctx.sessionMemory.checkpoints.getLatest(taskId);
     expect(checkpoint).not.toBeNull();
     expect(checkpoint?.phase).toBe("demo_prep");
   });

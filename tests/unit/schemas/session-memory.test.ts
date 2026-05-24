@@ -22,8 +22,6 @@ describe("SessionSchema", () => {
     started_at: "2026-03-10T12:00:00.000Z",
     ended_at: null,
     end_reason: null,
-    previous_session_id: null,
-    resumed_from_checkpoint: null,
   };
 
   it("parses a valid active session", () => {
@@ -55,8 +53,8 @@ describe("SessionSchema", () => {
     expect(() => SessionSchema.parse({ ...validSession, end_reason: "timeout" })).toThrow();
   });
 
-  it("has exactly 7 end reasons", () => {
-    expect(SessionEndReasonSchema.options).toHaveLength(7);
+  it("has exactly 5 end reasons", () => {
+    expect(SessionEndReasonSchema.options).toHaveLength(5);
   });
 });
 
@@ -69,14 +67,10 @@ describe("JournalEntrySchema", () => {
     task_id: "01TASK",
     timestamp: "2026-03-10T12:00:00.000Z",
     phase: Phases.research,
-    type: JournalEntryTypes.action,
+    type: JournalEntryTypes.phase_change,
     summary: "Read auth module source code",
     detail: null,
-    action_type: "file_read",
-    finding_type: null,
-    decision_key: null,
     error_detail: null,
-    comm_target: null,
     tags: ["auth"],
   };
 
@@ -84,11 +78,11 @@ describe("JournalEntrySchema", () => {
     expect(JournalEntrySchema.parse(validEntry)).toEqual(validEntry);
   });
 
-  it("has exactly 7 entry types", () => {
-    expect(JournalEntryTypeSchema.options).toHaveLength(7);
+  it("has exactly 3 entry types", () => {
+    expect(JournalEntryTypeSchema.options).toHaveLength(3);
   });
 
-  it("accepts all 7 entry types", () => {
+  it("accepts all 3 entry types", () => {
     for (const type of JournalEntryTypeSchema.options) {
       expect(JournalEntrySchema.parse({ ...validEntry, type })).toBeDefined();
     }
@@ -144,8 +138,8 @@ describe("CheckpointSchema", () => {
     expect(CheckpointSchema.parse(noWorkspace)).toEqual(noWorkspace);
   });
 
-  it("has exactly 4 checkpoint reasons", () => {
-    expect(CheckpointReasonSchema.options).toHaveLength(4);
+  it("has exactly 2 checkpoint reasons", () => {
+    expect(CheckpointReasonSchema.options).toHaveLength(2);
   });
 
   it("accepts all checkpoint reasons", () => {

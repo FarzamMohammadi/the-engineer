@@ -31,14 +31,13 @@ import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interf
 import type {
   AddJournalEntryInput,
   CreateCheckpointInput,
-  CreateSessionInput,
-  ISessionMemory,
 } from "../../src/core/interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../../src/core/interfaces/task-engine.interface.js";
 import type { WorkspaceVerification } from "../../src/core/interfaces/workspace-manager.interface.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
+import type { SessionMemory } from "../../src/core/session-memory/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { InferenceResult } from "../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
@@ -286,14 +285,9 @@ export interface TestOrchestratorHandle {
     execute: Mock;
   };
   sessionMemory: {
-    createSession: Mock;
-    endSession: Mock;
-    addJournalEntry: Mock;
-    createCheckpoint: Mock;
-    getLatestCheckpoint: Mock;
-    queryJournal: Mock;
-    getLatestJournalTimestamp: Mock;
-    getSessionChain: Mock;
+    sessions: { create: Mock; end: Mock };
+    journal: { addEntry: Mock; query: Mock; getLatestTimestamp: Mock };
+    checkpoints: { create: Mock; getLatest: Mock };
   };
   workspaceManager: {
     createWorkspace: Mock;
@@ -427,63 +421,62 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     }),
   };
 
-  // ── ISessionMemory mock ─────────────────────────────────────────────────
+  // ── SessionMemory mock ─────────────────────────────────────────────────
   let checkpointCounter = 0;
   let sessionCounter = 0;
 
   const sessionMemory = {
-    createSession: vi.fn((input: CreateSessionInput) => {
-      sessionCounter++;
-      return {
-        id: `session-${String(sessionCounter).padStart(3, "0")}`,
-        task_id: input.taskId,
-        started_at: new Date().toISOString(),
-        ended_at: null,
-        end_reason: null,
-        previous_session_id: input.previousSessionId ?? null,
-        resumed_from_checkpoint: input.resumedFromCheckpoint ?? null,
-      } satisfies Session;
-    }),
-    endSession: vi.fn(),
-    addJournalEntry: vi.fn((input: AddJournalEntryInput) => ({
-      id: `journal-${Date.now()}`,
-      session_id: input.sessionId,
-      task_id: input.taskId,
-      timestamp: new Date().toISOString(),
-      phase: input.phase,
-      type: input.type,
-      summary: input.summary,
-      detail: input.detail ?? null,
-      action_type: input.actionType ?? null,
-      finding_type: input.findingType ?? null,
-      decision_key: input.decisionKey ?? null,
-      error_detail: input.errorDetail ?? null,
-      comm_target: input.commTarget ?? null,
-      tags: input.tags ?? [],
-    })),
-    createCheckpoint: vi.fn((input: CreateCheckpointInput) => {
-      checkpointCounter++;
-      return {
-        id: `checkpoint-${String(checkpointCounter).padStart(3, "0")}`,
+    sessions: {
+      create: vi.fn((input: { taskId: string }) => {
+        sessionCounter++;
+        return {
+          id: `session-${String(sessionCounter).padStart(3, "0")}`,
+          task_id: input.taskId,
+          started_at: new Date().toISOString(),
+          ended_at: null,
+          end_reason: null,
+        } satisfies Session;
+      }),
+      end: vi.fn(),
+    },
+    journal: {
+      addEntry: vi.fn((input: AddJournalEntryInput) => ({
+        id: `journal-${Date.now()}`,
         session_id: input.sessionId,
         task_id: input.taskId,
-        phase: input.phase,
-        phase_progress: input.phaseProgress,
-        context_summary: input.contextSummary,
-        key_findings: input.keyFindings,
-        open_questions: input.openQuestions,
-        next_action: input.nextAction,
-        last_event_id: input.lastEventId,
-        workspace_ref: input.workspaceRef,
-        reason: input.reason,
         timestamp: new Date().toISOString(),
-        journal_offset: input.journalOffset,
-      } satisfies Checkpoint;
-    }),
-    getLatestCheckpoint: vi.fn().mockReturnValue(null),
-    queryJournal: vi.fn().mockReturnValue([]),
-    getLatestJournalTimestamp: vi.fn().mockReturnValue(null),
-    getSessionChain: vi.fn().mockReturnValue([]),
+        phase: input.phase,
+        type: input.type,
+        summary: input.summary,
+        detail: input.detail ?? null,
+        error_detail: input.errorDetail ?? null,
+        tags: input.tags ?? [],
+      })),
+      query: vi.fn().mockReturnValue([]),
+      getLatestTimestamp: vi.fn().mockReturnValue(null),
+    },
+    checkpoints: {
+      create: vi.fn((input: CreateCheckpointInput) => {
+        checkpointCounter++;
+        return {
+          id: `checkpoint-${String(checkpointCounter).padStart(3, "0")}`,
+          session_id: input.sessionId,
+          task_id: input.taskId,
+          phase: input.phase,
+          phase_progress: input.phaseProgress,
+          context_summary: input.contextSummary,
+          key_findings: input.keyFindings,
+          open_questions: input.openQuestions,
+          next_action: input.nextAction,
+          last_event_id: input.lastEventId,
+          workspace_ref: input.workspaceRef,
+          reason: input.reason,
+          timestamp: new Date().toISOString(),
+          journal_offset: input.journalOffset,
+        } satisfies Checkpoint;
+      }),
+      getLatest: vi.fn().mockReturnValue(null),
+    },
   };
 
   // ── WorkspaceManager mock ──────────────────────────────────────────────
@@ -531,7 +524,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     taskEngine: taskEngine as unknown as ITaskEngine,
     safetyLayer: safetyLayer as unknown as ISafetyLayer,
     actionPipeline: actionPipeline as unknown as ActionPipeline,
-    sessionMemory: sessionMemory as unknown as ISessionMemory,
+    sessionMemory: sessionMemory as unknown as SessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
     notifications,

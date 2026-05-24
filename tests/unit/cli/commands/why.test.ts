@@ -176,7 +176,7 @@ describe("runWhy", () => {
         "j-1",
         "session-001",
         "task-004",
-        JournalEntryTypes.finding,
+        JournalEntryTypes.phase_change,
         "Found 3 related files",
         Phases.research,
         "[]",

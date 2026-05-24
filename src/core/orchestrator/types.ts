@@ -8,11 +8,11 @@ import type { INotificationRouter } from "../interfaces/notification-router.inte
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "../interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
 import type { IObservationStore } from "../observer/types.js";
+import type { SessionMemory } from "../session-memory/index.js";
 import type { RepoContext } from "./prompts/index.js";
 
 // ── Shared Dependencies ────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ export interface OrchestratorContext {
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   actionPipeline: IActionPipeline;
-  sessionMemory: ISessionMemory;
+  sessionMemory: SessionMemory;
   workspaceManager: IWorkspaceManager;
   peopleDirectory: IPeopleDirectory;
   observationStore: IObservationStore | null;

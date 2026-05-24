@@ -114,7 +114,7 @@ export function createPrManager(ctx: OrchestratorContext, notifications: Notific
 
   function recordPrWorkflowError(sessionId: string, taskId: string, step: string, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    ctx.sessionMemory.addJournalEntry({
+    ctx.sessionMemory.journal.addEntry({
       sessionId,
       taskId,
       phase: Phases.demo_prep,

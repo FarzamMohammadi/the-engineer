@@ -103,9 +103,9 @@ function createOrphanedTask(ctx: IntegrationContext, options?: CreateOrphanOptio
   ctx.taskEngine.requestTransition(task.id, TaskStates.queued, null, "created", "test");
   ctx.taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "test");
 
-  const session = ctx.sessionMemory.createSession({ taskId: task.id });
+  const session = ctx.sessionMemory.sessions.create({ taskId: task.id });
 
-  ctx.sessionMemory.addJournalEntry({
+  ctx.sessionMemory.journal.addEntry({
     sessionId: session.id,
     taskId: task.id,
     phase: checkpointPhase,
@@ -114,7 +114,7 @@ function createOrphanedTask(ctx: IntegrationContext, options?: CreateOrphanOptio
     tags: ["phase_transition"],
   });
 
-  ctx.sessionMemory.createCheckpoint({
+  ctx.sessionMemory.checkpoints.create({
     sessionId: session.id,
     taskId: task.id,
     phase: checkpointPhase,
@@ -313,7 +313,7 @@ describe("E2E: Crash recovery", () => {
     // Recovery alone (no dispatch) is enough — the resume journal entry is
     // written by the orchestrator's `resolveStartState` when the task is later
     // dispatched. For this test we just verify pre-crash entries survive.
-    const journal = ctx.sessionMemory.queryJournal(taskId);
+    const journal = ctx.sessionMemory.journal.query(taskId);
     expect(journal.length).toBeGreaterThanOrEqual(1);
     expect(journal.some((j) => j.summary.includes("research"))).toBe(true);
   });

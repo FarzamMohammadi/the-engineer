@@ -137,7 +137,7 @@ function resolveStartState(
     throw new WorkspaceVerificationError(msg, { cause: verifyErr });
   }
 
-  ctx.sessionMemory.addJournalEntry({
+  ctx.sessionMemory.journal.addEntry({
     sessionId,
     taskId,
     phase: checkpoint.phase,
@@ -164,7 +164,7 @@ interface PhaseTransitionInput {
 function createPhaseCheckpoint(input: Omit<PhaseTransitionInput, "dispatch">): string {
   const { sessionId, taskId, completedPhase, nextPhase, priorOutputs, ctx } = input;
   const output = priorOutputs.get(completedPhase);
-  const checkpoint = ctx.sessionMemory.createCheckpoint({
+  const checkpoint = ctx.sessionMemory.checkpoints.create({
     sessionId,
     taskId,
     phase: completedPhase,
@@ -191,7 +191,7 @@ function recordPhaseTransition(input: PhaseTransitionInput): void {
     const output = priorOutputs.get(completedPhase);
     if (output) {
       const handoff = formatPhaseHandoff(completedPhase, nextPhase, output, dispatch);
-      ctx.sessionMemory.addJournalEntry({
+      ctx.sessionMemory.journal.addEntry({
         sessionId,
         taskId,
         phase: completedPhase,
@@ -201,7 +201,7 @@ function recordPhaseTransition(input: PhaseTransitionInput): void {
         tags: ["phase_transition", "sbar_handoff"],
       });
     } else {
-      ctx.sessionMemory.addJournalEntry({
+      ctx.sessionMemory.journal.addEntry({
         sessionId,
         taskId,
         phase: completedPhase,
@@ -211,7 +211,7 @@ function recordPhaseTransition(input: PhaseTransitionInput): void {
       });
     }
   } else {
-    ctx.sessionMemory.addJournalEntry({
+    ctx.sessionMemory.journal.addEntry({
       sessionId,
       taskId,
       phase: completedPhase,
@@ -260,7 +260,7 @@ function handlePhaseError(
   // even if it happened during post-phase processing.
   ctx.taskEngine.updateTaskField(taskId, "phase", phase);
 
-  ctx.sessionMemory.addJournalEntry({
+  ctx.sessionMemory.journal.addEntry({
     sessionId,
     taskId,
     phase,
@@ -272,7 +272,7 @@ function handlePhaseError(
 
   // Close the session so it doesn't remain open indefinitely in the DB.
   // Crash recovery re-dispatch will create a new session.
-  ctx.sessionMemory.endSession(sessionId, SessionEndReasons.crashed);
+  ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.crashed);
 
   return { outcome: "error", phase, reason: message };
 }
@@ -285,7 +285,7 @@ function handlePreemption(
   ctx: OrchestratorContext,
   preemptingId: string,
 ): ExecuteTaskResult {
-  const checkpoint = ctx.sessionMemory.createCheckpoint({
+  const checkpoint = ctx.sessionMemory.checkpoints.create({
     sessionId,
     taskId,
     phase: currentPhase,
@@ -300,7 +300,7 @@ function handlePreemption(
     journalOffset: 0,
   });
 
-  ctx.sessionMemory.addJournalEntry({
+  ctx.sessionMemory.journal.addEntry({
     sessionId,
     taskId,
     phase: currentPhase,
@@ -309,7 +309,7 @@ function handlePreemption(
     tags: ["preemption"],
   });
 
-  ctx.sessionMemory.endSession(sessionId, SessionEndReasons.preempted);
+  ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.preempted);
 
   return {
     outcome: Outcomes.terminated,
@@ -361,7 +361,7 @@ function checkSelfReviewLoopback(input: SelfReviewLoopbackInput): { targetPhase:
     return null;
   }
 
-  ctx.sessionMemory.addJournalEntry({
+  ctx.sessionMemory.journal.addEntry({
     sessionId,
     taskId,
     phase: Phases.self_review,
@@ -393,7 +393,7 @@ function emitLoopbackAlert(input: LoopbackAlertInput): void {
   // Deliver alert via centralized notification router
   ctx.notifications.notify({ kind: NotificationKinds.alert, taskId, message: alertContent });
 
-  ctx.sessionMemory.addJournalEntry({
+  ctx.sessionMemory.journal.addEntry({
     sessionId,
     taskId,
     phase: Phases.self_review,
@@ -426,7 +426,7 @@ function blockForPrWorkflowError(input: PrWorkflowBlockInput): PhaseCompletionRe
     waiting_for: "human",
   });
   ctx.notifications.notify({ kind: "task_error", taskId, reason: message });
-  ctx.sessionMemory.endSession(sessionId, SessionEndReasons.blocked);
+  ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.blocked);
   return { kind: "exit", result: { outcome: "blocked", phase, reason: message } };
 }
 
@@ -500,7 +500,7 @@ async function tryCommitPushAndCreatePR(input: CommitPushPrInput): Promise<Phase
       dispatch,
       ctx,
     });
-    ctx.sessionMemory.endSession(sessionId, SessionEndReasons.review_pending);
+    ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.review_pending);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const errStack = err instanceof Error ? err.stack : "";
@@ -652,7 +652,7 @@ async function handlePostPhaseActions(input: PostPhaseActionsInput): Promise<Pos
         { task_id: taskId, session_id: sessionId, trace_id: state.traceId },
       );
 
-      ctx.sessionMemory.endSession(sessionId, SessionEndReasons.blocked);
+      ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.blocked);
       return {
         completion: {
           kind: "exit",
@@ -976,7 +976,7 @@ export async function runPhasePipeline(
           waiting_for: "llm_adapter",
         });
 
-        ctx.sessionMemory.endSession(sessionId, SessionEndReasons.blocked);
+        ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.blocked);
 
         return endPipelineSpan(
           {
@@ -1082,7 +1082,7 @@ export async function runPhasePipeline(
   // Session close is important but not worth losing the completed outcome over.
   // If endSession throws (DB corruption, connection closed), log and continue.
   try {
-    ctx.sessionMemory.endSession(sessionId, SessionEndReasons.completed);
+    ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.completed);
   } catch (endErr) {
     ctx.observer.error("Failed to close session after pipeline completion", {
       taskId,

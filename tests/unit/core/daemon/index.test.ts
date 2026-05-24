@@ -221,7 +221,7 @@ describe("Daemon", () => {
       const task = createMockTask({ id: "task-resume", state: TaskStates.queued, sub_state: null });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
       const checkpoint = { id: "cp-1", phase: "research" };
-      handle.sessionMemory.getLatestCheckpoint.mockReturnValue(checkpoint);
+      handle.sessionMemory.checkpoints.getLatest.mockReturnValue(checkpoint);
 
       await handle.daemon.tick();
 
@@ -307,7 +307,7 @@ describe("Daemon", () => {
       await handle.daemon.tick(); // Schedule task
 
       handle.clock.advance(1_800_001); // Past stuck threshold
-      handle.sessionMemory.queryJournal.mockReturnValue([]);
+      handle.sessionMemory.journal.query.mockReturnValue([]);
 
       await handle.daemon.tick(); // Stuck check
 

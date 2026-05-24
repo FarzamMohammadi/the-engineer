@@ -8,12 +8,12 @@ import { createNotificationRouter } from "../../src/core/daemon/notification-rou
 import type { IActionPipeline } from "../../src/core/interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../../src/core/interfaces/event-bus.interface.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "../../src/core/interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "../../src/core/interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../../src/core/interfaces/workspace-manager.interface.js";
 import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
+import type { SessionMemory } from "../../src/core/session-memory/index.js";
 import { createCoreComponents } from "../../src/core/system.js";
 import type { Person } from "../../src/schemas/adapters.js";
 import {
@@ -54,7 +54,7 @@ export interface IntegrationContext {
   safetyLayer: ISafetyLayer;
   actionPipeline: IActionPipeline;
   orchestrator: Orchestrator;
-  sessionMemory: ISessionMemory;
+  sessionMemory: SessionMemory;
   workspaceManager: IWorkspaceManager;
   peopleDirectory: PeopleDirectory;
   fakes: IntegrationContextFakes;

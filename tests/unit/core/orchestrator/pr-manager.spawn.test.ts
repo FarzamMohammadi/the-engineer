@@ -234,7 +234,7 @@ describe("commitPushAndCreatePR", () => {
     expect(h.workspaceManager.pushBranch).toHaveBeenCalled();
 
     // Journal error should be recorded
-    const journalCalls = h.sessionMemory.addJournalEntry.mock.calls;
+    const journalCalls = h.sessionMemory.journal.addEntry.mock.calls;
     const pushErrorEntry = journalCalls.find(
       (call) =>
         (call[0] as { summary: string }).summary.includes("push") &&
@@ -257,7 +257,7 @@ describe("commitPushAndCreatePR", () => {
     expect(fakeGitHosting.createPR).toHaveBeenCalled();
 
     // Journal error should be recorded
-    const journalCalls = h.sessionMemory.addJournalEntry.mock.calls;
+    const journalCalls = h.sessionMemory.journal.addEntry.mock.calls;
     const prErrorEntry = journalCalls.find(
       (call) =>
         (call[0] as { summary: string }).summary.includes("pr_creation") &&
@@ -327,7 +327,7 @@ describe("commitPushAndCreatePR", () => {
     const dispatch = dispatchWithWorkspace();
     await h.orchestrator.executeTask(dispatch);
 
-    expect(h.sessionMemory.endSession).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.review_pending);
+    expect(h.sessionMemory.sessions.end).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.review_pending);
   });
 
   it("blocks task when PR creation fails", async () => {

@@ -130,7 +130,7 @@ export function createTaskScheduler(
 
   function dispatchTask(task: Task): void {
     // Build dispatch package
-    const rawCheckpoint = sessionMemory.getLatestCheckpoint(task.id);
+    const rawCheckpoint = sessionMemory.checkpoints.getLatest(task.id);
 
     // Rework dispatches (unapplied feedback) must restart from intake so the LLM
     // sees the reviewer's comments — NOT resume from the old checkpoint.

@@ -32,7 +32,7 @@ function insertTask(): string {
 }
 
 function createSession(taskId: string): string {
-  return sessions.createSession({ taskId }).id;
+  return sessions.create({ taskId }).id;
 }
 
 afterEach(() => testDb.cleanup());
@@ -43,21 +43,19 @@ describe("JournalStore", () => {
     const taskId = insertTask();
     const sessionId = createSession(taskId);
 
-    const entry = journal.addJournalEntry({
+    const entry = journal.addEntry({
       sessionId,
       taskId,
       phase: "research",
-      type: JournalEntryTypes.action,
-      summary: "Read 12 files",
-      actionType: "file_read",
+      type: JournalEntryTypes.phase_change,
+      summary: "Completed research phase",
     });
 
     expect(entry.id).toHaveLength(26);
     expect(entry.session_id).toBe(sessionId);
     expect(entry.task_id).toBe(taskId);
     expect(entry.phase).toBe("research");
-    expect(entry.type).toBe(JournalEntryTypes.action);
-    expect(entry.action_type).toBe("file_read");
+    expect(entry.type).toBe(JournalEntryTypes.phase_change);
     expect(entry.tags).toEqual([]);
   });
 
@@ -66,11 +64,11 @@ describe("JournalStore", () => {
     const taskId = insertTask();
     const sessionId = createSession(taskId);
 
-    const entry = journal.addJournalEntry({
+    const entry = journal.addEntry({
       sessionId,
       taskId,
       phase: "research",
-      type: JournalEntryTypes.finding,
+      type: JournalEntryTypes.phase_change,
       summary: "Found patterns",
       tags: ["auth", "css"],
     });
@@ -83,9 +81,8 @@ describe("JournalStore", () => {
     const taskId = insertTask();
     const sessionId = createSession(taskId);
 
-    // sanitizeSecrets redacts URL-embedded tokens (git credential URLs)
     const secretUrl = "https://git:my-secret-token@github.com/owner/repo.git";
-    const entry = journal.addJournalEntry({
+    const entry = journal.addEntry({
       sessionId,
       taskId,
       phase: "execution",
@@ -101,12 +98,12 @@ describe("JournalStore", () => {
     expect(entry.summary).toContain("https://git:***@");
   });
 
-  it("populates all type-specific fields", () => {
+  it("populates error_detail field", () => {
     setup();
     const taskId = insertTask();
     const sessionId = createSession(taskId);
 
-    const entry = journal.addJournalEntry({
+    const entry = journal.addEntry({
       sessionId,
       taskId,
       phase: "execution",
@@ -114,101 +111,41 @@ describe("JournalStore", () => {
       summary: "Test failure",
       detail: "3 assertions failed",
       errorDetail: "auth.test.ts: expected 200, got 401",
-      findingType: "test_failure",
-      decisionKey: "retry-strategy",
-      commTarget: "github:owner/repo#42",
       tags: ["testing"],
     });
 
     expect(entry.detail).toBe("3 assertions failed");
     expect(entry.error_detail).toBe("auth.test.ts: expected 200, got 401");
-    expect(entry.finding_type).toBe("test_failure");
-    expect(entry.decision_key).toBe("retry-strategy");
-    expect(entry.comm_target).toBe("github:owner/repo#42");
   });
 
-  it("queries all entries when no filters", () => {
+  it("queries all entries when called without filters", () => {
     setup();
     const taskId = insertTask();
     const sessionId = createSession(taskId);
     addSampleEntries(sessionId, taskId);
 
-    const entries = journal.queryJournal(taskId);
-    expect(entries).toHaveLength(4);
-  });
-
-  it("filters by type", () => {
-    setup();
-    const taskId = insertTask();
-    const sessionId = createSession(taskId);
-    addSampleEntries(sessionId, taskId);
-
-    const entries = journal.queryJournal(taskId, { type: JournalEntryTypes.finding });
-    expect(entries).toHaveLength(1);
-    expect(entries[0]!.type).toBe(JournalEntryTypes.finding);
-  });
-
-  it("filters by phase", () => {
-    setup();
-    const taskId = insertTask();
-    const sessionId = createSession(taskId);
-    addSampleEntries(sessionId, taskId);
-
-    const entries = journal.queryJournal(taskId, { phase: "research" });
-    expect(entries).toHaveLength(2);
-  });
-
-  it("filters by tags with AND semantics", () => {
-    setup();
-    const taskId = insertTask();
-    const sessionId = createSession(taskId);
-    addSampleEntries(sessionId, taskId);
-
-    const entries = journal.queryJournal(taskId, { tags: ["auth", "patterns"] });
-    expect(entries).toHaveLength(1);
-    expect(entries[0]!.summary).toBe("Found patterns");
-  });
-
-  it("combines multiple filters", () => {
-    setup();
-    const taskId = insertTask();
-    const sessionId = createSession(taskId);
-    addSampleEntries(sessionId, taskId);
-
-    const entries = journal.queryJournal(taskId, {
-      type: JournalEntryTypes.action,
-      phase: "research",
-    });
-    expect(entries).toHaveLength(1);
-    expect(entries[0]!.summary).toBe("Read files");
+    const entries = journal.query(taskId);
+    expect(entries).toHaveLength(3);
   });
 
   function addSampleEntries(sessionId: string, taskId: string): void {
-    journal.addJournalEntry({
+    journal.addEntry({
       sessionId,
       taskId,
       phase: "research",
-      type: JournalEntryTypes.action,
-      summary: "Read files",
+      type: JournalEntryTypes.phase_change,
+      summary: "Completed research",
       tags: ["auth"],
     });
-    journal.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: "research",
-      type: JournalEntryTypes.finding,
-      summary: "Found patterns",
-      tags: ["auth", "patterns"],
-    });
-    journal.addJournalEntry({
+    journal.addEntry({
       sessionId,
       taskId,
       phase: "planning",
-      type: JournalEntryTypes.decision,
-      summary: "Chose approach",
+      type: JournalEntryTypes.phase_change,
+      summary: "Completed planning",
       tags: ["architecture"],
     });
-    journal.addJournalEntry({
+    journal.addEntry({
       sessionId,
       taskId,
       phase: "execution",
@@ -218,30 +155,30 @@ describe("JournalStore", () => {
     });
   }
 
-  it("getLatestJournalTimestamp returns latest timestamp", () => {
+  it("getLatestTimestamp returns latest timestamp", () => {
     setup();
     const taskId = insertTask();
     const sessionId = createSession(taskId);
 
-    journal.addJournalEntry({
-      sessionId,
-      taskId,
-      phase: "intake_analysis",
-      type: JournalEntryTypes.finding,
-      summary: "First entry",
-    });
-    journal.addJournalEntry({
+    journal.addEntry({
       sessionId,
       taskId,
       phase: "research",
-      type: JournalEntryTypes.finding,
+      type: JournalEntryTypes.phase_change,
+      summary: "First entry",
+    });
+    journal.addEntry({
+      sessionId,
+      taskId,
+      phase: "research",
+      type: JournalEntryTypes.phase_change,
       summary: "Second entry",
     });
 
-    const latest = journal.getLatestJournalTimestamp(taskId);
+    const latest = journal.getLatestTimestamp(taskId);
     expect(latest).not.toBeNull();
 
-    const entries = journal.queryJournal(taskId);
+    const entries = journal.query(taskId);
     const maxTimestamp = entries
       .map((e) => e.timestamp)
       .sort()
@@ -249,9 +186,9 @@ describe("JournalStore", () => {
     expect(latest).toBe(maxTimestamp);
   });
 
-  it("getLatestJournalTimestamp returns null for task with no entries", () => {
+  it("getLatestTimestamp returns null for task with no entries", () => {
     setup();
     const taskId = insertTask();
-    expect(journal.getLatestJournalTimestamp(taskId)).toBeNull();
+    expect(journal.getLatestTimestamp(taskId)).toBeNull();
   });
 });

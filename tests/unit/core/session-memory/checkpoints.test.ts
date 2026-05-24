@@ -60,9 +60,9 @@ describe("CheckpointStore", () => {
   it("creates a checkpoint with ULID id", () => {
     setup();
     const taskId = insertTask();
-    const session = sessions.createSession({ taskId });
+    const session = sessions.create({ taskId });
 
-    const checkpoint = checkpoints.createCheckpoint(makeInput(session.id, taskId));
+    const checkpoint = checkpoints.create(makeInput(session.id, taskId));
 
     expect(checkpoint.id).toHaveLength(26);
     expect(checkpoint.session_id).toBe(session.id);
@@ -70,13 +70,13 @@ describe("CheckpointStore", () => {
     expect(checkpoint.phase).toBe("research");
   });
 
-  it("round-trips JSON arrays correctly via getLatestCheckpoint", () => {
+  it("round-trips JSON arrays correctly via getLatest", () => {
     setup();
     const taskId = insertTask();
-    const session = sessions.createSession({ taskId });
+    const session = sessions.create({ taskId });
 
-    checkpoints.createCheckpoint(makeInput(session.id, taskId));
-    const retrieved = checkpoints.getLatestCheckpoint(taskId);
+    checkpoints.create(makeInput(session.id, taskId));
+    const retrieved = checkpoints.getLatest(taskId);
 
     expect(retrieved).not.toBeNull();
     expect(retrieved?.key_findings).toEqual(["Uses JWT", "No refresh tokens"]);
@@ -90,10 +90,10 @@ describe("CheckpointStore", () => {
   it("handles null workspace_ref", () => {
     setup();
     const taskId = insertTask();
-    const session = sessions.createSession({ taskId });
+    const session = sessions.create({ taskId });
 
-    checkpoints.createCheckpoint(makeInput(session.id, taskId, { workspaceRef: null }));
-    const retrieved = checkpoints.getLatestCheckpoint(taskId);
+    checkpoints.create(makeInput(session.id, taskId, { workspaceRef: null }));
+    const retrieved = checkpoints.getLatest(taskId);
 
     expect(retrieved?.workspace_ref).toBeNull();
   });
@@ -102,14 +102,14 @@ describe("CheckpointStore", () => {
     setup();
     const taskId = insertTask();
 
-    const s1 = sessions.createSession({ taskId });
-    checkpoints.createCheckpoint(makeInput(s1.id, taskId, { phase: "research" }));
+    const s1 = sessions.create({ taskId });
+    checkpoints.create(makeInput(s1.id, taskId, { phase: "research" }));
 
-    sessions.endSession(s1.id, SessionEndReasons.preempted);
-    const s2 = sessions.createSession({ taskId, previousSessionId: s1.id });
-    checkpoints.createCheckpoint(makeInput(s2.id, taskId, { phase: "planning" }));
+    sessions.end(s1.id, SessionEndReasons.preempted);
+    const s2 = sessions.create({ taskId });
+    checkpoints.create(makeInput(s2.id, taskId, { phase: "planning" }));
 
-    const latest = checkpoints.getLatestCheckpoint(taskId);
+    const latest = checkpoints.getLatest(taskId);
     expect(latest).not.toBeNull();
     expect(latest?.phase).toBe("planning");
     expect(latest?.session_id).toBe(s2.id);
@@ -118,6 +118,6 @@ describe("CheckpointStore", () => {
   it("returns null when no checkpoints exist", () => {
     setup();
     const taskId = insertTask();
-    expect(checkpoints.getLatestCheckpoint(taskId)).toBeNull();
+    expect(checkpoints.getLatest(taskId)).toBeNull();
   });
 });

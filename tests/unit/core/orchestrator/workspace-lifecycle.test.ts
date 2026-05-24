@@ -43,11 +43,12 @@ function createMockContext(): OrchestratorContext {
       execute: vi.fn(),
     } as unknown as OrchestratorContext["actionPipeline"],
     sessionMemory: {
-      createSession: vi.fn().mockReturnValue({ id: "session-001", task_id: "task-001" }),
-      endSession: vi.fn(),
-      addJournalEntry: vi.fn(),
-      createCheckpoint: vi.fn(),
-      getLatestCheckpoint: vi.fn(),
+      sessions: {
+        create: vi.fn().mockReturnValue({ id: "session-001", task_id: "task-001" }),
+        end: vi.fn(),
+      },
+      journal: { addEntry: vi.fn(), query: vi.fn(), getLatestTimestamp: vi.fn() },
+      checkpoints: { create: vi.fn(), getLatest: vi.fn() },
     } as unknown as OrchestratorContext["sessionMemory"],
     workspaceManager: {
       getWorktreePath: vi.fn().mockReturnValue(null),
@@ -184,10 +185,10 @@ describe("WorkspaceLifecycle", () => {
       const session = wl.createSession(dispatch);
 
       expect(session.id).toBe("session-001");
-      expect(ctx.sessionMemory.createSession).toHaveBeenCalledWith({ taskId: "task-001" });
+      expect(ctx.sessionMemory.sessions.create).toHaveBeenCalledWith({ taskId: "task-001" });
     });
 
-    it("creates linked session on resume", () => {
+    it("creates a new session on resume (no linked fields)", () => {
       const ctx = createMockContext();
       const wl = createWorkspaceLifecycle(ctx);
       const dispatch = createDispatch();
@@ -199,10 +200,8 @@ describe("WorkspaceLifecycle", () => {
 
       wl.createSession(dispatch);
 
-      expect(ctx.sessionMemory.createSession).toHaveBeenCalledWith({
+      expect(ctx.sessionMemory.sessions.create).toHaveBeenCalledWith({
         taskId: "task-001",
-        previousSessionId: "session-prev",
-        resumedFromCheckpoint: "cp-001",
       });
     });
   });

@@ -15,7 +15,6 @@ import { EventTopology } from "./event-bus/topology.js";
 import type { IActionPipeline } from "./interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "./interfaces/event-bus.interface.js";
 import type { ISafetyLayer } from "./interfaces/safety-layer.interface.js";
-import type { ISessionMemory } from "./interfaces/session-memory.interface.js";
 import type { ITaskEngine } from "./interfaces/task-engine.interface.js";
 import type { AuthUrlProvider } from "./interfaces/workspace-manager.interface.js";
 import type { IWorkspaceManager } from "./interfaces/workspace-manager.interface.js";
@@ -29,7 +28,7 @@ export interface CoreComponents {
   taskEngine: ITaskEngine;
   safetyLayer: ISafetyLayer;
   actionPipeline: IActionPipeline;
-  sessionMemory: ISessionMemory;
+  sessionMemory: SessionMemory;
   workspaceManager: IWorkspaceManager;
 }
 

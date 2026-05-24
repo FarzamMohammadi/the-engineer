@@ -495,7 +495,7 @@ describe("foreign key enforcement", () => {
           `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run("j1", "nonexistent", "t1", now, Phases.research, JournalEntryTypes.action, "test"),
+        .run("j1", "nonexistent", "t1", now, Phases.research, JournalEntryTypes.phase_change, "test"),
     ).toThrow(FK_CONSTRAINT_PATTERN);
   });
 
@@ -519,7 +519,7 @@ describe("foreign key enforcement", () => {
         `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("j1", "s1", "t1", now, Phases.research, JournalEntryTypes.action, "test entry");
+      .run("j1", "s1", "t1", now, Phases.research, JournalEntryTypes.phase_change, "test entry");
 
     // Verify all exist
     const journal = handle.db.prepare("SELECT * FROM journal_entries WHERE id = ?").get("j1");
@@ -571,7 +571,7 @@ describe("JSON default completeness", () => {
         `INSERT INTO journal_entries (id, session_id, task_id, timestamp, phase, type, summary)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("j1", "s1", "t1", now, Phases.research, JournalEntryTypes.action, "test");
+      .run("j1", "s1", "t1", now, Phases.research, JournalEntryTypes.phase_change, "test");
 
     const row = handle.db.prepare("SELECT tags FROM journal_entries WHERE id = ?").get("j1") as {
       tags: string;
@@ -595,7 +595,19 @@ describe("JSON default completeness", () => {
         `INSERT INTO checkpoints (id, session_id, task_id, phase, phase_progress, context_summary, next_action, last_event_id, reason, timestamp, journal_offset)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("c1", "s1", "t1", Phases.research, "50%", "summary", "next", "evt1", CheckpointReasons.periodic, now, 0);
+      .run(
+        "c1",
+        "s1",
+        "t1",
+        Phases.research,
+        "50%",
+        "summary",
+        "next",
+        "evt1",
+        CheckpointReasons.phase_transition,
+        now,
+        0,
+      );
 
     const row = handle.db.prepare("SELECT key_findings, open_questions FROM checkpoints WHERE id = ?").get("c1") as {
       key_findings: string;

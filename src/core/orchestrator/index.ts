@@ -163,7 +163,7 @@ export class Orchestrator {
     try {
       this.workspaceLifecycle.setupWorkspace(dispatch);
     } catch (workspaceError) {
-      this.ctx.sessionMemory.endSession(sessionId, SessionEndReasons.crashed);
+      this.ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.crashed);
       throw workspaceError;
     }
 
@@ -237,7 +237,7 @@ export class Orchestrator {
       return false;
     }
 
-    const journalEntries = this.ctx.sessionMemory.queryJournal(taskId);
+    const journalEntries = this.ctx.sessionMemory.journal.query(taskId);
     const recentEntries = journalEntries.slice(-5);
     const blockedReason = task.blocked?.reason ?? "unknown";
 

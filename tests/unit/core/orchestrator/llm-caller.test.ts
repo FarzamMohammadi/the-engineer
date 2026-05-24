@@ -50,13 +50,9 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
       })),
     } as unknown as OrchestratorContext["actionPipeline"],
     sessionMemory: {
-      createSession: vi.fn(),
-      endSession: vi.fn(),
-      addJournalEntry: vi.fn(),
-      createCheckpoint: vi.fn(),
-      getLatestCheckpoint: vi.fn(),
-      queryJournal: vi.fn().mockReturnValue([]),
-      getSessionChain: vi.fn().mockReturnValue([]),
+      sessions: { create: vi.fn(), end: vi.fn() },
+      journal: { addEntry: vi.fn(), query: vi.fn().mockReturnValue([]), getLatestTimestamp: vi.fn() },
+      checkpoints: { create: vi.fn(), getLatest: vi.fn() },
     } as unknown as OrchestratorContext["sessionMemory"],
     workspaceManager: {
       getWorktreePath: vi.fn().mockReturnValue("/tmp/worktree"),

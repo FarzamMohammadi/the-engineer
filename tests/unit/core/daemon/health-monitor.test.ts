@@ -130,8 +130,10 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     attemptSelfUnblock: vi.fn().mockResolvedValue(false),
   };
   const sessionMemory = {
-    queryJournal: vi.fn().mockReturnValue([]),
-    getLatestJournalTimestamp: vi.fn().mockReturnValue(null),
+    journal: {
+      query: vi.fn().mockReturnValue([]),
+      getLatestTimestamp: vi.fn().mockReturnValue(null),
+    },
   };
 
   const ctx: HealthMonitorContext = {
@@ -162,7 +164,7 @@ describe("DaemonHealthMonitor", () => {
       const now = 1_000_000 + 2_000_000; // 2_000_000ms after started_at (> 1_800_000 threshold)
       const task = makeTask({ started_at: new Date(1_000_000).toISOString() });
       taskEngine.getTask.mockReturnValue(task);
-      sessionMemory.getLatestJournalTimestamp.mockReturnValue(null);
+      sessionMemory.journal.getLatestTimestamp.mockReturnValue(null);
 
       const notifications = makeNotifications();
       const getActiveTaskIds = vi.fn(() => ["task-1"]);
@@ -194,7 +196,7 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({ started_at: new Date(startedAt).toISOString() });
       taskEngine.getTask.mockReturnValue(task);
       // Recent journal timestamp (not stale), but total duration exceeded
-      sessionMemory.getLatestJournalTimestamp.mockReturnValue(new Date(now - 100_000).toISOString());
+      sessionMemory.journal.getLatestTimestamp.mockReturnValue(new Date(now - 100_000).toISOString());
 
       const notifications = makeNotifications();
       const getActiveTaskIds = vi.fn(() => ["task-1"]);

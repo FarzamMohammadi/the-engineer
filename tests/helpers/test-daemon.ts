@@ -84,7 +84,6 @@ export interface TestDaemonHandle {
     getWorktreePath: Mock;
     cleanupWorkspace: Mock;
     registerExistingWorkspace: Mock;
-    removeThoughtsAndPush: Mock;
   };
   peopleDirectory: {
     getPerson: Mock;
@@ -290,9 +289,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     getWorktreePath: vi.fn().mockReturnValue(null),
     cleanupWorkspace: vi.fn(),
     registerExistingWorkspace: vi.fn(),
-    removeThoughtsAndPush: vi.fn().mockReturnValue(false),
-    getSkillsDir: vi.fn().mockReturnValue("/tmp/test-skills"),
-    syncSkills: vi.fn(),
   };
 
   // ── PeopleDirectory mock ──────────────────────────────────────────────

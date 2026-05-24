@@ -126,7 +126,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     ...(options?.workspaceConfig ?? {}),
   });
   const {
-    components: { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager },
+    components: { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager, skillsManager },
   } = createCoreComponents({
     db,
     observer: observer.child("event-bus"),
@@ -164,6 +164,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     actionPipeline,
     sessionMemory,
     workspaceManager,
+    skillsManager,
     peopleDirectory,
     observationStore: null,
     observer: createTestObserverFacade("orchestrator"),

@@ -5,6 +5,9 @@
  * This is NOT a service locator — it creates and returns a plain object.
  * Components receive their dependencies through constructor injection.
  */
+import os from "node:os";
+import path from "node:path";
+
 import type Database from "better-sqlite3";
 
 import type { SafetyConfig, WorkspaceConfig } from "../schemas/config.js";
@@ -20,6 +23,7 @@ import type { AuthUrlProvider } from "./interfaces/workspace-manager.interface.j
 import type { IWorkspaceManager } from "./interfaces/workspace-manager.interface.js";
 import { EVENTS as SAFETY_LAYER_EVENTS, SafetyLayer } from "./safety-layer/index.js";
 import { SessionMemory } from "./session-memory/index.js";
+import { SkillsManager } from "./skills/index.js";
 import { EVENTS as TASK_ENGINE_EVENTS, TaskEngine } from "./task-engine/index.js";
 import { EVENTS as WORKSPACE_MANAGER_EVENTS, WorkspaceManager } from "./workspace-manager/index.js";
 
@@ -30,6 +34,7 @@ export interface CoreComponents {
   actionPipeline: IActionPipeline;
   sessionMemory: SessionMemory;
   workspaceManager: IWorkspaceManager;
+  skillsManager: SkillsManager;
 }
 
 /** Return type of createCoreComponents — components + wiring infrastructure. */
@@ -76,12 +81,18 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponentGraph
   const actionPipeline = new ActionPipeline(taskEngine, safetyLayer, eventBus, input.observer.child("action-pipeline"));
   const sessionMemory = new SessionMemory(input.db);
   const defaultAuthUrlProvider: AuthUrlProvider = (url) => new SecureValue(url);
+  // Expand the leading "~/" once so every consumer of workspace_root receives the canonical path.
+  const expandedWorkspaceConfig: WorkspaceConfig = {
+    ...input.workspaceConfig,
+    workspace_root: expandHome(input.workspaceConfig.workspace_root),
+  };
   const workspaceManager = new WorkspaceManager(
     eventBus,
-    input.workspaceConfig,
+    expandedWorkspaceConfig,
     input.observer.child("workspace-manager"),
     input.authUrlProvider ?? defaultAuthUrlProvider,
   );
+  const skillsManager = new SkillsManager(expandedWorkspaceConfig.workspace_root, input.observer.child("skills"));
 
   return {
     components: {
@@ -91,7 +102,13 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponentGraph
       actionPipeline,
       sessionMemory,
       workspaceManager,
+      skillsManager,
     },
     topology: eventTopology,
   };
+}
+
+/** Expand a leading `~/` to the user's home directory. Returns the input untouched otherwise. */
+function expandHome(p: string): string {
+  return p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : p;
 }

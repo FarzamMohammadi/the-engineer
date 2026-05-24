@@ -118,7 +118,7 @@ export class Orchestrator {
     });
 
     // Sync portable skills to {workspace_root}/skills/ before phase handlers resolve paths
-    this.ctx.workspaceManager.syncSkills();
+    this.ctx.skillsManager.sync();
 
     // Build phase handler registry from extracted phase-handlers module
     this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.llmCaller, this.ctx));

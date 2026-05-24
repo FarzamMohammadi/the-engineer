@@ -7,11 +7,24 @@ import {
   evaluatePostApprovalChecks,
 } from "../../../../src/core/daemon/review-handler.js";
 import type { ReviewHandlerContext } from "../../../../src/core/daemon/types.js";
+import { removeThoughtsAndPush as removeThoughtsAndPushFn } from "../../../../src/core/orchestrator/pr-manager.js";
 import { type DaemonConfig, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
+
+// removeThoughtsAndPush hits real git via execFileSync; intercept the call to assert
+// review-handler routing without spinning up a real workspace.
+vi.mock("../../../../src/core/orchestrator/pr-manager.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../../src/core/orchestrator/pr-manager.js")>();
+  return {
+    ...actual,
+    removeThoughtsAndPush: vi.fn().mockReturnValue(true),
+  };
+});
+
+const mockedRemoveThoughtsAndPush = vi.mocked(removeThoughtsAndPushFn);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -172,7 +185,8 @@ function buildContext(
       deleteRemoteBranch: vi.fn(),
       getWorktreePath: vi.fn().mockReturnValue(null),
       registerExistingWorkspace: vi.fn(),
-      removeThoughtsAndPush: vi.fn().mockReturnValue(true),
+      pushBranch: vi.fn(),
+      getWorkspaceRecord: vi.fn().mockReturnValue(null),
     } as unknown as ReviewHandlerContext["workspaceManager"],
     peopleDirectory: {
       getByRole: vi.fn().mockReturnValue([]),
@@ -1823,13 +1837,11 @@ describe("ReviewHandler", () => {
         content: null,
         pr_number: 42,
       };
+      mockedRemoveThoughtsAndPush.mockClear();
       handler.handleFeedbackEvent(payload);
       await flush();
 
-      const wm = ctx.workspaceManager as unknown as {
-        removeThoughtsAndPush: ReturnType<typeof vi.fn>;
-      };
-      expect(wm.removeThoughtsAndPush).toHaveBeenCalledWith("task-1");
+      expect(mockedRemoveThoughtsAndPush).toHaveBeenCalledWith(expect.anything(), "task-1");
     });
 
     it("does not call removeThoughtsAndPush when config disabled", async () => {
@@ -1867,13 +1879,11 @@ describe("ReviewHandler", () => {
         content: null,
         pr_number: 42,
       };
+      mockedRemoveThoughtsAndPush.mockClear();
       handler.handleFeedbackEvent(payload);
       await flush();
 
-      const wm = ctx.workspaceManager as unknown as {
-        removeThoughtsAndPush: ReturnType<typeof vi.fn>;
-      };
-      expect(wm.removeThoughtsAndPush).not.toHaveBeenCalled();
+      expect(mockedRemoveThoughtsAndPush).not.toHaveBeenCalled();
     });
 
     it("proceeds with merge even when removeThoughtsAndPush throws", async () => {
@@ -1908,10 +1918,8 @@ describe("ReviewHandler", () => {
       });
       hostingPlugin.mergePR.mockResolvedValue({ success: true });
 
-      const wm = ctx.workspaceManager as unknown as {
-        removeThoughtsAndPush: ReturnType<typeof vi.fn>;
-      };
-      wm.removeThoughtsAndPush.mockImplementation(() => {
+      mockedRemoveThoughtsAndPush.mockClear();
+      mockedRemoveThoughtsAndPush.mockImplementation(() => {
         throw new Error("git rm failed");
       });
 

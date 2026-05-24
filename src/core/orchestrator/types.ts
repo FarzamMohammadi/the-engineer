@@ -13,6 +13,7 @@ import type { IWorkspaceManager } from "../interfaces/workspace-manager.interfac
 import type { IObserver } from "../observer/index.js";
 import type { IObservationStore } from "../observer/types.js";
 import type { SessionMemory } from "../session-memory/index.js";
+import type { SkillsManager } from "../skills/index.js";
 import type { RepoContext } from "./prompts/index.js";
 
 // ── Shared Dependencies ────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ export interface OrchestratorContext {
   actionPipeline: IActionPipeline;
   sessionMemory: SessionMemory;
   workspaceManager: IWorkspaceManager;
+  skillsManager: SkillsManager;
   peopleDirectory: IPeopleDirectory;
   observationStore: IObservationStore | null;
   observer: IObserver;

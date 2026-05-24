@@ -61,6 +61,10 @@ function createMockContext(
       getWorkspaceRecord: vi.fn().mockReturnValue(null),
       verifyWorkspace: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],
+    skillsManager: {
+      sync: vi.fn(),
+      getDir: vi.fn().mockReturnValue("/tmp/test-skills"),
+    } as unknown as OrchestratorContext["skillsManager"],
     peopleDirectory: {} as OrchestratorContext["peopleDirectory"],
     notifications: {
       notify: vi.fn(),

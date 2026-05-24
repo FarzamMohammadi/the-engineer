@@ -5,6 +5,7 @@ import { NotificationKinds } from "../../schemas/notifications.js";
 import { type Task, TaskStates, TeamMemberRoles } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import { removeThoughtsAndPush } from "../orchestrator/pr-manager.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { ReviewHandlerContext } from "./types.js";
 
@@ -646,10 +647,12 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
       return;
     }
     try {
+      // Workspaces are tracked in-memory until Session 4's stateless refactor; re-register
+      // from the persisted task.workspace if the in-memory entry is missing post-restart.
       if (!workspaceManager.getWorktreePath(task.id) && task.workspace) {
         workspaceManager.registerExistingWorkspace(task.id, task.workspace);
       }
-      workspaceManager.removeThoughtsAndPush(task.id);
+      removeThoughtsAndPush({ workspaceManager, observer }, task.id);
     } catch (err) {
       observer.warn("Failed to remove thoughts directory before merge — proceeding", {
         taskId: task.id,

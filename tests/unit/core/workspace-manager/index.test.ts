@@ -1,5 +1,4 @@
-import { execSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -369,91 +368,5 @@ describe("createWorkspace branch rollback on worktree failure (F13)", () => {
       encoding: "utf-8",
     });
     expect(branches).not.toContain("task-fail");
-  });
-});
-
-// ── removeThoughtsAndPush ──────────────────────────────────────────────────
-
-describe("removeThoughtsAndPush", () => {
-  it("removes only branch-introduced thoughts files, commits, and pushes", () => {
-    const h = setup();
-    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, {
-      title: "Test",
-      thoughtsId: "issue-1",
-    });
-
-    // Verify thoughts dir exists
-    const thoughtsDir = join(record.worktreePath, record.thoughtsDir!);
-    expect(existsSync(thoughtsDir)).toBe(true);
-
-    // Commit the thoughts dir so git diff sees it as branch-added
-    execSync("git add -A && git commit -m 'add thoughts'", {
-      cwd: record.worktreePath,
-      encoding: "utf-8",
-      stdio: "pipe",
-    });
-
-    const result = h.workspaceManager.removeThoughtsAndPush("task-1");
-
-    expect(result).toBe(true);
-    expect(existsSync(thoughtsDir)).toBe(false);
-  });
-
-  it("returns false when branch has no thoughts files added", () => {
-    const h = setup();
-    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "No Thoughts" });
-
-    // No thoughtsId → no thoughts directory, nothing added to branch
-    const result = h.workspaceManager.removeThoughtsAndPush("task-1");
-
-    expect(result).toBe(false);
-  });
-
-  it("throws WorkspaceNotFoundError for unknown task", () => {
-    const h = setup();
-    expect(() => h.workspaceManager.removeThoughtsAndPush("unknown-task")).toThrow();
-  });
-});
-
-// ── getSkillsDir ────────────────────────────────────────────────────────────
-
-describe("getSkillsDir", () => {
-  it("returns {workspace_root}/skills/", () => {
-    const h = setup();
-    expect(h.workspaceManager.getSkillsDir()).toBe(join(h.workspaceRoot, "skills"));
-  });
-});
-
-// ── syncSkills ──────────────────────────────────────────────────────────────
-
-describe("syncSkills", () => {
-  it("copies skill files to {workspace_root}/skills/", () => {
-    const h = setup();
-    h.workspaceManager.syncSkills();
-
-    const skillsDir = h.workspaceManager.getSkillsDir();
-    expect(existsSync(join(skillsDir, "commit", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(skillsDir, "expert-panel-review", "SKILL.md"))).toBe(true);
-  });
-
-  it("copies persona files for expert-panel-review", () => {
-    const h = setup();
-    h.workspaceManager.syncSkills();
-
-    const personasDir = join(h.workspaceManager.getSkillsDir(), "expert-panel-review", "personas");
-    expect(existsSync(personasDir)).toBe(true);
-    const personas = readdirSync(personasDir);
-    expect(personas.length).toBeGreaterThan(0);
-    expect(personas.some((f) => f.endsWith(".md"))).toBe(true);
-  });
-
-  it("is idempotent — calling twice does not throw", () => {
-    const h = setup();
-    h.workspaceManager.syncSkills();
-    expect(() => h.workspaceManager.syncSkills()).not.toThrow();
-
-    // Files still present after second call
-    const skillsDir = h.workspaceManager.getSkillsDir();
-    expect(existsSync(join(skillsDir, "commit", "SKILL.md"))).toBe(true);
   });
 });

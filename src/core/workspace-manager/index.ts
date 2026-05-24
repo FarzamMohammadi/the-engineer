@@ -1,8 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import os from "node:os";
+import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import type { z } from "zod";
 
@@ -25,7 +23,7 @@ import type {
   WorkspaceVerification,
 } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
-import { writeSessionResultTemplate } from "../orchestrator/session-result.js";
+import { writeSessionResultTemplate } from "../session-result/index.js";
 import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -90,9 +88,6 @@ export function branchName(prefix: string, taskId: string, slug: string): string
   return `${prefix}${taskId}-${slug}`;
 }
 
-// Re-export from utils for backwards compatibility — canonical home is src/utils/git-url.ts.
-export { injectAuth } from "../../utils/git-url.js";
-
 /**
  * Validate that a path is within the expected workspace root.
  * Uses realpathSync to resolve symlinks before comparison.
@@ -155,13 +150,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     this.eventBus = eventBus;
     this.observer = observer;
     this.authUrlProvider = authUrlProvider;
-    // Expand ~ to actual home directory — Node APIs don't handle tilde
-    this.config = {
-      ...config,
-      workspace_root: config.workspace_root.startsWith("~/")
-        ? path.join(os.homedir(), config.workspace_root.slice(2))
-        : config.workspace_root,
-    };
+    this.config = config;
   }
 
   // ── Workspace Lifecycle ──────────────────────────────────────────────────
@@ -562,47 +551,6 @@ export class WorkspaceManager implements IWorkspaceManager {
     });
   }
 
-  // ── Thoughts Cleanup ────────────────────────────────────────────────────
-
-  /**
-   * Remove thoughts files **introduced by this branch** from the worktree, commit, and push.
-   * Only removes files added relative to the base branch — pre-existing thoughts/ content
-   * in the repo is never touched. Called before merge to keep engineering artifacts out of
-   * the target branch while preserving them in PR history for reviewer context.
-   * Returns true if a cleanup commit was made, false if nothing to remove.
-   */
-  removeThoughtsAndPush(taskId: string): boolean {
-    const record = this.workspaces.get(taskId);
-    if (!record) {
-      throw new WorkspaceNotFoundError(taskId);
-    }
-
-    // Find thoughts files added by this branch (not present on base branch)
-    const baseRef = `origin/${record.baseBranch}`;
-    const addedFiles = this.gitExec(
-      ["diff", "--name-only", "--diff-filter=A", baseRef, "--", "thoughts/"],
-      record.worktreePath,
-    );
-
-    if (!addedFiles.trim()) {
-      this.observer.debug("No branch-introduced thoughts files to remove", { taskId });
-      return false;
-    }
-
-    const files = addedFiles.trim().split("\n");
-    this.observer.info("Removing branch-introduced thoughts files before merge", {
-      taskId,
-      fileCount: files.length,
-    });
-
-    this.gitExec(["rm", "-f", ...files], record.worktreePath);
-    this.gitExec(["commit", "-m", "chore: remove engineering thoughts before merge"], record.worktreePath);
-    this.pushBranch(taskId);
-
-    this.observer.info("Thoughts files removed and pushed", { taskId, fileCount: files.length });
-    return true;
-  }
-
   // ── Queries ──────────────────────────────────────────────────────────────
 
   /** Get the worktree filesystem path for a task, or null if unknown. */
@@ -615,63 +563,14 @@ export class WorkspaceManager implements IWorkspaceManager {
     return this.workspaces.get(taskId) ?? null;
   }
 
-  // ── Skills ─────────────────────────────────────────────────────────────────
-
-  /** Absolute path to {workspace_root}/skills/ — the runtime location for portable skills. */
-  getSkillsDir(): string {
-    return path.join(this.config.workspace_root, "skills");
-  }
-
-  /**
-   * Copy skills from the source tree (resources/skills/) to {workspace_root}/skills/.
-   *
-   * Source is resolved relative to this module's location — works in both src/ (tsx)
-   * and dist/ (compiled) because both mirror the same directory structure with
-   * resources/ at the repo root.
-   */
-  syncSkills(): void {
-    const source = path.join(this.findRepoRoot(), "resources", "skills");
-
-    if (!existsSync(source)) {
-      this.observer.warn("Skills source directory not found — skipping sync", { source });
-      return;
-    }
-
-    const target = this.getSkillsDir();
-    mkdirSync(target, { recursive: true });
-    cpSync(source, target, { recursive: true });
-    this.observer.info("Skills synced", { source, target });
-  }
-
   // ── Private Helpers ────────────────────────────────────────────────────────
 
-  /** Walk up from this module to find the repo root (directory containing package.json). */
-  private findRepoRoot(): string {
-    const thisDir = path.dirname(fileURLToPath(import.meta.url));
-    let current = thisDir;
-    const root = path.resolve("/");
-    while (current !== root) {
-      try {
-        readFileSync(path.join(current, "package.json"), "utf-8");
-        return current;
-      } catch {
-        current = path.dirname(current);
-      }
-    }
-    return path.resolve(thisDir, "../../../..");
-  }
-
-  /** Run a git command with auth injected into the remote URL for fetch/push. */
+  /** Run a git command, swapping `origin` for an authenticated remote URL. Used for fetch from the primary clone. */
   private gitExecWithAuth(args: string[], cwd: string): string {
-    if (args[0] === "fetch" || args[0] === "push") {
-      // Get remote URL and inject auth for this operation only
-      const remoteUrl = this.gitExec(["remote", "get-url", "origin"], cwd);
-      const authUrl = this.authUrlProvider(remoteUrl);
-      // Replace "origin" with the auth URL in the args
-      const authArgs = args.map((a) => (a === "origin" ? authUrl.unwrap() : a));
-      return this.gitExec(authArgs, cwd);
-    }
-    return this.gitExec(args, cwd);
+    const remoteUrl = this.gitExec(["remote", "get-url", "origin"], cwd);
+    const authUrl = this.authUrlProvider(remoteUrl);
+    const authArgs = args.map((a) => (a === "origin" ? authUrl.unwrap() : a));
+    return this.gitExec(authArgs, cwd);
   }
 
   private gitExec(args: string[], cwd: string): string {

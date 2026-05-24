@@ -6,7 +6,7 @@ import {
   backupSessionResult,
   readSessionResult,
   writeSessionResultTemplate,
-} from "../../../../src/core/orchestrator/session-result.js";
+} from "../../../../src/core/session-result/index.js";
 import { Complexities, Phases } from "../../../../src/schemas/orchestrator.js";
 
 describe("readSessionResult", () => {

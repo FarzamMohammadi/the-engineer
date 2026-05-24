@@ -38,6 +38,7 @@ import { Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
 import type { SessionMemory } from "../../src/core/session-memory/index.js";
+import type { SkillsManager } from "../../src/core/skills/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { InferenceResult } from "../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
@@ -500,8 +501,12 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     registerExistingWorkspace: vi.fn(),
     pushBranch: vi.fn(),
     cleanupWorkspace: vi.fn(),
-    getSkillsDir: vi.fn().mockReturnValue("/tmp/test-skills"),
-    syncSkills: vi.fn(),
+  };
+
+  // ── SkillsManager mock ─────────────────────────────────────────────────
+  const skillsManager = {
+    sync: vi.fn(),
+    getDir: vi.fn().mockReturnValue("/tmp/test-skills"),
   };
 
   // ── Build Orchestrator ─────────────────────────────────────────────────
@@ -526,6 +531,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
     actionPipeline: actionPipeline as unknown as ActionPipeline,
     sessionMemory: sessionMemory as unknown as SessionMemory,
     workspaceManager: workspaceManager as unknown as WorkspaceManager,
+    skillsManager: skillsManager as unknown as SkillsManager,
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
     notifications,
     observationStore: null,

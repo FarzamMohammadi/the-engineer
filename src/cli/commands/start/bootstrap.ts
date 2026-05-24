@@ -92,7 +92,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     });
     progress?.("Initializing database", "done");
 
-    // 3. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager)
+    // 3. Core components (EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager, SkillsManager)
     //    AuthUrlProvider uses a late-binding closure — the git hosting plugin
     //    reference is populated after plugin loading (step 12), but by the time
     //    any git operation runs (during task execution), the reference is set.
@@ -105,7 +105,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       return new SecureValue(remoteUrl);
     };
     const {
-      components: { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager },
+      components: { eventBus, taskEngine, safetyLayer, actionPipeline, sessionMemory, workspaceManager, skillsManager },
       topology: eventTopology,
     } = createCoreComponents({
       db: dbHandle.db,
@@ -117,7 +117,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     });
     milestones["components"] = Date.now() - bootstrapStartMs;
     observer.debug(
-      "Core components created: EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager",
+      "Core components created: EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager, SkillsManager",
     );
 
     // 4. Registry (needs eventBus + health config + per-plugin state store factory)
@@ -166,6 +166,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       actionPipeline,
       sessionMemory,
       workspaceManager,
+      skillsManager,
       peopleDirectory,
       observationStore,
       observer: observer.child("orchestrator"),

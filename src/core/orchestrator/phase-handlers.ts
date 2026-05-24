@@ -29,7 +29,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   // ── Helpers ────────────────────────────────────────────────────────────
 
   /** Absolute path to skills directory, resolved from workspace config. */
-  const skillsDir = ctx.workspaceManager.getSkillsDir();
+  const skillsDir = ctx.skillsManager.getDir();
 
   /** Resolve absolute thoughts dir for use in prompts (LLM sees these paths). */
   function absThoughts(taskId: string, thoughtsDir: string): string {

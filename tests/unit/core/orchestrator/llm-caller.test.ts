@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AdapterMethodError, createAdapterError } from "../../../../src/adapters/index.js";
 import { createLlmCaller, isRetryableError } from "../../../../src/core/orchestrator/llm-caller.js";
-import { backupSessionResult, readSessionResult } from "../../../../src/core/orchestrator/session-result.js";
+import { backupSessionResult, readSessionResult } from "../../../../src/core/session-result/index.js";
 import type { InferenceResult } from "../../../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
 import { Complexities, Phases } from "../../../../src/schemas/orchestrator.js";
@@ -9,7 +9,7 @@ import type { SessionResult } from "../../../../src/schemas/orchestrator.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // Mock session-result reader — allows tests to control what readSessionResult returns
-vi.mock("../../../../src/core/orchestrator/session-result.js", () => ({
+vi.mock("../../../../src/core/session-result/index.js", () => ({
   readSessionResult: vi.fn().mockReturnValue(null),
   backupSessionResult: vi.fn(),
 }));
@@ -63,6 +63,10 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
       pushBranch: vi.fn(),
       cleanupWorkspace: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],
+    skillsManager: {
+      sync: vi.fn(),
+      getDir: vi.fn().mockReturnValue("/tmp/test-skills"),
+    } as unknown as OrchestratorContext["skillsManager"],
     peopleDirectory: {
       getOwner: vi.fn().mockReturnValue(null),
       resolveContact: vi.fn().mockReturnValue(null),

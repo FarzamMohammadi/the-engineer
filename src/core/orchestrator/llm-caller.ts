@@ -6,8 +6,8 @@ import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
 import { Complexities, type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
 import { ActionClasses } from "../../schemas/task.js";
 import type { PublishInput } from "../event-bus/index.js";
+import { backupSessionResult, readSessionResult } from "../session-result/index.js";
 import { LlmCallRejectedError, LlmUnavailableError, NoLlmPluginError, WorkspaceNotReadyError } from "./errors.js";
-import { backupSessionResult, readSessionResult } from "./session-result.js";
 import type { OrchestratorContext, PipelineState } from "./types.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────

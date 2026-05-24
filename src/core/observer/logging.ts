@@ -14,6 +14,7 @@ export type ComponentTag =
   | "safety-layer"
   | "session-memory"
   | "workspace-manager"
+  | "skills"
   | "event-bus"
   | "people-directory"
   | "config"

@@ -208,22 +208,28 @@ export function isRetryableError(error: unknown): boolean {
 
 // ── LlmCaller Interface ────────────────────────────────────────────────────
 
+/** Input for {@link LlmCaller.runPhaseWithCli}. */
+export interface RunPhaseWithCliInput {
+  readonly phase: Phase;
+  readonly taskId: string;
+  readonly systemPrompt: string;
+  readonly prompt: string;
+  readonly state: PipelineState;
+  readonly thoughtsDir: string;
+  /** Override the default `PHASE_DIR_MAP[phase]` subdirectory (e.g., "review"). */
+  readonly overridePhaseDir?: string;
+  /** Nested step name under the phase dir (e.g., "refinement"). */
+  readonly stepName?: string;
+  /** Default true. Set to false for sub-phases that don't write session-result.json. */
+  readonly requiresSessionResult?: boolean;
+}
+
 /** LLM invocation, cost tracking, and response validation. */
 export interface LlmCaller {
   /** Call LLM through ActionPipeline. Throws on rejection or no plugin. */
   callLlm(prompt: string, taskId: string, systemPrompt?: string | null): Promise<InferenceResult>;
   /** Run a phase via CLI-native invocation. Single CLI call, file-based routing. */
-  runPhaseWithCli(
-    phase: Phase,
-    taskId: string,
-    systemPrompt: string,
-    prompt: string,
-    state: PipelineState,
-    thoughtsDir: string,
-    overridePhaseDir?: string,
-    stepName?: string,
-    requiresSessionResult?: boolean,
-  ): Promise<PhaseOutput>;
+  runPhaseWithCli(input: RunPhaseWithCliInput): Promise<PhaseOutput>;
   /** Emit cost.incurred event from inference result. */
   emitCostIncurred(taskId: string, result: InferenceResult): void;
 }
@@ -349,17 +355,18 @@ export function createLlmCaller(ctx: OrchestratorContext): LlmCaller {
    * Generates a structured trace path and updates manifest.json after completion.
    */
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: phase lifecycle with observability, cost tracking, continue-retry, and fallback
-  async function runPhaseWithCli(
-    phase: Phase,
-    taskId: string,
-    systemPrompt: string,
-    prompt: string,
-    state: PipelineState,
-    thoughtsDir: string,
-    overridePhaseDir?: string,
-    stepName?: string,
-    requiresSessionResult?: boolean,
-  ): Promise<PhaseOutput> {
+  async function runPhaseWithCli(input: RunPhaseWithCliInput): Promise<PhaseOutput> {
+    const {
+      phase,
+      taskId,
+      systemPrompt,
+      prompt,
+      state,
+      thoughtsDir,
+      overridePhaseDir,
+      stepName,
+      requiresSessionResult,
+    } = input;
     if (!thoughtsDir) {
       throw new WorkspaceNotReadyError(`${taskId}: thoughtsDir is required for CLI-native phase "${phase}"`);
     }

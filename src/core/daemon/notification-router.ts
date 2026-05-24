@@ -242,7 +242,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
       // For each person, try contacts in order until one succeeds (fire-and-forget)
       for (const [personId, personContacts] of contactsByPerson) {
-        sendToFirstReachable(personId, personContacts, safeContent, messageType, notification, commPlugins);
+        sendToFirstReachable({ personId, personContacts, safeContent, messageType, notification, commPlugins });
       }
     } catch (err) {
       observer.warn("Unexpected error in notify()", {
@@ -307,18 +307,21 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     return { delivered: false, retryable: false };
   }
 
+  interface SendToFirstReachableInput {
+    readonly personId: string;
+    readonly personContacts: ResolvedContact[];
+    readonly safeContent: string;
+    readonly messageType: MessageType;
+    readonly notification: Notification;
+    readonly commPlugins: CommunicationAdapter[];
+  }
+
   /**
    * Try contacts in order (first = preferred). Stop on first successful delivery.
    * If none reachable, emit comm.send_failed and enqueue for retry if retryable.
    */
-  function sendToFirstReachable(
-    personId: string,
-    personContacts: ResolvedContact[],
-    safeContent: string,
-    messageType: MessageType,
-    notification: Notification,
-    commPlugins: CommunicationAdapter[],
-  ): void {
+  function sendToFirstReachable(input: SendToFirstReachableInput): void {
+    const { personId, personContacts, safeContent, messageType, notification, commPlugins } = input;
     // Fire-and-forget async chain — try contacts sequentially
     (async () => {
       let anyRetryable = false;

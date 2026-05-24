@@ -49,11 +49,11 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     const teamContacts = ctx.peopleDirectory.getAll();
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter((r) => !r.applied);
 
-    return llmCaller.runPhaseWithCli(
-      Phases.requirements_gathering,
+    return llmCaller.runPhaseWithCli({
+      phase: Phases.requirements_gathering,
       taskId,
-      buildCliNativeSystemPrompt(Phases.requirements_gathering),
-      buildRequirementsGatheringPrompt({
+      systemPrompt: buildCliNativeSystemPrompt(Phases.requirements_gathering),
+      prompt: buildRequirementsGatheringPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
@@ -66,7 +66,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       }),
       state,
       thoughtsDir,
-    );
+    });
   }
 
   function handleResearch(
@@ -77,11 +77,11 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
 
-    return llmCaller.runPhaseWithCli(
-      Phases.research,
+    return llmCaller.runPhaseWithCli({
+      phase: Phases.research,
       taskId,
-      buildCliNativeSystemPrompt(Phases.research),
-      buildResearchPrompt({
+      systemPrompt: buildCliNativeSystemPrompt(Phases.research),
+      prompt: buildResearchPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
@@ -90,7 +90,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       }),
       state,
       thoughtsDir,
-    );
+    });
   }
 
   // ── CLI-native phases (Session 070) ─────────────────────────────────
@@ -103,11 +103,11 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
     const task = ctx.taskEngine.getTask(taskId);
-    return llmCaller.runPhaseWithCli(
-      Phases.planning,
+    return llmCaller.runPhaseWithCli({
+      phase: Phases.planning,
       taskId,
-      buildCliNativeSystemPrompt(Phases.planning),
-      buildPlanningPrompt({
+      systemPrompt: buildCliNativeSystemPrompt(Phases.planning),
+      prompt: buildPlanningPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
@@ -117,7 +117,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       }),
       state,
       thoughtsDir,
-    );
+    });
   }
 
   function handleExecution(
@@ -130,11 +130,11 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     const task = ctx.taskEngine.getTask(taskId);
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter((r) => !r.applied);
 
-    return llmCaller.runPhaseWithCli(
-      Phases.execution,
+    return llmCaller.runPhaseWithCli({
+      phase: Phases.execution,
       taskId,
-      buildCliNativeSystemPrompt(Phases.execution),
-      buildExecutionPrompt({
+      systemPrompt: buildCliNativeSystemPrompt(Phases.execution),
+      prompt: buildExecutionPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
@@ -146,7 +146,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       }),
       state,
       thoughtsDir,
-    );
+    });
   }
 
   // ── CLI-native phases (Session 071) ─────────────────────────────────
@@ -169,11 +169,11 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
 
     // Step 1: Run each review sub-phase as a separate CLI call
     for (const reviewPhaseName of reviewPhases) {
-      await llmCaller.runPhaseWithCli(
-        Phases.self_review,
+      await llmCaller.runPhaseWithCli({
+        phase: Phases.self_review,
         taskId,
-        buildCliNativeSystemPrompt(Phases.self_review),
-        buildReviewSubPhasePrompt({
+        systemPrompt: buildCliNativeSystemPrompt(Phases.self_review),
+        prompt: buildReviewSubPhasePrompt({
           task: dispatch.task,
           repoContext: state.repoContext,
           repoKnowledge: dispatch.knowledge.repo,
@@ -185,18 +185,18 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
         }),
         state,
         thoughtsDir,
-        "review",
-        reviewPhaseName.replace(/_/g, "-"),
-        false, // sub-phases don't write session-result.json
-      );
+        overridePhaseDir: "review",
+        stepName: reviewPhaseName.replace(/_/g, "-"),
+        requiresSessionResult: false, // sub-phases don't write session-result.json
+      });
     }
 
     // Step 2: Run refinement — consolidate findings, apply fixes
-    const refinementOutput = await llmCaller.runPhaseWithCli(
-      Phases.self_review,
+    const refinementOutput = await llmCaller.runPhaseWithCli({
+      phase: Phases.self_review,
       taskId,
-      buildCliNativeSystemPrompt(Phases.self_review),
-      buildRefinementPrompt({
+      systemPrompt: buildCliNativeSystemPrompt(Phases.self_review),
+      prompt: buildRefinementPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
@@ -208,10 +208,10 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       }),
       state,
       thoughtsDir,
-      "review",
-      "refinement",
-      true, // refinement writes session-result.json for routing
-    );
+      overridePhaseDir: "review",
+      stepName: "refinement",
+      requiresSessionResult: true, // refinement writes session-result.json for routing
+    });
 
     // Step 3: Map next_phase → quality_assessment for checkSelfReviewLoopback compatibility
     const nextPhase = (refinementOutput.data as { next_phase?: string }).next_phase;
@@ -239,11 +239,11 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
     const reviewPhases = ctx.config.rrpir?.review_phases ?? [ReviewPhaseNames.requirements_check];
-    return llmCaller.runPhaseWithCli(
-      Phases.demo_prep,
+    return llmCaller.runPhaseWithCli({
+      phase: Phases.demo_prep,
       taskId,
-      buildCliNativeSystemPrompt(Phases.demo_prep),
-      buildDemoPrepPrompt({
+      systemPrompt: buildCliNativeSystemPrompt(Phases.demo_prep),
+      prompt: buildDemoPrepPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         repoKnowledge: dispatch.knowledge.repo,
@@ -253,7 +253,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       }),
       state,
       thoughtsDir,
-    );
+    });
   }
 
   function handleIntegration(
@@ -264,11 +264,11 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
 
-    return llmCaller.runPhaseWithCli(
-      Phases.integration,
+    return llmCaller.runPhaseWithCli({
+      phase: Phases.integration,
       taskId,
-      buildCliNativeSystemPrompt(Phases.integration),
-      buildIntegrationPrompt({
+      systemPrompt: buildCliNativeSystemPrompt(Phases.integration),
+      prompt: buildIntegrationPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
@@ -277,7 +277,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       }),
       state,
       thoughtsDir,
-    );
+    });
   }
 
   return {

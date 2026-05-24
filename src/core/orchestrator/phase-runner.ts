@@ -150,15 +150,19 @@ function resolveStartState(
   return { phases, startIndex };
 }
 
+interface PhaseTransitionInput {
+  readonly sessionId: string;
+  readonly taskId: string;
+  readonly completedPhase: Phase;
+  readonly nextPhase: Phase | null;
+  readonly priorOutputs: Map<Phase, PhaseOutput>;
+  readonly dispatch: Dispatch;
+  readonly ctx: OrchestratorContext;
+}
+
 /** Create a checkpoint at a phase transition (Protocol P4). */
-function createPhaseCheckpoint(
-  sessionId: string,
-  taskId: string,
-  completedPhase: Phase,
-  priorOutputs: Map<Phase, PhaseOutput>,
-  nextPhase: Phase | null,
-  ctx: OrchestratorContext,
-): string {
+function createPhaseCheckpoint(input: Omit<PhaseTransitionInput, "dispatch">): string {
+  const { sessionId, taskId, completedPhase, nextPhase, priorOutputs, ctx } = input;
   const output = priorOutputs.get(completedPhase);
   const checkpoint = ctx.sessionMemory.createCheckpoint({
     sessionId,
@@ -178,16 +182,9 @@ function createPhaseCheckpoint(
 }
 
 /** Record a phase transition: checkpoint + journal + update task.phase (Protocol P4). */
-function recordPhaseTransition(
-  sessionId: string,
-  taskId: string,
-  completedPhase: Phase,
-  nextPhase: Phase | null,
-  priorOutputs: Map<Phase, PhaseOutput>,
-  dispatch: Dispatch,
-  ctx: OrchestratorContext,
-): void {
-  createPhaseCheckpoint(sessionId, taskId, completedPhase, priorOutputs, nextPhase, ctx);
+function recordPhaseTransition(input: PhaseTransitionInput): void {
+  const { sessionId, taskId, completedPhase, nextPhase, priorOutputs, dispatch, ctx } = input;
+  createPhaseCheckpoint(input);
 
   // SBAR handoff logging
   if (nextPhase) {
@@ -322,15 +319,19 @@ function handlePreemption(
   };
 }
 
+/** Input for {@link checkSelfReviewLoopback}. */
+interface SelfReviewLoopbackInput {
+  readonly sessionId: string;
+  readonly taskId: string;
+  readonly output: PhaseOutput;
+  readonly phases: Phase[];
+  readonly state: PipelineState;
+  readonly ctx: OrchestratorContext;
+}
+
 /** Check if self-review output requires loopback to execution. */
-function checkSelfReviewLoopback(
-  sessionId: string,
-  taskId: string,
-  output: PhaseOutput,
-  phases: Phase[],
-  state: PipelineState,
-  ctx: OrchestratorContext,
-): { targetPhase: Phase; loopbackCount: number } | null {
+function checkSelfReviewLoopback(input: SelfReviewLoopbackInput): { targetPhase: Phase; loopbackCount: number } | null {
+  const { sessionId, taskId, output, phases, state, ctx } = input;
   const reviewData = output.data as { quality_assessment?: string; next_phase?: string };
 
   // Primary: quality_assessment from handler (CLI-native maps next_phase → quality_assessment).
@@ -356,7 +357,7 @@ function checkSelfReviewLoopback(
   const newLoopbackCount = state.loopbackCount + 1;
 
   if (newLoopbackCount > ctx.config.rrpir.max_review_loopbacks) {
-    emitLoopbackAlert(sessionId, taskId, newLoopbackCount, assessment, ctx);
+    emitLoopbackAlert({ sessionId, taskId, count: newLoopbackCount, assessment, ctx });
     return null;
   }
 
@@ -375,14 +376,18 @@ function checkSelfReviewLoopback(
   return { targetPhase: Phases.execution, loopbackCount: newLoopbackCount };
 }
 
+/** Input for {@link emitLoopbackAlert}. */
+interface LoopbackAlertInput {
+  readonly sessionId: string;
+  readonly taskId: string;
+  readonly count: number;
+  readonly assessment: string;
+  readonly ctx: OrchestratorContext;
+}
+
 /** Alert human that loopbacks have exceeded the safety threshold. */
-function emitLoopbackAlert(
-  sessionId: string,
-  taskId: string,
-  count: number,
-  assessment: string,
-  ctx: OrchestratorContext,
-): void {
+function emitLoopbackAlert(input: LoopbackAlertInput): void {
+  const { sessionId, taskId, count, assessment, ctx } = input;
   const alertContent = `Self-review loopback threshold exceeded (${String(count)} attempts, assessment: ${assessment}). Proceeding to demo_prep for human review.`;
 
   // Deliver alert via centralized notification router
@@ -398,15 +403,19 @@ function emitLoopbackAlert(
   });
 }
 
+/** Input for {@link blockForPrWorkflowError}. */
+interface PrWorkflowBlockInput {
+  readonly sessionId: string;
+  readonly taskId: string;
+  readonly phase: Phase;
+  readonly step: string;
+  readonly reason: string;
+  readonly ctx: OrchestratorContext;
+}
+
 /** Block task when a PR workflow step fails — notify owner and wait for resolution. */
-function blockForPrWorkflowError(
-  sessionId: string,
-  taskId: string,
-  phase: Phase,
-  step: string,
-  reason: string,
-  ctx: OrchestratorContext,
-): PhaseCompletionResult {
+function blockForPrWorkflowError(input: PrWorkflowBlockInput): PhaseCompletionResult {
+  const { sessionId, taskId, phase, step, reason, ctx } = input;
   const message = `PR workflow failed at ${step}: ${reason}`;
   ctx.taskEngine.requestTransition(taskId, TaskStates.blocked, null, message, "orchestrator");
   ctx.taskEngine.updateTaskField(taskId, "blocked", {
@@ -421,17 +430,21 @@ function blockForPrWorkflowError(
   return { kind: "exit", result: { outcome: "blocked", phase, reason: message } };
 }
 
+/** Input for {@link tryCommitPushAndCreatePR}. */
+interface CommitPushPrInput {
+  readonly sessionId: string;
+  readonly taskId: string;
+  readonly phase: Phase;
+  readonly output: PhaseOutput;
+  readonly dispatch: Dispatch;
+  readonly priorOutputs: Map<Phase, PhaseOutput>;
+  readonly ctx: OrchestratorContext;
+  readonly prManager: PrManager;
+}
+
 /** Commit, push, and optionally create PR. Returns pipeline exit result or null to continue. */
-async function tryCommitPushAndCreatePR(
-  sessionId: string,
-  taskId: string,
-  phase: Phase,
-  output: PhaseOutput,
-  dispatch: Dispatch,
-  priorOutputs: Map<Phase, PhaseOutput>,
-  ctx: OrchestratorContext,
-  prManager: PrManager,
-): Promise<PhaseCompletionResult | null> {
+async function tryCommitPushAndCreatePR(input: CommitPushPrInput): Promise<PhaseCompletionResult | null> {
+  const { sessionId, taskId, phase, output, dispatch, priorOutputs, ctx, prManager } = input;
   // Step 1: Commit and push
   const pushResult = await prManager.commitAndPush(sessionId, taskId, dispatch);
 
@@ -439,7 +452,7 @@ async function tryCommitPushAndCreatePR(
     return null; // No workspace or no changes — continue pipeline
   }
   if (pushResult.outcome === "error") {
-    return blockForPrWorkflowError(sessionId, taskId, phase, pushResult.step, pushResult.reason, ctx);
+    return blockForPrWorkflowError({ sessionId, taskId, phase, step: pushResult.step, reason: pushResult.reason, ctx });
   }
 
   // Step 2: Check if PR creation should be skipped
@@ -470,7 +483,7 @@ async function tryCommitPushAndCreatePR(
   const prResult = await prManager.createPullRequest(sessionId, taskId, output, dispatch);
 
   if (prResult.outcome === "error") {
-    return blockForPrWorkflowError(sessionId, taskId, phase, prResult.step, prResult.reason, ctx);
+    return blockForPrWorkflowError({ sessionId, taskId, phase, step: prResult.step, reason: prResult.reason, ctx });
   }
   if (prResult.outcome === "no_hosting_plugin") {
     return null; // No git hosting adapter configured — continue pipeline
@@ -478,7 +491,15 @@ async function tryCommitPushAndCreatePR(
 
   // PR created or rework pushed — exit pipeline for human review
   try {
-    recordPhaseTransition(sessionId, taskId, phase, null, priorOutputs, dispatch, ctx);
+    recordPhaseTransition({
+      sessionId,
+      taskId,
+      completedPhase: phase,
+      nextPhase: null,
+      priorOutputs,
+      dispatch,
+      ctx,
+    });
     ctx.sessionMemory.endSession(sessionId, SessionEndReasons.review_pending);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -496,24 +517,31 @@ async function tryCommitPushAndCreatePR(
   };
 }
 
+/** Input for {@link handlePostPhaseActions}. */
+interface PostPhaseActionsInput {
+  readonly sessionId: string;
+  readonly taskId: string;
+  readonly phase: Phase;
+  readonly output: PhaseOutput;
+  readonly currentPhases: Phase[];
+  readonly priorOutputs: Map<Phase, PhaseOutput>;
+  readonly dispatch: Dispatch;
+  readonly state: PipelineState;
+  readonly deps: PhaseRunnerDeps;
+}
+
+/** Outcome of {@link handlePostPhaseActions}. */
+interface PostPhaseActionsResult {
+  readonly completion: PhaseCompletionResult;
+  readonly loopbackCount: number;
+  readonly requirementsLoopCount: number;
+  readonly returnToPhase: Phase | null;
+}
+
 /** Handle post-phase logic: loopback, transitions, preemption, PR creation. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-branch pipeline orchestration
-async function handlePostPhaseActions(
-  sessionId: string,
-  taskId: string,
-  phase: Phase,
-  output: PhaseOutput,
-  currentPhases: Phase[],
-  priorOutputs: Map<Phase, PhaseOutput>,
-  dispatch: Dispatch,
-  state: PipelineState,
-  deps: PhaseRunnerDeps,
-): Promise<{
-  completion: PhaseCompletionResult;
-  loopbackCount: number;
-  requirementsLoopCount: number;
-  returnToPhase: Phase | null;
-}> {
+async function handlePostPhaseActions(input: PostPhaseActionsInput): Promise<PostPhaseActionsResult> {
+  const { sessionId, taskId, phase, output, currentPhases, priorOutputs, dispatch, state, deps } = input;
   const { ctx, prManager } = deps;
   const phases = currentPhases;
   let loopbackCount = state.loopbackCount;
@@ -676,7 +704,7 @@ async function handlePostPhaseActions(
 
   // Self-review quality gate: loopback to execution if needs_work
   if (phase === Phases.self_review) {
-    const loopbackResult = checkSelfReviewLoopback(sessionId, taskId, output, phases, state, ctx);
+    const loopbackResult = checkSelfReviewLoopback({ sessionId, taskId, output, phases, state, ctx });
     if (loopbackResult) {
       loopbackCount = loopbackResult.loopbackCount;
 
@@ -703,7 +731,7 @@ async function handlePostPhaseActions(
 
   // After demo_prep: commit, push, create draft PR — then exit pipeline for review
   if (phase === Phases.demo_prep) {
-    const prResult = await tryCommitPushAndCreatePR(
+    const prResult = await tryCommitPushAndCreatePR({
       sessionId,
       taskId,
       phase,
@@ -712,7 +740,7 @@ async function handlePostPhaseActions(
       priorOutputs,
       ctx,
       prManager,
-    );
+    });
     if (prResult) {
       return { completion: prResult, loopbackCount, requirementsLoopCount, returnToPhase };
     }
@@ -733,7 +761,7 @@ async function handlePostPhaseActions(
   // Fast-path PR: when self_review is the final phase
   if (phase === Phases.self_review && isLastPhase) {
     ctx.observer.info("Fast-path PR exit: self_review is last phase, creating PR", { taskId });
-    const prResult = await tryCommitPushAndCreatePR(
+    const prResult = await tryCommitPushAndCreatePR({
       sessionId,
       taskId,
       phase,
@@ -742,7 +770,7 @@ async function handlePostPhaseActions(
       priorOutputs,
       ctx,
       prManager,
-    );
+    });
     ctx.observer.debug("Fast-path PR result", { taskId, hasResult: !!prResult });
     if (prResult) {
       return { completion: prResult, loopbackCount, requirementsLoopCount, returnToPhase };
@@ -751,7 +779,15 @@ async function handlePostPhaseActions(
 
   // biome-ignore lint/style/noNonNullAssertion: next phase exists when not last
   const nextPhase = isLastPhase ? null : phases[currentIndex + 1]!;
-  recordPhaseTransition(sessionId, taskId, phase, nextPhase, priorOutputs, dispatch, ctx);
+  recordPhaseTransition({
+    sessionId,
+    taskId,
+    completedPhase: phase,
+    nextPhase,
+    priorOutputs,
+    dispatch,
+    ctx,
+  });
 
   // Check preemption after phase completion
   if (deps.preemption.isRequested(taskId) && nextPhase) {
@@ -979,17 +1015,17 @@ export async function runPhasePipeline(
     // and routed through handlePhaseError, which also closes the session.
     let completion: PhaseCompletionResult;
     try {
-      const result = await handlePostPhaseActions(
+      const result = await handlePostPhaseActions({
         sessionId,
         taskId,
         phase,
         output,
-        navigator.getPhases(),
+        currentPhases: navigator.getPhases(),
         priorOutputs,
         dispatch,
-        currentState,
+        state: currentState,
         deps,
-      );
+      });
       completion = result.completion;
 
       // Persist loopback counts if changed (crash recovery)

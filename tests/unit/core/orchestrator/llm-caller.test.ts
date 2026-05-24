@@ -290,12 +290,12 @@ describe("LlmCaller", () => {
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
-      const output = await caller.runPhaseWithCli(
-        Phases.execution,
-        "task-001",
-        "system prompt",
-        "do work",
-        {
+      const output = await caller.runPhaseWithCli({
+        phase: Phases.execution,
+        taskId: "task-001",
+        systemPrompt: "system prompt",
+        prompt: "do work",
+        state: {
           traceId: "trace-001",
           sessionId: "session-001",
           loopbackCount: 0,
@@ -305,8 +305,8 @@ describe("LlmCaller", () => {
           returnToPhase: null,
           phaseSequence: 1,
         },
-        "thoughts/2026-03-31-issue-5",
-      );
+        thoughtsDir: "thoughts/2026-03-31-issue-5",
+      });
 
       expect(output.data["status"]).toBe("ready");
       expect(output.data["next_phase"]).toBe(Phases.self_review);
@@ -326,12 +326,12 @@ describe("LlmCaller", () => {
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
-      const output = await caller.runPhaseWithCli(
-        Phases.execution,
-        "task-001",
-        "system prompt",
-        "do work",
-        {
+      const output = await caller.runPhaseWithCli({
+        phase: Phases.execution,
+        taskId: "task-001",
+        systemPrompt: "system prompt",
+        prompt: "do work",
+        state: {
           traceId: "trace-001",
           sessionId: "session-001",
           loopbackCount: 0,
@@ -341,8 +341,8 @@ describe("LlmCaller", () => {
           returnToPhase: null,
           phaseSequence: 1,
         },
-        "thoughts/2026-03-31-issue-5",
-      );
+        thoughtsDir: "thoughts/2026-03-31-issue-5",
+      });
 
       expect(output.data["status"]).toBe("need_more_info");
     });
@@ -354,12 +354,12 @@ describe("LlmCaller", () => {
 
       const caller = createLlmCaller(ctx);
       await expect(
-        caller.runPhaseWithCli(
-          Phases.execution,
-          "task-001",
-          "system prompt",
-          "do work",
-          {
+        caller.runPhaseWithCli({
+          phase: Phases.execution,
+          taskId: "task-001",
+          systemPrompt: "system prompt",
+          prompt: "do work",
+          state: {
             traceId: "trace-001",
             sessionId: "session-001",
             loopbackCount: 0,
@@ -369,8 +369,8 @@ describe("LlmCaller", () => {
             returnToPhase: null,
             phaseSequence: 1,
           },
-          "thoughts/2026-03-31-issue-5",
-        ),
+          thoughtsDir: "thoughts/2026-03-31-issue-5",
+        }),
       ).rejects.toThrow("CLI crashed hard");
     });
 
@@ -381,12 +381,12 @@ describe("LlmCaller", () => {
 
       const caller = createLlmCaller(ctx);
       await expect(
-        caller.runPhaseWithCli(
-          Phases.execution,
-          "task-001",
-          "system prompt",
-          "do work",
-          {
+        caller.runPhaseWithCli({
+          phase: Phases.execution,
+          taskId: "task-001",
+          systemPrompt: "system prompt",
+          prompt: "do work",
+          state: {
             traceId: "trace-001",
             sessionId: "session-001",
             loopbackCount: 0,
@@ -396,8 +396,8 @@ describe("LlmCaller", () => {
             returnToPhase: null,
             phaseSequence: 1,
           },
-          "thoughts/2026-03-31-issue-5",
-        ),
+          thoughtsDir: "thoughts/2026-03-31-issue-5",
+        }),
       ).rejects.toThrow("CLI crashed hard");
     });
 
@@ -414,12 +414,12 @@ describe("LlmCaller", () => {
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
-      await caller.runPhaseWithCli(
-        Phases.execution,
-        "task-001",
-        "system prompt",
-        "do work",
-        {
+      await caller.runPhaseWithCli({
+        phase: Phases.execution,
+        taskId: "task-001",
+        systemPrompt: "system prompt",
+        prompt: "do work",
+        state: {
           traceId: "trace-001",
           sessionId: "session-001",
           loopbackCount: 0,
@@ -429,8 +429,8 @@ describe("LlmCaller", () => {
           returnToPhase: null,
           phaseSequence: 1,
         },
-        "thoughts/2026-03-31-issue-5",
-      );
+        thoughtsDir: "thoughts/2026-03-31-issue-5",
+      });
 
       // cost.incurred event should NOT be published on recovery path
       const costCalls = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
@@ -480,17 +480,17 @@ describe("LlmCaller", () => {
       const { ctx } = setupForStepTests();
       const caller = createLlmCaller(ctx);
 
-      const output = await caller.runPhaseWithCli(
-        Phases.self_review,
-        "task-001",
-        "system prompt",
-        "review code",
-        baseState,
-        "thoughts/2026-04-09-issue-5",
-        "review",
-        "requirements-check",
-        false,
-      );
+      const output = await caller.runPhaseWithCli({
+        phase: Phases.self_review,
+        taskId: "task-001",
+        systemPrompt: "system prompt",
+        prompt: "review code",
+        state: baseState,
+        thoughtsDir: "thoughts/2026-04-09-issue-5",
+        overridePhaseDir: "review",
+        stepName: "requirements-check",
+        requiresSessionResult: false,
+      });
 
       expect(backupSessionResultMock).not.toHaveBeenCalled();
       expect(readSessionResultMock).not.toHaveBeenCalled();
@@ -501,17 +501,17 @@ describe("LlmCaller", () => {
       const { ctx } = setupForStepTests();
       const caller = createLlmCaller(ctx);
 
-      const output = await caller.runPhaseWithCli(
-        Phases.self_review,
-        "task-001",
-        "system prompt",
-        "review code",
-        baseState,
-        "thoughts/2026-04-09-issue-5",
-        "review",
-        "requirements-check",
-        false,
-      );
+      const output = await caller.runPhaseWithCli({
+        phase: Phases.self_review,
+        taskId: "task-001",
+        systemPrompt: "system prompt",
+        prompt: "review code",
+        state: baseState,
+        thoughtsDir: "thoughts/2026-04-09-issue-5",
+        overridePhaseDir: "review",
+        stepName: "requirements-check",
+        requiresSessionResult: false,
+      });
 
       expect(output.phase).toBe(Phases.self_review);
       expect(output.data["status"]).toBe("ready");
@@ -523,17 +523,17 @@ describe("LlmCaller", () => {
       const { ctx } = setupForStepTests();
       const caller = createLlmCaller(ctx);
 
-      const output = await caller.runPhaseWithCli(
-        Phases.self_review,
-        "task-001",
-        "system prompt",
-        "review code",
-        baseState,
-        "thoughts/2026-04-09-issue-5",
-        "review",
-        "requirements-check",
-        false,
-      );
+      const output = await caller.runPhaseWithCli({
+        phase: Phases.self_review,
+        taskId: "task-001",
+        systemPrompt: "system prompt",
+        prompt: "review code",
+        state: baseState,
+        thoughtsDir: "thoughts/2026-04-09-issue-5",
+        overridePhaseDir: "review",
+        stepName: "requirements-check",
+        requiresSessionResult: false,
+      });
 
       expect(output.data["deliverable_path"]).toBe("thoughts/2026-04-09-issue-5/review/requirements-check");
     });
@@ -549,17 +549,17 @@ describe("LlmCaller", () => {
       readSessionResultMock.mockReturnValue(sessionResult);
 
       const caller = createLlmCaller(ctx);
-      const output = await caller.runPhaseWithCli(
-        Phases.self_review,
-        "task-001",
-        "system prompt",
-        "refine code",
-        baseState,
-        "thoughts/2026-04-09-issue-5",
-        "review",
-        "refinement",
-        true,
-      );
+      const output = await caller.runPhaseWithCli({
+        phase: Phases.self_review,
+        taskId: "task-001",
+        systemPrompt: "system prompt",
+        prompt: "refine code",
+        state: baseState,
+        thoughtsDir: "thoughts/2026-04-09-issue-5",
+        overridePhaseDir: "review",
+        stepName: "refinement",
+        requiresSessionResult: true,
+      });
 
       expect(backupSessionResultMock).toHaveBeenCalled();
       expect(readSessionResultMock).toHaveBeenCalled();
@@ -573,17 +573,17 @@ describe("LlmCaller", () => {
 
       const caller = createLlmCaller(ctx);
       await expect(
-        caller.runPhaseWithCli(
-          Phases.self_review,
-          "task-001",
-          "system prompt",
-          "refine code",
-          baseState,
-          "thoughts/2026-04-09-issue-5",
-          "review",
-          "refinement",
-          true,
-        ),
+        caller.runPhaseWithCli({
+          phase: Phases.self_review,
+          taskId: "task-001",
+          systemPrompt: "system prompt",
+          prompt: "refine code",
+          state: baseState,
+          thoughtsDir: "thoughts/2026-04-09-issue-5",
+          overridePhaseDir: "review",
+          stepName: "refinement",
+          requiresSessionResult: true,
+        }),
       ).rejects.toThrow("session-result.json was not created by the CLI");
     });
 
@@ -593,14 +593,14 @@ describe("LlmCaller", () => {
 
       const caller = createLlmCaller(ctx);
       await expect(
-        caller.runPhaseWithCli(
-          Phases.execution,
-          "task-001",
-          "system prompt",
-          "do work",
-          baseState,
-          "thoughts/2026-04-09-issue-5",
-        ),
+        caller.runPhaseWithCli({
+          phase: Phases.execution,
+          taskId: "task-001",
+          systemPrompt: "system prompt",
+          prompt: "do work",
+          state: baseState,
+          thoughtsDir: "thoughts/2026-04-09-issue-5",
+        }),
       ).rejects.toThrow("session-result.json was not created by the CLI");
 
       expect(backupSessionResultMock).toHaveBeenCalled();

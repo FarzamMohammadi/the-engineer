@@ -1,15 +1,7 @@
 import type { Person } from "../../../schemas/adapters.js";
-import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
-import {
-  buildKnowledgeSection,
-  buildRRPIROverview,
-  buildRepoOverview,
-  buildTaskBrief,
-  section,
-  wrapUntrustedContent,
-} from "./format.js";
+import { buildRRPIROverview, buildRepoOverview, buildTaskBrief, section, wrapUntrustedContent } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,8 +13,6 @@ export interface RequirementsGatheringPromptContext {
     external_ref?: { type: string; repo: string; id: string } | null;
   };
   repoContext: RepoContext | null;
-  repoKnowledge: KnowledgeEntry[];
-  userKnowledge: KnowledgeEntry[];
   teamContacts: Person[];
   /** Full path to the thoughts directory, e.g. "thoughts/2026-03-22-issue-42" */
   thoughtsDir: string;
@@ -291,12 +281,6 @@ function buildTaskContextSection(ctx: RequirementsGatheringPromptContext, isFeed
 
   // Repository overview
   parts.push(buildRepoOverview(ctx.repoContext));
-
-  // Knowledge
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
-  }
 
   return parts.join("\n\n");
 }

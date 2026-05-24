@@ -64,7 +64,6 @@ export interface TestDaemonHandle {
   };
   sessionMemory: {
     getLatestCheckpoint: Mock;
-    getKnowledge: Mock;
     queryJournal: Mock;
     getLatestJournalTimestamp: Mock;
     createSession: Mock;
@@ -72,9 +71,6 @@ export interface TestDaemonHandle {
     addJournalEntry: Mock;
     createCheckpoint: Mock;
     getSessionChain: Mock;
-    storeKnowledge: Mock;
-    supersedeKnowledge: Mock;
-    confirmKnowledge: Mock;
   };
   safetyLayer: {
     evaluateAction: Mock;
@@ -238,7 +234,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
   // ── SessionMemory mock ────────────────────────────────────────────────
   const sessionMemory = {
     getLatestCheckpoint: vi.fn().mockReturnValue(null),
-    getKnowledge: vi.fn().mockReturnValue([]),
     queryJournal: vi.fn().mockReturnValue([]),
     getLatestJournalTimestamp: vi.fn().mockReturnValue(null),
     createSession: vi.fn(),
@@ -246,9 +241,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     addJournalEntry: vi.fn(),
     createCheckpoint: vi.fn(),
     getSessionChain: vi.fn().mockReturnValue([]),
-    storeKnowledge: vi.fn(),
-    supersedeKnowledge: vi.fn(),
-    confirmKnowledge: vi.fn(),
   };
 
   // ── SafetyLayer mock ──────────────────────────────────────────────────

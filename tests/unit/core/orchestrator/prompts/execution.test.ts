@@ -6,8 +6,6 @@ describe("buildExecutionPrompt", () => {
   const minimalCtx = {
     task: { title: "Test task", description: "A test" },
     repoContext: null,
-    repoKnowledge: [],
-    userKnowledge: [],
     thoughtsDir: "/tmp/thoughts",
     skillsDir: resolveSkillsDir(),
   };

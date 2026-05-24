@@ -23,12 +23,7 @@ import {
   WorktreeInfoSchema,
 } from "../../../src/schemas/ephemeral.js";
 import { Phases } from "../../../src/schemas/orchestrator.js";
-import {
-  CheckpointReasons,
-  KnowledgeConfidences,
-  KnowledgeDomains,
-  KnowledgeScopes,
-} from "../../../src/schemas/session-memory.js";
+import { CheckpointReasons } from "../../../src/schemas/session-memory.js";
 import { SubStates, TaskStates } from "../../../src/schemas/task.js";
 
 // ── Daemon State ────────────────────────────────────────────────────────────────
@@ -245,7 +240,6 @@ describe("DispatchSchema", () => {
     const dispatch = DispatchSchema.parse({
       task: minimalTask,
       resume_from: null,
-      knowledge: { repo: [], user: [] },
     });
     expect(dispatch.task.id).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
     expect(dispatch.resume_from).toBeNull();
@@ -272,34 +266,8 @@ describe("DispatchSchema", () => {
     const dispatch = DispatchSchema.parse({
       task: minimalTask,
       resume_from: checkpoint,
-      knowledge: { repo: [], user: [] },
     });
     expect(dispatch.resume_from?.phase).toBe("execution");
-  });
-
-  it("parses dispatch with knowledge entries", () => {
-    const knowledge = {
-      id: "abcdef1234567890abcdef1234567890",
-      scope: KnowledgeScopes.repo,
-      repo_scope: "owner/repo",
-      domain: KnowledgeDomains.conventions,
-      key: "naming",
-      body: "Use camelCase",
-      confidence: KnowledgeConfidences.observed,
-      evidence: [{ task_id: "01ABC", description: "Seen in codebase" }],
-      created_at: "2026-03-10T12:00:00.000Z",
-      last_confirmed: "2026-03-10T12:00:00.000Z",
-      superseded_by: null,
-      source_task_id: "01ABC",
-      source_phase: Phases.research,
-    };
-
-    const dispatch = DispatchSchema.parse({
-      task: minimalTask,
-      resume_from: null,
-      knowledge: { repo: [knowledge], user: [] },
-    });
-    expect(dispatch.knowledge.repo).toHaveLength(1);
   });
 });
 

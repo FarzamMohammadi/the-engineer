@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-const HEX_32 = /^[0-9a-f]{32}$/;
-
 import { Phases } from "../../../src/schemas/orchestrator.js";
 import {
   CheckpointReasonSchema,
@@ -10,17 +8,9 @@ import {
   JournalEntrySchema,
   JournalEntryTypeSchema,
   JournalEntryTypes,
-  KnowledgeConfidenceSchema,
-  KnowledgeConfidences,
-  KnowledgeDomainSchema,
-  KnowledgeDomains,
-  KnowledgeEntrySchema,
-  KnowledgeScopeSchema,
-  KnowledgeScopes,
   SessionEndReasonSchema,
   SessionEndReasons,
   SessionSchema,
-  knowledgeId,
 } from "../../../src/schemas/session-memory.js";
 
 // ── Session ────────────────────────────────────────────────────────────────────
@@ -170,117 +160,5 @@ describe("CheckpointSchema", () => {
 
   it("rejects non-integer journal_offset", () => {
     expect(() => CheckpointSchema.parse({ ...validCheckpoint, journal_offset: 5.5 })).toThrow();
-  });
-});
-
-// ── KnowledgeEntry ─────────────────────────────────────────────────────────────
-
-describe("KnowledgeEntrySchema", () => {
-  const validKnowledge = {
-    id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-    scope: KnowledgeScopes.repo,
-    repo_scope: "owner/repo",
-    domain: KnowledgeDomains.conventions,
-    key: "test framework",
-    body: "Uses Vitest with forks pool for all test tiers",
-    confidence: KnowledgeConfidences.observed,
-    evidence: [{ task_id: "01TASK", description: "saw this pattern in 5 files during task #42" }],
-    created_at: "2026-03-10T12:00:00.000Z",
-    last_confirmed: "2026-03-10T12:00:00.000Z",
-    superseded_by: null,
-    source_task_id: "01TASK",
-    source_phase: Phases.research,
-  };
-
-  it("parses a valid knowledge entry", () => {
-    expect(KnowledgeEntrySchema.parse(validKnowledge)).toEqual(validKnowledge);
-  });
-
-  it("accepts null repo_scope for user-scoped knowledge", () => {
-    const userScoped = { ...validKnowledge, scope: KnowledgeScopes.user, repo_scope: null };
-    expect(KnowledgeEntrySchema.parse(userScoped)).toBeDefined();
-  });
-
-  it("accepts superseded_by when set", () => {
-    const superseded = { ...validKnowledge, superseded_by: "newid123" };
-    expect(KnowledgeEntrySchema.parse(superseded)).toBeDefined();
-  });
-
-  it("has exactly 2 scopes", () => {
-    expect(KnowledgeScopeSchema.options).toHaveLength(2);
-  });
-
-  it("has exactly 3 confidence levels", () => {
-    expect(KnowledgeConfidenceSchema.options).toHaveLength(3);
-  });
-
-  it("has exactly 6 domains", () => {
-    expect(KnowledgeDomainSchema.options).toHaveLength(6);
-  });
-
-  it("rejects invalid scope", () => {
-    expect(() => KnowledgeEntrySchema.parse({ ...validKnowledge, scope: "global" })).toThrow();
-  });
-
-  it("rejects invalid domain", () => {
-    expect(() => KnowledgeEntrySchema.parse({ ...validKnowledge, domain: "architecture" })).toThrow();
-  });
-});
-
-// ── knowledgeId ────────────────────────────────────────────────────────────────
-
-describe("knowledgeId", () => {
-  it("returns a 32-character hex string", () => {
-    const id = knowledgeId("repo", "owner/repo", "test framework", "Uses Vitest");
-    expect(id).toHaveLength(32);
-    expect(id).toMatch(HEX_32);
-  });
-
-  it("is deterministic (same inputs produce same output)", () => {
-    const id1 = knowledgeId("repo", "owner/repo", "key", "body");
-    const id2 = knowledgeId("repo", "owner/repo", "key", "body");
-    expect(id1).toBe(id2);
-  });
-
-  it("produces different IDs for different inputs", () => {
-    const id1 = knowledgeId("repo", "owner/repo", "key", "body1");
-    const id2 = knowledgeId("repo", "owner/repo", "key", "body2");
-    expect(id1).not.toBe(id2);
-  });
-
-  it("different scopes with same key+body produce different IDs", () => {
-    const id1 = knowledgeId("repo", "owner/repo", "key", "body");
-    const id2 = knowledgeId("user", null, "key", "body");
-    expect(id1).not.toBe(id2);
-  });
-
-  it("different repo_scopes with same scope+key+body produce different IDs", () => {
-    const id1 = knowledgeId("repo", "owner/repo-a", "key", "body");
-    const id2 = knowledgeId("repo", "owner/repo-b", "key", "body");
-    expect(id1).not.toBe(id2);
-  });
-
-  it("null repo_scope treated as empty string in hash", () => {
-    const id1 = knowledgeId("user", null, "key", "body");
-    const id2 = knowledgeId("user", null, "key", "body");
-    expect(id1).toBe(id2);
-  });
-
-  it("handles empty strings", () => {
-    const id = knowledgeId("", null, "", "");
-    expect(id).toHaveLength(32);
-    expect(id).toMatch(HEX_32);
-  });
-
-  it("handles special characters", () => {
-    const id = knowledgeId("repo", "owner/repo", "key with spaces & symbols!", "body with\nnewlines\tand\ttabs");
-    expect(id).toHaveLength(32);
-    expect(id).toMatch(HEX_32);
-  });
-
-  it("handles unicode content", () => {
-    const id = knowledgeId("repo", "owner/repo", "clé", "données avec émojis 🚀");
-    expect(id).toHaveLength(32);
-    expect(id).toMatch(HEX_32);
   });
 });

@@ -16,16 +16,3 @@ export class SessionNotFoundError extends SessionMemoryError {
     this.sessionId = sessionId;
   }
 }
-
-/** Knowledge entry was not found by ID. */
-export class KnowledgeNotFoundError extends SessionMemoryError {
-  readonly tag = "KnowledgeNotFound" as const;
-  readonly retryable = false;
-  readonly entryId: string;
-
-  constructor(entryId: string) {
-    super(`Knowledge entry "${entryId}" not found`);
-    this.name = "KnowledgeNotFoundError";
-    this.entryId = entryId;
-  }
-}

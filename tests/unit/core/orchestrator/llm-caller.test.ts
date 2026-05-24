@@ -55,8 +55,6 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
       addJournalEntry: vi.fn(),
       createCheckpoint: vi.fn(),
       getLatestCheckpoint: vi.fn(),
-      storeKnowledge: vi.fn(),
-      getKnowledge: vi.fn().mockReturnValue([]),
       queryJournal: vi.fn().mockReturnValue([]),
       getSessionChain: vi.fn().mockReturnValue([]),
     } as unknown as OrchestratorContext["sessionMemory"],

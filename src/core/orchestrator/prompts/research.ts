@@ -1,6 +1,5 @@
-import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import { buildKnowledgeSection, buildRRPIROverview, buildRepoOverview, buildTaskBrief, section } from "./format.js";
+import { buildRRPIROverview, buildRepoOverview, buildTaskBrief, section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,8 +10,6 @@ export interface ResearchPromptContext {
     description: string | null;
   };
   repoContext: RepoContext | null;
-  repoKnowledge: KnowledgeEntry[];
-  userKnowledge: KnowledgeEntry[];
   /** Full path to the thoughts directory, e.g. "thoughts/2026-03-22-issue-42" */
   thoughtsDir: string;
 }
@@ -168,12 +165,6 @@ function buildTaskContextSection(ctx: ResearchPromptContext): string {
 
   // Repository overview
   parts.push(buildRepoOverview(ctx.repoContext));
-
-  // Knowledge
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
-  }
 
   return parts.join("\n\n");
 }

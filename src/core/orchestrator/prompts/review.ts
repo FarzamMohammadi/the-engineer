@@ -1,7 +1,6 @@
 import type { ReviewPhaseName } from "../../../schemas/config.js";
-import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import { buildKnowledgeSection, buildRRPIROverview, buildTaskBrief, section } from "./format.js";
+import { buildRRPIROverview, buildTaskBrief, section } from "./format.js";
 import { buildSkillsSection } from "./skills.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -13,8 +12,6 @@ export interface ReviewSubPhaseContext {
     description: string | null;
   };
   repoContext: RepoContext | null;
-  repoKnowledge: KnowledgeEntry[];
-  userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
   /** Absolute path to skills directory for on-demand reading by the CLI. */
   skillsDir: string;
@@ -31,8 +28,6 @@ export interface RefinementPromptContext {
     description: string | null;
   };
   repoContext: RepoContext | null;
-  repoKnowledge: KnowledgeEntry[];
-  userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
   /** Absolute path to skills directory for on-demand reading by the CLI. */
   skillsDir: string;
@@ -345,11 +340,6 @@ function buildTaskContext(ctx: ReviewSubPhaseContext | RefinementPromptContext):
 
   if (ctx.repoContext?.gitBranch) {
     parts.push(section("Repository", `Branch: ${ctx.repoContext.gitBranch}`));
-  }
-
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
   }
 
   return section("The Task Context", parts.join("\n\n"));

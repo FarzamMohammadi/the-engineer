@@ -56,8 +56,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       prompt: buildRequirementsGatheringPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        repoKnowledge: dispatch.knowledge.repo,
-        userKnowledge: dispatch.knowledge.user,
         teamContacts,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
@@ -84,8 +82,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       prompt: buildResearchPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        repoKnowledge: dispatch.knowledge.repo,
-        userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
       }),
       state,
@@ -110,8 +106,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       prompt: buildPlanningPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        repoKnowledge: dispatch.knowledge.repo,
-        userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
         skipResearch: task?.skip_research ?? false,
       }),
@@ -137,8 +131,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       prompt: buildExecutionPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        repoKnowledge: dispatch.knowledge.repo,
-        userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
         skillsDir,
         feedbackRounds: unappliedFeedback.length > 0 ? unappliedFeedback : undefined,
@@ -176,8 +168,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
         prompt: buildReviewSubPhasePrompt({
           task: dispatch.task,
           repoContext: state.repoContext,
-          repoKnowledge: dispatch.knowledge.repo,
-          userKnowledge: dispatch.knowledge.user,
           thoughtsDir: absThoughts(taskId, thoughtsDir),
           skillsDir,
           reviewPhaseName,
@@ -199,8 +189,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       prompt: buildRefinementPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        repoKnowledge: dispatch.knowledge.repo,
-        userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
         skillsDir,
         reviewPhases,
@@ -246,8 +234,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       prompt: buildDemoPrepPrompt({
         task: dispatch.task,
         repoContext: state.repoContext,
-        repoKnowledge: dispatch.knowledge.repo,
-        userKnowledge: dispatch.knowledge.user,
         thoughtsDir: absThoughts(taskId, thoughtsDir),
         reviewPhases,
       }),

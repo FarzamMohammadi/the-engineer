@@ -1,7 +1,6 @@
 import type { ReviewPhaseName } from "../../../schemas/config.js";
-import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
-import { buildKnowledgeSection, buildRRPIROverview, buildTaskBrief, section } from "./format.js";
+import { buildRRPIROverview, buildTaskBrief, section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,8 +12,6 @@ export interface DemoPrepPromptContext {
     external_ref?: { type: string; repo: string; id: string; url?: string | undefined } | null;
   };
   repoContext: RepoContext | null;
-  repoKnowledge: KnowledgeEntry[];
-  userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
   /** Which review phases were run (their .md files exist in review/). */
   reviewPhases: ReviewPhaseName[];
@@ -137,12 +134,6 @@ function buildTaskContext(ctx: DemoPrepPromptContext): string {
     if (repoLines.length > 0) {
       parts.push(section("Repository", repoLines.join("\n")));
     }
-  }
-
-  // Knowledge
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
   }
 
   return section("The Task Context", parts.join("\n\n"));

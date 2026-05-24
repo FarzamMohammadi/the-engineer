@@ -1,14 +1,6 @@
-import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { FeedbackRound } from "../../../schemas/task.js";
 import type { RepoContext } from "./context.js";
-import {
-  buildKnowledgeSection,
-  buildRRPIROverview,
-  buildRepoOverview,
-  buildTaskBrief,
-  section,
-  wrapUntrustedContent,
-} from "./format.js";
+import { buildRRPIROverview, buildRepoOverview, buildTaskBrief, section, wrapUntrustedContent } from "./format.js";
 import { buildSkillsSection } from "./skills.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -20,8 +12,6 @@ export interface ExecutionPromptContext {
     description: string | null;
   };
   repoContext: RepoContext | null;
-  repoKnowledge: KnowledgeEntry[];
-  userKnowledge: KnowledgeEntry[];
   thoughtsDir: string;
   /** Absolute path to skills directory for on-demand reading by the CLI. */
   skillsDir: string;
@@ -161,12 +151,6 @@ function buildTaskContext(ctx: ExecutionPromptContext): string {
 
   // Repo context
   parts.push(buildRepoOverview(ctx.repoContext));
-
-  // Knowledge
-  const knowledge = buildKnowledgeSection(ctx.repoKnowledge, ctx.userKnowledge);
-  if (knowledge) {
-    parts.push(knowledge);
-  }
 
   return parts.join("\n\n");
 }

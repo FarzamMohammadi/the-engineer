@@ -3,11 +3,6 @@ import type {
   CheckpointReason,
   JournalEntry,
   JournalEntryType,
-  KnowledgeConfidence,
-  KnowledgeDomain,
-  KnowledgeEntry,
-  KnowledgeEvidence,
-  KnowledgeScope,
   Session,
   SessionEndReason,
 } from "../../schemas/session-memory.js";
@@ -51,19 +46,6 @@ export interface CreateCheckpointInput {
   journalOffset: number;
 }
 
-/** Input for storeKnowledge(). */
-export interface StoreKnowledgeInput {
-  scope: KnowledgeScope;
-  repoScope?: string | null;
-  domain: KnowledgeDomain;
-  key: string;
-  body: string;
-  confidence: KnowledgeConfidence;
-  evidence: KnowledgeEvidence[];
-  sourceTaskId: string;
-  sourcePhase: string;
-}
-
 /** Filters for queryJournal(). All fields optional — omitted fields are not filtered. */
 export interface JournalQueryFilters {
   type?: JournalEntryType;
@@ -81,9 +63,5 @@ export interface ISessionMemory {
   getLatestJournalTimestamp(taskId: string): string | null;
   createCheckpoint(input: CreateCheckpointInput): Checkpoint;
   getLatestCheckpoint(taskId: string): Checkpoint | null;
-  storeKnowledge(input: StoreKnowledgeInput): KnowledgeEntry;
-  getKnowledge(scope: KnowledgeScope, repoScope?: string | null): KnowledgeEntry[];
-  supersedeKnowledge(oldId: string, newId: string): void;
-  confirmKnowledge(id: string): void;
   getSessionChain(taskId: string): Session[];
 }

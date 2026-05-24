@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { DaemonConfigSchema, SafetyConfigSchema, WorkspaceConfigSchema } from "./config.js";
-import { CheckpointSchema, KnowledgeEntrySchema } from "./session-memory.js";
+import { CheckpointSchema } from "./session-memory.js";
 import { TaskSchema } from "./task.js";
 
 // ── Daemon State ────────────────────────────────────────────────────────────────
@@ -89,10 +89,6 @@ export type DaemonState = z.infer<typeof DaemonStateSchema>;
 export const DispatchSchema = z.object({
   task: TaskSchema,
   resume_from: CheckpointSchema.nullable(),
-  knowledge: z.object({
-    repo: z.array(KnowledgeEntrySchema),
-    user: z.array(KnowledgeEntrySchema),
-  }),
 });
 export type DispatchPayload = z.infer<typeof DispatchSchema>;
 

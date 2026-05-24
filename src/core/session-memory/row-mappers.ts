@@ -4,11 +4,6 @@ import type {
   CheckpointReason,
   JournalEntry,
   JournalEntryType,
-  KnowledgeConfidence,
-  KnowledgeDomain,
-  KnowledgeEntry,
-  KnowledgeEvidence,
-  KnowledgeScope,
   Session,
   SessionEndReason,
 } from "../../schemas/session-memory.js";
@@ -57,22 +52,6 @@ export interface CheckpointRow {
   reason: string;
   timestamp: string;
   journal_offset: number;
-}
-
-export interface KnowledgeEntryRow {
-  id: string;
-  scope: string;
-  repo_scope: string | null;
-  domain: string;
-  key: string;
-  body: string;
-  confidence: string;
-  evidence: string;
-  created_at: string;
-  last_confirmed: string;
-  superseded_by: string | null;
-  source_task_id: string;
-  source_phase: string;
 }
 
 // ── Mappers (pure functions) ─────────────────────────────────────────────────
@@ -127,24 +106,5 @@ export function rowToCheckpoint(row: CheckpointRow): Checkpoint {
     reason: row.reason as CheckpointReason,
     timestamp: row.timestamp,
     journal_offset: row.journal_offset,
-  };
-}
-
-/** Convert a `knowledge` table row to a typed KnowledgeEntry object. */
-export function rowToKnowledgeEntry(row: KnowledgeEntryRow): KnowledgeEntry {
-  return {
-    id: row.id,
-    scope: row.scope as KnowledgeScope,
-    repo_scope: row.repo_scope,
-    domain: row.domain as KnowledgeDomain,
-    key: row.key,
-    body: row.body,
-    confidence: row.confidence as KnowledgeConfidence,
-    evidence: fromSqliteJson<KnowledgeEvidence[]>(row.evidence) ?? [],
-    created_at: row.created_at,
-    last_confirmed: row.last_confirmed,
-    superseded_by: row.superseded_by,
-    source_task_id: row.source_task_id,
-    source_phase: row.source_phase,
   };
 }

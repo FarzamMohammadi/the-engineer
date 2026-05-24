@@ -110,7 +110,6 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
   };
   const sessionMemory = {
     getLatestCheckpoint: vi.fn().mockReturnValue(null),
-    getKnowledge: vi.fn().mockReturnValue([]),
   };
   const workspaceManager = {
     cleanupWorkspace: vi.fn(),
@@ -225,7 +224,6 @@ describe("TaskScheduler", () => {
       expect.objectContaining({
         task,
         resume_from: null,
-        knowledge: { repo: [], user: [] },
       }),
     );
   });

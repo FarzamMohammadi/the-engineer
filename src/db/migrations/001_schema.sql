@@ -177,28 +177,6 @@ CREATE INDEX idx_checkpoints_session_id ON checkpoints(session_id);
 CREATE INDEX idx_checkpoints_task_id ON checkpoints(task_id);
 CREATE INDEX idx_checkpoints_timestamp ON checkpoints(timestamp);
 
--- ── knowledge ────────────────────────────────────────────────────────────────────
-
-CREATE TABLE knowledge (
-  id              TEXT PRIMARY KEY,
-  scope           TEXT NOT NULL CHECK(scope IN ('repo','user')),
-  repo_scope      TEXT,
-  domain          TEXT NOT NULL CHECK(domain IN ('conventions','patterns','gotchas','domain','tooling','preferences')),
-  key             TEXT NOT NULL,
-  body            TEXT NOT NULL,
-  confidence      TEXT NOT NULL CHECK(confidence IN ('observed','inferred','told')),
-  evidence        TEXT NOT NULL DEFAULT '[]',
-  created_at      TEXT NOT NULL,
-  last_confirmed  TEXT NOT NULL,
-  superseded_by   TEXT,
-  source_task_id  TEXT NOT NULL,
-  source_phase    TEXT NOT NULL
-);
-
-CREATE INDEX idx_knowledge_natural_key ON knowledge(scope, repo_scope, key);
-CREATE INDEX idx_knowledge_active ON knowledge(scope, repo_scope, superseded_by);
-CREATE INDEX idx_knowledge_domain ON knowledge(domain);
-
 -- ── plugin_state ────────────────────────────────────────────────────────────────
 
 CREATE TABLE plugin_state (

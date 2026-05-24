@@ -34,9 +34,7 @@ export { buildSkillsSection } from "./skills.js";
 export {
   section,
   buildTaskBrief,
-  formatKnowledge,
   buildRRPIROverview,
-  buildKnowledgeSection,
   buildRepoOverview,
   type TaskBriefInput,
 } from "./format.js";

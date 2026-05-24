@@ -124,7 +124,6 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
       ...overrides,
     } as Task,
     resume_from: null,
-    knowledge: { repo: [], user: [] },
     signal: new AbortController().signal,
   } as Dispatch;
 }

@@ -1,4 +1,3 @@
-import type { KnowledgeEntry } from "../../../schemas/session-memory.js";
 import type { RepoContext } from "./context.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -11,18 +10,6 @@ export interface TaskBriefInput {
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
-
-/** Format knowledge entries as a readable block. */
-export function formatKnowledge(entries: KnowledgeEntry[]): string {
-  if (entries.length === 0) {
-    return "";
-  }
-  const lines: string[] = [];
-  for (const entry of entries) {
-    lines.push(`- [${entry.domain}] ${entry.key}: ${entry.body} (confidence: ${entry.confidence})`);
-  }
-  return lines.join("\n");
-}
 
 /** Wrap content in a markdown section with heading. */
 export function section(heading: string, content: string): string {
@@ -74,33 +61,6 @@ export function buildRRPIROverview(phaseName: string, thoughtsDir: string): stri
       "You have full CLI capabilities: read files, write files, search code, run commands. Use them freely.",
     ].join("\n"),
   );
-}
-
-/**
- * Build the knowledge section from repo and user knowledge entries.
- *
- * Returns null if both are empty — callers should skip the section.
- */
-export function buildKnowledgeSection(repoKnowledge: KnowledgeEntry[], userKnowledge: KnowledgeEntry[]): string | null {
-  const repoFormatted = formatKnowledge(repoKnowledge);
-  const userFormatted = formatKnowledge(userKnowledge);
-
-  if (!(repoFormatted || userFormatted)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (repoFormatted) {
-    parts.push("Repository knowledge:", repoFormatted);
-  }
-  if (userFormatted) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push("User knowledge:", userFormatted);
-  }
-
-  return section("Known Context", parts.join("\n"));
 }
 
 /**

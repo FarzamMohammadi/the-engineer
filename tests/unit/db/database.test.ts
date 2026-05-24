@@ -7,13 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DatabaseError, MigrationError, createDatabase, createInMemoryDatabase } from "../../../src/db/database.js";
 import type { DatabaseHandle } from "../../../src/db/database.js";
 import { Phases } from "../../../src/schemas/orchestrator.js";
-import {
-  CheckpointReasons,
-  JournalEntryTypes,
-  KnowledgeConfidences,
-  KnowledgeDomains,
-  KnowledgeScopes,
-} from "../../../src/schemas/session-memory.js";
+import { CheckpointReasons, JournalEntryTypes } from "../../../src/schemas/session-memory.js";
 import { TaskStates } from "../../../src/schemas/task.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────────
@@ -27,15 +21,7 @@ const DB_OPEN_ERROR_PATTERN = /Failed to open database/;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
-const DOMAIN_TABLES = [
-  "tasks",
-  "state_transitions",
-  "events",
-  "sessions",
-  "journal_entries",
-  "checkpoints",
-  "knowledge",
-] as const;
+const DOMAIN_TABLES = ["tasks", "state_transitions", "events", "sessions", "journal_entries", "checkpoints"] as const;
 
 function getTableNames(handle: DatabaseHandle): string[] {
   const rows = handle.db
@@ -75,7 +61,7 @@ describe("createInMemoryDatabase", () => {
     expect(typeof handle.close).toBe("function");
   });
 
-  it("creates all 7 domain tables", () => {
+  it("creates every domain table", () => {
     handle = createInMemoryDatabase();
     const tables = getTableNames(handle);
     for (const table of DOMAIN_TABLES) {
@@ -166,7 +152,7 @@ describe("createDatabase", () => {
     expect(result[0]?.synchronous).toBe(1); // 1 = NORMAL
   });
 
-  it("creates all 7 domain tables + _meta", () => {
+  it("creates every domain table plus _meta", () => {
     const dbPath = path.join(tmpDir, "test.db");
     handle = createDatabase(dbPath);
     const tables = getTableNames(handle);
@@ -314,31 +300,6 @@ describe("table structure", () => {
     ).toThrow(CHECK_CONSTRAINT_PATTERN);
   });
 
-  it("knowledge.scope CHECK constraint rejects invalid values", () => {
-    handle = createInMemoryDatabase();
-    const now = new Date().toISOString();
-
-    expect(() =>
-      handle.db
-        .prepare(
-          `INSERT INTO knowledge (id, scope, domain, key, body, confidence, created_at, last_confirmed, source_task_id, source_phase)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          "hash123",
-          "invalid_scope",
-          KnowledgeDomains.patterns,
-          "k",
-          "v",
-          KnowledgeConfidences.observed,
-          now,
-          now,
-          "t1",
-          Phases.research,
-        ),
-    ).toThrow(CHECK_CONSTRAINT_PATTERN);
-  });
-
   it("journal_entries.type CHECK constraint rejects invalid values", () => {
     handle = createInMemoryDatabase();
 
@@ -442,10 +403,6 @@ describe("table structure", () => {
       "idx_checkpoints_session_id",
       "idx_checkpoints_task_id",
       "idx_checkpoints_timestamp",
-      // knowledge
-      "idx_knowledge_natural_key",
-      "idx_knowledge_active",
-      "idx_knowledge_domain",
       // idempotency_key dedup (active-scoped, unique)
       "idx_tasks_idempotency_key_active",
       // observations (003_observer)
@@ -646,34 +603,6 @@ describe("JSON default completeness", () => {
     };
     expect(row.key_findings).toBe("[]");
     expect(row.open_questions).toBe("[]");
-  });
-
-  it("knowledge.evidence defaults to '[]'", () => {
-    handle = createInMemoryDatabase();
-    const now = new Date().toISOString();
-
-    handle.db
-      .prepare(
-        `INSERT INTO knowledge (id, scope, domain, key, body, confidence, created_at, last_confirmed, source_task_id, source_phase)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        "hash1",
-        KnowledgeScopes.repo,
-        KnowledgeDomains.patterns,
-        "k",
-        "v",
-        KnowledgeConfidences.observed,
-        now,
-        now,
-        "t1",
-        Phases.research,
-      );
-
-    const row = handle.db.prepare("SELECT evidence FROM knowledge WHERE id = ?").get("hash1") as {
-      evidence: string;
-    };
-    expect(row.evidence).toBe("[]");
   });
 });
 

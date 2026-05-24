@@ -139,9 +139,6 @@ export function createTaskScheduler(
     const hasUnappliedFeedback = task.review?.feedback_rounds?.some((r) => !r.applied) ?? false;
     const checkpoint = hasUnappliedFeedback ? null : rawCheckpoint;
 
-    const repoKnowledge = task.workspace ? sessionMemory.getKnowledge("repo", task.workspace.repo) : [];
-    const userKnowledge = sessionMemory.getKnowledge("user");
-
     // Transition to active.working
     const transition = taskEngine.requestTransition(
       task.id,
@@ -164,7 +161,6 @@ export function createTaskScheduler(
       title: task.title,
       resumeFrom: checkpoint?.phase ?? null,
       isRework: hasUnappliedFeedback,
-      knowledgeEntries: { repo: repoKnowledge.length, user: userKnowledge.length },
     });
 
     // dispatch-tracker owns the AbortController, mints the dispatchId, and routes
@@ -175,7 +171,6 @@ export function createTaskScheduler(
         const dispatch: Dispatch = {
           task,
           resume_from: checkpoint,
-          knowledge: { repo: repoKnowledge, user: userKnowledge },
           signal,
         };
         return orchestrator.executeTask(dispatch);

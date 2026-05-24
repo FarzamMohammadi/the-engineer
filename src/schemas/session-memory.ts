@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 
 // ── Session ────────────────────────────────────────────────────────────────────
@@ -107,67 +106,3 @@ export const CheckpointSchema = z.object({
   journal_offset: z.number().int(),
 });
 export type Checkpoint = z.infer<typeof CheckpointSchema>;
-
-// ── KnowledgeEntry ─────────────────────────────────────────────────────────────
-
-export const KnowledgeScopeSchema = z.enum(["repo", "user"]);
-export type KnowledgeScope = z.infer<typeof KnowledgeScopeSchema>;
-
-/** Constant enum values for KnowledgeScope. Use instead of raw strings. */
-export const KnowledgeScopes = KnowledgeScopeSchema.enum;
-
-export const KnowledgeConfidenceSchema = z.enum(["observed", "inferred", "told"]);
-export type KnowledgeConfidence = z.infer<typeof KnowledgeConfidenceSchema>;
-
-/** Constant enum values for KnowledgeConfidence. Use instead of raw strings. */
-export const KnowledgeConfidences = KnowledgeConfidenceSchema.enum;
-
-export const KnowledgeDomainSchema = z.enum(["conventions", "patterns", "gotchas", "domain", "tooling", "preferences"]);
-export type KnowledgeDomain = z.infer<typeof KnowledgeDomainSchema>;
-
-/** Constant enum values for KnowledgeDomain. Use instead of raw strings. */
-export const KnowledgeDomains = KnowledgeDomainSchema.enum;
-
-export const KnowledgeEvidenceSchema = z.object({
-  task_id: z.string(),
-  description: z.string(),
-});
-export type KnowledgeEvidence = z.infer<typeof KnowledgeEvidenceSchema>;
-
-export const KnowledgeEntrySchema = z.object({
-  // Identity — content hash, NOT ULID
-  id: z.string(),
-
-  // Scope
-  scope: KnowledgeScopeSchema,
-  repo_scope: z.string().nullable(),
-  domain: KnowledgeDomainSchema,
-
-  // Content
-  key: z.string(),
-  body: z.string(),
-  confidence: KnowledgeConfidenceSchema,
-  evidence: z.array(KnowledgeEvidenceSchema),
-
-  // Lifecycle
-  created_at: z.string().datetime(),
-  last_confirmed: z.string().datetime(),
-  superseded_by: z.string().nullable(),
-
-  // Provenance
-  source_task_id: z.string(),
-  source_phase: z.string(),
-});
-export type KnowledgeEntry = z.infer<typeof KnowledgeEntrySchema>;
-
-// ── Knowledge ID generation ────────────────────────────────────────────────────
-
-export function knowledgeId(scope: string, repoScope: string | null, key: string, body: string): string {
-  // 128-bit (32 hex chars) — sufficient collision resistance for expected cardinality (thousands, not billions)
-  // repo_scope included to isolate knowledge per repository — same content in different repos gets distinct IDs
-  // Null byte separators prevent field-boundary collisions (e.g., key="a:b" vs key="a", body="b:...")
-  return createHash("sha256")
-    .update(`${scope}\0${repoScope ?? ""}\0${key}\0${body}`)
-    .digest("hex")
-    .slice(0, 32);
-}

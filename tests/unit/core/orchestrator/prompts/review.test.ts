@@ -11,8 +11,6 @@ describe("buildReviewSubPhasePrompt", () => {
   const minimalCtx = {
     task: { title: "Test task", description: "A test" },
     repoContext: null,
-    repoKnowledge: [],
-    userKnowledge: [],
     thoughtsDir: "/tmp/thoughts",
     skillsDir,
     reviewPhaseName: "code_quality" as const,
@@ -43,8 +41,6 @@ describe("buildRefinementPrompt", () => {
   const minimalCtx = {
     task: { title: "Test task", description: "A test" },
     repoContext: null,
-    repoKnowledge: [],
-    userKnowledge: [],
     thoughtsDir: "/tmp/thoughts",
     skillsDir,
     reviewPhases: ["code_quality" as const],

@@ -208,10 +208,6 @@ export function createMockDispatch(overrides?: {
   return {
     task: createMockTask(overrides?.task),
     resume_from: overrides?.resume_from ?? null,
-    knowledge: {
-      repo: [],
-      user: [],
-    },
     signal: overrides?.signal ?? new AbortController().signal,
   } as Dispatch;
 }
@@ -295,13 +291,9 @@ export interface TestOrchestratorHandle {
     addJournalEntry: Mock;
     createCheckpoint: Mock;
     getLatestCheckpoint: Mock;
-    storeKnowledge: Mock;
-    getKnowledge: Mock;
     queryJournal: Mock;
     getLatestJournalTimestamp: Mock;
     getSessionChain: Mock;
-    supersedeKnowledge: Mock;
-    confirmKnowledge: Mock;
   };
   workspaceManager: {
     createWorkspace: Mock;
@@ -489,13 +481,9 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       } satisfies Checkpoint;
     }),
     getLatestCheckpoint: vi.fn().mockReturnValue(null),
-    storeKnowledge: vi.fn(),
-    getKnowledge: vi.fn().mockReturnValue([]),
     queryJournal: vi.fn().mockReturnValue([]),
     getLatestJournalTimestamp: vi.fn().mockReturnValue(null),
     getSessionChain: vi.fn().mockReturnValue([]),
-    supersedeKnowledge: vi.fn(),
-    confirmKnowledge: vi.fn(),
   };
 
   // ── WorkspaceManager mock ──────────────────────────────────────────────

@@ -256,7 +256,7 @@ describe("DispatchTracker.drain", () => {
   it("returns within a SHARED timeout when dispatches refuse to settle (worst-case = timeoutMs, not timeoutMs × N) and synthesizes callbacks for stragglers", async () => {
     const tracker = createDispatchTracker({ observer: makeObserver() });
     const NUM_STUCK = 5;
-    const completedCallbacks: Array<ReturnType<typeof vi.fn>> = [];
+    const completedCallbacks: ReturnType<typeof vi.fn>[] = [];
     for (let i = 0; i < NUM_STUCK; i++) {
       const onCompleted = vi.fn();
       completedCallbacks.push(onCompleted);

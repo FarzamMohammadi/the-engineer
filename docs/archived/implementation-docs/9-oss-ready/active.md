@@ -21,20 +21,34 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 7 — Workspace & Session** — RRP complete (Session 31); implementation starts
-Session 32 (Slice 7 Session 1: knowledge layer cut + future-considerations
-consolidation). Three deliverables landed:
+**Slice 7 — Workspace & Session** — Session 1 (knowledge layer cut +
+future-considerations consolidation) complete. Next: Session 2 — session-memory
+hygiene + facade-to-namespace refactor.
 
-- `slices/07-workspace-session.md` — 6 goals, 13 decisions, Lens Check.
-- `.claude/temp/research/slice-07-workspace-session.md` — source-grounded research
-  with exact paths + line numbers, resume flow walkthrough, workspace events
-  verification, risks/gotchas.
-- `.claude/temp/create-plan/slice-07-workspace-session.md` — 9-decision plan with
-  rejected alternatives, 5-session breakdown (each green-on-commit, last is closing
-  sweep), per-session standards-application items, pre-mortem, panel review.
+**Session 1 landed** (commits `7893cf9` doc-only + `a36a213` code cut):
+- `KnowledgeStore`, knowledge schemas, knowledge table + indexes, `Dispatch.knowledge`
+  field, scheduler reads + log fields, all six prompt builders' knowledge plumbing,
+  `buildKnowledgeSection` + `formatKnowledge` — all deleted. Net +17 / −1050 lines.
+- All knowledge tests, mocks, fixtures cut from src and tests.
+- `docs/future-considerations.md`: consolidated `Hybrid Semantic Memory Search` into
+  `Cross-Task & Cross-Session Memory (supplementary)` (captures pivot story); added
+  separate `Standing System-Prompt Context (Repo + Owner Preferences)` entry for the
+  static owner-authored repo-knowledge / preferences feature that surfaced mid-session
+  (distinct from the cut layer — pure static text into the system prompt, not a
+  dynamic typed store).
+- Green at commit: 2401 unit + 39 integration + 16 e2e, lint clean, typecheck clean.
 
-Methodology refinements (commit `b41aff7`, `adb6f66`): `approach.md` now codifies
-"What Each RRP Must Hunt For", "Presenting Findings During RRP", and
+**Mid-session decision recorded:** the standing system-prompt feature (owner-authored
+repo knowledge + preferences injected into the system prompt at session startup) is
+**deferred** to a later slice (likely Slice 8 or 14, which own prompt assembly), not
+folded into Slice 7. Reason: Slice 7 is shaped as cuts and reshapes — adding a new
+feature blurs that. Future-considerations entry captures the shape.
+
+**Plan deltas vs `slice-07-workspace-session.md`:** none. Session 1 executed the plan's
+task list exactly; remaining Sessions 2–5 unchanged.
+
+Methodology refinements (commits `b41aff7`, `adb6f66` from Session 31): `approach.md`
+codifies "What Each RRP Must Hunt For", "Presenting Findings During RRP", and
 "coding-standards alignment is a planning concern, not a sweep concern." Future RRPs
 inherit this discipline.
 

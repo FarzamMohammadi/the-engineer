@@ -477,7 +477,11 @@ export class GeminiCliLLMPlugin extends LLMAdapter {
         if (traceStream) {
           traceStream.end();
         }
-        reject(new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn gemini CLI: ${err.message}`)));
+        reject(
+          new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn gemini CLI: ${err.message}`), {
+            cause: err,
+          }),
+        );
       });
 
       // Suppress EPIPE — child may exit before stdin is consumed

@@ -399,7 +399,9 @@ export class OpenCodeLLMPlugin extends LLMAdapter {
           traceStream.end();
         }
         reject(
-          new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn opencode CLI: ${err.message}`)),
+          new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn opencode CLI: ${err.message}`), {
+            cause: err,
+          }),
         );
       });
 

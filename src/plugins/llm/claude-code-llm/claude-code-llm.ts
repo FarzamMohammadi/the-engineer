@@ -378,7 +378,11 @@ export class ClaudeCodeLLMPlugin extends LLMAdapter {
         if (traceStream) {
           traceStream.end();
         }
-        reject(new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn claude CLI: ${err.message}`)));
+        reject(
+          new AdapterMethodError(createAdapterError("spawn_error", `Failed to spawn claude CLI: ${err.message}`), {
+            cause: err,
+          }),
+        );
       });
 
       // Pipe prompt via stdin to avoid OS argument length limits

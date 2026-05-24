@@ -178,6 +178,7 @@ export class GitHubTriggerPlugin extends TriggerAdapter {
         `Failed to poll ${owner}/${name}: ${error instanceof Error ? error.message : String(error)}`,
         { retryable: isRetryable(error), retry_after_ms: retryAfterMs, severity: AdapterErrorSeverities.error },
       ),
+      { cause: error },
     );
   }
 

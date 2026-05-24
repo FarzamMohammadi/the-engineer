@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
 - [approach.md](approach.md) — strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: `slices/07-workspace-session.md` — next up
+- Current slice: `slices/07-workspace-session.md` — RRP complete (Session 31), implementation Session 1 next
 
 ## How This File Works
 
@@ -21,7 +21,22 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 7 — Workspace & Session** — next up. RRPIR starts next session.
+**Slice 7 — Workspace & Session** — RRP complete (Session 31); implementation starts
+Session 32 (Slice 7 Session 1: knowledge layer cut + future-considerations
+consolidation). Three deliverables landed:
+
+- `slices/07-workspace-session.md` — 6 goals, 13 decisions, Lens Check.
+- `.claude/temp/research/slice-07-workspace-session.md` — source-grounded research
+  with exact paths + line numbers, resume flow walkthrough, workspace events
+  verification, risks/gotchas.
+- `.claude/temp/create-plan/slice-07-workspace-session.md` — 9-decision plan with
+  rejected alternatives, 5-session breakdown (each green-on-commit, last is closing
+  sweep), per-session standards-application items, pre-mortem, panel review.
+
+Methodology refinements (commit `b41aff7`, `adb6f66`): `approach.md` now codifies
+"What Each RRP Must Hunt For", "Presenting Findings During RRP", and
+"coding-standards alignment is a planning concern, not a sweep concern." Future RRPs
+inherit this discipline.
 
 **Cross-slice handoffs inherited from prior slices (still parked for target slices):**
 - Slice 5 → Slice 12: #9 reply-token + #10 unblock check.

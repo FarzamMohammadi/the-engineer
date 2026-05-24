@@ -81,15 +81,133 @@ packages/
 
 ---
 
-## Hybrid Semantic Memory Search
+## Standing System-Prompt Context (Repo + Owner Preferences)
 
-**Current state (v1):** Knowledge entries stored in SQLite, queried by structured fields (task, time range). No semantic search.
+**Current state (v1):** The system prompt for every CLI session is built by a pure function
+that concatenates four hardcoded constants (identity, operating standards, RRPIR methodology,
+security boundary) plus a per-phase line. There is no injection point for owner-authored
+standing context. No config field accepts free-form prompt text; no file on disk gets read
+into the system prompt at session startup.
 
-**When it becomes relevant:** When cross-task learning matures and the system needs to answer "what approach did we use for similar problems?" — queries that require semantic similarity, not exact field matching.
+**Why deferred:** v1's system prompt is intentionally fixed — the same standards apply to
+every task in every repo. Owner-authored standing context is a real capability, but earning
+its place needs concrete signal from real autonomous sessions (the agent missed something
+the owner could have said once and had stick) rather than speculative pre-design. Adding a
+config-driven injection point without a clear use case shape would lock in the wrong shape.
 
-**What it enables:** Hybrid vector + keyword search over knowledge entries and journal, with temporal decay and diversity for result quality. The weighting (e.g. 70/30 vector/keyword) is a tuning decision at build time. Pattern reference: OpenClaw's memory system uses a similar hybrid approach.
+**Distinct from cross-task memory.** This is *not* the cross-task memory layer described
+above. That one is dynamic, agent-produced, queried by scope and similarity. This one is
+**static, owner-authored, injected as-is** — closer to a CLAUDE.md / GEMINI.md / .cursor/rules
+pattern, but plugin-agnostic. Two separate features that may eventually coexist.
 
-**Migration path:** Knowledge entries already have structured text fields. Add an embedding column, index with sqlite-vec (or equivalent), implement hybrid scoring. The knowledge table schema supports this without breaking changes.
+**When it becomes relevant:** When the owner finds themselves correcting the same
+repo-specific pattern or stating the same standing preference across multiple tasks —
+the kind of thing they would have said in CLAUDE.md if there were one. That recurring
+correction is the signal.
+
+**What it enables:** Two pieces of owner-authored standing context, injected into the
+system prompt of every CLI session at startup:
+
+- **Repo knowledge** — per-repository conventions, gotchas, architectural facts the agent
+  should know before reading a single file. Example: "this repo uses pnpm workspaces with
+  a shared tsconfig.base.json; never run npm." Reduces wasted exploration on facts that
+  never change.
+- **Owner preferences** — standing personal preferences that apply across all tasks.
+  Example: "always prefer named exports; never use `default`." Captures the kind of
+  guidance that today lives implicitly in the owner's head and gets surfaced only via
+  code review.
+
+Both are pure text. The owner writes them once, edits them when they change. No schema,
+no confidence levels, no supersession — that complexity belongs to the dynamic memory
+layer, not this one.
+
+**Key context — agent-agnostic, not CLAUDE.md.** Project philosophy explicitly rules out
+per-tool instruction files (no CLAUDE.md, no GEMINI.md, no .cursor/rules). This feature
+must respect that: the standing context lives in **The Engineer's** config and is fed into
+the system prompt regardless of which LLM plugin is running. The CLI plugin sees the
+finished system prompt; it does not read a `CLAUDE.md` from the worktree.
+
+**Migration path (high-level).**
+
+1. **Where the owner writes it.** Two options the future builder picks between:
+   - Inline text fields in an existing config (e.g., orchestrator config) — fine for short
+     content.
+   - File-path references in config pointing to markdown files the owner edits separately —
+     better for long content; lets editor tooling apply.
+   Per-repo overrides may emerge as a third axis (a repo-specific extension to the
+   global repo-knowledge string).
+2. **How it reaches the prompt.** The system-prompt builder takes the standing context as
+   an input (instead of being parameterless beyond the phase). The orchestrator (or the
+   layer that constructs the orchestrator context) loads the text once at startup and
+   passes it through.
+3. **Plugin-agnostic.** The standing context is appended to the system prompt at the Core
+   level. Every LLM plugin receives the same finished prompt — no plugin-specific shim,
+   no CLAUDE.md-style on-disk file the plugin loads itself.
+4. **Audit trail.** The standing context is part of the system prompt, so it lands in
+   whatever transcript / observation the LLM call produces. Owner can see what the agent
+   actually saw.
+
+---
+
+## Cross-Task & Cross-Session Memory (supplementary)
+
+**Current state (v1):** Per-task continuity between phases is handled entirely by the
+file-based `thoughts/` protocol. Each phase prompt embeds the previous phases' deliverable
+paths with explicit read-this-before-you-start instructions; the LLM uses its native Read
+tool to pull content. Files are filesystem-resident, survive crashes, ship with the PR for
+reviewer context, and get cleanly removed from the branch before merge. No structured store
+of "what we learned" persists across tasks or across sessions on different tasks.
+
+**Why deferred — the pivot story:** An earlier design wired a consumer surface
+(`KnowledgeStore` reads on every dispatch, threaded into every RRPIR prompt builder) for a
+cross-task pattern-recall layer. **No producer was ever built** — nothing in the agent loop
+ever decided "this fact is worth remembering" and persisted it. The reads returned empty
+every dispatch for thirty sessions; the section never rendered. Rather than keep dead
+consumer code waiting on a producer that did not exist, v1 removes the whole subsystem.
+The files-as-primary approach already covers the *per-task* memory problem cleanly; the
+knowledge layer was the unbuilt *cross-task* half.
+
+**When it becomes relevant:** Post-v1, when real autonomous sessions show that the agent
+would have made a different (better) decision had it known what an earlier task on this
+repo learned, what an earlier session on this task tried, or what the owner's standing
+preferences are — and that signal recurs often enough that recomputing from scratch each
+time is a real cost. Speculative recall before that signal is just infrastructure without a
+user.
+
+**What it enables:** A supplementary memory layer on top of files. Three rough capability
+shapes a future design might cover, individually or together:
+
+- **Cross-task pattern recall** — "we faced this kind of bug last quarter; here's how it
+  was solved." Persists across tasks on the same repo.
+- **Cross-session continuity** — "you started this task two days ago and the codebase has
+  shifted since; here is what you knew then versus now." Persists across resumes on the
+  same task.
+- **Owner preferences** — "the owner has corrected this pattern three times; default to
+  the corrected form." Persists across tasks across repos.
+
+**Key context — the producer is the hard problem.** The consumer side is straightforward:
+inject relevant entries into prompts, let the LLM read. The hard design problems all live
+on the producer side: who extracts (the agent inline? a dedicated post-task pass?), with
+what confidence semantics, how the owner rejects or supersedes wrong inferences, how stale
+entries decay, how to avoid the agent gaming the layer by storing flattering self-quotes.
+These earn answers from real demand, not pre-design. The dead consumer code shipped before
+any producer was attempted should be a cautionary tale: design the producer first, and
+only then a consumer shaped to match it.
+
+**Migration path (open-ended).** Storage and retrieval are deliberately not prescribed —
+the right shape is determined by the producer's output. Options the future builder may
+consider:
+
+- **Structured fields** — natural-key lookups (scope + key) over typed rows. Simple,
+  exact, no embeddings needed.
+- **Vector / hybrid search** — semantic similarity over entry bodies, optionally weighted
+  with keyword search and temporal decay.
+- **Knowledge graphs** — relationships between entries (this pattern supersedes that one;
+  this gotcha applies in this codebase).
+
+Pick the shape that fits the producer's output, not the other way around. The shape that
+fit the v1 KnowledgeStore is no constraint — start fresh from what the producer actually
+emits.
 
 ---
 

@@ -154,7 +154,7 @@ stateDiagram-v2
 |-------|------------|-------------|
 | `requirements_gathering` | — | Initial state. Clarifying intent before scheduling. |
 | `queued` | — | Ready for execution, waiting to be scheduled |
-| `active` | `working`, `supervising`, `integrating` | Currently being worked on by the Orchestrator |
+| `active` | `working` | Currently being worked on by the Orchestrator |
 | `blocked` | — | Waiting on external input (human response, review feedback) |
 | `review_pending` | `code` | PR created, awaiting review |
 | `completed` | — | Successfully completed, PR merged |

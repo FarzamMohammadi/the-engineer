@@ -6,7 +6,7 @@ import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EvaluationManager } from "../evaluation/types.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
-import { MAX_LLM_UNAVAILABLE_RETRIES } from "../orchestrator/phase-runner.js";
+import type { RetryPolicy } from "../retry-policy/index.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { TaskSchedulerContext } from "./types.js";
 
@@ -15,20 +15,6 @@ import type { TaskSchedulerContext } from "./types.js";
 /** Whether a task in the given state consumes a working slot. */
 export function isSlotConsuming(state: string, subState: string | null): boolean {
   return state === TaskStates.active && subState === SubStates.working;
-}
-
-// ── Retry Backoff ────────────────────────────────────────────────────────────
-
-/** Backoff schedule in minutes for crash retries: 1, 5, 15, 30, 30. */
-const BACKOFF_MINUTES = [1, 5, 15, 30, 30] as const;
-
-/** Maximum crash retries before transitioning to failed. */
-export const MAX_CRASH_RETRIES = BACKOFF_MINUTES.length;
-
-/** Compute backoff duration in milliseconds for a given crash count (1-based). */
-export function computeBackoffMs(crashCount: number): number {
-  const index = Math.min(crashCount - 1, BACKOFF_MINUTES.length - 1);
-  return (BACKOFF_MINUTES[index] ?? BACKOFF_MINUTES[BACKOFF_MINUTES.length - 1] ?? 30) * 60_000;
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -70,6 +56,7 @@ export function createTaskScheduler(
   ctx: TaskSchedulerContext,
   notifications: NotificationRouter,
   callbacks: SchedulerCallbacks,
+  retryPolicy: RetryPolicy,
   evaluationManager?: EvaluationManager | null,
 ): TaskScheduler {
   const { config, eventBus, taskEngine, orchestrator, clock, observer } = ctx;
@@ -305,44 +292,52 @@ export function createTaskScheduler(
     taskEngine.requestTransition(taskId, TaskStates.blocked, null, `unknown_outcome_${outcome}`, "daemon");
   }
 
-  /** Handle blocked tasks with llm_unavailable reason: re-queue or final alert. */
+  /** Handle blocked tasks with llm_unavailable reason: increment counter, then re-queue or final alert. */
   function handleLlmUnavailableBlocked(taskId: string): void {
-    const blockedTask = taskEngine.getTask(taskId);
-    const retryCount = blockedTask?.consecutive_crash_count ?? 0;
+    const disposition = retryPolicy.recordFailure("llm_unavailable", taskId);
 
-    if (retryCount >= MAX_LLM_UNAVAILABLE_RETRIES) {
-      // Exhausted all retry cycles — stay blocked until owner explicitly unblocks
+    if (disposition.disposition === "terminal") {
       observer.error("LLM unavailability retries exhausted — task stays blocked until manual unblock", {
         taskId,
-        retryCount,
+        retryCount: disposition.count,
       });
       notifications.notify({
         kind: NotificationKinds.alert,
         taskId,
-        message: `LLM adapter unavailable after ${String(retryCount)} retry cycles (~47 minutes). Task blocked until you respond to unblock.`,
+        message: `LLM adapter unavailable after ${String(disposition.count)} retry cycles. Task blocked until you respond to unblock.`,
       });
       notifications.notify({
         kind: NotificationKinds.ticket_comment,
         taskId,
         message:
-          "LLM adapter has been unavailable for ~47 minutes. Task is blocked. Reply to this issue or use any communication channel to retry when the issue is resolved.",
+          "LLM adapter is unavailable. Task is blocked until you respond. Reply to this issue or use any communication channel to retry when the issue is resolved.",
       });
-    } else {
-      // Re-queue for retry — not_before already set by phase-runner
-      const requeue = taskEngine.requestTransition(taskId, TaskStates.queued, null, "llm_unavailable_retry", "daemon");
-      if (requeue.success) {
-        observer.info("Task re-queued for LLM unavailability retry", {
-          taskId,
-          retryCount,
-          notBefore: blockedTask?.not_before,
-        });
-      } else {
-        observer.warn("Failed to re-queue task for LLM retry", {
-          taskId,
-          reason: requeue.reason,
-        });
-      }
+      return;
     }
+
+    // Retry: re-queue. The not_before set by retry-policy keeps the task from dispatching until backoff elapses.
+    const backoffMs = new Date(disposition.not_before).getTime() - clock.now();
+    const backoffMinutes = Math.max(0, Math.round(backoffMs / 60_000));
+
+    const requeue = taskEngine.requestTransition(taskId, TaskStates.queued, null, "llm_unavailable_retry", "daemon");
+    if (!requeue.success) {
+      observer.warn("Failed to re-queue task for LLM retry", {
+        taskId,
+        reason: requeue.reason,
+      });
+      return;
+    }
+
+    observer.info("Task re-queued for LLM unavailability retry", {
+      taskId,
+      retryCount: disposition.count,
+      notBefore: disposition.not_before,
+    });
+    notifications.notify({
+      kind: NotificationKinds.alert,
+      taskId,
+      message: `LLM adapter unavailable — task blocked, will retry in ${String(backoffMinutes)} minutes. Respond to unblock manually.`,
+    });
   }
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: discriminated union routing over 7 outcome types — extraction would fragment related state handling
@@ -350,9 +345,15 @@ export function createTaskScheduler(
     activeDispatches.delete(taskId);
     tasksCompleted++;
 
-    // Reset crash backoff on any non-crash completion
-    taskEngine.updateTaskField(taskId, "consecutive_crash_count", 0);
-    taskEngine.updateTaskField(taskId, "not_before", null);
+    // Reset both retry counters on any successful (non-crash, non-llm_unavailable) outcome.
+    // The llm_unavailable path manages its own counter inside handleLlmUnavailableBlocked below.
+    if (result.outcome !== Outcomes.blocked) {
+      retryPolicy.recordSuccess("crash", taskId);
+      retryPolicy.recordSuccess("llm_unavailable", taskId);
+    } else {
+      // Blocked outcome: reset crash counter (this wasn't a crash), leave llm_unavailable to its own handler.
+      retryPolicy.recordSuccess("crash", taskId);
+    }
 
     if (result.outcome === Outcomes.completed) {
       handleCompletedOutcome(taskId);
@@ -390,12 +391,7 @@ export function createTaskScheduler(
         error: sanitizeErrorMessage(error),
       });
 
-      // Increment crash count
-      const task = taskEngine.getTask(taskId);
-      const crashCount = (task?.consecutive_crash_count ?? 0) + 1;
-      taskEngine.updateTaskField(taskId, "consecutive_crash_count", crashCount);
-
-      // Emit health event
+      // Emit health event for observability
       eventBus.publish({
         type: EventTypes["health.stuck_detected"],
         source: "daemon",
@@ -409,13 +405,14 @@ export function createTaskScheduler(
         },
       } satisfies PublishInput<"health.stuck_detected">);
 
-      if (crashCount >= MAX_CRASH_RETRIES) {
-        // Max retries exceeded → failed
+      const disposition = retryPolicy.recordFailure("crash", taskId);
+
+      if (disposition.disposition === "terminal") {
         const transition = taskEngine.requestTransition(
           taskId,
           TaskStates.failed,
           null,
-          `max_crash_retries_exceeded (${crashCount})`,
+          `max_crash_retries_exceeded (${disposition.count})`,
           "daemon",
         );
         if (!transition.success) {
@@ -424,21 +421,18 @@ export function createTaskScheduler(
             reason: transition.reason,
           });
         }
-        observer.error("Task exceeded max crash retries — marking failed", { taskId, crashCount });
+        observer.error("Task exceeded max crash retries — marking failed", {
+          taskId,
+          crashCount: disposition.count,
+        });
         notifications.notify({
           kind: NotificationKinds.task_error,
           taskId,
-          reason: `Task crashed ${crashCount} times — exceeded max retries`,
+          reason: `Task crashed ${String(disposition.count)} times — exceeded max retries`,
         });
         return;
       }
 
-      // Set not_before for backoff
-      const backoffMs = computeBackoffMs(crashCount);
-      const notBefore = new Date(clock.now() + backoffMs).toISOString();
-      taskEngine.updateTaskField(taskId, "not_before", notBefore);
-
-      // Transition back to queued
       const transition = taskEngine.requestTransition(
         taskId,
         TaskStates.queued,
@@ -455,9 +449,8 @@ export function createTaskScheduler(
 
       observer.info("Task crash — backoff retry scheduled", {
         taskId,
-        crashCount,
-        backoffMs,
-        notBefore,
+        crashCount: disposition.count,
+        notBefore: disposition.not_before,
       });
     } catch (innerError) {
       // Last-resort: if crash recovery itself fails, log and leave stuck detection to find it

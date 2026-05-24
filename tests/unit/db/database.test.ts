@@ -249,6 +249,7 @@ describe("table structure", () => {
       "requirements_loop_count",
       "not_before",
       "consecutive_crash_count",
+      "consecutive_llm_unavailable_count",
       "skip_research",
     ];
     expect(columns).toEqual(expected);

@@ -565,6 +565,10 @@ function makeSafeBundle() {
       subscriber_warn_threshold_ms: 50,
       notification_retry: { interval_ms: 30_000, max_attempts: 120, max_age_ms: 3_600_000 },
       review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
+      retry_policy: {
+        crash: { backoff_minutes: [1, 5, 15, 30, 30], max_attempts: 5 },
+        llm_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
+      },
       evaluation: { enabled: false },
     },
     orchestrator: {} as ReturnType<typeof import("../../../../src/schemas/config.js").OrchestratorConfigSchema.parse>,

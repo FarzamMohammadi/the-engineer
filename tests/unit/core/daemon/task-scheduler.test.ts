@@ -1,13 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
-import {
-  type SchedulerCallbacks,
-  computeBackoffMs,
-  createTaskScheduler,
-} from "../../../../src/core/daemon/task-scheduler.js";
+import { type SchedulerCallbacks, createTaskScheduler } from "../../../../src/core/daemon/task-scheduler.js";
 import type { TaskSchedulerContext } from "../../../../src/core/daemon/types.js";
 import type { ExecuteTaskResult } from "../../../../src/core/orchestrator/index.js";
+import { createRetryPolicy } from "../../../../src/core/retry-policy/index.js";
 import type { DaemonConfig } from "../../../../src/schemas/config.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
@@ -55,6 +52,10 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     database: { cache_size_mb: 64 },
     notification_retry: { interval_ms: 30_000, max_attempts: 120, max_age_ms: 3_600_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
+    retry_policy: {
+      crash: { backoff_minutes: [1, 5, 15, 30, 30], max_attempts: 5 },
+      llm_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
+    },
     evaluation: { enabled: false },
     ...overrides,
   };
@@ -149,7 +150,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getQueuedByPriority.mockReturnValue([task1, task2, task3]);
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.scheduleNext();
 
     // Should dispatch exactly 2 (max_concurrent)
@@ -169,7 +175,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getQueuedByPriority.mockReturnValue([task1, task2]);
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
 
     // Fill the single slot
     scheduler.scheduleNext();
@@ -190,7 +201,12 @@ describe("TaskScheduler", () => {
 
     const task = makeMockTask({ id: "t1", title: "Fix bug" });
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.dispatchTask(task);
 
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
@@ -220,7 +236,12 @@ describe("TaskScheduler", () => {
 
     const task = makeMockTask({ id: "t1" });
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.dispatchTask(task);
 
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
@@ -241,7 +262,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Done task" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     // First dispatch to make it active
     const task = makeMockTask({ id: "t1", title: "Done task" });
     scheduler.dispatchTask(task);
@@ -278,7 +304,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "PR task" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
@@ -316,7 +347,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Broken task" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
@@ -351,7 +387,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Task with huge error" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
@@ -383,7 +424,12 @@ describe("TaskScheduler", () => {
     // Return a task with 0 crash count
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", consecutive_crash_count: 0 }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
@@ -421,7 +467,12 @@ describe("TaskScheduler", () => {
     // Return a task at max retries (consecutive_crash_count = 4, will become 5)
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", consecutive_crash_count: 4 }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
@@ -452,7 +503,12 @@ describe("TaskScheduler", () => {
     const task = makeMockTask({ id: "t1", parent_id: null });
     taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.scheduleNext();
 
     expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
@@ -468,7 +524,12 @@ describe("TaskScheduler", () => {
 
     const task = makeMockTask({ id: "t1" });
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.dispatchTask(task);
 
     expect(orchestrator.executeTask).not.toHaveBeenCalled();
@@ -483,7 +544,12 @@ describe("TaskScheduler", () => {
 
     const task = makeMockTask({ id: "t1" });
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.dispatchTask(task);
     expect(scheduler.getActiveTaskIds()).toContain("t1");
 
@@ -499,7 +565,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Preempted task" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
@@ -528,7 +599,12 @@ describe("TaskScheduler", () => {
     orchestrator.executeTask.mockResolvedValue(completedResult);
 
     const task = makeMockTask({ id: "t1" });
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.dispatchTask(task);
 
     await flush();
@@ -547,7 +623,12 @@ describe("TaskScheduler", () => {
       throw new Error("cleanup failed");
     });
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
@@ -566,7 +647,12 @@ describe("TaskScheduler", () => {
     const callbacks = makeCallbacks();
     const observerSpy = vi.spyOn(ctx.observer, "error");
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
 
     // Simulate an error whose message contains a git auth URL with a token
     const authError = new Error(
@@ -591,7 +677,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Done task" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
 
@@ -620,7 +711,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Broken task" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
 
@@ -650,7 +746,12 @@ describe("TaskScheduler", () => {
 
     taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1" }));
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
 
@@ -682,7 +783,12 @@ describe("TaskScheduler", () => {
       throw new Error("DB write failed");
     });
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
 
@@ -702,7 +808,12 @@ describe("TaskScheduler", () => {
     // publish succeeds but transition to queued fails
     taskEngine.requestTransition.mockReturnValue({ success: false, reason: "invalid_transition" });
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
 
@@ -734,28 +845,103 @@ describe("TaskScheduler", () => {
     orchestrator.executeTask.mockResolvedValue(completedResult);
 
     const task = makeMockTask({ id: "t1" });
-    const scheduler = createTaskScheduler(ctx, notifications, throwingCallbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      throwingCallbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
 
     // Should flush without unhandled rejection
     await expect(flush()).resolves.toBeUndefined();
   });
-});
 
-// ── computeBackoffMs ─────────────────────────────────────────────────────────
+  // 33. handleLlmUnavailableBlocked: re-queues task when retry budget remains
+  it("handleTaskCompletion on blocked llm_unavailable re-queues when retry budget remains", () => {
+    const { ctx, taskEngine, clock } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+    const now = 1_700_000_000_000;
+    clock.now.mockReturnValue(now);
 
-describe("computeBackoffMs", () => {
-  it("returns correct backoff for each crash count", () => {
-    expect(computeBackoffMs(1)).toBe(1 * 60_000);
-    expect(computeBackoffMs(2)).toBe(5 * 60_000);
-    expect(computeBackoffMs(3)).toBe(15 * 60_000);
-    expect(computeBackoffMs(4)).toBe(30 * 60_000);
-    expect(computeBackoffMs(5)).toBe(30 * 60_000);
+    taskEngine.getTask.mockReturnValue(
+      makeMockTask({
+        id: "t1",
+        state: TaskStates.blocked,
+        blocked: {
+          reason: "llm_unavailable",
+          efforts_made: [],
+          contacted: [],
+          needed: "x",
+          waiting_for: "llm_adapter",
+        },
+        consecutive_llm_unavailable_count: 0,
+      }),
+    );
+
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
+    scheduler.handleTaskCompletion("t1", { outcome: "blocked", phase: "execution", reason: "llm_unavailable" });
+
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_llm_unavailable_count", 1);
+    expect(taskEngine.requestTransition).toHaveBeenCalledWith(
+      "t1",
+      TaskStates.queued,
+      null,
+      "llm_unavailable_retry",
+      "daemon",
+    );
   });
 
-  it("clamps to last value for crash counts beyond schedule length", () => {
-    expect(computeBackoffMs(6)).toBe(30 * 60_000);
-    expect(computeBackoffMs(100)).toBe(30 * 60_000);
+  // 34. handleLlmUnavailableBlocked: stays blocked when retry budget exhausted
+  it("handleTaskCompletion on blocked llm_unavailable stays blocked when budget exhausted", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    taskEngine.getTask.mockReturnValue(
+      makeMockTask({
+        id: "t1",
+        state: TaskStates.blocked,
+        blocked: {
+          reason: "llm_unavailable",
+          efforts_made: [],
+          contacted: [],
+          needed: "x",
+          waiting_for: "llm_adapter",
+        },
+        consecutive_llm_unavailable_count: 4, // becomes 5 = max_attempts → terminal
+      }),
+    );
+
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
+    scheduler.handleTaskCompletion("t1", { outcome: "blocked", phase: "execution", reason: "llm_unavailable" });
+
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_llm_unavailable_count", 5);
+    expect(taskEngine.requestTransition).not.toHaveBeenCalledWith(
+      "t1",
+      TaskStates.queued,
+      null,
+      "llm_unavailable_retry",
+      "daemon",
+    );
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: NotificationKinds.alert,
+        taskId: "t1",
+        message: expect.stringContaining("blocked until you respond"),
+      }),
+    );
   });
 });
 
@@ -773,7 +959,12 @@ describe("isTaskEligible not_before gate", () => {
     const task = makeMockTask({ id: "t1", parent_id: null, not_before: future });
     taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.scheduleNext();
 
     // Task should NOT be dispatched
@@ -791,7 +982,12 @@ describe("isTaskEligible not_before gate", () => {
     const task = makeMockTask({ id: "t1", parent_id: null, not_before: past });
     taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.scheduleNext();
 
     expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
@@ -805,7 +1001,12 @@ describe("isTaskEligible not_before gate", () => {
     const task = makeMockTask({ id: "t1", parent_id: null, not_before: null });
     taskEngine.getQueuedByPriority.mockReturnValue([task]);
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     scheduler.scheduleNext();
 
     expect(orchestrator.executeTask).toHaveBeenCalledTimes(1);
@@ -820,7 +1021,12 @@ describe("handleTaskCompletion crash reset", () => {
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
 
-    const scheduler = createTaskScheduler(ctx, notifications, callbacks);
+    const scheduler = createTaskScheduler(
+      ctx,
+      notifications,
+      callbacks,
+      createRetryPolicy({ config: ctx.config, taskEngine: ctx.taskEngine, clock: ctx.clock, observer: ctx.observer }),
+    );
     const task = makeMockTask({
       id: "t1",
       consecutive_crash_count: 3,

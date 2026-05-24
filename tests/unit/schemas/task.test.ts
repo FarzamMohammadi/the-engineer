@@ -345,6 +345,7 @@ describe("TaskSchema", () => {
     thoughts_id: null,
     not_before: null,
     consecutive_crash_count: 0,
+    consecutive_llm_unavailable_count: 0,
     session_id: null,
   };
 

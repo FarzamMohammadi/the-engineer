@@ -541,6 +541,7 @@ describe("Daemon", () => {
         id: "orphan-1",
         state: TaskStates.active,
         sub_state: SubStates.working,
+        consecutive_crash_count: 0,
       });
       handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
         if (state === TaskStates.active) {
@@ -548,11 +549,50 @@ describe("Daemon", () => {
         }
         return [];
       });
+      handle.taskEngine.getTask.mockReturnValue(orphan);
 
       await handle.daemon.start();
 
       expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
         "orphan-1",
+        TaskStates.queued,
+        null,
+        "crash_recovery",
+        "daemon",
+      );
+    });
+
+    // Boot-loop hole closure: an orphaned task that has already crashed up to its
+    // budget ceiling must transition straight to failed at boot — not back to queued,
+    // which would let a systemd-restarted daemon re-pick it up and crash again forever.
+    it("transitions orphaned tasks at the crash ceiling straight to failed", async () => {
+      handle = createTestDaemon();
+      const orphan = createMockTask({
+        id: "orphan-poison",
+        state: TaskStates.active,
+        sub_state: SubStates.working,
+        consecutive_crash_count: 4, // Will become 5 = max_attempts → terminal
+      });
+      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
+        if (state === TaskStates.active) {
+          return [orphan];
+        }
+        return [];
+      });
+      handle.taskEngine.getTask.mockReturnValue(orphan);
+
+      await handle.daemon.start();
+
+      expect(handle.taskEngine.updateTaskField).toHaveBeenCalledWith("orphan-poison", "consecutive_crash_count", 5);
+      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+        "orphan-poison",
+        TaskStates.failed,
+        null,
+        expect.stringContaining("max_crash_retries_exceeded"),
+        "daemon",
+      );
+      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
+        "orphan-poison",
         TaskStates.queued,
         null,
         "crash_recovery",

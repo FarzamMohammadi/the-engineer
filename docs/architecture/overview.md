@@ -84,6 +84,7 @@ graph LR
 | **Daemon** | Tick loop: poll triggers, schedule tasks, dispatch to Orchestrator, monitor health |
 | **Orchestrator** | Seven-phase task execution pipeline, agent loop, workspace lifecycle |
 | **TaskEngine** | Task state machine, transitions, permissions, priority queries |
+| **RetryPolicy** | Single source of truth for task-level retry semantics — per-category backoff schedules, ceilings, and terminal disposition. Called by the scheduler (crash + LLM-unavailable) and by boot recovery |
 | **EventBus** | Pub/sub with SQLite persistence, replay for state reconstruction, glob pattern subscriptions |
 | **SafetyLayer** | Policy evaluation, cost tracking, autonomy verdicts |
 | **ActionPipeline** | Authorization middleware: Gate 1 (state check) + Gate 2 (policy check) + Execute + Notify |

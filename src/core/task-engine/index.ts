@@ -86,6 +86,7 @@ const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
   requirements_loop_count: "integer",
   skip_research: "boolean",
   consecutive_crash_count: "integer",
+  consecutive_llm_unavailable_count: "integer",
 
   // REAL columns
   // (none currently — cost fields are updated via updateTracking, not updateTaskField)
@@ -144,7 +145,7 @@ export class TaskEngine implements ITaskEngine {
         return_to_phase,
         priority, llm_tokens, llm_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
-        not_before, consecutive_crash_count,
+        not_before, consecutive_crash_count, consecutive_llm_unavailable_count,
         session_id, version
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
@@ -154,7 +155,7 @@ export class TaskEngine implements ITaskEngine {
         ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?,
+        ?, ?, ?,
         ?, ?
       )
     `);
@@ -218,6 +219,7 @@ export class TaskEngine implements ITaskEngine {
       now, // last_transition_at
       null, // not_before
       0, // consecutive_crash_count
+      0, // consecutive_llm_unavailable_count
       null, // session_id
       1, // version
     );
@@ -271,6 +273,7 @@ export class TaskEngine implements ITaskEngine {
       last_transition_at: now,
       not_before: null,
       consecutive_crash_count: 0,
+      consecutive_llm_unavailable_count: 0,
       session_id: null,
     };
 

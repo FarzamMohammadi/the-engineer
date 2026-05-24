@@ -57,7 +57,8 @@ export type UpdatableField =
   | "requirements_loop_count"
   | "skip_research"
   | "not_before"
-  | "consecutive_crash_count";
+  | "consecutive_crash_count"
+  | "consecutive_llm_unavailable_count";
 
 export interface ITaskEngine {
   createTask(input: CreateTaskInput): Task;

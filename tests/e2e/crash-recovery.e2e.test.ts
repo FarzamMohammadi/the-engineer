@@ -258,8 +258,9 @@ describe("E2E: Crash recovery", () => {
     expect(ctx.taskEngine.getTask(taskId)?.state).toBe(TaskStates.queued);
 
     // Tick to dispatch the queued task — orchestrator resumes from the planning
-    // checkpoint, skipping requirements/research/planning.
-    ctx.clock.advance(1_000);
+    // checkpoint, skipping requirements/research/planning. Advance past the
+    // first-crash retry-policy backoff (~1 minute) so the task is eligible.
+    ctx.clock.advance(60_000 + 1_000);
     await daemon2.tick();
     await waitForIdle(daemon2);
 

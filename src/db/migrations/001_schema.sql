@@ -61,6 +61,7 @@ CREATE TABLE tasks (
   -- Scheduling
   not_before              TEXT,
   consecutive_crash_count INTEGER NOT NULL DEFAULT 0,
+  consecutive_llm_unavailable_count INTEGER NOT NULL DEFAULT 0,
 
   -- Complexity-based phase skipping
   skip_research           INTEGER NOT NULL DEFAULT 0

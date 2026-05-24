@@ -152,6 +152,24 @@ export const DaemonConfigSchema = z.object({
     .default(50)
     .describe("Warn if an EventBus subscriber callback exceeds this duration (ms). 0 = disabled."),
 
+  // Retry policy: per-category backoff schedules and ceilings for task-level retries
+  retry_policy: z
+    .object({
+      crash: z
+        .object({
+          backoff_minutes: z.array(z.number().int().positive()).default([1, 5, 15, 30, 30]),
+          max_attempts: z.number().int().positive().default(5),
+        })
+        .default({}),
+      llm_unavailable: z
+        .object({
+          backoff_minutes: z.array(z.number().int().positive()).default([2, 5, 10, 15, 15]),
+          max_attempts: z.number().int().positive().default(5),
+        })
+        .default({}),
+    })
+    .default({}),
+
   // Notification retry (Issue #5)
   notification_retry: z
     .object({

@@ -23,6 +23,15 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # --- Shutdown ---
 # shutdown_timeout_ms: "30s"          # Time to drain active tasks on shutdown (default: 30s)
 
+# --- Retry policy (per-category backoff for task-level retries) ---
+# retry_policy:
+#   crash:
+#     backoff_minutes: [1, 5, 15, 30, 30]  # Backoff schedule in minutes
+#     max_attempts: 5                       # Terminal after this many crashes
+#   llm_unavailable:
+#     backoff_minutes: [2, 5, 10, 15, 15]  # Backoff schedule in minutes
+#     max_attempts: 5                       # Terminal after this many unavailability cycles
+
 # --- Trigger polling ---
 # trigger_poll_interval_ms: "30s"     # How often to poll triggers (default: 30s)
 # response_poll_interval_ms: "5s"     # How often to poll responses (default: 5s)
@@ -334,6 +343,15 @@ max_active_duration_ms: "8h"              # Kill task after this duration (defau
 
 # ── Shutdown ──────────────────────────────────────────────────────────────────
 shutdown_timeout_ms: "30s"                # Drain timeout on SIGTERM (default: 30s)
+
+# ── Retry Policy (per-category backoff for task-level retries) ──────────────
+retry_policy:
+  crash:                                  # Orchestrator crash retries
+    backoff_minutes: [1, 5, 15, 30, 30]   # Backoff schedule in minutes (default: [1, 5, 15, 30, 30])
+    max_attempts: 5                       # Terminal after this many crashes (default: 5)
+  llm_unavailable:                        # LLM adapter unavailability retries
+    backoff_minutes: [2, 5, 10, 15, 15]   # Backoff schedule in minutes (default: [2, 5, 10, 15, 15])
+    max_attempts: 5                       # Terminal after this many unavailability cycles (default: 5)
 
 # ── Trigger Polling ──────────────────────────────────────────────────────────
 trigger_poll_interval_ms: "30s"           # How often to poll triggers (default: 30s)

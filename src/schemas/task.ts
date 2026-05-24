@@ -210,6 +210,7 @@ export const TaskSchema = z.object({
   // Scheduling
   not_before: z.string().datetime().nullable().default(null),
   consecutive_crash_count: z.number().int().default(0),
+  consecutive_llm_unavailable_count: z.number().int().default(0),
 
   // Session link
   session_id: z.string().nullable(),

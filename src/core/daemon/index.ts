@@ -25,6 +25,7 @@ import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import { createEvaluationManager } from "../evaluation/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
+import { createRetryPolicy } from "../retry-policy/index.js";
 import { createCostLimitQueue } from "./cost-limit-queue.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
@@ -205,6 +206,13 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       })
     : null;
 
+  const retryPolicy = createRetryPolicy({
+    config: ctx.config,
+    taskEngine: ctx.taskEngine,
+    clock: ctx.clock,
+    observer: ctx.observer,
+  });
+
   const scheduler = createTaskScheduler(
     ctx,
     notifications,
@@ -212,6 +220,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       onTaskCompleted: (taskId, result) => handleTaskCompletion(taskId, result),
       onTaskError: (taskId, error) => handleTaskError(taskId, error),
     },
+    retryPolicy,
     evaluation,
   );
 
@@ -398,35 +407,72 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
   // ── Startup: Protocol P1 ──────────────────────────────────────────────
 
+  /** Outcome of recovering a single orphaned task during boot. */
+  type OrphanRecoveryOutcome = "recovered" | "failed_terminal" | "transition_failed";
+
+  function recoverOrphanedTask(task: { id: string; sub_state: string | null }): OrphanRecoveryOutcome {
+    observer.warn("Recovering orphaned active task", {
+      taskId: task.id,
+      subState: task.sub_state,
+    });
+
+    const disposition = retryPolicy.recordFailure("crash", task.id);
+
+    if (disposition.disposition === "terminal") {
+      const result = taskEngine.requestTransition(
+        task.id,
+        TaskStates.failed,
+        null,
+        `max_crash_retries_exceeded (${disposition.count}) — boot recovery`,
+        "daemon",
+      );
+      if (!result.success) {
+        observer.error("Crash recovery: terminal transition failed", {
+          taskId: task.id,
+          reason: result.reason,
+        });
+        return "transition_failed";
+      }
+      observer.error("Orphaned task exceeded crash budget — marking failed", {
+        taskId: task.id,
+        crashCount: disposition.count,
+      });
+      return "failed_terminal";
+    }
+
+    const result = taskEngine.requestTransition(task.id, TaskStates.queued, null, "crash_recovery", "daemon");
+    if (!result.success) {
+      observer.error("Crash recovery transition failed", {
+        taskId: task.id,
+        reason: result.reason,
+      });
+      return "transition_failed";
+    }
+    return "recovered";
+  }
+
   function rebuildStateFromTaskEngine(): void {
-    // Crash recovery: transition orphaned active tasks → queued
+    // Crash recovery: each orphaned active task is treated as a crash failure via
+    // the retry-policy module. If a task's crash budget is exhausted (e.g., a poison
+    // task that has crashed at boot N times in a row), retry-policy returns terminal
+    // and we transition straight to failed instead of queued — closing the boot-loop
+    // hole where a systemd-restarted daemon would re-pick up a guaranteed-to-crash task.
     const activeTasks = taskEngine.getTasksByState(TaskStates.active);
-    let recovered = 0;
-    let failed = 0;
+    const counts = { recovered: 0, failed_terminal: 0, transition_failed: 0 };
 
     for (const task of activeTasks) {
-      if (isSlotConsuming(task.state, task.sub_state)) {
-        observer.warn("Recovering orphaned active task", {
-          taskId: task.id,
-          subState: task.sub_state,
-        });
-        const result = taskEngine.requestTransition(task.id, TaskStates.queued, null, "crash_recovery", "daemon");
-        if (result.success) {
-          recovered++;
-        } else {
-          failed++;
-          observer.error("Crash recovery transition failed", {
-            taskId: task.id,
-            reason: result.reason,
-          });
-        }
+      if (!isSlotConsuming(task.state, task.sub_state)) {
+        continue;
       }
+      const outcome = recoverOrphanedTask(task);
+      counts[outcome]++;
     }
 
     observer.info("Crash recovery scan complete", {
       activeTasks: activeTasks.length,
-      orphansRecovered: recovered,
-      recoveryFailures: failed,
+      orphansRecovered: counts.recovered,
+      orphansFailedTerminal: counts.failed_terminal,
+      recoveryFailures: counts.transition_failed,
     });
   }
 

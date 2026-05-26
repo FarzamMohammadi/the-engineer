@@ -237,6 +237,7 @@ describe("TaskWorkspaceSchema", () => {
       TaskWorkspaceSchema.parse({
         repo: "owner/repo",
         branch: "engineer/47-dark-mode",
+        base_branch: "main",
         worktree_path: null,
         thoughts_dir: null,
       }),
@@ -246,10 +247,22 @@ describe("TaskWorkspaceSchema", () => {
       TaskWorkspaceSchema.parse({
         repo: "owner/repo",
         branch: "engineer/47-dark-mode",
+        base_branch: "main",
         worktree_path: "/tmp/worktree",
         thoughts_dir: "thoughts/2026-03-23-issue-42",
       }),
     ).toBeDefined();
+  });
+
+  it("rejects data missing base_branch", () => {
+    expect(() =>
+      TaskWorkspaceSchema.parse({
+        repo: "owner/repo",
+        branch: "engineer/47-dark-mode",
+        worktree_path: null,
+        thoughts_dir: null,
+      }),
+    ).toThrow();
   });
 });
 

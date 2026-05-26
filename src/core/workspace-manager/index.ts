@@ -12,9 +12,10 @@ import {
   WorkspaceVerifiedPayloadSchema,
 } from "../../schemas/events.js";
 import { PHASE_DIRECTORIES } from "../../schemas/orchestrator.js";
-import type { TaskWorkspace } from "../../schemas/task.js";
+import type { Task } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
+import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type {
   AuthUrlProvider,
   CreateWorkspaceOptions,
@@ -33,6 +34,12 @@ type WorkspaceConfig = z.output<typeof WorkspaceConfigSchema>;
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
+/**
+ * Workspace lifecycle events. `subscribers: []` is intentional — these events
+ * exist for the EventBus persistence layer (audit trail), not for any runtime
+ * subscriber. Workspace lifecycle changes are driven directly by the
+ * orchestrator's per-task code path.
+ */
 export const EVENTS: EventDeclaration[] = [
   {
     type: "workspace.created",
@@ -89,6 +96,26 @@ export function branchName(prefix: string, taskId: string, slug: string): string
 }
 
 /**
+ * Project a Task's persisted `workspace` field into a runtime WorkspaceRecord.
+ * Returns null when the task has no workspace, or when the worktree path is
+ * absent (worktree never created — only the placeholder shape is on the task).
+ */
+export function recordFromTask(task: Task): WorkspaceRecord | null {
+  const ws = task.workspace;
+  if (!ws?.worktree_path) {
+    return null;
+  }
+  return {
+    taskId: task.id,
+    repo: ws.repo,
+    branch: ws.branch,
+    worktreePath: ws.worktree_path,
+    baseBranch: ws.base_branch,
+    thoughtsDir: ws.thoughts_dir,
+  };
+}
+
+/**
  * Validate that a path is within the expected workspace root.
  * Uses realpathSync to resolve symlinks before comparison.
  * Throws if the resolved path is outside the workspace root.
@@ -126,12 +153,26 @@ export function validateWorkspacePath(targetPath: string, workspaceRoot: string)
 
 // ── WorkspaceManager ─────────────────────────────────────────────────────────
 
+/** Constructor dependencies for WorkspaceManager. */
+export interface WorkspaceManagerDeps {
+  eventBus: IEventBus;
+  config: WorkspaceConfig;
+  observer: IObserver;
+  authUrlProvider: AuthUrlProvider;
+  /** Source of truth for workspace state — reads project `task.workspace` into a WorkspaceRecord on every query. */
+  taskEngine: ITaskEngine;
+}
+
 /**
  * Git operations service for per-task workspace isolation.
  *
  * Uses git worktrees for lightweight, isolated checkouts sharing the same .git
  * directory. Each task gets its own worktree with a named branch. The branch
  * is the persistent artifact; the worktree is ephemeral.
+ *
+ * Stateless: every read projects `task.workspace` (persisted in the tasks table)
+ * into a `WorkspaceRecord`. The DB is the single source of truth — no in-memory
+ * cache to keep in sync.
  *
  * Emits workspace events on the Event Bus at each lifecycle point.
  *
@@ -144,13 +185,14 @@ export class WorkspaceManager implements IWorkspaceManager {
   private readonly config: WorkspaceConfig;
   private readonly observer: IObserver;
   private readonly authUrlProvider: AuthUrlProvider;
-  private readonly workspaces = new Map<string, WorkspaceRecord>();
+  private readonly taskEngine: ITaskEngine;
 
-  constructor(eventBus: IEventBus, config: WorkspaceConfig, observer: IObserver, authUrlProvider: AuthUrlProvider) {
-    this.eventBus = eventBus;
-    this.observer = observer;
-    this.authUrlProvider = authUrlProvider;
-    this.config = config;
+  constructor(deps: WorkspaceManagerDeps) {
+    this.eventBus = deps.eventBus;
+    this.observer = deps.observer;
+    this.authUrlProvider = deps.authUrlProvider;
+    this.config = deps.config;
+    this.taskEngine = deps.taskEngine;
   }
 
   // ── Workspace Lifecycle ──────────────────────────────────────────────────
@@ -236,17 +278,24 @@ export class WorkspaceManager implements IWorkspaceManager {
       });
     }
 
+    // Persist before any caller can query — DB is the single source of truth.
+    this.taskEngine.updateTaskField(taskId, "workspace", {
+      repo,
+      branch,
+      base_branch: resolvedBase,
+      worktree_path: worktreePath,
+      thoughts_dir: thoughtsDirRelative,
+    });
+
     const workspace: WorkspaceRecord = {
       taskId,
       repo,
       branch,
       worktreePath,
       baseBranch: resolvedBase,
-      baseCommit,
       thoughtsDir: thoughtsDirRelative,
     };
 
-    this.workspaces.set(taskId, workspace);
     this.observer.info("Workspace created", { taskId, repo, branch, worktreePath, baseCommit });
 
     this.eventBus.publish({
@@ -275,7 +324,7 @@ export class WorkspaceManager implements IWorkspaceManager {
    * Emits `workspace.verified`.
    */
   verifyWorkspace(taskId: string): WorkspaceVerification {
-    const record = this.workspaces.get(taskId);
+    const record = this.readRecord(taskId);
 
     if (!record) {
       const result: WorkspaceVerification = {
@@ -352,10 +401,12 @@ export class WorkspaceManager implements IWorkspaceManager {
   /**
    * Clean up a workspace — remove worktree and optionally delete the branch.
    *
-   * Idempotent: no-op if the taskId is not known. Emits `workspace.cleaned`.
+   * Idempotent: no-op if no workspace is recorded for the task. The persisted
+   * `task.workspace` row is left intact; the `workspace.cleaned` event is the
+   * audit trail.
    */
   cleanupWorkspace(taskId: string, preserveBranch?: boolean): void {
-    const record = this.workspaces.get(taskId);
+    const record = this.readRecord(taskId);
 
     if (!record) {
       return; // Idempotent
@@ -370,8 +421,8 @@ export class WorkspaceManager implements IWorkspaceManager {
 
     const repoCloneDir = path.join(this.config.workspace_root, record.repo);
 
-    // Remove worktree (--force handles dirty working trees).
-    // Wrapped in try/catch so a failed removal doesn't prevent branch cleanup and map removal.
+    // Remove worktree (--force handles dirty working trees). Wrapped so a failed
+    // removal doesn't prevent branch deletion or event emission.
     if (existsSync(record.worktreePath)) {
       try {
         this.gitExec(["worktree", "remove", record.worktreePath, "--force"], repoCloneDir);
@@ -395,8 +446,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       }
     }
 
-    this.workspaces.delete(taskId);
-    this.observer.debug("Workspace cleaned up", {
+    this.observer.debug("Workspace cleaned", {
       taskId,
       elapsedMs: Date.now() - cleanupStart,
     });
@@ -474,7 +524,7 @@ export class WorkspaceManager implements IWorkspaceManager {
    * to .git/config. Sets upstream tracking.
    */
   pushBranch(taskId: string): void {
-    const record = this.workspaces.get(taskId);
+    const record = this.readRecord(taskId);
     if (!record) {
       throw new WorkspaceNotFoundError(taskId);
     }
@@ -499,7 +549,7 @@ export class WorkspaceManager implements IWorkspaceManager {
   }
 
   deleteRemoteBranch(taskId: string): void {
-    const record = this.workspaces.get(taskId);
+    const record = this.readRecord(taskId);
     if (!record) {
       throw new WorkspaceNotFoundError(taskId);
     }
@@ -523,47 +573,31 @@ export class WorkspaceManager implements IWorkspaceManager {
     });
   }
 
-  /**
-   * Re-register a workspace from persisted task state (for daemon restart).
-   *
-   * Populates the in-memory workspaces map from a task's `workspace` field
-   * so that `getWorktreePath()` and other methods work after restart.
-   */
-  registerExistingWorkspace(taskId: string, workspace: TaskWorkspace): void {
-    if (!workspace.worktree_path) {
-      this.observer.debug("registerExistingWorkspace: no worktree_path — skipping", { taskId });
-      return;
-    }
-    this.workspaces.set(taskId, {
-      taskId,
-      repo: workspace.repo,
-      branch: workspace.branch,
-      worktreePath: workspace.worktree_path,
-      baseBranch: this.config.default_base_branch,
-      baseCommit: "",
-      thoughtsDir: workspace.thoughts_dir ?? null,
-    });
-    this.observer.debug("Registered existing workspace", {
-      taskId,
-      repo: workspace.repo,
-      branch: workspace.branch,
-      worktreePath: workspace.worktree_path,
-    });
-  }
-
   // ── Queries ──────────────────────────────────────────────────────────────
 
-  /** Get the worktree filesystem path for a task, or null if unknown. */
+  /** Get the worktree filesystem path for a task, or null if no workspace is persisted. */
   getWorktreePath(taskId: string): string | null {
-    return this.workspaces.get(taskId)?.worktreePath ?? null;
+    return this.readRecord(taskId)?.worktreePath ?? null;
   }
 
-  /** Get the full workspace record for a task, or null if unknown. */
+  /** Get the full workspace record for a task, or null if no workspace is persisted. */
   getWorkspaceRecord(taskId: string): WorkspaceRecord | null {
-    return this.workspaces.get(taskId) ?? null;
+    return this.readRecord(taskId);
   }
 
   // ── Private Helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Project the task's persisted `workspace` field into a WorkspaceRecord.
+   *
+   * The DB is the single source of truth — every read goes through this helper.
+   * Returns null when the task has no workspace (never created, or pre-creation).
+   * Lets `taskEngine.getTask` errors propagate to the caller (fail loud — § 15).
+   */
+  private readRecord(taskId: string): WorkspaceRecord | null {
+    const task = this.taskEngine.getTask(taskId);
+    return task ? recordFromTask(task) : null;
+  }
 
   /** Run a git command, swapping `origin` for an authenticated remote URL. Used for fetch from the primary clone. */
   private gitExecWithAuth(args: string[], cwd: string): string {

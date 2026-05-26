@@ -822,11 +822,12 @@ describe("Orchestrator", () => {
   });
 
   describe("commitPushAndCreatePR — rework path", () => {
-    it("re-registers workspace on rework dispatch with existing PR", async () => {
+    it("re-uses workspace on rework dispatch with existing PR — no createWorkspace call", async () => {
       handle.setAllPhaseResponses();
       const workspace = {
         repo: "org/repo",
         branch: "engineer/task-001-test",
+        base_branch: "main",
         worktree_path: TEST_WORKTREE_PATH,
         thoughts_dir: null,
       };
@@ -849,8 +850,7 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      // Should re-register existing workspace, not create new
-      expect(handle.workspaceManager.registerExistingWorkspace).toHaveBeenCalledWith("task-001", workspace);
+      // WorkspaceManager is stateless — DB is the source of truth, no per-dispatch re-register.
       expect(handle.workspaceManager.createWorkspace).not.toHaveBeenCalled();
     });
 
@@ -862,7 +862,6 @@ describe("Orchestrator", () => {
         branch: "engineer/task-001-test",
         baseBranch: "main",
         worktreePath: TEST_WORKTREE_PATH,
-        baseCommit: "abc123",
         thoughtsDir: "thoughts/2026-03-22-issue-1",
       });
       const task = createMockTask({
@@ -871,6 +870,7 @@ describe("Orchestrator", () => {
         workspace: {
           repo: "org/repo",
           branch: "engineer/task-001-test",
+          base_branch: "main",
           worktree_path: TEST_WORKTREE_PATH,
           thoughts_dir: null,
         },
@@ -904,11 +904,12 @@ describe("Orchestrator", () => {
   });
 
   describe("workspace guard — rework dispatch", () => {
-    it("re-registers existing workspace instead of creating new one", async () => {
+    it("re-uses existing workspace instead of creating a new one", async () => {
       handle.setAllPhaseResponses();
       const workspace = {
         repo: "org/repo",
         branch: "engineer/task-001-fix-bug",
+        base_branch: "main",
         worktree_path: TEST_WORKTREE_PATH,
         thoughts_dir: null,
       };
@@ -924,7 +925,6 @@ describe("Orchestrator", () => {
 
       await handle.orchestrator.executeTask(dispatch);
 
-      expect(handle.workspaceManager.registerExistingWorkspace).toHaveBeenCalledWith("task-001", workspace);
       expect(handle.workspaceManager.createWorkspace).not.toHaveBeenCalled();
     });
   });

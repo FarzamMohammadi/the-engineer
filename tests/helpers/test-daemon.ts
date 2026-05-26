@@ -83,7 +83,6 @@ export interface TestDaemonHandle {
     verifyWorkspace: Mock;
     getWorktreePath: Mock;
     cleanupWorkspace: Mock;
-    registerExistingWorkspace: Mock;
   };
   peopleDirectory: {
     getPerson: Mock;
@@ -288,7 +287,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     verifyWorkspace: vi.fn(),
     getWorktreePath: vi.fn().mockReturnValue(null),
     cleanupWorkspace: vi.fn(),
-    registerExistingWorkspace: vi.fn(),
   };
 
   // ── PeopleDirectory mock ──────────────────────────────────────────────

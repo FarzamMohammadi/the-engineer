@@ -1,4 +1,3 @@
-import type { TaskWorkspace } from "../../schemas/task.js";
 import type { SecureValue } from "../../utils/secure-value.js";
 
 /**
@@ -17,14 +16,19 @@ export interface WorkspaceVerification {
   recoveryAction: string | null;
 }
 
-/** Internal record tracking a workspace's state. */
+/**
+ * A workspace's runtime shape, projected from the task's persisted `task.workspace` field.
+ *
+ * WorkspaceManager constructs this view from `taskEngine.getTask(taskId)?.workspace` on
+ * every read — there is no in-memory cache. The persisted `task.workspace` is the single
+ * source of truth.
+ */
 export interface WorkspaceRecord {
   taskId: string;
   repo: string;
   branch: string;
   worktreePath: string;
   baseBranch: string;
-  baseCommit: string;
   /** Relative path to the thoughts directory (e.g., "thoughts/2026-03-22-issue-42"), or null if none. */
   thoughtsDir: string | null;
 }
@@ -59,9 +63,6 @@ export interface IWorkspaceManager {
 
   /** Delete the task's branch from the remote. Best-effort — callers should catch errors. */
   deleteRemoteBranch(taskId: string): void;
-
-  /** Re-register a workspace from persisted task state (for daemon restart). */
-  registerExistingWorkspace(taskId: string, workspace: TaskWorkspace): void;
 
   /** Get the worktree filesystem path for a task, or null if unknown. */
   getWorktreePath(taskId: string): string | null;

@@ -647,11 +647,6 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
       return;
     }
     try {
-      // Workspaces are tracked in-memory until Session 4's stateless refactor; re-register
-      // from the persisted task.workspace if the in-memory entry is missing post-restart.
-      if (!workspaceManager.getWorktreePath(task.id) && task.workspace) {
-        workspaceManager.registerExistingWorkspace(task.id, task.workspace);
-      }
       removeThoughtsAndPush({ workspaceManager, observer }, task.id);
     } catch (err) {
       observer.warn("Failed to remove thoughts directory before merge — proceeding", {

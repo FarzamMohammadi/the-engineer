@@ -22,6 +22,7 @@ function setup(): TestWorkspaceManagerHandle {
 describe("removeThoughtsAndPush", () => {
   it("removes only branch-introduced thoughts files, commits, and pushes", () => {
     const h = setup();
+    h.setupTask("task-1");
     const record = h.workspaceManager.createWorkspace("task-1", h.repoName, {
       title: "Test",
       thoughtsId: "issue-1",
@@ -49,6 +50,7 @@ describe("removeThoughtsAndPush", () => {
 
   it("returns false when branch has no thoughts files added", () => {
     const h = setup();
+    h.setupTask("task-1");
     h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "No Thoughts" });
 
     // No thoughtsId → no thoughts directory, nothing added to branch

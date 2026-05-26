@@ -59,11 +59,9 @@ function createMockContext(): OrchestratorContext {
         worktreePath: "/tmp/worktree/task-001",
         repo: "owner/repo",
         baseBranch: "main",
-        baseCommit: "abc123",
         thoughtsDir: "thoughts/2026-03-22-issue-1",
       }),
       verifyWorkspace: vi.fn(),
-      registerExistingWorkspace: vi.fn(),
       pushBranch: vi.fn(),
       cleanupWorkspace: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],
@@ -123,7 +121,7 @@ function createDispatch(overrides?: Partial<Task>): Dispatch {
 
 describe("WorkspaceLifecycle", () => {
   describe("setupWorkspace", () => {
-    it("creates workspace for fresh task with repo", () => {
+    it("creates workspace for fresh task with repo (persistence owned by createWorkspace)", () => {
       const ctx = createMockContext();
       const wl = createWorkspaceLifecycle(ctx);
       const dispatch = createDispatch();
@@ -134,36 +132,38 @@ describe("WorkspaceLifecycle", () => {
         title: "Test task",
         cloneUrl: "https://github.com/owner/repo.git",
       });
-      expect(ctx.taskEngine.updateTaskField).toHaveBeenCalledWith(
-        "task-001",
-        "workspace",
-        expect.objectContaining({ repo: "owner/repo" }),
-      );
     });
 
-    it("re-registers existing workspace on rework", () => {
+    it("skips workspace creation on rework when task.workspace is already persisted", () => {
       const ctx = createMockContext();
-      // No need to mock getWorktreePath — rework detection uses task.workspace (DB-persisted),
-      // not in-memory map, so it works after daemon restart.
       const wl = createWorkspaceLifecycle(ctx);
       const dispatch = createDispatch({
-        workspace: { repo: "owner/repo", branch: "engineer/task-001", worktree_path: "/tmp/wt" },
+        workspace: {
+          repo: "owner/repo",
+          branch: "engineer/task-001",
+          base_branch: "main",
+          worktree_path: "/tmp/wt",
+          thoughts_dir: null,
+        },
       } as Partial<Task>);
 
       wl.setupWorkspace(dispatch);
 
-      expect(ctx.workspaceManager.registerExistingWorkspace).toHaveBeenCalledWith(
-        "task-001",
-        expect.objectContaining({ repo: "owner/repo" }),
-      );
+      // Stateless workspace-manager — no per-dispatch setup. DB-backed reads work as-is.
       expect(ctx.workspaceManager.createWorkspace).not.toHaveBeenCalled();
     });
 
-    it("registers existing workspace on resume", () => {
+    it("skips workspace setup on resume — DB-backed reads work as-is", () => {
       const ctx = createMockContext();
       const wl = createWorkspaceLifecycle(ctx);
       const dispatch = createDispatch({
-        workspace: { repo: "owner/repo", branch: "engineer/task-001", worktree_path: "/tmp/wt" },
+        workspace: {
+          repo: "owner/repo",
+          branch: "engineer/task-001",
+          base_branch: "main",
+          worktree_path: "/tmp/wt",
+          thoughts_dir: null,
+        },
       } as Partial<Task>);
       (dispatch as { resume_from: unknown }).resume_from = {
         id: "cp-001",
@@ -173,10 +173,7 @@ describe("WorkspaceLifecycle", () => {
 
       wl.setupWorkspace(dispatch);
 
-      expect(ctx.workspaceManager.registerExistingWorkspace).toHaveBeenCalledWith(
-        "task-001",
-        expect.objectContaining({ repo: "owner/repo" }),
-      );
+      expect(ctx.workspaceManager.createWorkspace).not.toHaveBeenCalled();
     });
   });
 

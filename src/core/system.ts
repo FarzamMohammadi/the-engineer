@@ -86,12 +86,13 @@ export function createCoreComponents(input: CreateCoreInput): CoreComponentGraph
     ...input.workspaceConfig,
     workspace_root: expandHome(input.workspaceConfig.workspace_root),
   };
-  const workspaceManager = new WorkspaceManager(
+  const workspaceManager = new WorkspaceManager({
     eventBus,
-    expandedWorkspaceConfig,
-    input.observer.child("workspace-manager"),
-    input.authUrlProvider ?? defaultAuthUrlProvider,
-  );
+    config: expandedWorkspaceConfig,
+    observer: input.observer.child("workspace-manager"),
+    authUrlProvider: input.authUrlProvider ?? defaultAuthUrlProvider,
+    taskEngine,
+  });
   const skillsManager = new SkillsManager(expandedWorkspaceConfig.workspace_root, input.observer.child("skills"));
 
   return {

@@ -6,6 +6,7 @@ import path from "node:path";
 import type { z } from "zod";
 import { EventBus, type EventRow, rowToEvent } from "../../src/core/event-bus/index.js";
 import type { AuthUrlProvider } from "../../src/core/interfaces/workspace-manager.interface.js";
+import { TaskEngine } from "../../src/core/task-engine/index.js";
 import { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import type { Event } from "../../src/schemas/events.js";
@@ -18,6 +19,8 @@ type WorkspaceConfig = z.output<typeof WorkspaceConfigSchema>;
 export interface TestWorkspaceManagerHandle {
   workspaceManager: WorkspaceManager;
   eventBus: EventBus;
+  /** Real TaskEngine backing the workspace-manager's DB-backed reads. */
+  taskEngine: TaskEngine;
   /** Path to the bare "remote" repository. */
   bareRepoDir: string;
   /** Path to the primary clone (acts as workspace_root/repoName). */
@@ -26,6 +29,10 @@ export interface TestWorkspaceManagerHandle {
   workspaceRoot: string;
   /** Repo name used in paths. */
   repoName: string;
+  /** Insert a task row so workspace-manager's persistence writes have a target. */
+  setupTask(taskId: string, options?: { title?: string }): void;
+  /** Mint a fresh WorkspaceManager over the same DB — simulates a daemon restart. */
+  createWorkspaceManager(): WorkspaceManager;
   /** Get all emitted events, optionally filtered by type. Reads from DB (source of truth). */
   getEmittedEvents(type?: string): Event[];
   /**
@@ -108,8 +115,19 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
   // Test auth provider — passes URL through unchanged (local bare repos don't need auth)
   const authUrlProvider: AuthUrlProvider = (url) => new SecureValue(url);
 
-  const workspaceManagerObserver = createTestObserverFacade("workspace-manager");
-  const workspaceManager = new WorkspaceManager(eventBus, config, workspaceManagerObserver, authUrlProvider);
+  const taskEngine = new TaskEngine(testDb.db, eventBus, createTestObserverFacade("task-engine"));
+
+  function buildWorkspaceManager(): WorkspaceManager {
+    return new WorkspaceManager({
+      eventBus,
+      config,
+      observer: createTestObserverFacade("workspace-manager"),
+      authUrlProvider,
+      taskEngine,
+    });
+  }
+
+  const workspaceManager = buildWorkspaceManager();
 
   const allEventsStmt = testDb.db.prepare("SELECT * FROM events ORDER BY sequence");
   const eventsByTypeStmt = testDb.db.prepare("SELECT * FROM events WHERE type = ? ORDER BY sequence");
@@ -117,10 +135,24 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
   return {
     workspaceManager,
     eventBus,
+    taskEngine,
     bareRepoDir,
     cloneDir,
     workspaceRoot,
     repoName,
+
+    setupTask(taskId: string, options?: { title?: string }): void {
+      taskEngine.createTask({
+        title: options?.title ?? `Test task ${taskId}`,
+        repo: repoName,
+        source: "test",
+        idempotency_key: `test:${taskId}`,
+      });
+      // TaskEngine generates its own id — overwrite with the desired test id for stable assertions.
+      testDb.db.prepare("UPDATE tasks SET id = ? WHERE idempotency_key = ?").run(taskId, `test:${taskId}`);
+    },
+
+    createWorkspaceManager: buildWorkspaceManager,
 
     getEmittedEvents(type?: string): Event[] {
       const rows = (type ? eventsByTypeStmt.all(type) : allEventsStmt.all()) as EventRow[];

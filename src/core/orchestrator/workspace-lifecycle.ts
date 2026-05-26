@@ -22,42 +22,33 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
 
     ctx.observer.info("Setting up workspace", { taskId, isResume });
 
-    if (!dispatch.resume_from) {
-      const repo = dispatch.task.repo;
-      const cloneUrl = dispatch.task.clone_url;
-      if (repo && cloneUrl) {
-        // Rework dispatch: workspace already exists (preserved during review_pending).
-        // Check task.workspace (DB-persisted) — not getWorktreePath() which is in-memory
-        // and empty after daemon restart.
-        if (dispatch.task.workspace) {
-          ctx.observer.debug("Workspace setup: re-registering existing workspace (rework)", {
-            taskId,
-            repo,
-          });
-          ctx.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
-        } else {
-          const thoughtsId = dispatch.task.thoughts_id ?? undefined;
-          const record = ctx.workspaceManager.createWorkspace(taskId, repo, {
-            title: dispatch.task.title,
-            cloneUrl,
-            thoughtsId,
-          });
-          ctx.taskEngine.updateTaskField(taskId, "workspace", {
-            repo,
-            branch: record.branch,
-            worktree_path: record.worktreePath,
-            thoughts_dir: record.thoughtsDir,
-          });
-        }
-      } else {
-        ctx.observer.debug("Workspace setup: no repo/cloneUrl — skipping workspace creation", {
-          taskId,
-        });
-      }
-    } else if (dispatch.task.workspace) {
-      ctx.observer.debug("Workspace setup: re-registering workspace for resume", { taskId });
-      ctx.workspaceManager.registerExistingWorkspace(taskId, dispatch.task.workspace);
+    // Resume dispatches read workspace state from task.workspace via the DB —
+    // no per-dispatch setup needed (WorkspaceManager is stateless).
+    if (dispatch.resume_from) {
+      return;
     }
+
+    const repo = dispatch.task.repo;
+    const cloneUrl = dispatch.task.clone_url;
+
+    if (!(repo && cloneUrl)) {
+      ctx.observer.debug("Workspace setup: no repo/cloneUrl — skipping workspace creation", { taskId });
+      return;
+    }
+
+    // Rework dispatch: workspace already exists (preserved during review_pending).
+    // task.workspace is the source of truth — no in-memory re-registration needed.
+    if (dispatch.task.workspace) {
+      ctx.observer.debug("Workspace setup: re-using existing workspace (rework)", { taskId, repo });
+      return;
+    }
+
+    const thoughtsId = dispatch.task.thoughts_id ?? undefined;
+    ctx.workspaceManager.createWorkspace(taskId, repo, {
+      title: dispatch.task.title,
+      cloneUrl,
+      thoughtsId,
+    });
   }
 
   function createSession(dispatch: Dispatch): Session {

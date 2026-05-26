@@ -33,7 +33,6 @@ const WORKSPACE_RECORD: WorkspaceRecord = {
   branch: "engineer/task-001-test-task",
   worktreePath: WORKTREE_PATH,
   baseBranch: "main",
-  baseCommit: "abc123",
   thoughtsDir: "thoughts/2026-03-22-issue-1",
 };
 

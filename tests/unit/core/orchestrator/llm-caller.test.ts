@@ -59,7 +59,6 @@ function createMockContext(overrides?: Partial<OrchestratorContext>): Orchestrat
       getWorkspaceRecord: vi.fn().mockReturnValue(null),
       createWorkspace: vi.fn(),
       verifyWorkspace: vi.fn(),
-      registerExistingWorkspace: vi.fn(),
       pushBranch: vi.fn(),
       cleanupWorkspace: vi.fn(),
     } as unknown as OrchestratorContext["workspaceManager"],

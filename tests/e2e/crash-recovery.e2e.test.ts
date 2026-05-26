@@ -84,19 +84,14 @@ function createOrphanedTask(ctx: IntegrationContext, options?: CreateOrphanOptio
     ...(repo ? { clone_url: repo.cloneUrl } : {}),
   });
 
-  // If a real repo is provided, create an actual worktree and persist it on the
-  // task — mirrors what the orchestrator would have done before the crash.
+  // If a real repo is provided, create an actual worktree — mirrors what the
+  // orchestrator would have done before the crash. createWorkspace persists
+  // task.workspace itself; no separate updateTaskField call is needed.
   if (repo) {
-    const record = ctx.workspaceManager.createWorkspace(task.id, "test/repo", {
+    ctx.workspaceManager.createWorkspace(task.id, "test/repo", {
       title,
       cloneUrl: repo.cloneUrl,
       thoughtsId: "crash-recovery",
-    });
-    ctx.taskEngine.updateTaskField(task.id, "workspace", {
-      repo: "test/repo",
-      branch: record.branch,
-      worktree_path: record.worktreePath,
-      thoughts_dir: record.thoughtsDir,
     });
   }
 

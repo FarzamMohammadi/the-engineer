@@ -184,7 +184,6 @@ function buildContext(
       cleanupWorkspace: vi.fn(),
       deleteRemoteBranch: vi.fn(),
       getWorktreePath: vi.fn().mockReturnValue(null),
-      registerExistingWorkspace: vi.fn(),
       pushBranch: vi.fn(),
       getWorkspaceRecord: vi.fn().mockReturnValue(null),
     } as unknown as ReviewHandlerContext["workspaceManager"],

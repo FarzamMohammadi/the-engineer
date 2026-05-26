@@ -295,7 +295,6 @@ export interface TestOrchestratorHandle {
     verifyWorkspace: Mock;
     getWorktreePath: Mock;
     getWorkspaceRecord: Mock;
-    registerExistingWorkspace: Mock;
     pushBranch: Mock;
     cleanupWorkspace: Mock;
   };
@@ -495,10 +494,8 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       branch: "engineer/task-001-test",
       worktreePath,
       baseBranch: "main",
-      baseCommit: "abc123",
       thoughtsDir,
     }),
-    registerExistingWorkspace: vi.fn(),
     pushBranch: vi.fn(),
     cleanupWorkspace: vi.fn(),
   };

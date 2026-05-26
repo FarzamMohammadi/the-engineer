@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md) — why we're doing this, what done looks like
 - [approach.md](approach.md) — strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: `slices/07-workspace-session.md` — Sessions 1-3 complete, Session 4 next
+- Current slice: `slices/07-workspace-session.md` — Sessions 1-4 complete, Session 5 (closing sweep) next
 
 ## How This File Works
 
@@ -21,11 +21,11 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 7 — Workspace & Session** — Session 3 (workspace-manager extractions:
-session-result, skills, removeThoughtsAndPush) complete. Next: Session 4 —
-workspace-manager state simplification (persist `base_branch`, drop
-`baseCommit`, kill the in-memory `workspaces` Map, end-to-end resume flow
-verification).
+**Slice 7 — Workspace & Session** — Session 4 (workspace-manager state
+simplification: kill the `workspaces` Map, persist `base_branch`, drop
+`baseCommit` from `WorkspaceRecord`, end-to-end resume flow verification)
+complete. Next: Session 5 — closing standards sweep across every file
+touched by Sessions 1–4.
 
 **Session 1 landed** (commits `7893cf9` doc-only + `a36a213` code cut):
 - `KnowledgeStore`, knowledge schemas, knowledge table + indexes, `Dispatch.knowledge`
@@ -57,6 +57,46 @@ verification).
 - Green at commit: 2384 unit + 39 integration + 16 e2e, lint clean,
   typecheck clean.
 
+**Session 4 landed** (commits `98b70bf` code + `f7b4923` lint):
+- `WorkspaceManager` is now stateless. `private readonly workspaces = new
+  Map<...>` field deleted along with every set/get/delete mutation;
+  `registerExistingWorkspace` deleted (DB is the only state — nothing to
+  register). Every read goes through a private `readRecord` helper that
+  projects `task.workspace` via `taskEngine.getTask(taskId)`.
+- `TaskWorkspaceSchema` gains `base_branch: string` (non-nullable). Kills
+  the silent wrong-base bug on restart that `registerExistingWorkspace`
+  used to mask (hardcoded `default_base_branch` + empty `baseCommit`).
+- `WorkspaceRecord.baseCommit` dropped — read nowhere post-creation; kept
+  as a local in `createWorkspace` purely to populate the event payload.
+- Constructor takes an options object (`WorkspaceManagerDeps`) including
+  the new `taskEngine: ITaskEngine` dep. 5 deps past coding-standards § 3
+  positional ideal.
+- `createWorkspace` owns the `taskEngine.updateTaskField("workspace", ...)`
+  write so persistence and worktree creation are a single contract
+  (eliminates the coordination foot-gun for callers).
+- `cleanupWorkspace` leaves `task.workspace` intact post-cleanup; the
+  `workspace.cleaned` event is the canonical audit trail. No `cleaned_at`
+  field added — decision recorded in the session log.
+- Resilience lens: `taskEngine.getTask` exceptions propagate out of
+  `readRecord` — no try/catch around DB calls. Fail loud per § 15.
+- `workspace-lifecycle.setupWorkspace` simplified: no `registerExisting
+  Workspace` calls on rework/resume; resume path becomes early return
+  ("DB-backed reads work as-is"). Persistence write removed (createWorkspace
+  owns it now).
+- `review-handler.tryRemoveThoughtsBeforeMerge` drops its re-register dance
+  + stale "until Session 4's stateless refactor" comment.
+- `EVENTS` declaration gets an explicit "subscribers: [] is intentional
+  (audit-trail-only)" comment per Decision #12.
+- New unit test asserts the resume flow contract: `base_branch` persists
+  on create + a fresh WorkspaceManager over the same DB reads it back.
+  Plus targeted assertions on the new "task.workspace retained as audit
+  post-cleanup" semantics and the schema's `base_branch` requirement.
+- Test helper `test-workspace-manager.ts` wires a real `TaskEngine` over
+  the test DB and exposes `setupTask(taskId)` + `createWorkspaceManager()`
+  so tests can simulate restart over the same DB.
+- Green at commit: 2389 unit + 39 integration + 16 e2e, lint clean
+  (0 errors, 0 new warnings), typecheck clean.
+
 **Session 3 landed** (commit `85afd55`):
 - `core/session-result/` extracted from orchestrator — three pure functions
   (read/write template/backup) consumed by workspace-manager and llm-caller
@@ -87,12 +127,18 @@ repo knowledge + preferences injected into the system prompt at session startup)
 folded into Slice 7. Reason: Slice 7 is shaped as cuts and reshapes — adding a new
 feature blurs that. Future-considerations entry captures the shape.
 
-**Plan deltas vs `slice-07-workspace-session.md`:** Sessions 1-3 executed the
-plan's task lists. One scope addition during Session 3: hoisted the
-`workspace_root` tilde expansion from WorkspaceManager into `system.ts` to
-avoid duplicating the expansion inside SkillsManager (single source of truth
-for the canonical path). ~6-line change, contained, preserves behavior. Remaining
-Sessions 4–5 unchanged.
+**Plan deltas vs `slice-07-workspace-session.md`:** Sessions 1-4 executed the
+plan's task lists. Two scope additions:
+- Session 3 hoisted the `workspace_root` tilde expansion from WorkspaceManager
+  into `system.ts` (SSOT for the canonical path).
+- Session 4 moved the `taskEngine.updateTaskField("workspace", ...)` write
+  from `workspace-lifecycle.setupWorkspace` into `WorkspaceManager.createWorkspace`
+  itself. Rationale: with the Map gone, "create the worktree" and "persist
+  the workspace shape" become a single atomic contract — callers can't
+  forget the second step, tests don't need a manual updateTaskField after
+  every create.
+
+Remaining Session 5 (closing standards sweep) unchanged.
 
 Methodology refinements (commits `b41aff7`, `adb6f66` from Session 31): `approach.md`
 codifies "What Each RRP Must Hunt For", "Presenting Findings During RRP", and

@@ -198,8 +198,8 @@ describe("TaskEngine", () => {
       expect(task.session_id).toBeNull();
       expect(task.started_at).toBeNull();
       expect(task.completed_at).toBeNull();
-      expect(task.llm_tokens).toBe(0);
-      expect(task.llm_cost_usd).toBe(0);
+      expect(task.agent_tokens).toBe(0);
+      expect(task.agent_cost_usd).toBe(0);
       expect(task.compute_time_ms).toBe(0);
     });
 
@@ -606,8 +606,8 @@ describe("TaskEngine", () => {
       const retrieved = assertDefined(engine.getTask(task.id), "task");
       expect(typeof retrieved.id).toBe("string");
       expect(typeof retrieved.priority).toBe("number");
-      expect(typeof retrieved.llm_tokens).toBe("number");
-      expect(typeof retrieved.llm_cost_usd).toBe("number");
+      expect(typeof retrieved.agent_tokens).toBe("number");
+      expect(typeof retrieved.agent_cost_usd).toBe("number");
       expect(typeof retrieved.compute_time_ms).toBe("number");
       expect(typeof retrieved.created_at).toBe("string");
     });
@@ -817,8 +817,8 @@ describe("TaskEngine", () => {
       const task = engine.createTask(makeInput());
       engine.updateTracking(task.id, 1000, 0.05, 500);
       const updated = assertDefined(engine.getTask(task.id), "task");
-      expect(updated.llm_tokens).toBe(1000);
-      expect(updated.llm_cost_usd).toBeCloseTo(0.05);
+      expect(updated.agent_tokens).toBe(1000);
+      expect(updated.agent_cost_usd).toBeCloseTo(0.05);
       expect(updated.compute_time_ms).toBe(500);
     });
 
@@ -828,8 +828,8 @@ describe("TaskEngine", () => {
       engine.updateTracking(task.id, 2000, 0.1, 300);
       engine.updateTracking(task.id, 500, 0.02, 200);
       const updated = assertDefined(engine.getTask(task.id), "task");
-      expect(updated.llm_tokens).toBe(3500);
-      expect(updated.llm_cost_usd).toBeCloseTo(0.17);
+      expect(updated.agent_tokens).toBe(3500);
+      expect(updated.agent_cost_usd).toBeCloseTo(0.17);
       expect(updated.compute_time_ms).toBe(1000);
     });
 
@@ -837,8 +837,8 @@ describe("TaskEngine", () => {
       const task = engine.createTask(makeInput());
       engine.updateTracking(task.id, 0, 0, 0);
       const updated = assertDefined(engine.getTask(task.id), "task");
-      expect(updated.llm_tokens).toBe(0);
-      expect(updated.llm_cost_usd).toBe(0);
+      expect(updated.agent_tokens).toBe(0);
+      expect(updated.agent_cost_usd).toBe(0);
       expect(updated.compute_time_ms).toBe(0);
     });
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { InferenceResult, TriggerEvent } from "../../src/schemas/adapters.js";
+import type { AgentRunResult, TriggerEvent } from "../../src/schemas/adapters.js";
 import type { Event } from "../../src/schemas/events.js";
 import { TaskStates } from "../../src/schemas/task.js";
 import { writeSessionResultFromPrompt } from "../helpers/fake-cli-writer.js";
@@ -38,8 +38,8 @@ function makeTriggerEvent(overrides?: Partial<TriggerEvent>): TriggerEvent {
   };
 }
 
-/** Build an InferenceResult with the given JSON content (wrapped in agent loop format). */
-function makeResponse(json: Record<string, unknown>): InferenceResult {
+/** Build an AgentRunResult with the given JSON content (wrapped in agent loop format). */
+function makeResponse(json: Record<string, unknown>): AgentRunResult {
   return {
     content: JSON.stringify({ action: "done", result: json }),
     cost_usd: 0.003,
@@ -56,7 +56,7 @@ function makeResponse(json: Record<string, unknown>): InferenceResult {
  * orchestrator commits/pushes and creates a PR — the pipeline exits at `review_pending`
  * for human review. Integration runs later, only after the PR is merged.
  */
-function makeFullPipelineResponses(): InferenceResult[] {
+function makeFullPipelineResponses(): AgentRunResult[] {
   const ready = (extra: Record<string, unknown> = {}) => makeResponse({ status: "ready", ...extra });
   return [
     ready(), // requirements_gathering
@@ -112,7 +112,7 @@ describe("E2E: Task happy path", () => {
     ctx.fakes.llm.setInferSideEffect(writeSessionResultFromPrompt);
 
     await ctx.registry.initializePlugin("fake-trigger", {});
-    await ctx.registry.initializePlugin("fake-llm", {});
+    await ctx.registry.initializePlugin("fake-agent", {});
 
     await ctx.daemon.start();
 
@@ -150,7 +150,7 @@ describe("E2E: Task happy path", () => {
     ctx.fakes.trigger.setEvents([makeTriggerEvent({ title: "Routing test" })]);
 
     await ctx.registry.initializePlugin("fake-trigger", {});
-    await ctx.registry.initializePlugin("fake-llm", {});
+    await ctx.registry.initializePlugin("fake-agent", {});
 
     await ctx.daemon.start();
 
@@ -180,7 +180,7 @@ describe("E2E: Task happy path", () => {
     ctx.fakes.llm.setInferSideEffect(writeSessionResultFromPrompt);
 
     await ctx.registry.initializePlugin("fake-trigger", {});
-    await ctx.registry.initializePlugin("fake-llm", {});
+    await ctx.registry.initializePlugin("fake-agent", {});
 
     await ctx.daemon.start();
     ctx.clock.advance(1_000);
@@ -206,7 +206,7 @@ describe("E2E: Task happy path", () => {
     ctx.fakes.trigger.setEvents([event]);
 
     await ctx.registry.initializePlugin("fake-trigger", {});
-    await ctx.registry.initializePlugin("fake-llm", {});
+    await ctx.registry.initializePlugin("fake-agent", {});
 
     await ctx.daemon.start();
 

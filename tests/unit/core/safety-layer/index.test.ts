@@ -526,7 +526,7 @@ describe("SafetyLayer — snapshot", () => {
         task_id: "task-1",
         repo: "owner/repo",
         provider_id: "claude-api",
-        operation: "llm_call",
+        operation: "agent_call",
         spend_usd: 0.3,
         duration_ms: null,
       },

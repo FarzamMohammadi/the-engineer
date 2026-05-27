@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  InferenceRequestSchema,
-  InferenceResultSchema,
+  AgentRunRequestSchema,
+  AgentRunResultSchema,
   PluginManifestSchema,
   TriggerEventSchema,
 } from "../../src/schemas/adapters.js";
 import { EventSchema } from "../../src/schemas/events.js";
 import { TaskSchema, TaskStates } from "../../src/schemas/task.js";
 import {
+  createMockAgentRunRequest,
+  createMockAgentRunResult,
   createMockEvent,
-  createMockInferenceRequest,
-  createMockInferenceResult,
   createMockManifest,
   createMockTask,
   createMockTriggerEvent,
@@ -25,9 +25,9 @@ describe("mock-factories", () => {
     });
 
     it("applies overrides", () => {
-      const manifest = createMockManifest({ id: "custom-id", type: "llm" });
+      const manifest = createMockManifest({ id: "custom-id", type: "agent" });
       expect(manifest.id).toBe("custom-id");
-      expect(manifest.type).toBe("llm");
+      expect(manifest.type).toBe("agent");
     });
 
     it("provides sensible defaults", () => {
@@ -93,26 +93,26 @@ describe("mock-factories", () => {
     });
   });
 
-  describe("createMockInferenceRequest", () => {
-    it("produces a Zod-valid InferenceRequest", () => {
-      const request = createMockInferenceRequest();
-      expect(() => InferenceRequestSchema.parse(request)).not.toThrow();
+  describe("createMockAgentRunRequest", () => {
+    it("produces a Zod-valid AgentRunRequest", () => {
+      const request = createMockAgentRunRequest();
+      expect(() => AgentRunRequestSchema.parse(request)).not.toThrow();
     });
 
     it("applies overrides", () => {
-      const request = createMockInferenceRequest({ prompt: "Custom prompt" });
+      const request = createMockAgentRunRequest({ prompt: "Custom prompt" });
       expect(request.prompt).toBe("Custom prompt");
     });
   });
 
-  describe("createMockInferenceResult", () => {
-    it("matches InferenceResult schema shape", () => {
-      const result = createMockInferenceResult();
-      expect(() => InferenceResultSchema.parse(result)).not.toThrow();
+  describe("createMockAgentRunResult", () => {
+    it("matches AgentRunResult schema shape", () => {
+      const result = createMockAgentRunResult();
+      expect(() => AgentRunResultSchema.parse(result)).not.toThrow();
     });
 
     it("always includes cost and duration data", () => {
-      const result = createMockInferenceResult();
+      const result = createMockAgentRunResult();
       expect(result).toHaveProperty("cost_usd");
       expect(result.duration_ms).toBeGreaterThanOrEqual(0);
     });

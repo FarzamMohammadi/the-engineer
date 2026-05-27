@@ -12,7 +12,7 @@ function makeConfig(overrides?: Partial<DaemonConfig["retry_policy"]>): Pick<Dae
   return {
     retry_policy: {
       crash: { backoff_minutes: [1, 5, 15, 30, 30], max_attempts: 5 },
-      llm_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
+      agent_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
       ...overrides,
     },
   };
@@ -23,7 +23,7 @@ function makeTaskEngine(taskOverrides?: Partial<Task>): ITaskEngine {
     getTask: vi.fn().mockReturnValue({
       id: "task-1",
       consecutive_crash_count: 0,
-      consecutive_llm_unavailable_count: 0,
+      consecutive_agent_unavailable_count: 0,
       ...taskOverrides,
     }),
     updateTaskField: vi.fn(),
@@ -83,8 +83,8 @@ describe("RetryPolicy", () => {
       expect(taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "not_before", expect.any(String));
     });
 
-    it("increments llm_unavailable counter and sets not_before", () => {
-      const taskEngine = makeTaskEngine({ consecutive_llm_unavailable_count: 0 });
+    it("increments agent_unavailable counter and sets not_before", () => {
+      const taskEngine = makeTaskEngine({ consecutive_agent_unavailable_count: 0 });
       const policy = createRetryPolicy({
         config: makeConfig(),
         taskEngine,
@@ -92,11 +92,11 @@ describe("RetryPolicy", () => {
         observer: makeObserver(),
       });
 
-      const result = policy.recordFailure("llm_unavailable", "task-1");
+      const result = policy.recordFailure("agent_unavailable", "task-1");
 
       expect(result.disposition).toBe("retry");
       expect(result.count).toBe(1);
-      expect(taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "consecutive_llm_unavailable_count", 1);
+      expect(taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "consecutive_agent_unavailable_count", 1);
     });
 
     it("returns terminal disposition when crash budget exhausted", () => {
@@ -115,8 +115,8 @@ describe("RetryPolicy", () => {
       expect(taskEngine.updateTaskField).not.toHaveBeenCalledWith("task-1", "not_before", expect.any(String));
     });
 
-    it("returns terminal disposition when llm_unavailable budget exhausted", () => {
-      const taskEngine = makeTaskEngine({ consecutive_llm_unavailable_count: 4 });
+    it("returns terminal disposition when agent_unavailable budget exhausted", () => {
+      const taskEngine = makeTaskEngine({ consecutive_agent_unavailable_count: 4 });
       const policy = createRetryPolicy({
         config: makeConfig(),
         taskEngine,
@@ -124,7 +124,7 @@ describe("RetryPolicy", () => {
         observer: makeObserver(),
       });
 
-      const result = policy.recordFailure("llm_unavailable", "task-1");
+      const result = policy.recordFailure("agent_unavailable", "task-1");
 
       expect(result).toEqual({ disposition: "terminal", state: "blocked", count: 5 });
     });
@@ -179,8 +179,8 @@ describe("RetryPolicy", () => {
       expect(taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "not_before", null);
     });
 
-    it("resets llm_unavailable counter and clears not_before", () => {
-      const taskEngine = makeTaskEngine({ consecutive_llm_unavailable_count: 3 });
+    it("resets agent_unavailable counter and clears not_before", () => {
+      const taskEngine = makeTaskEngine({ consecutive_agent_unavailable_count: 3 });
       const policy = createRetryPolicy({
         config: makeConfig(),
         taskEngine,
@@ -188,9 +188,9 @@ describe("RetryPolicy", () => {
         observer: makeObserver(),
       });
 
-      policy.recordSuccess("llm_unavailable", "task-1");
+      policy.recordSuccess("agent_unavailable", "task-1");
 
-      expect(taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "consecutive_llm_unavailable_count", 0);
+      expect(taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "consecutive_agent_unavailable_count", 0);
       expect(taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "not_before", null);
     });
   });

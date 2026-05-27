@@ -9,7 +9,7 @@ import { TaskSchema } from "./task.js";
 // The schema covers the *serializable* dispatch payload — fields persisted to
 // the journal, replayed at boot, or inspected by tests. The runtime `Dispatch`
 // type extends it with `signal`, an AbortSignal owned by the dispatch-tracker
-// that lets phase-runner / llm-caller / LLM plugins honor force-termination.
+// that lets phase-runner / agent-runner / agent plugins honor force-termination.
 // `signal` is runtime infrastructure, not parsed input, so it lives outside
 // the Zod schema by design (see Parse-Don't-Validate in coding-standards § 4).
 
@@ -21,6 +21,6 @@ export type DispatchPayload = z.infer<typeof DispatchSchema>;
 
 export type Dispatch = DispatchPayload & {
   /** Aborted by `dispatchTracker.terminate(...)`. Slice 6 ships the wiring;
-   *  honoring through phase-runner → llm-caller → LLM plugins lands in Slice 8. */
+   *  honoring through phase-runner → agent-runner → agent plugins lands in Slice 8. */
   readonly signal: AbortSignal;
 };

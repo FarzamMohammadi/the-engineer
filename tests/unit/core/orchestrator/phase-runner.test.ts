@@ -401,7 +401,7 @@ describe("PhaseRunner", () => {
           phase,
           vi.fn(() => {
             if (phase === Phases.requirements_gathering) {
-              return Promise.reject(new Error("LLM unavailable"));
+              return Promise.reject(new Error("agent adapter unavailable"));
             }
             return Promise.resolve(makeOutput(phase));
           }),
@@ -415,7 +415,7 @@ describe("PhaseRunner", () => {
       expect(result.outcome).toBe("error");
       if (result.outcome === "error") {
         expect(result.phase).toBe(Phases.requirements_gathering);
-        expect(result.reason).toContain("LLM unavailable");
+        expect(result.reason).toContain("agent adapter unavailable");
       }
     });
 

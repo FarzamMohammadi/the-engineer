@@ -4,7 +4,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { useSystemStatus } from "../../hooks/use-system-status";
 import { cn } from "../../lib/cn";
 
-/** Displays daemon running/stopped state with PID and LLM provider info. */
+/** Displays daemon running/stopped state with PID and agent provider info. */
 export function DaemonStatus(): React.JSX.Element {
   const { data: status, isLoading } = useSystemStatus();
 
@@ -42,7 +42,7 @@ export function DaemonStatus(): React.JSX.Element {
         {status?.daemon_pid && (
           <p className="mt-1 text-xs text-muted-foreground">
             PID {status.daemon_pid}
-            {status.llm_provider && <> &middot; {status.llm_provider}</>}
+            {status.agent_provider && <> &middot; {status.agent_provider}</>}
           </p>
         )}
       </CardContent>

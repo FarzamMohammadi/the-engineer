@@ -1,6 +1,6 @@
 import { ulid } from "ulid";
-import type { LLMAdapter } from "../../adapters/llm.js";
-import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
+import type { AgentAdapter } from "../../adapters/agent.js";
+import { AdapterTypes, type AgentRunResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import {
   CommMessageSentPayloadSchema,
@@ -14,8 +14,8 @@ import { ActionClasses, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import { type AgentRunner, createAgentRunner } from "./agent-runner.js";
 import { type AndonCord, createAndonCord } from "./andon-cord.js";
-import { type LlmCaller, createLlmCaller } from "./llm-caller.js";
 import { createPhaseHandlers } from "./phase-handlers.js";
 import { type PhaseHandlerRegistry, createPhaseHandlerRegistry, runPhasePipeline } from "./phase-runner.js";
 import { type PrManager, createPrManager } from "./pr-manager.js";
@@ -34,7 +34,7 @@ export { Outcomes } from "./types.js";
 export const EVENTS: EventDeclaration[] = [
   {
     type: EventTypes["cost.incurred"],
-    description: "Emitted after each LLM call with token/cost details",
+    description: "Emitted after each agent run with token/cost details",
     payloadSchema: CostIncurredPayloadSchema,
     publishers: ["orchestrator"],
     subscribers: [],
@@ -73,7 +73,7 @@ function createPreemptionGate(): WritablePreemptionGate {
  *
  * Derives from compiler front-end (multi-pass pipeline) + flight director
  * (coordination and communication). Delegates to focused subsystems:
- * - LlmCaller: LLM invocation, retry, cost, validation
+ * - AgentRunner: agent invocation, retry, cost, validation
  * - WorkspaceLifecycle: workspace setup, session management
  * - NotificationRouter: centralized milestone notifications, issue comments, outreach
  * - PrManager: commit, push, PR creation
@@ -86,7 +86,7 @@ function createPreemptionGate(): WritablePreemptionGate {
  */
 export class Orchestrator {
   private readonly ctx: OrchestratorContext;
-  private readonly llmCaller: LlmCaller;
+  private readonly agentRunner: AgentRunner;
   private readonly workspaceLifecycle: WorkspaceLifecycle;
   private readonly notifications: NotificationRouter;
   private readonly prManager: PrManager;
@@ -101,7 +101,7 @@ export class Orchestrator {
     this.ctx = ctx;
 
     // Create subsystems
-    this.llmCaller = createLlmCaller(this.ctx);
+    this.agentRunner = createAgentRunner(this.ctx);
     this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
     this.notifications = this.ctx.notifications;
     this.prManager = createPrManager(this.ctx, this.notifications);
@@ -121,7 +121,7 @@ export class Orchestrator {
     this.ctx.skillsManager.sync();
 
     // Build phase handler registry from extracted phase-handlers module
-    this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.llmCaller, this.ctx));
+    this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.agentRunner, this.ctx));
   }
 
   /** Signal cooperative shutdown — phases will yield at the next boundary. */
@@ -232,8 +232,8 @@ export class Orchestrator {
       blockedReason: task.blocked?.reason ?? "unknown",
     });
 
-    const llm = this.ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
-    if (!llm) {
+    const agent = this.ctx.registry.getPrimaryPlugin<AgentAdapter>(AdapterTypes.agent);
+    if (!agent) {
       return false;
     }
 
@@ -254,13 +254,13 @@ export class Orchestrator {
     );
 
     try {
-      const pipelineResult = await this.ctx.actionPipeline.execute<InferenceResult>({
+      const pipelineResult = await this.ctx.actionPipeline.execute<AgentRunResult>({
         taskId,
         actionClass: ActionClasses.read,
         details: { operation: "self_unblock_diagnosis" },
         requestedBy: "orchestrator",
         executeFn: () =>
-          llm.infer({
+          agent.run({
             prompt,
             system_prompt: null,
             cwd: null,
@@ -272,7 +272,7 @@ export class Orchestrator {
         return false;
       }
 
-      this.llmCaller.emitCostIncurred(taskId, pipelineResult.result);
+      this.agentRunner.emitCostIncurred(taskId, pipelineResult.result);
 
       const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean };
       const canResolve = parsed.can_resolve === true;

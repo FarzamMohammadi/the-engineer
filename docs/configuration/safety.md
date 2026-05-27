@@ -14,7 +14,7 @@ Set spending caps to prevent runaway costs. Warnings fire at 80% of each limit. 
 | `cost_limits.per_task.cost_usd` | number \| null | `null` | USD limit per task. `null` = unlimited. |
 | `cost_limits.daily.cost_usd` | number \| null | `null` | USD limit per day (resets at UTC midnight). |
 | `cost_limits.monthly.cost_usd` | number \| null | `null` | USD limit per month (resets on the 1st). |
-| `cost_limits.providers.<id>.daily_requests` | integer \| null | `null` | Per-provider daily request cap. Key is the plugin ID (e.g., `claude-code-llm`). |
+| `cost_limits.providers.<id>.daily_requests` | integer \| null | `null` | Per-provider daily request cap. Key is the plugin ID (e.g., `claude-code-agent`). |
 
 ```yaml
 cost_limits:

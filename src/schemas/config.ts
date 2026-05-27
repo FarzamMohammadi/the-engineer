@@ -163,7 +163,7 @@ export const DaemonConfigSchema = z.object({
           max_attempts: z.number().int().positive().default(5),
         })
         .default({}),
-      llm_unavailable: z
+      agent_unavailable: z
         .object({
           backoff_minutes: z.array(z.number().int().positive()).default([2, 5, 10, 15, 15]),
           max_attempts: z.number().int().positive().default(5),
@@ -438,7 +438,7 @@ export const CostLimitsSchema = z.object({
   providers: z
     .record(ProviderLimitSchema)
     .default({})
-    .describe("Per-provider limits. Keys are plugin IDs (e.g. 'claude-code-llm')."),
+    .describe("Per-provider limits. Keys are plugin IDs (e.g. 'claude-code-agent')."),
 });
 export type CostLimits = z.infer<typeof CostLimitsSchema>;
 

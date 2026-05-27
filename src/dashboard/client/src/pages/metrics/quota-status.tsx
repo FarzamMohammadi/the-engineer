@@ -11,7 +11,7 @@ interface QuotaStatusProps {
   isLoading: boolean;
 }
 
-/** LLM quota progress bar with usage percentage and exhaustion event history. */
+/** Agent quota progress bar with usage percentage and exhaustion event history. */
 export function QuotaStatus({ data, isLoading }: QuotaStatusProps): React.JSX.Element {
   if (isLoading) {
     return (
@@ -33,7 +33,7 @@ export function QuotaStatus({ data, isLoading }: QuotaStatusProps): React.JSX.El
           <CardTitle>Quota Status</CardTitle>
         </CardHeader>
         <CardContent>
-          <EmptyState title="No quota data" description="Quota tracking activates after the first LLM call" />
+          <EmptyState title="No quota data" description="Quota tracking activates after the first agent run" />
         </CardContent>
       </Card>
     );

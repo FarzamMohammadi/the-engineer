@@ -120,7 +120,7 @@ describe("E2E: Daemon lifecycle", () => {
 
     // Initialize plugins so dispatch works
     await ctx.registry.initializePlugin("fake-trigger", {});
-    await ctx.registry.initializePlugin("fake-llm", {});
+    await ctx.registry.initializePlugin("fake-agent", {});
 
     await ctx.daemon.start();
 

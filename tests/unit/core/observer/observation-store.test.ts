@@ -103,14 +103,14 @@ describe("Observer", () => {
 
   describe("startSpan() + end()", () => {
     it("returns ObservationSpan with valid ULID id", () => {
-      const span = handle.observer.startSpan("llm_call", "test");
+      const span = handle.observer.startSpan("agent_call", "test");
       expect(span.id).toMatch(ULID_PATTERN);
       span.end();
     });
 
     it("persists initial row immediately with null end_time", () => {
-      const span = handle.observer.startSpan("llm_call", "test");
-      const results = handle.observer.query({ type: "llm_call" });
+      const span = handle.observer.startSpan("agent_call", "test");
+      const results = handle.observer.query({ type: "agent_call" });
       expect(results).toHaveLength(1);
       expect(results[0]?.end_time).toBeNull();
       expect(results[0]?.duration_ms).toBeNull();
@@ -118,37 +118,37 @@ describe("Observer", () => {
     });
 
     it("end() sets end_time and duration_ms", () => {
-      const span = handle.observer.startSpan("llm_call", "test");
+      const span = handle.observer.startSpan("agent_call", "test");
       span.end();
 
-      const results = handle.observer.query({ type: "llm_call" });
+      const results = handle.observer.query({ type: "agent_call" });
       expect(results[0]?.end_time).not.toBeNull();
       expect(results[0]?.duration_ms).toBeTypeOf("number");
       expect(results[0]?.duration_ms).toBeGreaterThanOrEqual(0);
     });
 
     it("end() stores output as JSON", () => {
-      const span = handle.observer.startSpan("llm_call", "test");
+      const span = handle.observer.startSpan("agent_call", "test");
       span.end({ tokens: 100, cost: 0.01 });
 
-      const results = handle.observer.query({ type: "llm_call" });
+      const results = handle.observer.query({ type: "agent_call" });
       expect(results[0]?.output).toEqual({ tokens: 100, cost: 0.01 });
     });
 
     it("end() stores input from startSpan", () => {
-      const span = handle.observer.startSpan("llm_call", "test", { prompt: "hello" });
+      const span = handle.observer.startSpan("agent_call", "test", { prompt: "hello" });
       span.end();
 
-      const results = handle.observer.query({ type: "llm_call" });
+      const results = handle.observer.query({ type: "agent_call" });
       expect(results[0]?.input).toEqual({ prompt: "hello" });
     });
 
     it("double end() is idempotent", () => {
-      const span = handle.observer.startSpan("llm_call", "test");
+      const span = handle.observer.startSpan("agent_call", "test");
       span.end({ first: true });
       span.end({ second: true });
 
-      const results = handle.observer.query({ type: "llm_call" });
+      const results = handle.observer.query({ type: "agent_call" });
       expect(results).toHaveLength(1);
       expect(results[0]?.output).toEqual({ first: true });
     });
@@ -178,18 +178,18 @@ describe("Observer", () => {
   describe("startChild()", () => {
     it("sets parent_observation_id to parent span id", () => {
       const parent = handle.observer.startSpan("agent_iteration", "iter-1");
-      const child = parent.startChild("llm_call", "completion");
+      const child = parent.startChild("agent_call", "completion");
       child.end();
       parent.end();
 
-      const results = handle.observer.query({ type: "llm_call" });
+      const results = handle.observer.query({ type: "agent_call" });
       expect(results).toHaveLength(1);
       expect(results[0]?.parent_observation_id).toBe(parent.id);
     });
 
     it("supports multiple children under one parent", () => {
       const parent = handle.observer.startSpan("agent_iteration", "iter-1");
-      const child1 = parent.startChild("llm_call", "call-1");
+      const child1 = parent.startChild("agent_call", "call-1");
       const child2 = parent.startChild("tool_execution", "bash");
       child1.end();
       child2.end();
@@ -203,7 +203,7 @@ describe("Observer", () => {
     it("supports grandchild nesting", () => {
       const parent = handle.observer.startSpan("phase_transition", "execution");
       const child = parent.startChild("agent_iteration", "iter-1");
-      const grandchild = child.startChild("llm_call", "completion");
+      const grandchild = child.startChild("agent_call", "completion");
       grandchild.end();
       child.end();
       parent.end();
@@ -220,11 +220,11 @@ describe("Observer", () => {
         task_id: "task-1",
         trace_id: "trace-1",
       });
-      const child = parent.startChild("llm_call", "completion");
+      const child = parent.startChild("agent_call", "completion");
       child.end();
       parent.end();
 
-      const results = handle.observer.query({ type: "llm_call" });
+      const results = handle.observer.query({ type: "agent_call" });
       expect(results[0]?.task_id).toBe("task-1");
       expect(results[0]?.trace_id).toBe("trace-1");
     });
@@ -359,7 +359,7 @@ describe("Observer", () => {
     it("includes recovery info when provided", () => {
       handle.observer.recordError(
         new Error("timeout"),
-        { operation: "llm_call", component: "orchestrator" },
+        { operation: "agent_call", component: "orchestrator" },
         { action: "retry_with_backoff", success: true },
       );
 
@@ -421,7 +421,7 @@ describe("Observer", () => {
     beforeEach(() => {
       handle.observer.observe("lifecycle", "boot", {}, { task_id: "task-1", trace_id: "trace-1", phase: "init" });
       handle.observer.observe(
-        "llm_call",
+        "agent_call",
         "completion",
         {},
         { task_id: "task-1", trace_id: "trace-1", phase: "execution" },
@@ -508,7 +508,7 @@ describe("Observer", () => {
       const received: Observation[] = [];
       handle.observer.subscribe((obs) => received.push(obs));
 
-      const span = handle.observer.startSpan("llm_call", "test");
+      const span = handle.observer.startSpan("agent_call", "test");
       expect(received).toHaveLength(1);
 
       span.end({ result: "ok" });

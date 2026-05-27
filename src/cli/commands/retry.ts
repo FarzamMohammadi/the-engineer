@@ -22,7 +22,7 @@ interface TaskRow {
 /**
  * Retry a blocked or failed task by transitioning it back to queued.
  *
- * Resets both per-category retry counters (crash, LLM-unavailable) and
+ * Resets both per-category retry counters (crash, agent-unavailable) and
  * clears `not_before` so the retry cycle starts fresh. Direct DB access
  * (no full bootstrap) keeps it fast and usable even when the daemon is stopped.
  */
@@ -85,9 +85,9 @@ function retryTask(db: BetterSqlite3.Database, taskId: string): number {
       clearBlockedPreservingContacts(db, taskId, task.blocked);
     }
 
-    db.prepare("UPDATE tasks SET consecutive_crash_count = 0, consecutive_llm_unavailable_count = 0 WHERE id = ?").run(
-      taskId,
-    );
+    db.prepare(
+      "UPDATE tasks SET consecutive_crash_count = 0, consecutive_agent_unavailable_count = 0 WHERE id = ?",
+    ).run(taskId);
   })();
 
   if (out.mode === "json") {

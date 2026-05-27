@@ -4,8 +4,8 @@ import type { TriggerAdapter } from "../../../../src/adapters/trigger.js";
 import { Registry, type RegistryOptions } from "../../../../src/core/registry/index.js";
 import type { AdapterType, PluginManifest } from "../../../../src/schemas/adapters.js";
 import { PluginHealthStates } from "../../../../src/schemas/adapters.js";
+import { FakeAgentPlugin } from "../../../helpers/fake-plugins/fake-agent/index.js";
 import { FakeCommunicationPlugin } from "../../../helpers/fake-plugins/fake-comm/index.js";
-import { FakeLLMPlugin } from "../../../helpers/fake-plugins/fake-llm/index.js";
 import { FakeTriggerPlugin } from "../../../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../../../helpers/mock-factories.js";
 import { type TestEventBusHandle, createTestEventBus } from "../../../helpers/test-event-bus.js";
@@ -170,7 +170,7 @@ describe("Registry", () => {
       const t2 = new FakeTriggerPlugin();
       registry.register(createManifest("trigger", "t1"), t1);
       registry.register(createManifest("trigger", "t2"), t2);
-      registry.register(createManifest("llm", "l1"), new FakeLLMPlugin());
+      registry.register(createManifest("agent", "l1"), new FakeAgentPlugin());
 
       const triggers = registry.getPluginsByType<TriggerAdapter>("trigger");
 
@@ -260,12 +260,12 @@ describe("Registry", () => {
 
       const t1 = new FakeTriggerPlugin();
       const c1 = new FakeCommunicationPlugin();
-      const l1 = new FakeLLMPlugin();
+      const l1 = new FakeAgentPlugin();
 
       // Register in order: t1(1), c1(2), l1(3)
       registry.register(createManifest("trigger", "t1"), t1);
       registry.register(createManifest("communication", "c1"), c1);
-      registry.register(createManifest("llm", "l1"), l1);
+      registry.register(createManifest("agent", "l1"), l1);
 
       // Spy on shutdown to track order
       vi.spyOn(t1, "shutdown").mockImplementation(() => {
@@ -589,7 +589,7 @@ describe("Registry", () => {
   describe("getAllHealthRecords", () => {
     it("returns health records for all registered plugins", () => {
       registry.register(createManifest("trigger", "t1"), new FakeTriggerPlugin());
-      registry.register(createManifest("llm", "l1"), new FakeLLMPlugin());
+      registry.register(createManifest("agent", "l1"), new FakeAgentPlugin());
 
       const records = registry.getAllHealthRecords();
 

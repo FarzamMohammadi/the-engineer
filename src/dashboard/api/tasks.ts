@@ -17,7 +17,7 @@ export interface TaskRoutesDeps {
 
 /** Columns for the lightweight task list. Avoids needing rowToTask. */
 const LIST_COLUMNS = `id, title, state, sub_state, phase, priority, repo,
-  llm_cost_usd, llm_tokens, created_at, started_at, completed_at,
+  agent_cost_usd, agent_tokens, created_at, started_at, completed_at,
   last_transition_at, workspace`;
 
 interface TaskListRow {
@@ -28,8 +28,8 @@ interface TaskListRow {
   phase: string | null;
   priority: number;
   repo: string | null;
-  llm_cost_usd: number;
-  llm_tokens: number;
+  agent_cost_usd: number;
+  agent_tokens: number;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -45,8 +45,8 @@ interface TaskListItem {
   phase: string | null;
   priority: number;
   repo: string | null;
-  llm_cost_usd: number;
-  llm_tokens: number;
+  agent_cost_usd: number;
+  agent_tokens: number;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -68,8 +68,8 @@ function mapListRow(row: TaskListRow): TaskListItem {
     phase: row.phase,
     priority: row.priority,
     repo: row.repo,
-    llm_cost_usd: row.llm_cost_usd,
-    llm_tokens: row.llm_tokens,
+    agent_cost_usd: row.agent_cost_usd,
+    agent_tokens: row.agent_tokens,
     created_at: row.created_at,
     started_at: row.started_at,
     completed_at: row.completed_at,
@@ -308,12 +308,12 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     return c.json({ traces });
   });
 
-  /** LLM traces for a task. */
-  app.get("/:id/llm-traces", (c) => {
+  /** Agent traces for a task. */
+  app.get("/:id/agent-traces", (c) => {
     const taskId = c.req.param("id");
     const phase = c.req.query("phase");
     const traces = deps.observationStore.query({
-      type: "llm_call",
+      type: "agent_call",
       task_id: taskId,
       phase: phase ?? undefined,
       limit: 1000,

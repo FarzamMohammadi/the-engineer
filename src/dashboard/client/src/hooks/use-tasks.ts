@@ -64,12 +64,12 @@ export function useTaskPhases(taskId: string | undefined): ReturnType<typeof use
   });
 }
 
-/** Fetch and cache LLM call traces for a task from /api/tasks/:id/llm-traces. */
-export function useTaskLlmTraces(taskId: string | undefined): ReturnType<typeof useQuery<Observation[]>> {
+/** Fetch and cache agent call traces for a task from /api/tasks/:id/agent-traces. */
+export function useTaskAgentTraces(taskId: string | undefined): ReturnType<typeof useQuery<Observation[]>> {
   return useQuery({
-    queryKey: queryKeys.tasks.llmTraces(taskId ?? ""),
+    queryKey: queryKeys.tasks.agentTraces(taskId ?? ""),
     queryFn: async () => {
-      const response = await apiFetch<{ traces: Observation[] }>(`/tasks/${taskId}/llm-traces`);
+      const response = await apiFetch<{ traces: Observation[] }>(`/tasks/${taskId}/agent-traces`);
       return response.traces;
     },
     enabled: !!taskId,

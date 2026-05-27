@@ -47,10 +47,10 @@ export function createCostLimitQueue(
         `Cost limit breached for active task ${taskId}`,
         [
           { id: "terminate_now", description: "Abort dispatch and notify owner immediately" },
-          { id: "let_finish", description: "Let the current LLM call finish before blocking" },
+          { id: "let_finish", description: "Let the current agent run finish before blocking" },
         ],
         "terminate_now",
-        "Owner must hear about the limit before the next LLM call accrues more spend",
+        "Owner must hear about the limit before the next agent run accrues more spend",
         1,
         { task_id: taskId },
       );
@@ -59,7 +59,7 @@ export function createCostLimitQueue(
       // Termination is async via the dispatch-tracker — the scheduler's terminate
       // routing will transition the task to `blocked` when the in-flight dispatch
       // settles. But the owner must hear about the limit *now*, not whenever the
-      // LLM call eventually finishes, so notifications fire immediately.
+      // agent run eventually finishes, so notifications fire immediately.
       dispatchTracker.terminate(taskId, "cost_limit_reached");
       notifications.notify({ kind: NotificationKinds.cost_limit, taskId });
       notifications.notify({

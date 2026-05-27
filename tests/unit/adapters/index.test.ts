@@ -19,9 +19,9 @@ describe("SDK boundary (src/adapters/index.ts)", () => {
       expect(sdk.CommunicationAdapter.prototype).toBeInstanceOf(sdk.BaseAdapter);
     });
 
-    it("exports LLMAdapter", () => {
-      expect(sdk.LLMAdapter).toBeDefined();
-      expect(sdk.LLMAdapter.prototype).toBeInstanceOf(sdk.BaseAdapter);
+    it("exports AgentAdapter", () => {
+      expect(sdk.AgentAdapter).toBeDefined();
+      expect(sdk.AgentAdapter.prototype).toBeInstanceOf(sdk.BaseAdapter);
     });
 
     it("exports GitHostingAdapter", () => {
@@ -69,9 +69,9 @@ describe("SDK boundary (src/adapters/index.ts)", () => {
       "TaskReconciliationInputSchema",
       "ReconciliationResultSchema",
       // LLM
-      "InferenceRequestSchema",
-      "InferenceResultSchema",
-      "LLMCapabilitiesSchema",
+      "AgentRunRequestSchema",
+      "AgentRunResultSchema",
+      "AgentCapabilitiesSchema",
       // Git Hosting
       "PROptionsSchema",
       "PRResultSchema",

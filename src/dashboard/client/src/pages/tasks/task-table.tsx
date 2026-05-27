@@ -43,17 +43,17 @@ const columns: ColumnDef<TaskListItem>[] = [
     size: 220,
   },
   {
-    accessorKey: "llm_cost_usd",
+    accessorKey: "agent_cost_usd",
     header: ({ column }) => <SortButton column={column} label="Cost" />,
-    cell: ({ row }) => <CostDisplay amount={row.original.llm_cost_usd} size="sm" />,
+    cell: ({ row }) => <CostDisplay amount={row.original.agent_cost_usd} size="sm" />,
     size: 80,
   },
   {
-    accessorKey: "llm_tokens",
+    accessorKey: "agent_tokens",
     header: ({ column }) => <SortButton column={column} label="Tokens" />,
     cell: ({ row }) => (
       <span className="font-mono text-xs tabular-nums text-muted-foreground">
-        {formatTokens(row.original.llm_tokens)}
+        {formatTokens(row.original.agent_tokens)}
       </span>
     ),
     size: 80,

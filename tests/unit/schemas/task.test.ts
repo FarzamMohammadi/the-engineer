@@ -347,8 +347,8 @@ describe("TaskSchema", () => {
     requirements_loop_count: 0,
     skip_research: false,
     priority: 50,
-    llm_tokens: 0,
-    llm_cost_usd: 0,
+    agent_tokens: 0,
+    agent_cost_usd: 0,
     compute_time_ms: 0,
     created_at: "2026-03-10T12:00:00.000Z",
     started_at: null,
@@ -358,7 +358,7 @@ describe("TaskSchema", () => {
     thoughts_id: null,
     not_before: null,
     consecutive_crash_count: 0,
-    consecutive_llm_unavailable_count: 0,
+    consecutive_agent_unavailable_count: 0,
     session_id: null,
   };
 

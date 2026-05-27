@@ -4,7 +4,7 @@ import { EventBus } from "../../src/core/event-bus/index.js";
 import { Registry } from "../../src/core/registry/index.js";
 import { PluginHealthStates } from "../../src/schemas/adapters.js";
 import type { Event } from "../../src/schemas/events.js";
-import { FakeLLMPlugin } from "../helpers/fake-plugins/fake-llm/index.js";
+import { FakeAgentPlugin } from "../helpers/fake-plugins/fake-agent/index.js";
 import { FakeTriggerPlugin } from "../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../helpers/mock-factories.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
@@ -122,10 +122,10 @@ describe("Health state machine (integration)", () => {
     setup();
 
     const trigger = new FakeTriggerPlugin();
-    const llm = new FakeLLMPlugin();
+    const llm = new FakeAgentPlugin();
 
     registry.register(createMockManifest({ id: "t1", type: "trigger", name: "Trigger" }), trigger);
-    registry.register(createMockManifest({ id: "l1", type: "llm", name: "LLM" }), llm);
+    registry.register(createMockManifest({ id: "l1", type: "agent", name: "Agent" }), llm);
 
     await registry.initializePlugin("t1", {});
     await registry.initializePlugin("l1", {});

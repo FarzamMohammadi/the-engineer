@@ -37,7 +37,7 @@ Each concurrent task spawns a CLI agent process. Memory usage scales linearly �
 ## Retry Policy
 
 Task-level retry semantics live in one Core-owned module, called from the scheduler
-(crash path, LLM-unavailable path) and from boot recovery. Each category has its own
+(crash path, agent-unavailable path) and from boot recovery. Each category has its own
 counter field on the task row, its own backoff schedule, and its own terminal disposition.
 Configuration is per-category — both shape the *automatic* retry budget the daemon
 applies before owner intervention is required.
@@ -46,10 +46,10 @@ applies before owner intervention is required.
 |-------|------|---------|-------------|
 | `retry_policy.crash.backoff_minutes` | integer[] | `[1, 5, 15, 30, 30]` | Backoff schedule (in minutes) applied after each orchestrator crash. Index N is the wait before retry N+1. Past the array length, the last entry repeats until `max_attempts`. |
 | `retry_policy.crash.max_attempts` | integer | `5` | Crashes before the task is marked `failed`. Owner can recover via `engineer retry <task-id>` after addressing the root cause. |
-| `retry_policy.llm_unavailable.backoff_minutes` | integer[] | `[2, 5, 10, 15, 15]` | Backoff schedule applied each time the LLM adapter is unreachable, blocking the task. |
-| `retry_policy.llm_unavailable.max_attempts` | integer | `5` | LLM-unavailability cycles before the task stays blocked until the owner explicitly unblocks. |
+| `retry_policy.agent_unavailable.backoff_minutes` | integer[] | `[2, 5, 10, 15, 15]` | Backoff schedule applied each time the agent adapter is unreachable, blocking the task. |
+| `retry_policy.agent_unavailable.max_attempts` | integer | `5` | agent-unavailability cycles before the task stays blocked until the owner explicitly unblocks. |
 
-**Categories are independent.** A task whose LLM adapter is briefly unavailable does
+**Categories are independent.** A task whose agent adapter is briefly unavailable does
 not lose any of its crash budget, and a successful pass through any phase resets both
 counters. The same applies at boot — orphaned active tasks are routed through the
 crash category, so a persistent boot-loop on a poison task exhausts the budget and

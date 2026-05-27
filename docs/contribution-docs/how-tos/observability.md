@@ -16,7 +16,7 @@ IObserver (what components use)
     └── Tracing ──→ ObservationStore ──→ SQLite (observations table)
                         │
                         ├── ObserverStream ──→ SSE to dashboard (real-time)
-                        └── BlobStore ──→ content-addressable files (LLM prompts/responses)
+                        └── BlobStore ──→ content-addressable files (agent prompts/responses)
 ```
 
 **Three distinct systems, one entry point:**
@@ -27,7 +27,7 @@ IObserver (what components use)
 | Tracing | Dashboard visibility | SQLite `observations` table | `observer.startSpan/observe/recordDecision/recordError()` |
 | Event Bus | Audit trail | SQLite `events` table | `eventBus.publish()` (separate from observer) |
 
-The Event Bus is a separate system — it records business events (task created, state changed, cost incurred). The observer records everything else (what's happening inside components, LLM calls, decisions, errors).
+The Event Bus is a separate system — it records business events (task created, state changed, cost incurred). The observer records everything else (what's happening inside components, agent runs, decisions, errors).
 
 ---
 
@@ -89,12 +89,12 @@ observer.observe("phase_transition", "execution_started", {
 }, { task_id: taskId, trace_id: traceId });
 
 // Span (has duration — wraps an operation)
-const span = observer.startSpan("llm_call", "planning_completion", {
+const span = observer.startSpan("agent_call", "planning_completion", {
   model: "claude-sonnet-4-20250514", promptLength: 4200,
 }, { task_id: taskId, trace_id: traceId, phase: "planning" });
 
 try {
-  const result = await callLlm(...);
+  const result = await run(...);
   span.end({ tokensIn: result.tokens_in, tokensOut: result.tokens_out });
 } catch (error) {
   span.setError(error);
@@ -152,8 +152,8 @@ myObserver.info("Task created", { taskId });
 
 | Type | When to use |
 |------|-------------|
-| `agent_iteration` | One cycle of the LLM agent loop |
-| `llm_call` | Direct LLM provider invocation |
+| `agent_iteration` | One cycle of the agent execution loop |
+| `agent_call` | Direct agent invocation |
 | `tool_execution` | Tool/action execution (bash, file write, etc.) |
 | `phase_transition` | Orchestrator phase change |
 | `decision_point` | Structured decision with alternatives and reasoning |
@@ -193,7 +193,7 @@ Every observer child is tagged with a `ComponentTag` — a TypeScript string uni
 daemon, registry, orchestrator, task-engine, safety, session-memory,
 workspace-manager, event-bus, people-directory, config, cli,
 action-pipeline, hooks, observer, pr-manager, phase-runner,
-llm-caller, agent-loop, plugin-loader
+agent-runner, agent-loop, plugin-loader
 ```
 
 Tags appear in every log line's `component` field. Use the existing tag for your component. If adding a new component, add its tag to the union in `src/core/logging.ts`.
@@ -326,7 +326,7 @@ CREATE TABLE observations (
 
 **File:** `src/core/observer/blob-store.ts`
 
-Content-addressable storage for large content (LLM prompts/responses). Uses SHA-256 hashing with Git-like directory structure:
+Content-addressable storage for large content (agent prompts/responses). Uses SHA-256 hashing with Git-like directory structure:
 
 ```
 ~/.engineer/traces/blobs/
@@ -334,7 +334,7 @@ Content-addressable storage for large content (LLM prompts/responses). Uses SHA-
   cd/cdef5678...
 ```
 
-Stored content is deduped by hash. Used by the orchestrator's LLM caller to avoid storing multi-KB prompts in the observations table.
+Stored content is deduped by hash. Used by the orchestrator's agent runner to avoid storing multi-KB prompts in the observations table.
 
 ---
 
@@ -375,7 +375,7 @@ const handle = createTestObserver();
 
 // ... do work that generates observations ...
 
-const observations = handle.observer.query({ type: "llm_call", task_id: "task-1" });
+const observations = handle.observer.query({ type: "agent_call", task_id: "task-1" });
 expect(observations).toHaveLength(1);
 
 // Cleanup

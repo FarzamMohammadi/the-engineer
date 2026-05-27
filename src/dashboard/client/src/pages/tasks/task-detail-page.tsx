@@ -9,16 +9,16 @@ import { useCancelTask, useTaskDetail } from "../../hooks/use-tasks";
 import { ROUTES } from "../../lib/routes";
 import type { TaskDetail } from "../../types/api";
 import { BlockedResponse } from "./blocked-response";
-import { TaskLlmTab } from "./task-llm-tab";
+import { TaskAgentTab } from "./task-agent-tab";
 import { TaskOverviewTab } from "./task-overview-tab";
 import { TaskPhasesTab } from "./task-phases-tab";
 import { TaskTimelineTab } from "./task-timeline-tab";
 import { TaskToolsTab } from "./task-tools-tab";
 
-const TAB_ROUTES = ["overview", "timeline", "phases", "llm", "tools"] as const;
+const TAB_ROUTES = ["overview", "timeline", "phases", "agent", "tools"] as const;
 type TabValue = (typeof TAB_ROUTES)[number];
 
-/** Single task detail page with tabbed views for overview, timeline, phases, LLM calls, and tools. */
+/** Single task detail page with tabbed views for overview, timeline, phases, agent calls, and tools. */
 export function TaskDetailPage(): React.JSX.Element {
   const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
   const navigate = useNavigate();
@@ -88,7 +88,7 @@ export function TaskDetailPage(): React.JSX.Element {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="phases">Phases</TabsTrigger>
-          <TabsTrigger value="llm">LLM Calls</TabsTrigger>
+          <TabsTrigger value="agent">Agent Calls</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
@@ -100,8 +100,8 @@ export function TaskDetailPage(): React.JSX.Element {
         <TabsContent value="phases">
           <TaskPhasesTab taskId={typedTask.id} />
         </TabsContent>
-        <TabsContent value="llm">
-          <TaskLlmTab taskId={typedTask.id} />
+        <TabsContent value="agent">
+          <TaskAgentTab taskId={typedTask.id} />
         </TabsContent>
         <TabsContent value="tools">
           <TaskToolsTab taskId={typedTask.id} />

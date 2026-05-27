@@ -202,8 +202,8 @@ function showSelectionWarnings(selectedPlugins: readonly string[], plugins: read
   if (!selectedTypes.has(AdapterTypes.trigger)) {
     out.warn("No trigger plugin selected. The Engineer will start but won't pick up tasks.");
   }
-  if (!selectedTypes.has(AdapterTypes.llm)) {
-    out.warn("No LLM plugin selected. The Engineer cannot reason without an LLM.");
+  if (!selectedTypes.has(AdapterTypes.agent)) {
+    out.warn("No agent plugin selected. The Engineer cannot reason without a coding agent.");
   }
   if (!selectedTypes.has(AdapterTypes.communication)) {
     out.warn("No communication plugin selected. The Engineer won't send notifications.");

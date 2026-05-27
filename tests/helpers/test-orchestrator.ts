@@ -40,7 +40,7 @@ import type { Registry } from "../../src/core/registry/index.js";
 import type { SessionMemory } from "../../src/core/session-memory/index.js";
 import type { SkillsManager } from "../../src/core/skills/index.js";
 import type { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
-import type { InferenceResult } from "../../src/schemas/adapters.js";
+import type { AgentRunResult } from "../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import type { Dispatch } from "../../src/schemas/ephemeral.js";
 import type { Event } from "../../src/schemas/events.js";
@@ -52,7 +52,7 @@ import type { Task } from "../../src/schemas/task.js";
 import { TaskStates } from "../../src/schemas/task.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
 
-// ── Phase Directory Map (mirrors PHASE_DIR_MAP in llm-caller.ts) ─────────────
+// ── Phase Directory Map (mirrors PHASE_DIR_MAP in agent-runner.ts) ─────────────
 
 const PHASE_DIR_MAP: Record<Phase, string> = {
   requirements_gathering: "requirements",
@@ -185,8 +185,8 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     review: null,
     blocked: null,
     priority: 50,
-    llm_tokens: 0,
-    llm_cost_usd: 0,
+    agent_tokens: 0,
+    agent_cost_usd: 0,
     compute_time_ms: 0,
     created_at: now,
     started_at: now,
@@ -238,11 +238,11 @@ export function createMockCheckpoint(overrides?: Partial<Checkpoint>): Checkpoin
 // ── LLM Response Helper ──────────────────────────────────────────────────────
 
 /**
- * Create an InferenceResult with JSON content matching the agent loop format.
+ * Create an AgentRunResult with JSON content matching the agent loop format.
  * Wraps phase data in {"action": "done", "result": {...}} so the agent loop
  * parses it correctly and terminates on the first iteration.
  */
-function createLlmResponse(data: Record<string, unknown>): InferenceResult {
+function createLlmResponse(data: Record<string, unknown>): AgentRunResult {
   return {
     content: JSON.stringify({ action: "done", result: data }),
     cost_usd: 0.01,
@@ -316,7 +316,7 @@ export interface TestOrchestratorHandle {
 export function createTestOrchestrator(): TestOrchestratorHandle {
   let preemptionCallback: EventCallback | null = null;
   let llmCallIndex = 0;
-  let llmResponses: InferenceResult[] = [];
+  let llmResponses: AgentRunResult[] = [];
 
   // ── EventBus mock ──────────────────────────────────────────────────────
   const eventBus = {
@@ -362,10 +362,10 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
   }
 
   const fakeLlm = {
-    infer: vi.fn(() => {
+    run: vi.fn(() => {
       const response = llmResponses[llmCallIndex] ?? createLlmResponse({});
       llmCallIndex++;
-      // Write session-result.json to all phase directories so runPhaseWithCli
+      // Write session-result.json to all phase directories so runPhase
       // finds valid output after the CLI call. In production, the CLI writes this.
       writeSessionResultFiles(worktreePath, thoughtsDir);
       return Promise.resolve(response);
@@ -381,7 +381,7 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
 
   const registry = {
     getPrimaryPlugin: vi.fn((type: string) => {
-      if (type === "llm") {
+      if (type === "agent") {
         return fakeLlm;
       }
       return null;

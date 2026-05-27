@@ -27,9 +27,9 @@ import {
   WorkspaceConfigSchema,
 } from "../../src/schemas/config.js";
 import { FakeClock } from "./fake-clock.js";
+import type { FakeAgentPlugin } from "./fake-plugins/fake-agent/index.js";
 import type { FakeCommunicationPlugin } from "./fake-plugins/fake-comm/index.js";
 import type { FakeGitHostingPlugin } from "./fake-plugins/fake-git-hosting/index.js";
-import type { FakeLLMPlugin } from "./fake-plugins/fake-llm/index.js";
 import type { FakeTriggerPlugin } from "./fake-plugins/fake-trigger/index.js";
 import { createTestDatabase } from "./test-database.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
@@ -40,7 +40,7 @@ import { type TestRegistryFakes, createTestRegistry } from "./test-registry.js";
 export interface IntegrationContextFakes extends TestRegistryFakes {
   trigger: FakeTriggerPlugin;
   communication: FakeCommunicationPlugin;
-  llm: FakeLLMPlugin;
+  llm: FakeAgentPlugin;
   gitHosting: FakeGitHostingPlugin;
 }
 

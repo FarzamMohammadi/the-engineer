@@ -1,20 +1,20 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import type { InferenceRequest, InferenceResult } from "../../src/schemas/adapters.js";
+import type { AgentRunRequest, AgentRunResult } from "../../src/schemas/adapters.js";
 
 /**
  * Simulates the file-writing behavior of a real CLI LLM agent.
  *
  * Real CLI tools (claude-code, opencode) write `session-result.json` to a phase
  * directory before exiting. The FakeLLM doesn't do this — without a side effect,
- * `runPhaseWithCli` reads the unmodified template, sees "invalid", and throws.
+ * `runPhase` reads the unmodified template, sees "invalid", and throws.
  *
  * The prompt always includes an absolute `…/session-result.json` path. We parse
  * the last such mention and write a valid result there. Prompts that don't need
  * a session-result (review sub-phases) are no-ops.
  */
-export function writeSessionResultFromPrompt(_request: InferenceRequest, response: InferenceResult): void {
+export function writeSessionResultFromPrompt(_request: AgentRunRequest, response: AgentRunResult): void {
   const prompt = _request.prompt;
   const matches = prompt.matchAll(/(\/[^\s`'"]+\/session-result\.json)/g);
   let targetPath: string | null = null;

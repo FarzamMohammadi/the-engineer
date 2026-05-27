@@ -186,7 +186,7 @@ Is this generic? Would Core still work if you swapped every plugin?
 
 **The test:** "If I deleted every plugin and replaced them with completely different implementations, would Core still compile and function?"
 
-**Development strategy:** We develop and test with one plugin per adapter type (Claude CLI for LLM, GitHub for trigger/hosting, Telegram for comms). The abstraction stays generic. Others are preview — they should work, but we're honest about what's proven vs. untested.
+**Development strategy:** We develop and test with one plugin per adapter type (Claude CLI for agent, GitHub for trigger/hosting, Telegram for comms). The abstraction stays generic. Others are preview — they should work, but we're honest about what's proven vs. untested.
 
 ### 3. Plugin Authoring Simplicity
 

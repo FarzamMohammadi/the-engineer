@@ -332,7 +332,7 @@ The synthetic unapplied feedback round triggers the existing rework path in the 
 
 1. `hasUnappliedFeedback = true` → checkpoint cleared → no resume
 2. Orchestrator starts from **requirements_gathering** (full reflection)
-3. The LLM sees the CI failure context in the feedback round
+3. The agent sees the CI failure context in the feedback round
 4. It investigates, fixes, pushes to the same branch
 5. PR manager dismisses stale approvals on GitHub (the old approval was for different code)
 6. Returns to `review_pending` → accommodation state is reset → awaits fresh approval

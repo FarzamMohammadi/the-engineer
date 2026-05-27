@@ -198,8 +198,8 @@ export const TaskSchema = z.object({
 
   // Tracking
   priority: z.number().int().min(1).max(100).default(50),
-  llm_tokens: z.number().int(),
-  llm_cost_usd: z.number(),
+  agent_tokens: z.number().int(),
+  agent_cost_usd: z.number(),
   compute_time_ms: z.number().int(),
 
   // Timestamps
@@ -211,7 +211,7 @@ export const TaskSchema = z.object({
   // Scheduling
   not_before: z.string().datetime().nullable().default(null),
   consecutive_crash_count: z.number().int().default(0),
-  consecutive_llm_unavailable_count: z.number().int().default(0),
+  consecutive_agent_unavailable_count: z.number().int().default(0),
 
   // Session link
   session_id: z.string().nullable(),

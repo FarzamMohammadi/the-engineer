@@ -11,7 +11,7 @@ import { fromSqliteJson } from "../db/serialize.js";
 
 export const ObservationTypeSchema = z.enum([
   "agent_iteration",
-  "llm_call",
+  "agent_call",
   "tool_execution",
   "phase_transition",
   "decision_point",

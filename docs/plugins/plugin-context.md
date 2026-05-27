@@ -1,6 +1,6 @@
 # Plugin Context
 
-Every plugin — trigger, communication, LLM, git-hosting — receives the same set of capabilities from Core. This is the contract a plugin author can rely on: read it once, and you know everything Core provides and everything you are expected to provide back.
+Every plugin — trigger, communication, agent, git-hosting — receives the same set of capabilities from Core. This is the contract a plugin author can rely on: read it once, and you know everything Core provides and everything you are expected to provide back.
 
 Core injects these onto your plugin instance **before `initialize()` runs**. You never construct or set them.
 
@@ -151,5 +151,5 @@ State is an efficiency optimization, not a correctness requirement: Core dedupli
 
 ## See also
 
-- [Trigger adapter](trigger/README.md) · [Communication adapter](communication/README.md) · [LLM adapter](llm/README.md) · [Git-hosting adapter](git-hosting/README.md)
+- [Trigger adapter](trigger/README.md) · [Communication adapter](communication/README.md) · [Agent adapter](agent/README.md) · [Git-hosting adapter](git-hosting/README.md)
 - [Three-tier model](../architecture/three-tier-model.md) — why Core never knows which plugin is behind the contract

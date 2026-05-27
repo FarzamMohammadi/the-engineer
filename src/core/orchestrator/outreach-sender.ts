@@ -27,7 +27,7 @@ const TXT_SUFFIX_RE = /\.txt$/;
 // ── Main Function ──────────────────────────────────────────────────────────
 
 /**
- * Send outreach messages from files written by the LLM.
+ * Send outreach messages from files written by the agent.
  *
  * Reads `.txt` files from `outreachDir`, validates person IDs against
  * People Directory, routes through the centralized NotificationRouter,
@@ -56,7 +56,7 @@ export async function sendOutreach(
   const contacted: BlockedDetails["contacted"] = [];
 
   for (const file of files) {
-    // path.basename prevents path traversal from LLM output
+    // path.basename prevents path traversal from agent output
     const safeFile = path.basename(file);
     const personId = safeFile.replace(TXT_SUFFIX_RE, "");
     const message = readFileSync(path.join(outreachDir, safeFile), "utf-8").trim();

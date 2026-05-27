@@ -12,13 +12,13 @@ Part of **Layer 1** — see [`../layers.md`](../layers.md) for where this fits. 
 ┌─────────────────────────────────────────────────────┐
 │                     PLUGINS                         │
 │  GitHubTriggerPlugin  TelegramCommPlugin            │
-│  ClaudeCodeLLMPlugin  GitHubHostingPlugin           │
+│  ClaudeCodeAgentPlugin  GitHubHostingPlugin           │
 │  GitHubCommPlugin  ...                              │
 │                                                     │
 │  ┌─────────────────────────────────────────────┐    │
 │  │               ADAPTERS                      │    │
 │  │  TriggerAdapter    CommunicationAdapter     │    │
-│  │  LLMAdapter        GitHostingAdapter        │    │
+│  │  AgentAdapter        GitHostingAdapter        │    │
 │  │  ...                                        │    │
 │  │                                             │    │
 │  │  ┌─────────────────────────────────────┐    │    │
@@ -51,7 +51,7 @@ Nine components that are always present, invariant across all configurations.
 |-----------|------|----------------|
 | **Daemon** | Always-running process. Polls triggers, dispatches tasks, manages lifecycle. The heartbeat. | [`daemon-scheduler.md`](../2-components/daemon-scheduler.md) |
 | **Task Engine** | Manages tasks from trigger to completion. State ownership, permissions, hierarchy. | [`task-engine.md`](../2-components/task-engine.md) |
-| **Orchestrator** | The brain. Phase pipeline, LLM reasoning, decision-making, communication. | [`orchestrator.md`](../2-components/orchestrator.md) |
+| **Orchestrator** | The brain. Phase pipeline, agent reasoning, decision-making, communication. | [`orchestrator.md`](../2-components/orchestrator.md) |
 | **Event Bus** | The nervous system. All inter-component communication flows as events. The event stream IS the audit trail. | [`event-bus.md`](../2-components/event-bus.md) |
 | **Session/Memory** | State persistence, checkpoints, journal. Crash recovery foundation. | [`session-memory.md`](../2-components/session-memory.md) |
 | **Safety Layer** | Guardrails, permissions, policy enforcement. Gate 2 in the Action Pipeline. Config-driven. | [`safety-layer.md`](../2-components/safety-layer.md) |
@@ -75,7 +75,7 @@ Four adapter types are currently defined, each representing a category of extern
 |---------|--------------|-------------------|
 | **TriggerAdapter** | Daemon | Work discovery from any external source. Daemon polls via `poll()` at the adapter's declared interval. |
 | **CommunicationAdapter** | Orchestrator, Daemon | Human interaction — sending notifications, asking questions, receiving responses, syncing state to external platforms. |
-| **LLMAdapter** | Orchestrator | All LLM-powered reasoning, code generation, and analysis. Unifies CLI-based (subscription) and API-based (pay-per-token) providers behind one contract. |
+| **AgentAdapter** | Orchestrator | All agent-driven reasoning, code generation, and analysis. Unifies CLI-based (subscription) and API-based (pay-per-token) providers behind one contract. |
 | **GitHostingAdapter** | Workspace Manager | PR lifecycle via hosting platform APIs — create, update, merge, close PRs. Branch protection queries. Review status. |
 | **...** | | New adapter types as needs emerge (see § Future Adapter Types and § Extensibility by Design). |
 
@@ -134,7 +134,7 @@ Plugins are concrete implementations that satisfy an adapter contract. One plugi
 |---------|----------------|---------------|
 | TriggerAdapter | GitHubTriggerPlugin, _(future: JiraTriggerPlugin, LinearTriggerPlugin)_ | Switch from GitHub Issues to Jira for work intake |
 | CommunicationAdapter | TelegramCommPlugin, GitHubCommPlugin, _(future: SlackCommPlugin, TeamsCommPlugin)_ | Add Slack alongside Telegram, or replace both with Teams |
-| LLMAdapter | ClaudeCodeLLMPlugin, _(future: OpenRouterLLMPlugin, OllamaLLMPlugin)_ | Switch from Claude to a local Ollama model |
+| AgentAdapter | ClaudeCodeAgentPlugin, _(future: OpenRouterAgentPlugin, OllamaAgentPlugin)_ | Switch from Claude to a local Ollama model |
 | GitHostingAdapter | GitHubHostingPlugin, _(future: GitLabHostingPlugin, GiteaHostingPlugin)_ | Switch from GitHub to self-hosted Gitea |
 
 **The accessibility promise:** A contributor building a new plugin (say, a Slack communication plugin) needs only the CommunicationAdapter contract from [`adapter-contracts.md`](../3-interactions/adapter-contracts.md). They don't need to understand the Orchestrator, Task Engine, Event Bus, or any Core internals. The adapter boundary is all they need.

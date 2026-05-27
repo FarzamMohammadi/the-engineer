@@ -47,17 +47,17 @@ function insertTask(db: import("better-sqlite3").Database, id: string, overrides
     repo: null,
     created_at: "2026-01-15T10:30:00Z",
     last_transition_at: "2026-01-15T10:30:00Z",
-    llm_tokens: 0,
-    llm_cost_usd: 0,
+    agent_tokens: 0,
+    agent_cost_usd: 0,
     consecutive_crash_count: 3,
-    consecutive_llm_unavailable_count: 2,
+    consecutive_agent_unavailable_count: 2,
     not_before: "2026-06-01T00:00:00Z",
     ...overrides,
   };
   db.prepare(
     `INSERT INTO tasks (id, idempotency_key, state, sub_state, priority, title, description, repo,
-       created_at, last_transition_at, llm_tokens, llm_cost_usd,
-       consecutive_crash_count, consecutive_llm_unavailable_count, not_before)
+       created_at, last_transition_at, agent_tokens, agent_cost_usd,
+       consecutive_crash_count, consecutive_agent_unavailable_count, not_before)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
@@ -70,10 +70,10 @@ function insertTask(db: import("better-sqlite3").Database, id: string, overrides
     defaults.repo,
     defaults.created_at,
     defaults.last_transition_at,
-    defaults.llm_tokens,
-    defaults.llm_cost_usd,
+    defaults.agent_tokens,
+    defaults.agent_cost_usd,
     defaults.consecutive_crash_count,
-    defaults.consecutive_llm_unavailable_count,
+    defaults.consecutive_agent_unavailable_count,
     defaults.not_before,
   );
 }
@@ -108,7 +108,7 @@ describe("runRetry", () => {
     expect(row["sub_state"]).toBeNull();
     expect(row["not_before"]).toBeNull();
     expect(row["consecutive_crash_count"]).toBe(0);
-    expect(row["consecutive_llm_unavailable_count"]).toBe(0);
+    expect(row["consecutive_agent_unavailable_count"]).toBe(0);
 
     const transition = handle.db
       .prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY rowid DESC LIMIT 1")
@@ -133,7 +133,7 @@ describe("runRetry", () => {
     expect(row["state"]).toBe(TaskStates.queued);
     expect(row["not_before"]).toBeNull();
     expect(row["consecutive_crash_count"]).toBe(0);
-    expect(row["consecutive_llm_unavailable_count"]).toBe(0);
+    expect(row["consecutive_agent_unavailable_count"]).toBe(0);
 
     const transition = handle.db
       .prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY rowid DESC LIMIT 1")

@@ -59,7 +59,7 @@ packages/
 
 ## Live Test Tier
 
-**Current state (v1):** All tests run locally with fake plugins. No tests hit real external APIs (GitHub, Telegram, LLM providers).
+**Current state (v1):** All tests run locally with fake plugins. No tests hit real external APIs (GitHub, Telegram, agent plugins).
 
 **When it becomes relevant:** When CI is established and real API integration validation is needed beyond fake-based testing.
 
@@ -124,7 +124,7 @@ layer, not this one.
 **Key context — agent-agnostic, not CLAUDE.md.** Project philosophy explicitly rules out
 per-tool instruction files (no CLAUDE.md, no GEMINI.md, no .cursor/rules). This feature
 must respect that: the standing context lives in **The Engineer's** config and is fed into
-the system prompt regardless of which LLM plugin is running. The CLI plugin sees the
+the system prompt regardless of which agent plugin is running. The CLI plugin sees the
 finished system prompt; it does not read a `CLAUDE.md` from the worktree.
 
 **Migration path (high-level).**
@@ -141,10 +141,10 @@ finished system prompt; it does not read a `CLAUDE.md` from the worktree.
    layer that constructs the orchestrator context) loads the text once at startup and
    passes it through.
 3. **Plugin-agnostic.** The standing context is appended to the system prompt at the Core
-   level. Every LLM plugin receives the same finished prompt — no plugin-specific shim,
+   level. Every agent plugin receives the same finished prompt — no plugin-specific shim,
    no CLAUDE.md-style on-disk file the plugin loads itself.
 4. **Audit trail.** The standing context is part of the system prompt, so it lands in
-   whatever transcript / observation the LLM call produces. Owner can see what the agent
+   whatever transcript / observation the agent run produces. Owner can see what the agent
    actually saw.
 
 ---
@@ -153,7 +153,7 @@ finished system prompt; it does not read a `CLAUDE.md` from the worktree.
 
 **Current state (v1):** Per-task continuity between phases is handled entirely by the
 file-based `thoughts/` protocol. Each phase prompt embeds the previous phases' deliverable
-paths with explicit read-this-before-you-start instructions; the LLM uses its native Read
+paths with explicit read-this-before-you-start instructions; the agent uses its native Read
 tool to pull content. Files are filesystem-resident, survive crashes, ship with the PR for
 reviewer context, and get cleanly removed from the branch before merge. No structured store
 of "what we learned" persists across tasks or across sessions on different tasks.
@@ -186,7 +186,7 @@ shapes a future design might cover, individually or together:
   the corrected form." Persists across tasks across repos.
 
 **Key context — the producer is the hard problem.** The consumer side is straightforward:
-inject relevant entries into prompts, let the LLM read. The hard design problems all live
+inject relevant entries into prompts, let the agent read. The hard design problems all live
 on the producer side: who extracts (the agent inline? a dedicated post-task pass?), with
 what confidence semantics, how the owner rejects or supersedes wrong inferences, how stale
 entries decay, how to avoid the agent gaming the layer by storing flattering self-quotes.
@@ -213,23 +213,23 @@ emits.
 
 ## Context Budget Management
 
-**Current state:** The Orchestrator invokes LLMs per phase but has no context budget — every call gets whatever context is assembled, with no cap or optimization.
+**Current state:** The Orchestrator invokes the agent per phase but has no context budget — every call gets whatever context is assembled, with no cap or optimization.
 
-**When it becomes relevant:** When token costs become a real concern or when prompts grow large enough that context window limits are hit. Every LLM call burns tokens; context management is the primary cost lever.
+**When it becomes relevant:** When token costs become a real concern or when prompts grow large enough that context window limits are hit. Every agent run burns tokens; context management is the primary cost lever.
 
 **What it enables:** Prompt caching (significant cost reduction on supported providers), file truncation caps, on-demand loading (only include what the current phase needs), compaction of stale context. "Smarter prompting routinely outperforms larger models with dumb prompting."
 
-**Migration path:** Context budgeting is an Orchestrator concern — it decides what goes into each LLM call per phase. The LLMAdapter contract supports token tracking; the budget layer sits between "what context is available" and "what gets sent."
+**Migration path:** Context budgeting is an Orchestrator concern — it decides what goes into each agent run per phase. The AgentAdapter contract supports token tracking; the budget layer sits between "what context is available" and "what gets sent."
 
 ---
 
 ## Deterministic Sub-Engine for Operational Tasks
 
-**Current state (v1):** All Orchestrator phases are LLM-driven. Appropriate for engineering judgment (research, planning, code review), but wasteful for deterministic sequences (deploy steps, CI commands, test suites).
+**Current state (v1):** All Orchestrator phases are agent-driven. Appropriate for engineering judgment (research, planning, code review), but wasteful for deterministic sequences (deploy steps, CI commands, test suites).
 
 **When it becomes relevant:** When The Engineer handles operational side-tasks alongside engineering work — deploy sequences, CI/CD orchestration, repetitive multi-step procedures.
 
-**What it enables:** Declarative pipelines for deterministic work: step sequencing, approval gates, resume tokens, retry + error handling. LLM handles creative work; deterministic engine handles plumbing. Pattern reference: OpenClaw's Lobster workflow engine uses a similar split.
+**What it enables:** Declarative pipelines for deterministic work: step sequencing, approval gates, resume tokens, retry + error handling. The agent handles creative work; deterministic engine handles plumbing. Pattern reference: OpenClaw's Lobster workflow engine uses a similar split.
 
 **Migration path:** Implement as an optional ToolAdapter plugin. Orchestrator delegates deterministic sub-tasks to the engine; results feed back into the phase pipeline. Does not require Core changes.
 
@@ -280,7 +280,7 @@ emits.
 3. Thorough Linux testing and promotion from "preview" to "full" support
 4. Windows support via POSIX compatibility layer or native adaptation
 
-**Current workaround:** The plugin how-to guides include LLM-guided setup prompts. Users point their LLM CLI at the setup prompt, and the LLM detects their OS and guides them through platform-appropriate setup.
+**Current workaround:** The plugin how-to guides include agent-guided setup prompts. Users point their agent CLI at the setup prompt, and the agent detects their OS and guides them through platform-appropriate setup.
 
 **Migration path:**
 1. Abstract credential access behind a provider interface with OS-specific implementations
@@ -307,7 +307,7 @@ emits.
 
 **Migration path (high-level):**
 
-1. **Producer.** Decide how the planning phase emits a structured decomposition plan and teach the LLM when/how to produce one. Today there is no producer surface at all.
+1. **Producer.** Decide how the planning phase emits a structured decomposition plan and teach the agent when/how to produce one. Today there is no producer surface at all.
 2. **Consumer.** Re-introduce parent-aware scheduling: children gate on the parent's state, slot accounting distinguishes parent supervising vs child working, the parent resumes for integration when children finish, and re-queue paths land the parent back in the correct sub-state.
 3. **State machine.** Give the parent the sub-states it needs (supervising while children run, integrating while combining their work, or whatever shape the design lands on) and make sure every queue ↔ active transition exists so a re-queued parent can resume correctly.
 4. **Workspace boundary.** Decide whether each child gets its own isolated worktree or whether children serialize on a shared workspace. This is a workspace-layer decision; the scheduler should not pre-judge it.
@@ -318,13 +318,13 @@ emits.
 
 ## Plugin How-To Guides
 
-Each adapter type needs an agent-executable "How to build a plugin" guide so contributors can add new integrations without reading Core code. The **LLMAdapter** guide exists and is the reference pattern. Three remain:
+Each adapter type needs an agent-executable "How to build a plugin" guide so contributors can add new integrations without reading Core code. The **AgentAdapter** guide exists and is the reference pattern. Three remain:
 
 - **TriggerAdapter** — poll for events, produce `TriggerEvent[]` with a stable `idempotency_key` (identity/dedup) and optional `external_ref` (descriptive), plus watermarks. Example: a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
 - **CommunicationAdapter** — send messages, format for your platform, capability gates for send/receive/sync/issue_management. Example: a Slack, Discord, or email plugin.
 - **GitHostingAdapter** — PR lifecycle (create, update, merge, get status, list comments). Example: a GitLab hosting plugin.
 
-**Format:** follow the LLMAdapter guide — adapter interface, required vs optional methods, capability gates, manifest format, config schema, a minimal working example, and how to register/test, written as an agent-executable prompt. Guides live alongside the existing LLMAdapter guide in the contribution docs.
+**Format:** follow the AgentAdapter guide — adapter interface, required vs optional methods, capability gates, manifest format, config schema, a minimal working example, and how to register/test, written as an agent-executable prompt. Guides live alongside the existing AgentAdapter guide in the contribution docs.
 
 ---
 
@@ -332,7 +332,7 @@ Each adapter type needs an agent-executable "How to build a plugin" guide so con
 
 **Current state:** First-run setup is handled by `engineer start` with auto-detection + guided plugin selection. To change configuration after initial setup, users must `engineer stop`, manually edit YAML files in `~/.engineer/config/`, and `engineer start` again.
 
-**When it becomes relevant:** When users frequently change plugin selections, add/remove repos, or switch LLM providers and want a guided experience instead of manual YAML editing.
+**When it becomes relevant:** When users frequently change plugin selections, add/remove repos, or switch agent plugins and want a guided experience instead of manual YAML editing.
 
 **What it enables:** `engineer start --reconfigure` (or auto-detection of config changes) that:
 1. Detects existing config and shows current state
@@ -362,7 +362,7 @@ Each adapter type needs an agent-executable "How to build a plugin" guide so con
 3. Claude CLI binary + API key available inside the container
 4. No access to `~/.engineer`, PID files, or the host daemon process
 5. `--dangerously-skip-permissions` enabled (safe because the container IS the sandbox)
-6. Network access scoped to git push/pull and LLM API calls
+6. Network access scoped to git push/pull and agent CLI calls
 
 **Architecture concept:**
 - Base Docker image: Node.js + CLI agent + git (built/pulled once, cached)
@@ -405,7 +405,7 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 3. **Results history** — each benchmark run appends to a log with: date, benchmark task, prompt/strategy version, the scorecard. This is the trend line — did the last change help or hurt?
 
-4. **Quality assessment** — starts with human review (pass/fail + one-line note on the deliverable). LLM-as-judge or golden-output diffing can be added later, but human judgment is the ground truth for v1.
+4. **Quality assessment** — starts with human review (pass/fail + one-line note on the deliverable). agent-as-judge or golden-output diffing can be added later, but human judgment is the ground truth for v1.
 
 **Workflow:** Make a prompt change → run the simple benchmark → check the scorecard → check the deliverable → log it. ~10 minutes per iteration.
 
@@ -458,7 +458,7 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 ## Live Agent Session Transparency
 
-**Current state (v1):** The CLI agent runs as a child process. Its output is consumed in two ways: (1) structured NDJSON events are parsed in real-time to extract the final result and rate-limit signals, and (2) raw output is optionally written to a trace file on disk via a configurable path. After execution, the observer stores structured observations (phase transitions, tool executions, LLM calls, safety verdicts) in the database, and the dashboard queries them for after-the-fact inspection. What does *not* exist is a live, real-time stream of the agent's full activity visible to the owner while work is happening — the equivalent of watching the agent work.
+**Current state (v1):** The CLI agent runs as a child process. Its output is consumed in two ways: (1) structured NDJSON events are parsed in real-time to extract the final result and rate-limit signals, and (2) raw output is optionally written to a trace file on disk via a configurable path. After execution, the observer stores structured observations (phase transitions, tool executions, agent runs, safety verdicts) in the database, and the dashboard queries them for after-the-fact inspection. What does *not* exist is a live, real-time stream of the agent's full activity visible to the owner while work is happening — the equivalent of watching the agent work.
 
 **Why this matters — the transparency gap:**
 

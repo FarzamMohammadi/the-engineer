@@ -20,7 +20,7 @@ export function section(heading: string, content: string): string {
  * Wrap untrusted external content in clearly-marked delimiters.
  *
  * Used for task titles, descriptions, and PR review feedback that originate
- * from GitHub issues (attacker-controlled). The delimiter instructs the LLM
+ * from GitHub issues (attacker-controlled). The delimiter instructs the agent
  * to treat the content as data to analyze, not instructions to follow.
  */
 export function wrapUntrustedContent(content: string): string {

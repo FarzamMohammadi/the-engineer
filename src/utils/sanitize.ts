@@ -1,8 +1,8 @@
 /**
  * Secret sanitization utility (D154).
  *
- * Applied at chokepoints (SessionMemory, LLM caller) to prevent tokens
- * from leaking into journal entries, LLM context, or log output.
+ * Applied at chokepoints (SessionMemory, agent runner) to prevent tokens
+ * from leaking into journal entries, agent context, or log output.
  *
  * Secret env var names are discovered dynamically at startup via the
  * secret-registry module — no hardcoded plugin-specific names in Core.

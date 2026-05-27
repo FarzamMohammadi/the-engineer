@@ -28,7 +28,7 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 #   crash:
 #     backoff_minutes: [1, 5, 15, 30, 30]  # Backoff schedule in minutes
 #     max_attempts: 5                       # Terminal after this many crashes
-#   llm_unavailable:
+#   agent_unavailable:
 #     backoff_minutes: [2, 5, 10, 15, 15]  # Backoff schedule in minutes
 #     max_attempts: 5                       # Terminal after this many unavailability cycles
 
@@ -149,7 +149,7 @@ cost_limits:
       cost_usd: 25.0                  # Daily USD limit
     monthly:
       cost_usd: 250.0                 # Monthly USD limit
-#   cli: {}                           # Per-CLI-provider limits (keyed by plugin ID, e.g. "claude-code-llm")
+#   cli: {}                           # Per-CLI-provider limits (keyed by plugin ID, e.g. "claude-code-agent")
 
 # --- Scope boundaries ---
 # scope:
@@ -293,23 +293,23 @@ github_token: "\${GITHUB_TOKEN}"           # <-- set env var
 # default_merge_strategy: squash          # squash | merge | rebase (default: squash)
 `;
 
-export const CLAUDE_CODE_LLM_TEMPLATE = `# Claude Code LLM plugin
-# Uses Claude CLI for LLM completions
+export const CLAUDE_CODE_AGENT_TEMPLATE = `# Claude Code agent plugin
+# Drives the Claude Code CLI as an autonomous coding agent
 
 # model: claude-sonnet-4-6              # Model to use
 # cli_path: claude                        # Path to claude CLI binary
 `;
 
-export const OPENCODE_LLM_TEMPLATE = `# OpenCode LLM plugin
-# Multi-provider LLM reasoning via OpenCode CLI
+export const OPENCODE_AGENT_TEMPLATE = `# OpenCode agent plugin
+# Multi-provider autonomous coding agent via OpenCode CLI
 # Supports Anthropic, OpenAI, Google, and more — configure model as provider/model
 
 # model: opencode/gemini-3.1-pro             # Model in provider/model format
 # cli_path: opencode                         # Path to opencode CLI binary
 `;
 
-export const GEMINI_CLI_LLM_TEMPLATE = `# Gemini CLI LLM plugin
-# Uses Google Gemini CLI for LLM completions
+export const GEMINI_CLI_AGENT_TEMPLATE = `# Gemini CLI agent plugin
+# Drives Google's Gemini CLI as an autonomous coding agent
 # Free tier — no cost tracking (cost_usd always null)
 
 # model: gemini-2.5-pro                      # Model to use
@@ -349,7 +349,7 @@ retry_policy:
   crash:                                  # Orchestrator crash retries
     backoff_minutes: [1, 5, 15, 30, 30]   # Backoff schedule in minutes (default: [1, 5, 15, 30, 30])
     max_attempts: 5                       # Terminal after this many crashes (default: 5)
-  llm_unavailable:                        # LLM adapter unavailability retries
+  agent_unavailable:                      # Agent adapter unavailability retries
     backoff_minutes: [2, 5, 10, 15, 15]   # Backoff schedule in minutes (default: [2, 5, 10, 15, 15])
     max_attempts: 5                       # Terminal after this many unavailability cycles (default: 5)
 
@@ -479,7 +479,7 @@ cost_limits:
       cost_usd: 25.0                      # Daily USD limit (default: null)
     monthly:
       cost_usd: 250.0                     # Monthly USD limit (default: null)
-  cli: {}                                 # Per-CLI-provider limits, keyed by plugin ID (e.g. "claude-code-llm")
+  cli: {}                                 # Per-CLI-provider limits, keyed by plugin ID (e.g. "claude-code-agent")
 
 # ── Scope Boundaries ────────────────────────────────────────────────────────
 scope:
@@ -654,10 +654,10 @@ github_token: "\${GITHUB_TOKEN}"           # REQUIRED — GitHub personal access
 default_merge_strategy: squash            # squash | merge | rebase (default: squash)
 `;
 
-export const EXAMPLE_CLAUDE_CODE_LLM = `# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │  CLAUDE CODE LLM PLUGIN — Full Reference                                 │
-# │  Copy to ~/.engineer/config/plugins/claude-code-llm.yaml and customize.  │
-# │  Uses Claude CLI for LLM completions.                                    │
+export const EXAMPLE_CLAUDE_CODE_AGENT = `# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  CLAUDE CODE AGENT PLUGIN — Full Reference                               │
+# │  Copy to ~/.engineer/config/plugins/claude-code-agent.yaml and customize.│
+# │  Drives the Claude Code CLI as an autonomous coding agent.               │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # All fields are optional — defaults shown below.
@@ -665,10 +665,10 @@ model: claude-sonnet-4-6                # Model to use (default: claude-sonnet-4
 cli_path: claude                          # Path to claude CLI binary (default: claude)
 `;
 
-export const EXAMPLE_OPENCODE_LLM = `# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │  OPENCODE LLM PLUGIN — Full Reference                                    │
-# │  Copy to ~/.engineer/config/plugins/opencode-llm.yaml and customize.     │
-# │  Multi-provider LLM via OpenCode CLI (Anthropic, OpenAI, Google, etc.)   │
+export const EXAMPLE_OPENCODE_AGENT = `# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  OPENCODE AGENT PLUGIN — Full Reference                                  │
+# │  Copy to ~/.engineer/config/plugins/opencode-agent.yaml and customize.   │
+# │  Multi-provider agent via OpenCode CLI (Anthropic, OpenAI, Google, etc.) │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # All fields are optional — defaults shown below.
@@ -676,10 +676,10 @@ model: opencode/gemini-3.1-pro             # Model in provider/model format (def
 cli_path: opencode                         # Path to opencode CLI binary (default: opencode)
 `;
 
-export const EXAMPLE_GEMINI_CLI_LLM = `# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │  GEMINI CLI LLM PLUGIN — Full Reference                                  │
-# │  Copy to ~/.engineer/config/plugins/gemini-cli-llm.yaml and customize.   │
-# │  Uses Google Gemini CLI for LLM completions. Free tier, no cost data.    │
+export const EXAMPLE_GEMINI_CLI_AGENT = `# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  GEMINI CLI AGENT PLUGIN — Full Reference                                │
+# │  Copy to ~/.engineer/config/plugins/gemini-cli-agent.yaml and customize. │
+# │  Drives Google's Gemini CLI as an autonomous coding agent (free tier).   │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
 # All fields are optional — defaults shown below.
@@ -708,9 +708,9 @@ export const ALL_TEMPLATES: readonly TemplateFile[] = [
   { relativePath: "config/plugins/telegram-comm.yaml", content: TELEGRAM_COMM_TEMPLATE },
   { relativePath: "config/plugins/github-comm.yaml", content: GITHUB_COMM_TEMPLATE },
   { relativePath: "config/plugins/github-hosting.yaml", content: GITHUB_HOSTING_TEMPLATE },
-  { relativePath: "config/plugins/claude-code-llm.yaml", content: CLAUDE_CODE_LLM_TEMPLATE },
-  { relativePath: "config/plugins/opencode-llm.yaml", content: OPENCODE_LLM_TEMPLATE },
-  { relativePath: "config/plugins/gemini-cli-llm.yaml", content: GEMINI_CLI_LLM_TEMPLATE },
+  { relativePath: "config/plugins/claude-code-agent.yaml", content: CLAUDE_CODE_AGENT_TEMPLATE },
+  { relativePath: "config/plugins/opencode-agent.yaml", content: OPENCODE_AGENT_TEMPLATE },
+  { relativePath: "config/plugins/gemini-cli-agent.yaml", content: GEMINI_CLI_AGENT_TEMPLATE },
 ];
 
 /** Fully documented example templates — written to ~/.engineer/example-templates/. */
@@ -724,7 +724,7 @@ export const ALL_EXAMPLE_TEMPLATES: readonly TemplateFile[] = [
   { relativePath: "example-templates/telegram-comm.yaml", content: EXAMPLE_TELEGRAM_COMM },
   { relativePath: "example-templates/github-comm.yaml", content: EXAMPLE_GITHUB_COMM },
   { relativePath: "example-templates/github-hosting.yaml", content: EXAMPLE_GITHUB_HOSTING },
-  { relativePath: "example-templates/claude-code-llm.yaml", content: EXAMPLE_CLAUDE_CODE_LLM },
-  { relativePath: "example-templates/opencode-llm.yaml", content: EXAMPLE_OPENCODE_LLM },
-  { relativePath: "example-templates/gemini-cli-llm.yaml", content: EXAMPLE_GEMINI_CLI_LLM },
+  { relativePath: "example-templates/claude-code-agent.yaml", content: EXAMPLE_CLAUDE_CODE_AGENT },
+  { relativePath: "example-templates/opencode-agent.yaml", content: EXAMPLE_OPENCODE_AGENT },
+  { relativePath: "example-templates/gemini-cli-agent.yaml", content: EXAMPLE_GEMINI_CLI_AGENT },
 ];

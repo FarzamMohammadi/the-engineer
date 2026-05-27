@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Daemon } from "../../src/core/daemon/index.js";
 import { createDaemon } from "../../src/core/daemon/index.js";
 import { createNotificationRouter } from "../../src/core/daemon/notification-router.js";
-import type { InferenceResult } from "../../src/schemas/adapters.js";
+import type { AgentRunResult } from "../../src/schemas/adapters.js";
 import { type DaemonConfig, DaemonConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import { CheckpointReasons, JournalEntryTypes } from "../../src/schemas/session-memory.js";
 import { SubStates, TaskStates } from "../../src/schemas/task.js";
@@ -27,8 +27,8 @@ async function waitForIdle(daemon: Daemon, maxMs = 5_000): Promise<void> {
   }
 }
 
-/** Build an InferenceResult with the given JSON content. */
-function makeResponse(json: Record<string, unknown>): InferenceResult {
+/** Build an AgentRunResult with the given JSON content. */
+function makeResponse(json: Record<string, unknown>): AgentRunResult {
   return {
     content: JSON.stringify({ action: "done", result: json }),
     cost_usd: 0.003,
@@ -43,7 +43,7 @@ function makeResponse(json: Record<string, unknown>): InferenceResult {
  * the orchestrator creates a PR and exits at `review_pending`; integration runs only
  * after PR merge.
  */
-function makeResumeFromPlanningResponses(): InferenceResult[] {
+function makeResumeFromPlanningResponses(): AgentRunResult[] {
   const ready = (extra: Record<string, unknown> = {}) => makeResponse({ status: "ready", ...extra });
   return [
     ready(), // execution
@@ -244,7 +244,7 @@ describe("E2E: Crash recovery", () => {
     ctx.fakes.llm.setCannedResponses(makeResumeFromPlanningResponses());
     ctx.fakes.llm.setInferSideEffect(writeSessionResultFromPrompt);
 
-    await ctx.registry.initializePlugin("fake-llm", {});
+    await ctx.registry.initializePlugin("fake-agent", {});
 
     daemon2 = createSecondDaemon(ctx);
     await daemon2.start();

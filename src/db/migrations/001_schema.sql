@@ -37,8 +37,8 @@ CREATE TABLE tasks (
 
   -- Tracking
   priority                INTEGER NOT NULL DEFAULT 50 CHECK(priority BETWEEN 1 AND 100),
-  llm_tokens              INTEGER NOT NULL DEFAULT 0,
-  llm_cost_usd            REAL NOT NULL DEFAULT 0.0,
+  agent_tokens            INTEGER NOT NULL DEFAULT 0,
+  agent_cost_usd          REAL NOT NULL DEFAULT 0.0,
   compute_time_ms         INTEGER NOT NULL DEFAULT 0,
 
   -- Timestamps
@@ -61,7 +61,7 @@ CREATE TABLE tasks (
   -- Scheduling
   not_before              TEXT,
   consecutive_crash_count INTEGER NOT NULL DEFAULT 0,
-  consecutive_llm_unavailable_count INTEGER NOT NULL DEFAULT 0,
+  consecutive_agent_unavailable_count INTEGER NOT NULL DEFAULT 0,
 
   -- Complexity-based phase skipping
   skip_research           INTEGER NOT NULL DEFAULT 0

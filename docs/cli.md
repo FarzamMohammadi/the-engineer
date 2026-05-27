@@ -47,7 +47,7 @@ Directory structure (created automatically on first `engineer start`):
   data/               # SQLite database
   logs/               # Daemon log files (rolling JSON)
   run/                # PID file
-  traces/             # LLM prompt/response blobs (content-addressable)
+  traces/             # agent prompt/response blobs (content-addressable)
   workspaces/         # Git worktrees for task isolation
   example-templates/  # Fully documented config references
 ```
@@ -72,8 +72,8 @@ engineer start
 
 That's it. On first run, `start` detects there's no config and launches guided setup:
 
-1. **Environment detection** — scans PATH for LLM CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars
-2. **Plugin selection** — one prompt per adapter type (LLM, trigger, hosting, communication, tools), grouped by category, with detection status shown
+1. **Environment detection** — scans PATH for coding agent CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars
+2. **Plugin selection** — one prompt per adapter type (agent, trigger, hosting, communication, tools), grouped by category, with detection status shown
 3. **Per-plugin config** — prompts for required fields (repos to watch, etc.)
 4. **People Directory** — configures the owner (the single person The Engineer reaches) and optional additional people. For each person: name, identifier, roles, and a handle for each selected communication channel (derived from plugin manifests). Generates `people.yaml` with real values instead of placeholders.
 5. **Secret collection** — prompts for token values with masked input (e.g., `GITHUB_TOKEN`). Tokens already set in your shell are captured and persisted to `~/.engineer/.env` automatically. Permissions: `0o600`.
@@ -176,7 +176,7 @@ engineer doctor
 | Database | SQLite file accessible |
 | Plugin Manifests | Plugin config files parse correctly |
 | Workspace | Git binary available, workspace dir exists |
-| External Dependencies | LLM CLIs on PATH |
+| External Dependencies | agent CLIs on PATH |
 | People Directory | An owner is configured, the single-user constraint is respected, and the owner's channels have an installed communication plugin (needs loaded config) |
 | Risky Config | Warnings for auto-merge enabled, missing cost limits, high concurrency (needs loaded config) |
 
@@ -199,7 +199,7 @@ Source: [`src/cli/commands/why.ts`](../src/cli/commands/why.ts)
 
 ### retry
 
-Re-queues a `blocked` or `failed` task so the daemon picks it up on the next scheduling cycle. Resets both per-category retry counters (crash, LLM-unavailable) and clears `not_before` so the retry cycle starts fresh. Direct database access — usable even when the daemon is stopped.
+Re-queues a `blocked` or `failed` task so the daemon picks it up on the next scheduling cycle. Resets both per-category retry counters (crash, agent-unavailable) and clears `not_before` so the retry cycle starts fresh. Direct database access — usable even when the daemon is stopped.
 
 ```bash
 engineer retry <task-id>                 # Re-queue a blocked or failed task
@@ -225,7 +225,7 @@ Config files live in `~/.engineer/config/`. Generated on first run with conserva
 - `people.yaml` — the owner and their contact channels for communication
 
 **Plugin configs** (`config/plugins/`):
-- One YAML file per enabled plugin (e.g., `github-trigger.yaml`, `claude-code-llm.yaml`)
+- One YAML file per enabled plugin (e.g., `github-trigger.yaml`, `claude-code-agent.yaml`)
 - A plugin is enabled if and only if its config YAML exists
 - Secrets use `${ENV_VAR}` references — actual values live in `.env`
 

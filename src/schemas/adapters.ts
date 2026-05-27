@@ -4,7 +4,7 @@ import { ExternalRefSchema } from "./task.js";
 
 // ── Universal Adapter Contract ──────────────────────────────────────────────────
 
-export const AdapterTypeSchema = z.enum(["trigger", "communication", "llm", "git_hosting"]);
+export const AdapterTypeSchema = z.enum(["trigger", "communication", "agent", "git_hosting"]);
 export type AdapterType = z.infer<typeof AdapterTypeSchema>;
 
 /** Constant enum values for AdapterType. Use instead of raw strings. */
@@ -195,11 +195,13 @@ export const ReconciliationResultSchema = z.object({
 });
 export type ReconciliationResult = z.infer<typeof ReconciliationResultSchema>;
 
-// ── LLM Adapter ─────────────────────────────────────────────────────────────────
-// CLI-only contract. LLMs are inference-only (D143) — prompt in, text out.
-// Plugin-specific details (flags, output parsing) belong in each plugin, not here.
+// ── Agent Adapter ───────────────────────────────────────────────────────────────
+// CLI-only contract. The Engineer drives an autonomous coding agent (Claude Code,
+// OpenCode, etc.) by sending it a prompt against a workspace; the agent reads
+// and writes files, runs tools, and returns a structured result. Plugin-specific
+// details (flags, output parsing) belong in each plugin, not here.
 
-export const InferenceRequestSchema = z.object({
+export const AgentRunRequestSchema = z.object({
   prompt: z.string(),
   system_prompt: z.string().nullable().default(null),
   /** Working directory for the CLI process. Plugins use this as CWD
@@ -210,7 +212,7 @@ export const InferenceRequestSchema = z.object({
    *  Plugins that don't support it ignore this field. Core generates the path. */
   trace_output_path: z.string().nullable().default(null),
 });
-export type InferenceRequest = z.infer<typeof InferenceRequestSchema>;
+export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
 
 // Per-call token breakdown. Plugins fill what their CLI reports.
 export const TokenUsageSchema = z.object({
@@ -223,12 +225,12 @@ export const TokenUsageSchema = z.object({
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 
 // Full per-call usage (tokens + model context).
-export const InferenceUsageSchema = z.object({
+export const AgentRunUsageSchema = z.object({
   tokens: TokenUsageSchema,
   model_id: z.string().nullable().default(null),
   service_tier: z.string().nullable().default(null),
 });
-export type InferenceUsage = z.infer<typeof InferenceUsageSchema>;
+export type AgentRunUsage = z.infer<typeof AgentRunUsageSchema>;
 
 // A single quota/rate-limit window (e.g. Claude's 5-hour session, 7-day weekly).
 export const QuotaWindowSchema = z.object({
@@ -247,22 +249,22 @@ export const QuotaStatusSchema = z.object({
 });
 export type QuotaStatus = z.infer<typeof QuotaStatusSchema>;
 
-export const InferenceResultSchema = z.object({
+export const AgentRunResultSchema = z.object({
   content: z.string(),
   cost_usd: z.number().nullable(),
   duration_ms: z.number().int(),
   /** Per-call usage details. null if the CLI doesn't report them. */
-  usage: InferenceUsageSchema.nullable().default(null),
+  usage: AgentRunUsageSchema.nullable().default(null),
 });
-export type InferenceResult = z.infer<typeof InferenceResultSchema>;
+export type AgentRunResult = z.infer<typeof AgentRunResultSchema>;
 
-export const LLMCapabilitiesSchema = z.object({
+export const AgentCapabilitiesSchema = z.object({
   model_id: z.string(),
   supports_usage_reporting: z.boolean().default(false),
   supports_quota_reporting: z.boolean().default(false),
   context_window: z.number().int().positive().nullable().default(null),
 });
-export type LLMCapabilities = z.infer<typeof LLMCapabilitiesSchema>;
+export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;
 
 // ── Git Hosting Adapter ─────────────────────────────────────────────────────────
 

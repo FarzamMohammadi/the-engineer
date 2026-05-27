@@ -35,7 +35,7 @@ export interface OrchestratorContext {
   observer: IObserver;
   notifications: INotificationRouter;
   /** Absolute path to the traces directory (~/.engineer/traces/).
-   *  Used by llm-caller to write structured session trace files. Null disables tracing. */
+   *  Used by agent-runner to write structured session trace files. Null disables tracing. */
   tracesDir: string | null;
 }
 

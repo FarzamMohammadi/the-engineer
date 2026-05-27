@@ -24,7 +24,7 @@ const SKILLS_SOURCE_DIR = path.resolve(MODULE_DIR, "..", "..", "..", "resources"
  * Manages the runtime location of portable skills.
  *
  * Syncs skills from the source tree (resources/skills/) into the workspace root
- * so the LLM CLI can load them on demand. The runtime path is exposed via
+ * so the agent CLI can load them on demand. The runtime path is exposed via
  * `getDir()` for phase prompts that point the CLI at it.
  */
 export class SkillsManager {

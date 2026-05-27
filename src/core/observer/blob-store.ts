@@ -1,5 +1,5 @@
 /**
- * Content-addressable blob store for LLM prompt/response storage.
+ * Content-addressable blob store for agent prompt/response storage.
  *
  * Git object model applied to observability: content is SHA-256 hashed,
  * stored as files on disk, and referenced by hash in the database.

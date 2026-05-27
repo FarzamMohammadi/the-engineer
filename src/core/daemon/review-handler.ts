@@ -667,7 +667,7 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
    *
    * Adds a synthetic unapplied feedback round with context for ALL detected issues
    * so the orchestrator restarts from requirements_gathering (the standard rework path)
-   * and the LLM knows exactly what to investigate. Groups issues into a single cycle.
+   * and the agent knows exactly what to investigate. Groups issues into a single cycle.
    */
   function handlePostApprovalFailures(taskId: string, issues: PostApprovalIssue[]): void {
     const attempt = countPostApprovalFixAttempts(taskId) + 1;

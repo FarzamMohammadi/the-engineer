@@ -81,7 +81,7 @@ export interface IObservationStore {
   /** Subscribe to real-time observations. Returns unsubscribe function. */
   subscribe(callback: (obs: import("../../schemas/observer.js").Observation) => void): () => void;
 
-  /** Store large content (LLM prompts/responses) in blob store. */
+  /** Store large content (agent prompts/responses) in blob store. */
   storeBlob(content: string): string;
 
   /** Read content from blob store by hash reference. */

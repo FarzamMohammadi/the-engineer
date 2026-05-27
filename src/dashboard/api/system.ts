@@ -39,9 +39,9 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       .prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'tool_execution'")
       .get() as { count: number } | undefined;
 
-    const llmCount = deps.db.prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'llm_call'").get() as
-      | { count: number }
-      | undefined;
+    const agentCallCount = deps.db
+      .prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'agent_call'")
+      .get() as { count: number } | undefined;
 
     // Sum spend from phase_transition observations (stored in output JSON)
     const phaseObs = deps.observationStore.query({
@@ -76,22 +76,22 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       }
     }
 
-    // Detect LLM provider from observations
-    let llmProvider: string | null = null;
-    const recentLlm = deps.observationStore.query({ type: ObservationTypes.llm_call, limit: 1 });
-    if (recentLlm.length > 0) {
-      const input = recentLlm[0]?.input as Record<string, unknown> | null;
-      llmProvider = (input?.["provider_id"] as string) ?? null;
+    // Detect agent provider from observations
+    let agentProvider: string | null = null;
+    const recentAgent = deps.observationStore.query({ type: ObservationTypes.agent_call, limit: 1 });
+    if (recentAgent.length > 0) {
+      const input = recentAgent[0]?.input as Record<string, unknown> | null;
+      agentProvider = (input?.["provider_id"] as string) ?? null;
     }
 
     return c.json({
       daemon_running: daemonRunning,
       daemon_pid: daemonPid,
-      llm_provider: llmProvider,
+      agent_provider: agentProvider,
       total_tasks: totalTasks,
       tasks_by_state: stateMap,
       total_action_traces: actionCount?.count ?? 0,
-      total_llm_traces: llmCount?.count ?? 0,
+      total_agent_traces: agentCallCount?.count ?? 0,
       total_spend_usd: totalSpend,
     });
   });

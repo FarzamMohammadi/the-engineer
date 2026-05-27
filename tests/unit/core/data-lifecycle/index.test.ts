@@ -78,7 +78,7 @@ function insertLlmObservation(
   promptRef?: string | null,
   responseRef?: string | null,
 ): void {
-  insertObservation(db, timestamp, "llm_call", "completion", {
+  insertObservation(db, timestamp, "agent_call", "completion", {
     prompt_ref: promptRef ?? null,
     response_ref: responseRef ?? null,
     cost_usd: 0.01,
@@ -210,7 +210,7 @@ describe("collectReferencedBlobRefs", () => {
     dbHandle.cleanup();
   });
 
-  it("returns all distinct prompt_ref and response_ref from llm_call observations", () => {
+  it("returns all distinct prompt_ref and response_ref from agent_call observations", () => {
     insertLlmObservation(dbHandle.db, new Date().toISOString(), "ab/abc123", "cd/cde456");
     insertLlmObservation(dbHandle.db, new Date().toISOString(), "ef/efg789", null);
 

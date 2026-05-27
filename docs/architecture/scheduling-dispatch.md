@@ -16,7 +16,7 @@ A queued task is eligible to dispatch when both of the following hold:
 2. The task's `not_before` timestamp is past.
 
 That is the whole gate. `not_before` is set by the [retry policy](../configuration/daemon.md#retry-policy)
-after a crash or LLM-unavailable failure to defer the next attempt; on success it is
+after a crash or agent-unavailable failure to defer the next attempt; on success it is
 cleared. There are no other gates — no parent checks, no cascade rules, no priority
 threshold. If a queued task is eligible, the scheduler will dispatch it next tick.
 
@@ -39,7 +39,7 @@ The tracker gives every dispatch three things:
 - **An `AbortSignal`** owned by the tracker and passed to the dispatch runner. The
   signal lives on the `Dispatch` object handed to the orchestrator; it is the contract
   by which the scheduler force-ends in-flight work. Honoring the signal through the
-  full call chain (phase-runner → llm-caller → LLM plugins) lands in Slice 8 — until
+  full call chain (phase-runner → agent-runner → agent plugins) lands in Slice 8 — until
   then, the signal is set on abort but the orchestrator finishes its current call
   before observing it. Best-effort termination, by design.
 - **One terminate path.** `terminate(taskId, reason)` records the reason, aborts the
@@ -96,7 +96,7 @@ the late callback no-ops on identity mismatch when the task is re-dispatched.
 When the safety layer raises `cost.limit_reached`, the cost-limit-queue drains it on
 the next tick: it calls `dispatchTracker.terminate(taskId, "cost_limit_reached")`
 **and** fires owner-facing notifications immediately — the owner must hear about
-the limit *now*, not whenever the in-flight LLM call eventually settles. The state
+the limit *now*, not whenever the in-flight agent run eventually settles. The state
 transition to `blocked` happens later through the standard late-callback path. Once
 Slice 8 plumbs the signal through the orchestrator, the gap between "owner notified"
 and "task settled" closes to near-zero.
@@ -120,7 +120,7 @@ the drain:
   through the standard `graceful_shutdown` path → re-queues the task.
 - If a dispatch's promise refuses to settle (the v1 best-effort case until Slice 8
   lands), the drain synthesizes the late callback so the task is still re-queued
-  cleanly. The daemon must shut down even when an in-flight LLM call cannot be
+  cleanly. The daemon must shut down even when an in-flight agent run cannot be
   killed.
 
 After drain returns, every dispatched task is in `queued` and will resume from its

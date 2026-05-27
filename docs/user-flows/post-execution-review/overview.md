@@ -20,7 +20,7 @@ After execution completes, The Engineer reviews its own work through a multi-ste
 
 **Entry point:** Self-review phase handler in `phase-handlers.ts`, triggered after execution completes.
 
-Self-review is not a single LLM call — it's a **multi-step pipeline** with configurable review lenses followed by a consolidation step.
+Self-review is not a single agent run — it's a **multi-step pipeline** with configurable review lenses followed by a consolidation step.
 
 ### Review Sub-Phases
 
@@ -134,7 +134,7 @@ Repo context refreshed (captures new code changes)
   |
   v
 Self-review runs again with:
-  - Updated loopbackCount (LLM knows this is attempt N)
+  - Updated loopbackCount (the agent knows this is attempt N)
   - Fresh repo context (sees actual code from latest execution)
   - Prior review findings still in thoughts/.../review/*.md
   |
@@ -146,7 +146,7 @@ Loopback decision repeats (Section 2)
 
 | What | How |
 |---|---|
-| Loopback count | Passed to review prompt builder so the LLM knows which attempt this is |
+| Loopback count | Passed to review prompt builder so the agent knows which attempt this is |
 | Prior findings | Review sub-phase `.md` files persist in `thoughts/` directory across loops |
 | Repo context | Refreshed after every execution phase via `gatherRepoContextSafe()` |
 | Phase outputs | Cleared from execution onward to prevent stale data accumulation |

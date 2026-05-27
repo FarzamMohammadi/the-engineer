@@ -114,7 +114,7 @@ describe("EventBus delivery (integration)", () => {
         payload: {
           task_id: "t1",
           repo: "",
-          provider_id: "llm",
+          provider_id: "agent",
           operation: "test",
           spend_usd: 0.01,
           duration_ms: 150,

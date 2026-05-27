@@ -119,7 +119,7 @@ describe("commitPushAndCreatePR", () => {
       }),
     };
     h.registry.getPrimaryPlugin.mockImplementation((type: string) => {
-      if (type === "llm") {
+      if (type === "agent") {
         // Need the original LLM mock — call the original
         return h.registry.getPrimaryPlugin.getMockImplementation() ? undefined : null;
       }
@@ -129,7 +129,7 @@ describe("commitPushAndCreatePR", () => {
       return null;
     });
 
-    // Re-wire to keep original getPrimaryPlugin for "llm"
+    // Re-wire to keep original getPrimaryPlugin for "agent"
     const originalImpl = createTestOrchestrator();
     const originalGetPrimary = originalImpl.registry.getPrimaryPlugin;
     h.registry.getPrimaryPlugin.mockImplementation((type: string) => {

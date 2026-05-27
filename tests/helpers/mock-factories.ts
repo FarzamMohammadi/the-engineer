@@ -1,8 +1,8 @@
 import {
-  type InferenceRequest,
-  InferenceRequestSchema,
-  type InferenceResult,
-  InferenceResultSchema,
+  type AgentRunRequest,
+  AgentRunRequestSchema,
+  type AgentRunResult,
+  AgentRunResultSchema,
   type PluginManifest,
   PluginManifestSchema,
   type TriggerEvent,
@@ -107,8 +107,8 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     blocked: null,
     return_to_phase: null,
     priority: 50,
-    llm_tokens: 0,
-    llm_cost_usd: 0,
+    agent_tokens: 0,
+    agent_cost_usd: 0,
     compute_time_ms: 0,
     created_at: now,
     started_at: null,
@@ -122,10 +122,10 @@ export function createMockTask(overrides?: Partial<Task>): Task {
 // ── Inference Request ──────────────────────────────────────────────────────
 
 /**
- * Create a Zod-valid InferenceRequest with sensible defaults.
+ * Create a Zod-valid AgentRunRequest with sensible defaults.
  */
-export function createMockInferenceRequest(overrides?: Partial<InferenceRequest>): InferenceRequest {
-  return InferenceRequestSchema.parse({
+export function createMockAgentRunRequest(overrides?: Partial<AgentRunRequest>): AgentRunRequest {
+  return AgentRunRequestSchema.parse({
     prompt: "Mock prompt",
     system_prompt: null,
     cwd: null,
@@ -137,11 +137,11 @@ export function createMockInferenceRequest(overrides?: Partial<InferenceRequest>
 // ── Inference Result ───────────────────────────────────────────────────────
 
 /**
- * Create a valid InferenceResult with sensible defaults.
+ * Create a valid AgentRunResult with sensible defaults.
  * Not Zod-parsed since it's a return value, but matches the schema shape.
  */
-export function createMockInferenceResult(overrides?: Partial<InferenceResult>): InferenceResult {
-  return InferenceResultSchema.parse({
+export function createMockAgentRunResult(overrides?: Partial<AgentRunResult>): AgentRunResult {
+  return AgentRunResultSchema.parse({
     content: "Mock inference response",
     cost_usd: 0.01,
     duration_ms: 100,

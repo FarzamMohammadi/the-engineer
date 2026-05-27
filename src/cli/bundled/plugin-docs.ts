@@ -358,18 +358,18 @@ On each poll cycle, the plugin iterates through configured repos and calls the G
 These three plugins share the same \`GITHUB_TOKEN\` and form the complete GitHub workflow: trigger from issues, communicate via comments, deliver via PRs.
 `;
 
-const LLM_README = `# LLM Adapter
+const AGENT_README = `# Agent Adapter
 
-LLM adapters are inference-only providers. The Engineer is the agent -- LLM plugins receive a prompt and return text. Each plugin spawns a CLI tool as a child process, pipes the prompt via stdin, parses structured output from stdout, and returns content + cost + usage data. The Orchestrator handles all reasoning, tool use, and phase transitions. Plugins never make decisions.
+Agent adapters are inference-only providers. The Engineer is the agent -- agent plugins receive a prompt and return text. Each plugin spawns a CLI tool as a child process, pipes the prompt via stdin, parses structured output from stdout, and returns content + cost + usage data. The Orchestrator handles all reasoning, tool use, and phase transitions. Plugins never make decisions.
 
 ## Contract
 
-\`LLMAdapter\` extends \`BaseAdapter\`. All lifecycle methods are inherited as template methods.
+\`AgentAdapter\` extends \`BaseAdapter\`. All lifecycle methods are inherited as template methods.
 
 | Method | Signature | Required | Description |
 |--------|-----------|----------|-------------|
-| \`doInfer(request)\` | \`(request: InferenceRequest) => Promise<InferenceResult>\` | Yes | Spawn the CLI, pipe prompt via stdin, parse output. Every result MUST include \`cost_usd\` (or \`null\`) and \`duration_ms\`. |
-| \`getCapabilities()\` | \`() => LLMCapabilities\` | Yes | Synchronous, pure. Return model ID, reporting flags, context window. |
+| \`doRun(request)\` | \`(request: AgentRunRequest) => Promise<AgentRunResult>\` | Yes | Spawn the CLI, pipe prompt via stdin, parse output. Every result MUST include \`cost_usd\` (or \`null\`) and \`duration_ms\`. |
+| \`getCapabilities()\` | \`() => AgentCapabilities\` | Yes | Synchronous, pure. Return model ID, reporting flags, context window. |
 | \`getQuotaStatus()\` | \`() => Promise<QuotaStatus \\| null>\` | No | Override to report rate limits/quota. Default returns \`null\`. |
 | \`doInitialize(config)\` | \`(config: Record<string, unknown>) => Promise<InitResult>\` | Yes | Parse config with Zod. Return \`{ success: false, message }\` on bad config -- never throw. |
 | \`doShutdown()\` | \`() => Promise<void>\` | Yes | Kill active child process, clean up. |
@@ -392,20 +392,20 @@ Each layer is optional. Core degrades gracefully when data is missing.
 |  -> Dashboard shows quota consumption               |
 +-----------------------------------------------------+
 |  Layer 1: Per-Call Usage                             |
-|  InferenceResult.usage -> TokenUsage + model_id     |
+|  AgentRunResult.usage -> TokenUsage + model_id     |
 |  -> Safety Layer tracks cost, dashboard shows tokens |
 +-----------------------------------------------------+
 \`\`\`
 
 | Layer | What | Method/Field | If missing |
 |-------|------|--------------|------------|
-| Per-call usage | Tokens, cost, cache hits | \`InferenceResult.usage\` | Cost tracking uses \`cost_usd\` alone; token displays show N/A |
+| Per-call usage | Tokens, cost, cache hits | \`AgentRunResult.usage\` | Cost tracking uses \`cost_usd\` alone; token displays show N/A |
 | Quota status | Session/plan windows | \`getQuotaStatus()\` | No quota display, no pause-for-reset |
 | Limit detection | Hard stop signal | \`QuotaStatus.is_rate_limited\` | Core cannot detect rate limits proactively |
 
 ## Key Types
 
-### InferenceRequest
+### AgentRunRequest
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -413,16 +413,16 @@ Each layer is optional. Core degrades gracefully when data is missing.
 | \`system_prompt\` | \`string \\| null\` | System-level instructions. Use CLI's \`--system-prompt\` flag if available, otherwise prepend to prompt. |
 | \`cwd\` | \`string \\| null\` | Working directory for the CLI process. Set as \`spawn()\` cwd so the CLI loads the target repo's project context. |
 
-### InferenceResult
+### AgentRunResult
 
 | Field | Type | Description |
 |-------|------|-------------|
-| \`content\` | \`string\` | The LLM's response text. Orchestrator parses this for actions. |
+| \`content\` | \`string\` | The agent's response text. Orchestrator parses this for actions. |
 | \`cost_usd\` | \`number \\| null\` | Cost of this call in USD. Critical for Safety Layer cost tracking. \`null\` if CLI does not report cost. |
 | \`duration_ms\` | \`number\` | Wall-clock time for the CLI call. Measured by your plugin (\`Date.now()\` delta). |
-| \`usage\` | \`InferenceUsage \\| null\` | Token breakdown and model info. \`null\` if CLI does not report usage. |
+| \`usage\` | \`AgentRunUsage \\| null\` | Token breakdown and model info. \`null\` if CLI does not report usage. |
 
-### InferenceUsage
+### AgentRunUsage
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -434,7 +434,7 @@ Each layer is optional. Core degrades gracefully when data is missing.
 | \`model_id\` | \`string \\| null\` | Actual model used (may differ from requested). |
 | \`service_tier\` | \`string \\| null\` | Provider's service tier (e.g. \`"standard"\`, \`"extended_thinking"\`). |
 
-### LLMCapabilities
+### AgentCapabilities
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -462,12 +462,12 @@ Each layer is optional. Core degrades gracefully when data is missing.
 Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\`:
 
 \`\`\`
-src/plugins/llm/my-llm/
-  my-llm.ts       # Plugin class extending LLMAdapter
+src/plugins/agent/my-agent/
+  my-agent.ts       # Plugin class extending AgentAdapter
   config.ts       # Zod config schema
 
-tests/unit/plugins/llm/my-llm/
-  my-llm.test.ts  # Tests including contract suite
+tests/unit/plugins/agent/my-agent/
+  my-agent.test.ts  # Tests including contract suite
 \`\`\`
 
 ### Minimal class skeleton
@@ -477,25 +477,25 @@ import { type ChildProcess, spawn } from "node:child_process";
 import {
   AdapterMethodError,
   type HealthStatus,
-  type InferenceRequest,
-  type InferenceResult,
+  type AgentRunRequest,
+  type AgentRunResult,
   type InitResult,
-  LLMAdapter,
-  type LLMCapabilities,
+  AgentAdapter,
+  type AgentCapabilities,
   createAdapterError,
 } from "../../../adapters/index.js";
-import { type MyLLMConfig, MyLLMConfigSchema } from "./config.js";
+import { type MyAgentConfig, MyAgentConfigSchema } from "./config.js";
 
 // ── Environment isolation ─────────────────────────────────────────────────────
-// Shared subprocess discipline -- enforces env sanitization across all LLM plugins.
+// Shared subprocess discipline -- enforces env sanitization across all agent plugins.
 // NEVER pass process.env directly to spawn() -- secrets will leak to the CLI.
-import { buildLlmEnv } from "../subprocess.js";
+import { buildAgentEnv } from "../subprocess.js";
 
-export class MyLLMPlugin extends LLMAdapter {
-  private config!: MyLLMConfig;
+export class MyAgentPlugin extends AgentAdapter {
+  private config!: MyAgentConfig;
   private activeProcess: ChildProcess | null = null;
 
-  protected doInfer(request: InferenceRequest): Promise<InferenceResult> {
+  protected doRun(request: AgentRunRequest): Promise<AgentRunResult> {
     const args = ["--model", this.config.model, "--format", "json"];
 
     // System prompt: use CLI flag if available, otherwise prepend
@@ -511,7 +511,7 @@ export class MyLLMPlugin extends LLMAdapter {
       const child = spawn(this.config.cli_path, args, {
         stdio: ["pipe", "pipe", "pipe"],
         timeout: this.config.command_timeout_ms,
-        env: buildLlmEnv(process.env),  // sanitized -- no secrets
+        env: buildAgentEnv(process.env),  // sanitized -- no secrets
         cwd: request.cwd ?? undefined,
       });
 
@@ -554,7 +554,7 @@ export class MyLLMPlugin extends LLMAdapter {
     });
   }
 
-  getCapabilities(): LLMCapabilities {
+  getCapabilities(): AgentCapabilities {
     return {
       model_id: this.config?.model ?? "my-default-model",
       supports_usage_reporting: false,
@@ -564,7 +564,7 @@ export class MyLLMPlugin extends LLMAdapter {
   }
 
   protected doInitialize(config: Record<string, unknown>): Promise<InitResult> {
-    const parsed = MyLLMConfigSchema.safeParse(config);
+    const parsed = MyAgentConfigSchema.safeParse(config);
     if (!parsed.success) {
       return Promise.resolve({ success: false, message: \`Invalid config: \${parsed.error.message}\` });
     }
@@ -584,7 +584,7 @@ export class MyLLMPlugin extends LLMAdapter {
     return new Promise((resolve) => {
       const child = spawn(this.config.cli_path, ["--version"], {
         timeout: 5000,
-        env: buildLlmEnv(process.env),
+        env: buildAgentEnv(process.env),
       });
       const chunks: Buffer[] = [];
       child.stdout?.on("data", (c: Buffer) => chunks.push(c));
@@ -604,7 +604,7 @@ export class MyLLMPlugin extends LLMAdapter {
 }
 \`\`\`
 
-### Critical rules for LLM plugins
+### Critical rules for agent plugins
 
 **Always pipe prompts via stdin.** Orchestrator prompts are 50KB+. Passing them as CLI arguments hits OS \`ARG_MAX\` limits and causes silent truncation or failure.
 
@@ -626,7 +626,7 @@ CLI-specific stdin patterns:
 | OpenCode | Reads from stdin when no message args given |
 | Gemini CLI | Appends stdin to \`-p\` value; use \`-p ""\` to enable non-interactive mode |
 
-**Always sanitize the environment.** Use \`buildLlmEnv(process.env)\` -- never pass \`process.env\` directly to \`spawn()\`. The parent process holds \`GITHUB_TOKEN\`, \`TELEGRAM_BOT_TOKEN\`, and other secrets that must not leak to LLM subprocesses. If your CLI needs a specific auth env var, add it to a local allowlist in your plugin -- do not add secrets to the shared allowlist.
+**Always sanitize the environment.** Use \`buildAgentEnv(process.env)\` -- never pass \`process.env\` directly to \`spawn()\`. The parent process holds \`GITHUB_TOKEN\`, \`TELEGRAM_BOT_TOKEN\`, and other secrets that must not leak to agent subprocesses. If your CLI needs a specific auth env var, add it to a local allowlist in your plugin -- do not add secrets to the shared allowlist.
 
 **Prepend system prompt when no CLI flag exists.** Only Claude Code has \`--system-prompt\`. For other CLIs:
 
@@ -662,16 +662,16 @@ child.stdin?.on("error", () => {});  // suppress EPIPE
 ### Config schema pattern
 
 \`\`\`typescript
-// my-llm/config.ts
+// my-agent/config.ts
 import { z } from "zod";
 
-export const MyLLMConfigSchema = z.object({
+export const MyAgentConfigSchema = z.object({
   model: z.string().default("my-default-model"),
   cli_path: z.string().default("my-cli"),
   command_timeout_ms: z.number().int().positive().default(600_000),
 });
 
-export type MyLLMConfig = z.output<typeof MyLLMConfigSchema>;
+export type MyAgentConfig = z.output<typeof MyAgentConfigSchema>;
 \`\`\`
 
 Use \`z.output<typeof Schema>\` (not \`z.infer\`) -- this resolves defaults and transforms, required for \`exactOptionalPropertyTypes\`.
@@ -680,15 +680,15 @@ Use \`z.output<typeof Schema>\` (not \`z.infer\`) -- this resolves defaults and 
 
 \`\`\`typescript
 // 1. Import
-import { MyLLMPlugin } from "./llm/my-llm/my-llm.js";
+import { MyAgentPlugin } from "./agent/my-agent/my-agent.js";
 
 // 2. Manifest (in manifests array)
 {
-  id: "my-llm",
-  type: "llm",
+  id: "my-agent",
+  type: "agent",
   version: "1.0.0",
-  name: "My LLM CLI",
-  description: "LLM reasoning via My CLI process",
+  name: "My Agent CLI",
+  description: "Autonomous coding agent via My CLI process",
   critical: true,
   requirements: [{ type: "binary", name: "my-cli" }],
   entry: "builtin",
@@ -697,23 +697,23 @@ import { MyLLMPlugin } from "./llm/my-llm/my-llm.js";
 },
 
 // 3. Factory (in factories map)
-"my-llm": () => new MyLLMPlugin(),
+"my-agent": () => new MyAgentPlugin(),
 \`\`\`
 
 ### Contract test suite
 
-Path: \`tests/helpers/contract-suites/llm-contract.ts\`.
+Path: \`tests/helpers/contract-suites/agent-contract.ts\`.
 
 \`\`\`typescript
-// tests/unit/plugins/llm/my-llm/my-llm.test.ts
-import { runLLMContractSuite } from "../../../../helpers/contract-suites/llm-contract.js";
-import { MyLLMPlugin } from "./my-llm.js";
+// tests/unit/plugins/agent/my-agent/my-agent.test.ts
+import { runAgentContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
+import { MyAgentPlugin } from "./my-agent.js";
 
 const manifest = {
-  id: "my-llm",
-  type: "llm" as const,
+  id: "my-agent",
+  type: "agent" as const,
   version: "1.0.0",
-  name: "My LLM",
+  name: "My Agent",
   description: "Test",
   critical: true,
   entry: "builtin",
@@ -721,8 +721,8 @@ const manifest = {
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },
 };
 
-runLLMContractSuite(
-  () => new MyLLMPlugin(),
+runAgentContractSuite(
+  () => new MyAgentPlugin(),
   {
     manifest,
     validConfig: { model: "my-model", cli_path: "/path/to/mock-cli" },
@@ -736,9 +736,9 @@ The contract suite validates:
 - \`initialize()\` succeeds/fails correctly with valid/invalid config
 - \`healthCheck()\` returns \`HealthStatus\` with all required fields, resolves within 5 seconds
 - \`shutdown()\` resolves without throwing
-- \`infer()\` returns a valid \`InferenceResult\` (schema-validated), always includes \`cost_usd\` and \`duration_ms\`
-- \`usage\` is \`null\` or valid \`InferenceUsage\` with all token fields
-- \`getCapabilities()\` returns valid \`LLMCapabilities\` with all fields
+- \`infer()\` returns a valid \`AgentRunResult\` (schema-validated), always includes \`cost_usd\` and \`duration_ms\`
+- \`usage\` is \`null\` or valid \`AgentRunUsage\` with all token fields
+- \`getCapabilities()\` returns valid \`AgentCapabilities\` with all fields
 - \`getQuotaStatus()\` returns \`null\` or valid \`QuotaStatus\`
 
 For unit tests that do not hit a real CLI, create mock scripts that write expected NDJSON to stdout. Set \`cli_path\` to the mock script path in your test config.
@@ -787,26 +787,26 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 
 | File | Purpose |
 |------|---------|
-| \`src/adapters/llm.ts\` | Abstract \`LLMAdapter\` base class (three-layer contract) |
+| \`src/adapters/agent.ts\` | Abstract \`AgentAdapter\` base class (three-layer contract) |
 | \`src/adapters/base.ts\` | \`BaseAdapter\` -- lifecycle template methods, \`hasCapability()\` |
 | \`src/adapters/errors.ts\` | \`AdapterMethodError\`, \`createAdapterError()\` |
 | \`src/adapters/index.ts\` | Plugin SDK barrel -- single import point |
-| \`src/schemas/adapters.ts\` | All Zod schemas (\`InferenceRequest\`, \`InferenceResult\`, \`TokenUsage\`, \`QuotaStatus\`, \`LLMCapabilities\`) |
-| \`src/plugins/llm/subprocess.ts\` | Shared subprocess discipline: env sanitization, stderr buffer cap |
-| \`src/plugins/llm/claude-code-llm/claude-code-llm.ts\` | Reference: spawn, NDJSON parse, usage, quota API |
-| \`src/plugins/llm/claude-code-llm/config.ts\` | Reference config schema |
-| \`src/plugins/llm/opencode-llm/opencode-llm.ts\` | Reference: multi-provider, step_finish cost/tokens, stderr rate limit kill |
-| \`src/plugins/llm/gemini-cli-llm/gemini-cli-llm.ts\` | Reference: free tier, no cost, stdout+stderr rate limit detection |
+| \`src/schemas/adapters.ts\` | All Zod schemas (\`AgentRunRequest\`, \`AgentRunResult\`, \`TokenUsage\`, \`QuotaStatus\`, \`AgentCapabilities\`) |
+| \`src/plugins/agent/subprocess.ts\` | Shared subprocess discipline: env sanitization, stderr buffer cap |
+| \`src/plugins/agent/claude-code-agent/claude-code-agent.ts\` | Reference: spawn, NDJSON parse, usage, quota API |
+| \`src/plugins/agent/claude-code-agent/config.ts\` | Reference config schema |
+| \`src/plugins/agent/opencode-agent/opencode-agent.ts\` | Reference: multi-provider, step_finish cost/tokens, stderr rate limit kill |
+| \`src/plugins/agent/gemini-cli-agent/gemini-cli-agent.ts\` | Reference: free tier, no cost, stdout+stderr rate limit detection |
 | \`src/plugins/builtin.ts\` | Plugin registration (manifests + factories) |
-| \`tests/helpers/contract-suites/llm-contract.ts\` | Contract compliance test suite |
-| \`contribution-docs/how-tos/plugins/llm-adapter/prompt.md\` | Interactive LLM-facing setup prompt |
+| \`tests/helpers/contract-suites/agent-contract.ts\` | Contract compliance test suite |
+| \`contribution-docs/how-tos/plugins/agent-adapter/prompt.md\` | Interactive agent-facing setup prompt |
 `;
 
-const LLM_CLAUDE_CODE = `# Claude Code LLM
+const AGENT_CLAUDE_CODE = `# Claude Code Agent
 
-The Claude Code LLM plugin is the default and most full-featured LLM option. It spawns the Claude CLI (\`claude\`) as a child process with \`--print --output-format stream-json --verbose\`, parses the NDJSON output for result events, and returns content, cost, and detailed token usage (including cache breakdown).
+The Claude Code agent plugin is the default and most full-featured agent option. It spawns the Claude CLI (\`claude\`) as a child process with \`--print --output-format stream-json --verbose\`, parses the NDJSON output for result events, and returns content, cost, and detailed token usage (including cache breakdown).
 
-This is the recommended choice if you have a Claude Pro/Max subscription or API access. It is the only LLM plugin that supports quota reporting -- it reads your OAuth credentials to query Anthropic's usage API for real utilization percentages across quota windows.
+This is the recommended choice if you have a Claude Pro/Max subscription or API access. It is the only agent plugin that supports quota reporting -- it reads your OAuth credentials to query Anthropic's usage API for real utilization percentages across quota windows.
 
 ## Requirements
 
@@ -833,7 +833,7 @@ No environment variables are needed -- the Claude CLI handles its own authentica
 
 ## Configuration
 
-Config file: \`~/.engineer/config/plugins/claude-code-llm.yaml\`
+Config file: \`~/.engineer/config/plugins/claude-code-agent.yaml\`
 
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
@@ -846,8 +846,8 @@ Config file: \`~/.engineer/config/plugins/claude-code-llm.yaml\`
 All fields have defaults. An empty config file works:
 
 \`\`\`yaml
-# Claude Code LLM plugin
-# Uses Claude CLI for LLM completions
+# Claude Code agent plugin
+# Drives the Claude Code CLI as an autonomous coding agent
 \`\`\`
 
 ### Full config
@@ -881,15 +881,15 @@ command_timeout_ms: 7200000
 
 | Plugin | Relationship |
 |---|---|
-| **opencode-llm** | Alternative LLM plugin supporting multiple providers (Anthropic, OpenAI, Google) via one CLI. |
-| **gemini-cli-llm** | Alternative LLM plugin using Google's free Gemini CLI. No cost tracking. |
+| **opencode-agent** | Alternative agent plugin supporting multiple providers (Anthropic, OpenAI, Google) via one CLI. |
+| **gemini-cli-agent** | Alternative agent plugin using Google's free Gemini CLI. No cost tracking. |
 
-Only one LLM plugin is active at a time. The Daemon uses the configured LLM plugin for all Orchestrator phase inference.
+Only one agent plugin is active at a time. The Daemon uses the configured agent plugin for all Orchestrator phase inference.
 `;
 
-const LLM_OPENCODE = `# OpenCode LLM
+const AGENT_OPENCODE = `# OpenCode Agent
 
-The OpenCode LLM plugin provides multi-provider LLM inference through the OpenCode CLI. It supports Anthropic, OpenAI, Google, and other providers through a single CLI tool, using the \`opencode run --format json\` command with NDJSON output parsing.
+The OpenCode agent plugin provides multi-provider autonomous coding through the OpenCode CLI. It supports Anthropic, OpenAI, Google, and other providers through a single CLI tool, using the \`opencode run --format json\` command with NDJSON output parsing.
 
 Use this plugin when you want provider flexibility -- switch between models from different vendors by changing one config field, without swapping plugins.
 
@@ -920,7 +920,7 @@ Does **not** support:
 
 ## Configuration
 
-Config file: \`~/.engineer/config/plugins/opencode-llm.yaml\`
+Config file: \`~/.engineer/config/plugins/opencode-agent.yaml\`
 
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
@@ -933,8 +933,8 @@ Config file: \`~/.engineer/config/plugins/opencode-llm.yaml\`
 All fields have defaults. An empty config file works:
 
 \`\`\`yaml
-# OpenCode LLM plugin
-# Multi-provider LLM reasoning via OpenCode CLI
+# OpenCode agent plugin
+# Multi-provider autonomous coding agent via OpenCode CLI
 \`\`\`
 
 ### Full config
@@ -957,13 +957,13 @@ command_timeout_ms: 600000
 
 **Rate limit detection**: The plugin monitors stderr for patterns matching \`exhausted your capacity\`, \`rate limit\`, or \`quota\` (case-insensitive). On detection, it immediately sends SIGTERM to the child process and rejects with a retryable \`cli_error\`. This prevents the OpenCode CLI from entering infinite retry loops that waste time and potentially cost money.
 
-**Environment isolation**: Same allowlist as all LLM plugins -- only system essentials, XDG dirs, Node.js config, TLS/proxy settings, and locale vars are forwarded. No secrets leak to the subprocess.
+**Environment isolation**: Same allowlist as all agent plugins -- only system essentials, XDG dirs, Node.js config, TLS/proxy settings, and locale vars are forwarded. No secrets leak to the subprocess.
 
 ## Limitations
 
 - No quota reporting -- the plugin cannot tell you how much of your provider's quota you have used.
 - No context window size reported -- depends on the underlying model/provider.
-- System prompts are prepended to the user prompt as text markers, not passed as a native parameter. The LLM sees them as part of the conversation, which is slightly less reliable than native system prompt support.
+- System prompts are prepended to the user prompt as text markers, not passed as a native parameter. The agent sees them as part of the conversation, which is slightly less reliable than native system prompt support.
 - Model ID in capabilities reflects the configured model string, not the actual model used by the provider.
 - No \`max_tokens\` config field -- output length is controlled by the underlying provider/model defaults.
 
@@ -971,15 +971,15 @@ command_timeout_ms: 600000
 
 | Plugin | Relationship |
 |---|---|
-| **claude-code-llm** | The default LLM plugin. Full cost/quota reporting, native system prompt support, 200k context window. Best choice if you only use Anthropic. |
-| **gemini-cli-llm** | Google's free-tier Gemini CLI. No cost data. Good for zero-cost experimentation. |
+| **claude-code-agent** | The default agent plugin. Full cost/quota reporting, native system prompt support, 200k context window. Best choice if you only use Anthropic. |
+| **gemini-cli-agent** | Google's free-tier Gemini CLI. No cost data. Good for zero-cost experimentation. |
 
-Only one LLM plugin is active at a time.
+Only one agent plugin is active at a time.
 `;
 
-const LLM_GEMINI_CLI = `# Gemini CLI LLM
+const AGENT_GEMINI_CLI = `# Gemini CLI Agent
 
-The Gemini CLI LLM plugin uses Google's Gemini CLI tool for LLM inference. It runs on the free tier -- there is no cost data (cost_usd is always null). The plugin invokes \`gemini -p "" -o stream-json --yolo\` with the prompt piped via stdin, parses NDJSON output for content and token usage, and detects rate limits from both stdout and stderr.
+The Gemini CLI agent plugin drives Google's Gemini CLI as an autonomous coding agent. It runs on the free tier -- there is no cost data (cost_usd is always null). The plugin invokes \`gemini -p "" -o stream-json --yolo\` with the prompt piped via stdin, parses NDJSON output for content and token usage, and detects rate limits from both stdout and stderr.
 
 Use this plugin for zero-cost experimentation or as a fallback when paid providers hit quota limits.
 
@@ -994,7 +994,7 @@ No API keys or environment variables needed. The plugin is marked \`critical: tr
 
 ## Capabilities
 
-- Free-tier LLM inference via Google's Gemini CLI
+- Free-tier autonomous coding agent via Google's Gemini CLI
 - Token usage reporting: input, output, cached, total
 - Quota status reporting (exhausted/available based on rate limit detection)
 - System prompt prepended to user prompt (no native \`--system-prompt\` flag)
@@ -1010,7 +1010,7 @@ Does **not** support:
 
 ## Configuration
 
-Config file: \`~/.engineer/config/plugins/gemini-cli-llm.yaml\`
+Config file: \`~/.engineer/config/plugins/gemini-cli-agent.yaml\`
 
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
@@ -1023,8 +1023,8 @@ Config file: \`~/.engineer/config/plugins/gemini-cli-llm.yaml\`
 All fields have defaults. An empty config file works:
 
 \`\`\`yaml
-# Gemini CLI LLM plugin
-# Uses Google Gemini CLI for LLM completions
+# Gemini CLI agent plugin
+# Drives Google's Gemini CLI as an autonomous coding agent
 # Free tier -- no cost tracking
 \`\`\`
 
@@ -1053,7 +1053,7 @@ command_timeout_ms: 600000
 
 **Quota reporting**: \`getQuotaStatus()\` returns a simple exhausted/not-exhausted status based on the \`rateLimited\` flag from the last inference call. There is no usage API to query actual percentages.
 
-**Environment isolation**: Same allowlist as all LLM plugins -- only system essentials, XDG dirs, Node.js config, TLS/proxy settings, and locale vars are forwarded.
+**Environment isolation**: Same allowlist as all agent plugins -- only system essentials, XDG dirs, Node.js config, TLS/proxy settings, and locale vars are forwarded.
 
 ## Limitations
 
@@ -1068,10 +1068,10 @@ command_timeout_ms: 600000
 
 | Plugin | Relationship |
 |---|---|
-| **claude-code-llm** | The default LLM plugin. Full cost/quota reporting, native system prompt support. Best for production use. |
-| **opencode-llm** | Multi-provider alternative supporting Anthropic, OpenAI, Google, and others through one CLI. Reports cost. |
+| **claude-code-agent** | The default agent plugin. Full cost/quota reporting, native system prompt support. Best for production use. |
+| **opencode-agent** | Multi-provider alternative supporting Anthropic, OpenAI, Google, and others through one CLI. Reports cost. |
 
-Only one LLM plugin is active at a time.
+Only one agent plugin is active at a time.
 `;
 
 const COMMUNICATION_README = `# Communication Adapter
@@ -1984,10 +1984,10 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 export const ALL_PLUGIN_DOCS: readonly PluginDoc[] = [
   { relativePath: "docs/plugins/trigger/README.md", content: TRIGGER_README },
   { relativePath: "docs/plugins/trigger/github-trigger.md", content: TRIGGER_GITHUB_TRIGGER },
-  { relativePath: "docs/plugins/llm/README.md", content: LLM_README },
-  { relativePath: "docs/plugins/llm/claude-code-llm.md", content: LLM_CLAUDE_CODE },
-  { relativePath: "docs/plugins/llm/opencode-llm.md", content: LLM_OPENCODE },
-  { relativePath: "docs/plugins/llm/gemini-cli-llm.md", content: LLM_GEMINI_CLI },
+  { relativePath: "docs/plugins/agent/README.md", content: AGENT_README },
+  { relativePath: "docs/plugins/agent/claude-code-agent.md", content: AGENT_CLAUDE_CODE },
+  { relativePath: "docs/plugins/agent/opencode-agent.md", content: AGENT_OPENCODE },
+  { relativePath: "docs/plugins/agent/gemini-cli-agent.md", content: AGENT_GEMINI_CLI },
   { relativePath: "docs/plugins/communication/README.md", content: COMMUNICATION_README },
   { relativePath: "docs/plugins/communication/github-comm.md", content: COMMUNICATION_GITHUB_COMM },
   {

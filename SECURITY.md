@@ -1,6 +1,6 @@
 # Security Policy
 
-The Engineer handles credentials, accesses repositories, and runs LLM CLI tools that can execute code. The security surface is real, even at preview stage. If you find a vulnerability, please report it privately so we can fix it before disclosure.
+The Engineer handles credentials, accesses repositories, and runs coding agent CLIs that can execute code. The security surface is real, even at preview stage. If you find a vulnerability, please report it privately so we can fix it before disclosure.
 
 ## Reporting a vulnerability
 
@@ -21,14 +21,14 @@ You and the maintainer can then collaborate on a fix in a private thread before 
 - Credential leakage (tokens, API keys, session secrets) through logs, errors, PR descriptions, or any output channel
 - Workspace escape or filesystem access outside task boundaries
 - Authentication or authorization bypasses in any adapter or plugin
-- Code execution beyond what an LLM CLI tool would legitimately perform
+- Code execution beyond what an coding agent CLI would legitimately perform
 - Configuration parsing that allows arbitrary file reads or command execution
 - Any path that allows a malicious task to compromise the host system or the user's other repositories
 
 ## What's out of scope
 
 - Bugs that don't have a security impact — those go to [regular issues](https://github.com/FarzamMohammadi/the-engineer/issues)
-- Vulnerabilities in third-party LLM CLI tools (Claude Code, Codex, OpenCode) — report those to their respective maintainers
+- Vulnerabilities in third-party coding agent CLIs (Claude Code, Codex, OpenCode) — report those to their respective maintainers
 - Social-engineering attacks that require the user to act against their own interest
 - Issues that only apply to forks that have removed safety controls
 

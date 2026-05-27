@@ -77,7 +77,7 @@ describe("Orchestrator", () => {
       }
     });
 
-    it("calls LLM adapter once per phase", async () => {
+    it("calls agent adapter once per phase", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
@@ -85,7 +85,7 @@ describe("Orchestrator", () => {
 
       // 7 phases = 8 LLM calls (self_review runs 1 review sub-phase + 1 refinement)
       const llmCalls = handle.actionPipeline.execute.mock.calls.filter(
-        (call: any[]) => call[0]?.details?.operation === "llm_infer",
+        (call: any[]) => call[0]?.details?.operation === "agent_run",
       );
       expect(llmCalls).toHaveLength(8);
     });
@@ -327,7 +327,7 @@ describe("Orchestrator", () => {
       let llmCallCount = 0;
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
-          if (input.details?.operation === "llm_infer") {
+          if (input.details?.operation === "agent_run") {
             llmCallCount++;
             // LLM calls 5+ = self_review phase: return non-JSON without writing session-result
             if (llmCallCount >= 5 && llmCallCount <= 14) {
@@ -362,7 +362,7 @@ describe("Orchestrator", () => {
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
           callCount++;
-          if (callCount === 1 && input.details?.operation === "llm_infer") {
+          if (callCount === 1 && input.details?.operation === "agent_run") {
             return {
               outcome: "executed",
               result: {
@@ -393,7 +393,7 @@ describe("Orchestrator", () => {
       // Agent-loop phases (self_review onwards) get "low" confidence fallback.
       handle.actionPipeline.execute.mockImplementation(
         async (input: { executeFn: () => Promise<unknown>; details?: { operation?: string } }) => {
-          if (input.details?.operation === "llm_infer") {
+          if (input.details?.operation === "agent_run") {
             return {
               outcome: "executed",
               result: {
@@ -433,7 +433,7 @@ describe("Orchestrator", () => {
   // ── Action Pipeline Integration ────────────────────────────────────────────
 
   describe("action pipeline integration", () => {
-    it("all phases use ActionPipeline for LLM calls", async () => {
+    it("all phases use ActionPipeline for agent runs", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
@@ -528,7 +528,7 @@ describe("Orchestrator", () => {
   // ── Error Handling ─────────────────────────────────────────────────────────
 
   describe("error handling", () => {
-    it("throws clear error when no LLM plugin is registered", async () => {
+    it("throws clear error when no agent plugin is registered", async () => {
       handle.registry.getPrimaryPlugin.mockReturnValue(null);
       const dispatch = createMockDispatch();
 
@@ -536,17 +536,17 @@ describe("Orchestrator", () => {
 
       expect(result.outcome).toBe("error");
       if (result.outcome === "error") {
-        expect(result.reason).toContain("no LLM plugin");
+        expect(result.reason).toContain("no agent plugin");
       }
     });
 
-    it("returns error result when LLM adapter throws", async () => {
+    it("returns error result when agent adapter throws", async () => {
       handle.actionPipeline.execute.mockImplementation((input: { details?: { operation?: string } }) => {
-        if (input.details?.operation === "llm_infer") {
+        if (input.details?.operation === "agent_run") {
           return Promise.resolve({
             outcome: "error",
-            reason: "LLM provider unavailable",
-            error: new Error("LLM down"),
+            reason: "Agent provider unavailable",
+            error: new Error("Agent down"),
           });
         }
         return Promise.resolve({ outcome: "executed", result: null });
@@ -581,7 +581,7 @@ describe("Orchestrator", () => {
   // ── Cost Tracking ──────────────────────────────────────────────────────────
 
   describe("cost tracking", () => {
-    it("emits cost.incurred event after each LLM call", async () => {
+    it("emits cost.incurred event after each agent run", async () => {
       handle.setAllPhaseResponses();
       const dispatch = createMockDispatch();
 
@@ -721,7 +721,7 @@ describe("Orchestrator", () => {
       expect(result).toBe(false);
     });
 
-    it("sanitizes secrets in the prompt sent to LLM", async () => {
+    it("sanitizes secrets in the prompt sent to the agent", async () => {
       const secretToken = `ghp_${"a".repeat(40)}`;
       handle.taskEngine.getTask.mockReturnValue(
         createMockTask({
@@ -745,8 +745,8 @@ describe("Orchestrator", () => {
         const result = await input.executeFn();
         return { outcome: "executed", result };
       });
-      const mockLlm = {
-        infer: (req: { prompt: string }) => {
+      const mockAgent = {
+        run: (req: { prompt: string }) => {
           capturedPrompt = req.prompt;
           return {
             content: JSON.stringify({ can_resolve: false, action: "n/a" }),
@@ -756,7 +756,7 @@ describe("Orchestrator", () => {
           };
         },
       };
-      handle.registry.getPrimaryPlugin.mockReturnValue(mockLlm);
+      handle.registry.getPrimaryPlugin.mockReturnValue(mockAgent);
 
       await handle.orchestrator.attemptSelfUnblock("task-1");
 

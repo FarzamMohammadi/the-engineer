@@ -77,7 +77,7 @@ Each task has its own state, workspace, and session trail. Nothing bleeds across
 - Explain why a system exists and what it guarantees before explaining how.
 
 [10] OUTPUT DESIGN
-- For LLM consumers: structured, bounded length, consistent format, actionable content.
+- For agent consumers: structured, bounded length, consistent format, actionable content.
 - For human consumers: scannable, lead with the answer, detail on demand.
 - For both: structured data with a human-readable summary.
 - Plain language. Short sentences. No idioms or jargon without explanation.

@@ -7,7 +7,7 @@ import { ComplexitySchema, Phases } from "../../schemas/orchestrator.js";
 import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { AndonCord } from "./andon-cord.js";
-import { LlmUnavailableError, PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
+import { AgentUnavailableError, PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
 import { sendOutreach } from "./outreach-sender.js";
 import { PhaseNavigator } from "./phase-navigator.js";
 import type { PrManager } from "./pr-manager.js";
@@ -341,7 +341,7 @@ function checkSelfReviewLoopback(input: SelfReviewLoopbackInput): { targetPhase:
           : "";
   }
 
-  // Only loopback when the LLM explicitly assessed "needs_work" or
+  // Only loopback when the agent explicitly assessed "needs_work" or
   // "fundamental_issues". Any other value (including "unknown" from fallback
   // outputs, "ship_it", "acceptable", or free-form positive assessments)
   // passes through to the next phase.
@@ -945,11 +945,11 @@ export async function runPhasePipeline(
       const handler = handlers.get(phase);
       output = await handler(taskId, dispatch, priorOutputs, currentState);
     } catch (error: unknown) {
-      // LLM unavailable: block with reason and let the daemon-side scheduler decide
+      // Agent unavailable: block with reason and let the daemon-side scheduler decide
       // re-queue vs stay-blocked via the retry-policy module. Phase-runner does not
       // touch the retry counter or not_before — that's retry-policy's surface.
-      if (error instanceof LlmUnavailableError) {
-        ctx.observer.error("LLM adapter unavailable — blocking task", {
+      if (error instanceof AgentUnavailableError) {
+        ctx.observer.error("Agent adapter unavailable — blocking task", {
           taskId,
           phase,
           attempts: error.attempts,
@@ -960,15 +960,15 @@ export async function runPhasePipeline(
           taskId,
           TaskStates.blocked,
           null,
-          `LLM adapter unavailable: ${error.lastError}`,
+          `Agent adapter unavailable: ${error.lastError}`,
           "orchestrator",
         );
         ctx.taskEngine.updateTaskField(taskId, "blocked", {
-          reason: "llm_unavailable",
+          reason: "agent_unavailable",
           efforts_made: [`${String(error.attempts)} retry attempts with exponential backoff`],
           contacted: [],
-          needed: "LLM adapter to become available",
-          waiting_for: "llm_adapter",
+          needed: "Agent adapter to become available",
+          waiting_for: "agent_adapter",
         });
 
         ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.blocked);
@@ -977,7 +977,7 @@ export async function runPhasePipeline(
           {
             outcome: Outcomes.blocked,
             phase,
-            reason: `LLM adapter unavailable: ${error.lastError}`,
+            reason: `Agent adapter unavailable: ${error.lastError}`,
           },
           navigator.phasesRun(),
         );

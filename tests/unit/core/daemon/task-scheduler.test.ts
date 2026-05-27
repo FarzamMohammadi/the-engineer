@@ -55,7 +55,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
     retry_policy: {
       crash: { backoff_minutes: [1, 5, 15, 30, 30], max_attempts: 5 },
-      llm_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
+      agent_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
     },
     evaluation: { enabled: false },
     ...overrides,
@@ -848,8 +848,8 @@ describe("TaskScheduler", () => {
     await expect(flush()).resolves.toBeUndefined();
   });
 
-  // 33. handleLlmUnavailableBlocked: re-queues task when retry budget remains
-  it("handleTaskCompletion on blocked llm_unavailable re-queues when retry budget remains", () => {
+  // 33. handleAgentUnavailableBlocked: re-queues task when retry budget remains
+  it("handleTaskCompletion on blocked agent_unavailable re-queues when retry budget remains", () => {
     const { ctx, taskEngine, clock } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
@@ -861,31 +861,31 @@ describe("TaskScheduler", () => {
         id: "t1",
         state: TaskStates.blocked,
         blocked: {
-          reason: "llm_unavailable",
+          reason: "agent_unavailable",
           efforts_made: [],
           contacted: [],
           needed: "x",
           waiting_for: "llm_adapter",
         },
-        consecutive_llm_unavailable_count: 0,
+        consecutive_agent_unavailable_count: 0,
       }),
     );
 
     const scheduler = makeScheduler(ctx, notifications, callbacks);
-    scheduler.handleTaskCompletion("t1", { outcome: "blocked", phase: "execution", reason: "llm_unavailable" });
+    scheduler.handleTaskCompletion("t1", { outcome: "blocked", phase: "execution", reason: "agent_unavailable" });
 
-    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_llm_unavailable_count", 1);
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_agent_unavailable_count", 1);
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
       "t1",
       TaskStates.queued,
       null,
-      "llm_unavailable_retry",
+      "agent_unavailable_retry",
       "daemon",
     );
   });
 
-  // 34. handleLlmUnavailableBlocked: stays blocked when retry budget exhausted
-  it("handleTaskCompletion on blocked llm_unavailable stays blocked when budget exhausted", () => {
+  // 34. handleAgentUnavailableBlocked: stays blocked when retry budget exhausted
+  it("handleTaskCompletion on blocked agent_unavailable stays blocked when budget exhausted", () => {
     const { ctx, taskEngine } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
@@ -895,25 +895,25 @@ describe("TaskScheduler", () => {
         id: "t1",
         state: TaskStates.blocked,
         blocked: {
-          reason: "llm_unavailable",
+          reason: "agent_unavailable",
           efforts_made: [],
           contacted: [],
           needed: "x",
           waiting_for: "llm_adapter",
         },
-        consecutive_llm_unavailable_count: 4, // becomes 5 = max_attempts → terminal
+        consecutive_agent_unavailable_count: 4, // becomes 5 = max_attempts → terminal
       }),
     );
 
     const scheduler = makeScheduler(ctx, notifications, callbacks);
-    scheduler.handleTaskCompletion("t1", { outcome: "blocked", phase: "execution", reason: "llm_unavailable" });
+    scheduler.handleTaskCompletion("t1", { outcome: "blocked", phase: "execution", reason: "agent_unavailable" });
 
-    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_llm_unavailable_count", 5);
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_agent_unavailable_count", 5);
     expect(taskEngine.requestTransition).not.toHaveBeenCalledWith(
       "t1",
       TaskStates.queued,
       null,
-      "llm_unavailable_retry",
+      "agent_unavailable_retry",
       "daemon",
     );
     expect(notifications.notify).toHaveBeenCalledWith(

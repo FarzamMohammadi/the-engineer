@@ -5,11 +5,11 @@ import { CHART_COLORS, ChartContainer, ChartTooltip } from "../../components/ui/
 import { Skeleton } from "../../components/ui/skeleton";
 
 interface CostByTaskProps {
-  data: Array<{ id: string; title: string; llm_cost_usd: number }>;
+  data: Array<{ id: string; title: string; agent_cost_usd: number }>;
   isLoading: boolean;
 }
 
-/** Horizontal bar chart showing top 15 tasks by LLM cost. */
+/** Horizontal bar chart showing top 15 tasks by agent cost. */
 export function CostByTask({ data, isLoading }: CostByTaskProps): React.JSX.Element {
   if (isLoading) {
     return (
@@ -39,7 +39,7 @@ export function CostByTask({ data, isLoading }: CostByTaskProps): React.JSX.Elem
 
   const chartData = data.slice(0, 15).map((t) => ({
     name: t.title.length > 30 ? `${t.title.slice(0, 30)}…` : t.title,
-    cost: t.llm_cost_usd,
+    cost: t.agent_cost_usd,
   }));
 
   return (

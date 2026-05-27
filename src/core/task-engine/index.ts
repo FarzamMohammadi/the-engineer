@@ -86,7 +86,7 @@ const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
   requirements_loop_count: "integer",
   skip_research: "boolean",
   consecutive_crash_count: "integer",
-  consecutive_llm_unavailable_count: "integer",
+  consecutive_agent_unavailable_count: "integer",
 
   // REAL columns
   // (none currently — cost fields are updated via updateTracking, not updateTaskField)
@@ -143,9 +143,9 @@ export class TaskEngine implements ITaskEngine {
         team, related, decisions,
         repo, clone_url, thoughts_id, workspace, review, blocked,
         return_to_phase,
-        priority, llm_tokens, llm_cost_usd, compute_time_ms,
+        priority, agent_tokens, agent_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
-        not_before, consecutive_crash_count, consecutive_llm_unavailable_count,
+        not_before, consecutive_crash_count, consecutive_agent_unavailable_count,
         session_id, version
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
@@ -161,7 +161,7 @@ export class TaskEngine implements ITaskEngine {
     `);
 
     this.updateTrackingStmt = db.prepare(
-      "UPDATE tasks SET llm_tokens = llm_tokens + ?, llm_cost_usd = llm_cost_usd + ?, compute_time_ms = compute_time_ms + ? WHERE id = ?",
+      "UPDATE tasks SET agent_tokens = agent_tokens + ?, agent_cost_usd = agent_cost_usd + ?, compute_time_ms = compute_time_ms + ? WHERE id = ?",
     );
 
     // Per-field update statements
@@ -210,8 +210,8 @@ export class TaskEngine implements ITaskEngine {
       null, // blocked
       null, // return_to_phase
       priority,
-      0, // llm_tokens
-      0.0, // llm_cost_usd
+      0, // agent_tokens
+      0.0, // agent_cost_usd
       0, // compute_time_ms
       now, // created_at
       null, // started_at
@@ -219,7 +219,7 @@ export class TaskEngine implements ITaskEngine {
       now, // last_transition_at
       null, // not_before
       0, // consecutive_crash_count
-      0, // consecutive_llm_unavailable_count
+      0, // consecutive_agent_unavailable_count
       null, // session_id
       1, // version
     );
@@ -264,8 +264,8 @@ export class TaskEngine implements ITaskEngine {
       requirements_loop_count: 0,
       skip_research: false,
       priority,
-      llm_tokens: 0,
-      llm_cost_usd: 0,
+      agent_tokens: 0,
+      agent_cost_usd: 0,
       compute_time_ms: 0,
       created_at: now,
       started_at: null,
@@ -273,7 +273,7 @@ export class TaskEngine implements ITaskEngine {
       last_transition_at: now,
       not_before: null,
       consecutive_crash_count: 0,
-      consecutive_llm_unavailable_count: 0,
+      consecutive_agent_unavailable_count: 0,
       session_id: null,
     };
 

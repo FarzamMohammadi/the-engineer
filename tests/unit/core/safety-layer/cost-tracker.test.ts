@@ -44,7 +44,7 @@ function simulateCostEvent(eb: EventBus, overrides: Partial<CostIncurredPayload>
     task_id: "task-1",
     repo: "owner/repo",
     provider_id: "claude-api",
-    operation: "llm_call",
+    operation: "agent_call",
     spend_usd: 0.01,
     duration_ms: null,
     input_tokens: null,

@@ -141,21 +141,21 @@ export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
 }
 
 /**
- * Collect all blob references still used by llm_call observations.
+ * Collect all blob references still used by agent_call observations.
  * Blob refs are stored inside the input JSON as prompt_ref / response_ref.
  */
 export function collectReferencedBlobRefs(db: Database.Database): Set<string> {
   const refs = new Set<string>();
 
   // Use json_extract at the SQL level to avoid loading full input JSON blobs into JS memory.
-  // With thousands of LLM calls, the input column can be multi-KB each — extracting only the
+  // With thousands of agent calls, the input column can be multi-KB each — extracting only the
   // two ref strings keeps memory proportional to ref count, not total JSON size.
   const rows = db
     .prepare(
       `SELECT json_extract(input, '$.prompt_ref') as prompt_ref,
               json_extract(input, '$.response_ref') as response_ref
        FROM observations
-       WHERE type = 'llm_call' AND input IS NOT NULL`,
+       WHERE type = 'agent_call' AND input IS NOT NULL`,
     )
     .all() as { prompt_ref: string | null; response_ref: string | null }[];
 

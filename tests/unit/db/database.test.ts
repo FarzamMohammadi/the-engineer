@@ -221,8 +221,8 @@ describe("table structure", () => {
       "review",
       "blocked",
       "priority",
-      "llm_tokens",
-      "llm_cost_usd",
+      "agent_tokens",
+      "agent_cost_usd",
       "compute_time_ms",
       "created_at",
       "started_at",
@@ -235,7 +235,7 @@ describe("table structure", () => {
       "requirements_loop_count",
       "not_before",
       "consecutive_crash_count",
-      "consecutive_llm_unavailable_count",
+      "consecutive_agent_unavailable_count",
       "skip_research",
     ];
     expect(columns).toEqual(expected);

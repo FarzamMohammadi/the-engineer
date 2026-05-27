@@ -632,7 +632,7 @@ export function checkRiskyConfig(bundle: ConfigBundle): DoctorCategory {
     checks.push({
       label: "High concurrency",
       status: "warn",
-      message: `max_concurrent is ${bundle.daemon.max_concurrent} — high concurrency increases resource usage and LLM costs`,
+      message: `max_concurrent is ${bundle.daemon.max_concurrent} — high concurrency increases resource usage and agent costs`,
     });
   }
 

@@ -125,7 +125,7 @@ Another variant uses `as const satisfies` for additional type constraints:
 // src/schemas/observer.ts
 export const ObservationType = {
   AGENT_ITERATION: "agent_iteration",
-  LLM_CALL: "llm_call",
+  AGENT_CALL: "agent_call",
   // ...
 } as const satisfies Record<string, ObservationTypeValue>;
 ```
@@ -206,7 +206,7 @@ When schema A references schema B which references schema A:
 // src/schemas/orchestrator.ts
 export const PlanningOutputSchema = z.object({
   approach: z.string(),
-  decomposition_plan: z.lazy(() => LLMDecompositionPlanSchema).nullable(),
+  decomposition_plan: z.lazy(() => AgentDecompositionPlanSchema).nullable(),
 });
 ```
 

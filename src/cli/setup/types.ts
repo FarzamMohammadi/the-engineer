@@ -14,7 +14,7 @@ export interface DetectionResult {
 
 // ── Adapter Type Config ──────────────────────────────────────────────────────
 
-/** How the guided setup prompts the user for one adapter slot (LLM, trigger, etc.). */
+/** How the guided setup prompts the user for one adapter slot (agent, trigger, etc.). */
 export interface AdapterTypeConfig {
   readonly type: AdapterType;
   readonly label: string;

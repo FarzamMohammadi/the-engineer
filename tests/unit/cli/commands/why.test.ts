@@ -50,12 +50,12 @@ function insertTask(db: import("better-sqlite3").Database, id: string, overrides
     repo: null,
     created_at: "2026-01-15T10:30:00Z",
     last_transition_at: "2026-01-15T10:30:00Z",
-    llm_tokens: 0,
-    llm_cost_usd: 0,
+    agent_tokens: 0,
+    agent_cost_usd: 0,
     ...overrides,
   };
   db.prepare(
-    `INSERT INTO tasks (id, idempotency_key, state, sub_state, priority, title, description, repo, created_at, last_transition_at, llm_tokens, llm_cost_usd)
+    `INSERT INTO tasks (id, idempotency_key, state, sub_state, priority, title, description, repo, created_at, last_transition_at, agent_tokens, agent_cost_usd)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
@@ -68,8 +68,8 @@ function insertTask(db: import("better-sqlite3").Database, id: string, overrides
     defaults.repo,
     defaults.created_at,
     defaults.last_transition_at,
-    defaults.llm_tokens,
-    defaults.llm_cost_usd,
+    defaults.agent_tokens,
+    defaults.agent_cost_usd,
   );
 }
 
@@ -98,8 +98,8 @@ describe("runWhy", () => {
       sub_state: SubStates.working,
       description: "Fix bug",
       repo: "owner/repo",
-      llm_tokens: 1230,
-      llm_cost_usd: 0.42,
+      agent_tokens: 1230,
+      agent_cost_usd: 0.42,
     });
     handle.close();
 
@@ -202,8 +202,8 @@ describe("runWhy", () => {
     insertTask(handle.db, "task-005", {
       state: TaskStates.completed,
       description: "Fix auth",
-      llm_tokens: 500,
-      llm_cost_usd: 0.25,
+      agent_tokens: 500,
+      agent_cost_usd: 0.25,
     });
     handle.close();
 

@@ -118,7 +118,7 @@ The Engineer is built for everyone. This demands:
 - Trustworthiness — people are giving this agent access to their repos
 - Clear documentation and easy setup
 - Configurable safety and autonomy levels
-- No vendor lock-in to any LLM, platform, or service
+- No vendor lock-in to any agent, platform, or service
 
 ### Trust Through Restraint
 
@@ -170,7 +170,7 @@ Some deviations are larger than a single decision — deliberate narrowings of s
 
 ### Orchestrate, Don't Build
 
-The Engineer stays lean by orchestrating, not building. LLM CLI tools from providers like Anthropic (Claude Code), OpenAI (Codex), OpenCode, and others are full autonomous agents with native capabilities — code execution, file manipulation, web search, reasoning. They improve constantly without us lifting a finger. We capture that value by design.
+The Engineer stays lean by orchestrating, not building. coding agent CLIs from providers like Anthropic (Claude Code), OpenAI (Codex), OpenCode, and others are full autonomous agents with native capabilities — code execution, file manipulation, web search, reasoning. They improve constantly without us lifting a finger. We capture that value by design.
 
 - **Delegate the work.** The Engineer provides context, instructions, and phase sequencing. The CLI agent does the work. We never rebuild what an external tool already does better — and they will always do it better, because that's their entire focus.
 - **Master the tools.** These CLI tools are The Engineer's instruments — just as a real engineer learns the depths of their tools to extract maximum value, The Engineer must continuously evolve how it uses them. Study their flags, their output formats, their strengths and limitations. Find the absolute best ways to leverage each tool for the highest-quality outcome. The tools improve, and so must our use of them.
@@ -231,7 +231,7 @@ Violating this poisons the entire three-tier model.
 
 The entire value proposition of the three-tier model (see [`architecture/three-tier-model.md`](architecture/three-tier-model.md)) is that plugins are the ecosystem — swappable, community-contributed, independently developed. The moment Core contains knowledge about a specific plugin, every future plugin must either (a) be known to Core (defeating the purpose) or (b) be a second-class citizen that Core doesn't accommodate. Both outcomes destroy extensibility.
 
-The adapter contract IS the integration boundary. Everything Core needs from the outside world is defined there: `TriggerAdapter.poll()`, `CommunicationAdapter.sendMessage()`, `LLMAdapter.runInference()`. The plugin behind the contract is irrelevant to Core. GitHub today, GitLab tomorrow, a custom webhook next week — Core's code does not change.
+The adapter contract IS the integration boundary. Everything Core needs from the outside world is defined there: `TriggerAdapter.poll()`, `CommunicationAdapter.sendMessage()`, `AgentAdapter.run()`. The plugin behind the contract is irrelevant to Core. GitHub today, GitLab tomorrow, a custom webhook next week — Core's code does not change.
 
 **The test:** Before merging any code, ask: "If I deleted every plugin and replaced them with completely different implementations for different platforms, would Core still compile and function?" If the answer is no, the code violates this principle.
 
@@ -241,11 +241,11 @@ See [`architecture/three-tier-model.md`](architecture/three-tier-model.md) § Ho
 
 Every output the system produces — tool results, phase handoffs, error messages, status updates — has a consumer. Design for that consumer, not for "whoever happens to look at it."
 
-- **When the consumer is an LLM agent:** Structure for parsing. Bounded length, consistent format, actionable content. An agent processing a wall of unstructured text to find one relevant line is an interface failure.
+- **When the consumer is an AI agent:** Structure for parsing. Bounded length, consistent format, actionable content. An agent processing a wall of unstructured text to find one relevant line is an interface failure.
 - **When the consumer is a human:** Optimize for scannability. Lead with the answer, provide detail on demand.
 - **When both will read it:** Provide structured data with a human-readable summary.
 
-Phase handoffs are the connective tissue of the pipeline. If the output of one phase is formatted for human reading but consumed by the next phase's LLM, information degrades at every transition. Precision in, precision out.
+Phase handoffs are the connective tissue of the pipeline. If the output of one phase is formatted for human reading but consumed by the next phase's agent, information degrades at every transition. Precision in, precision out.
 
 ### Fail Loud
 
@@ -259,12 +259,12 @@ Errors are information. Swallowing them is sabotage.
 
 No user should have to manually figure out setup, configuration, or integration. We live in the age of AI — every process that a human would struggle with should be automated or agent-guided.
 
-- **Contribution guides are agent prompts.** A user points their LLM at the guide and the agent handles OS detection, credential setup, config generation, and testing interactively. The guide is written for the agent to execute, not for a human to puzzle through.
+- **Contribution guides are agent prompts.** A user points their AI coding CLI at the guide and the agent handles OS detection, credential setup, config generation, and testing interactively. The guide is written for the agent to execute, not for a human to puzzle through.
 - **Zero-pain plugin development.** Adding a new plugin means following a prompt, not reading architecture docs. The agent reads the contract, examines the reference implementation, builds the plugin, and runs the compliance suite.
 - **Self-validating setup.** Every setup path ends with a verification step the agent can run. If something is wrong, the agent diagnoses it — the user never sees a cryptic error.
 - **Platform adaptation is automatic.** The agent detects the user's OS and adapts. No manual "if you're on Linux, do X instead" — the agent handles the branching.
 
-The bar: any user with any LLM CLI tool can set up, extend, and contribute to The Engineer without pain. If they need to read a stack trace or hunt for a config path, we failed.
+The bar: any user with any coding agent CLI can set up, extend, and contribute to The Engineer without pain. If they need to read a stack trace or hunt for a config path, we failed.
 
 ---
 

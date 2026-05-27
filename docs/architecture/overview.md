@@ -36,7 +36,7 @@ graph TB
         direction TB
         TA[TriggerAdapter]
         CA[CommunicationAdapter]
-        LA[LLMAdapter]
+        LA[AgentAdapter]
         GHA[GitHostingAdapter]
     end
 
@@ -45,7 +45,7 @@ graph TB
         GHT[GitHub Trigger]
         GHC[GitHub Comm]
         TG[Telegram Comm]
-        CL[Claude Code LLM]
+        CL[Claude Code Agent]
         GHH[GitHub Hosting]
     end
 
@@ -69,7 +69,7 @@ graph LR
     Daemon -->|polls| Registry
     Orchestrator -->|manages state| TaskEngine
     Orchestrator -->|calls| ActionPipeline
-    Orchestrator -->|LLM inference| Registry
+    Orchestrator -->|agent execution| Registry
     ActionPipeline -->|Gate 1| TaskEngine
     ActionPipeline -->|Gate 2| SafetyLayer
     Orchestrator -->|workspace| WorkspaceManager
@@ -84,7 +84,7 @@ graph LR
 | **Daemon** | Tick loop: poll triggers, schedule tasks, dispatch to Orchestrator, monitor health |
 | **Orchestrator** | Seven-phase task execution pipeline, agent loop, workspace lifecycle |
 | **TaskEngine** | Task state machine, transitions, permissions, priority queries |
-| **RetryPolicy** | Single source of truth for task-level retry semantics — per-category backoff schedules, ceilings, and terminal disposition. Called by the scheduler (crash + LLM-unavailable) and by boot recovery |
+| **RetryPolicy** | Single source of truth for task-level retry semantics — per-category backoff schedules, ceilings, and terminal disposition. Called by the scheduler (crash + agent-unavailable) and by boot recovery |
 | **DispatchTracker** | Single owner of in-flight dispatch lifecycle. Mints a per-dispatch identity so late callbacks are idempotent across re-dispatch, owns the `AbortSignal` exposed to the orchestrator, and exposes one `terminate(taskId, reason)` path that routes preemption, cost-limit, hard-cap, and graceful-shutdown through `Outcomes.terminated`. Drains on shutdown with a single shared timeout. See [scheduling-dispatch.md](scheduling-dispatch.md). |
 | **EventBus** | Pub/sub with SQLite persistence, replay for state reconstruction, glob pattern subscriptions |
 | **SafetyLayer** | Policy evaluation, cost tracking, autonomy verdicts |
@@ -187,7 +187,7 @@ contributes:
 
 1. **Discover** — Scan configured directories for `engineer.plugin.yaml` manifests
 2. **Validate** — Check unique IDs, type validity, entry point existence
-3. **Order** — Sort by adapter type (Communication > LLM > GitHosting > Trigger)
+3. **Order** — Sort by adapter type (Communication > Agent > GitHosting > Trigger)
 4. **Load** — Dynamic import, call `createPlugin()` factory function
 5. **Initialize** — Validate config, resolve env vars, call `plugin.initialize(config)`
 

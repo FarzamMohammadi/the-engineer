@@ -6,6 +6,9 @@ import {
   AdapterErrorSeveritySchema,
   AdapterTypeSchema,
   AdapterTypes,
+  AgentCapabilitiesSchema,
+  AgentRunRequestSchema,
+  AgentRunResultSchema,
   BranchProtectionSchema,
   CommentResultSchema,
   ContactInfoSchema,
@@ -13,13 +16,10 @@ import {
   FormattedMessageSchema,
   HealthStatusSchema,
   InboundMessageSchema,
-  InferenceRequestSchema,
-  InferenceResultSchema,
   InitResultSchema,
   IssueOptionsSchema,
   IssueResultSchema,
   IssueUpdatesSchema,
-  LLMCapabilitiesSchema,
   MergeResultSchema,
   MergeStrategySchema,
   MessageTypeSchema,
@@ -54,7 +54,7 @@ describe("AdapterTypeSchema", () => {
   });
 
   it("accepts all valid values", () => {
-    for (const type of ["trigger", "communication", "llm", "git_hosting"]) {
+    for (const type of ["trigger", "communication", "agent", "git_hosting"]) {
       expect(AdapterTypeSchema.parse(type)).toBe(type);
     }
   });
@@ -426,23 +426,23 @@ describe("ReconciliationResultSchema", () => {
 
 // ── LLM Adapter ─────────────────────────────────────────────────────────────────
 
-describe("InferenceRequestSchema", () => {
+describe("AgentRunRequestSchema", () => {
   it("parses valid request", () => {
-    const req = InferenceRequestSchema.parse({
+    const req = AgentRunRequestSchema.parse({
       prompt: "Explain this code",
     });
     expect(req.prompt).toBe("Explain this code");
   });
 
   it("system_prompt defaults to null when omitted", () => {
-    const req = InferenceRequestSchema.parse({
+    const req = AgentRunRequestSchema.parse({
       prompt: "test",
     });
     expect(req.system_prompt).toBeNull();
   });
 
   it("accepts explicit system_prompt string", () => {
-    const req = InferenceRequestSchema.parse({
+    const req = AgentRunRequestSchema.parse({
       prompt: "test",
       system_prompt: "You are a code reviewer.",
     });
@@ -450,14 +450,14 @@ describe("InferenceRequestSchema", () => {
   });
 
   it("cwd defaults to null when omitted", () => {
-    const req = InferenceRequestSchema.parse({
+    const req = AgentRunRequestSchema.parse({
       prompt: "test",
     });
     expect(req.cwd).toBeNull();
   });
 
   it("accepts explicit cwd string", () => {
-    const req = InferenceRequestSchema.parse({
+    const req = AgentRunRequestSchema.parse({
       prompt: "test",
       cwd: "/tmp/worktree/42",
     });
@@ -465,9 +465,9 @@ describe("InferenceRequestSchema", () => {
   });
 });
 
-describe("InferenceResultSchema", () => {
+describe("AgentRunResultSchema", () => {
   it("parses valid result with cost", () => {
-    const result = InferenceResultSchema.parse({
+    const result = AgentRunResultSchema.parse({
       content: "Here is the explanation...",
       cost_usd: 0.015,
       duration_ms: 1200,
@@ -477,7 +477,7 @@ describe("InferenceResultSchema", () => {
   });
 
   it("accepts null cost_usd", () => {
-    const result = InferenceResultSchema.parse({
+    const result = AgentRunResultSchema.parse({
       content: "output",
       cost_usd: null,
       duration_ms: 500,
@@ -486,16 +486,16 @@ describe("InferenceResultSchema", () => {
   });
 });
 
-describe("LLMCapabilitiesSchema", () => {
+describe("AgentCapabilitiesSchema", () => {
   it("parses valid capabilities", () => {
-    const caps = LLMCapabilitiesSchema.parse({
+    const caps = AgentCapabilitiesSchema.parse({
       model_id: "claude-sonnet-4-5-20250514",
     });
     expect(caps.model_id).toBe("claude-sonnet-4-5-20250514");
   });
 
   it("rejects missing model_id", () => {
-    expect(() => LLMCapabilitiesSchema.parse({})).toThrow();
+    expect(() => AgentCapabilitiesSchema.parse({})).toThrow();
   });
 });
 

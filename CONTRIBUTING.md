@@ -33,7 +33,7 @@ npx tsx src/index.ts
 src/
   core/         # Invariant components (EventBus, TaskEngine, Orchestrator, Daemon, etc.)
   adapters/     # Abstract base classes + SDK boundary (plugin authors import from here)
-  plugins/      # Implementations grouped by adapter type (trigger/, communication/, llm/, tool/, git-hosting/)
+  plugins/      # Implementations grouped by adapter type (trigger/, communication/, agent/, tool/, git-hosting/)
   schemas/      # Centralized Zod schemas
   cli/          # Commander CLI (start, stop, status, logs, doctor, why)
   config/       # Config loader + hot-reload watcher
@@ -111,7 +111,7 @@ When changes span multiple concerns, split into separate commits — one logical
 
 ## Writing Plugins
 
-The Engineer's plugin system lets you add new triggers, communication channels, LLM providers, tools, and git hosting integrations.
+The Engineer's plugin system lets you add new triggers, communication channels, agent plugins, tools, and git hosting integrations.
 
 See [Plugin Documentation](docs/plugins/) — each adapter type has its own directory with contract and per-plugin references. For guided plugin development, see the [contribution how-tos](docs/contribution-docs/) — these are agent-executable prompts that walk you through the process interactively.
 

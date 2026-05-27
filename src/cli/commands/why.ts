@@ -16,8 +16,8 @@ interface TaskRow {
   readonly description: string | null;
   readonly repo: string | null;
   readonly created_at: string;
-  readonly llm_tokens: number;
-  readonly llm_cost_usd: number;
+  readonly agent_tokens: number;
+  readonly agent_cost_usd: number;
 }
 
 interface TransitionRow {
@@ -122,7 +122,7 @@ function queryAndDisplay(db: BetterSqlite3.Database, taskId: string): number {
         payload: e.payload ? safeJsonParse(e.payload) : null,
       })),
       journal,
-      cost: { tokens: task.llm_tokens, usd: task.llm_cost_usd },
+      cost: { tokens: task.agent_tokens, usd: task.agent_cost_usd },
     });
     return 0;
   }
@@ -168,7 +168,7 @@ function queryAndDisplay(db: BetterSqlite3.Database, taskId: string): number {
 
   // Cost
   out.blank();
-  out.keyValue("Cost", `$${task.llm_cost_usd.toFixed(2)} total (${String(task.llm_tokens)} tokens)`);
+  out.keyValue("Cost", `$${task.agent_cost_usd.toFixed(2)} total (${String(task.agent_tokens)} tokens)`);
 
   return 0;
 }

@@ -44,7 +44,7 @@ Biome automates what it can: formatting, import ordering, file naming, complexit
 ### Rules
 
 - **Full names, no abbreviations.** `CommunicationAdapter` not `CommAdapter`. `requirements_gathering` not `req_gathering`.
-- **Acronyms as words.** `LlmAdapter`, `loadHttpUrl`, `parseJsonBody` — not `LLMAdapter`, `loadHTTPURL`.
+- **Acronyms as words.** `XmlParser`, `loadHttpUrl`, `parseJsonBody` — not `XMLParser`, `loadHTTPURL`.
 - **Boolean prefixes preferred.** Use `is`, `has`, `can`, `should`, `was`, `will` when the bare word is ambiguous. `isActive`, `hasChildren`, `shouldRetry`. Exception: obvious adjectives that can only be boolean — `enabled`, `blocked`, `active` (on a clearly boolean field).
 - **No vague -ER suffixes.** `TaskManager` (manages how?) and `DataProcessor` (processes into what?) are banned. `ConfigLoader` and `EventHandler` are fine when precise. The test: if you can't describe what it does without repeating the suffix, rename it.
 - **No `utils`, `helpers`, `misc`.** These are junk drawers. Move functions to the concept they belong to.
@@ -572,7 +572,7 @@ Logging captures *reasoning*. Tracing captures *structure* — the shape of an o
 
 ### Span Lifecycle
 
-Every non-trivial operation gets a span: start, annotate, end with success or error. Spans nest — a task execution span contains phase spans, which contain LLM call spans.
+Every non-trivial operation gets a span: start, annotate, end with success or error. Spans nest — a task execution span contains phase spans, which contain agent run spans.
 
 ```typescript
 const span = observer.startSpan("phase_transition", `execute-${phase}`, { taskId });
@@ -601,11 +601,11 @@ Non-obvious choices (retry vs. fail, plugin selection, safety verdicts) use `obs
 
 ## 15. Graceful Degradation
 
-The daemon must survive any single component failure. A plugin crash, a temporary DB lock, an LLM timeout — none of these should take down the system.
+The daemon must survive any single component failure. A plugin crash, a temporary DB lock, an agent timeout — none of these should take down the system.
 
 ### Degrade, Don't Crash
 
-When a dependency fails, reduce capability instead of terminating. A failed trigger plugin means no new events from that source — not a dead daemon. A failed LLM call means the current phase retries or pauses — not an orphaned task.
+When a dependency fails, reduce capability instead of terminating. A failed trigger plugin means no new events from that source — not a dead daemon. A failed agent run means the current phase retries or pauses — not an orphaned task.
 
 ### Log the Degradation
 

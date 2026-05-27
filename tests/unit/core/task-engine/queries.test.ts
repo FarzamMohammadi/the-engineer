@@ -29,7 +29,7 @@ describe("TaskQueries", () => {
         title, description, source_text, acceptance_criteria,
         team, related, decisions,
         repo, clone_url, workspace, review, blocked,
-        priority, llm_tokens, llm_cost_usd, compute_time_ms,
+        priority, agent_tokens, agent_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
         session_id, version
       ) VALUES (

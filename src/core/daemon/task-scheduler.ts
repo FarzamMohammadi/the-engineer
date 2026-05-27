@@ -23,7 +23,7 @@ export function isSlotConsuming(state: string, subState: string | null): boolean
  * Whether a queued task is eligible to dispatch right now.
  *
  * The only gate is `not_before` — set by retry-policy after a crash or
- * LLM-unavailable failure to defer the next attempt. Slot availability is a
+ * agent-unavailable failure to defer the next attempt. Slot availability is a
  * separate concern handled by the scheduler.
  */
 export function isTaskEligible(task: { id: string; not_before: string | null }, now: number): boolean {
@@ -132,7 +132,7 @@ export function createTaskScheduler(
     // Build dispatch package
     const rawCheckpoint = sessionMemory.checkpoints.getLatest(task.id);
 
-    // Rework dispatches (unapplied feedback) must restart from intake so the LLM
+    // Rework dispatches (unapplied feedback) must restart from intake so the agent
     // sees the reviewer's comments — NOT resume from the old checkpoint.
     // Pipeline fix also adds a synthetic unapplied feedback round, so this
     // naturally covers CI failure rework too.
@@ -352,25 +352,25 @@ export function createTaskScheduler(
     taskEngine.requestTransition(taskId, TaskStates.blocked, null, `unknown_outcome_${outcome}`, "daemon");
   }
 
-  /** Handle blocked tasks with llm_unavailable reason: increment counter, then re-queue or final alert. */
-  function handleLlmUnavailableBlocked(taskId: string): void {
-    const disposition = retryPolicy.recordFailure("llm_unavailable", taskId);
+  /** Handle blocked tasks with agent_unavailable reason: increment counter, then re-queue or final alert. */
+  function handleAgentUnavailableBlocked(taskId: string): void {
+    const disposition = retryPolicy.recordFailure("agent_unavailable", taskId);
 
     if (disposition.disposition === "terminal") {
-      observer.error("LLM unavailability retries exhausted — task stays blocked until manual unblock", {
+      observer.error("Agent unavailability retries exhausted — task stays blocked until manual unblock", {
         taskId,
         retryCount: disposition.count,
       });
       notifications.notify({
         kind: NotificationKinds.alert,
         taskId,
-        message: `LLM adapter unavailable after ${String(disposition.count)} retry cycles. Task blocked until you respond to unblock.`,
+        message: `Agent adapter unavailable after ${String(disposition.count)} retry cycles. Task blocked until you respond to unblock.`,
       });
       notifications.notify({
         kind: NotificationKinds.ticket_comment,
         taskId,
         message:
-          "LLM adapter is unavailable. Task is blocked until you respond. Reply to this issue or use any communication channel to retry when the issue is resolved.",
+          "Agent adapter is unavailable. Task is blocked until you respond. Reply to this issue or use any communication channel to retry when the issue is resolved.",
       });
       return;
     }
@@ -379,16 +379,16 @@ export function createTaskScheduler(
     const backoffMs = new Date(disposition.not_before).getTime() - clock.now();
     const backoffMinutes = Math.max(0, Math.round(backoffMs / 60_000));
 
-    const requeue = taskEngine.requestTransition(taskId, TaskStates.queued, null, "llm_unavailable_retry", "daemon");
+    const requeue = taskEngine.requestTransition(taskId, TaskStates.queued, null, "agent_unavailable_retry", "daemon");
     if (!requeue.success) {
-      observer.warn("Failed to re-queue task for LLM retry", {
+      observer.warn("Failed to re-queue task for agent retry", {
         taskId,
         reason: requeue.reason,
       });
       return;
     }
 
-    observer.info("Task re-queued for LLM unavailability retry", {
+    observer.info("Task re-queued for agent unavailability retry", {
       taskId,
       retryCount: disposition.count,
       notBefore: disposition.not_before,
@@ -396,7 +396,7 @@ export function createTaskScheduler(
     notifications.notify({
       kind: NotificationKinds.alert,
       taskId,
-      message: `LLM adapter unavailable — task blocked, will retry in ${String(backoffMinutes)} minutes. Respond to unblock manually.`,
+      message: `Agent adapter unavailable — task blocked, will retry in ${String(backoffMinutes)} minutes. Respond to unblock manually.`,
     });
   }
 
@@ -406,13 +406,13 @@ export function createTaskScheduler(
     // before invoking this callback — no local cleanup needed.
     tasksCompleted++;
 
-    // Reset both retry counters on any successful (non-crash, non-llm_unavailable) outcome.
-    // The llm_unavailable path manages its own counter inside handleLlmUnavailableBlocked below.
+    // Reset both retry counters on any successful (non-crash, non-agent_unavailable) outcome.
+    // The agent_unavailable path manages its own counter inside handleAgentUnavailableBlocked below.
     if (result.outcome !== Outcomes.blocked) {
       retryPolicy.recordSuccess("crash", taskId);
-      retryPolicy.recordSuccess("llm_unavailable", taskId);
+      retryPolicy.recordSuccess("agent_unavailable", taskId);
     } else {
-      // Blocked outcome: reset crash counter (this wasn't a crash), leave llm_unavailable to its own handler.
+      // Blocked outcome: reset crash counter (this wasn't a crash), leave agent_unavailable to its own handler.
       retryPolicy.recordSuccess("crash", taskId);
     }
 
@@ -427,8 +427,8 @@ export function createTaskScheduler(
       const blockedTask = taskEngine.getTask(taskId);
       const blockedReason = blockedTask?.blocked?.reason;
 
-      if (blockedReason === "llm_unavailable") {
-        handleLlmUnavailableBlocked(taskId);
+      if (blockedReason === "agent_unavailable") {
+        handleAgentUnavailableBlocked(taskId);
       } else {
         // Human-blocked tasks stay blocked — no re-transition needed
         observer.info("Task blocked awaiting human input", {

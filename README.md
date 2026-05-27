@@ -19,7 +19,7 @@
 
 ## What it is
 
-AI coding CLIs like Claude Code, OpenCode, and other LLM agents are extraordinarily capable inside a single prompt. They fall short the moment you want them to do **real engineering work** — receiving tasks, gathering requirements, researching across the codebase, the web, and adjacent systems, planning the approach, executing safely, self-reviewing, shipping a pull request that survives review, iterating on review comments and CI failures, and merging only after sign-off.
+AI coding CLIs like Claude Code, OpenCode, and other AI coding agents are extraordinarily capable inside a single prompt. They fall short the moment you want them to do **real engineering work** — receiving tasks, gathering requirements, researching across the codebase, the web, and adjacent systems, planning the approach, executing safely, self-reviewing, shipping a pull request that survives review, iterating on review comments and CI failures, and merging only after sign-off.
 
 The Engineer is the orchestration layer that closes that gap. It runs as a long-lived daemon that listens for tasks wherever engineering work actually lives — GitHub Issues today; Jira, Azure DevOps, and other popular ticket-management systems as plugin support lands.
 
@@ -78,7 +78,7 @@ Full command reference, options, and configuration details: **[docs/cli.md](docs
 **Three tiers.** The system is built around a single architectural invariant called **Plugin Blindness**:
 
 - **Core** — task engine, orchestrator, safety layer, event bus, daemon. **The conductor.**
-- **Adapters** — contracts (`TriggerAdapter`, `CommunicationAdapter`, `LLMAdapter`, `GitHostingAdapter`). **The score.**
+- **Adapters** — contracts (`TriggerAdapter`, `CommunicationAdapter`, `AgentAdapter`, `GitHostingAdapter`). **The score.**
 - **Plugins** — swappable implementations behind each adapter. **The instruments.**
 
 Core never knows which plugins exist. The adapter contract is the integration boundary. Swap GitHub for GitLab, Telegram for Slack, Claude Code for OpenCode — Core's code does not change.
@@ -102,7 +102,7 @@ The Engineer's leverage compounds with every plugin built against it. Core defin
 |---|---|---|
 | `TriggerAdapter` | `github-trigger` | GitLab, Jira, Linear, webhooks, cron — anything that emits a task |
 | `CommunicationAdapter` | `github-comm`, `telegram-comm` | Slack, Discord, email, SMS |
-| `LLMAdapter` | `claude-code-llm`, `opencode-llm`, `gemini-cli-llm` | Codex, Aider, any CLI agent that edits files from a prompt |
+| `AgentAdapter` | `claude-code-agent`, `opencode-agent`, `gemini-cli-agent` | Codex, Aider, any CLI agent that edits files from a prompt |
 | `GitHostingAdapter` | `github-hosting` | GitLab, Bitbucket, Gitea, self-hosted git |
 
 Build a plugin once, and every existing Core capability — safety rails, audit trail, retries, observability — applies automatically.
@@ -112,7 +112,7 @@ See [docs/plugins/](docs/plugins/) for adapter contracts and [docs/contribution-
 ## Philosophy
 
 - **Real engineer behavior** — requirements first, research without bounds, plan then question the plan, build for the next person.
-- **Orchestrate, don't build** — leverage LLM CLI tools (Claude Code, OpenCode, Gemini CLI) as autonomous agents. They keep evolving, we inherit every improvement.
+- **Orchestrate, don't build** — leverage coding agent CLIs (Claude Code, OpenCode, Gemini CLI) as autonomous agents. They keep evolving, we inherit every improvement.
 - **Radical observability** — every action leaves a trail. The owner is never in the dark.
 - **Boundaries as discipline** — modular everything, enforced contracts, swappable plugins. Plugin Blindness is the core architectural invariant.
 - **Post-completion rigor** — reassess architecture, refine until beautiful, verify what matters, ship and refine through feedback.

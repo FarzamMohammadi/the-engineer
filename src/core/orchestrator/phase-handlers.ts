@@ -2,7 +2,7 @@ import path from "node:path";
 import { ReviewPhaseNames } from "../../schemas/config.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { type Phase, type PhaseOutput, Phases } from "../../schemas/orchestrator.js";
-import type { LlmCaller } from "./llm-caller.js";
+import type { AgentRunner } from "./agent-runner.js";
 import type { PhaseHandler } from "./phase-runner.js";
 import {
   buildCliNativeSystemPrompt,
@@ -22,16 +22,16 @@ import type { OrchestratorContext, PipelineState } from "./types.js";
 /**
  * Create the phase handler for every RRPIR phase.
  *
- * All phases use CLI-native invocation (runPhaseWithCli).
+ * All phases use CLI-native invocation (runPhase).
  * Self-review runs a multi-step review pipeline: one CLI call per review lens + one refinement call.
  */
-export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorContext): Record<Phase, PhaseHandler> {
+export function createPhaseHandlers(agentRunner: AgentRunner, ctx: OrchestratorContext): Record<Phase, PhaseHandler> {
   // ── Helpers ────────────────────────────────────────────────────────────
 
   /** Absolute path to skills directory, resolved from workspace config. */
   const skillsDir = ctx.skillsManager.getDir();
 
-  /** Resolve absolute thoughts dir for use in prompts (LLM sees these paths). */
+  /** Resolve absolute thoughts dir for use in prompts (agent sees these paths). */
   function absThoughts(taskId: string, thoughtsDir: string): string {
     const wt = ctx.workspaceManager.getWorktreePath(taskId);
     return wt ? path.join(wt, thoughtsDir) : thoughtsDir;
@@ -49,7 +49,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     const teamContacts = ctx.peopleDirectory.getAll();
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter((r) => !r.applied);
 
-    return llmCaller.runPhaseWithCli({
+    return agentRunner.runPhase({
       phase: Phases.requirements_gathering,
       taskId,
       systemPrompt: buildCliNativeSystemPrompt(Phases.requirements_gathering),
@@ -75,7 +75,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
 
-    return llmCaller.runPhaseWithCli({
+    return agentRunner.runPhase({
       phase: Phases.research,
       taskId,
       systemPrompt: buildCliNativeSystemPrompt(Phases.research),
@@ -97,7 +97,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
     const task = ctx.taskEngine.getTask(taskId);
-    return llmCaller.runPhaseWithCli({
+    return agentRunner.runPhase({
       phase: Phases.planning,
       taskId,
       systemPrompt: buildCliNativeSystemPrompt(Phases.planning),
@@ -122,7 +122,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     const task = ctx.taskEngine.getTask(taskId);
     const unappliedFeedback = (dispatch.task.review?.feedback_rounds ?? []).filter((r) => !r.applied);
 
-    return llmCaller.runPhaseWithCli({
+    return agentRunner.runPhase({
       phase: Phases.execution,
       taskId,
       systemPrompt: buildCliNativeSystemPrompt(Phases.execution),
@@ -157,7 +157,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
 
     // Step 1: Run each review sub-phase as a separate CLI call
     for (const reviewPhaseName of reviewPhases) {
-      await llmCaller.runPhaseWithCli({
+      await agentRunner.runPhase({
         phase: Phases.self_review,
         taskId,
         systemPrompt: buildCliNativeSystemPrompt(Phases.self_review),
@@ -178,7 +178,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     }
 
     // Step 2: Run refinement — consolidate findings, apply fixes
-    const refinementOutput = await llmCaller.runPhaseWithCli({
+    const refinementOutput = await agentRunner.runPhase({
       phase: Phases.self_review,
       taskId,
       systemPrompt: buildCliNativeSystemPrompt(Phases.self_review),
@@ -223,7 +223,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
     const reviewPhases = ctx.config.rrpir?.review_phases ?? [ReviewPhaseNames.requirements_check];
-    return llmCaller.runPhaseWithCli({
+    return agentRunner.runPhase({
       phase: Phases.demo_prep,
       taskId,
       systemPrompt: buildCliNativeSystemPrompt(Phases.demo_prep),
@@ -246,7 +246,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
   ): Promise<PhaseOutput> {
     const thoughtsDir = state.thoughtsDir ?? "";
 
-    return llmCaller.runPhaseWithCli({
+    return agentRunner.runPhase({
       phase: Phases.integration,
       taskId,
       systemPrompt: buildCliNativeSystemPrompt(Phases.integration),

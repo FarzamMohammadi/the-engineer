@@ -1,5 +1,5 @@
 /**
- * Trace detail API routes — action observations, LLM observations, blob content.
+ * Trace detail API routes — action observations, agent observations, blob content.
  */
 import { Hono } from "hono";
 
@@ -25,7 +25,7 @@ export function traceRoutes(deps: TraceRoutesDeps): Hono {
     return c.json({ traces });
   });
 
-  /** Get action + LLM observations for a specific phase of a task. */
+  /** Get action + agent observations for a specific phase of a task. */
   app.get("/:taskId/:phase", (c) => {
     const taskId = c.req.param("taskId");
     const phase = c.req.param("phase");
@@ -35,13 +35,13 @@ export function traceRoutes(deps: TraceRoutesDeps): Hono {
       phase,
       limit: 1000,
     });
-    const llmTraces = deps.observationStore.query({
-      type: "llm_call",
+    const agentTraces = deps.observationStore.query({
+      type: "agent_call",
       task_id: taskId,
       phase,
       limit: 1000,
     });
-    return c.json({ action_traces: actionTraces, llm_traces: llmTraces });
+    return c.json({ action_traces: actionTraces, agent_traces: agentTraces });
   });
 
   return app;
@@ -54,7 +54,7 @@ export interface BlobRoutesDeps {
 export function blobRoutes(deps: BlobRoutesDeps): Hono {
   const app = new Hono();
 
-  /** Fetch full LLM prompt or response content from blob store. */
+  /** Fetch full agent prompt or response content from blob store. */
   app.get("/:prefix/:hash", (c) => {
     const prefix = c.req.param("prefix");
     const hash = c.req.param("hash");

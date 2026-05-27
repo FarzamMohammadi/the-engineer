@@ -13,7 +13,7 @@ export { type AdapterObserver, BaseAdapter, type PluginContext, type StateStore 
 // ── Adapter Contracts ───────────────────────────────────────────────────────
 export { TriggerAdapter } from "./trigger.js";
 export { CommunicationAdapter } from "./communication.js";
-export { LLMAdapter } from "./llm.js";
+export { AgentAdapter } from "./agent.js";
 export { GitHostingAdapter } from "./git-hosting.js";
 
 // ── Error Helpers ───────────────────────────────────────────────────────────
@@ -60,18 +60,18 @@ export {
   type SyncMetadata,
   type Target,
   type TaskReconciliationInput,
-  // LLM
-  InferenceRequestSchema,
-  InferenceResultSchema,
-  InferenceUsageSchema,
-  LLMCapabilitiesSchema,
+  // Agent
+  AgentCapabilitiesSchema,
+  AgentRunRequestSchema,
+  AgentRunResultSchema,
+  AgentRunUsageSchema,
   QuotaStatusSchema,
   QuotaWindowSchema,
   TokenUsageSchema,
-  type InferenceRequest,
-  type InferenceResult,
-  type InferenceUsage,
-  type LLMCapabilities,
+  type AgentCapabilities,
+  type AgentRunRequest,
+  type AgentRunResult,
+  type AgentRunUsage,
   type QuotaStatus,
   type QuotaWindow,
   type TokenUsage,

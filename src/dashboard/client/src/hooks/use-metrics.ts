@@ -4,7 +4,7 @@ import { STALE_TIMES } from "../lib/constants";
 import { queryKeys } from "../lib/query-keys";
 import type { CostMetrics, QuotaStatus } from "../types/api";
 
-/** Fetch and cache aggregated LLM cost metrics from /api/metrics/cost. */
+/** Fetch and cache aggregated agent cost metrics from /api/metrics/cost. */
 export function useCostMetrics(): ReturnType<typeof useQuery<CostMetrics>> {
   return useQuery({
     queryKey: queryKeys.metrics.cost,

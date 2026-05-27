@@ -8,7 +8,7 @@ interface PhasePerformanceProps {
     phase: string;
     spend_usd: number;
     duration_ms: number;
-    llm_iterations: number;
+    agent_iterations: number;
     executions: number;
   }>;
   isLoading: boolean;
@@ -57,7 +57,7 @@ export function PhasePerformance({ data, isLoading }: PhasePerformanceProps): Re
                 <div>
                   <p className="text-sm font-medium capitalize">{phase.phase.replace(/_/g, " ")}</p>
                   <p className="text-xs text-muted-foreground">
-                    {phase.executions} run{phase.executions !== 1 ? "s" : ""} · {phase.llm_iterations} LLM calls
+                    {phase.executions} run{phase.executions !== 1 ? "s" : ""} · {phase.agent_iterations} agent calls
                   </p>
                 </div>
                 <div className="text-right">

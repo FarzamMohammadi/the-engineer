@@ -126,15 +126,15 @@ describe("generateConfigFiles", () => {
   });
 
   it("generates plugin config for selected plugins", () => {
-    const files = generateConfigFiles(["claude-code-llm", "github-trigger"], {});
+    const files = generateConfigFiles(["claude-code-agent", "github-trigger"], {});
     const pluginFiles = files.filter((f) => f.relativePath.startsWith("config/plugins/"));
     const pluginPaths = pluginFiles.map((f) => f.relativePath);
-    expect(pluginPaths).toContain("config/plugins/claude-code-llm.yaml");
+    expect(pluginPaths).toContain("config/plugins/claude-code-agent.yaml");
     expect(pluginPaths).toContain("config/plugins/github-trigger.yaml");
   });
 
   it("does not generate plugin config for unselected plugins", () => {
-    const files = generateConfigFiles(["claude-code-llm"], {});
+    const files = generateConfigFiles(["claude-code-agent"], {});
     const pluginFiles = files.filter((f) => f.relativePath.startsWith("config/plugins/"));
     const pluginPaths = pluginFiles.map((f) => f.relativePath);
     expect(pluginPaths).not.toContain("config/plugins/github-trigger.yaml");
@@ -183,7 +183,7 @@ describe("generateConfigFiles", () => {
   it("generates plugin docs for every adapter type", () => {
     const files = generateConfigFiles([], {});
     const docs = files.filter((f) => f.relativePath.startsWith("docs/plugins/"));
-    const types = ["trigger", "llm", "communication", "git-hosting"];
+    const types = ["trigger", "agent", "communication", "git-hosting"];
     for (const type of types) {
       const readme = docs.find((f) => f.relativePath === `docs/plugins/${type}/README.md`);
       expect(readme, `missing README for ${type}`).toBeDefined();
@@ -268,7 +268,7 @@ describe("needsSetup", () => {
     const pluginsDir = join(tmpHome, "config", "plugins");
     mkdirSync(pluginsDir, { recursive: true });
     const { writeFileSync: wfs } = require("node:fs");
-    wfs(join(pluginsDir, "claude-code-llm.yaml"), "# config");
+    wfs(join(pluginsDir, "claude-code-agent.yaml"), "# config");
     expect(needsSetup(tmpHome)).toBe(false);
   });
 });
@@ -313,7 +313,7 @@ describe("promptForConfig on builtin plugins", () => {
   });
 
   it("plugins with all-default configs do not have promptForConfig", () => {
-    const allDefaultPlugins = ["claude-code-llm", "opencode-llm", "gemini-cli-llm"];
+    const allDefaultPlugins = ["claude-code-agent", "opencode-agent", "gemini-cli-agent"];
     for (const id of allDefaultPlugins) {
       const plugin = BUILTIN_PLUGINS.find((p) => p.manifest.id === id);
       expect(plugin?.promptForConfig).toBeUndefined();
@@ -485,7 +485,7 @@ describe("writePluginDocs", () => {
 
   it("writes all 11 plugin doc files", () => {
     writePluginDocs(tmpHome);
-    const types = ["trigger", "llm", "communication", "git-hosting"];
+    const types = ["trigger", "agent", "communication", "git-hosting"];
     for (const type of types) {
       expect(existsSync(join(tmpHome, `docs/plugins/${type}/README.md`))).toBe(true);
     }
@@ -526,7 +526,7 @@ describe("doc path conventions", () => {
   });
 
   it("adapterDocPath follows convention", () => {
-    expect(adapterDocPath("/home/.engineer", "llm")).toBe("/home/.engineer/docs/plugins/llm/README.md");
+    expect(adapterDocPath("/home/.engineer", "agent")).toBe("/home/.engineer/docs/plugins/agent/README.md");
   });
 
   it("pluginDocPath normalizes git_hosting to git-hosting", () => {

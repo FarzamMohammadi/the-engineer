@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EventBus } from "../../src/core/event-bus/index.js";
 import { Registry } from "../../src/core/registry/index.js";
 import { AdapterTypes, PluginHealthStates } from "../../src/schemas/adapters.js";
+import { FakeAgentPlugin } from "../helpers/fake-plugins/fake-agent/index.js";
 import { FakeCommunicationPlugin } from "../helpers/fake-plugins/fake-comm/index.js";
 import { FakeGitHostingPlugin } from "../helpers/fake-plugins/fake-git-hosting/index.js";
-import { FakeLLMPlugin } from "../helpers/fake-plugins/fake-llm/index.js";
 import { FakeTriggerPlugin } from "../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../helpers/mock-factories.js";
 import { type TestDatabaseHandle, createTestDatabase } from "../helpers/test-database.js";
@@ -49,7 +49,10 @@ describe("Registry plugin loading (integration)", () => {
         createMockManifest({ id: "c1", type: AdapterTypes.communication, name: "Comm" }),
         new FakeCommunicationPlugin(),
       );
-      registry.register(createMockManifest({ id: "l1", type: AdapterTypes.llm, name: "LLM" }), new FakeLLMPlugin());
+      registry.register(
+        createMockManifest({ id: "l1", type: AdapterTypes.agent, name: "Agent" }),
+        new FakeAgentPlugin(),
+      );
       registry.register(
         createMockManifest({ id: "g1", type: AdapterTypes.git_hosting, name: "Git" }),
         new FakeGitHostingPlugin(),
@@ -57,7 +60,7 @@ describe("Registry plugin loading (integration)", () => {
 
       expect(registry.getPlugin("trigger", "t1")).toBeInstanceOf(FakeTriggerPlugin);
       expect(registry.getPlugin("communication", "c1")).toBeInstanceOf(FakeCommunicationPlugin);
-      expect(registry.getPlugin("llm", "l1")).toBeInstanceOf(FakeLLMPlugin);
+      expect(registry.getPlugin("agent", "l1")).toBeInstanceOf(FakeAgentPlugin);
       expect(registry.getPlugin("git_hosting", "g1")).toBeInstanceOf(FakeGitHostingPlugin);
     });
 
@@ -72,26 +75,29 @@ describe("Registry plugin loading (integration)", () => {
         createMockManifest({ id: "t2", type: AdapterTypes.trigger, name: "T2" }),
         new FakeTriggerPlugin(),
       );
-      registry.register(createMockManifest({ id: "l1", type: AdapterTypes.llm, name: "LLM" }), new FakeLLMPlugin());
+      registry.register(
+        createMockManifest({ id: "l1", type: AdapterTypes.agent, name: "Agent" }),
+        new FakeAgentPlugin(),
+      );
 
       const triggers = registry.getPluginsByType("trigger");
       expect(triggers).toHaveLength(2);
 
-      const llms = registry.getPluginsByType("llm");
+      const llms = registry.getPluginsByType("agent");
       expect(llms).toHaveLength(1);
     });
 
     it("getPrimaryPlugin returns the first plugin of a type", () => {
       setup();
 
-      const first = new FakeLLMPlugin();
-      registry.register(createMockManifest({ id: "l1", type: AdapterTypes.llm, name: "Primary" }), first);
+      const first = new FakeAgentPlugin();
+      registry.register(createMockManifest({ id: "l1", type: AdapterTypes.agent, name: "Primary" }), first);
       registry.register(
-        createMockManifest({ id: "l2", type: AdapterTypes.llm, name: "Secondary" }),
-        new FakeLLMPlugin(),
+        createMockManifest({ id: "l2", type: AdapterTypes.agent, name: "Secondary" }),
+        new FakeAgentPlugin(),
       );
 
-      expect(registry.getPrimaryPlugin("llm")).toBe(first);
+      expect(registry.getPrimaryPlugin("agent")).toBe(first);
     });
 
     it("returns null for unregistered plugin", () => {

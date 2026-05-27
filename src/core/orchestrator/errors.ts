@@ -4,27 +4,27 @@ export abstract class OrchestratorError extends Error {
   abstract readonly retryable: boolean;
 }
 
-/** No LLM plugin is registered in the Registry. */
-export class NoLlmPluginError extends OrchestratorError {
-  readonly tag = "NoLlmPlugin" as const;
+/** No agent plugin is registered in the Registry. */
+export class NoAgentPluginError extends OrchestratorError {
+  readonly tag = "NoAgentPlugin" as const;
   readonly retryable = false;
 
   constructor() {
-    super("Orchestrator: no LLM plugin registered");
-    this.name = "NoLlmPluginError";
+    super("Orchestrator: no agent plugin registered");
+    this.name = "NoAgentPluginError";
   }
 }
 
-/** LLM call was rejected by the ActionPipeline (safety gate or permission check). */
-export class LlmCallRejectedError extends OrchestratorError {
-  readonly tag = "LlmCallRejected" as const;
+/** Agent run was rejected by the ActionPipeline (safety gate or permission check). */
+export class AgentRunRejectedError extends OrchestratorError {
+  readonly tag = "AgentRunRejected" as const;
   readonly retryable = false;
   readonly outcome: string;
   readonly reason: string;
 
   constructor(outcome: string, reason: string) {
-    super(`LLM call rejected: ${outcome} - ${reason}`);
-    this.name = "LlmCallRejectedError";
+    super(`Agent run rejected: ${outcome} - ${reason}`);
+    this.name = "AgentRunRejectedError";
     this.outcome = outcome;
     this.reason = reason;
   }
@@ -58,16 +58,16 @@ export class WorkspaceNotReadyError extends OrchestratorError {
   }
 }
 
-/** All LLM retry attempts exhausted due to transient errors (API down, rate limits). */
-export class LlmUnavailableError extends OrchestratorError {
-  readonly tag = "LlmUnavailable" as const;
+/** All agent retry attempts exhausted due to transient errors (API down, rate limits). */
+export class AgentUnavailableError extends OrchestratorError {
+  readonly tag = "AgentUnavailable" as const;
   readonly retryable = true;
   readonly attempts: number;
   readonly lastError: string;
 
   constructor(attempts: number, lastError: string, options?: { cause?: unknown }) {
-    super(`LLM adapter unavailable after ${attempts} attempts: ${lastError}`, options);
-    this.name = "LlmUnavailableError";
+    super(`Agent adapter unavailable after ${attempts} attempts: ${lastError}`, options);
+    this.name = "AgentUnavailableError";
     this.attempts = attempts;
     this.lastError = lastError;
   }

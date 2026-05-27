@@ -36,14 +36,14 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
         <CardContent>
           <dl className="space-y-3 text-sm">
             <div className="flex justify-between">
-              <dt className="text-muted-foreground">LLM Cost</dt>
+              <dt className="text-muted-foreground">Agent Cost</dt>
               <dd>
-                <CostDisplay amount={task.llm_cost_usd} size="sm" />
+                <CostDisplay amount={task.agent_cost_usd} size="sm" />
               </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Tokens</dt>
-              <dd className="font-mono text-xs tabular-nums">{formatTokens(task.llm_tokens)}</dd>
+              <dd className="font-mono text-xs tabular-nums">{formatTokens(task.agent_tokens)}</dd>
             </div>
           </dl>
         </CardContent>

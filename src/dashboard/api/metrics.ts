@@ -24,9 +24,9 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
     // Per-task cost (top 20 by spend)
     const perTask = deps.db
       .prepare(
-        `SELECT id, title, llm_cost_usd, llm_tokens
-         FROM tasks WHERE llm_cost_usd > 0
-         ORDER BY llm_cost_usd DESC LIMIT 20`,
+        `SELECT id, title, agent_cost_usd, agent_tokens
+         FROM tasks WHERE agent_cost_usd > 0
+         ORDER BY agent_cost_usd DESC LIMIT 20`,
       )
       .all() as Record<string, unknown>[];
 
@@ -44,7 +44,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       {
         spend_usd: number;
         duration_ms: number;
-        llm_iterations: number;
+        agent_iterations: number;
         executions: number;
       }
     >();
@@ -61,7 +61,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       }
       const spend = typeof output["spend_usd"] === "number" ? output["spend_usd"] : 0;
       const durationMs = typeof output["duration_ms"] === "number" ? output["duration_ms"] : 0;
-      const llmIter = typeof output["llm_iterations"] === "number" ? output["llm_iterations"] : 0;
+      const agentIter = typeof output["agent_iterations"] === "number" ? output["agent_iterations"] : 0;
 
       if (spend === 0) {
         continue;
@@ -79,12 +79,12 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       const phaseEntry = phaseMap.get(phaseName) ?? {
         spend_usd: 0,
         duration_ms: 0,
-        llm_iterations: 0,
+        agent_iterations: 0,
         executions: 0,
       };
       phaseEntry.spend_usd += spend;
       phaseEntry.duration_ms += durationMs;
-      phaseEntry.llm_iterations += llmIter;
+      phaseEntry.agent_iterations += agentIter;
       phaseEntry.executions += 1;
       phaseMap.set(phaseName, phaseEntry);
 
@@ -106,13 +106,13 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       .map(([phase, v]) => ({ phase, ...v }))
       .sort((a, b) => b.spend_usd - a.spend_usd);
 
-    // Aggregate token totals from llm_call observations
-    const llmObs = deps.observationStore.query({ type: ObservationTypes.llm_call, limit: 50000 });
+    // Aggregate token totals from agent_call observations
+    const agentObs = deps.observationStore.query({ type: ObservationTypes.agent_call, limit: 50000 });
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let totalCacheReadTokens = 0;
 
-    for (const obs of llmObs) {
+    for (const obs of agentObs) {
       // observe() stores data in `input`; span.end() stores in `output`. Check both.
       const out = (obs.output ?? obs.input) as Record<string, unknown> | null;
       if (!out) {
@@ -150,7 +150,7 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
 
   /**
    * Quota status — pure data reader. Reads from:
-   * 1. quota_status observations (written by Core after each LLM call + daemon polling)
+   * 1. quota_status observations (written by Core after each agent run + daemon polling)
    * 2. cost.quota_exhausted events (hard limit breaches)
    *
    * Dashboard never fetches data itself. Plugin gets it, Core stores it, dashboard reads it.

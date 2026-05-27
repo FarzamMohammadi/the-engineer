@@ -24,7 +24,7 @@ export type ComponentTag =
   | "observer"
   | "pr-manager"
   | "phase-runner"
-  | "llm-caller"
+  | "agent-runner"
   | "plugin-loader"
   | "data-lifecycle"
   | "notifications"

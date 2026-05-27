@@ -45,7 +45,7 @@ The constraint is on the *number of humans*, and nothing else:
 - **One user ≠ one task.** The single owner still has many concurrent tasks. Per-task isolation,
   correlation, and the full pipeline run independently for each one.
 - **One user ≠ one plugin.** This constrains the *human*, not the *integrations*. Many trigger,
-  communication, hosting, and LLM plugins coexist. [Plugin Blindness](philosophy.md#plugin-blindness--core-sees-only-adapters)
+  communication, hosting, and agent plugins coexist. [Plugin Blindness](philosophy.md#plugin-blindness--core-sees-only-adapters)
   is untouched — Core still never knows which plugins exist.
 
 ### Where it shows up

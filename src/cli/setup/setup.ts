@@ -33,10 +33,10 @@ export interface SetupOptions {
 
 // ── Adapter Type Configuration ───────────────────────────────────────────────
 
-/** Adapter slots offered during guided setup, in `setupOrder` (LLM → trigger → git hosting → communication). */
+/** Adapter slots offered during guided setup, in `setupOrder` (agent → trigger → git hosting → communication). */
 export const ADAPTER_TYPE_CONFIGS: AdapterTypeConfig[] = [
   {
-    type: AdapterTypes.llm,
+    type: AdapterTypes.agent,
     label: "Which AI do you use?",
     selectionMode: "single",
     setupOrder: 1,

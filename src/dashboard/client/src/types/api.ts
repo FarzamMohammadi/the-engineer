@@ -32,8 +32,8 @@ export interface TaskListItem {
   phase: Phase | null;
   priority: number;
   repo: string | null;
-  llm_cost_usd: number;
-  llm_tokens: number;
+  agent_cost_usd: number;
+  agent_tokens: number;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -53,8 +53,8 @@ export interface TaskDetail {
   priority: number;
   repo: string | null;
   branch: string | null;
-  llm_cost_usd: number;
-  llm_tokens: number;
+  agent_cost_usd: number;
+  agent_tokens: number;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -76,11 +76,11 @@ export interface TaskDetail {
 export interface SystemStatus {
   daemon_running: boolean;
   daemon_pid: number | null;
-  llm_provider: string | null;
+  agent_provider: string | null;
   total_tasks: number;
   tasks_by_state: Record<string, number>;
   total_action_traces: number;
-  total_llm_traces: number;
+  total_agent_traces: number;
   total_spend_usd: number | null;
 }
 
@@ -90,13 +90,13 @@ export interface SystemStatus {
 export interface CostMetrics {
   today_spend_usd: number;
   month_spend_usd: number;
-  per_task: Array<{ id: string; title: string; llm_cost_usd: number; llm_tokens: number }>;
+  per_task: Array<{ id: string; title: string; agent_cost_usd: number; agent_tokens: number }>;
   per_day: Array<{ day: string; spend_usd: number; duration_ms: number }>;
   per_phase: Array<{
     phase: string;
     spend_usd: number;
     duration_ms: number;
-    llm_iterations: number;
+    agent_iterations: number;
     executions: number;
   }>;
   token_totals: {
@@ -107,7 +107,7 @@ export interface CostMetrics {
   };
 }
 
-/** LLM provider quota status and exhaustion history. */
+/** Agent provider quota status and exhaustion history. */
 export interface QuotaStatus {
   available: boolean;
   live: Record<string, unknown> | null;
@@ -116,10 +116,10 @@ export interface QuotaStatus {
 
 // ── Observations ─────────────────────────────────────────────────────────────
 
-/** All 14 observation types recorded by the observer. */
+/** Observation types recorded by the observer. */
 export type ObservationType =
   | "agent_iteration"
-  | "llm_call"
+  | "agent_call"
   | "tool_execution"
   | "phase_transition"
   | "decision_point"

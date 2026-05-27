@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLifecycleManager } from "../../../../src/core/registry/lifecycle.js";
 import type { AdapterType, PluginManifest } from "../../../../src/schemas/adapters.js";
 import { PluginHealthStates } from "../../../../src/schemas/adapters.js";
-import { FakeLLMPlugin } from "../../../helpers/fake-plugins/fake-llm/index.js";
+import { FakeAgentPlugin } from "../../../helpers/fake-plugins/fake-agent/index.js";
 import { FakeTriggerPlugin } from "../../../helpers/fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "../../../helpers/mock-factories.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
@@ -77,7 +77,7 @@ describe("createLifecycleManager", () => {
     it("returns all plugins of the given type", () => {
       lifecycle.register(createManifest("trigger", "t1"), new FakeTriggerPlugin());
       lifecycle.register(createManifest("trigger", "t2"), new FakeTriggerPlugin());
-      lifecycle.register(createManifest("llm", "l1"), new FakeLLMPlugin());
+      lifecycle.register(createManifest("agent", "l1"), new FakeAgentPlugin());
 
       const triggers = lifecycle.getPluginsByType("trigger");
 
@@ -175,10 +175,10 @@ describe("createLifecycleManager", () => {
     it("shuts down in reverse init order", async () => {
       const shutdownOrder: string[] = [];
       const t1 = new FakeTriggerPlugin();
-      const t2 = new FakeLLMPlugin();
+      const t2 = new FakeAgentPlugin();
 
       lifecycle.register(createManifest("trigger", "t1"), t1);
-      lifecycle.register(createManifest("llm", "l1"), t2);
+      lifecycle.register(createManifest("agent", "l1"), t2);
 
       vi.spyOn(t1, "shutdown").mockImplementation(() => {
         shutdownOrder.push("t1");
@@ -212,7 +212,7 @@ describe("createLifecycleManager", () => {
   describe("getAllRecords", () => {
     it("returns all registered records", () => {
       lifecycle.register(createManifest("trigger", "t1"), new FakeTriggerPlugin());
-      lifecycle.register(createManifest("llm", "llm1"), new FakeLLMPlugin());
+      lifecycle.register(createManifest("agent", "llm1"), new FakeAgentPlugin());
 
       const records = lifecycle.getAllRecords();
 

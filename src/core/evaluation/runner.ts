@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { LLMAdapter } from "../../adapters/llm.js";
-import { AdapterTypes, type InferenceResult } from "../../schemas/adapters.js";
+import type { AgentAdapter } from "../../adapters/agent.js";
+import { AdapterTypes, type AgentRunResult } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import {
@@ -52,26 +52,26 @@ export async function runEvaluation(snapshot: EvaluationSnapshot, ctx: Evaluatio
   let session2: SessionResult | null = null;
 
   try {
-    const llm = ctx.registry.getPrimaryPlugin<LLMAdapter>(AdapterTypes.llm);
-    if (!llm) {
-      ctx.observer.warn("Evaluation skipped — no LLM plugin available", {
+    const agent = ctx.registry.getPrimaryPlugin<AgentAdapter>(AdapterTypes.agent);
+    if (!agent) {
+      ctx.observer.warn("Evaluation skipped — no agent plugin available", {
         taskId: snapshot.taskId,
       });
       return;
     }
 
-    // Skip if LLM is currently rate-limited — don't waste a call that will fail
-    const quota = await llm.getQuotaStatus();
+    // Skip if the agent is currently rate-limited — don't waste a call that will fail
+    const quota = await agent.getQuotaStatus();
     if (quota?.is_rate_limited) {
-      ctx.observer.info("Evaluation skipped — LLM is rate-limited", {
+      ctx.observer.info("Evaluation skipped — agent is rate-limited", {
         taskId: snapshot.taskId,
         resetsAt: quota.earliest_reset_at,
       });
       return;
     }
 
-    session1 = await runBlindPlan(llm, snapshot, ctx);
-    session2 = await runComparison(llm, snapshot, ctx);
+    session1 = await runBlindPlan(agent, snapshot, ctx);
+    session2 = await runComparison(agent, snapshot, ctx);
 
     const totalCost = (session1.costUsd ?? 0) + (session2.costUsd ?? 0) || null;
     const totalDuration = Date.now() - startTime;
@@ -86,7 +86,7 @@ export async function runEvaluation(snapshot: EvaluationSnapshot, ctx: Evaluatio
 // ── Session Runners ���─────────────────────────────────────────────────────────
 
 async function runBlindPlan(
-  llm: LLMAdapter,
+  agent: AgentAdapter,
   snapshot: EvaluationSnapshot,
   ctx: EvaluationManagerContext,
 ): Promise<SessionResult> {
@@ -96,7 +96,7 @@ async function runBlindPlan(
   });
 
   const result = await runSession(
-    llm,
+    agent,
     buildBlindPlanSystemPrompt(),
     buildBlindPlanPrompt(snapshot),
     snapshot.bareCloneDir,
@@ -112,7 +112,7 @@ async function runBlindPlan(
 }
 
 async function runComparison(
-  llm: LLMAdapter,
+  agent: AgentAdapter,
   snapshot: EvaluationSnapshot,
   ctx: EvaluationManagerContext,
 ): Promise<SessionResult> {
@@ -123,7 +123,7 @@ async function runComparison(
   const personaContent = loadPersonaContent(snapshot.bareCloneDir);
 
   const result = await runSession(
-    llm,
+    agent,
     buildComparisonSystemPrompt(personaContent),
     buildComparisonPrompt(snapshot),
     snapshot.evaluationDir,
@@ -140,11 +140,16 @@ async function runComparison(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function runSession(llm: LLMAdapter, systemPrompt: string, prompt: string, cwd: string): Promise<SessionResult> {
+async function runSession(
+  agent: AgentAdapter,
+  systemPrompt: string,
+  prompt: string,
+  cwd: string,
+): Promise<SessionResult> {
   const startedAt = new Date().toISOString();
   const start = Date.now();
 
-  const result: InferenceResult = await llm.infer({
+  const result: AgentRunResult = await agent.run({
     prompt,
     system_prompt: systemPrompt,
     cwd,

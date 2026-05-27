@@ -6,18 +6,18 @@ import type { IObserver } from "../observer/index.js";
 // ── Types ──────────────────────────────────────────────────────────────────
 
 /** Retry categories — each has its own counter field, backoff schedule, and terminal disposition. */
-export type RetryCategory = "crash" | "llm_unavailable";
+export type RetryCategory = "crash" | "agent_unavailable";
 
 /** Counter field on the task row for each category. */
-const COUNTER_FIELDS: Record<RetryCategory, "consecutive_crash_count" | "consecutive_llm_unavailable_count"> = {
+const COUNTER_FIELDS: Record<RetryCategory, "consecutive_crash_count" | "consecutive_agent_unavailable_count"> = {
   crash: "consecutive_crash_count",
-  llm_unavailable: "consecutive_llm_unavailable_count",
+  agent_unavailable: "consecutive_agent_unavailable_count",
 } as const;
 
 /** Terminal state when a category's retry budget is exhausted. */
 const TERMINAL_STATES: Record<RetryCategory, "failed" | "blocked"> = {
   crash: "failed",
-  llm_unavailable: "blocked",
+  agent_unavailable: "blocked",
 } as const;
 
 /** Result of recording a failure — either retry with backoff or terminal. */

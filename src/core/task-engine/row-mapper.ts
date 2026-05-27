@@ -40,8 +40,8 @@ export interface TaskRow {
   requirements_loop_count: number;
   skip_research: number;
   priority: number;
-  llm_tokens: number;
-  llm_cost_usd: number;
+  agent_tokens: number;
+  agent_cost_usd: number;
   compute_time_ms: number;
   created_at: string;
   started_at: string | null;
@@ -49,7 +49,7 @@ export interface TaskRow {
   last_transition_at: string;
   not_before: string | null;
   consecutive_crash_count: number;
-  consecutive_llm_unavailable_count: number;
+  consecutive_agent_unavailable_count: number;
   session_id: string | null;
   /** Optimistic locking — incremented on every state transition. */
   version: number;
@@ -95,8 +95,8 @@ export function rowToTask(row: TaskRow): Task {
     requirements_loop_count: row.requirements_loop_count,
     skip_research: fromSqliteBoolean(row.skip_research),
     priority: row.priority,
-    llm_tokens: row.llm_tokens,
-    llm_cost_usd: row.llm_cost_usd,
+    agent_tokens: row.agent_tokens,
+    agent_cost_usd: row.agent_cost_usd,
     compute_time_ms: row.compute_time_ms,
     created_at: row.created_at,
     started_at: row.started_at,
@@ -104,7 +104,7 @@ export function rowToTask(row: TaskRow): Task {
     last_transition_at: row.last_transition_at,
     not_before: row.not_before,
     consecutive_crash_count: row.consecutive_crash_count,
-    consecutive_llm_unavailable_count: row.consecutive_llm_unavailable_count,
+    consecutive_agent_unavailable_count: row.consecutive_agent_unavailable_count,
     session_id: row.session_id,
   };
 }

@@ -9,7 +9,7 @@ Controls the RRPIR pipeline (Requirements, Research, Planning, Implementation, R
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `rrpir.max_requirements_loops` | integer | `5` | Maximum requirement-gathering loops before escalation. If the LLM keeps returning "need_more_info", it gives up after this many rounds. |
+| `rrpir.max_requirements_loops` | integer | `5` | Maximum requirement-gathering loops before escalation. If the agent keeps returning "need_more_info", it gives up after this many rounds. |
 | `rrpir.include_thoughts_in_pr` | boolean | `true` | Include the `thoughts/` directory in PR commits. When true, RRPIR artifacts (requirements, research, planning docs) are committed for reviewer context. |
 | `rrpir.review_phases` | string[] | `["requirements_check"]` | Which review sub-phases to run during self-review. Options: `"requirements_check"`, `"security_review"`, `"code_quality"`. |
 | `rrpir.max_review_loopbacks` | integer | `3` | Maximum execution-to-self-review loops. If self-review keeps finding issues, it stops after this many rounds and alerts the owner. |

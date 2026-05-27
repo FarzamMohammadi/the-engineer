@@ -57,8 +57,8 @@ export const PHASE_ORDER: Phase[] = [
 
 /** Human-readable short labels for each observation type in the timeline. */
 export const OBSERVATION_TYPE_LABELS: Record<ObservationType, string> = {
-  agent_iteration: "Agent",
-  llm_call: "LLM",
+  agent_iteration: "Agent Loop",
+  agent_call: "Agent Call",
   tool_execution: "Tool",
   phase_transition: "Phase",
   decision_point: "Decision",

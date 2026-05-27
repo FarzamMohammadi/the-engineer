@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AgentAdapter } from "../../src/adapters/agent.js";
 import { CommunicationAdapter } from "../../src/adapters/communication.js";
 import { GitHostingAdapter } from "../../src/adapters/git-hosting.js";
-import { LLMAdapter } from "../../src/adapters/llm.js";
 import { TriggerAdapter } from "../../src/adapters/trigger.js";
 import { AdapterTypes, MessageTypes } from "../../src/schemas/adapters.js";
 import { type TestEventBusHandle, createTestEventBus } from "./test-event-bus.js";
@@ -26,7 +26,7 @@ describe("createTestRegistry", () => {
     const { registry } = registryHandle;
     expect(registry.getPluginsByType(AdapterTypes.trigger)).toHaveLength(1);
     expect(registry.getPluginsByType(AdapterTypes.communication)).toHaveLength(1);
-    expect(registry.getPluginsByType(AdapterTypes.llm)).toHaveLength(1);
+    expect(registry.getPluginsByType(AdapterTypes.agent)).toHaveLength(1);
     expect(registry.getPluginsByType(AdapterTypes.git_hosting)).toHaveLength(1);
   });
 
@@ -34,7 +34,7 @@ describe("createTestRegistry", () => {
     const { fakes } = registryHandle;
     expect(fakes.trigger).toBeInstanceOf(TriggerAdapter);
     expect(fakes.communication).toBeInstanceOf(CommunicationAdapter);
-    expect(fakes.llm).toBeInstanceOf(LLMAdapter);
+    expect(fakes.llm).toBeInstanceOf(AgentAdapter);
     expect(fakes.gitHosting).toBeInstanceOf(GitHostingAdapter);
   });
 
@@ -42,7 +42,7 @@ describe("createTestRegistry", () => {
     const { fakes } = registryHandle;
     expect(fakes.trigger.manifest.id).toBe("fake-trigger");
     expect(fakes.communication.manifest.id).toBe("fake-comm");
-    expect(fakes.llm.manifest.id).toBe("fake-llm");
+    expect(fakes.llm.manifest.id).toBe("fake-agent");
     expect(fakes.gitHosting.manifest.id).toBe("fake-git-hosting");
   });
 
@@ -85,7 +85,7 @@ describe("createTestRegistry", () => {
     expect(fakes.communication.getMessages()).toHaveLength(1);
 
     // LLM: returns canned responses
-    const result = await fakes.llm.infer({
+    const result = await fakes.llm.run({
       prompt: "test",
       system_prompt: null,
       cwd: null,

@@ -1,9 +1,9 @@
 import type { EventBus } from "../../src/core/event-bus/index.js";
 import { Registry } from "../../src/core/registry/index.js";
 import { AdapterTypes } from "../../src/schemas/adapters.js";
+import { FakeAgentPlugin } from "./fake-plugins/fake-agent/index.js";
 import { FakeCommunicationPlugin } from "./fake-plugins/fake-comm/index.js";
 import { FakeGitHostingPlugin } from "./fake-plugins/fake-git-hosting/index.js";
-import { FakeLLMPlugin } from "./fake-plugins/fake-llm/index.js";
 import { FakeTriggerPlugin } from "./fake-plugins/fake-trigger/index.js";
 import { createMockManifest } from "./mock-factories.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
@@ -12,7 +12,7 @@ import { createTestStateStoreFactory } from "./test-state-store.js";
 export interface TestRegistryFakes {
   trigger: FakeTriggerPlugin;
   communication: FakeCommunicationPlugin;
-  llm: FakeLLMPlugin;
+  llm: FakeAgentPlugin;
   gitHosting: FakeGitHostingPlugin;
 }
 
@@ -43,7 +43,7 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
 
   const trigger = new FakeTriggerPlugin();
   const communication = new FakeCommunicationPlugin();
-  const llm = new FakeLLMPlugin();
+  const llm = new FakeAgentPlugin();
   const gitHosting = new FakeGitHostingPlugin();
 
   registry.register(
@@ -72,10 +72,10 @@ export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
 
   registry.register(
     createMockManifest({
-      id: "fake-llm",
-      type: AdapterTypes.llm,
+      id: "fake-agent",
+      type: AdapterTypes.agent,
       name: "Fake LLM Plugin",
-      description: "Test LLM plugin",
+      description: "Test agent plugin",
       critical: false,
       adapter_meta: { provider_type: "cli" },
     }),

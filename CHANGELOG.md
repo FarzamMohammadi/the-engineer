@@ -13,11 +13,11 @@ The current development cut. Tagged as `v0.1.0-preview` and superseded by future
 **Architecture**
 
 - Three-tier model: Core / Adapter / Plugin, with Core blind to which plugins exist
-- Adapter types: `TriggerAdapter`, `CommunicationAdapter`, `LLMAdapter`, `GitHostingAdapter`
+- Adapter types: `TriggerAdapter`, `CommunicationAdapter`, `AgentAdapter`, `GitHostingAdapter`
 - Reference plugins (one per adapter per platform):
   - Trigger: `github-trigger`
   - Communication: `github-comm`, `telegram-comm`
-  - LLM: `claude-code-llm`, `gemini-cli-llm`, `opencode-llm`
+  - Agent: `claude-code-agent`, `gemini-cli-agent`, `opencode-agent`
   - Git hosting: `github-hosting`
 - Core components: EventBus, TaskEngine, SafetyLayer, ActionPipeline, SessionMemory, WorkspaceManager, Orchestrator, Daemon, Registry, PeopleDirectory
 - Orchestration pipeline: requirements gathering → research → planning → execution → self-review → demo prep → integration

@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md): why we're doing this, what done looks like
 - [approach.md](approach.md): strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: **Slice 8 (RRPIR Phases)**. No slice file yet. The RRPIR for Slice 8 (Requirements -> Research -> Plan) is the next session's work and will create `slices/08-rrpir-phases.md`.
+- Current slice: **Slice 8 (Pipeline Phases)** — RRPIR in progress. Requirements + Research landed in Session 38 (this session); Plan deferred to Session 39. Slice file `slices/08-pipeline-phases.md` will be created when the plan lands.
 
 ## How This File Works
 
@@ -21,31 +21,16 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 8 (RRPIR Phases)**: not started. The next session is the RRPIR (Requirements -> Research -> Plan) for the slice. No code work until the plan lands.
+**Slice 8 (Pipeline Phases)**: RRPIR in progress. Session 38 landed Requirements + Research; slice file `slices/08-pipeline-phases.md` consolidates scope, the 26 locked decisions, cross-slice handoffs, findings, open questions, session breakdown, and closing-sweep section. Session 39 picks up at Planning.
 
-**One-off tangent landed before Slice 8 RRPIR (Session 37):** the LLM adapter abstraction was renamed to Agent across the whole repo. The "LLM" abstraction was wrong from day one — these plugins drive autonomous coding agent CLIs (Claude Code, OpenCode, Gemini CLI), not raw LLM API calls. Single atomic commit covering code, tests, DB migration, bundled docs, user-facing docs, seed-example. Locked-in renames: `LLMAdapter` -> `AgentAdapter`, `AdapterTypes.llm` -> `AdapterTypes.agent`, `src/plugins/llm/` -> `src/plugins/agent/`, plugin folders/IDs/classes drop `-llm`/`LLM` and gain `-agent`/`Agent`. Open decisions Farzam locked: caller is `AgentRunner` (`src/core/orchestrator/agent-runner.ts`), adapter method is `run()` (was `infer()`). Cascade: error classes (`NoLlmPluginError` -> `NoAgentPluginError`, `LlmCallRejectedError` -> `AgentRunRejectedError`, `LlmUnavailableError` -> `AgentUnavailableError`), schemas (`InferenceRequest/Result/Usage` -> `AgentRunRequest/Result/Usage`, `LLMCapabilities` -> `AgentCapabilities`), DB columns (`llm_tokens/llm_cost_usd/consecutive_llm_unavailable_count` -> `agent_tokens/agent_cost_usd/consecutive_agent_unavailable_count`), config key (`retry_policy.llm_unavailable` -> `retry_policy.agent_unavailable`), observation type (`llm_call` -> `agent_call`), log scope (`"llm-caller"` -> `"agent-runner"`), dashboard URL route (`/llm` -> `/agent`), dashboard tab labels ("LLM Calls" -> "Agent Calls"), bundled CLI docs/templates. Final triad: 2357 unit + 39 integration + 16 e2e all green, typecheck clean, lint clean (8 pre-existing complexity warnings unchanged), build OK. Coding-standards `§2 "Acronyms as words"` example bullet was rewritten from `LlmAdapter`/`LLMAdapter` to `XmlParser`/`XMLParser` since the original token no longer exists.
+**Reference files:**
+- Slice file (durable home): [`slices/08-pipeline-phases.md`](slices/08-pipeline-phases.md)
+- Research artifact: `.claude/temp/research/slice-08-pipeline-phases.md`
+- Plan artifact (to be created Session 39): `.claude/temp/create-plan/slice-08-pipeline-phases.md`
 
-**Scope framing (subject to refinement during the RRPIR):** Slice 8 owns the seven-phase pipeline that the orchestrator runs per task: requirements_gathering -> research -> planning -> execution -> self_review -> demo_prep -> integration. Concretely the slice covers the per-phase prompts (`src/core/orchestrator/prompts/*`), the phase handlers (`src/core/orchestrator/phase-handlers.ts`), the per-phase routing logic in `phase-runner.ts` (loopback gates, fallback to requirements_gathering, complexity-based research skip, fast-path PR), and the agent runner (`src/core/orchestrator/agent-runner.ts`) that bridges prompts to the agent CLI. Out of scope: workspace, session-memory, scheduler, PR creation (already done in prior slices).
+**One-line scope summary:** 7-phase pipeline becomes a 6-phase data-driven sub-phase registry. Slice 8 absorbs Slices 9 (Demo & PR) + 10 (Review & Feedback External) in full; subsequent slices renumber down by 2. See slice file for full decision record.
 
-**Inherited handoffs that land in Slice 8 (verified, parked):**
-
-- **Slice 5 -> Slice 8: trivial-skip.** Today's complexity-based "trivial -> skip research" lives at `phase-runner.ts:691-703` and reads from the requirements_gathering output's `complexity` field via `shouldSkipResearch`. Verify the heuristic is honest under the v1 pipeline shape and that the persisted `skip_research` flag survives crash recovery cleanly.
-- **Slice 6 -> Slice 8: decomposition cleanup.** The decomposition consumer was deleted in Slice 6 but residual references remain:
-  - `src/schemas/orchestrator.ts`: still exports `LLMDecompositionPlanSchema` and references `decomposition_plan` (verify scope during Slice 8's research phase; this name predates the Agent rename and may need its own follow-up).
-  - Planning prompt (`src/core/orchestrator/prompts/planning.ts`) and the planning section of `format.ts` may still instruct the agent about decomposition.
-  - The `integration` phase's purpose was to verify decomposed child tasks. With decomposition gone, the integration phase needs re-evaluation: keep, repurpose, or cut.
-  - `docs/configuration/orchestrator.md`, `docs/cli.md`, `docs/usage-guide/writing-tickets.md` still mention decomposition; live-doc cleanup folds into the slice.
-- **Slice 6 -> Slice 8: signal honoring.** `Dispatch.signal: AbortSignal` is wired by Slice 6's dispatch-tracker but not yet honored by phase-runner -> agent-runner -> agent plugins. Slice 8 owns threading the signal through so termination (preemption, hard-cap, shutdown) actually aborts in-flight CLI calls.
-- **Session 37 (LLM->Agent rename) -> Slice 8: `provider_id` literal.** `agent-runner.ts` still hardcodes `provider_id: "agent"` on the `cost.incurred` event payload (was previously `"llm"`). Semantically the field is meant to be the actual plugin ID (e.g. `claude-code-agent`) for per-provider cost tracking. Slice 8 should either fix the call site to pass the real plugin ID, or revisit whether the field is needed at all.
-
-**Cross-slice handoffs still parked for other target slices:**
-
-- Slice 5 -> Slice 10: review polling.
-- Slice 5 -> Slice 12: reply-token + unblock check.
-- Slice 6 -> Slice 12: notification-kind enumeration audit.
-- Slice 6 -> Slice 15: dashboard UI cleanup for the simplified state machine.
-
-**Next session's task:** start the RRPIR for Slice 8 per the `/requirements-gathering` -> `/research` -> `/create-plan` skill chain. Per `approach.md`, RRP is one focused conversation, with the user fully engaged. Implementation comes in follow-up sessions.
+**Next session's task (Session 39):** Planning phase only. Use `/create-plan` skill to walk through the 9 open questions (slice file § "Open Questions") with Farzam Q&A-style, then produce the implementation plan at `.claude/temp/create-plan/slice-08-pipeline-phases.md` with Choice/Context/Rejected/Consequence decision template, per-session task breakdown, verification contract, risks, pre-mortem, and panel review. No code work in Session 39; implementation begins Session 40 with the foundation-cleanup session.
 
 ## Completed Slices
 

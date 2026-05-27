@@ -1,19 +1,19 @@
-# Active — Phase 9: OSS Ready
+# Active: Phase 9 (OSS Ready)
 
 > **ALWAYS READ BEFORE PROCEEDING.** Then read [approach.md](approach.md) and the current slice file.
 > These references are permanent. Never remove them.
 
 ## Key Files
 
-- [vision.md](vision.md) — why we're doing this, what done looks like
-- [approach.md](approach.md) — strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: `slices/07-workspace-session.md` — Sessions 1-4 complete, Session 5 (closing sweep) next
+- [vision.md](vision.md): why we're doing this, what done looks like
+- [approach.md](approach.md): strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
+- Current slice: **Slice 8 (RRPIR Phases)**. No slice file yet. The RRPIR for Slice 8 (Requirements -> Research -> Plan) is the next session's work and will create `slices/08-rrpir-phases.md`.
 
 ## How This File Works
 
 This file answers one question: **where are we right now?** Nothing more.
 
-- **Current** holds the active slice — its state, plan, and the immediate next step.
+- **Current** holds the active slice: its state, plan, and the immediate next step.
 - When a slice finishes, recap it as **one line** under **Completed Slices**, then advance
   **Current** to the next slice.
 - Depth lives elsewhere: per-session detail in `sessions/N.md`, per-slice decisions in that
@@ -21,146 +21,42 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 7 — Workspace & Session** — Session 4 (workspace-manager state
-simplification: kill the `workspaces` Map, persist `base_branch`, drop
-`baseCommit` from `WorkspaceRecord`, end-to-end resume flow verification)
-complete. Next: Session 5 — closing standards sweep across every file
-touched by Sessions 1–4.
+**Slice 8 (RRPIR Phases)**: not started. The next session is the RRPIR (Requirements -> Research -> Plan) for the slice. No code work until the plan lands.
 
-**Session 1 landed** (commits `7893cf9` doc-only + `a36a213` code cut):
-- `KnowledgeStore`, knowledge schemas, knowledge table + indexes, `Dispatch.knowledge`
-  field, scheduler reads + log fields, all six prompt builders' knowledge plumbing,
-  `buildKnowledgeSection` + `formatKnowledge` — all deleted. Net +17 / −1050 lines.
-- All knowledge tests, mocks, fixtures cut from src and tests.
-- `docs/future-considerations.md`: consolidated `Hybrid Semantic Memory Search` into
-  `Cross-Task & Cross-Session Memory (supplementary)` (captures pivot story); added
-  separate `Standing System-Prompt Context (Repo + Owner Preferences)` entry for the
-  static owner-authored repo-knowledge / preferences feature that surfaced mid-session
-  (distinct from the cut layer — pure static text into the system prompt, not a
-  dynamic typed store).
-- Green at commit: 2401 unit + 39 integration + 16 e2e, lint clean, typecheck clean.
+**Scope framing (subject to refinement during the RRPIR):** Slice 8 owns the seven-phase pipeline that the orchestrator runs per task: requirements_gathering -> research -> planning -> execution -> self_review -> demo_prep -> integration. Concretely the slice covers the per-phase prompts (`src/core/orchestrator/prompts/*`), the phase handlers (`src/core/orchestrator/phase-handlers.ts`), the per-phase routing logic in `phase-runner.ts` (loopback gates, fallback to requirements_gathering, complexity-based research skip, fast-path PR), and the LLM caller (`src/core/orchestrator/llm-caller.ts`) that bridges prompts to the CLI agent. Out of scope: workspace, session-memory, scheduler, PR creation (already done in prior slices).
 
-**Session 2 landed** (commit `876b97a`):
-- Schema surface trimmed: SessionEndReason 7→5, JournalEntryType 7→3,
-  CheckpointReason 4→2. Dropped `previous_session_id`,
-  `resumed_from_checkpoint` from sessions; dropped `action_type`,
-  `finding_type`, `decision_key`, `comm_target` from journal entries.
-  Migration CHECK constraints updated to match.
-- SessionMemory facade → namespace: `ISessionMemory` interface deleted,
-  SessionMemory now exposes `sessions`, `journal`, `checkpoints` as
-  public readonly store fields. All call sites updated (38 files, net
-  −479 lines).
-- Dead code removed: `JournalQueryFilters` (dynamic SQL builder),
-  `CreateSessionInput`, `getSessionChain`, `SessionRow`, `rowToSession`.
-- Resume audit trail: journal entry at `phase-runner.ts:140` confirmed as
-  authoritative (captures phase, reason, next_action — no column dependency).
-- Green at commit: 2384 unit + 39 integration + 16 e2e, lint clean,
-  typecheck clean.
+**Inherited handoffs that land in Slice 8 (verified, parked):**
 
-**Session 4 landed** (commits `98b70bf` code + `f7b4923` lint):
-- `WorkspaceManager` is now stateless. `private readonly workspaces = new
-  Map<...>` field deleted along with every set/get/delete mutation;
-  `registerExistingWorkspace` deleted (DB is the only state — nothing to
-  register). Every read goes through a private `readRecord` helper that
-  projects `task.workspace` via `taskEngine.getTask(taskId)`.
-- `TaskWorkspaceSchema` gains `base_branch: string` (non-nullable). Kills
-  the silent wrong-base bug on restart that `registerExistingWorkspace`
-  used to mask (hardcoded `default_base_branch` + empty `baseCommit`).
-- `WorkspaceRecord.baseCommit` dropped — read nowhere post-creation; kept
-  as a local in `createWorkspace` purely to populate the event payload.
-- Constructor takes an options object (`WorkspaceManagerDeps`) including
-  the new `taskEngine: ITaskEngine` dep. 5 deps past coding-standards § 3
-  positional ideal.
-- `createWorkspace` owns the `taskEngine.updateTaskField("workspace", ...)`
-  write so persistence and worktree creation are a single contract
-  (eliminates the coordination foot-gun for callers).
-- `cleanupWorkspace` leaves `task.workspace` intact post-cleanup; the
-  `workspace.cleaned` event is the canonical audit trail. No `cleaned_at`
-  field added — decision recorded in the session log.
-- Resilience lens: `taskEngine.getTask` exceptions propagate out of
-  `readRecord` — no try/catch around DB calls. Fail loud per § 15.
-- `workspace-lifecycle.setupWorkspace` simplified: no `registerExisting
-  Workspace` calls on rework/resume; resume path becomes early return
-  ("DB-backed reads work as-is"). Persistence write removed (createWorkspace
-  owns it now).
-- `review-handler.tryRemoveThoughtsBeforeMerge` drops its re-register dance
-  + stale "until Session 4's stateless refactor" comment.
-- `EVENTS` declaration gets an explicit "subscribers: [] is intentional
-  (audit-trail-only)" comment per Decision #12.
-- New unit test asserts the resume flow contract: `base_branch` persists
-  on create + a fresh WorkspaceManager over the same DB reads it back.
-  Plus targeted assertions on the new "task.workspace retained as audit
-  post-cleanup" semantics and the schema's `base_branch` requirement.
-- Test helper `test-workspace-manager.ts` wires a real `TaskEngine` over
-  the test DB and exposes `setupTask(taskId)` + `createWorkspaceManager()`
-  so tests can simulate restart over the same DB.
-- Green at commit: 2389 unit + 39 integration + 16 e2e, lint clean
-  (0 errors, 0 new warnings), typecheck clean.
+- **Slice 5 -> Slice 8: trivial-skip.** Today's complexity-based "trivial -> skip research" lives at `phase-runner.ts:691-703` and reads from the requirements_gathering output's `complexity` field via `shouldSkipResearch`. Verify the heuristic is honest under the v1 pipeline shape and that the persisted `skip_research` flag survives crash recovery cleanly.
+- **Slice 6 -> Slice 8: decomposition cleanup.** The decomposition consumer was deleted in Slice 6 but residual references remain:
+  - `src/schemas/orchestrator.ts`: still exports `LLMDecompositionPlanSchema` and references `decomposition_plan` (verify scope during Slice 8's research phase).
+  - Planning prompt (`src/core/orchestrator/prompts/planning.ts`) and the planning section of `format.ts` may still instruct the LLM about decomposition.
+  - The `integration` phase's purpose was to verify decomposed child tasks. With decomposition gone, the integration phase needs re-evaluation: keep, repurpose, or cut.
+  - `docs/configuration/orchestrator.md`, `docs/cli.md`, `docs/usage-guide/writing-tickets.md` still mention decomposition; live-doc cleanup folds into the slice.
+- **Slice 6 -> Slice 8: signal honoring.** `Dispatch.signal: AbortSignal` is wired by Slice 6's dispatch-tracker but not yet honored by phase-runner -> llm-caller -> LLM plugins. Slice 8 owns threading the signal through so termination (preemption, hard-cap, shutdown) actually aborts in-flight CLI calls.
 
-**Session 3 landed** (commit `85afd55`):
-- `core/session-result/` extracted from orchestrator — three pure functions
-  (read/write template/backup) consumed by workspace-manager and llm-caller
-  as peers. Tests relocated.
-- `core/skills/` created with `SkillsManager` class (`sync()` + `getDir()`).
-  Wired through `CoreComponents` → `OrchestratorContext` → bootstrap;
-  orchestrator init calls `skillsManager.sync()`; phase-handlers call
-  `skillsManager.getDir()`. The walk-up `findRepoRoot()` replaced with a
-  fixed relative resolve from `import.meta.url` (same depth in src/ and dist/).
-- `removeThoughtsAndPush` moved to pr-manager as a standalone exported
-  function with narrow `{workspaceManager, observer}` deps; review-handler
-  imports and calls it directly. Span `remove_thoughts_and_push` +
-  `recordDecision` for the "no files to remove" early-return path.
-- Dead-surface cuts in workspace-manager: `injectAuth` re-export deleted;
-  `gitExecWithAuth` push branch (unreachable) dropped, helper simplified to
-  fetch-auth semantics.
-- SSOT refinement surfaced during planning: `workspace_root` tilde expansion
-  hoisted from WorkspaceManager's constructor into `system.ts` so both
-  SkillsManager and WorkspaceManager receive the canonical expanded path.
-- Observability: span `skills_sync` (lifecycle) added; "skills" added to
-  ComponentTag; bootstrap log + comment enumerate SkillsManager.
-- Green at commit: 2384 unit + 39 integration + 16 e2e, lint clean,
-  typecheck clean, build OK. Net −270 lines.
+**Cross-slice handoffs still parked for other target slices:**
 
-**Mid-session decision recorded:** the standing system-prompt feature (owner-authored
-repo knowledge + preferences injected into the system prompt at session startup) is
-**deferred** to a later slice (likely Slice 8 or 14, which own prompt assembly), not
-folded into Slice 7. Reason: Slice 7 is shaped as cuts and reshapes — adding a new
-feature blurs that. Future-considerations entry captures the shape.
+- Slice 5 -> Slice 10: review polling.
+- Slice 5 -> Slice 12: reply-token + unblock check.
+- Slice 6 -> Slice 12: notification-kind enumeration audit.
+- Slice 6 -> Slice 15: dashboard UI cleanup for the simplified state machine.
 
-**Plan deltas vs `slice-07-workspace-session.md`:** Sessions 1-4 executed the
-plan's task lists. Two scope additions:
-- Session 3 hoisted the `workspace_root` tilde expansion from WorkspaceManager
-  into `system.ts` (SSOT for the canonical path).
-- Session 4 moved the `taskEngine.updateTaskField("workspace", ...)` write
-  from `workspace-lifecycle.setupWorkspace` into `WorkspaceManager.createWorkspace`
-  itself. Rationale: with the Map gone, "create the worktree" and "persist
-  the workspace shape" become a single atomic contract — callers can't
-  forget the second step, tests don't need a manual updateTaskField after
-  every create.
-
-Remaining Session 5 (closing standards sweep) unchanged.
-
-Methodology refinements (commits `b41aff7`, `adb6f66` from Session 31): `approach.md`
-codifies "What Each RRP Must Hunt For", "Presenting Findings During RRP", and
-"coding-standards alignment is a planning concern, not a sweep concern." Future RRPs
-inherit this discipline.
-
-**Cross-slice handoffs inherited from prior slices (still parked for target slices):**
-- Slice 5 → Slice 12: #9 reply-token + #10 unblock check.
-- Slice 5 → Slice 8: trivial-skip.
-- Slice 5 → Slice 10: review polling.
-- Slice 6 → Slice 8: decomposition-handler.ts deletion + planning prompt instruction
-  removal + decomposition schemas deletion + integration phase re-evaluation + signal
-  honoring through phase-runner → llm-caller → LLM plugins.
-- Slice 6 → Slice 12: notification-kind enumeration audit.
-- Slice 6 → Slice 15: dashboard UI cleanup for the simplified state machine.
+**Next session's task:** start the RRPIR for Slice 8 per the `/requirements-gathering` -> `/research` -> `/create-plan` skill chain. Per `approach.md`, RRP is one focused conversation, with the user fully engaged. Implementation comes in follow-up sessions.
 
 ## Completed Slices
 
-- **Slice 1 — Standards Alignment:** `docs/coding-standards.md` written — 10 categories decided via deep Q&A.
-- **Slice 2 — Repo Readiness:** Biome aligned, lint split, CI parallelized, tests restructured (`tests/unit/` mirrors `src/`), migrations consolidated, hardcoded paths fixed.
-- **Slice 3 — Dashboard:** 5-page React SPA rewrite (Overview, Tasks, Activity, Metrics, Errors), all features working, coding standards audited. Sessions 4–8 — detail in `slices/03-dashboard.md`.
-- **Slice 4 — Startup & Configuration:** Getting-started path (`pnpm run setup` → `engineer start`), OS detection gate, seed-example sanitization + dogfooding, removals (checkCliArtifacts, config-version machinery, Output.table, quiet mode), CLI restructure (Screaming Architecture), original coding standards audit (1–11), new coding standards added (§4 expanded, §5 expanded, §7 framing, §12–§15), six post-bootstrap infrastructure gaps closed (retryable flag, cause chains, trace_id correlation, floating promises, span/log correlation, graceful degradation logs), and new standards applied across slice 4 in-scope files. "Apply with judgment, never mechanically" principle codified. Sessions 9–16 — detail in `slices/04-startup.md`.
-- **Slice 5 — Trigger & Requirements (Contacts) Flow:** PluginContext + per-plugin StateStore (the SDK foundation), durable dedup moved to Core on `idempotency_key`, dead `trigger.pr_review` scaffolding removed (issues-only trigger), per-plugin poll cadence + configurable label/assignee work selection + Core-owned backoff, single-user constraint (`docs/constraints.md`, owner assumed-not-required, doctor "People Directory" category). Closing standards sweep (Session 22) closed it: deleted unwired config hot-reload infra, re-synced bundled plugin docs with source, removed dead `max_tokens`, fixed the chronic orchestrator test flake, line-by-line audit of all in-scope files. Sessions 17–22 — detail in `slices/05-trigger.md`.
-- **Slice 6 — Scheduling & Dispatch:** Decomposition consumer deleted in full, single retry-policy module (per-category, config-driven), dispatch-tracker primitive (AbortController, per-dispatch identity, idempotent late callbacks), `Outcomes.terminated` with typed reason routing, preemption tightened (eligible filter, bounded priority, one-per-tick), hard-cap enforcement (`max_active_duration_ms` → terminate → failed + alert), crash recovery unification (boot-loop hole closed), `engineer retry` accepts failed tasks, `failed → queued` transition, dead `preemption.ready` event deleted. Closing standards sweep (Session 29) fixed stale overview States table, dispatch-tracker drain complexity, Array<T> syntax, swallowed DB-open error in retry CLI, stale decomposition JSDoc. Post-sweep refinement (Session 30) collapsed triplicated LLM subprocess helpers (env allowlist + buildLlmEnv + appendStderr) into `src/plugins/llm/subprocess.ts` — surfaced a new sweep principle: duplicated *functions* count under § 11 too, not just literals. Sessions 25–30 — detail in `slices/06-scheduling.md`.
-- **E2E test fix (carried over from Slice 5, Session 23):** the five `task-happy-path` + `crash-recovery` e2e failures were structural — tests used `clone_url: ""` (silently skipping workspace creation → `WorkspaceNotReadyError` → no LLM call), and asserted impossible LLM counts since the FakeLLM doesn't simulate the CLI's `session-result.json` write. Rewrote as one full-pipeline smoke test (bare git repo + FakeLLM side-effect hook) plus honest dispatch/routing/recovery tests. 16/16 e2e passing. Commit `f54ad8c`.
+- **Slice 1: Standards Alignment.** `docs/coding-standards.md` written. 10 categories decided via deep Q&A.
+- **Slice 2: Repo Readiness.** Biome aligned, lint split, CI parallelized, tests restructured (`tests/unit/` mirrors `src/`), migrations consolidated, hardcoded paths fixed.
+- **Slice 3: Dashboard.** 5-page React SPA rewrite (Overview, Tasks, Activity, Metrics, Errors), all features working, coding standards audited. Sessions 4-8, detail in `slices/03-dashboard.md`.
+- **Slice 4: Startup & Configuration.** Getting-started path (`pnpm run setup` -> `engineer start`), OS detection gate, seed-example sanitization + dogfooding, removals (checkCliArtifacts, config-version machinery, Output.table, quiet mode), CLI restructure (Screaming Architecture), original coding standards audit (1-11), new coding standards added (sec 4 expanded, sec 5 expanded, sec 7 framing, sec 12-15), six post-bootstrap infrastructure gaps closed (retryable flag, cause chains, trace_id correlation, floating promises, span/log correlation, graceful degradation logs), and new standards applied across slice 4 in-scope files. "Apply with judgment, never mechanically" principle codified. Sessions 9-16, detail in `slices/04-startup.md`.
+- **Slice 5: Trigger & Requirements (Contacts) Flow.** PluginContext + per-plugin StateStore (the SDK foundation), durable dedup moved to Core on `idempotency_key`, dead `trigger.pr_review` scaffolding removed (issues-only trigger), per-plugin poll cadence + configurable label/assignee work selection + Core-owned backoff, single-user constraint (`docs/constraints.md`, owner assumed-not-required, doctor "People Directory" category). Closing standards sweep (Session 22) closed it: deleted unwired config hot-reload infra, re-synced bundled plugin docs with source, removed dead `max_tokens`, fixed the chronic orchestrator test flake, line-by-line audit of all in-scope files. Sessions 17-22, detail in `slices/05-trigger.md`.
+- **Slice 6: Scheduling & Dispatch.** Decomposition consumer deleted in full, single retry-policy module (per-category, config-driven), dispatch-tracker primitive (AbortController, per-dispatch identity, idempotent late callbacks), `Outcomes.terminated` with typed reason routing, preemption tightened (eligible filter, bounded priority, one-per-tick), hard-cap enforcement (`max_active_duration_ms` -> terminate -> failed + alert), crash recovery unification (boot-loop hole closed), `engineer retry` accepts failed tasks, `failed -> queued` transition, dead `preemption.ready` event deleted. Closing standards sweep (Session 29) fixed stale overview States table, dispatch-tracker drain complexity, Array<T> syntax, swallowed DB-open error in retry CLI, stale decomposition JSDoc. Post-sweep refinement (Session 30) collapsed triplicated LLM subprocess helpers (env allowlist + buildLlmEnv + appendStderr) into `src/plugins/llm/subprocess.ts`. Surfaced a new sweep principle: duplicated *functions* count under sec 11 too, not just literals. Sessions 25-30, detail in `slices/06-scheduling.md`.
+- **Slice 7: Workspace & Session.** Five sessions, four implementation + closing sweep. Net -1568 lines across 79 files. Sessions 31-36, detail in `slices/07-workspace-session.md`.
+  - **Session 31:** RRPIR for the slice (requirements + research + plan).
+  - **Session 32:** Knowledge layer cut in full (KnowledgeStore, schemas, table, Dispatch.knowledge field, scheduler reads, all six prompt builders' knowledge plumbing, buildKnowledgeSection). Future-considerations entry captures the cross-task memory pivot. Commits `7893cf9` + `a36a213`.
+  - **Session 33:** Session-memory hygiene + facade -> namespace. Enums trimmed (SessionEndReason 7 -> 5, JournalEntryType 7 -> 3, CheckpointReason 4 -> 2), dead columns dropped (`previous_session_id`, `resumed_from_checkpoint`, four journal type-specific columns), `JournalQueryFilters` dynamic SQL replaced with single static prepared statement, `getSessionChain` deleted, `ISessionMemory` interface deleted. SessionMemory now exposes `sessions`, `journal`, `checkpoints` as public readonly fields. 38 files, -479 lines. Commit `876b97a`.
+  - **Session 34:** Workspace-manager extractions. `core/session-result/` extracted from orchestrator as a peer module, `core/skills/` created with `SkillsManager` class, `removeThoughtsAndPush` moved to pr-manager as a standalone exported function. `injectAuth` re-export + dead `push` branch cut. SSOT refinement: `workspace_root` tilde expansion hoisted into `system.ts`. 25 files, -270 lines. Commit `85afd55`.
+  - **Session 35:** Workspace-manager state simplification. In-memory `workspaces` Map killed (DB is the single source of truth via `taskEngine.getTask(taskId)?.workspace`). `registerExistingWorkspace` deleted (nothing to register). `TaskWorkspaceSchema` gained `base_branch: string` (non-nullable, fixes the silent wrong-base-on-restart bug). `baseCommit` dropped from `WorkspaceRecord`. WorkspaceManager constructor takes a `WorkspaceManagerDeps` options object. `createWorkspace` owns the persistence write atomically with worktree creation. Commits `98b70bf` + `f7b4923`.
+  - **Session 36 (closing sweep):** Four sweep commits, each green. (1) Cut dead schema surface from `schemas/ephemeral.ts`: 18 unused schemas/types had zero src/ consumers, several literally described the killed in-memory Map, one (`PendingPreemption`) was a dual-source-of-truth with a different-shaped runtime interface. Net -578 lines. Plus un-exported `recordFromTask` in workspace-manager. (2) Deleted backward-compat re-exports: `PHASE_SEQUENCE` re-export in `phase-runner.ts` + `isSlotConsuming`/`shouldPreempt` re-exports in `daemon/index.ts`; tests updated to import from real sources. Universal-rule violation closed. (3) Stale residue cleanup across comments, JSDoc, and live docs: `workspace-lifecycle` JSDoc fixed (re-register doesn't exist), pr-manager TODO got `(farzam)` per coding-standards sec 8, `phase-handlers` "all 7 phase handlers" stale count rewritten + three stale `(Session 0XX)` section dividers consolidated, four live docs cut "knowledge" mentions (overview, three-tier-model, zod-schemas). (4) Coding-standards compliance: three swallowed catches logged (Fail Loud), error message dropped redundant `WorkspaceManager:` prefix + quoted path (Deno style), `removeThoughtsAndPush` uses `WorkspaceNotFoundError` domain class instead of bare `Error`, `Array<{...}>` -> `{...}[]` shorthand. All four commits rewritten via cherry-pick + backup branch after Farzam called out em dashes (memory captured as `feedback_no_em_dashes_in_commits.md`). Final triad: 2357 unit + 39 integration + 16 e2e all green, lint clean (8 pre-existing complexity warnings unchanged, all outside Slice 7 scope), typecheck clean, build OK.
+- **E2E test fix (carried over from Slice 5, Session 23):** the five `task-happy-path` + `crash-recovery` e2e failures were structural: tests used `clone_url: ""` (silently skipping workspace creation -> `WorkspaceNotReadyError` -> no LLM call), and asserted impossible LLM counts since the FakeLLM doesn't simulate the CLI's `session-result.json` write. Rewrote as one full-pipeline smoke test (bare git repo + FakeLLM side-effect hook) plus honest dispatch/routing/recovery tests. 16/16 e2e passing. Commit `f54ad8c`.

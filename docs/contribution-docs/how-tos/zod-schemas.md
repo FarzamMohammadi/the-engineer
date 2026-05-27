@@ -15,7 +15,7 @@ src/schemas/
   orchestrator.ts    — Phases, outputs, agent actions, decomposition
   config.ts          — All configuration schemas
   adapters.ts        — Adapter types, contracts, plugin interfaces
-  session-memory.ts  — Sessions, journal, checkpoints, knowledge
+  session-memory.ts  — Sessions, journal, checkpoints
   ephemeral.ts       — Daemon runtime state, dispatch, cost tracking
   observer.ts        — Observation types, queries, blob refs
   index.ts           — Barrel export
@@ -290,7 +290,7 @@ if (item.status === Statuses.active) { ... }
 | `src/schemas/orchestrator.ts` | Phase, PhaseOutput schemas, AgentAction discriminated union |
 | `src/schemas/config.ts` | DaemonConfig, OrchestratorConfig, SafetyConfig, all subsystem configs |
 | `src/schemas/adapters.ts` | AdapterType, adapter contracts, plugin health states |
-| `src/schemas/session-memory.ts` | Session, journal, checkpoint, knowledge schemas |
+| `src/schemas/session-memory.ts` | Session, journal, checkpoint schemas |
 | `src/schemas/ephemeral.ts` | Dispatch, cost accumulators, preemption state |
 | `src/schemas/observer.ts` | ObservationType const, observation queries, row mappers |
 | `src/core/orchestrator/types.ts` | Outcomes const (executeTask result discriminant) |

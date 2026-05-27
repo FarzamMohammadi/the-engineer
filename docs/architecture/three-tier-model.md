@@ -53,7 +53,7 @@ Nine components that are always present, invariant across all configurations.
 | **Task Engine** | Manages tasks from trigger to completion. State ownership, permissions, hierarchy. | [`task-engine.md`](../2-components/task-engine.md) |
 | **Orchestrator** | The brain. Phase pipeline, LLM reasoning, decision-making, communication. | [`orchestrator.md`](../2-components/orchestrator.md) |
 | **Event Bus** | The nervous system. All inter-component communication flows as events. The event stream IS the audit trail. | [`event-bus.md`](../2-components/event-bus.md) |
-| **Session/Memory** | State persistence, knowledge, checkpoints, journal. Crash recovery foundation. | [`session-memory.md`](../2-components/session-memory.md) |
+| **Session/Memory** | State persistence, checkpoints, journal. Crash recovery foundation. | [`session-memory.md`](../2-components/session-memory.md) |
 | **Safety Layer** | Guardrails, permissions, policy enforcement. Gate 2 in the Action Pipeline. Config-driven. | [`safety-layer.md`](../2-components/safety-layer.md) |
 | **People Directory** | Who to talk to, their roles, how to reach them. Contact resolution for all communication. Config-driven. | [`adapter-contracts.md`](../3-interactions/adapter-contracts.md) § People Directory |
 | **Workspace Manager** | Per-task git isolation via branches and worktrees. Local git operations (clone, branch, commit, push). | [`workspace-manager.md`](../2-components/workspace-manager.md) |

@@ -6,9 +6,9 @@ import type { OrchestratorContext } from "./types.js";
 
 /** Workspace setup and session management for task dispatches. */
 export interface WorkspaceLifecycle {
-  /** Set up workspace for a task dispatch (create or re-register). */
+  /** Set up the workspace for a task dispatch — creates for fresh dispatches, no-op for resume/rework (task.workspace is the source of truth). */
   setupWorkspace(dispatch: Dispatch): void;
-  /** Create or resume a session for a dispatch. */
+  /** Create a session row for a dispatch. */
   createSession(dispatch: Dispatch): Session;
 }
 

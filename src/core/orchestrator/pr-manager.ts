@@ -150,7 +150,7 @@ export function createPrManager(ctx: OrchestratorContext, notifications: Notific
       { task_id: taskId },
     );
 
-    // TODO: Reconsider moving commit responsibility back to the execution phase entirely.
+    // TODO(farzam): Reconsider moving commit responsibility back to the execution phase entirely.
     // The CLI agent should commit all changes during its session; pr-manager should only push.
     // This safety-net commit exists because the agent may leave uncommitted changes.
     // 1. Deterministic commit: git add -A && git commit

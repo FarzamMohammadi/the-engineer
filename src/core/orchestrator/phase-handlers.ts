@@ -20,7 +20,7 @@ import type { OrchestratorContext, PipelineState } from "./types.js";
 // ── Phase Handler Factory ────────────────────────────────────────────────────
 
 /**
- * Create all 7 phase handlers.
+ * Create the phase handler for every RRPIR phase.
  *
  * All phases use CLI-native invocation (runPhaseWithCli).
  * Self-review runs a multi-step review pipeline: one CLI call per review lens + one refinement call.
@@ -37,7 +37,7 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     return wt ? path.join(wt, thoughtsDir) : thoughtsDir;
   }
 
-  // ── CLI-native phases (RRPIR) ──────────────────────────────────────────
+  // ── Phase Handlers ─────────────────────────────────────────────────────
 
   function handleRequirementsGathering(
     taskId: string,
@@ -89,8 +89,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
     });
   }
 
-  // ── CLI-native phases (Session 070) ─────────────────────────────────
-
   function handlePlanning(
     taskId: string,
     dispatch: Dispatch,
@@ -140,8 +138,6 @@ export function createPhaseHandlers(llmCaller: LlmCaller, ctx: OrchestratorConte
       thoughtsDir,
     });
   }
-
-  // ── CLI-native phases (Session 071) ─────────────────────────────────
 
   /**
    * Multi-step review pipeline: one CLI call per review lens, then one refinement call.

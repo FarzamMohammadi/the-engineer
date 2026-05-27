@@ -89,7 +89,7 @@ graph LR
 | **EventBus** | Pub/sub with SQLite persistence, replay for state reconstruction, glob pattern subscriptions |
 | **SafetyLayer** | Policy evaluation, cost tracking, autonomy verdicts |
 | **ActionPipeline** | Authorization middleware: Gate 1 (state check) + Gate 2 (policy check) + Execute + Notify |
-| **SessionMemory** | Session lifecycle, journal entries, checkpoints, knowledge store |
+| **SessionMemory** | Session lifecycle, journal entries, checkpoints |
 | **WorkspaceManager** | Git worktree creation/cleanup per task |
 | **Registry** | Plugin discovery, five-phase loading, health monitoring, lifecycle management |
 | **PeopleDirectory** | Config-driven contact resolution for notifications and escalations |

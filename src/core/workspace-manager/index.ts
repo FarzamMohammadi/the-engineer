@@ -100,7 +100,7 @@ export function branchName(prefix: string, taskId: string, slug: string): string
  * Returns null when the task has no workspace, or when the worktree path is
  * absent (worktree never created — only the placeholder shape is on the task).
  */
-export function recordFromTask(task: Task): WorkspaceRecord | null {
+function recordFromTask(task: Task): WorkspaceRecord | null {
   const ws = task.workspace;
   if (!ws?.worktree_path) {
     return null;

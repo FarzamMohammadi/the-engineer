@@ -2,7 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deriveAggregateReviewState, isSlotConsuming, shouldPreempt } from "../../../../src/core/daemon/index.js";
+import { shouldPreempt } from "../../../../src/core/daemon/preemption-manager.js";
+import { deriveAggregateReviewState } from "../../../../src/core/daemon/review-handler.js";
+import { isSlotConsuming } from "../../../../src/core/daemon/task-scheduler.js";
 import type { ExecuteTaskResult } from "../../../../src/core/orchestrator/index.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";

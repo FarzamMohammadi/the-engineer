@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { PHASE_SEQUENCE } from "../../../../src/core/orchestrator/phase-runner.js";
+import { PHASE_SEQUENCE } from "../../../../src/core/orchestrator/types.js";
 import { Phases } from "../../../../src/schemas/orchestrator.js";
 import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../../../src/schemas/session-memory.js";
 import { ActionClasses, SubStates, TaskStates } from "../../../../src/schemas/task.js";

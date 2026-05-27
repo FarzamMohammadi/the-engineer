@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAndonCord } from "../../../../src/core/orchestrator/andon-cord.js";
 import {
-  PHASE_SEQUENCE,
   type PhaseRunnerDeps,
   createPhaseHandlerRegistry,
   formatPhaseHandoff,
   runPhasePipeline,
 } from "../../../../src/core/orchestrator/phase-runner.js";
 import type { PrManager } from "../../../../src/core/orchestrator/pr-manager.js";
-import type { OrchestratorContext, PipelineState } from "../../../../src/core/orchestrator/types.js";
+import {
+  type OrchestratorContext,
+  PHASE_SEQUENCE,
+  type PipelineState,
+} from "../../../../src/core/orchestrator/types.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
 import type { Dispatch } from "../../../../src/schemas/ephemeral.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";

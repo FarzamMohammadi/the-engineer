@@ -152,11 +152,6 @@ export interface Daemon {
   getState(): DaemonState;
 }
 
-// ── Pure Function Re-exports ──────────────────────────────────────────────────
-// Each function lives in its subsystem file — re-exported here for backward compatibility.
-
-export { isSlotConsuming } from "./task-scheduler.js";
-export { shouldPreempt } from "./preemption-manager.js";
 export { deriveAggregateReviewState } from "./review-handler.js";
 export { evaluateTaskStuckness } from "./health-monitor.js";
 

@@ -21,11 +21,6 @@ import {
   buildPhaseSequence,
 } from "./types.js";
 
-// ── Constants ───────────────────────────────────────────────────────────────
-
-// Re-export for backward compatibility (tests import from here).
-export { PHASE_SEQUENCE } from "./types.js";
-
 // ── Phase Handler Registry ─────────────────────────────────────────────────
 
 /** A phase handler function. */

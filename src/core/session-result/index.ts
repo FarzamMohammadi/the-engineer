@@ -56,9 +56,14 @@ export function backupSessionResult(phaseDir: string): void {
     // Removing the stale file is more important than preserving the backup.
     try {
       unlinkSync(filePath);
-    } catch {
-      // Best effort — if both fail, the stale file remains but the warn log
-      // from readSessionResult will surface the issue.
+    } catch (removalError) {
+      // Both rename AND unlink failed — the stale file remains and will mask
+      // the next CLI session's output. No observer in this module's scope; use
+      // stderr so the failure is at least surfaced to the operator (matches
+      // the doctor.ts pattern from the Slice 5 sweep).
+      process.stderr.write(
+        `session-result: failed to clear stale file at "${filePath}" (${removalError instanceof Error ? removalError.message : String(removalError)})\n`,
+      );
     }
   }
 

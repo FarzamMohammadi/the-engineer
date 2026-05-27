@@ -222,7 +222,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     // Clone repo if not present (D147)
     if (!existsSync(repoCloneDir)) {
       if (!cloneUrl) {
-        throw new WorkspaceCreationError(`WorkspaceManager: repo clone directory does not exist: ${repoCloneDir}`);
+        throw new WorkspaceCreationError(`Repo clone directory does not exist: "${repoCloneDir}"`);
       }
       this.ensureClone(repo, cloneUrl);
     }
@@ -437,12 +437,17 @@ export class WorkspaceManager implements IWorkspaceManager {
       }
     }
 
-    // Delete branch unless preserving
+    // Delete branch unless preserving — log if it fails so genuine errors
+    // (permissions, repo corruption) don't hide behind the idempotency comment.
     if (!preserveBranch) {
       try {
         this.gitExec(["branch", "-D", record.branch], repoCloneDir);
-      } catch {
-        // Branch may already be deleted — not an error
+      } catch (err) {
+        this.observer.debug("Branch deletion skipped (already deleted or unavailable)", {
+          taskId,
+          branch: record.branch,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
@@ -504,8 +509,15 @@ export class WorkspaceManager implements IWorkspaceManager {
       });
       try {
         rmSync(repoCloneDir, { recursive: true, force: true });
-      } catch {
-        // Removal best-effort — deletion failure is logged by the outer error
+      } catch (removalError) {
+        // Removal failed AFTER set-url failed — the clone with the auth token in
+        // .git/config is now stranded on disk. Surface it loudly: no silent
+        // token persistence (§ 15 Graceful Degradation).
+        this.observer.error("Auth token persists on disk — clone removal failed after set-url failure", {
+          repo,
+          repoCloneDir,
+          error: removalError instanceof Error ? removalError.message : String(removalError),
+        });
       }
       throw new WorkspaceCreationError(
         `Failed to reset git remote after clone — removed clone to prevent token persistence: ${setUrlError instanceof Error ? setUrlError.message : String(setUrlError)}`,

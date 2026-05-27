@@ -135,7 +135,7 @@ describe("createWorkspace", () => {
 
     expect(() => {
       h.workspaceManager.createWorkspace("task-1", "nonexistent-repo", { title: "Title" });
-    }).toThrow("repo clone directory does not exist");
+    }).toThrow("Repo clone directory does not exist");
   });
 });
 

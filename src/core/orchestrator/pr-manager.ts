@@ -14,6 +14,7 @@ import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
+import { WorkspaceNotFoundError } from "../workspace-manager/errors.js";
 import type { OrchestratorContext } from "./types.js";
 
 // ── PR Body Helpers ────────────────────────────────────────────────────────
@@ -423,7 +424,7 @@ export function removeThoughtsAndPush(deps: RemoveThoughtsDeps, taskId: string):
   const { workspaceManager, observer } = deps;
   const record = workspaceManager.getWorkspaceRecord(taskId);
   if (!record) {
-    throw new Error(`Workspace not found for task "${taskId}"`);
+    throw new WorkspaceNotFoundError(taskId);
   }
 
   const span = observer.startSpan(

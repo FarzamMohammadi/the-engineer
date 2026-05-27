@@ -586,7 +586,7 @@ async function handlePostPhaseActions(input: PostPhaseActionsInput): Promise<Pos
 
       // Send outreach messages before blocking — read .txt files from outreach/ directory
       const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
-      let contacted: Array<{ person: string; channel: string; timestamp: string }> = [];
+      let contacted: { person: string; channel: string; timestamp: string }[] = [];
       let shouldBlock = true;
 
       if (worktreePath && state.thoughtsDir) {

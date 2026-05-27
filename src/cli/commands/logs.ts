@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import pinoPretty from "pino-pretty";
 
 import { getOutput } from "../output.js";
 
@@ -32,25 +33,17 @@ export function runLogs(engineerHome: string, options: LogsOptions): number {
   return runStaticMode(logFile, options);
 }
 
-/**
- * Finds the most recent log file in the logs directory.
- * pino-roll creates files like engineer.log, engineer.log.1, etc.
- */
+/** Finds the most recent log file in the logs directory. */
 function findLogFile(engineerHome: string): string | null {
   const logsDir = join(engineerHome, "logs");
   if (!existsSync(logsDir)) {
     return null;
   }
 
-  // pino-roll names the current file "engineer.log"
-  const currentLog = join(logsDir, "engineer.log");
-  if (existsSync(currentLog)) {
-    return currentLog;
-  }
-
-  // Fall back to finding any log file
+  // pino-roll strips the extension, then produces: engineer.[date].<N>.log
+  // e.g. engineer.1.log, engineer.2.log, engineer.2025-05-27.1.log
   const files = readdirSync(logsDir)
-    .filter((f) => f.startsWith("engineer.log"))
+    .filter((f) => f.startsWith("engineer.") && f.endsWith(".log"))
     .sort()
     .reverse();
 
@@ -72,13 +65,7 @@ function runStaticMode(logFile: string, options: LogsOptions): number {
     return 0;
   }
 
-  // Format with pino-pretty if available
-  try {
-    formatWithPinoPretty(lines);
-  } catch {
-    // Fall back to raw output if pino-pretty is unavailable
-    writeRawLines(lines);
-  }
+  formatWithPinoPretty(lines);
   return 0;
 }
 
@@ -95,24 +82,14 @@ function runFollowMode(logFile: string, options: LogsOptions): number {
     return 0;
   }
 
-  // Pipe through pino-pretty
   const tail = spawn("tail", tailArgs, { stdio: ["inherit", "pipe", "inherit"] });
-  const pretty = spawn("pino-pretty", [], { stdio: ["pipe", "inherit", "inherit"] });
+  const pretty = pinoPretty();
 
   if (tail.stdout) {
-    tail.stdout.pipe(pretty.stdin);
+    tail.stdout.pipe(pretty).pipe(process.stdout);
   }
 
-  tail.on("error", (err) => {
-    out.error(`Failed to tail log file: ${err.message}`);
-  });
-  pretty.on("error", () => {
-    // pino-pretty not found — fall back to raw tail
-    const rawTail = spawn("tail", tailArgs, { stdio: "inherit" });
-    rawTail.on("error", (err) => {
-      out.error(`Failed to tail log file: ${err.message}`);
-    });
-  });
+  tail.on("error", (err) => out.error(`Failed to tail log file: ${err.message}`));
 
   // Follow mode keeps the process running — return 0 (won't actually reach this)
   return 0;
@@ -126,13 +103,9 @@ function writeRawLines(lines: string[]): void {
 }
 
 function formatWithPinoPretty(lines: string[]): void {
-  // Use pino-pretty as a spawned process for simplicity
-  const proc = spawn("pino-pretty", [], {
-    stdio: ["pipe", "inherit", "inherit"],
-  });
-
+  const pretty = pinoPretty();
   for (const line of lines) {
-    proc.stdin.write(`${line}\n`);
+    pretty.write(`${line}\n`);
   }
-  proc.stdin.end();
+  pretty.end();
 }

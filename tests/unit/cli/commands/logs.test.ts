@@ -50,6 +50,19 @@ describe("runLogs", () => {
     expect(joined).not.toContain("line1");
   });
 
+  it("finds pino-roll numbered log files (engineer.1.log)", () => {
+    const logsDir = join(tempDir, "logs");
+    mkdirSync(logsDir, { recursive: true });
+    const logLines = ['{"level":30,"msg":"from-numbered"}'];
+    writeFileSync(join(logsDir, "engineer.1.log"), logLines.join("\n"), "utf8");
+
+    const code = runLogs(tempDir, { json: true, lines: 50, follow: false });
+    expect(code).toBe(0);
+
+    const joined = stdoutLines.join("");
+    expect(joined).toContain("from-numbered");
+  });
+
   it("respects --lines option", () => {
     const logsDir = join(tempDir, "logs");
     mkdirSync(logsDir, { recursive: true });

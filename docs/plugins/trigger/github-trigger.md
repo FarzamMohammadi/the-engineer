@@ -95,6 +95,16 @@ On each poll cycle, the plugin iterates through configured repos and calls the G
 - Label filtering is applied at the API level (comma-joined), so an issue must have all listed labels to match. Assignee filtering is likewise applied at the API level.
 - Watermark loss (corrupt state, first run) causes re-fetching from the beginning. The Daemon's idempotency key deduplication prevents duplicate tasks.
 
+## Troubleshooting
+
+**Issue not being picked up?** Check these in order:
+
+1. **Missing label** — the issue must carry the `engineer` label (or whatever you configured in `labels`). This is the most common cause. Reopening a closed issue does not re-add labels if they were removed.
+2. **Missing assignee** — if you configured `assignee`, the issue must be assigned to that user.
+3. **Not an issue** — pull requests are filtered out, even if they have the right labels.
+4. **Poll delay** — there is up to a 30-second delay between issue creation/update and pickup (one poll interval).
+5. **Rate limited** — check the daemon logs for rate-limit warnings. The plugin backs off when GitHub returns 429.
+
 ## Related Plugins
 
 | Plugin | Relationship |

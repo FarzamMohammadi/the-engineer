@@ -50,7 +50,7 @@ engineer start              # Setup (first run) + start daemon
 engineer stop               # Graceful shutdown
 engineer status             # Daemon state + task listing (IDs, state, title, age)
 engineer status --all       # Include completed and failed tasks
-engineer logs               # View daemon logs (--follow, --json)
+engineer logs               # View daemon logs (--follow, --raw)
 engineer doctor             # Health checks
 engineer why <task-id>      # Explain a task's decision trail
 engineer retry <task-id>    # Re-queue a blocked or failed task

@@ -6,7 +6,7 @@ import pinoPretty from "pino-pretty";
 import { getOutput } from "../output.js";
 
 interface LogsOptions {
-  readonly json: boolean;
+  readonly raw: boolean;
   readonly lines: number;
   readonly follow: boolean;
 }
@@ -60,7 +60,7 @@ function readLastLines(filePath: string, lineCount: number): string[] {
 function runStaticMode(logFile: string, options: LogsOptions): number {
   const lines = readLastLines(logFile, options.lines);
 
-  if (options.json) {
+  if (options.raw) {
     writeRawLines(lines);
     return 0;
   }
@@ -73,8 +73,7 @@ function runFollowMode(logFile: string, options: LogsOptions): number {
   const out = getOutput();
   const tailArgs = ["-f", "-n", String(options.lines), logFile];
 
-  if (options.json) {
-    // Raw JSON follow
+  if (options.raw) {
     const tail = spawn("tail", tailArgs, { stdio: "inherit" });
     tail.on("error", (err) => {
       out.error(`Failed to tail log file: ${err.message}`);

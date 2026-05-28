@@ -161,7 +161,7 @@ Tails the daemon log file.
 
 ```bash
 engineer logs                            # Last 50 lines, pretty-printed
-engineer logs --json                     # Raw JSON (pino format)
+engineer logs --raw                      # Raw JSON (no pretty-printing)
 engineer logs --lines 100               # Last 100 lines
 engineer logs --follow                   # Stream new entries (like tail -f)
 ```

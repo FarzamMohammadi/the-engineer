@@ -26,7 +26,7 @@ afterEach(() => {
 
 describe("runLogs", () => {
   it("returns 0 when no log file exists", () => {
-    const code = runLogs(tempDir, { json: false, lines: 50, follow: false });
+    const code = runLogs(tempDir, { raw: false, lines: 50, follow: false });
     expect(code).toBe(0);
   });
 
@@ -40,7 +40,7 @@ describe("runLogs", () => {
     ];
     writeFileSync(join(logsDir, "engineer.log"), logLines.join("\n"), "utf8");
 
-    const code = runLogs(tempDir, { json: true, lines: 2, follow: false });
+    const code = runLogs(tempDir, { raw: true, lines: 2, follow: false });
     expect(code).toBe(0);
 
     // Each raw line is written as `${line}\n` — should show last 2
@@ -56,7 +56,7 @@ describe("runLogs", () => {
     const logLines = ['{"level":30,"msg":"from-numbered"}'];
     writeFileSync(join(logsDir, "engineer.1.log"), logLines.join("\n"), "utf8");
 
-    const code = runLogs(tempDir, { json: true, lines: 50, follow: false });
+    const code = runLogs(tempDir, { raw: true, lines: 50, follow: false });
     expect(code).toBe(0);
 
     const joined = stdoutLines.join("");
@@ -69,7 +69,7 @@ describe("runLogs", () => {
     const lines = Array.from({ length: 10 }, (_, i) => `{"level":30,"msg":"line${i}"}`);
     writeFileSync(join(logsDir, "engineer.log"), lines.join("\n"), "utf8");
 
-    runLogs(tempDir, { json: true, lines: 3, follow: false });
+    runLogs(tempDir, { raw: true, lines: 3, follow: false });
 
     const written = stdoutLines.filter((line) => line.includes('"msg":"line'));
     expect(written).toHaveLength(3);

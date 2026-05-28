@@ -136,14 +136,14 @@ program
 program
   .command("logs")
   .description("View daemon log output")
-  .option("--json", "Show raw JSON instead of pretty-printed output")
+  .option("--raw", "Show raw JSON instead of pretty-printed output")
   .option("--lines <n>", "Number of lines to show", "50")
   .option("--follow", "Follow mode — stream new entries")
-  .action((options: { json?: boolean; lines: string; follow?: boolean }) => {
+  .action((options: { raw?: boolean; lines: string; follow?: boolean }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runLogs(home, {
-      json: options.json ?? false,
+      raw: options.raw ?? false,
       lines: Number.parseInt(options.lines, 10),
       follow: options.follow ?? false,
     });

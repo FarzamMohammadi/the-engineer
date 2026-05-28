@@ -161,13 +161,15 @@ Five typed event variants from the `GitHostingAdapter`'s new event detection met
 | `pr_comments` | Requirements (with skip-gate fast-path) | Assessment may surface new scope; trivial-comment skip-gate routes forward fast |
 | `pr_ci_failure` | Execution | Pure code fix, no human-intent ambiguity |
 | `pr_merge_conflict` | Execution | Pure code fix, base branch moved |
-| `pr_approved` | informational only (notify owner) | Approval is intent; task stays blocked |
+| `pr_approved` | trigger auto-merge attempt (orchestrator sub-phase) | Human approval is the trigger; The Engineer performs the merge |
 | `pr_merged` | terminal `completed` | Merge is the real completion event |
 
-Routing declared as data per sub-phase, not hardcoded. Approval is informational —
-Farzam Q20 locked "merge = terminal, approval = informational." Today's review-handler
-auto-merges on approval when safety-gated; **planning resolves whether auto-merge stays
-as a config-gated opt-in (default-OFF) or is cut entirely.**
+Routing declared as data per sub-phase, not hardcoded. `pr_approved` triggers The
+Engineer's auto-merge attempt via `GitHostingAdapter.mergePR` (CI-gated + mergeable-gated).
+On merge success → `pr_merged` event → terminal. On CI not ready → wait, recheck next
+tick. On CI failure post-approval → route via `pr_ci_failure`. On conflict post-approval
+→ route via `pr_merge_conflict`. (Today's `attemptMerge` + `approvedAwaitingCI` flow
+preserved, refactored against typed events.)
 
 ### #9 — Failure policy: every failure blocks with descriptive typed reason
 
@@ -310,21 +312,26 @@ per variant (CI failure carries which checks failed + error logs; merge conflict
 carries which files; comments carry comment text + author + ID; approved/merged
 carry minimal metadata).
 
-### #23 — Review-handler refactor onto typed events + decision on auto-merge
+### #23 — Review-handler refactor onto typed events; auto-merge preserved
 
 Today's 996-line `daemon/review-handler.ts` refactors against the new typed-event
-contract. Most existing capabilities preserved: accommodation gate (dedup),
-comment-based approval (`/approve` regex), authorized approver check via
-people-directory, circuit breaker (failure window), per-tick caching, self-comment
-filtering, branch deletion on completion, thoughts-removal-before-merge.
-`MAX_POST_APPROVAL_FIX_RETRIES = 3` semantics preserved (now as a registry-level cap
-on `pr_ci_failure` / `pr_merge_conflict` loopback iterations).
+contract. **All existing capabilities preserved**, just rewired through the typed
+events:
 
-**Auto-merge divergence from Q20:** today's review-handler auto-merges on approval
-when `safetyLayer.checkAutoMergeAllowed(repo)` returns true. Farzam Q20 said
-"merge = terminal, approval = informational." Planning resolves: lean
-config-gated default-OFF (preserves capability, no surprise default), but the
-alternative (cut entirely; humans always merge externally) is on the table.
+- Accommodation gate (dedup) — preserved.
+- Comment-based approval (`/approve` regex) — preserved (surfaces as `pr_approved` event from the hosting plugin).
+- Authorized approver check via people-directory — preserved.
+- Circuit breaker (failure window for hosting API) — preserved.
+- Per-tick caching — preserved.
+- Self-comment filtering (`SELF_COMMENT_PREFIXES`) — preserved.
+- Branch deletion on completion — preserved.
+- Thoughts-removal-before-merge — preserved.
+- **Auto-merge — preserved.** On `pr_approved` event, The Engineer attempts the merge
+  (CI-gated + mergeable-gated) via `GitHostingAdapter.mergePR`. Today's `attemptMerge`
+  flow stays, just driven by the typed event instead of the polling code path.
+- `MAX_POST_APPROVAL_FIX_RETRIES = 3` — preserved as a registry-level cap on
+  `pr_ci_failure` / `pr_merge_conflict` loopback iterations after approval.
+- `approvedAwaitingCI` (deferred merge while CI runs) — preserved.
 
 ### #24 — Slice rename: `08-pipeline-phases.md`
 
@@ -379,10 +386,13 @@ churn.
 - **Slice 8 → Slice 10 (was 12) Communication:** notification-kind enumeration
   audit (already parked from Slice 6); reply-token + unblock check (already parked
   from Slice 5); response-poller integration with the new typed-event surface.
-- **Slice 8 → Slice 13 (was 15) Dashboard Revisit:** dashboard UI for `phase` +
-  `sub_phase` + `phase_iteration` visibility; visual treatment of the simplified
-  state machine (no more `review_pending` row). Slice 8 produces the data;
-  Slice 13 displays.
+- **Slice 8 → Slice 13 (was 15) Dashboard Revisit:** ALL dashboard UI for the new
+  pipeline shape — `phase` + `sub_phase` + `phase_iteration` visibility, visual
+  treatment of the simplified state machine (no more `review_pending` row),
+  block-reason-taxonomy display, routing-decisions trail, skip-gate trail,
+  sub-phase progress visualization. Slice 8 produces the data (schema columns,
+  event emissions, observation records) and minimal data-layer surface; Slice 13
+  owns all UI work.
 
 ## Findings (no decision needed — captured for the plan to address)
 
@@ -412,26 +422,23 @@ churn.
   section), `docs/cli.md`, `docs/usage-guide/writing-tickets.md`, plus possibly a
   new `docs/architecture/pipeline.md` if the overview section grows too large.
 
-## Open Questions (resolved in plan, Session 39)
+## Implementation Decisions (resolved in plan, Session 39)
 
-1. **Auto-merge fate** — config-gated default-OFF vs cut entirely vs preserve today's
-   behavior. Lean default-OFF.
-2. **`PrEvent` typed union payload schemas** per event type — what data each variant
-   carries to keep the "Why You're Back Here" context useful.
-3. **Sub-phase routing declaration shape** — TypeScript discriminated union vs
-   function refs vs config object.
-4. **Per-sub-phase checkpoint shape** — `sub_phase: string | null` field on
-   `CheckpointSchema` vs composite key.
-5. **Workspace-manager sub-phase dir creation** — pre-create all vs create-on-demand.
-   Lean on-demand (matches today's review/refinement dir creation in `agent-runner.ts`).
-6. **`Phase` enum split** — top-level enum + flat-string sub-phase vs composite enum.
-   Lean enum + string for OSS extensibility.
-7. **Expert-panel-review fate** — keep as skill, promote to sub-phase, or cut from
-   default. Lean keep as skill (minimal change).
-8. **Refactor-guide.md distillation scope** — which principles land in self_review
-   lens prompt vs in coding-standards.
-9. **Requirements `gather` "context summary" upfront** — Phase 1 Intake analog;
-   write `## Context Summary` at top of `requirements.md` as the first artifact?
+These are implementation-level shape decisions that the plan resolves with engineering
+judgment. Documented in the plan's Decision Record with Choice/Context/Rejected/Consequence
+template. Requirements are locked — these don't reopen anything; they translate locked
+requirements into concrete implementation shape.
+
+- `PrEvent` typed union payload schemas per event type.
+- Sub-phase routing declaration shape (TypeScript discriminated union vs function refs vs config object).
+- Per-sub-phase checkpoint shape (`sub_phase: string | null` on `CheckpointSchema` vs composite key).
+- Workspace-manager sub-phase dir creation strategy (pre-create vs create-on-demand).
+- `Phase` enum split (top-level enum + flat-string sub-phase vs composite enum).
+- Expert-panel-review fate (keep as skill, promote to sub-phase, or cut).
+- Refactor-guide.md distillation scope (lens prompt vs coding-standards).
+- Requirements `gather` "context summary" upfront analog to dev-toolbox Phase 1 Intake.
+- Block reason taxonomy enumeration.
+- Test architecture pattern (registry iteration + per-sub-phase tests).
 
 ## Future Considerations
 
@@ -463,17 +470,26 @@ Rough breakdown (refined in plan):
 4. **Session 4 — Review phase onto registry.** `self_review` + `refinement` +
    optional lenses. Intra-phase loop + cap + escape-route routing.
 5. **Session 5 — Delivery sub-phases.** `pr_description`, `pr_push`, `pr_create`,
-   `await_review`. PR-manager surgery; tryCommitPushAndCreatePR teardown.
+   `await_review`. PR-manager surgery; `tryCommitPushAndCreatePR` teardown.
 6. **Session 6 — `AgentAdapter` signal threading + retry-policy shrink.** Through
    adapter, agent-runner, phase-runner, all 3 agent plugins. Cut `crash` category.
 7. **Session 7 — `GitHostingAdapter` typed events + review-handler refactor.**
    New contract method, hosting plugin implementation, review-handler refactor
-   against typed events, typed routing into the pipeline.
+   against typed events, typed routing into the pipeline. Auto-merge preserved
+   under the new routing.
 8. **Session 8 — Dev-toolbox skill principles ported into prompts.** Concrete
    prompt diffs per sub-phase (per the port/adapt/skip table in research doc).
-9. **Session 9 — Closing standards sweep.** Line-by-line audit of every file the
-   slice created or changed. May spill into Session 10 if surface demands (slice
-   is bigger than Slice 7).
+9. **Session 9 — Project-wide docs sweep.** Architecture docs (`overview.md`,
+   `three-tier-model.md`, potentially a new `pipeline.md`), configuration docs
+   (`orchestrator.md` rrpir reshape + delete decomposition section + verify
+   every claimed config key exists), user-flow docs, plugin author guides,
+   README mentions of "7 phases" / "RRPIR" acronym, bundled CLI plugin docs,
+   seed-example references. Dashboard UI work explicitly deferred to Slice 13
+   (was 15) — Slice 8 produces the data, Slice 13 displays it.
+10. **Session 10 — Closing standards sweep.** Line-by-line audit of every file
+    the slice created or changed against `coding-standards.md`, `anti-patterns.md`,
+    `philosophy.md`. Two-pass discipline. May spill into Session 11 if surface
+    demands (slice is bigger than Slice 7).
 
 ## Closing Standards Sweep
 
@@ -498,7 +514,7 @@ Per `approach.md` § "Lenses" — every slice is evaluated through these perspec
   clearer. Per-sub-phase checkpoints mean a crash mid-Review-iteration-2 doesn't
   redo iteration-1.
 - **Plugin Integrity.** Net positive. `GitHostingAdapter` typed-event contract moves
-  platform-specific aggregation behind the adapter boundary (Plugin Blindness
+  platform-specific aggregation behind the adapter boundary (Plugin Opacity
   strengthened — Core stops seeing `reviewStatus.reviewers[].state`). Agent plugin
   contract gains `signal` parameter uniformly across all 3 agent plugins. Sub-phase
   registry is Core-internal; no plugin contract leakage.

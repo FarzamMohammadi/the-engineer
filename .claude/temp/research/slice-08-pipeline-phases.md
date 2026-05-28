@@ -217,7 +217,7 @@ For Q10's 5-event typed routing, two options:
 - (a) Add new method `detectPrEvents(repo, prNumber, accommodated): PrEvent[]` returning typed union — moves platform-specific aggregation behind the contract.
 - (b) Keep polling methods, formalize the typed `PrEvent` union in Core, have review-handler aggregate per-event-type (current pattern, just typed).
 
-Option (a) is plugin-blindness-cleaner (Core never sees `reviewStatus.reviewers[].state` directly). Option (b) is less plugin work. Plan decides.
+Option (a) is plugin-opacity-cleaner (Core never sees `reviewStatus.reviewers[].state` directly). Option (b) is less plugin work. Plan decides.
 
 ### 12. Decomposition Residue
 
@@ -341,7 +341,7 @@ JSDoc on class (line 71): `"The brain of the system — a 7-phase pipeline that 
 
 2. **Use Node's native AbortSignal support.** `child_process.spawn(cmd, args, { signal })` is Node 16+ standard. When `signal.aborted` fires, Node sends SIGTERM to the child and rejects the spawn-promise chain. Each agent plugin's `doRun` accepts `request.signal` from the new `AgentRunRequest` and passes it directly to `spawn`. No manual listener wiring needed.
 
-3. **GitHostingAdapter typed events — option (a) wins.** Add `detectPrEvents(repo, prNumber, accommodated): PrEvent[]` to the contract. The platform-specific aggregation (state derivation, comment scanning, CI/mergeable checks) lives in the plugin. Core sees clean typed events. Today's review-handler logic becomes the github-hosting plugin's implementation of `detectPrEvents`. Plugin Blindness gain: a future GitLab plugin implements detectPrEvents differently and Core's review-handler doesn't change.
+3. **GitHostingAdapter typed events — option (a) wins.** Add `detectPrEvents(repo, prNumber, accommodated): PrEvent[]` to the contract. The platform-specific aggregation (state derivation, comment scanning, CI/mergeable checks) lives in the plugin. Core sees clean typed events. Today's review-handler logic becomes the github-hosting plugin's implementation of `detectPrEvents`. Plugin Opacity gain: a future GitLab plugin implements detectPrEvents differently and Core's review-handler doesn't change.
 
 4. **Remove `review_pending` state entirely, use `blocked(reason=pr_review_pending)`.** Surgical changes: `TaskStateSchema` drops the value, `ValidTransitions` rewrites 5 entries, `PermissionTable` rewrites 1 entry, `BlockedDetails` already supports the structured shape. All review-handler `getTasksByState(review_pending)` calls become `getBlockedTasks(reason=pr_review_pending)` (new query method or filter). Workspace cleanup hooks already trigger on completion — fine.
 
@@ -355,11 +355,15 @@ JSDoc on class (line 71): `"The brain of the system — a 7-phase pipeline that 
 
 1. **Decomposition residue is wider than expected.** `docs/configuration/orchestrator.md` references config keys (`decomposition.auto_threshold_ms`, etc.) that **do not exist in DaemonConfigSchema or OrchestratorConfigSchema**. The doc was lying before Slice 6 deleted decomposition — Slice 8's docs cleanup must verify each claimed config key exists, not just delete the section header.
 
-2. **Auto-merge divergence from Q20.** Today's review-handler auto-merges on approval when safetyLayer.checkAutoMergeAllowed(repo) returns true. Farzam's Q20 said "merge = terminal, approval = informational." Reconciliation needed:
-   - **Option A**: Cut auto-merge entirely. Humans always merge externally. Aligns with Q20 strictly.
-   - **Option B**: Keep auto-merge as safety-config-gated optional behavior (today's pattern). Default-OFF or default-ON?
-   - **Option C**: Cut for OSS-default; preserve as power-user opt-in via config.
-   - Recommendation for planning: **Option C** — auto_merge_after_approval config defaults to `false` for new installs; existing behavior preserved when explicitly enabled. Preserves capability, no surprise default behavior.
+2. **Auto-merge clarification (Q20 reread).** Today's review-handler auto-merges on
+   approval when `safetyLayer.checkAutoMergeAllowed(repo)` returns true. Q20's
+   "merge = terminal, approval = informational" framing was originally interpreted as
+   "humans merge externally" — incorrect. The actual intent: **human approval is the
+   trigger, The Engineer auto-merges, the merge event is terminal.** Auto-merge is
+   preserved end-to-end. Refactored against the new typed-event registry instead of the
+   old polling code path. Today's CI gate, mergeable gate, `approvedAwaitingCI`
+   deferred-merge pattern, `MAX_POST_APPROVAL_FIX_RETRIES` post-approval failure
+   handling all preserved.
 
 3. **`review_pending` removal touches state history.** Existing rows in `state_transitions` table reference `review_pending` as `from_state` and `to_state`. Pre-v1 universal rule says nuke `data.db` — no migration burden. But: any code that reads state history (`taskEngine.getStateHistory`) and checks for specific state values will need updates. `review-handler.ts:660` references this exact pattern (`countPostApprovalFixAttempts` reads history for transition reason).
 
@@ -375,7 +379,9 @@ JSDoc on class (line 71): `"The brain of the system — a 7-phase pipeline that 
 
 ### Open Questions
 
-1. **Auto-merge fate** (auto-merge today vs Q20's terminal-merge model). Recommendation: config-gated default-OFF. Plan to confirm.
+1. ~~Auto-merge fate~~ — **resolved during planning conversation**: auto-merge stays
+   (Q20 was reread; approval triggers auto-merge, merge is terminal). Today's flow
+   refactors onto typed events; capability preserved end-to-end.
 2. **`PrEvent` typed union shape**. Five types confirmed (`pr_comments`, `pr_ci_failure`, `pr_merge_conflict`, `pr_approved`, `pr_merged`). What payload schema per type? Each must carry enough info for the typed routing destination's prompt context (e.g., CI failure → list of failed checks, error logs).
 3. **Sub-phase routing declaration shape**. TypeScript discriminated union (`{ kind: "advance" } | { kind: "loopback"; to: SubPhaseName } | { kind: "block"; reason: BlockReason } | { kind: "skip-to-phase"; phase: Phase }`)? Or function refs returning a route? Decide in planning.
 4. **Per-sub-phase resume implementation**. `CheckpointSchema` gets `sub_phase: string | null`? Or composite key `"phase:sub_phase"`? Decide in planning.

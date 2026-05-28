@@ -23,7 +23,7 @@ files to OSS-grade quality.
 **Files**: `src/cli/bootstrap.ts` (302 lines)
 
 - Single `bootstrap()` async function. Wires ~13 components in dependency order inside one big try block. Each step has a numbered comment (1-12).
-- Late-binding closure for `authUrlProvider` (line 103) — the git hosting plugin reference is `null` until plugin loading completes; the closure reads it lazily. This keeps Core plugin-blind. The `authUrlProvider` arrow has no return type annotation.
+- Late-binding closure for `authUrlProvider` (line 103) — the git hosting plugin reference is `null` until plugin loading completes; the closure reads it lazily. This keeps Core plugin-opaque. The `authUrlProvider` arrow has no return type annotation.
 - Returns `BootstrapResult { daemon, observer, cleanup, hints }`. The `cleanup()` method is a shorthand method in an object literal — no return type annotation.
 - Failure path: catch block does reverse-order teardown (registry shutdown, db close, logger close). Well-handled.
 - `milestones` record tracks elapsed ms per step for observability.
@@ -71,7 +71,7 @@ files to OSS-grade quality.
 - 9 check categories + conditional risky-config + aggregation + terminal formatting, all in one file.
 - **Bug — orphaned JSDoc**: line 555 has `/** Run all doctor check categories (8 base + 1 conditional risky config). */` immediately followed on line 556 by `/** Category: CLI session artifact accumulation (informational). */` then `function checkCliArtifacts()`. The first JSDoc was meant for `runAllChecks` (which is actually defined at line 624) — a previous edit inserted `checkCliArtifacts` between the JSDoc and its function, orphaning it. Also "8 base + 1 conditional" is wrong — there are 9 base checks.
 - **Stale category numbering**: comments label checks "Category 1" through "Category 8", then `checkCliArtifacts` is unnumbered, then `checkRiskyConfig` is labeled "Category 11" (line 472). Categories 9 and 10 do not exist. The numbering rotted across edits.
-- **Plugin-blindness concern — `checkCliArtifacts`** (lines 557-622, ~65 lines): scans `~/.claude/projects/` and warns if it exceeds 500 MB. This hardcodes knowledge of the Claude Code CLI's session-history directory. A user running Codex, Gemini, or OpenCode as their LLM plugin has no `~/.claude/projects/`. Core/CLI code assuming a specific plugin's on-disk layout is exactly the pattern Plugin Blindness forbids. It is informational-only, but it does not belong in a plugin-agnostic doctor.
+- **Plugin-opacity concern — `checkCliArtifacts`** (lines 557-622, ~65 lines): scans `~/.claude/projects/` and warns if it exceeds 500 MB. This hardcodes knowledge of the Claude Code CLI's session-history directory. A user running Codex, Gemini, or OpenCode as their LLM plugin has no `~/.claude/projects/`. Core/CLI code assuming a specific plugin's on-disk layout is exactly the pattern Plugin Opacity forbids. It is informational-only, but it does not belong in a plugin-agnostic doctor.
 - The check functions themselves are clean, well-structured guard-clause style, with actionable `remedy` strings.
 - `wsRoot` (line 334) — abbreviation; should be `workspaceRoot`.
 - `runAllChecks` returns 9 categories (+1 conditional). `runPreFlightChecks` returns 7. Used by `cli/index.ts` doctor action and `start.ts` respectively.
@@ -124,7 +124,7 @@ files to OSS-grade quality.
 ### 13. Plugin discovery and loading
 **Files**: `src/plugins/loader.ts` (189 lines), `src/plugins/builtin.ts` (180 lines)
 
-- `loader.ts` — `discoverEnabledPlugins` (a plugin is enabled iff its config YAML exists), `loadSinglePlugin` (create → register → load config → merge shared config → initialize), `loadBuiltinPlugins`. Critical-plugin failures throw; non-critical failures deregister and continue. Clean, well-commented, plugin-blind.
+- `loader.ts` — `discoverEnabledPlugins` (a plugin is enabled iff its config YAML exists), `loadSinglePlugin` (create → register → load config → merge shared config → initialize), `loadBuiltinPlugins`. Critical-plugin failures throw; non-critical failures deregister and continue. Clean, well-commented, plugin-opaque.
 - `builtin.ts` — 8 plugin manifests defined as a `const` array, validated against `PluginManifestSchema` at import time. `factories` map (id → constructor), `promptFunctions` map (only `github-trigger` has one). `BUILTIN_PLUGINS` assembled from validated manifests + factories.
 - `factories[manifest.id] as () => BaseAdapter` (line 171) — type assertion. If a manifest id has no matching factory, this silently produces `undefined` cast as a function, deferring the failure to call time. A guard that every manifest has a factory would fail loud at import.
 - Clean otherwise.
@@ -185,14 +185,14 @@ files to OSS-grade quality.
 
 ### Patterns to follow
 - **Functional core / imperative shell** — `setup.ts` already separates pure functions from I/O wrappers. New code (OS detection, etc.) should follow: a pure `detectOperatingSystem()`-style decision function, a thin caller.
-- **Manifest-driven, no hardcoded plugin lists** — `runDetection` derives binary/env checks from `BUILTIN_PLUGINS` manifests. `checkCliArtifacts` is the one place this is violated; everything new must stay plugin-blind.
+- **Manifest-driven, no hardcoded plugin lists** — `runDetection` derives binary/env checks from `BUILTIN_PLUGINS` manifests. `checkCliArtifacts` is the one place this is violated; everything new must stay plugin-opaque.
 - **Guard clauses + actionable remedies** — `doctor.ts` checks are the model: validate, bail early, attach a `remedy` string. The OS-detection gate and any new pre-flight messaging should match this shape.
 - **Numbered, commented wiring** — `bootstrap.ts` step comments are good. Keep them in sync if steps change.
 
 ### Risks
 - **Stale docs teach the wrong thing** — `docs/configuration/README.md` documents a non-existent `engineer init` command and a wrong flag name. `docs/cli.md`'s doctor table doesn't match the code. Anyone onboarding via these docs is misled. These must be fixed in the same unit of work as the code (Definition of Done item 7).
 - **Telegram template contradiction** — `templates.ts` claims automatic chat-id resolution that `future-considerations.md` says doesn't exist. Whatever the truth, the template a new user receives must not promise a feature that isn't there. Verify against the actual telegram plugin before touching the template.
-- **`checkCliArtifacts` plugin-blindness violation** — shipping an OSS tool whose health check assumes one specific LLM CLI's directory layout is a visible architectural smell. Reviewers will flag it. Decide: make it generic, gate it behind the active LLM plugin, or remove it.
+- **`checkCliArtifacts` plugin-opacity violation** — shipping an OSS tool whose health check assumes one specific LLM CLI's directory layout is a visible architectural smell. Reviewers will flag it. Decide: make it generic, gate it behind the active LLM plugin, or remove it.
 - **Config-version machinery vs. "zero backward compatibility"** — keeping version-negotiation code in a pre-v1 codebase that explicitly disclaims backward compatibility is a contradiction a sharp reviewer will notice. Either is defensible, but it should be a conscious, documented decision.
 - **Three sources of config content** — `templates.ts`, `seed-example/`, and the Zod schemas can drift. Not fixable in this slice without restructuring, but worth noting so changes touch all three.
 - **`pnpm setup` naming collision** — `pnpm setup` is a pnpm built-in (configures `PNPM_HOME`). A project script named `setup` is only reachable as `pnpm run setup`. Docs and README must always write `pnpm run setup` explicitly to avoid confusion.
@@ -212,7 +212,7 @@ files to OSS-grade quality.
 - **`seed-example/` is personal config** — it carries a hardcoded `cli_path` to one developer's machine and watches that developer's repo. For the slice's "tracked reference template" plan to work, `seed-example/` must first be sanitized to generic placeholder values.
 
 ### Open questions (need a decision before planning)
-- **`checkCliArtifacts`**: remove it, make it generic, or gate it behind the active LLM plugin? It violates Plugin Blindness as written.
+- **`checkCliArtifacts`**: remove it, make it generic, or gate it behind the active LLM plugin? It violates Plugin Opacity as written.
 - **Config-version machinery**: keep it (forward-looking) or strip it (pre-v1, zero-backcompat)? It is ~30 lines, currently dead in practice (no template writes a `version:` field).
 - **`doctor.ts` 725 lines**: split into `doctor/` (checks / aggregation / formatting) or leave as one cohesive file?
 - **`pnpm run setup` script naming**: `pnpm setup` is a pnpm built-in; the project script is only reachable as `pnpm run setup`. Confirm the name or pick an unambiguous alternative.

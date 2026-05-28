@@ -34,7 +34,7 @@ export interface PluginLoadResult {
  *
  * @param sharedConfigByType — Shared config keyed by adapter type (e.g. `{ communication: { people } }`).
  *   Merged into every plugin whose `manifest.type` matches the key. Avoids hardcoding plugin IDs
- *   in Core (Plugin Blindness).
+ *   in Core (Plugin Opacity).
  */
 export async function loadBuiltinPlugins(
   registry: Registry,

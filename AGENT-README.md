@@ -40,7 +40,7 @@ Everything below is loaded **only when your task requires it.** You may already 
 |------|-------------------|
 | [`docs/coding-standards.md`](docs/coding-standards.md) | The law for all code — read in full before writing a single line |
 | [`docs/anti-patterns.md`](docs/anti-patterns.md) | What to avoid — YAGNI, cargo culting, scope creep, silent decisions |
-| [`docs/philosophy.md`](docs/philosophy.md) § "How the System Is Built" | Architecture principles, plugin blindness, boundaries, fail loud |
+| [`docs/philosophy.md`](docs/philosophy.md) § "How the System Is Built" | Architecture principles, plugin opacity, boundaries, fail loud |
 
 **When touching a specific domain:**
 

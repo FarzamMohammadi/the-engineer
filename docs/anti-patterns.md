@@ -30,7 +30,7 @@ Expanding task scope without explicit user agreement is a violation of trust. If
 
 ## Dogmatic Rule Following
 
-Nothing in this project is 100% absolute (except [Plugin Blindness](philosophy.md#plugin-blindness--core-sees-only-adapters) and [Trust Through Restraint](philosophy.md#trust-through-restraint) — those are invariants). Every other rule is a strong default. When a specific case deliberately calls for deviation, deviate — but document why. The test: "Is this deviation intentional and justified, or am I being lazy?"
+Nothing in this project is 100% absolute (except [Plugin Opacity](philosophy.md#plugin-opacity--core-sees-only-adapters) and [Trust Through Restraint](philosophy.md#trust-through-restraint) — those are invariants). Every other rule is a strong default. When a specific case deliberately calls for deviation, deviate — but document why. The test: "Is this deviation intentional and justified, or am I being lazy?"
 
 ## Silent Decisions
 

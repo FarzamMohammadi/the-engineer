@@ -41,7 +41,7 @@ answer the questions, review the output. A "team of one," indefinitely, until de
 
 Two things it explicitly does **not** relax:
 - **One user ≠ one task.** The owner still has many concurrent tasks — per-task correlation stays live.
-- **One user ≠ one plugin.** This constrains the *human*, not the *integrations*. Plugin Blindness untouched.
+- **One user ≠ one plugin.** This constrains the *human*, not the *integrations*. Plugin Opacity untouched.
 
 Documented in **`docs/constraints.md`** ("Deliberate Constraints"), referenced from `README.md` +
 `AGENT-README.md` (always-read), linked from `philosophy.md`. That doc is the home for future
@@ -229,7 +229,7 @@ The two deleted files (`src/core/hooks/index.ts`, its test) need no audit — ve
   observability/tracing (§14); graceful degradation (§15).
 - **anti-patterns.md** — YAGNI, gold-plating, cargo culting, scope creep, dogmatic rule-following,
   silent decisions. Delete speculative or dead code; collapse premature abstractions.
-- **philosophy.md** — Plugin Blindness (no hardcoded plugin IDs/tokens in Core); Fail Loud (no swallowed
+- **philosophy.md** — Plugin Opacity (no hardcoded plugin IDs/tokens in Core); Fail Loud (no swallowed
   errors/silent fallbacks); Universal Audience + Docs as Product (docs accurate, plain, in sync with
   code); Design Every Output for Its Consumer.
 

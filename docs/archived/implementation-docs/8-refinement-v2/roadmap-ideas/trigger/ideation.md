@@ -2,9 +2,9 @@
 
 Runtime Phase Refinement section 2 of 9. The bridge between external events and internal tasks: trigger polling, dedup, task creation, prioritization, requirements gathering, human outreach, and response handling.
 
-Brainstormed in Session 079. Three rounds of expert panel review applied (5 panelists each: Torvalds, Hipp, Pike, Engineer Persona, Technical Architect). Final round enforced Plugin Blindness as a hard constraint — surfaced 5 additional tier violations in existing Core code beyond `parseGitHubUrl`.
+Brainstormed in Session 079. Three rounds of expert panel review applied (5 panelists each: Torvalds, Hipp, Pike, Engineer Persona, Technical Architect). Final round enforced Plugin Opacity as a hard constraint — surfaced 5 additional tier violations in existing Core code beyond `parseGitHubUrl`.
 
-**Governing principle:** Plugin Blindness (see `docs/philosophy.md`). Core sees only adapter contracts. Every decision below is framed through adapters, never through specific plugins. Plugin-internal improvements (ETags, watermarks, platform-specific optimizations) are clearly labeled as such and confined to the plugin tier.
+**Governing principle:** Plugin Opacity (see `docs/philosophy.md`). Core sees only adapter contracts. Every decision below is framed through adapters, never through specific plugins. Plugin-internal improvements (ETags, watermarks, platform-specific optimizations) are clearly labeled as such and confined to the plugin tier.
 
 ---
 
@@ -25,7 +25,7 @@ Current state: `parseGitHubUrl()` is inlined in `trigger-poller.ts` (core) with 
 const parsed = parseGitHubUrl(event.external_ref);
 const externalRef = parsed ? toExternalRef(...) : null;
 
-// After (core is blind — plugin provides structured object):
+// After (plugin opacity — plugin provides structured object):
 const externalRef = event.external_ref; // Already ExternalRef | null from plugin
 ```
 
@@ -65,9 +65,9 @@ Core reads `url` when it needs a link. If `url` is absent, Core omits the link �
 
 ---
 
-## Plugin Blindness — Purge All Type-String Checks from Core
+## Plugin Opacity — Purge All Type-String Checks from Core
 
-**Panel finding (final sweep — all 5 panelists):** Beyond `parseGitHubUrl`, Core contains 5 additional Plugin Blindness violations where it checks ExternalRef type strings against platform-specific values:
+**Panel finding (final sweep — all 5 panelists):** Beyond `parseGitHubUrl`, Core contains 5 additional Plugin Opacity violations where it checks ExternalRef type strings against platform-specific values:
 
 | File | Line | Violation |
 |------|------|-----------|

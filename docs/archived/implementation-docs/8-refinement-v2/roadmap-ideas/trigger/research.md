@@ -487,7 +487,7 @@ Communication adapters returning messages from `pollMessages()` provide metadata
 
 ## Implementation Ordering
 
-**Governing principle:** Core changes speak through adapter contracts. Plugin-internal improvements are clearly separated. No step should introduce knowledge of specific plugins into Core. Every step must pass the Plugin Blindness test: "If I deleted every plugin and replaced them, would Core still compile?"
+**Governing principle:** Core changes speak through adapter contracts. Plugin-internal improvements are clearly separated. No step should introduce knowledge of specific plugins into Core. Every step must pass the Plugin Opacity test: "If I deleted every plugin and replaced them, would Core still compile?"
 
 **Phase 0 — Schema & Migration (no behavior change)**
 1. Add optional `url: z.string().optional()` field to `ExternalRefSchema` (task.ts)
@@ -504,7 +504,7 @@ This phase is a single atomic change: Core stops parsing URLs, plugin starts pro
 
 8. Delete `parseGitHubUrl()` and `toExternalRef()` from trigger-poller.ts — Core no longer parses platform URLs
 9. Update `processNewTriggerEvent()` to read `external_ref` directly from TriggerEvent
-10. Purge ALL Plugin Blindness violations from Core — replace `type !== "github_issue"` / `type !== "github_pr"` guards in `phase-runner.ts:217`, `orchestrator-notifier.ts:78`, `notification-router.ts:256` with `ticket_management` capability gates. Fix plugin ID construction in `orchestrator-notifier.ts:39` (`p.manifest.id === \`${contact.channel}-comm\``) — use Registry + capability lookup instead of constructing plugin IDs from channel names.
+10. Purge ALL Plugin Opacity violations from Core — replace `type !== "github_issue"` / `type !== "github_pr"` guards in `phase-runner.ts:217`, `orchestrator-notifier.ts:78`, `notification-router.ts:256` with `ticket_management` capability gates. Fix plugin ID construction in `orchestrator-notifier.ts:39` (`p.manifest.id === \`${contact.channel}-comm\``) — use Registry + capability lookup instead of constructing plugin IDs from channel names.
 11. Fix `linkMessageToTask()` in `response-poller.ts:41` — stop constructing `{ type: "github_issue" }`. Require full `external_ref` object in adapter message metadata
 12. Fix URL construction in `notification-router.ts:283` — use `external_ref.url` instead of constructing platform-specific URLs
 13. Trigger plugin: build structured `ExternalRef` (with `url` field) in `mapIssueToEvent()` — the plugin-side of steps 8-9

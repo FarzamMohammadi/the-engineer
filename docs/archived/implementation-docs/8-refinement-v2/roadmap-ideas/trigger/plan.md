@@ -5,7 +5,7 @@
 Layer 8 Runtime Phase Refinement for the Trigger & Requirements Flow subsystem. Sessions 079-080 completed ideation (4 rounds of expert panel review + co-founder line-by-line review). This plan translates `ideation.md` + `research.md` into executable implementation steps.
 
 **Governing principles:**
-1. **Plugin Blindness** — Core sees only adapters. No hardcoded plugin names, tokens, platform-specific checks. The test: "If I deleted every plugin, would Core still compile?"
+1. **Plugin Opacity** — Core sees only adapters. No hardcoded plugin names, tokens, platform-specific checks. The test: "If I deleted every plugin, would Core still compile?"
 2. **Fresh project, local-only** — Clean breaks always. No dual-format unions, no migration scripts for old data.
 
 **All line numbers verified against current codebase on 2026-03-28.**
@@ -70,7 +70,7 @@ Steps must ship together — Core stops parsing URLs, plugin starts providing st
 - Delete L126-129 (call site in `processNewTriggerEvent()`)
 - Replace with: `const externalRef = event.external_ref;` (already structured from plugin)
 
-### 1.2 Purge ALL Plugin Blindness violations from Core
+### 1.2 Purge ALL Plugin Opacity violations from Core
 - Replace type-string checks with `ticket_management` capability gates:
   - `src/core/orchestrator/phase-runner.ts:217` — `if (type !== "github_issue"...)` → check `hasCapability("ticket_management")`
   - `src/core/orchestrator/orchestrator-notifier.ts:78` — same pattern

@@ -57,7 +57,7 @@ A task is not done because the agent says it is done. Work is complete when **ev
    - Does the work pass your own quality bar, not just the machine gates?
 
 3. **Architectural invariants hold.**
-   - If code touches Core or adapter boundaries: would Core still compile and function if every plugin were deleted and replaced? See [Plugin Blindness](#plugin-blindness--core-sees-only-adapters).
+   - If code touches Core or adapter boundaries: would Core still compile and function if every plugin were deleted and replaced? See [Plugin Opacity](#plugin-opacity--core-sees-only-adapters).
    - If code touches credentials, user data, or file system boundaries: would it leak, escalate, or escape under malicious input or misconfigured environment? See [Trust Through Restraint](#trust-through-restraint).
    - If code produces output (docs, errors, CLI, PR descriptions): would someone with no context and intermediate English understand it on first read? See [Universal Audience](#universal-audience).
 
@@ -164,7 +164,7 @@ Sometimes you build ahead because you *know* the feature is coming and the found
 
 The key word is *deliberate*. Every deviation is intentional, justified, and documented. Not lazy, not convenient — considered. Both humans and AI are in constant flux, improving and evolving. The same applies to how we work. Just because a decision was right yesterday does not mean it must be perpetuated endlessly. Question, evaluate, evolve.
 
-One exception: certain principles are architectural invariants — they are never overridden because the cost of violation is catastrophic. Plugin Blindness and Trust Through Restraint are invariants. Everything else is a strong default.
+One exception: certain principles are architectural invariants — they are never overridden because the cost of violation is catastrophic. Plugin Opacity and Trust Through Restraint are invariants. Everything else is a strong default.
 
 Some deviations are larger than a single decision — deliberate narrowings of scope that hold across the whole of v1. Those are recorded in [`constraints.md`](constraints.md). The single-user constraint (the human side is one person — the owner) is the current example.
 
@@ -212,7 +212,7 @@ Every piece of the system earns its boundaries. Modularity is not a code organiz
 
 This is what makes great open source: it works for everyone, not just one setup.
 
-### Plugin Blindness — Core Sees Only Adapters
+### Plugin Opacity — Core Sees Only Adapters
 
 This is the most critical application of boundary discipline — and the single most important architectural rule in The Engineer. It gets its own section because the concept is hard to grasp and the cost of violating it is catastrophic.
 

@@ -84,7 +84,7 @@ function buildInstructions(thoughtsDir: string): string {
       "   Choose one and justify: why this approach over the other? If the simplest path works, choose it. Complexity must earn its place with a specific, articulable benefit.",
       "",
       "3. **Apply architectural filters to your chosen approach.** Before detailing the plan, pressure-test it against these principles:",
-      "   - **Plugin Blindness:** Does your design keep Core unaware of specific plugins? If your change touches Core or adapter boundaries, would Core still compile if every plugin were deleted?",
+      "   - **Plugin Opacity:** Does your design keep Core unaware of specific plugins? If your change touches Core or adapter boundaries, would Core still compile if every plugin were deleted?",
       "   - **Isolation:** Does your design introduce shared mutable state or bleed across task boundaries?",
       "   - **Boundaries:** Are you reaching into module internals, or working through defined contracts? If you need something a module does not expose, the answer is to extend the contract.",
       "   - **Reversibility:** Which decisions in your plan are hard to undo (new interfaces, schema changes, event types)? Call them out explicitly.",

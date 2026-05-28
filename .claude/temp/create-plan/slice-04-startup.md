@@ -45,7 +45,7 @@ trust the project, and the code a new contributor reads first.
 
 ### D6: Remove `checkCliArtifacts` from doctor
 **Choice**: Delete the `~/.claude/projects/` disk-usage check entirely.
-**Context**: It hardcodes one LLM plugin's on-disk layout (Plugin Blindness violation), diagnoses a *different tool*, and is informational-only with near-zero value.
+**Context**: It hardcodes one LLM plugin's on-disk layout (Plugin Opacity violation), diagnoses a *different tool*, and is informational-only with near-zero value.
 **Rejected**: Make it generic / gate it behind the active LLM plugin — not worth the effort for a low-value check.
 **Consequence**: `doctor` has 8 unconditional checks + 1 conditional (risky config). Category numbering gets corrected in Phase 4.
 

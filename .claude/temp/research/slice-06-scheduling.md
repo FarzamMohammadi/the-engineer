@@ -218,7 +218,7 @@ No new API, no new event. Doc paragraph in `configuration/daemon.md` or a new `a
 **Files**: `docs/architecture/overview.md`, `docs/configuration/daemon.md`, `docs/cli.md`, plus possibly a new `docs/architecture/scheduling-dispatch.md`.
 
 **Updates needed:**
-- `architecture/overview.md`: scheduling section refresh — describe the queue → eligibility → dispatch → outcome flow without supervising/integrating sub-states. Plugin Blindness re-emphasis on retry-policy and dispatch-tracker (both pure Core).
+- `architecture/overview.md`: scheduling section refresh — describe the queue → eligibility → dispatch → outcome flow without supervising/integrating sub-states. Plugin Opacity re-emphasis on retry-policy and dispatch-tracker (both pure Core).
 - `configuration/daemon.md`: new `retry_policy` config block (per-category backoff schedules and ceilings, defaults); `max_active_duration_ms` behavior change (was warn, now terminate + fail); preemption documentation including bounded priority and the explicit one-per-tick policy.
 - `cli.md`: `engineer retry` documentation refresh to mention per-category counter reset.
 - Possibly a new `docs/architecture/scheduling-dispatch.md` if the overview section grows large — captures the eligibility model (slot + `not_before`), the retry-policy concept, the dispatch-tracker primitive, and the Outcomes.terminated reason routing table.

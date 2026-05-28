@@ -5,7 +5,7 @@
 Layer 8 Runtime Phase Refinement for the Scheduling & Dispatch subsystem. Session 081 completed brainstorming + 5-panelist expert panel review. 11 decisions made. This plan translates `ideation.md` + `research.md` into executable implementation steps.
 
 **Governing principles:**
-1. **Plugin Blindness** — Core sees only adapters. All changes are Core-internal. No adapter or plugin references.
+1. **Plugin Opacity** — Core sees only adapters. All changes are Core-internal. No adapter or plugin references.
 2. **Fresh project, local-only** — Clean breaks always. No dual-format unions, no migration scripts for old data.
 
 **All line numbers verified against current codebase on 2026-03-31.**

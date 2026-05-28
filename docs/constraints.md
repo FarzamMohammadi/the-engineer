@@ -5,7 +5,7 @@ on purpose. We narrowed the problem so we could refine a smaller surface to a hi
 
 This document is the home for those self-imposed constraints. Each one is **deliberate**, **scoped
 to v1**, and stays in place **until it is deliberately lifted**. None of them are architectural
-invariants (those live in [`philosophy.md`](philosophy.md) — Plugin Blindness and Trust Through
+invariants (those live in [`philosophy.md`](philosophy.md) — Plugin Opacity and Trust Through
 Restraint). Everything here is a chosen narrowing that a future version may widen.
 
 ---
@@ -45,7 +45,7 @@ The constraint is on the *number of humans*, and nothing else:
 - **One user ≠ one task.** The single owner still has many concurrent tasks. Per-task isolation,
   correlation, and the full pipeline run independently for each one.
 - **One user ≠ one plugin.** This constrains the *human*, not the *integrations*. Many trigger,
-  communication, hosting, and agent plugins coexist. [Plugin Blindness](philosophy.md#plugin-blindness--core-sees-only-adapters)
+  communication, hosting, and agent plugins coexist. [Plugin Opacity](philosophy.md#plugin-opacity--core-sees-only-adapters)
   is untouched — Core still never knows which plugins exist.
 
 ### Where it shows up

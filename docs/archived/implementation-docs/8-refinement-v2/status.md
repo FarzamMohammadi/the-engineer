@@ -25,7 +25,7 @@ None currently. All RPI design questions resolved in Session 068 design process.
 
 These two principles apply to every session, every decision, every line of code from now through the end of the Layer 8 roadmap. They were learned the hard way in Session 079 (Trigger & Requirements Flow) and codified to prevent repeated violations.
 
-### 1. Plugin Blindness — Core Sees Only Adapters
+### 1. Plugin Opacity — Core Sees Only Adapters
 
 Fully documented in `docs/philosophy.md`. The single most important architectural discipline.
 

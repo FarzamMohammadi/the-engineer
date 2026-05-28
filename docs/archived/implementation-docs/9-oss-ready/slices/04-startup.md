@@ -66,7 +66,7 @@ Current 10-step flow is structurally sound. Changes:
 
 ### Simplification — Removals (confirmed)
 
-- **Remove `checkCliArtifacts`** from `doctor.ts` (~65 lines) — scans `~/.claude/projects/`, hardcodes one LLM plugin's directory layout (Plugin Blindness violation), diagnoses a different tool, near-zero value.
+- **Remove `checkCliArtifacts`** from `doctor.ts` (~65 lines) — scans `~/.claude/projects/`, hardcodes one LLM plugin's directory layout (Plugin Opacity violation), diagnoses a different tool, near-zero value.
 - **Strip config-version machinery** from `loader.ts` (~30 lines) — `CURRENT_CONFIG_VERSION`, `ConfigVersionSchema`, `detectConfigVersion`, version-mismatch warning. Currently dead in practice; YAGNI for pre-v1. Document as future consideration (see below).
 - **Delete `Output.table()`** — dead code, zero call sites.
 - **Remove `"quiet"` `OutputMode`** — half-implemented, no `--quiet` flag exists, unreachable branches.

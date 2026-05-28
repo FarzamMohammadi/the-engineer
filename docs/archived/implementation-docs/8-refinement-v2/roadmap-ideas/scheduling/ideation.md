@@ -4,7 +4,7 @@ Runtime Phase Refinement section 3 of 9. How tasks move from waiting to working:
 
 Brainstormed in Session 081. Expert panel review applied (5 panelists: Torvalds, Hipp, Pike, Engineer Persona, Technical Architect). Findings incorporated below.
 
-**Governing principle:** Plugin Blindness (see `docs/philosophy.md`). Core sees only adapter contracts. The scheduling system is entirely Core — no adapter or plugin references exist. Every decision below maintains this invariant.
+**Governing principle:** Plugin Opacity (see `docs/philosophy.md`). Core sees only adapter contracts. The scheduling system is entirely Core — no adapter or plugin references exist. Every decision below maintains this invariant.
 
 ---
 

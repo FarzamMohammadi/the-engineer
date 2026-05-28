@@ -105,7 +105,7 @@ const REVIEW_LENS: Record<ReviewPhaseName, { title: string; instructions: string
       "2. Run `git diff` to see all code changes.",
       "3. Check against the project's architectural principles:",
       "",
-      "   **Plugin Blindness (most critical):**",
+      "   **Plugin Opacity (most critical):**",
       "   - Core referencing specific plugins or platform details",
       "   - Hardcoded plugin names, tokens, or platform-specific checks in Core",
       "   - Assumptions about which plugins are installed (must degrade gracefully with zero plugins)",

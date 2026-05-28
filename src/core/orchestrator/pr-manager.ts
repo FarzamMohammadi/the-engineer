@@ -25,7 +25,7 @@ interface TriggerRefInput {
 }
 
 /**
- * Build a plugin-blind trigger reference line.
+ * Build a plugin-opaque trigger reference line.
  *
  * Never inspects `external_ref.type` — works for any git hosting platform.
  * Returns a markdown blockquote when a reference exists, or `null` otherwise.
@@ -338,7 +338,7 @@ export function createPrManager(ctx: OrchestratorContext, notifications: Notific
       // Wrap with trigger reference header and branding footer
       const prBody = composePrBody(prDescription, dispatch.task);
 
-      // Apply PR title decorations when available (plugin-blind: Core treats all values as opaque)
+      // Apply PR title decorations when available (plugin-opaque: Core treats all values as opaque)
       const rawTitle = sanitizeSecrets(dispatch.task.title);
       const decorations = dispatch.task.external_ref?.pr_decorations;
       const titleParts: string[] = [];

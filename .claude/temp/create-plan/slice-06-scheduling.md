@@ -362,7 +362,7 @@ T3.1 (Outcomes type) → T3.2 (phase-runner emits new variant — clears existin
 **API Designer — dispatch-tracker contract**
 - *"Should `terminate` return a promise that resolves when the dispatch actually settles?"* — Today's plan: fire-and-forget (`void` return). For the v1 best-effort scope this is fine — callers don't need to wait. Slice 8's signal honoring will make termination fast enough that synchronous-feeling becomes the norm. **No change for v1.**
 - *"Is `recordSuccess` symmetric to `recordFailure`?"* — Yes, retry-policy exposes both. Scheduler's `handleTaskCompletion` calls `recordSuccess` for both categories on non-error outcomes (already in T2.4). Documented in module surface.
-- *"Should the reason enum be open (string) for plugin extensibility?"* — No. Per Plugin Blindness, the reason field is Core-internal. Plugins don't trigger terminations. Keep the Zod enum closed — additions are deliberate decisions, not plugin-author extensions.
+- *"Should the reason enum be open (string) for plugin extensibility?"* — No. Per Plugin Opacity, the reason field is Core-internal. Plugins don't trigger terminations. Keep the Zod enum closed — additions are deliberate decisions, not plugin-author extensions.
 
 **Operator — UX consequences**
 - *"Owner sees a task in `failed` state. Today they can't do anything. After D13 they can run `engineer retry`. Is the discoverability good?"* — The alert message (T4.6) names the command explicitly: *"Run `engineer retry {taskId}` after addressing the root cause."* `engineer retry --help` should also mention it works on both `blocked` and `failed`. Add to T4.2 verification.

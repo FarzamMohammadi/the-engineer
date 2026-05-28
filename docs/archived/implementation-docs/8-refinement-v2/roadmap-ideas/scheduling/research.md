@@ -371,7 +371,7 @@ Same pattern for `state_transitions` table (CHECK constraints on `from_state` an
 
 ## Implementation Ordering
 
-**Governing principle:** Core changes speak through adapter contracts. No step introduces knowledge of specific plugins into Core. Plugin Blindness test passes at every step.
+**Governing principle:** Core changes speak through adapter contracts. No step introduces knowledge of specific plugins into Core. Plugin Opacity test passes at every step.
 
 **Migration 1 — New columns (additive, low risk)**
 1. Add `not_before TEXT` column to tasks table (nullable, default NULL)

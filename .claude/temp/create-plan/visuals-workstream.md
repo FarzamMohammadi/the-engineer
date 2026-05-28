@@ -18,7 +18,7 @@ Future session should read these in order before writing or committing anything:
 2. [`docs/the-engineer-persona.md`](../../../docs/the-engineer-persona.md) — to embody the project's voice.
 3. [`README.md`](../../../README.md) — current state, including the two `<!-- TODO(visuals): -->` markers and the orchestra metaphor that runs through it.
 4. [`docs/architecture/overview.md`](../../../docs/architecture/overview.md) and [`docs/architecture/three-tier-model.md`](../../../docs/architecture/three-tier-model.md) — source of truth for the architecture diagram.
-5. [`docs/philosophy.md`](../../../docs/philosophy.md) § "Orchestrate, Don't Build" and § "Plugin Blindness" — the conceptual model the diagram has to honor.
+5. [`docs/philosophy.md`](../../../docs/philosophy.md) § "Orchestrate, Don't Build" and § "Plugin Opacity" — the conceptual model the diagram has to honor.
 6. The [requirements doc](../requirements-gathering/oss-prep.md) — for acceptance criteria (line 105) and the visuals deferral framing (lines 127, 167–178).
 
 ## Decisions

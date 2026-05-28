@@ -5,6 +5,7 @@ import BetterSqlite3 from "better-sqlite3";
 
 import { TaskStates } from "../../schemas/task.js";
 import { getOutput } from "../output.js";
+import { resolveTaskId } from "../resolve-task.js";
 
 // ── Row Types ────────────────────────────────────────────────────────────────
 
@@ -51,8 +52,13 @@ export function runRetry(engineerHome: string, taskId: string): number {
   }
 }
 
-function retryTask(db: BetterSqlite3.Database, taskId: string): number {
+function retryTask(db: BetterSqlite3.Database, taskIdInput: string): number {
   const out = getOutput();
+
+  const taskId = resolveTaskId(db, taskIdInput);
+  if (!taskId) {
+    return 1;
+  }
 
   const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as TaskRow | undefined;
 

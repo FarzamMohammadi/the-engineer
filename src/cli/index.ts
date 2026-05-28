@@ -83,7 +83,7 @@ program.hook("preAction", () => {
 
 program
   .command("start")
-  .description("Start the daemon")
+  .description("Start the daemon (interactive setup on first run)")
   .option("--daemon", "Run in background")
   .option("--dry-run", "Validate config and show what would happen without starting")
   .option("--seed <path>", "Seed directory for non-interactive setup (contains plugins/ and configs/)")
@@ -120,11 +120,12 @@ program
 
 program
   .command("status")
-  .description("Show daemon status and task queue")
-  .action(() => {
+  .description("Show daemon status and task listing")
+  .option("--all", "Include completed and failed tasks")
+  .action((options: { all?: boolean }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
-    const code = runStatus(home);
+    const code = runStatus(home, { all: options.all ?? false });
     if (code !== 0) {
       process.exitCode = code;
     }
@@ -196,7 +197,7 @@ program
 
 program
   .command("why <task-id>")
-  .description("Explain why a task is in its current state")
+  .description("Walk a task's event log, state transitions, and journal")
   .action((taskId: string) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
@@ -210,7 +211,7 @@ program
 
 program
   .command("retry <task-id>")
-  .description("Retry a blocked task (transitions blocked → queued)")
+  .description("Retry a blocked or failed task (transitions to queued)")
   .action((taskId: string) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);

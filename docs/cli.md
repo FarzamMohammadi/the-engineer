@@ -136,10 +136,21 @@ Source: [`src/cli/commands/stop.ts`](../src/cli/commands/stop.ts)
 
 ### status
 
-Shows whether the daemon is running and task queue depth. Reads SQLite directly (read-only, no IPC).
+Shows whether the daemon is running and lists non-terminal tasks with their 8-character ID prefix, state, title, and age. Use the printed prefix with `why` or `retry`. Reads SQLite directly (read-only, no IPC).
 
 ```bash
-engineer status
+engineer status                          # Non-terminal tasks (active, queued, blocked, etc.)
+engineer status --all                    # Include completed and failed tasks
+```
+
+Example output:
+
+```
+  The Engineer: running (PID 25725)
+  Tasks: 1 active, 1 queued
+
+    active  01HXYZ12  Add OAuth scope toggle              3m ago
+    queued  01HXYW98  Fix README link rot                  7m ago
 ```
 
 Source: [`src/cli/commands/status.ts`](../src/cli/commands/status.ts)
@@ -188,10 +199,11 @@ Source: [`src/cli/commands/doctor.ts`](../src/cli/commands/doctor.ts)
 
 ### why
 
-Displays a timeline of significant events for a task — state transitions, events, journal entries, and cost. Opens the database read-only; no daemon required.
+Displays a timeline of significant events for a task — state transitions, events, journal entries, and cost. Opens the database read-only; no daemon required. Accepts a full task ID or a unique prefix (e.g., the 8-char prefix from `engineer status`).
 
 ```bash
 engineer why <task-id>                   # Human-readable timeline
+engineer why 01HXYZ12                    # Works with ID prefix
 engineer why <task-id> --json            # Machine-readable JSON output
 ```
 
@@ -199,10 +211,11 @@ Source: [`src/cli/commands/why.ts`](../src/cli/commands/why.ts)
 
 ### retry
 
-Re-queues a `blocked` or `failed` task so the daemon picks it up on the next scheduling cycle. Resets both per-category retry counters (crash, agent-unavailable) and clears `not_before` so the retry cycle starts fresh. Direct database access — usable even when the daemon is stopped.
+Re-queues a `blocked` or `failed` task so the daemon picks it up on the next scheduling cycle. Resets both per-category retry counters (crash, agent-unavailable) and clears `not_before` so the retry cycle starts fresh. Direct database access — usable even when the daemon is stopped. Accepts a full task ID or a unique prefix.
 
 ```bash
 engineer retry <task-id>                 # Re-queue a blocked or failed task
+engineer retry 01HXYZ12                  # Works with ID prefix
 engineer retry <task-id> --json          # Machine-readable JSON output
 ```
 

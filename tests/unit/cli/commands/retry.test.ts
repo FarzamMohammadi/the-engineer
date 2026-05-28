@@ -145,6 +145,23 @@ describe("runRetry", () => {
     handle.close();
   });
 
+  it("resolves a task by ID prefix", () => {
+    const dbPath = join(tempDir, "data", "engineer.db");
+    const handle = createDatabase(dbPath);
+    insertTask(handle.db, "01HXYZ1234567890ABCDEFGHIJ", { state: TaskStates.failed });
+
+    const code = runRetry(tempDir, "01HXYZ12");
+    expect(code).toBe(0);
+
+    const row = handle.db.prepare("SELECT * FROM tasks WHERE id = ?").get("01HXYZ1234567890ABCDEFGHIJ") as Record<
+      string,
+      unknown
+    >;
+    expect(row["state"]).toBe(TaskStates.queued);
+    expect(stdoutWrites.join("")).toContain("moved from failed to queued");
+    handle.close();
+  });
+
   it("rejects retry on a non-retryable state", () => {
     const dbPath = join(tempDir, "data", "engineer.db");
     const handle = createDatabase(dbPath);

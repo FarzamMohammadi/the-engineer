@@ -193,6 +193,24 @@ describe("runWhy", () => {
     expect(output).toContain("research");
   });
 
+  it("resolves a task by ID prefix", () => {
+    const dbPath = join(tempDir, "data", "engineer.db");
+    const handle = createDatabase(dbPath);
+    insertTask(handle.db, "01HXYZ1234567890ABCDEFGHIJ", {
+      state: TaskStates.active,
+      sub_state: SubStates.working,
+      description: "Prefix test",
+    });
+    handle.close();
+
+    const code = runWhy(tempDir, "01HXYZ12");
+    expect(code).toBe(0);
+
+    const output = stdoutWrites.join("");
+    expect(output).toContain("01HXYZ1234567890ABCDEFGHIJ");
+    expect(output).toContain("active");
+  });
+
   it("outputs JSON in json mode", () => {
     resetOutput();
     createOutput({ mode: "json" });

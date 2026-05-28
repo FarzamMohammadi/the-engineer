@@ -356,22 +356,18 @@ Each adapter type needs an agent-executable "How to build a plugin" guide so con
 3. **Untrusted input:** Task descriptions come from GitHub issues (external input). A malicious issue could craft instructions that manipulate the host system.
 4. **Unbounded access:** The CLI can read `~/.engineer/config/`, access API keys in `.env`, modify the database, or interact with any host service.
 
-**What it enables:** Full process isolation via OS-agnostic containerization (Docker). Each CLI invocation runs inside a container with:
-1. The worktree mounted as a volume (read-write)
-2. Git credentials injected via env vars (not host SSH agent)
-3. Claude CLI binary + API key available inside the container
-4. No access to `~/.engineer`, PID files, or the host daemon process
-5. `--dangerously-skip-permissions` enabled (safe because the container IS the sandbox)
-6. Network access scoped to git push/pull and agent CLI calls
+**What it enables:** Each CLI invocation runs inside a sandbox confined to its worktree plus the specific network endpoints it needs (agent provider API, git remote). The sandbox prevents access to `~/.engineer`, the daemon's PID file, host SSH keys, other tasks' workspaces, and any host process beyond the agent itself. `--dangerously-skip-permissions` stays safe because the sandbox becomes the real boundary.
 
-**Architecture concept:**
-- Base Docker image: Node.js + CLI agent + git (built/pulled once, cached)
-- WorkspaceManager creates the worktree on the host, then mounts it into the container
-- Container runs the CLI command, streams output back to the host
-- Container is ephemeral — destroyed after each invocation
-- Fallback to direct spawn if Docker is unavailable (with a warning)
+**Mechanism — deliberately open.** The right isolation mechanism depends on platform and workload. Candidates worth weighing when this lands:
 
-**Migration path:** Abstract CLI spawning behind a strategy interface (direct vs. containerized). The containerized strategy wraps the existing spawn logic. Config enables/disables sandboxing and specifies the image. Doctor checks Docker availability when sandbox is enabled.
+- **Docker / OCI containers** — well-understood, cross-platform, but heavy (daemon dependency, per-invocation startup cost, file I/O penalty on macOS via 9p/virtiofs).
+- **OS-native sandboxing** — `sandbox-exec` on macOS, `bubblewrap` or `firejail` on Linux. Lightweight, no extra runtime, native file I/O, but mechanism differs per OS.
+- **Linux namespaces directly** — PID/mount/network namespaces give precise control with no extra dependency, but Linux-only.
+- **Microvirtualization** — Firecracker, Apple Virtualization.framework. Strong isolation with fast startup; heavier than a container, lighter than a full VM.
+
+The choice should be made when scoping the work, against real constraints (startup latency budget, host platforms, file I/O patterns of an agent that reads the worktree constantly). A single mechanism may not be optimal across every OS we support.
+
+**Migration path:** Abstract CLI spawning behind a strategy interface (direct vs. sandboxed). The sandboxed strategy wraps the existing spawn logic with whichever mechanism is chosen. Config enables/disables sandboxing per task or globally. Doctor verifies the chosen sandbox is available before tasks run. Fall back to direct spawn (with a prominent warning) when the sandbox is unavailable.
 
 ---
 

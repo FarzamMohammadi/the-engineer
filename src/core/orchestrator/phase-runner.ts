@@ -5,7 +5,7 @@ import { NotificationKinds } from "../../schemas/notifications.js";
 import type { Phase, PhaseOutput } from "../../schemas/orchestrator.js";
 import { ComplexitySchema, Phases } from "../../schemas/orchestrator.js";
 import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../schemas/session-memory.js";
-import { TaskStates } from "../../schemas/task.js";
+import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import type { AndonCord } from "./andon-cord.js";
 import { AgentUnavailableError, PhaseHandlerMissingError, WorkspaceVerificationError } from "./errors.js";
 import { sendOutreach } from "./outreach-sender.js";
@@ -484,7 +484,18 @@ async function tryCommitPushAndCreatePR(input: CommitPushPrInput): Promise<Phase
     return null; // No git hosting adapter configured — continue pipeline
   }
 
-  // PR created or rework pushed — exit pipeline for human review
+  // PR created or rework pushed — block awaiting external review.
+  // review_pending collapsed into blocked(pr_review_pending): structurally blocked, but an
+  // expected wait, not a failure. The scheduler notifies the reviewer; review-handler and
+  // health-monitor treat pr_review_pending as waiting, not stuck.
+  ctx.taskEngine.requestTransition(taskId, TaskStates.blocked, null, "pr_created", "orchestrator");
+  ctx.taskEngine.updateTaskField(taskId, "blocked", {
+    reason: BlockReasons.pr_review_pending,
+    efforts_made: [],
+    contacted: [],
+    needed: "Human review of the pull request",
+    waiting_for: "human",
+  });
   try {
     recordPhaseTransition({
       sessionId,
@@ -495,7 +506,7 @@ async function tryCommitPushAndCreatePR(input: CommitPushPrInput): Promise<Phase
       dispatch,
       ctx,
     });
-    ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.review_pending);
+    ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.blocked);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const errStack = err instanceof Error ? err.stack : "";
@@ -508,7 +519,7 @@ async function tryCommitPushAndCreatePR(input: CommitPushPrInput): Promise<Phase
 
   return {
     kind: "exit",
-    result: { outcome: Outcomes.review_pending, phase, phaseOutputs: priorOutputs },
+    result: { outcome: Outcomes.blocked, phase, reason: "pr_review_pending" },
   };
 }
 

@@ -128,7 +128,7 @@ describe("E2E: Task happy path", () => {
 
     // After demo_prep the orchestrator created a PR via fake-git-hosting, so the
     // task is waiting on human review.
-    const reviewPending = ctx.taskEngine.getTasksByState(TaskStates.review_pending);
+    const reviewPending = ctx.taskEngine.getBlockedTasksByReason("pr_review_pending");
     expect(reviewPending.length).toBe(1);
 
     const taskId = reviewPending[0]!.id;

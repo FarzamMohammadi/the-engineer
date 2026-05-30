@@ -60,13 +60,7 @@ interface DataLifecycleManagerDeps {
 }
 
 // Active task states — never prune data belonging to these tasks
-const ACTIVE_STATES = [
-  TaskStates.requirements_gathering,
-  TaskStates.queued,
-  TaskStates.active,
-  TaskStates.blocked,
-  TaskStates.review_pending,
-];
+const ACTIVE_STATES = [TaskStates.requirements_gathering, TaskStates.queued, TaskStates.active, TaskStates.blocked];
 
 // ── Table Definitions ─────────────────────────────────────────────────────────
 

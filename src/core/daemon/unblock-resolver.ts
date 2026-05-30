@@ -102,20 +102,8 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
       return { unblocked: false, taskId, reason: result.reason ?? "transition_failed" };
     }
 
-    // Clear blocked details but preserve contacted history
-    const task = taskEngine.getTask(taskId);
-    const contacted = task?.blocked?.contacted ?? [];
-    if (contacted.length > 0) {
-      taskEngine.updateTaskField(taskId, "blocked", {
-        reason: "",
-        efforts_made: [],
-        contacted,
-        needed: "",
-        waiting_for: "",
-      });
-    } else {
-      taskEngine.updateTaskField(taskId, "blocked", null);
-    }
+    // Clear blocked details — the task is no longer blocked.
+    taskEngine.updateTaskField(taskId, "blocked", null);
 
     observer.info("Task unblocked", { taskId, source });
     return { unblocked: true, taskId, reason: null };

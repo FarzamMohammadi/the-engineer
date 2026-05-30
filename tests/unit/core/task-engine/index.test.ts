@@ -87,13 +87,6 @@ function getPathToState(state: TaskState, subState: SubState | null): Transition
       { state: TaskStates.blocked, sub: null, reason: "needs human input" },
     ];
   }
-  if (state === TaskStates.review_pending && subState === SubStates.code) {
-    return [
-      ...base,
-      { state: TaskStates.active, sub: SubStates.working, reason: "scheduled" },
-      { state: TaskStates.review_pending, sub: SubStates.code, reason: "PR ready" },
-    ];
-  }
   if (state === TaskStates.completed) {
     return [
       ...base,
@@ -501,15 +494,6 @@ describe("TaskEngine", () => {
       const task = createTaskInState(engine, TaskStates.active, SubStates.working);
       expect(engine.checkPermission(task.id, ActionClasses.merge).allowed).toBe(false);
       expect(engine.checkPermission(task.id, ActionClasses.deploy).allowed).toBe(false);
-    });
-
-    it("returns conditional for merge in review_pending.code", () => {
-      const task = createTaskInState(engine, TaskStates.review_pending, SubStates.code);
-      expect(engine.checkPermission(task.id, ActionClasses.read).allowed).toBe(true);
-      expect(engine.checkPermission(task.id, ActionClasses.communicate).allowed).toBe(true);
-      const mergeResult = engine.checkPermission(task.id, ActionClasses.merge);
-      expect(mergeResult.allowed).toBe(true);
-      expect(mergeResult.conditional).toBe("auto_merge_after_approval configured for repo");
     });
 
     it("allows read, communicate, ask_human in blocked", () => {

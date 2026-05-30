@@ -6,7 +6,6 @@ export const STATE_COLORS: Record<TaskState, string> = {
   queued: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   active: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   blocked: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  review_pending: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   completed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   failed: "bg-red-500/20 text-red-400 border-red-500/30",
 };
@@ -17,7 +16,6 @@ export const STATE_LABELS: Record<TaskState, string> = {
   queued: "Queued",
   active: "Active",
   blocked: "Blocked",
-  review_pending: "Review",
   completed: "Completed",
   failed: "Failed",
 };
@@ -28,7 +26,6 @@ export const STATE_DOT_COLORS: Record<TaskState, string> = {
   queued: "bg-zinc-400",
   active: "bg-blue-400",
   blocked: "bg-amber-400",
-  review_pending: "bg-cyan-400",
   completed: "bg-emerald-400",
   failed: "bg-red-400",
 };

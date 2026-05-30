@@ -1,7 +1,7 @@
 import { TimeoutStageActions } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { BlockReasons, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { HealthMonitorContext } from "./types.js";
@@ -116,7 +116,12 @@ export function createDaemonHealthMonitor(
   // ── Blocked Escalation ──────────────────────────────────────────────────
 
   function checkBlockedEscalation(now: number): void {
-    const blockedTasks = taskEngine.getTasksByState(TaskStates.blocked);
+    // Exclude tasks awaiting PR review: pr_review_pending is expected waiting, not stuck.
+    // Their reminders run separately in checkReviewPendingReminders; escalating them would
+    // wrongly self-unblock and eventually fail a healthy PR sitting in review.
+    const blockedTasks = taskEngine
+      .getTasksByState(TaskStates.blocked)
+      .filter((task) => task.blocked?.reason !== BlockReasons.pr_review_pending);
     const timeoutPolicy = safetyLayer.getTimeoutPolicy();
     const stages = timeoutPolicy.blocked.stages;
 
@@ -238,7 +243,7 @@ export function createDaemonHealthMonitor(
   // ── Review Pending Reminders ────────────────────────────────────────────
 
   function checkReviewPendingReminders(now: number, prefetchedTasks?: Task[]): void {
-    const reviewPendingTasks = prefetchedTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
+    const reviewPendingTasks = prefetchedTasks ?? taskEngine.getBlockedTasksByReason(BlockReasons.pr_review_pending);
     const timeoutPolicy = safetyLayer.getTimeoutPolicy();
     const reviewConfig = timeoutPolicy.review_pending;
 

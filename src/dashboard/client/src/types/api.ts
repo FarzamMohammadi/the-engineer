@@ -1,17 +1,10 @@
 // ── Task ─────────────────────────────────────────────────────────────────────
 
 /** Valid task lifecycle states. */
-export type TaskState =
-  | "requirements_gathering"
-  | "queued"
-  | "active"
-  | "blocked"
-  | "review_pending"
-  | "completed"
-  | "failed";
+export type TaskState = "requirements_gathering" | "queued" | "active" | "blocked" | "completed" | "failed";
 
 /** Task sub-state when active. */
-export type SubState = "working" | "code";
+export type SubState = "working";
 
 /** RRPIR pipeline phase. */
 export type Phase = "requirements_gathering" | "research" | "planning" | "execution" | "self_review" | "demo_prep";

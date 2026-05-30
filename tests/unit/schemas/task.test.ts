@@ -24,24 +24,16 @@ import {
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
 describe("TaskStateSchema", () => {
-  const validStates = [
-    "requirements_gathering",
-    "queued",
-    "active",
-    "blocked",
-    "review_pending",
-    "completed",
-    "failed",
-  ];
+  const validStates = ["requirements_gathering", "queued", "active", "blocked", "completed", "failed"];
 
-  it("accepts all 7 valid states", () => {
+  it("accepts all 6 valid states", () => {
     for (const state of validStates) {
       expect(TaskStateSchema.parse(state)).toBe(state);
     }
   });
 
-  it("has exactly 7 values", () => {
-    expect(TaskStateSchema.options).toHaveLength(7);
+  it("has exactly 6 values", () => {
+    expect(TaskStateSchema.options).toHaveLength(6);
   });
 
   it("rejects invalid values", () => {
@@ -53,7 +45,7 @@ describe("TaskStateSchema", () => {
 
 describe("SubStateSchema", () => {
   it("accepts valid sub-states", () => {
-    for (const sub of ["working", "code"]) {
+    for (const sub of ["working"]) {
       expect(SubStateSchema.parse(sub)).toBe(sub);
     }
   });
@@ -61,6 +53,7 @@ describe("SubStateSchema", () => {
   it("rejects invalid values", () => {
     expect(() => SubStateSchema.parse("review")).toThrow();
     expect(() => SubStateSchema.parse("supervising")).toThrow();
+    expect(() => SubStateSchema.parse("code")).toThrow();
   });
 });
 
@@ -311,7 +304,7 @@ describe("ReviewStateSchema", () => {
 describe("BlockedDetailsSchema", () => {
   it("parses valid data with nested contacted array", () => {
     const valid = {
-      reason: "Need API credentials",
+      reason: "need_more_info",
       efforts_made: ["Checked docs", "Searched codebase"],
       contacted: [{ person: "farzam", channel: "telegram", timestamp: "2026-03-10T12:00:00.000Z" }],
       needed: "AWS credentials for staging",
@@ -481,7 +474,6 @@ describe("PermissionTable", () => {
       [TaskStates.requirements_gathering, null],
       [TaskStates.queued, null],
       [TaskStates.active, SubStates.working],
-      [TaskStates.review_pending, SubStates.code],
       [TaskStates.blocked, null],
       [TaskStates.completed, null],
       [TaskStates.failed, null],
@@ -504,12 +496,6 @@ describe("PermissionTable", () => {
   it("active.working has the most permissions", () => {
     const working = PermissionTable.find((e) => e.state === TaskStates.active && e.sub_state === SubStates.working);
     expect(working?.allowed.length).toBeGreaterThan(5);
-  });
-
-  it("review_pending.code has conditional merge permission", () => {
-    const code = PermissionTable.find((e) => e.state === TaskStates.review_pending && e.sub_state === SubStates.code);
-    expect(code?.conditional).toBeDefined();
-    expect(code?.conditional?.merge).toBeDefined();
   });
 
   it("all allowed values are valid ActionClass values", () => {

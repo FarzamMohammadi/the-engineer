@@ -51,6 +51,7 @@ export interface TestDaemonHandle {
     requestTransition: Mock;
     getTask: Mock;
     getTasksByState: Mock;
+    getBlockedTasksByReason: Mock;
     getQueuedByPriority: Mock;
     updateTaskField: Mock;
     updateTracking: Mock;
@@ -206,6 +207,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
     requestTransition: vi.fn().mockReturnValue({ success: true } satisfies TransitionResult),
     getTask: vi.fn().mockReturnValue(null),
     getTasksByState: vi.fn().mockReturnValue([]),
+    getBlockedTasksByReason: vi.fn().mockReturnValue([]),
     getQueuedByPriority: vi.fn().mockReturnValue([]),
     updateTaskField: vi.fn(),
     updateTracking: vi.fn(),

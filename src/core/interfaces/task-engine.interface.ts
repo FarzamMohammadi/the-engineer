@@ -1,4 +1,12 @@
-import type { ActionClass, ExternalRef, StateTransition, SubState, Task, TaskState } from "../../schemas/task.js";
+import type {
+  ActionClass,
+  BlockReason,
+  ExternalRef,
+  StateTransition,
+  SubState,
+  Task,
+  TaskState,
+} from "../../schemas/task.js";
 
 /** Input for createTask(). Only caller-provided fields. */
 export interface CreateTaskInput {
@@ -72,6 +80,7 @@ export interface ITaskEngine {
   checkPermission(taskId: string, actionClass: ActionClass): PermissionResult;
   getTask(id: string): Task | null;
   getTasksByState(state: TaskState): Task[];
+  getBlockedTasksByReason(reason: BlockReason): Task[];
   getQueuedByPriority(): Task[];
   getStateHistory(taskId: string): StateTransition[];
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void;

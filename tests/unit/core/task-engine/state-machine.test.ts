@@ -89,10 +89,6 @@ describe("subStateMatches", () => {
     expect(subStateMatches(SubStates.working, SubStates.working)).toBe(true);
   });
 
-  it("rejects mismatched sub-state", () => {
-    expect(subStateMatches(SubStates.working, SubStates.code)).toBe(false);
-  });
-
   it("rejects defined entry with null actual", () => {
     expect(subStateMatches(SubStates.working, null)).toBe(false);
   });
@@ -107,10 +103,12 @@ describe("isValidTransition", () => {
     expect(isValidTransition(TaskStates.queued, null, TaskStates.active, SubStates.working)).toBe(true);
   });
 
-  it("allows active.working → review_pending.code", () => {
-    expect(isValidTransition(TaskStates.active, SubStates.working, TaskStates.review_pending, SubStates.code)).toBe(
-      true,
-    );
+  it("allows active.working → blocked", () => {
+    expect(isValidTransition(TaskStates.active, SubStates.working, TaskStates.blocked, null)).toBe(true);
+  });
+
+  it("allows blocked → completed (PR merge path)", () => {
+    expect(isValidTransition(TaskStates.blocked, null, TaskStates.completed, null)).toBe(true);
   });
 
   it("rejects intake → active", () => {
@@ -124,7 +122,7 @@ describe("isValidTransition", () => {
   });
 
   it("rejects transition with wrong sub-state", () => {
-    expect(isValidTransition(TaskStates.queued, null, TaskStates.active, SubStates.code)).toBe(false);
+    expect(isValidTransition(TaskStates.queued, null, TaskStates.active, null)).toBe(false);
   });
 });
 
@@ -190,7 +188,7 @@ describe("StateMachine", () => {
     const id = insertTask(dbHandle.db);
     stateMachine.requestTransition(id, TaskStates.queued, null, "ready", "test");
     stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "go", "test");
-    stateMachine.requestTransition(id, TaskStates.review_pending, SubStates.code, "code", "test");
+    stateMachine.requestTransition(id, TaskStates.blocked, null, "pr_review_pending", "test");
     stateMachine.requestTransition(id, TaskStates.completed, null, "done", "test");
 
     const row = dbHandle.db.prepare("SELECT completed_at FROM tasks WHERE id = ?").get(id) as {

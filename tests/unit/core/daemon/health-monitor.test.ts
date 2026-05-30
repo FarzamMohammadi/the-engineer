@@ -120,6 +120,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
   const taskEngine = {
     getTask: vi.fn().mockReturnValue(null),
     getTasksByState: vi.fn().mockReturnValue([]),
+    getBlockedTasksByReason: vi.fn().mockReturnValue([]),
     requestTransition: vi.fn().mockReturnValue({ success: true }),
   };
   const safetyLayer = {
@@ -367,10 +368,10 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "review-1",
         title: "Review task",
-        state: TaskStates.review_pending,
+        state: TaskStates.blocked,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
-      taskEngine.getTasksByState.mockReturnValue([task]);
+      taskEngine.getBlockedTasksByReason.mockReturnValue([task]);
 
       const getActiveTaskIds = vi.fn(() => []);
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
@@ -393,10 +394,10 @@ describe("DaemonHealthMonitor", () => {
       const task = makeTask({
         id: "review-2",
         title: "Review task 2",
-        state: TaskStates.review_pending,
+        state: TaskStates.blocked,
         last_transition_at: new Date(transitionTime).toISOString(),
       });
-      taskEngine.getTasksByState.mockReturnValue([task]);
+      taskEngine.getBlockedTasksByReason.mockReturnValue([task]);
 
       const getActiveTaskIds = vi.fn(() => []);
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);

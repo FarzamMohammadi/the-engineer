@@ -3,21 +3,13 @@ import { PhaseSchema } from "./orchestrator.js";
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
-export const TaskStateSchema = z.enum([
-  "requirements_gathering",
-  "queued",
-  "active",
-  "blocked",
-  "review_pending",
-  "completed",
-  "failed",
-]);
+export const TaskStateSchema = z.enum(["requirements_gathering", "queued", "active", "blocked", "completed", "failed"]);
 export type TaskState = z.infer<typeof TaskStateSchema>;
 
 /** Constant enum values for TaskState. Use instead of raw strings. */
 export const TaskStates = TaskStateSchema.enum;
 
-export const SubStateSchema = z.enum(["working", "code"]);
+export const SubStateSchema = z.enum(["working"]);
 export type SubState = z.infer<typeof SubStateSchema>;
 
 /** Constant enum values for SubState. Use instead of raw strings. */
@@ -39,6 +31,22 @@ export type ActionClass = z.infer<typeof ActionClassSchema>;
 
 /** Constant enum values for ActionClass. Use instead of raw strings. */
 export const ActionClasses = ActionClassSchema.enum;
+
+/**
+ * Why a task is blocked. Closed enum so blocked tasks can be queried and routed by reason.
+ * `pr_review_pending` marks a task waiting on an external PR event (the collapsed review state);
+ * the others mark a task waiting on human input or recovery.
+ */
+export const BlockReasonSchema = z.enum([
+  "need_more_info",
+  "agent_unavailable",
+  "pr_workflow_failed",
+  "pr_review_pending",
+]);
+export type BlockReason = z.infer<typeof BlockReasonSchema>;
+
+/** Constant enum values for BlockReason. Use instead of raw strings. */
+export const BlockReasons = BlockReasonSchema.enum;
 
 // ── Sub-schemas ────────────────────────────────────────────────────────────────
 
@@ -135,7 +143,7 @@ export const ReviewStateSchema = z.object({
 export type ReviewState = z.infer<typeof ReviewStateSchema>;
 
 export const BlockedDetailsSchema = z.object({
-  reason: z.string(),
+  reason: BlockReasonSchema,
   efforts_made: z.array(z.string()),
   contacted: z.array(
     z.object({
@@ -240,26 +248,13 @@ export const ValidTransitions = [
   { from: TaskStates.requirements_gathering, to: TaskStates.failed },
   { from: TaskStates.queued, to: TaskStates.active, to_sub: SubStates.working },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.blocked },
-  {
-    from: TaskStates.active,
-    from_sub: SubStates.working,
-    to: TaskStates.review_pending,
-    to_sub: SubStates.code,
-  },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.completed },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.failed },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.queued },
   { from: TaskStates.blocked, to: TaskStates.active, to_sub: SubStates.working },
+  { from: TaskStates.blocked, to: TaskStates.completed },
   { from: TaskStates.blocked, to: TaskStates.failed },
   { from: TaskStates.blocked, to: TaskStates.queued },
-  {
-    from: TaskStates.review_pending,
-    from_sub: SubStates.code,
-    to: TaskStates.active,
-    to_sub: SubStates.working,
-  },
-  { from: TaskStates.review_pending, from_sub: SubStates.code, to: TaskStates.completed },
-  { from: TaskStates.review_pending, from_sub: SubStates.code, to: TaskStates.queued },
   { from: TaskStates.failed, to: TaskStates.queued },
 ] as const satisfies ReadonlyArray<{
   readonly from: TaskState;
@@ -295,12 +290,6 @@ export const PermissionTable: readonly PermissionEntry[] = [
       ActionClasses.task_manage,
       ActionClasses.ask_human,
     ],
-  },
-  {
-    state: TaskStates.review_pending,
-    sub_state: SubStates.code,
-    allowed: [ActionClasses.read, ActionClasses.communicate],
-    conditional: { [ActionClasses.merge]: "auto_merge_after_approval configured for repo" },
   },
   {
     state: TaskStates.blocked,

@@ -493,7 +493,7 @@ describe("PhaseRunner", () => {
       expect(journalCall!.summary.length).toBeLessThan(2300);
     });
 
-    it("exits with review_pending when PR is created after demo_prep", async () => {
+    it("blocks with pr_review_pending when PR is created after demo_prep", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -513,7 +513,10 @@ describe("PhaseRunner", () => {
 
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
-      expect(result.outcome).toBe("review_pending");
+      expect(result.outcome).toBe("blocked");
+      if (result.outcome === "blocked") {
+        expect(result.reason).toBe("pr_review_pending");
+      }
     });
 
     it("completes with completed when skip_pr_creation is enabled and push succeeds", async () => {

@@ -9,7 +9,7 @@ import { createRetryPolicy } from "../../../../src/core/retry-policy/index.js";
 import type { DaemonConfig } from "../../../../src/schemas/config.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
-import { SubStates, type Task, TaskStates } from "../../../../src/schemas/task.js";
+import { BlockReasons, SubStates, type Task, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -291,32 +291,28 @@ describe("TaskScheduler", () => {
     expect(scheduler.getTasksCompleted()).toBe(1);
   });
 
-  // 6. handleTaskCompletion on "review_pending" outcome
-  it("handleTaskCompletion on review_pending outcome transitions to review_pending.code", () => {
+  // 6. handleTaskCompletion on a blocked(pr_review_pending) outcome
+  it("handleTaskCompletion on pr_review_pending blocked outcome notifies the reviewer", () => {
     const { ctx, taskEngine } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
 
-    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "PR task" }));
+    // The phase-runner already blocked the task; the scheduler routes on the reason.
+    taskEngine.getTask.mockReturnValue(
+      makeMockTask({ id: "t1", title: "PR task", blocked: { reason: BlockReasons.pr_review_pending } }),
+    );
 
     const scheduler = makeScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
     const result: ExecuteTaskResult = {
-      outcome: "review_pending",
+      outcome: "blocked",
       phase: "demo_prep",
-      phaseOutputs: new Map(),
+      reason: "pr_review_pending",
     };
     scheduler.handleTaskCompletion("t1", result);
 
-    expect(taskEngine.requestTransition).toHaveBeenCalledWith(
-      "t1",
-      TaskStates.review_pending,
-      SubStates.code,
-      "pr_created",
-      "daemon",
-    );
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.objectContaining({ kind: NotificationKinds.review_pending, taskId: "t1" }),
     );

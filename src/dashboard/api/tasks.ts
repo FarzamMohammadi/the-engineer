@@ -337,7 +337,6 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       TaskStates.queued,
       TaskStates.active,
       TaskStates.blocked,
-      TaskStates.review_pending,
     ]);
 
     if (!cancellableStates.has(row.state)) {

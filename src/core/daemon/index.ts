@@ -20,7 +20,7 @@ import {
   TaskFeedbackReceivedPayloadSchema,
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
-import { TaskStates } from "../../schemas/task.js";
+import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import { createDispatchTracker } from "../dispatch-tracker/index.js";
 import { createEvaluationManager } from "../evaluation/index.js";
@@ -536,8 +536,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     healthMonitor.checkStuckTasks(now);
     healthMonitor.checkBlockedEscalation(now);
 
-    // Query review_pending tasks once, pass to all consumers (avoids 3 redundant DB queries/tick)
-    const reviewPendingTasks = taskEngine.getTasksByState(TaskStates.review_pending);
+    // Query PR-review-pending tasks once, pass to all consumers (avoids 3 redundant DB queries/tick)
+    const reviewPendingTasks = taskEngine.getBlockedTasksByReason(BlockReasons.pr_review_pending);
     healthMonitor.checkReviewPendingReminders(now, reviewPendingTasks);
 
     // Step 7+8+8b: Check merges, feedback, and CI for approved tasks

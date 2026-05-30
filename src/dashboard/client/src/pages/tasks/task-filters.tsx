@@ -2,15 +2,7 @@ import { cn } from "../../lib/cn";
 import { STATE_DOT_COLORS, STATE_LABELS } from "../../lib/constants";
 import type { TaskState } from "../../types/api";
 
-const FILTER_STATES: TaskState[] = [
-  "active",
-  "blocked",
-  "queued",
-  "requirements_gathering",
-  "review_pending",
-  "completed",
-  "failed",
-];
+const FILTER_STATES: TaskState[] = ["active", "blocked", "queued", "requirements_gathering", "completed", "failed"];
 
 interface TaskFiltersProps {
   selected: string | undefined;

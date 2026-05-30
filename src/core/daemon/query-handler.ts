@@ -59,7 +59,6 @@ function formatStatusResponse(taskEngine: ITaskEngine): string {
     TaskStates.queued,
     TaskStates.active,
     TaskStates.blocked,
-    TaskStates.review_pending,
     TaskStates.completed,
     TaskStates.failed,
   ];

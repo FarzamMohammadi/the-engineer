@@ -303,29 +303,28 @@ describe("commitPushAndCreatePR", () => {
     );
   });
 
-  // ── Review Pending Outcome ────────────────────────────────────────────
+  // ── PR Review Pending (blocked) ───────────────────────────────────────
 
-  it("returns review_pending outcome when PR is successfully created", async () => {
+  it("blocks with pr_review_pending when PR is successfully created", async () => {
     setupGitMocks({ hasStagedChanges: true });
 
     const dispatch = dispatchWithWorkspace();
     const result = await h.orchestrator.executeTask(dispatch);
 
-    expect(result.outcome).toBe("review_pending");
-    if (result.outcome === "review_pending") {
+    expect(result.outcome).toBe("blocked");
+    if (result.outcome === "blocked") {
       expect(result.phase).toBe(Phases.demo_prep);
-      // All 6 phases run; demo_prep is the terminal phase before the PR exit
-      expect(result.phaseOutputs.size).toBe(6);
+      expect(result.reason).toBe("pr_review_pending");
     }
   });
 
-  it("ends session with review_pending when PR is created", async () => {
+  it("ends session as blocked when PR is created", async () => {
     setupGitMocks({ hasStagedChanges: true });
 
     const dispatch = dispatchWithWorkspace();
     await h.orchestrator.executeTask(dispatch);
 
-    expect(h.sessionMemory.sessions.end).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.review_pending);
+    expect(h.sessionMemory.sessions.end).toHaveBeenCalledWith(expect.any(String), SessionEndReasons.blocked);
   });
 
   it("blocks task when PR creation fails", async () => {

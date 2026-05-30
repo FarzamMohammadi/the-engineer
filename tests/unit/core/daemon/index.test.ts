@@ -7,7 +7,7 @@ import { deriveAggregateReviewState } from "../../../../src/core/daemon/review-h
 import { isSlotConsuming } from "../../../../src/core/daemon/task-scheduler.js";
 import type { ExecuteTaskResult } from "../../../../src/core/orchestrator/index.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
-import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { BlockReasons, SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import { createMockTriggerPlugin, createTestDaemon, createTestTriggerEvent } from "../../../helpers/test-daemon.js";
 import { createMockTask } from "../../../helpers/test-orchestrator.js";
 
@@ -1004,13 +1004,20 @@ describe("Daemon", () => {
       const oneDayAgo = new Date(handle.clock.now() - 86_400_000 - 1000).toISOString();
       const reviewTask = createMockTask({
         id: "review-1",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         title: "Needs review",
         last_transition_at: oneDayAgo,
       });
-      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === TaskStates.review_pending) {
+      handle.taskEngine.getBlockedTasksByReason.mockImplementation((reason: string) => {
+        if (reason === BlockReasons.pr_review_pending) {
           return [reviewTask];
         }
         return [];
@@ -1053,13 +1060,20 @@ describe("Daemon", () => {
       const recentTime = new Date(handle.clock.now() - 3_600_000).toISOString(); // 1h ago
       const reviewTask = createMockTask({
         id: "review-2",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         title: "Too early",
         last_transition_at: recentTime,
       });
-      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === TaskStates.review_pending) {
+      handle.taskEngine.getBlockedTasksByReason.mockImplementation((reason: string) => {
+        if (reason === BlockReasons.pr_review_pending) {
           return [reviewTask];
         }
         return [];
@@ -1087,13 +1101,20 @@ describe("Daemon", () => {
       const oneDayAgo = new Date(handle.clock.now() - 86_400_000 - 1000).toISOString();
       const reviewTask = createMockTask({
         id: "review-3",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         title: "Repeat check",
         last_transition_at: oneDayAgo,
       });
-      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === TaskStates.review_pending) {
+      handle.taskEngine.getBlockedTasksByReason.mockImplementation((reason: string) => {
+        if (reason === BlockReasons.pr_review_pending) {
           return [reviewTask];
         }
         return [];
@@ -1140,7 +1161,7 @@ describe("Daemon", () => {
   // ── Review Pending ──────────────────────────────────────────────────
 
   describe("review pending", () => {
-    it("transitions task to review_pending.code on review_pending outcome", async () => {
+    it("leaves a pr_review_pending task blocked — no terminal transition by the daemon", async () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-pr",
@@ -1149,25 +1170,47 @@ describe("Daemon", () => {
         title: "PR task",
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({
+          id: "task-pr",
+          state: TaskStates.blocked,
+          sub_state: null,
+          blocked: {
+            reason: BlockReasons.pr_review_pending,
+            efforts_made: [],
+            contacted: [],
+            needed: "review",
+            waiting_for: "human",
+          },
+        }),
+      );
       handle.orchestrator.executeTask.mockResolvedValueOnce({
-        outcome: "review_pending",
+        outcome: "blocked",
         phase: "demo_prep",
-        phaseOutputs: new Map(),
+        reason: "pr_review_pending",
       } satisfies ExecuteTaskResult);
 
       await handle.daemon.tick();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
+      // The phase-runner owns the block; the daemon must not complete or fail the task.
+      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
         "task-pr",
-        TaskStates.review_pending,
-        SubStates.code,
-        "pr_created",
-        "daemon",
+        TaskStates.completed,
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
+        "task-pr",
+        TaskStates.failed,
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
       );
     });
 
-    it("does not cleanup workspace on review_pending outcome", async () => {
+    it("does not cleanup workspace on pr_review_pending blocked outcome", async () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-pr",
@@ -1175,10 +1218,24 @@ describe("Daemon", () => {
         sub_state: null,
       });
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task]);
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({
+          id: "task-pr",
+          state: TaskStates.blocked,
+          sub_state: null,
+          blocked: {
+            reason: BlockReasons.pr_review_pending,
+            efforts_made: [],
+            contacted: [],
+            needed: "review",
+            waiting_for: "human",
+          },
+        }),
+      );
       handle.orchestrator.executeTask.mockResolvedValueOnce({
-        outcome: "review_pending",
+        outcome: "blocked",
         phase: "demo_prep",
-        phaseOutputs: new Map(),
+        reason: "pr_review_pending",
       } satisfies ExecuteTaskResult);
 
       await handle.daemon.tick();
@@ -1191,8 +1248,15 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-merged",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         title: "Merged task",
         repo: "org/repo",
         review: {
@@ -1204,8 +1268,8 @@ describe("Daemon", () => {
           accommodated_review_state: null,
         },
       });
-      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === TaskStates.review_pending) {
+      handle.taskEngine.getBlockedTasksByReason.mockImplementation((reason: string) => {
+        if (reason === BlockReasons.pr_review_pending) {
           return [task];
         }
         return [];
@@ -1248,8 +1312,15 @@ describe("Daemon", () => {
       handle = createTestDaemon();
       const task = createMockTask({
         id: "task-open",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -1259,8 +1330,8 @@ describe("Daemon", () => {
           accommodated_review_state: null,
         },
       });
-      handle.taskEngine.getTasksByState.mockImplementation((state: string) => {
-        if (state === TaskStates.review_pending) {
+      handle.taskEngine.getBlockedTasksByReason.mockImplementation((reason: string) => {
+        if (reason === BlockReasons.pr_review_pending) {
           return [task];
         }
         return [];
@@ -1311,8 +1382,15 @@ describe("Daemon", () => {
     function setupReviewTask(overrides?: Partial<ReturnType<typeof createMockTask>>) {
       const task = createMockTask({
         id: "task-review",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1354,7 +1432,7 @@ describe("Daemon", () => {
     it("emits feedback event when changes_requested detected", async () => {
       handle = createTestDaemon();
       const task = setupReviewTask();
-      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getBlockedTasksByReason.mockReturnValue([task]);
       handle.taskEngine.getTask.mockReturnValue(task);
 
       const hosting = setupHostingMock(
@@ -1384,8 +1462,8 @@ describe("Daemon", () => {
 
     it("emits approved event when PR is approved", async () => {
       handle = createTestDaemon();
-      const task = setupReviewTask({ sub_state: SubStates.code });
-      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      const task = setupReviewTask();
+      handle.taskEngine.getBlockedTasksByReason.mockReturnValue([task]);
       handle.taskEngine.getTask.mockReturnValue(task);
 
       const hosting = setupHostingMock(
@@ -1416,7 +1494,7 @@ describe("Daemon", () => {
     it("deduplicates — does not re-emit same aggregate state", async () => {
       handle = createTestDaemon();
       const task = setupReviewTask();
-      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getBlockedTasksByReason.mockReturnValue([task]);
       handle.taskEngine.getTask.mockReturnValue(task);
 
       const hosting = setupHostingMock(
@@ -1441,7 +1519,7 @@ describe("Daemon", () => {
     it("emits new event when aggregate state changes", async () => {
       handle = createTestDaemon();
       const task = setupReviewTask();
-      handle.taskEngine.getTasksByState.mockReturnValue([task]);
+      handle.taskEngine.getBlockedTasksByReason.mockReturnValue([task]);
       handle.taskEngine.getTask.mockReturnValue(task);
 
       const hosting = setupHostingMock(
@@ -1481,8 +1559,15 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-fb",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1540,8 +1625,15 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-code-approve",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1590,8 +1682,15 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-auto-merge",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1662,8 +1761,15 @@ describe("Daemon", () => {
       await handle.daemon.start();
       const task = createMockTask({
         id: "task-merge-fail",
-        state: TaskStates.review_pending,
-        sub_state: SubStates.code,
+        state: TaskStates.blocked,
+        sub_state: null,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          efforts_made: [],
+          contacted: [],
+          needed: "review",
+          waiting_for: "human",
+        },
         repo: "owner/repo",
         review: {
           pr_number: 10,
@@ -1715,7 +1821,7 @@ describe("Daemon", () => {
         expect(fakeHosting.mergePR).toHaveBeenCalled();
       });
 
-      // Should NOT complete the task — leave in review_pending for retry
+      // Should NOT complete the task — leave blocked(pr_review_pending) for retry
       await vi.waitFor(() => {
         expect(handle.taskEngine.requestTransition).not.toHaveBeenCalledWith(
           "task-merge-fail",
@@ -1727,7 +1833,7 @@ describe("Daemon", () => {
       });
     });
 
-    it("ignores feedback for non-review_pending tasks", async () => {
+    it("ignores feedback for tasks not awaiting PR review", async () => {
       handle = createTestDaemon();
       await handle.daemon.start();
       const task = createMockTask({

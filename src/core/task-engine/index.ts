@@ -3,7 +3,7 @@ import { ulid } from "ulid";
 import { type SqliteColumnType, toSqlite, toSqliteJson } from "../../db/serialize.js";
 
 import { EventTypes, TaskCreatedPayloadSchema, TaskStateChangedPayloadSchema } from "../../schemas/events.js";
-import type { ActionClass, StateTransition, SubState, Task, TaskState } from "../../schemas/task.js";
+import type { ActionClass, BlockReason, StateTransition, SubState, Task, TaskState } from "../../schemas/task.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
@@ -326,6 +326,11 @@ export class TaskEngine implements ITaskEngine {
   /** Get all tasks in a given state, ordered by priority DESC, created_at ASC. */
   getTasksByState(state: TaskState): Task[] {
     return this.queries.getTasksByState(state);
+  }
+
+  /** Get all blocked tasks with a given block reason, ordered by priority DESC, created_at ASC. */
+  getBlockedTasksByReason(reason: BlockReason): Task[] {
+    return this.queries.getBlockedTasksByReason(reason);
   }
 
   /** Get all queued tasks, ordered by priority DESC, created_at ASC. */

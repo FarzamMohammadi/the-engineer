@@ -71,7 +71,7 @@ describe("Task lifecycle (integration)", () => {
       });
     });
 
-    it("transitions through review_pending.demo → review_pending.code → completed", () => {
+    it("transitions active.working → blocked(pr_review_pending) → completed", () => {
       setup();
 
       const task = taskEngine.createTask({
@@ -84,13 +84,10 @@ describe("Task lifecycle (integration)", () => {
 
       taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
-      taskEngine.requestTransition(task.id, TaskStates.review_pending, SubStates.code, "demo_ready", "orchestrator");
+      taskEngine.requestTransition(task.id, TaskStates.blocked, null, "pr_review_pending", "orchestrator");
 
-      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.review_pending);
-      expect(taskEngine.getTask(task.id)?.sub_state).toBe(SubStates.code);
-
-      taskEngine.requestTransition(task.id, TaskStates.review_pending, SubStates.code, "demo_approved", "reviewer");
-      expect(taskEngine.getTask(task.id)?.sub_state).toBe(SubStates.code);
+      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.blocked);
+      expect(taskEngine.getTask(task.id)?.sub_state).toBe(null);
 
       taskEngine.requestTransition(task.id, TaskStates.completed, null, "approved", "reviewer");
       expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.completed);

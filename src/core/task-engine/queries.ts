@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-import type { StateTransition, Task, TaskState } from "../../schemas/task.js";
+import type { BlockReason, StateTransition, Task, TaskState } from "../../schemas/task.js";
 import { type StateTransitionRow, type TaskRow, rowToStateTransition, rowToTask } from "./row-mapper.js";
 
 /**
@@ -10,6 +10,7 @@ import { type StateTransitionRow, type TaskRow, rowToStateTransition, rowToTask 
 export class TaskQueries {
   private readonly getTaskStmt: Database.Statement;
   private readonly getTasksByStateStmt: Database.Statement;
+  private readonly getBlockedByReasonStmt: Database.Statement;
   private readonly getQueuedStmt: Database.Statement;
   private readonly getStateHistoryStmt: Database.Statement;
   private readonly findByIdempotencyKeyStmt: Database.Statement;
@@ -18,6 +19,10 @@ export class TaskQueries {
     this.getTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?");
 
     this.getTasksByStateStmt = db.prepare("SELECT * FROM tasks WHERE state = ? ORDER BY priority DESC, created_at ASC");
+
+    this.getBlockedByReasonStmt = db.prepare(
+      "SELECT * FROM tasks WHERE state = 'blocked' AND json_extract(blocked, '$.reason') = ? ORDER BY priority DESC, created_at ASC",
+    );
 
     this.getQueuedStmt = db.prepare(
       "SELECT * FROM tasks WHERE state = 'queued' ORDER BY priority DESC, created_at ASC",
@@ -42,6 +47,12 @@ export class TaskQueries {
   /** Get all tasks in a given state, ordered by priority DESC, created_at ASC. */
   getTasksByState(state: TaskState): Task[] {
     const rows = this.getTasksByStateStmt.all(state) as TaskRow[];
+    return rows.map(rowToTask);
+  }
+
+  /** Get all blocked tasks with a given block reason, ordered by priority DESC, created_at ASC. */
+  getBlockedTasksByReason(reason: BlockReason): Task[] {
+    const rows = this.getBlockedByReasonStmt.all(reason) as TaskRow[];
     return rows.map(rowToTask);
   }
 

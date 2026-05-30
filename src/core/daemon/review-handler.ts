@@ -2,7 +2,7 @@ import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes, type PRComment } from "../../schemas/adapters.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { type Task, TaskStates, TeamMemberRoles } from "../../schemas/task.js";
+import { BlockReasons, type Task, TaskStates, TeamMemberRoles } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { removeThoughtsAndPush } from "../orchestrator/pr-manager.js";
@@ -227,7 +227,7 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
   }
 
   async function checkMerges(reviewPendingTasks?: Task[]): Promise<void> {
-    const reviewTasks = reviewPendingTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
+    const reviewTasks = reviewPendingTasks ?? taskEngine.getBlockedTasksByReason(BlockReasons.pr_review_pending);
     if (reviewTasks.length === 0) {
       return;
     }
@@ -490,7 +490,7 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
   }
 
   async function checkFeedback(reviewPendingTasks?: Task[]): Promise<void> {
-    const reviewTasks = reviewPendingTasks ?? taskEngine.getTasksByState(TaskStates.review_pending);
+    const reviewTasks = reviewPendingTasks ?? taskEngine.getBlockedTasksByReason(BlockReasons.pr_review_pending);
     if (reviewTasks.length === 0) {
       return;
     }
@@ -506,7 +506,7 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
       return;
     }
 
-    // Prune stale dedup entries for tasks no longer in review_pending
+    // Prune stale dedup entries for tasks no longer awaiting PR review
     observer.debug("Polling review feedback", {
       count: reviewTasks.length,
       taskIds: reviewTasks.map((t) => t.id),
@@ -535,9 +535,9 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
       return;
     }
 
-    // Guard: only handle feedback for tasks in review_pending state
-    if (task.state !== TaskStates.review_pending) {
-      observer.debug("Ignoring feedback for non-review_pending task", {
+    // Guard: only handle feedback for tasks blocked awaiting PR review
+    if (task.state !== TaskStates.blocked || task.blocked?.reason !== BlockReasons.pr_review_pending) {
+      observer.debug("Ignoring feedback for task not awaiting PR review", {
         taskId: payload.task_id,
         state: task.state,
       });
@@ -926,8 +926,8 @@ export function createReviewHandler(ctx: ReviewHandlerContext, notifications: No
       taskIds: [...approvedAwaitingCI.keys()],
     });
 
-    // Prune entries for tasks no longer in review_pending
-    const reviewTasks = new Set(taskEngine.getTasksByState(TaskStates.review_pending).map((t) => t.id));
+    // Prune entries for tasks no longer awaiting PR review
+    const reviewTasks = new Set(taskEngine.getBlockedTasksByReason(BlockReasons.pr_review_pending).map((t) => t.id));
     for (const taskId of approvedAwaitingCI.keys()) {
       if (!reviewTasks.has(taskId)) {
         approvedAwaitingCI.delete(taskId);

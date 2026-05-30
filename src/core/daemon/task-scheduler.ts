@@ -1,7 +1,7 @@
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { BlockReasons, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { DispatchTracker } from "../dispatch-tracker/index.js";
 import type { EvaluationManager } from "../evaluation/types.js";
@@ -239,30 +239,19 @@ export function createTaskScheduler(
     });
   }
 
-  function handleReviewPendingOutcome(taskId: string): void {
-    const reviewTransition = taskEngine.requestTransition(
+  function handlePrReviewPendingBlocked(taskId: string): void {
+    // The phase-runner already blocked the task as pr_review_pending after opening the PR.
+    // A successful run means the agent was available — reset the unavailability counter.
+    retryPolicy.recordSuccess("agent_unavailable", taskId);
+    // Trigger evaluation — the worktree survives while the PR awaits review.
+    triggerEvaluationIfEnabled(taskId);
+    notifications.notify({ kind: NotificationKinds.review_pending, taskId });
+    notifications.notify({
+      kind: NotificationKinds.ticket_comment,
       taskId,
-      TaskStates.review_pending,
-      SubStates.code,
-      "pr_created",
-      "daemon",
-    );
-    if (reviewTransition.success) {
-      // Trigger evaluation — worktree survives during review_pending
-      triggerEvaluationIfEnabled(taskId);
-      notifications.notify({ kind: NotificationKinds.review_pending, taskId });
-      notifications.notify({
-        kind: NotificationKinds.ticket_comment,
-        taskId,
-        message: "Pull request created — awaiting review.",
-      });
-      observer.info("Task awaiting PR review", { taskId });
-    } else {
-      observer.warn("Failed to transition task to review_pending — skipping notifications", {
-        taskId,
-        reason: reviewTransition.reason,
-      });
-    }
+      message: "Pull request created — awaiting review.",
+    });
+    observer.info("Task awaiting PR review", { taskId });
   }
 
   /**
@@ -418,16 +407,16 @@ export function createTaskScheduler(
 
     if (result.outcome === Outcomes.completed) {
       handleCompletedOutcome(taskId);
-    } else if (result.outcome === Outcomes.review_pending) {
-      handleReviewPendingOutcome(taskId);
     } else if (result.outcome === Outcomes.terminated) {
       handleTerminatedOutcome(taskId, result.reason, result.lastPhase);
     } else if (result.outcome === Outcomes.blocked) {
-      // Task already transitioned to blocked by the phase-runner.
+      // Task already transitioned to blocked by the phase-runner; route on the block reason.
       const blockedTask = taskEngine.getTask(taskId);
       const blockedReason = blockedTask?.blocked?.reason;
 
-      if (blockedReason === "agent_unavailable") {
+      if (blockedReason === BlockReasons.pr_review_pending) {
+        handlePrReviewPendingBlocked(taskId);
+      } else if (blockedReason === BlockReasons.agent_unavailable) {
         handleAgentUnavailableBlocked(taskId);
       } else {
         // Human-blocked tasks stay blocked — no re-transition needed

@@ -260,8 +260,9 @@ describe("E2E: Crash recovery", () => {
 
     expect(ctx.fakes.llm.getCallCount()).toBe(RESUME_FROM_PLANNING_LLM_CALLS);
     expect(daemon2.getState().tasksCompleted).toBe(1);
-    // After demo_prep the orchestrator created a PR and exited at review_pending.
-    expect(ctx.taskEngine.getTask(taskId)?.state).toBe(TaskStates.review_pending);
+    // After demo_prep the orchestrator created a PR and blocked at pr_review_pending.
+    expect(ctx.taskEngine.getTask(taskId)?.state).toBe(TaskStates.blocked);
+    expect(ctx.taskEngine.getTask(taskId)?.blocked?.reason).toBe("pr_review_pending");
   });
 
   it("handles multiple orphaned tasks", async () => {

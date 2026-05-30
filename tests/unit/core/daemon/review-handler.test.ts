@@ -11,7 +11,7 @@ import { removeThoughtsAndPush as removeThoughtsAndPushFn } from "../../../../sr
 import { type DaemonConfig, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
 import { EventTypes, type TaskFeedbackReceivedPayload } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
-import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { BlockReasons, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // removeThoughtsAndPush hits real git via execFileSync; intercept the call to assert
@@ -103,8 +103,15 @@ function createReviewTask(overrides?: Record<string, unknown>) {
   return {
     id: "task-1",
     title: "Fix the bug",
-    state: TaskStates.review_pending,
-    sub_state: SubStates.code,
+    state: TaskStates.blocked,
+    sub_state: null,
+    blocked: {
+      reason: BlockReasons.pr_review_pending,
+      efforts_made: [],
+      contacted: [],
+      needed: "Human review of the pull request",
+      waiting_for: "human",
+    },
     repo: "owner/repo",
     external_ref: "issue:1",
     workspace: "/tmp/ws/task-1",
@@ -162,8 +169,8 @@ function buildContext(
       }),
     } as unknown as ReviewHandlerContext["registry"],
     taskEngine: {
-      getTasksByState: vi.fn().mockImplementation((state: string) => {
-        if (state === TaskStates.review_pending) {
+      getBlockedTasksByReason: vi.fn().mockImplementation((reason: string) => {
+        if (reason === BlockReasons.pr_review_pending) {
           return tasks;
         }
         return [];
@@ -220,7 +227,7 @@ describe("ReviewHandler", () => {
       const te = ctx.taskEngine as unknown as {
         requestTransition: ReturnType<typeof vi.fn>;
       };
-      // Task is already in code sub_state, so it transitions directly to completed
+      // Task is blocked(pr_review_pending), so it transitions directly to completed
       expect(te.requestTransition).toHaveBeenCalledWith("task-1", TaskStates.completed, null, "pr_merged", "daemon");
     });
 
@@ -289,7 +296,7 @@ describe("ReviewHandler", () => {
 
   describe("checkFeedback", () => {
     it("detects changes_requested and emits feedback event", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -314,7 +321,7 @@ describe("ReviewHandler", () => {
     });
 
     it("detects approval and emits feedback event", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -337,7 +344,7 @@ describe("ReviewHandler", () => {
     });
 
     it("deduplicates identical review states", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -359,7 +366,7 @@ describe("ReviewHandler", () => {
     });
 
     it("emits new event when review state changes", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
 
@@ -393,7 +400,7 @@ describe("ReviewHandler", () => {
     });
 
     it("skips polling after too many recent failures (time-windowed)", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getReviewStatus.mockRejectedValue(new Error("API down"));
 
@@ -414,7 +421,7 @@ describe("ReviewHandler", () => {
 
     // SECURITY: reviewer comments are sanitized before EventBus emission
     it("sanitizes reviewer comment content in feedback event payload", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -438,7 +445,7 @@ describe("ReviewHandler", () => {
     });
 
     it("resumes polling after failure window expires", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getReviewStatus.mockRejectedValue(new Error("API down"));
 
@@ -465,7 +472,7 @@ describe("ReviewHandler", () => {
     });
 
     it("respects configurable max_failures_before_pause threshold", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       // Override config to pause after just 1 failure
@@ -493,7 +500,7 @@ describe("ReviewHandler", () => {
 
   describe("handleFeedbackEvent", () => {
     it("transitions to queued on changes_requested", () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       handler.handleFeedbackEvent({
@@ -525,7 +532,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on approved/code without auto-merge: transitions to completed with cleanup", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -570,7 +577,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on approved/code with auto-merge + CI passing: merges PR and completes", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -617,7 +624,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on approved/code with auto-merge + CI pending: defers merge", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -665,7 +672,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on approved/code with auto-merge + CI failing: re-queues for post-approval fix", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -712,7 +719,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on approved/code with auto-merge + no CI: merges immediately", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -742,7 +749,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on merge rejected by GitHub: does NOT complete the task", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -793,7 +800,7 @@ describe("ReviewHandler", () => {
     });
 
     it("on merge API exception: does NOT complete the task", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -834,7 +841,6 @@ describe("ReviewHandler", () => {
 
     it("post-approval fix resets accommodated_review_state and accommodated_comment_ids", async () => {
       const task = createReviewTask({
-        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -880,7 +886,7 @@ describe("ReviewHandler", () => {
     });
 
     it("post-approval fix retry limit: completes with manual merge message", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -930,8 +936,8 @@ describe("ReviewHandler", () => {
       );
     });
 
-    it("ignores feedback for non-review_pending tasks", () => {
-      const task = createReviewTask({ state: TaskStates.active, sub_state: null });
+    it("ignores feedback for tasks not awaiting PR review", () => {
+      const task = createReviewTask({ state: TaskStates.active, sub_state: null, blocked: null });
       buildContext([task]);
 
       handler.handleFeedbackEvent({
@@ -968,7 +974,7 @@ describe("ReviewHandler", () => {
     });
 
     it("stores feedback round on the task", () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       handler.handleFeedbackEvent({
@@ -997,7 +1003,7 @@ describe("ReviewHandler", () => {
 
     // SECURITY: feedback content is sanitized before storage
     it("sanitizes secrets in feedback content before storing in task review rounds", () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       const tokenContent = "Fix the auth: https://git:ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@github.com/org/repo";
@@ -1026,7 +1032,7 @@ describe("ReviewHandler", () => {
 
   describe("checkApprovedCI", () => {
     it("merges when pending CI becomes passing", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1071,7 +1077,7 @@ describe("ReviewHandler", () => {
     });
 
     it("re-queues for post-approval fix when pending CI becomes failing", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1122,7 +1128,7 @@ describe("ReviewHandler", () => {
     });
 
     it("does nothing when CI is still pending", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1176,7 +1182,7 @@ describe("ReviewHandler", () => {
 
   describe("post-approval merge conflict detection", () => {
     it("handleCodeApproval: CI passing + mergeable false → re-queues with merge_conflict", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1223,7 +1229,7 @@ describe("ReviewHandler", () => {
     });
 
     it("handleCodeApproval: CI failing + mergeable false → grouped feedback with BOTH issues", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1274,7 +1280,7 @@ describe("ReviewHandler", () => {
     });
 
     it("handleCodeApproval: CI failing + mergeable true → only CI failure in feedback", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1311,7 +1317,7 @@ describe("ReviewHandler", () => {
     });
 
     it("handleCodeApproval: CI pending → defers to approvedAwaitingCI (ignores mergeable)", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1355,7 +1361,7 @@ describe("ReviewHandler", () => {
     });
 
     it("attemptMerge: merge_conflict error → re-queues for resolution (no retry)", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1398,7 +1404,7 @@ describe("ReviewHandler", () => {
     });
 
     it("attemptMerge: network_error → retries next tick (existing behavior preserved)", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1447,7 +1453,7 @@ describe("ReviewHandler", () => {
     });
 
     it("checkSingleTaskCI: CI passing + mergeable false → re-queues for merge conflict", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1499,7 +1505,7 @@ describe("ReviewHandler", () => {
     });
 
     it("checkSingleTaskCI: CI passing + mergeable true → calls attemptMerge (happy path)", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1542,7 +1548,7 @@ describe("ReviewHandler", () => {
     });
 
     it("backward compat: pipeline_fix history entries counted by retry counter", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1592,7 +1598,7 @@ describe("ReviewHandler", () => {
     });
 
     it("retry limit with grouped issues → completes with message listing all issues", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       (
         ctx.safetyLayer as unknown as { checkAutoMergeAllowed: ReturnType<typeof vi.fn> }
@@ -1673,7 +1679,7 @@ describe("ReviewHandler", () => {
 
   describe("comment-based approval flow", () => {
     it("ignores /approve when enable_comment_approval is false", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       hostingPlugin.getPRComments.mockResolvedValue([
@@ -1695,7 +1701,7 @@ describe("ReviewHandler", () => {
     });
 
     it("treats /approve as approval when enabled and author is authorized", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       // Enable comment approval
@@ -1725,7 +1731,7 @@ describe("ReviewHandler", () => {
     });
 
     it("rejects /approve from unauthorized author when people are configured", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       const sl = ctx.safetyLayer as unknown as {
@@ -1761,7 +1767,7 @@ describe("ReviewHandler", () => {
     });
 
     it("formal changes_requested takes precedence over /approve comment", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
 
       const sl = ctx.safetyLayer as unknown as {
@@ -1798,7 +1804,6 @@ describe("ReviewHandler", () => {
   describe("thoughts cleanup on code approval", () => {
     it("calls removeThoughtsAndPush before merge when config enabled", async () => {
       const task = createReviewTask({
-        sub_state: SubStates.code,
         workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
         review: {
           pr_number: 42,
@@ -1845,7 +1850,6 @@ describe("ReviewHandler", () => {
 
     it("does not call removeThoughtsAndPush when config disabled", async () => {
       const task = createReviewTask({
-        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -1887,7 +1891,6 @@ describe("ReviewHandler", () => {
 
     it("proceeds with merge even when removeThoughtsAndPush throws", async () => {
       const task = createReviewTask({
-        sub_state: SubStates.code,
         workspace: { repo: "owner/repo", branch: "engineer/task-1", worktree_path: "/tmp/wt" },
         review: {
           pr_number: 42,
@@ -1951,7 +1954,6 @@ describe("ReviewHandler", () => {
   describe("feedback accommodation tracking", () => {
     it("suppresses re-trigger when same comments exist after rework", async () => {
       const task = createReviewTask({
-        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -1986,7 +1988,6 @@ describe("ReviewHandler", () => {
 
     it("triggers rework when new comment appears after accommodation", async () => {
       const task = createReviewTask({
-        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -2022,7 +2023,6 @@ describe("ReviewHandler", () => {
 
     it("triggers rework when review state changes from accommodated state", async () => {
       const task = createReviewTask({
-        sub_state: SubStates.code,
         review: {
           pr_number: 42,
           pr_state: "ready",
@@ -2054,7 +2054,7 @@ describe("ReviewHandler", () => {
     });
 
     it("fresh task (no accommodated state) treats all feedback as new", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({
@@ -2078,7 +2078,7 @@ describe("ReviewHandler", () => {
     });
 
     it("updates accommodated state when new feedback is detected", async () => {
-      const task = createReviewTask({ sub_state: SubStates.code });
+      const task = createReviewTask();
       buildContext([task]);
       hostingPlugin.getPRStatus.mockResolvedValue({ state: "open", draft: false });
       hostingPlugin.getReviewStatus.mockResolvedValue({

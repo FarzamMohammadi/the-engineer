@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { PHASE_SEQUENCE } from "../../../../src/core/orchestrator/types.js";
 import { Phases } from "../../../../src/schemas/orchestrator.js";
 import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../../../src/schemas/session-memory.js";
-import { ActionClasses, SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { ActionClasses, BlockReasons, SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import {
   TEST_WORKTREE_PATH,
   TRIVIAL_REQUIREMENTS_DATA,
@@ -646,7 +646,7 @@ describe("Orchestrator", () => {
           state: TaskStates.blocked,
           sub_state: null,
           blocked: {
-            reason: "Missing dependency",
+            reason: BlockReasons.need_more_info,
             efforts_made: [],
             contacted: [],
             needed: "dependency",
@@ -728,9 +728,9 @@ describe("Orchestrator", () => {
           id: "task-1",
           state: TaskStates.blocked,
           sub_state: null,
-          title: `Fix auth with ${secretToken}`,
+          title: `Fix auth with ${secretToken} at https://git:${secretToken}@github.com`,
           blocked: {
-            reason: `Failed at https://git:${secretToken}@github.com`,
+            reason: BlockReasons.pr_workflow_failed,
             efforts_made: [],
             contacted: [],
             needed: "fix",
@@ -802,7 +802,7 @@ describe("Orchestrator", () => {
             pr_number: 42,
             pr_state: "ready",
             demo_artifacts: [],
-            feedback_rounds: [{ stage: SubStates.code, comments: ["Fix naming"], applied: false }],
+            feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
             accommodated_comment_ids: [],
             accommodated_review_state: null,
           },
@@ -811,8 +811,8 @@ describe("Orchestrator", () => {
 
       const result = await handle.orchestrator.executeTask(dispatch);
 
-      // Should start from intake (index 0) — rework dispatch exits with review_pending after push
-      expect(result.outcome).toBe("review_pending");
+      // Should start from intake (index 0) — rework dispatch blocks at pr_review_pending after push
+      expect(result.outcome).toBe("blocked");
       // Verify first phase was requirements_gathering (task.phase set to requirements_gathering first)
       const phaseUpdates = handle.taskEngine.updateTaskField.mock.calls
         .filter((c: unknown[]) => c[1] === "phase")
@@ -840,7 +840,7 @@ describe("Orchestrator", () => {
           pr_number: 42,
           pr_state: "ready",
           demo_artifacts: [],
-          feedback_rounds: [{ stage: SubStates.code, comments: ["Fix naming"], applied: false }],
+          feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
           accommodated_comment_ids: [],
           accommodated_review_state: null,
         },
@@ -878,7 +878,7 @@ describe("Orchestrator", () => {
           pr_number: 42,
           pr_state: "ready",
           demo_artifacts: [],
-          feedback_rounds: [{ stage: SubStates.code, comments: ["Fix naming"], applied: false }],
+          feedback_rounds: [{ stage: "code", comments: ["Fix naming"], applied: false }],
           accommodated_comment_ids: [],
           accommodated_review_state: null,
         },

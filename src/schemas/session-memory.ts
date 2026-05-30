@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ── Session ────────────────────────────────────────────────────────────────────
 
-export const SessionEndReasonSchema = z.enum(["completed", "preempted", "crashed", "review_pending", "blocked"]);
+export const SessionEndReasonSchema = z.enum(["completed", "preempted", "crashed", "blocked"]);
 export type SessionEndReason = z.infer<typeof SessionEndReasonSchema>;
 
 /** Constant enum values for SessionEndReason. Use instead of raw strings. */

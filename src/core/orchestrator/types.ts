@@ -95,7 +95,6 @@ export const TerminationReasons = TerminationReasonSchema.enum;
 /** Constant enum for executeTask outcome values. */
 export const Outcomes = {
   completed: "completed",
-  review_pending: "review_pending",
   terminated: "terminated",
   blocked: "blocked",
   error: "error",
@@ -106,7 +105,6 @@ export type Outcome = (typeof Outcomes)[keyof typeof Outcomes];
 /** Discriminated union of executeTask outcomes. */
 export type ExecuteTaskResult =
   | { outcome: typeof Outcomes.completed; phaseOutputs: Map<Phase, PhaseOutput> }
-  | { outcome: typeof Outcomes.review_pending; phase: Phase; phaseOutputs: Map<Phase, PhaseOutput> }
   | {
       outcome: typeof Outcomes.terminated;
       reason: TerminationReason;

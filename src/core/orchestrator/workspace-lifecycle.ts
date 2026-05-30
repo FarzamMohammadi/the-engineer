@@ -36,7 +36,7 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
       return;
     }
 
-    // Rework dispatch: workspace already exists (preserved during review_pending).
+    // Rework dispatch: workspace already exists (preserved while blocked awaiting PR review).
     // task.workspace is the source of truth — no in-memory re-registration needed.
     if (dispatch.task.workspace) {
       ctx.observer.debug("Workspace setup: re-using existing workspace (rework)", { taskId, repo });

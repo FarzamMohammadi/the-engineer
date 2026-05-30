@@ -21,7 +21,7 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 8 (Pipeline Phases)**: RRPIR COMPLETE. Requirements + Research (Session 38) and Planning + expert-panel stress test (Session 39) are done. The plan is locked. Implementation begins next session with Session 1 (Foundation cleanup).
+**Slice 8 (Pipeline Phases)**: RRPIR + Implementation Session 1 COMPLETE. RRPIR landed Sessions 38-39 (plan locked, expert-panel-hardened). Implementation Session 1 (overall Session 40) did the foundation cleanup on the current (legacy) runner — 4 green commits: cut the dead integration phase; collapsed `review_pending` into `blocked(pr_review_pending)` (closed `BlockReasonSchema` enum, new `getBlockedTasksByReason` query, D11 escalation-exclusion fragment, `blocked→completed` transition, dead `code` sub_state + conditional merge permission removed); removed decomposition residue + the dead `child_pr_strategy` config; tightened `001_schema.sql`. All gates green (2363 unit + 39 integration + 16 e2e). The legacy runner still drives everything. Session 2 (Pipeline core, built dark) is next.
 
 **Reference files:**
 - Slice file (durable backbone + design narrative for the docs slice): [`slices/08-pipeline-phases.md`](slices/08-pipeline-phases.md)
@@ -33,7 +33,13 @@ This file answers one question: **where are we right now?** Nothing more.
 
 **RRPIR reshaped the original framing substantially** (vs Session 38's first draft): the "sub-phase registry with RoutingRule[] + predicate DSL" was killed by the expert panel and replaced with the `next()`-function design; auto-merge is preserved (not cut); retry-policy is untouched (crash ≠ pipeline failure); external events route via DB re-queue (not `applyExternalEvent`); migration is atomic cutover (not parallel runners). The slice file + plan reflect the final locked design.
 
-**Next session's task (Session 1 of implementation — overall Session 40):** Foundation cleanup. Cut the `integration` phase in full (enum, schema, prompt, dir, skill mapping, trace mapping, demo_prep routing branch, all src + doc references); collapse `Outcomes.review_pending` + `TaskStates.review_pending` into `blocked(reason=pr_review_pending)` (state-machine surgery: ValidTransitions, PermissionTable, the `getTasksByState(review_pending)` call sites in review-handler → a `getBlockedTasksByReason` filter); add the `BlockReasonSchema` enum + structured `BlockDetail` type; clean decomposition residue from source (2 prompt files) + docs (the lying `orchestrator.md` config keys, `cli.md`, `writing-tickets.md`, `workspace.md`); rewrite `001_schema.sql`. The current runner stays live and drives everything — this session is pure cleanup before the architecture rebuild. Green on commit. See plan § "Session 1" for the exact file list and verify steps.
+**Next session's task (Session 2 of implementation — overall Session 41):** Pipeline core, built dark. Build `src/core/orchestrator/pipeline/` — `runner.ts` (the generic loop: skip → run → next, cursor, iteration caps, checkpoint-per-sub-phase, observability emitted by the runner), `types.ts` (the `SubPhase` / `SubPhaseResult` / `Route` / `Ctx` vocabulary), and `cli-run.ts` (the one defended boundary: spawn via adapter, retry/backoff, hard-validate `session-result.json`, partial-write recovery, `details` Zod validation) — plus the mock-pipeline test harness. Thread signals: optional `AgentRunRequest.signal` + adapter + the three agent plugins' `spawn({ signal })`. **Built dark: NOT wired to `executeTask`** — the legacy runner stays live and green; the new runner is exercised in isolation with the fake agent. See plan § "Session 2" for the exact file list and verify steps.
+
+**Deferred from Session 1 (do in the session that consumes them):**
+- `BlockDetail` (`{ reason, sub_phase, category, needed }`) + the `FailureCategory` enum land in **Session 2**, where `cli-run` produces them — adding them in Session 1 would have been unconsumed scaffolding referencing an undefined enum. `BlockReasonSchema` (consumed now by `blocked.reason`) did land in Session 1.
+- The phase RENAME (`self_review`/`demo_prep` → the locked `review`/`delivery` names) happens at the **Session 5 atomic cutover**, not before. Session 1 kept the current enum names minus integration (6 phases ending at `demo_prep`).
+- The `sub_phase` / `phase_iteration` / `total_reworks` columns land in the migration at the **Session 5 cutover**, not in Session 1.
+- **Live docs still say "seven phases … integration"** (README.md and other `docs/` outside Session 1's scope). Per the plan that is the **Session 9 project-wide docs sweep**. Known deliberate lag, not an oversight — flag if it should move earlier.
 
 ## Completed Slices
 

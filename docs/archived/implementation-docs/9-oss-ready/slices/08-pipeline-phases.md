@@ -1,527 +1,668 @@
 # Slice 8: Pipeline Phases
 
+> **This file is the backbone design record for the per-task pipeline — the heart of
+> The Engineer.** It captures not just *what* was decided but *why*, because this
+> reasoning is the seed for the eventual documentation slice and the user-facing
+> pipeline docs. When the docs slice writes "how the pipeline works," it draws from
+> here. Read it as a design narrative, not just a decision list.
+
 ## Requirements
 
-Gathered through Q&A (Session 38). Code reality verified through direct grounding of
-the orchestrator surface, pr-manager, review-handler, retry-policy, agent adapter,
-git-hosting adapter, observation infrastructure, and existing test patterns; research
-saved to `.claude/temp/research/slice-08-pipeline-phases.md` with observations vs
-inferences split per the dev-toolbox research skill. Implementation plan saved to
-`.claude/temp/create-plan/slice-08-pipeline-phases.md`.
+Gathered through deep Q&A (Session 38) and refined through an expert-panel stress test
+(Session 39). Code reality verified by direct grounding of the orchestrator surface,
+pr-manager, review-handler, retry-policy, agent adapter, git-hosting adapter,
+observation infrastructure, and existing test patterns. Research saved to
+`.claude/temp/research/slice-08-pipeline-phases.md` (observations-vs-inferences split).
+Implementation plan saved to `.claude/temp/create-plan/slice-08-pipeline-phases.md`.
 
 ### Scope Framing
 
-This slice owns the per-task pipeline that the orchestrator runs from task intake to
-PR merge. **It is a structural reshape** of three previously-separate slices
-(8 / 9 / 10) into one coherent unit. Three intertwined halves:
+This slice owns the per-task pipeline that the orchestrator runs from task intake to PR
+merge. **It is a structural reshape** that folds three originally-separate slices
+(8 / 9 / 10) into one coherent unit, because their seams are too tight to split without
+leaving half-baked boundaries. Three intertwined halves:
 
-1. **The pipeline shape** — 6 top-level phases (down from 7), data-driven sub-phase
-   registry, generic phase-runner over registry, state model with `phase` +
-   `sub_phase` + iteration counter, typed routing declarations, full observability
-   end-to-end.
-2. **Delivery (absorbed from Slice 9)** — PR description writing, commit/push, PR
-   creation, the `await_review` block sub-phase.
+1. **The pipeline shape** — 6 top-level phases (down from 7), a data-driven sub-phase
+   architecture, a generic runner, the phase/state model, typed routing, full
+   observability end to end.
+2. **Delivery (absorbed from Slice 9)** — PR description, commit/push, PR creation, the
+   blocking `await-review` step, and auto-merge.
 3. **Review & Feedback External (absorbed from Slice 10)** — typed PR-event detection
-   via the `GitHostingAdapter` contract, typed routing from blocked-state back into the
-   pipeline (comments → Requirements; CI failure / merge conflict → Execution;
-   approval → notify; merge → terminal), feedback rework context plumbing, the full
-   refactor of today's 996-line review-handler.
+   behind the `GitHostingAdapter` contract, and typed routing of those events back into
+   a blocked task's pipeline.
 
-Out of scope (handed off to other slices):
+Out of scope (handed to downstream slices, renumbered down by 2 after Slice 8 lands):
 
 - Workspace cleanup on completion → Slice 9 (was 11).
 - Notification routing, response polling, query handling → Slice 10 (was 12).
-- Background services (cost tracking, data lifecycle, health monitoring) → Slice 11 (was 13).
-- Dashboard UI updates that follow from the new phase shape → Slice 13 (was 15).
+- Background services internals (cost tracking, data lifecycle, health) → Slice 11 (was 13).
+- All dashboard UI for the new pipeline shape → Slice 13 (was 15). Slice 8 produces the
+  data; Slice 13 displays it.
 - npm SDK extraction → Slice 14 (was 16).
-
-(Subsequent slices renumber down by 2 after Slice 8 lands; was Slices 11→16, becomes Slices 9→14.)
 
 ### Goals (priority order)
 
-1. **Honest, evolvable pipeline shape.** Cut the dead `integration` phase. Replace
-   hardcoded phase if-chains in `phase-runner.ts` with a data-driven sub-phase
-   registry. Adding/removing/toggling a sub-phase is config plus one new file.
-   Phase-runner does not change. Tests follow the registry, not the shape.
-2. **Phase + state model end-to-end.** Persist `phase` + `sub_phase` +
-   `phase_iteration` on the task row. Collapse `Outcomes.review_pending` into
-   `blocked(reason=pr_review_pending)`. Remove `TaskStates.review_pending` entirely.
-3. **Default-every-failure-blocks.** No abandonment paths. Every failure transitions
-   the task to `blocked` with a descriptive typed reason naming the failed sub-phase,
-   failure category, and next operator action. `engineer retry` is the universal
-   unblock verb. `retry-policy` module shrinks to a single `agent_unavailable`
-   category; the `crash` category and `consecutive_crash_count` field are cut.
-4. **Signal honoring end-to-end.** `AgentRunRequest` gains `signal: AbortSignal`;
-   plugins pass it to Node's `spawn({ signal })` natively. Phase-runner threads
-   `dispatch.signal` through `agent-runner` into every agent call. Closes the
-   Slice 6 → Slice 8 handoff.
-5. **Delivery as sub-phases under the new registry.** `pr_description` (CLI) +
-   `pr_push` (orchestrator) + `pr_create` (orchestrator) + `await_review`
-   (orchestrator block). Replaces today's `demo_prep` phase + the inline
-   `tryCommitPushAndCreatePR` logic in phase-runner. Absorbs the long-standing TODO
-   in `pr-manager.ts:154` (move commit responsibility back to execution).
-6. **External review polling refactored onto typed events.** `GitHostingAdapter` gains
-   a typed-event detection method; review-handler refactors against it. Five typed
-   `PrEvent` variants (`pr_comments`, `pr_ci_failure`, `pr_merge_conflict`,
-   `pr_approved` informational, `pr_merged` terminal). Routing per event type
-   declared in the registry, not hardcoded.
-7. **Observability load-bearing.** Every phase transition / sub-phase
-   start-end-skip / loopback iteration / routing decision / block event / cap-hit
-   alert / skip-gate trigger gets logged + traced + decision-recorded. Dashboard
-   shows the registry state at every moment.
-8. **Dev-toolbox skill refinements ported into prompts** as concrete prompt diffs.
-   One locked adaptation: outreach is batched per contact (not one question at a
-   time). Other principles classified port / adapt / skip per the framework in the
-   plan.
-9. **Docs and tests in sync.** Decomposition residue cleaned across docs.
-   `docs/constraints.md` gets "Sub-Phase Execution Order" (sequential v1).
-   `docs/future-considerations.md` gets "Parallel Sub-Phase Execution". Closing
-   standards sweep at the end (may spill into a second sweep session given the
-   absorbed scope).
+1. **Intuitive to evolve.** The single most important goal, and the reason for the
+   reshape. The past pain point — tests shattering whenever the phase shape changed —
+   was a symptom of a deeper problem: the pipeline was hardcoded, not data-driven. A
+   contributor must be able to look at the structure, understand it, and know exactly
+   where to make a change. Adding, removing, or toggling a step is a one-file change,
+   never a runner rewrite. The architecture mirrors the mental model.
+2. **Honest.** Cut the dead `integration` phase. No vestigial scaffolding. No docs that
+   lie about config keys that don't exist.
+3. **Loud and recoverable.** Every pipeline failure blocks with a descriptive, typed
+   reason naming what failed and what the operator should do. No abandonment paths.
+   `engineer retry` is the universal unblock verb.
+4. **Observable by construction.** Every phase transition, sub-phase start/end/skip,
+   loop iteration, routing decision, and block is logged, traced, and decision-recorded
+   — and it is structurally impossible to add a step that forgets to do this, because
+   the logging lives in the runner, not the steps.
+5. **Plugin-blind.** The new `GitHostingAdapter.detectPrEvents` contract moves
+   platform-specific aggregation behind the boundary. Core still compiles and functions
+   if every plugin is deleted.
 
-## Decisions
+---
 
-### #1 — Cut the `integration` phase entirely
+## The Architecture
 
-Dead surface since Slice 6 deleted decomposition. The phase always runs with
-`childSummaries: []`; the prompt is "merge child branches" but there are no children.
-Demo_prep still routes to it via `next_phase: "integration"` instruction. Delete the
-enum value, schema (`IntegrationOutputSchema`), prompt builder
-(`prompts/integration.ts`), the `"integration"` entry in `PHASE_DIRECTORIES`, the
-trace dir mapping, the skill mapping, demo_prep's routing branch. PHASE_SEQUENCE
-shrinks. Future-considerations entry for decomposition already exists.
+This is the heart of the slice. Read this section and you understand the system.
 
-### #2 — 6-phase canonical model
+### The intuition principle
 
-New canonical order: **Requirements → Research → Planning → Execution → Review →
-Delivery**. `self_review` becomes its own top-level `Review` phase (not a sub-step
-under Execution). `demo_prep` collapses into `Delivery` alongside commit/push/PR
-creation. Phase enum values: `requirements`, `research`, `planning`, `execution`,
-`review`, `delivery`.
+A task walks through **phases**. Each phase is a **folder**. Each step within a phase
+is a **sub-phase**, and each sub-phase is a **file**. Every sub-phase file owns exactly
+two things and nothing else: **how to do its work**, and **where to go next**. That is
+the whole architecture. The folder tree *is* the pipeline. A newcomer reads the tree
+and knows the system; opens a file and understands one step completely.
 
-### #3 — Phase + state model with `sub_phase` + `phase_iteration`
+```
+src/core/orchestrator/pipeline/
+  runner.ts            ← the generic loop. ~120 lines. Rarely touched.
+  types.ts             ← SubPhase, SubPhaseResult, Route, Ctx. The vocabulary.
+  pipeline.ts          ← the phase order, each phase's sub-phase list, and entryFor. The map.
+  cli-run.ts           ← the one defended boundary: spawn agent, retry, validate, recover, honor signal.
 
-Task row gains: `phase` (top-level enum), `sub_phase` (string, name from registry),
-`phase_iteration` (int, for intra-phase loops like Review). All three persisted, all
-visible in dashboard. The `phase` field becomes an enum-validated value (today it's
-`string().nullable()`).
+  requirements/
+    gather.ts          ← prompt + next
+  research/
+    investigate.ts
+  planning/
+    design.ts
+  execution/
+    implement.ts       ← CLI: writes code, commits as it goes
+    verify.ts          ← orchestrator: typecheck/lint/test; loops to implement on red
+  review/
+    self-review.ts     ← default lens
+    security.ts        ← opt-in lens (adding a lens = adding a file)
+    code-quality.ts    ← opt-in lens
+    architecture.ts    ← opt-in lens
+    refine.ts          ← consolidates findings, fixes in place, decides advance / repeat / escalate
+  delivery/
+    pr-description.ts  ← CLI: writes the PR narrative (this is the old "demo_prep")
+    push.ts            ← orchestrator: commit stragglers + push
+    create-pr.ts       ← orchestrator: open the PR
+    await-review.ts    ← orchestrator: block, exit pipeline, wait for an external event
+    auto-merge.ts      ← orchestrator: reached on approval, merges
+```
 
-### #4 — Outcome collapse: `review_pending` → `blocked(pr_review_pending)`
+### The three types everything rests on
 
-`Outcomes.review_pending` removed. The task's `await_review` sub-phase transitions
-the task to `blocked` with structured reason `pr_review_pending`. Same mechanism as
-`need_more_info` already uses today. `TaskStates.review_pending` removed from
-`TaskStateSchema`, `ValidTransitions`, `PermissionTable`. Existing
-`getTasksByState(TaskStates.review_pending)` call sites in `review-handler` rewire to
-`getBlockedTasksByReason("pr_review_pending")` (new query method or filter).
+```typescript
+type SubPhase = {
+  name: string;
+  skip?: (ctx: Ctx) => SkipReason | null;        // optional: don't even run (trivial→skip research; push-only→skip create-pr)
+  run:   (ctx: Ctx) => Promise<SubPhaseResult>;   // CLI: cli-run() helper. Orchestrator: a plain async fn.
+  next:  (result: SubPhaseResult, ctx: Ctx) => Route;   // read the result, return where to go. Reads like prose.
+};
 
-### #5 — Sub-phase registry as load-bearing architecture
+type SubPhaseResult =
+  | { outcome: "ok";          summary: string; data?: unknown }   // did the job; proceed
+  | { outcome: "needs_human"; summary: string }                   // a person must answer something
+  | { outcome: "failed";      summary: string; category: FailureCategory; detail: string };
 
-Each top-level phase has 1+ sub-phases declared as data. A sub-phase declaration:
-`{ name, kind: "cli" | "orchestrator", handler ref, session_result_required, skip_gate?,
-config_gate?, routing_declarations[] }`. Phase-runner becomes generic over the
-registry. Routing rules (intra-phase loop, advance, escape to other phase, block,
-terminal) are declared per sub-phase, not hardcoded in phase-runner if-chains.
+type Route =
+  | { go: "advance" }                                   // next sub-phase (or next phase if this was the last)
+  | { go: "repeat"; carry: Carry }                      // loop THIS phase from its start  → phase_iteration++
+  | { go: "jump"; to: Phase; carry: Carry }             // hand back to an earlier phase   → total_reworks++
+  | { go: "block"; reason: BlockReason; sub_phase: string }   // loud, operator-recoverable
+  | { go: "done" };                                     // terminal: completed
+```
 
-**The load-bearing concern:** today's tests broke whenever phase shape changed because
-the architecture wasn't dynamic. Slice 8 fixes this — slight over-engineering for
-evolvability is sanctioned. Adding/removing/toggling a sub-phase is config + one new
-file. Tests follow the registry shape.
+That is the entire vocabulary. **No predicate library, no routing-rule arrays, no
+first-match-wins evaluation order to memorize.** To know what a step does, read its
+`run` and its `next` — both are ordinary functions that appear in stack traces by name.
 
-### #6 — Default sub-phases per phase
+This shape is the resolution of the expert panel's strongest, unanimous finding: an
+earlier draft modeled routing as a declarative `RoutingRule[]` DSL with predicate
+functions and five target variants. All three panelists independently called it "a
+small programming language" / "dependency-management theater" — more to learn than the
+code it replaced, and invisible in a backtrace. Routing as a per-sub-phase `next()`
+function is modular *and* linear: modular because each phase's logic lives in its own
+files, linear because each `next` reads top to bottom like the if-chain it replaces.
 
-| Phase | Default sub-phases | Optional opt-in |
+### The runner
+
+`runner.ts` is a generic loop. It holds the cursor (which phase, which sub-phase),
+calls `skip` → `run` → `next` on each sub-phase, interprets the returned `Route`
+(advance the cursor, repeat the phase, jump to another phase, block the task, or
+finish), enforces the iteration caps, writes a checkpoint after each sub-phase, and
+emits all observability. It knows nothing about any specific phase or sub-phase — it
+drives whatever `pipeline.ts` declares. Adding a sub-phase never touches it.
+
+### cli-run: the one defended boundary
+
+Every CLI sub-phase does its real work in a **separate autonomous coding-agent
+subprocess** (Claude Code, OpenCode, Gemini CLI). The orchestrator's only knowledge of
+what happened is what that subprocess writes to a `session-result.json` file. That
+boundary is where the genuine risk lives — a subprocess can die mid-write, leave a
+stale template, or self-report success it didn't earn.
+
+`cli-run.ts` concentrates *all* of that risk in one well-tested helper. A CLI sub-phase
+is built as `run: cliRun({ prompt, skills, detailsSchema })`, and `cliRun` owns:
+
+- Spawning the agent through the `AgentAdapter`, passing the abort signal.
+- Retrying transient failures with backoff.
+- Writing the structured trace.
+- Reading `session-result.json` and **validating it hard** — a stale-template or
+  malformed result becomes `{ outcome: "failed", category: "no_result" }`, failing loud
+  instead of routing a lie.
+- Recovering a partial write after a SIGTERM (the work may be done even if the process
+  died).
+- Validating the optional `details` payload against the sub-phase's `detailsSchema`
+  (so `details` is never an untyped free-for-all).
+
+This is the panel's "make the routing dumb and in-code; make the boundary smart and
+defended" principle. The dangerous 10% is one module, tested with a fake agent. The
+routing is dumb named functions. Orchestrator sub-phases (`verify`, `push`, etc.) skip
+`cli-run` entirely — their `run` is just an async function.
+
+### Observability by construction
+
+Because every transition flows through the runner interpreting a `Route`, **the runner
+is the single place that emits observability**: phase-enter, sub-phase-start,
+sub-phase-result, the routing decision (`recordDecision` with the alternatives and the
+reason), every skip, every block, and every iteration increment. You cannot add a
+sub-phase and forget to log it, because the logging is not in the sub-phase — it is in
+the loop that drives it. The "every step traced" requirement is satisfied by
+construction, not by remembering. This directly serves Goal 4 and the radical-
+observability philosophy.
+
+---
+
+## The Handoff Contract
+
+The interface between an opaque agent subprocess and the orchestrator is the actual
+design surface of this slice. Get it wrong and everything above is built on sand.
+
+### The agent reports an outcome; the orchestrator owns the route
+
+`session-result.json` carries a small, honest vocabulary:
+
+```json
+{ "status": "ok" | "needs_human" | "failed",
+  "summary": "one line",
+  "details": { }   /* optional, sub-phase-specific, validated per sub-phase */ }
+```
+
+**The agent never names a phase.** It reports *what happened* — I did my job, I need a
+person, or I failed. The sub-phase's `next` function (orchestrator code we own and can
+grep and test) maps that outcome to a destination. This is the project's "Orchestrate,
+don't build" and "Principles over prescriptions" applied to the handoff: the agent does
+work and reports facts; the orchestrator owns control flow.
+
+Why this matters, concretely:
+- **Smaller job for the agent.** Three outcomes, not a seven-value phase enum it has to
+  reason about.
+- **A whole bug class disappears.** The agent literally cannot route to a dead or wrong
+  phase, because it does not choose phases. (The old model let the agent write
+  `next_phase: "integration"`; that is impossible now.)
+- **Routing is greppable and testable.** It lives in `next` functions, not smuggled
+  through an overloaded destination field. The earlier code reverse-engineered intent
+  by string-matching `next_phase` (`=== "execution"` secretly meant "needs rework") —
+  that hack is gone.
+
+### We do not trust the self-report
+
+A subprocess can write `"ok"` without having earned it. The architecture defends
+against that **structurally**, not by hoping: `implement`'s claim of success is checked
+by `verify` (real typecheck/lint/test gates, orchestrator-owned, the agent cannot
+fake), and the whole change is checked again by `review` (independent quality lenses).
+We never route a lie because the next step verifies the last step's claim. This is the
+answer to the panel's deepest concern — routing correctness is not bounded by an
+agent's honesty, because honesty is independently re-checked downstream.
+
+### Richer signals are local and validated
+
+Only `refine` needs more than three outcomes (it must say "ship" vs "the code needs
+rework" vs "the plan is wrong" vs "the requirements are unclear"). It puts a typed
+`verdict` in `details`, and its own `next` reads it. `cli-run` validates `details`
+against `refine`'s `detailsSchema`. So the common contract stays dead simple, and the
+richness is opt-in, local to the one sub-phase that needs it, and type-checked.
+
+---
+
+## Routing and Loop Control
+
+### repeat vs jump — two verbs, two counters
+
+- **`repeat`** means "do this phase again from its first sub-phase." It is an
+  *intra-phase* loop. Example: `verify` fails → `repeat` → back to `implement` with the
+  test failures as carry. Counted by `phase_iteration`, which **resets on every phase
+  entry** and is capped per-phase (Review's refine loop caps at 3).
+- **`jump`** means "hand control back to an earlier phase." It is an *inter-phase*
+  rework. Example: `refine` decides the plan itself is wrong → `jump` to Planning.
+  Counted by `total_reworks`, which does **not** reset within a dispatch, with one
+  generous global backstop that catches cross-phase oscillation (refine→execution→
+  refine→…) that a per-phase counter would miss.
+
+Keeping them as distinct verbs (rather than collapsing `repeat` into `jump`-to-self) is
+deliberate: `verify.next` saying `repeat(...)` reads clearer than `jump("execution")`
+from inside execution, and the two verbs map one-to-one onto the two counters. A `jump`
+to the current phase is disallowed — use `repeat`.
+
+### The two counters replace four
+
+Today the codebase has `loopback_count`, `requirements_loop_count`, and a history-
+derived post-approval-fix count, and an earlier draft added a fourth. They collapse
+into:
+
+- `phase_iteration` — intra-phase, resets on phase entry, small per-phase caps.
+- `total_reworks` — inter-phase backward jumps within one dispatch, one generous
+  global cap.
+
+**Lifecycle:** both persist on the task row *and on the checkpoint*, so a mid-loop
+preempt-and-resume does not reset the guard (without this, a thrashing task that keeps
+getting preempted would never trip its cap — a real bug the panel surfaced). Both reset
+on a *fresh* dispatch. The consequence is exactly right: a single dispatch cannot spin
+forever, but human-driven external reworks (a reviewer asking for changes ten times)
+are legitimately unbounded, because each external event is its own fresh dispatch.
+
+### Caps live in the runner, not in `next`
+
+A `next` function just says `repeat`. The runner increments `phase_iteration`, compares
+against the phase's configured cap, and converts an over-cap `repeat` into a
+`block(reason: iteration_cap_hit)`. The cap policy is in one place. Hitting the cap is a
+workflow-level red flag, loud by design — if Review cannot converge in three passes,
+something deeper than the code is wrong, and the operator should look.
+
+---
+
+## The Phases
+
+Everything upstream of Delivery is identical regardless of how the work ships; only
+Delivery's shape changes by config (see "The Deliverable").
+
+| Phase | Default sub-phases | The one thing that makes it right |
 |---|---|---|
-| Requirements | `gather` (CLI, may block on outreach) | — |
-| Research | `investigate` (CLI) | — |
-| Planning | `design` (CLI) | — |
-| Execution | `implement` (CLI), `verify` (orchestrator: typecheck/lint/tests) | — |
-| Review | `self_review` (CLI), `refinement` (CLI) | `security_review`, `code_quality`, `architecture_review` |
-| Delivery | `pr_description` (CLI), `pr_push` (orch), `pr_create` (orch), `await_review` (orch block) | — |
+| **Requirements** | `gather` | Writes a `## Context Summary` *first* (so a wrong understanding is caught at the first artifact), grounds in the codebase before asking, batches **all** questions for a contact into one outreach file. `needs_human` blocks the task. |
+| **Research** | `investigate` | Observations-vs-inferences discipline; `skip` on trivial complexity. |
+| **Planning** | `design` | One agent session that designs *and* stress-tests its own plan (no separate panel roundtrip); `skip` on trivial. |
+| **Execution** | `implement` → `verify` | `verify` is orchestrator-owned gates the agent cannot fake; on red it `repeat`s to `implement` carrying the failures. `implement` commits logically as it goes; `push` is the later safety net. |
+| **Review** | `self-review` (+ opt-in lenses) → `refine` | Lenses each write findings and `advance`; `refine` consolidates, **fixes in place**, `repeat`s to re-check (cap 3), and only `jump`s out (to execution/planning/requirements) when it genuinely cannot fix. This matches how the system actually behaved best historically: review reviewed *and* fixed, rather than always bouncing to execution. |
+| **Delivery** | `pr-description` → `push` → `create-pr` → `await-review`; plus `auto-merge` (entry-only) | See below. Skip-gates collapse it to just `push` in push-only mode. `await-review` blocks and exits; external events re-enter. |
 
-`self_review` is a single broad default lens that absorbs requirements-check + code
-smells + completeness ideas from refactor-guide.md. Other lenses opt-in via config.
-Refinement always-on.
+Notes that earn a sentence:
 
-### #7 — Review intra-phase loop with cap + refinement-declared escape
+- **One sub-phase is the common case, and that is fine.** Requirements/Research/Planning
+  have a single sub-phase today. The architecture does not force them to have more; it
+  makes *growing* them cheap if a future need appears. The cost of the abstraction is
+  paid by Review (2 + 3 opt-in) and Delivery (5), which genuinely need it now — not
+  speculation.
+- **Lenses are just sub-phases with a trivial `next: advance`.** Multiple lenses give
+  each one focus (security looks only at security), then `refine` fixes holistically.
+  With only the default lens on, `review` is `[self-review, refine]` — find then fix,
+  which also reduces an agent rationalizing away its own findings.
 
-Refinement iterates within Review (re-runs lenses + applies fixes) capped at 3
-iterations (configurable). Refinement may declare an early escape route at any
-iteration: "this is a Planning problem" → Planning; "this is a Requirements problem"
-→ Requirements. Cap-hit without early-route → unconditional block with descriptive
-reason (workflow-level red flag, loud by design). Replaces today's "needs_work routes
-to execution" inter-phase loopback.
+---
 
-### #8 — Typed external event routing from `await_review`
+## External Events and Delivery
 
-Five typed event variants from the `GitHostingAdapter`'s new event detection method:
+### The Deliverable (config-driven — the load-bearing product framing)
 
-| Event | Route | Reason |
+The Engineer's entire pipeline exists to produce **one of two deliverables**, chosen by
+`workspaceConfig.pr.skip_pr_creation` (global default, per-repo override). This is the
+clearest single statement of "what does The Engineer do," and the docs slice should
+anchor on it.
+
+| Delivery sub-phase | Push-only (`skip_pr_creation: true`) | PR mode (default) |
 |---|---|---|
-| `pr_comments` | Requirements (with skip-gate fast-path) | Assessment may surface new scope; trivial-comment skip-gate routes forward fast |
-| `pr_ci_failure` | Execution | Pure code fix, no human-intent ambiguity |
-| `pr_merge_conflict` | Execution | Pure code fix, base branch moved |
-| `pr_approved` | trigger auto-merge attempt (orchestrator sub-phase) | Human approval is the trigger; The Engineer performs the merge |
-| `pr_merged` | terminal `completed` | Merge is the real completion event |
+| `pr-description` (CLI) | **skip** | run |
+| `push` (orchestrator) | **run** | run |
+| `create-pr` (orchestrator) | **skip** | run |
+| `await-review` (orchestrator block) | **skip** | run |
+| `auto-merge` (orchestrator, entry-only) | **skip** | run on approval |
 
-Routing declared as data per sub-phase, not hardcoded. `pr_approved` triggers The
-Engineer's auto-merge attempt via `GitHostingAdapter.mergePR` (CI-gated + mergeable-gated).
-On merge success → `pr_merged` event → terminal. On CI not ready → wait, recheck next
-tick. On CI failure post-approval → route via `pr_ci_failure`. On conflict post-approval
-→ route via `pr_merge_conflict`. (Today's `attemptMerge` + `approvedAwaitingCI` flow
-preserved, refactored against typed events.)
+- **PR mode (default).** The deliverable is a *reviewed, merged pull request*. The full
+  lifecycle with live feedback loops. **Done when the PR is merged** — The Engineer
+  performs the merge once a human approves and CI is green (auto-merge), or detects an
+  external merge.
+- **Push-only mode.** The deliverable is a *pushed branch*. `push` runs, everything else
+  skips, the task completes immediately. No PR, no review loop, no feedback — a
+  deliberate escape hatch for operators who own the downstream PR process themselves.
+  **Done when the branch is pushed.**
 
-### #9 — Failure policy: every failure blocks with descriptive typed reason
+Everything upstream of Delivery is identical across both modes; only Delivery's shape
+differs, expressed as skip-gates. This is the second concrete use of the skip-gate
+mechanism (trivial-skip is the first) and the proof of the architecture's value: a
+fundamental product behavior is a data-declared skip-gate, not a hardcoded branch.
 
-No abandonment paths. CLI session dies without writing session-result.json → block.
-Schema validation fails → block. Orchestrator sub-phase throws → block. Plugin call
-errors → block. Each block carries a structured reason naming the failed sub-phase +
-failure category + next operator action. `engineer retry` unblocks; resume picks up at
-the failed sub-phase. Catastrophic orchestrator crashes still flow through Slice 6's
-crash-recovery, which retries → blocks. Functionally the operator always has a
-recoverable surface.
+### Typed PR events, computed statelessly
 
-### #10 — `retry-policy` shrinks to single `agent_unavailable` category
+The `GitHostingAdapter` gains `detectPrEvents(repo, prNumber): Promise<PrEvent[]>`. The
+plugin aggregates platform-specific state (reviewer statuses, check runs, mergeability)
+into a small typed vocabulary:
 
-Cut the `crash` category (`consecutive_crash_count` field, `COUNTER_FIELDS["crash"]`,
-`TERMINAL_STATES["crash"]`, `retry_policy.crash` config). Crash-style failures block
-immediately per #9. Keep `agent_unavailable` (genuine provider transient — backoff +
-retry before blocking is real value). Refactor consumers of `crash` category in
-`task-scheduler.ts` (boot recovery) and `phase-runner.ts` `handlePhaseError` to block
-directly.
+- `pr_comments` — actionable reviewer feedback.
+- `pr_ci_failure` — checks are red.
+- `pr_merge_conflict` — the base moved and it no longer merges.
+- `pr_ready_to_merge` — approved **and** CI green **and** mergeable, all at once.
+- `pr_merged` — merged (by us or externally).
 
-### #11 — Signal honoring end-to-end
+The crucial refinement: the plugin emits `pr_ready_to_merge` **only when all merge
+preconditions hold simultaneously**. "Approved but CI still running" emits nothing — the
+task simply stays blocked, waiting. This **deletes the in-memory `approvedAwaitingCI`
+map** that exists today, and with it an entire class of restart bugs: on daemon restart
+there is no in-memory wait-state to lose, because readiness is recomputed statelessly
+from the PR on every poll. The panel's darkest 3am corner (daemon restarts mid-wait,
+task stuck forever, nothing alerts) cannot occur.
 
-`AgentRunRequest` schema gains `signal: AbortSignal`. `AgentAdapter.run(request)`
-plumbs it through; each plugin's `doRun` passes `request.signal` to
-`spawn(cmd, args, { signal })` natively. Phase-runner passes `dispatch.signal` to
-every `agentRunner.runPhaseWithCli` call. Self-unblock path in
-`orchestrator/index.ts:262` also threads signal. Termination (preemption, hard-cap,
-shutdown, cost-limit) actually aborts in-flight agent CLI calls instead of being
-best-effort.
+### How an event re-enters the pipeline
 
-### #12 — Per-sub-phase checkpoints, composite resume
+External events do **not** call into the orchestrator through a back channel. They flow
+through the boundary that already works: daemon polls → `arbitrate` picks one winning
+event → dedup → write the event onto the task → re-queue → the scheduler re-dispatches
+normally. The pipeline, on entry, reads the pending event and starts at the right place
+via one exhaustive map:
 
-`CheckpointSchema` gains `sub_phase: string | null`. Each sub-phase's completion writes
-a checkpoint. Resume code reads `(checkpoint.phase, checkpoint.sub_phase)` and skips
-to the named sub-phase. **Planning resolves the exact representation** (single
-`sub_phase` field on checkpoint vs composite key).
-
-### #13 — Execution split: `implement` + `verify`, logical commits during implement
-
-`implement` (CLI) — agent writes code, runs tests during work, makes logical commits
-using the dev-toolbox `/commit` skill. `verify` (orchestrator) — runs `pnpm run
-typecheck`, `pnpm run lint`, `pnpm test`. If red, loops back to `implement` with
-structured failure context (gate + output) under the same "Why You're Back Here"
-pattern as external feedback. `pr_push` becomes the safety-net catch-all commit
-during Delivery. Resolves `pr-manager.ts:154` TODO.
-
-### #14 — Delivery sub-phases
-
-Four sub-phases:
-
-- **`pr_description`** (CLI) — agent writes the PR write-up.
-- **`pr_push`** (orchestrator) — commit any straggler changes + push branch.
-- **`pr_create`** (orchestrator) — open the PR via `GitHostingAdapter.createPR`.
-- **`await_review`** (orchestrator block) — transition task to
-  `blocked(reason=pr_review_pending)`, exit pipeline. Unblock on external event per
-  #8.
-
-### #15 — Outreach batching (locked adaptation of dev-toolbox principle)
-
-Requirements `gather` writes ONE outreach file per contact with ALL questions in it.
-Not split across iterations. Adapts the dev-toolbox `requirements-gathering` skill's
-"strictly one question at a time" — which is right for interactive Q&A, wrong for
-async comm-plugin outreach. Locked decision.
-
-### #16 — Rework feedback context as structured data
-
-Every loop-back / rework sub-phase prompt gets a structured "Why You're Back Here"
-section embedding the event type, raw content, file refs, CI logs, conflict files —
-whatever the hosting plugin surfaced. Untrusted external content wrapped via
-`wrapUntrustedContent`. No loose feedback strings appended to prompts. The
-sub-phase's registry declaration includes "what context shape do I need" so the
-orchestrator assembles it correctly.
-
-### #17 — Trivial-skip generalized as registry skip-gate
-
-Today's `skip_research` flag becomes one instance of a generic per-sub-phase skip
-mechanism. Each sub-phase declares its skip condition in the registry. Trivial
-complexity from Requirements may skip Research and Planning sub-phases. Full
-observability for every skip: `recordDecision` for the skip, journal entry naming the
-gate that fired, dashboard reflects the skipped sub-phase clearly. Closes the
-Slice 5 → Slice 8 trivial-skip-honesty handoff.
-
-### #18 — Sequential sub-phase execution (v1 constraint)
-
-Sub-phases execute sequentially within a phase. Parallel execution deferred to
-future-considerations. `docs/constraints.md` gets "Sub-Phase Execution Order" entry.
-`docs/future-considerations.md` gets "Parallel Sub-Phase Execution" capability
-concept.
-
-### #19 — `thoughts/` directory layout: per-sub-phase dirs
-
-```
-thoughts/{task}/{phase}/{sub_phase}/
-  output.md           (CLI sub-phases)
-  session-result.json (CLI sub-phases)
-  log.txt             (orchestrator sub-phases — optional)
+```typescript
+// pipeline.ts — the whole "how does each external event re-enter" in one place
+const entryFor = (e: PrEvent): Entry => {
+  switch (e.type) {
+    case "pr_comments":       return { phase: "requirements" };                // may surface scope; trivial→skip-gates forward
+    case "pr_ci_failure":     return { phase: "execution", sub: "implement" };
+    case "pr_merge_conflict": return { phase: "execution", sub: "implement" };
+    case "pr_ready_to_merge": return { phase: "delivery",  sub: "auto-merge" };
+    case "pr_merged":         return { phase: "delivery",  sub: "auto-merge" }; // detects already-merged → done
+  }
+};
 ```
 
-Symmetric with traces dir structure. Self-contained sub-phase units. **Planning
-resolves** pre-create-all vs create-on-demand strategy in workspace-manager.
+This keeps the daemon→orchestrator boundary acyclic and crash-safe (the pending event
+lives on the task row, in the DB, surviving restart), runs the merge inside a normal
+dispatch (abortable via signal, observable as a normal sub-phase, off the daemon's poll
+thread), and makes `auto-merge` a legitimate sub-phase reached by *entry* rather than
+*advance*. The panel's highest-leverage finding (drop the synchronous
+`applyExternalEvent` coupling) and its "a sub-phase the runner never advances to isn't a
+sub-phase" critique are both resolved: every external re-entry uses the same standard
+mechanism.
 
-### #20 — Prompt builder organization: one file per sub-phase, grouped by phase
+### Arbitration, dedup, and authorization stay in Core
 
+- **Arbitration** (panel S2): two events can land in one poll (a comment *and* an
+  approval). `arbitrate(events): PrEvent` is a Core policy function that picks the single
+  winner by precedence (changes-requested/comments beat ready-to-merge — address
+  feedback before merging). This replaces the precedence that today's aggregate-state
+  derivation provided and that a naive list-of-events would have dropped.
+- **Dedup** (panel S4): the plugin returns *all* events; Core filters against
+  `accommodated_comment_ids` / `accommodated_review_state`. Dedup is The Engineer's own
+  processing-state concern, not the platform's — it stays in Core so a new hosting
+  plugin author does not have to re-implement it.
+- **Authorization** (panel S4): a `/approve` comment is a *fact* the plugin can report,
+  but *who may approve* is Core policy (the people-directory). The plugin surfaces the
+  comment; Core decides whether that author's `/approve` counts. Authorization never
+  leaks into a plugin.
+
+---
+
+## Failure Model
+
+### Every pipeline failure blocks, loudly and recoverably
+
+Any sub-phase failure — a CLI session that dies without a valid `session-result.json`,
+a `details` schema validation failure, an orchestrator step that throws, a plugin call
+that errors, a `verify` that stays red past its cap — transitions the task to `blocked`
+with a **structured, typed** reason. The block payload is typed keys, not prose:
+
+```typescript
+type BlockDetail = { reason: BlockReason; sub_phase: string; category: FailureCategory; needed: string };
 ```
-src/core/orchestrator/prompts/
-  requirements/gather.ts
-  research/investigate.ts
-  planning/design.ts
-  execution/implement.ts
-  review/self_review.ts, refinement.ts
-  delivery/pr_description.ts
-  shared/format.ts, system.ts, context.ts, skills.ts
-```
 
-Sub-phase prompt-builder filenames match sub-phase names. Adding a lens = add a file.
-Maps directly to thoughts/, traces/, and registry layout.
+(panel S3 — the failed sub-phase and the failure category are query-relevant dimensions
+the dashboard and alerting read directly, so they are typed fields, not strings stuffed
+into a human-prose blob; this also honors the project's strict-data-invariants rule.)
+`engineer retry` unblocks; resume picks up at the failed sub-phase. No abandonment.
 
-### #21 — Dev-toolbox skill refinements ported into phase prompts
+### A crash is not a pipeline failure — keep the retry-policy crash category
 
-Port / adapt / skip framework — concrete prompt diffs in the plan. Per-skill
-enumeration lives in research doc § 15 ("Dev-Toolbox Skill Principles") and gets
-translated into prompt edits during Implementation Session for prompts. Key locks:
+The panel surfaced a real distinction the earlier draft erased. A *pipeline failure* is
+the orchestrator *deciding* it cannot proceed — that blocks, per above. A *crash* is an
+uncaught throw / OOM / process death mid-dispatch, where the orchestrator decided
+nothing; it died. Crashes keep Slice 6's `retry-policy` `crash` category: exponential
+backoff plus an attempt cap, which is exactly the poison-task protection that prevents a
+task that crashes on every dispatch from thrashing the daemon and burning agent spend in
+a tight retry loop. **Slice 8 does not touch retry-policy's crash handling.** "Every
+failure blocks" governs *sub-phase* failures; crashes keep their backoff safety net.
+(This also shrinks Slice 8's scope — one fewer thing to refactor.)
 
-- **Port** (use as-is): observations vs inferences split (Research), Decision template
-  Choice/Context/Rejected/Consequence (Planning), refactor-guide cut-on-sight /
-  keep-on-sight lists (self_review lens), principles of depth (Requirements gather).
-- **Adapt**: one-question-at-a-time → batch per outreach (#15); user-signals-when-to-stop
-  → self-decide based on completeness; interactive walkthroughs → embed rationale in
-  doc artifacts.
-- **Skip**: investigation-plan-before-research (no interactive user), local-testing
-  handoff (no human in the loop), AskUserQuestion mechanics.
+### Audit the consumers of `blocked` (panel S5)
 
-### #22 — `GitHostingAdapter` typed-event detection contract
+Collapsing `review_pending` into `blocked(reason=pr_review_pending)` changes what
+"blocked" means — it is now *either* "needs a human" *or* "waiting on an external PR
+event." The health-monitor's stuck-detection, the unblock-resolver, and the
+response-poller must treat `blocked(pr_review_pending)` as *expected waiting*, not
+*stuck*, or they will false-alarm on every PR awaiting review. This is an explicit task,
+not just a query-call-site rewire.
 
-Add `detectPrEvents(repo, prNumber, accommodated): Promise<PrEvent[]>` to the
-adapter contract. Plugin implementations aggregate platform-specific state into
-typed `PrEvent` variants. Core's review-handler consumes typed events; routing
-declared by the registry. **Planning resolves** the exact `PrEvent` payload schema
-per variant (CI failure carries which checks failed + error logs; merge conflict
-carries which files; comments carry comment text + author + ID; approved/merged
-carry minimal metadata).
+---
 
-### #23 — Review-handler refactor onto typed events; auto-merge preserved
+## Signal Honoring
 
-Today's 996-line `daemon/review-handler.ts` refactors against the new typed-event
-contract. **All existing capabilities preserved**, just rewired through the typed
-events:
+`AgentRunRequest` gains an optional `signal: AbortSignal`. `cli-run` passes
+`dispatch.signal` to every agent run; each agent plugin passes it to Node's native
+`spawn(cmd, args, { signal })`, which sends SIGTERM to the child on abort. This closes
+the Slice 6 → Slice 8 handoff so termination (preemption, hard-cap, shutdown,
+cost-limit) actually aborts in-flight agent CLI calls instead of waiting for them to
+finish. The self-unblock path (`orchestrator/index.ts`) threads the signal too. The
+field is optional so legacy code compiles unchanged during the build window (it is
+deleted at cutover regardless).
 
-- Accommodation gate (dedup) — preserved.
-- Comment-based approval (`/approve` regex) — preserved (surfaces as `pr_approved` event from the hosting plugin).
-- Authorized approver check via people-directory — preserved.
-- Circuit breaker (failure window for hosting API) — preserved.
-- Per-tick caching — preserved.
-- Self-comment filtering (`SELF_COMMENT_PREFIXES`) — preserved.
-- Branch deletion on completion — preserved.
-- Thoughts-removal-before-merge — preserved.
-- **Auto-merge — preserved.** On `pr_approved` event, The Engineer attempts the merge
-  (CI-gated + mergeable-gated) via `GitHostingAdapter.mergePR`. Today's `attemptMerge`
-  flow stays, just driven by the typed event instead of the polling code path.
-- `MAX_POST_APPROVAL_FIX_RETRIES = 3` — preserved as a registry-level cap on
-  `pr_ci_failure` / `pr_merge_conflict` loopback iterations after approval.
-- `approvedAwaitingCI` (deferred merge while CI runs) — preserved.
+---
 
-### #24 — Slice rename: `08-pipeline-phases.md`
+## Skip-gates and Trivial-skip
 
-The original slice file name `08-rrpir-phases.md` reflected the RRPIR (5-step)
-methodology. The new shape is 6 phases, only some of which map cleanly to RRPIR
-letters. Slice file renames to `08-pipeline-phases.md` to reflect what the slice
-actually owns.
+A sub-phase's optional `skip(ctx)` is the single mechanism for "don't even run this
+step." It subsumes two earlier ideas (config-disabled and context-skipped) into one
+hook — `ctx` carries config, so an opt-in lens skips when config disables it, and
+research skips when requirements reported trivial complexity. Every skip emits the full
+observability triple (decision-record + journal + dashboard-visible state) from the
+runner. Today's `skip_research` flag becomes one instance of this generic mechanism;
+trivial tasks may skip both Research and Planning. The Slice 5 → Slice 8 trivial-skip-
+honesty handoff closes here.
 
-### #25 — Slice 8 absorbs Slices 9 + 10 in full
+---
 
-Original roadmap: Slice 9 = Demo & PR; Slice 10 = Review & Feedback (External).
-Both are tightly coupled to the pipeline shape and to each other. Splitting them
-risks half-baked seams. One coherent architectural unit lands together.
-Subsequent slices renumber down by 2 (was 11→16, becomes 9→14). Slice 11
-boundary preserved (workspace cleanup stays Slice 9 / was Slice 11 — terminal
-state cleanup is a different concern than pipeline shape).
+## Migration Strategy: build dark, cut over atomically
 
-### #26 — `engineer retry` CLI verb stays
+The panel would "bet against" an earlier plan that ran a legacy runner and the new
+runner side by side, migrating phases one at a time. The reason is decisive: a task is
+one continuous stateful flow, not partitionable by phase. A checkpoint written by one
+runner (with a `sub_phase`, new enum names) resumed by the other (no `sub_phase`, old
+names) corrupts the resume — re-running a whole phase, double-pushing. There is no safe
+window.
 
-Semantically becomes "unblock-and-resume" in the new every-failure-blocks model,
-but the verb stays. No new `engineer unblock` command. The block-reason naming
-carries the real semantics; the CLI verb is general-purpose. Avoids CLI surface
-churn.
+So the migration is **build-dark-then-atomic-cutover**:
+
+1. Build the entire `pipeline/` (runner, types, cli-run, every phase folder and
+   sub-phase file) *without wiring it to `executeTask`*. The legacy runner stays fully
+   live and untouched and keeps every test green. The new code is exercised end to end
+   in isolation with the fake-agent test harness (real workspace-manager, real
+   session-memory, fake CLI).
+2. **In a single commit**, point `executeTask` at the new runner, delete the legacy
+   runner + handlers + old prompt files + old phase enum, and finalize the schema. Since
+   pre-v1 wipes `~/.engineer/data.db` on a new version, no in-flight task straddles the
+   two runners — the DB wipe *is* the migration. The corruption window does not exist.
+
+A little duplicated code coexisting for a few build sessions (old and new both present,
+new not yet wired) is a tiny, bounded cost; a shared-mutable-state seam across four
+sessions is not.
+
+---
 
 ## Cross-Slice Handoffs
 
-### Inbound (parked from prior slices, all land in Slice 8)
+### Inbound (parked from prior slices, all land here)
 
-- **Slice 5 → Slice 8:** trivial-skip honesty. Verified in research: today's
-  complexity-based `skip_research` flag lives at `phase-runner.ts:691-703`,
-  persisted on the task row. #17 generalizes it.
-- **Slice 6 → Slice 8:** decomposition cleanup. Verified surface: 4 source files
-  (`prompts/demo-prep.ts:109`, `prompts/planning.ts:97`,
-  `prompts/integration.ts` entire, `prompts/index.ts:21`) + 5 doc files
-  (`docs/configuration/orchestrator.md` references config keys that don't
-  exist in `OrchestratorConfigSchema` — docs lie). #1 cuts the surface.
-- **Slice 6 → Slice 8:** signal honoring. Verified gap: `Dispatch.signal:
-  AbortSignal` flows in via Slice 6's dispatch-tracker but is never read anywhere
-  downstream. Only `signal` mention beyond `Dispatch` is `preemption-manager.ts:188`
-  (unrelated log line). #11 closes it.
-- **Session 37 (LLM→Agent rename) → Slice 8:** `provider_id` literal in
-  `agent-runner.ts` still hardcodes `"agent"` on `cost.incurred` payload.
-  Semantically the field should be the actual plugin ID
-  (e.g. `claude-code-agent`). Folded into Slice 8 cleanup.
+- **Slice 5 → Slice 8:** trivial-skip honesty. Generalized as the `skip` hook with full
+  observability.
+- **Slice 6 → Slice 8:** decomposition residue. The `integration` phase is cut; the
+  prompt prose, the demo_prep routing branch, and the lying config docs
+  (`orchestrator.md` references `decomposition.*` keys that do not exist in any schema)
+  are removed.
+- **Slice 6 → Slice 8:** signal honoring. Closed via the `AgentRunRequest.signal`
+  threading above.
+- **Session 37 (Agent rename) → Slice 8:** the `provider_id: "agent"` literal in
+  `agent-runner` should carry the real plugin id; folded into the cutover.
 
 ### Outbound (parked for downstream slices, post-renumber)
 
-- **Slice 8 → Slice 9 (was 11) Completion & Cleanup:** terminal-state hooks
-  (workspace cleanup on merged, archive logic, terminal notifications). Slice 8
-  produces the terminal `completed` state cleanly with all observability;
-  Slice 9 owns the post-pipeline reaper.
-- **Slice 8 → Slice 10 (was 12) Communication:** notification-kind enumeration
-  audit (already parked from Slice 6); reply-token + unblock check (already parked
-  from Slice 5); response-poller integration with the new typed-event surface.
-- **Slice 8 → Slice 13 (was 15) Dashboard Revisit:** ALL dashboard UI for the new
-  pipeline shape — `phase` + `sub_phase` + `phase_iteration` visibility, visual
-  treatment of the simplified state machine (no more `review_pending` row),
-  block-reason-taxonomy display, routing-decisions trail, skip-gate trail,
-  sub-phase progress visualization. Slice 8 produces the data (schema columns,
-  event emissions, observation records) and minimal data-layer surface; Slice 13
-  owns all UI work.
+- **Slice 8 → Slice 9 (was 11):** terminal-state cleanup — workspace removal on
+  merged/completed, terminal notifications. Slice 8 produces a clean `completed` state;
+  Slice 9 owns the reaper.
+- **Slice 8 → Slice 10 (was 12):** notification-kind audit; reply-token + unblock check;
+  response-poller integration with the typed-event surface.
+- **Slice 8 → Slice 13 (was 15):** ALL dashboard UI for the new shape — `phase` /
+  `sub_phase` / `phase_iteration` / `total_reworks` visibility, the simplified state
+  machine (no `review_pending` row), block-reason taxonomy display, the routing-decision
+  and skip-gate trails. Slice 8 emits the data; Slice 13 displays it.
+- **Slice 8 → the documentation slice (Slice 12, was 14, "Agent Readiness") + Slice 8's
+  own Session 9 docs sweep:** this entire file is the design source. The
+  user-facing pipeline docs ("how a task flows," "what The Engineer delivers," "how to
+  add a review lens," "how feedback re-enters") draw their *why* from here. See
+  "Documentation Seed" below.
 
-## Findings (no decision needed — captured for the plan to address)
+## Findings (no decision needed — captured for implementation)
 
-- **`docs/configuration/orchestrator.md` references nonexistent config keys**
-  (`decomposition.auto_threshold_ms`, `suggest_threshold_ms`, `min_child_size_ms`).
-  Not in `DaemonConfigSchema` or `OrchestratorConfigSchema`. Docs lie. Slice 8
-  decomposition residue cleanup must verify each claimed config key exists, not
-  just delete section headers.
-- **Pre-v1 universal rule applies**: rewrite `001_schema.sql` to reflect the
-  post-Slice-8 shape (drop `review_pending` from CHECK constraint, drop
-  `consecutive_crash_count` column, add `sub_phase` + `phase_iteration` to tasks
-  row, add `sub_phase` to `checkpoints` row). Document "delete `~/.engineer/data.db`
-  before running this version" in the slice's session log.
-- **Test surface changes substantially.** Most coupling is through `PHASE_SEQUENCE`
-  iteration (refactor-friendly), but `makeOutput()` has per-phase data shapes that
-  rewrite for sub-phase outputs, and `PHASE_SEQUENCE has exactly 7 phases` /
-  `starts with X ends with Y` assertions break naturally and rewrite for 6-phase
-  shape. New per-sub-phase tests follow existing prompt-test pattern (snapshot-style
-  assertions on prompt builders).
-- **No prompt-builder unit tests today** for `requirements-gathering`, `research`,
-  `planning`, `demo-prep`, `context`, `format`, `system`. Slice 8's new per-sub-phase
-  prompt files all get unit tests (closes the gap).
-- **Self-unblock path** (`orchestrator/index.ts:224-288`) uses `agent.run` directly
-  without signal. Easy to miss — included in #11's signal-threading scope.
-- **Documentation surface to update.** `docs/architecture/overview.md` (pipeline
-  section), `docs/configuration/orchestrator.md` (rrpir block + delete decomposition
-  section), `docs/cli.md`, `docs/usage-guide/writing-tickets.md`, plus possibly a
-  new `docs/architecture/pipeline.md` if the overview section grows too large.
-
-## Implementation Decisions (resolved in plan, Session 39)
-
-These are implementation-level shape decisions that the plan resolves with engineering
-judgment. Documented in the plan's Decision Record with Choice/Context/Rejected/Consequence
-template. Requirements are locked — these don't reopen anything; they translate locked
-requirements into concrete implementation shape.
-
-- `PrEvent` typed union payload schemas per event type.
-- Sub-phase routing declaration shape (TypeScript discriminated union vs function refs vs config object).
-- Per-sub-phase checkpoint shape (`sub_phase: string | null` on `CheckpointSchema` vs composite key).
-- Workspace-manager sub-phase dir creation strategy (pre-create vs create-on-demand).
-- `Phase` enum split (top-level enum + flat-string sub-phase vs composite enum).
-- Expert-panel-review fate (keep as skill, promote to sub-phase, or cut).
-- Refactor-guide.md distillation scope (lens prompt vs coding-standards).
-- Requirements `gather` "context summary" upfront analog to dev-toolbox Phase 1 Intake.
-- Block reason taxonomy enumeration.
-- Test architecture pattern (registry iteration + per-sub-phase tests).
+- `docs/configuration/orchestrator.md` documents `decomposition.auto_threshold_ms`,
+  `suggest_threshold_ms`, `min_child_size_ms` — none exist in any schema. The docs lie.
+  Verify every claimed config key against the Zod schemas during the docs sweep.
+- Pre-v1: rewrite `001_schema.sql` to the final shape (drop `review_pending` from the
+  state CHECK, drop the dead phase values, add `sub_phase` / `phase_iteration` /
+  `total_reworks` to tasks, add `sub_phase` / `phase_iteration` / `total_reworks` to
+  checkpoints). "Delete `~/.engineer/data.db` before running this version" goes in the
+  cutover session log.
+- No prompt-builder unit tests exist today for several phases; every new sub-phase prompt
+  file gets one (closes the gap).
+- The self-unblock path uses `agent.run` directly and must thread the signal too.
 
 ## Future Considerations
 
-Captured in `docs/future-considerations.md` (added during implementation):
+Captured in `docs/future-considerations.md` during implementation:
 
-- **Parallel Sub-Phase Execution** — generalization of the registry's sequential
-  execution to allow declared-parallel sub-phases (e.g., security_review +
-  code_quality + architecture_review running concurrently within Review).
-- **Auto-Merge** — if cut in Slice 8 (TBD per #8 open question), captures the
-  capability concept for a future paid-tier or opt-in feature.
+- **Parallel sub-phase execution.** v1 runs sub-phases sequentially (documented as a
+  deliberate constraint in `docs/constraints.md`). A future version could let a phase
+  declare independent sub-phases that run concurrently (e.g., the three review lenses).
+- **Per-task pipeline customization.** The pipeline is global today. A future version
+  could let a trigger or a task type select a pipeline variant.
 
 ## Session Breakdown
 
-Finalized in `.claude/temp/create-plan/slice-08-pipeline-phases.md`. Sized so each
-session finishes completely (code + tests + docs + green gates) within Farzam's
-~400k token cap per session, ideally focused. Quantity does not matter if it brings
-real value (Farzam's wording).
+Sized to ~400k tokens each, focused, each green-on-commit. Quantity is not the goal;
+value is. Refined in `.claude/temp/create-plan/slice-08-pipeline-phases.md`.
 
-Rough breakdown (refined in plan):
-
-1. **Session 1 — Foundation cleanup.** Cut integration phase + collapse
-   `review_pending` outcome + decomposition residue cleanup (source + docs).
-   Smallest blast-radius cleanup before the architecture rebuild.
-2. **Session 2 — Sub-phase registry primitive.** New `registry.ts`, types,
-   declaration shape, generic phase-runner over registry. Tested in isolation
-   with mock sub-phases.
-3. **Session 3 — Migrate phases onto registry.** Requirements, Research, Planning,
-   Execution onto the new registry. Old phase-handlers shape deleted.
-4. **Session 4 — Review phase onto registry.** `self_review` + `refinement` +
-   optional lenses. Intra-phase loop + cap + escape-route routing.
-5. **Session 5 — Delivery sub-phases.** `pr_description`, `pr_push`, `pr_create`,
-   `await_review`. PR-manager surgery; `tryCommitPushAndCreatePR` teardown.
-6. **Session 6 — `AgentAdapter` signal threading + retry-policy shrink.** Through
-   adapter, agent-runner, phase-runner, all 3 agent plugins. Cut `crash` category.
-7. **Session 7 — `GitHostingAdapter` typed events + review-handler refactor.**
-   New contract method, hosting plugin implementation, review-handler refactor
-   against typed events, typed routing into the pipeline. Auto-merge preserved
-   under the new routing.
-8. **Session 8 — Dev-toolbox skill principles ported into prompts.** Concrete
-   prompt diffs per sub-phase (per the port/adapt/skip table in research doc).
-9. **Session 9 — Project-wide docs sweep.** Architecture docs (`overview.md`,
-   `three-tier-model.md`, potentially a new `pipeline.md`), configuration docs
-   (`orchestrator.md` rrpir reshape + delete decomposition section + verify
-   every claimed config key exists), user-flow docs, plugin author guides,
-   README mentions of "7 phases" / "RRPIR" acronym, bundled CLI plugin docs,
-   seed-example references. Dashboard UI work explicitly deferred to Slice 13
-   (was 15) — Slice 8 produces the data, Slice 13 displays it.
-10. **Session 10 — Closing standards sweep.** Line-by-line audit of every file
-    the slice created or changed against `coding-standards.md`, `anti-patterns.md`,
-    `philosophy.md`. Two-pass discipline. May spill into Session 11 if surface
-    demands (slice is bigger than Slice 7).
+1. **Foundation cleanup.** Cut `integration`; collapse `review_pending` →
+   `blocked(pr_review_pending)`; add the `BlockReason` enum + structured `BlockDetail`;
+   decomposition residue in source + docs. Operates on the *current* runner, which stays
+   live. Green.
+2. **Pipeline core.** `pipeline/` runner + types + `cli-run` (with signal threading:
+   `AgentRunRequest.signal` + adapter + the three agent plugins' `spawn({signal})`) +
+   the mock-pipeline test harness + observability-in-runner. Built dark, tested in
+   isolation. Green.
+3. **Upstream phases.** `requirements/gather`, `research/investigate`, `planning/design`,
+   `execution/implement` + `execution/verify`, with their prompts and per-sub-phase tests.
+   Built dark. Green.
+4. **Review + Delivery phases.** `review/*` (self-review + opt-in lenses + refine with
+   the cap-3 repeat loop), `delivery/*` (the five sub-phases + skip-gates), `entryFor`,
+   `arbitrate`. Built dark. Green.
+5. **Atomic cutover.** Point `executeTask` at the new runner; delete the legacy runner,
+   handlers, old prompts, old phase enum; finalize `001_schema.sql` (columns +
+   checkpoints + 2-counter model). DB-wipe note. All tests now run against the new
+   pipeline. The big green-cutover commit.
+6. **Typed PR events (contract + plugin).** `GitHostingAdapter.detectPrEvents`;
+   github-hosting plugin implementation (aggregates today's polling, computes
+   `pr_ready_to_merge` statelessly); Core `arbitrate` + dedup + authorization.
+7. **External re-entry + review-handler refactor.** Refactor the 996-line review-handler
+   onto typed events; external events flow via DB re-queue + `entryFor`; wire
+   `await-review` + `auto-merge`; delete the `approvedAwaitingCI` map; audit the
+   `blocked` semantic consumers (health-monitor, unblock-resolver, response-poller).
+8. **Dev-toolbox skill principles ported into prompts.** Concrete per-sub-phase prompt
+   diffs (the port/adapt/skip table in the research doc); refactor-guide framing into the
+   `self-review` lens.
+9. **Project-wide docs sweep.** Architecture docs, configuration docs (verify every key
+   against schemas), user-flow docs, plugin-author guides, README, bundled CLI docs,
+   seed-example. Draws on this file's rationale. No dashboard UI (deferred to Slice 13).
+10. **Closing standards sweep.** Line-by-line audit of every touched file against
+    coding-standards / anti-patterns / philosophy, two-pass discipline. May spill to
+    Session 11.
 
 ## Closing Standards Sweep
 
-Same pattern as Slice 7's closing sweep — full-file line-by-line audit of every
-file the slice created or changed, against `docs/coding-standards.md`,
-`docs/anti-patterns.md`, `docs/philosophy.md`, and the principle-driven checks in
-`approach.md` § "Closing Standards Sweep" (every documented reference matches code;
-every manifest matches behavior; every swallowed error is logged; every constant
-lives in one place; no stale counts; no vestigial scaffolding; backwards-compat
-re-exports forbidden; coding-standards alignment as planning concern, not
-sweep-only). Two-pass discipline (Slice 7 Session 36 lesson — first pass finds
-small things, second pass finds the structural defects). Update
-`feedback_slice_closing_standards_sweep.md` if a new class of defect surfaces.
+Mirrors Slice 7's closing pattern: full-file line-by-line audit of every file the slice
+created or changed against `docs/coding-standards.md`, `docs/anti-patterns.md`,
+`docs/philosophy.md`, and the principle-driven checks in `approach.md` (every documented
+reference matches code; every manifest matches behavior; every swallowed error logged;
+every constant single-sourced; no stale counts; no vestigial scaffolding; no
+backward-compat re-exports). Two-pass discipline (Slice 7 Session 36 lesson — the second
+pass finds the structural defects the first pass reads past). Update
+`feedback_slice_closing_standards_sweep.md` if a new defect class surfaces.
 
 ## Lens Check
 
-Per `approach.md` § "Lenses" — every slice is evaluated through these perspectives.
+- **Resilience.** Strongly positive. Signal honoring makes termination real. Structured
+  block reasons make the operator's diagnostic surface sharp. Per-sub-phase checkpoints
+  mean a crash mid-Review-iteration-2 resumes at iteration 2. The stateless
+  `pr_ready_to_merge` removes a whole class of restart bugs.
+- **Plugin Integrity.** Positive. `detectPrEvents` moves platform aggregation behind the
+  contract; dedup and authorization stay in Core; the sub-phase architecture is
+  Core-internal. Core still compiles with every plugin deleted.
+- **Plugin Authoring Simplicity.** Positive. The two contract additions
+  (`AgentRunRequest.signal`, `GitHostingAdapter.detectPrEvents`) are minimal and typed.
+- **UX Quality.** Strongly positive. The dashboard gains `phase` / `sub_phase` /
+  iteration / structured block reasons (Slice 13 displays them). The deliverable framing
+  (PR vs push-only) is explicit and documented. Block reasons are loud and actionable.
 
-- **Resilience.** Net strongly positive. Signal honoring closes a real cancellation
-  hole (best-effort termination becomes actual termination). Every-failure-blocks
-  with descriptive reason makes the operator's diagnostic surface dramatically
-  clearer. Per-sub-phase checkpoints mean a crash mid-Review-iteration-2 doesn't
-  redo iteration-1.
-- **Plugin Integrity.** Net positive. `GitHostingAdapter` typed-event contract moves
-  platform-specific aggregation behind the adapter boundary (Plugin Opacity
-  strengthened — Core stops seeing `reviewStatus.reviewers[].state`). Agent plugin
-  contract gains `signal` parameter uniformly across all 3 agent plugins. Sub-phase
-  registry is Core-internal; no plugin contract leakage.
-- **Plugin Authoring Simplicity.** Net positive. The two new contract additions
-  (`AgentRunRequest.signal`, `GitHostingAdapter.detectPrEvents`) are minimal and
-  well-typed. Sub-phase registry doesn't touch plugin contracts.
-- **UX Quality.** Net strongly positive. Dashboard now shows `phase` + `sub_phase`
-  + iteration count + descriptive block reasons. Operator-facing CLI messaging
-  becomes uniform. Auto-merge default-OFF (if locked in plan) removes a surprise
-  behavior. Block reason taxonomy makes "what's wrong" loud and clear.
+## Documentation Seed
+
+> **For the future documentation slice and this slice's own Session 9 docs sweep.** This
+> file is deliberately written as a design narrative, not a terse decision list, because
+> the *why* captured here is the raw material for the user-facing docs. When the docs are
+> written, these are the pieces to lift and adapt:
+
+- **"How a task flows through The Engineer"** → the 6-phase model + the "intuition
+  principle" (folders = phases, files = sub-phases) + the phases table.
+- **"What The Engineer delivers"** → the Deliverable section (PR mode vs push-only,
+  "done when merged" vs "done when pushed").
+- **"How The Engineer handles review feedback"** → the typed PR-event vocabulary + the
+  `entryFor` re-entry map + the loop-and-cap model.
+- **"How to extend the pipeline" (contributor guide)** → the three newcomer walkthroughs
+  below; the `SubPhase` type; "add a lens = add a file."
+- **"How The Engineer stays observable"** → observability-by-construction.
+- **Design rationale / architecture-decision record** → the panel findings and the five
+  refinements (outcome-not-destination handoff, two-counter model, stateless merge
+  readiness, observability-in-runner, the one defended boundary). These explain *why the
+  architecture is shaped this way*, which is what separates good docs from a feature
+  list.
+
+### The newcomer walkthroughs (the maintainability bar, and excellent doc material)
+
+- *Add a "performance" review lens* → copy `review/security.ts` to
+  `review/performance.ts`, write the prompt, set `next: advance`, add one line to
+  `pipeline.ts`, add a config enum value, add a snapshot test. One file plus one line.
+- *Change what happens when verify fails* → open `execution/verify.ts`, edit its `next`
+  function. One function, one file.
+- *Understand how an approved PR gets merged* → `pipeline.ts`'s `entryFor` says
+  `pr_ready_to_merge → delivery/auto-merge`; open that file and read `run` + `next`. Two
+  hops.
+
+The structure mirrors the mental model, the dangerous part is one well-tested file, and
+observability cannot be forgotten. That is the "amazing to evolve and maintain" bar this
+slice is held to.

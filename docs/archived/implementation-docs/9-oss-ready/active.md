@@ -21,16 +21,19 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 8 (Pipeline Phases)**: RRPIR in progress. Session 38 landed Requirements + Research; slice file `slices/08-pipeline-phases.md` consolidates scope, the 26 locked decisions, cross-slice handoffs, findings, open questions, session breakdown, and closing-sweep section. Session 39 picks up at Planning.
+**Slice 8 (Pipeline Phases)**: RRPIR COMPLETE. Requirements + Research (Session 38) and Planning + expert-panel stress test (Session 39) are done. The plan is locked. Implementation begins next session with Session 1 (Foundation cleanup).
 
 **Reference files:**
-- Slice file (durable home): [`slices/08-pipeline-phases.md`](slices/08-pipeline-phases.md)
+- Slice file (durable backbone + design narrative for the docs slice): [`slices/08-pipeline-phases.md`](slices/08-pipeline-phases.md)
+- Plan (decision record + 10-session breakdown + verification + risks + panel review + pre-mortem): `.claude/temp/create-plan/slice-08-pipeline-phases.md`
 - Research artifact: `.claude/temp/research/slice-08-pipeline-phases.md`
-- Plan artifact (to be created Session 39): `.claude/temp/create-plan/slice-08-pipeline-phases.md`
+- Architecture in memory: `project_slice8_pipeline_architecture.md`
 
-**One-line scope summary:** 7-phase pipeline becomes a 6-phase data-driven sub-phase registry. Slice 8 absorbs Slices 9 (Demo & PR) + 10 (Review & Feedback External) in full; subsequent slices renumber down by 2. See slice file for full decision record.
+**The locked architecture (one-paragraph summary):** the 7-phase hardcoded pipeline becomes a **6-phase data-driven sub-phase architecture** (requirements → research → planning → execution → review → delivery; integration cut). Folders = phases, files = sub-phases; each sub-phase file owns `run` (do the work) + `next` (where to go), where `next(result,ctx): Route` is a plain function (no routing DSL). The agent reports a 3-word outcome (`ok`/`needs_human`/`failed`) and the orchestrator owns the route. `cli-run.ts` is the one defended boundary for the opaque agent subprocess. Two loop counters (`phase_iteration` intra + `total_reworks` inter) on task + checkpoint. External PR events re-enter via DB re-queue + an `entryFor` map (no back-channel call); `pr_ready_to_merge` is computed statelessly (kills the in-memory wait map + its restart bug). Every pipeline failure blocks with a typed `BlockDetail`; crashes keep retry-policy's backoff (untouched). Deliverable is config-driven (PR mode = merged PR; push-only = pushed branch). Migration is build-dark-then-atomic-cutover (no parallel runners). Observability is emitted by the runner so a step can't forget it. Slice 8 absorbs original Slices 9 + 10; downstream slices renumber down by 2; ALL dashboard UI deferred to Slice 13.
 
-**Next session's task (Session 39):** Planning phase only. Use `/create-plan` skill to walk through the 9 open questions (slice file § "Open Questions") with Farzam Q&A-style, then produce the implementation plan at `.claude/temp/create-plan/slice-08-pipeline-phases.md` with Choice/Context/Rejected/Consequence decision template, per-session task breakdown, verification contract, risks, pre-mortem, and panel review. No code work in Session 39; implementation begins Session 40 with the foundation-cleanup session.
+**RRPIR reshaped the original framing substantially** (vs Session 38's first draft): the "sub-phase registry with RoutingRule[] + predicate DSL" was killed by the expert panel and replaced with the `next()`-function design; auto-merge is preserved (not cut); retry-policy is untouched (crash ≠ pipeline failure); external events route via DB re-queue (not `applyExternalEvent`); migration is atomic cutover (not parallel runners). The slice file + plan reflect the final locked design.
+
+**Next session's task (Session 1 of implementation — overall Session 40):** Foundation cleanup. Cut the `integration` phase in full (enum, schema, prompt, dir, skill mapping, trace mapping, demo_prep routing branch, all src + doc references); collapse `Outcomes.review_pending` + `TaskStates.review_pending` into `blocked(reason=pr_review_pending)` (state-machine surgery: ValidTransitions, PermissionTable, the `getTasksByState(review_pending)` call sites in review-handler → a `getBlockedTasksByReason` filter); add the `BlockReasonSchema` enum + structured `BlockDetail` type; clean decomposition residue from source (2 prompt files) + docs (the lying `orchestrator.md` config keys, `cli.md`, `writing-tickets.md`, `workspace.md`); rewrite `001_schema.sql`. The current runner stays live and drives everything — this session is pure cleanup before the architecture rebuild. Green on commit. See plan § "Session 1" for the exact file list and verify steps.
 
 ## Completed Slices
 

@@ -10,8 +10,8 @@ CREATE TABLE tasks (
   idempotency_key         TEXT NOT NULL,
 
   -- State
-  state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
-  sub_state               TEXT CHECK(sub_state IN ('working','code')),
+  state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','completed','failed')),
+  sub_state               TEXT CHECK(sub_state IN ('working')),
   phase                   TEXT,
 
   -- Context
@@ -84,10 +84,10 @@ CREATE UNIQUE INDEX idx_tasks_idempotency_key_active
 CREATE TABLE state_transitions (
   id              TEXT PRIMARY KEY,
   task_id         TEXT NOT NULL REFERENCES tasks(id),
-  from_state      TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
-  to_state        TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','review_pending','completed','failed')),
-  from_sub        TEXT CHECK(from_sub IN ('working','code')),
-  to_sub          TEXT CHECK(to_sub IN ('working','code')),
+  from_state      TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','completed','failed')),
+  to_state        TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','completed','failed')),
+  from_sub        TEXT CHECK(from_sub IN ('working')),
+  to_sub          TEXT CHECK(to_sub IN ('working')),
   reason          TEXT NOT NULL,
   timestamp       TEXT NOT NULL,
   triggered_by    TEXT NOT NULL
@@ -122,7 +122,7 @@ CREATE TABLE sessions (
   task_id                 TEXT NOT NULL REFERENCES tasks(id),
   started_at              TEXT NOT NULL,
   ended_at                TEXT,
-  end_reason              TEXT CHECK(end_reason IN ('completed','preempted','crashed','review_pending','blocked'))
+  end_reason              TEXT CHECK(end_reason IN ('completed','preempted','crashed','blocked'))
 );
 
 CREATE INDEX idx_sessions_task_id ON sessions(task_id);

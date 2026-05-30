@@ -232,7 +232,7 @@ Config files live in `~/.engineer/config/`. Generated on first run with conserva
 
 **Core configs:**
 - `daemon.yaml` — tick interval, concurrency, plugin health settings
-- `orchestrator.yaml` — RRPIR phases, notifications, decomposition
+- `orchestrator.yaml` — RRPIR phases, notifications
 - `safety.yaml` — cost limits, autonomy level, merge policy
 - `workspace.yaml` — worktree root, branch prefix, PR defaults, cleanup
 - `people.yaml` — the owner and their contact channels for communication

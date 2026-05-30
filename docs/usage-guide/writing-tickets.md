@@ -82,7 +82,7 @@ The Engineer works best with focused, single-concern tickets. Signs a ticket is 
 - The acceptance criteria cover unrelated behaviors
 - You're writing paragraphs to explain the scope
 
-Split it. The Engineer handles decomposition natively, but clean input produces cleaner output.
+Split it into focused tickets. Clean input produces cleaner output.
 
 ## Mechanical Refactors
 

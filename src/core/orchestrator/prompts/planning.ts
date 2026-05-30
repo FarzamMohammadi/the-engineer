@@ -94,9 +94,7 @@ function buildInstructions(thoughtsDir: string): string {
       "",
       `5. **Write the plan** to \`${thoughtsDir}/planning/plan.md\` using the template below. Use checkbox format so execution can track progress.`,
       "",
-      "6. **If decomposition is needed** (3+ genuinely independent areas of change), include a `## Decomposition` section. Each subtask runs the full RRPIR pipeline independently. Only decompose when subtasks are truly separable.",
-      "",
-      '7. **If you need more information,** set `next_phase` to `"requirements_gathering"` in session-result.json.',
+      '6. **If you need more information,** set `next_phase` to `"requirements_gathering"` in session-result.json.',
     ].join("\n"),
   );
 }

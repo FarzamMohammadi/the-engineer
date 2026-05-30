@@ -30,12 +30,6 @@ Controls git operations: where worktrees are created, how branches are named, PR
 | `cleanup.preserve_branch_on_failure` | boolean | `true` | Keep the task branch when a task fails, for post-mortem debugging. |
 | `cleanup.preserve_branch_on_cancel` | boolean | `false` | Keep the task branch when a task is cancelled. |
 
-## Child Task Strategy
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `child_pr_strategy` | `"merge_into_parent"` \| `"individual_prs"` | `"merge_into_parent"` | How child task branches integrate. `merge_into_parent` merges all children into the parent branch for a single PR. `individual_prs` creates one PR per child task. |
-
 ## Multi-Repo
 
 | Field | Type | Default | Description |

@@ -220,9 +220,6 @@ export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
 #   preserve_branch_on_failure: true
 #   preserve_branch_on_cancel: false
 
-# --- Child task PR strategy ---
-# child_pr_strategy: merge_into_parent       # merge_into_parent | individual_prs
-
 # --- Multi-repo ---
 # multi_repo:
 #   enabled: true
@@ -558,9 +555,6 @@ pr:
 cleanup:
   preserve_branch_on_failure: true        # Keep branch when task fails (default: true)
   preserve_branch_on_cancel: false        # Keep branch when task cancelled (default: false)
-
-# ── Child Task PR Strategy ───────────────────────────────────────────────────
-child_pr_strategy: merge_into_parent      # merge_into_parent | individual_prs (default: merge_into_parent)
 
 # ── Multi-Repo ───────────────────────────────────────────────────────────────
 multi_repo:

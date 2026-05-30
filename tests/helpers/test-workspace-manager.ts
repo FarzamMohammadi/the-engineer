@@ -105,7 +105,6 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
       preserve_branch_on_failure: true,
       preserve_branch_on_cancel: false,
     },
-    child_pr_strategy: "merge_into_parent",
     multi_repo: {
       enabled: true,
       max_repos_per_task: 5,

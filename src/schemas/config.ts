@@ -393,12 +393,6 @@ export const WorkspaceConfigSchema = z.object({
     .describe("Default base branch for PRs when not specified by the task. Default: main."),
   pr: PrConfigSchema.default({}),
   cleanup: CleanupConfigSchema.default({}),
-  child_pr_strategy: z
-    .enum(["merge_into_parent", "individual_prs"])
-    .default("merge_into_parent")
-    .describe(
-      "How child task branches integrate: merge_into_parent (single PR) or individual_prs (one PR per child). Default: merge_into_parent.",
-    ),
   multi_repo: MultiRepoConfigSchema.default({}),
 });
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

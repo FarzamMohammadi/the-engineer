@@ -253,7 +253,6 @@ describe("WorkspaceConfigSchema", () => {
     expect(config.default_base_branch).toBe("main");
     expect(config.pr.default_merge_strategy).toBe("squash");
     expect(config.cleanup.preserve_branch_on_failure).toBe(true);
-    expect(config.child_pr_strategy).toBe("merge_into_parent");
     expect(config.multi_repo.enabled).toBe(true);
   });
 });

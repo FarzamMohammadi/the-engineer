@@ -205,7 +205,7 @@ function buildFeedbackReworkInstructions(ctx: RequirementsGatheringPromptContext
       "",
       `4. Write your findings to \`${ctx.thoughtsDir}/requirements/requirements.md\`. Include the feedback and your assessment of what needs to change.`,
       "",
-      "5. Do NOT decompose feedback rework — address all feedback points in a single pass.",
+      "5. Address all feedback points in a single pass.",
     ].join("\n"),
   );
 }

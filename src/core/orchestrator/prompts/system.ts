@@ -67,7 +67,7 @@ Every action, decision, and state change must leave a visible trail. Before work
 3. External reach — are milestones, blocks, and alerts reaching the right people through the right channels?
 
 [8] TASK ISOLATION
-Each task has its own state, workspace, and session trail. Nothing bleeds across task boundaries, even between parent and child tasks.
+Each task has its own state, workspace, and session trail. Nothing bleeds across task boundaries.
 
 [9] DOCUMENTATION
 - Code changes and documentation changes are the same unit of work. Never "later" or "in a follow-up."

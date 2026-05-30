@@ -1,6 +1,6 @@
 # Orchestrator Configuration
 
-Controls the RRPIR pipeline (Requirements, Research, Planning, Implementation, Review), notifications, task decomposition, and phase management. These settings shape how The Engineer thinks and communicates.
+Controls the RRPIR pipeline (Requirements, Research, Planning, Implementation, Review), notifications, and phase management. These settings shape how The Engineer thinks and communicates.
 
 **File:** `~/.engineer/config/orchestrator.yaml`
 **Hot-reload:** No — requires daemon restart.
@@ -11,7 +11,7 @@ Controls the RRPIR pipeline (Requirements, Research, Planning, Implementation, R
 |-------|------|---------|-------------|
 | `rrpir.max_requirements_loops` | integer | `5` | Maximum requirement-gathering loops before escalation. If the agent keeps returning "need_more_info", it gives up after this many rounds. |
 | `rrpir.include_thoughts_in_pr` | boolean | `true` | Include the `thoughts/` directory in PR commits. When true, RRPIR artifacts (requirements, research, planning docs) are committed for reviewer context. |
-| `rrpir.review_phases` | string[] | `["requirements_check"]` | Which review sub-phases to run during self-review. Options: `"requirements_check"`, `"security_review"`, `"code_quality"`. |
+| `rrpir.review_phases` | string[] | `["requirements_check"]` | Which review sub-phases to run during self-review. Options: `"requirements_check"`, `"security_review"`, `"code_quality"`, `"architecture_review"`. |
 | `rrpir.max_review_loopbacks` | integer | `3` | Maximum execution-to-self-review loops. If self-review keeps finding issues, it stops after this many rounds and alerts the owner. |
 
 ## Notifications
@@ -49,14 +49,6 @@ Controls the RRPIR pipeline (Requirements, Research, Planning, Implementation, R
 | `question_batching.batch_window_ms` | integer (ms) | `30000` (30s) | Wait window before sending a question batch. |
 | `question_batching.max_batch_size` | integer | `5` | Maximum questions per batch. |
 
-## Task Decomposition
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `decomposition.auto_threshold_ms` | integer (ms) | `14400000` (4h) | Auto-decompose tasks estimated longer than this. |
-| `decomposition.suggest_threshold_ms` | integer (ms) | `7200000` (2h) | Suggest decomposition for tasks above this estimate. |
-| `decomposition.min_child_size_ms` | integer (ms) | `1800000` (30m) | Minimum estimated duration for child tasks. |
-
 ## Demo
 
 | Field | Type | Default | Description |
@@ -71,7 +63,7 @@ Controls the RRPIR pipeline (Requirements, Research, Planning, Implementation, R
 | `phases.checkpoint_on_transition` | boolean | `true` | Create a checkpoint at every phase transition for resume support. |
 | `phases.periodic_checkpoint_interval_ms` | integer (ms) | `900000` (15m) | Create periodic checkpoints during long-running phases. |
 | `phases.max_loopbacks_before_alert` | integer | `3` | Alert the owner if self-review loopbacks exceed this count. |
-| `phases.force_full_pipeline` | boolean | `false` | Force all tasks through the full 7-phase pipeline, disabling complexity-based research skipping. Safety net if trivial-mode causes quality regressions. |
+| `phases.force_full_pipeline` | boolean | `false` | Force all tasks through the full 6-phase pipeline, disabling complexity-based research skipping. Safety net if trivial-mode causes quality regressions. |
 
 ## Journal
 
@@ -93,8 +85,4 @@ phases:
 
 notification:
   milestone_based: true
-
-decomposition:
-  auto_threshold_ms: 14400000
-  suggest_threshold_ms: 7200000
 ```

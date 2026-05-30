@@ -54,7 +54,7 @@ function makeResponse(json: Record<string, unknown>): AgentRunResult {
  * The CLI-native pipeline makes 7 LLM calls in order: requirements, research, planning,
  * execution, self-review (1 sub-phase + 1 refinement), demo-prep. After demo-prep the
  * orchestrator commits/pushes and creates a PR — the pipeline exits at `review_pending`
- * for human review. Integration runs later, only after the PR is merged.
+ * for human review.
  */
 function makeFullPipelineResponses(): AgentRunResult[] {
   const ready = (extra: Record<string, unknown> = {}) => makeResponse({ status: "ready", ...extra });
@@ -127,7 +127,7 @@ describe("E2E: Task happy path", () => {
     expect(ctx.fakes.llm.getCallCount()).toBe(FULL_PIPELINE_LLM_CALLS);
 
     // After demo_prep the orchestrator created a PR via fake-git-hosting, so the
-    // task is waiting on human review. Integration runs later, post-merge.
+    // task is waiting on human review.
     const reviewPending = ctx.taskEngine.getTasksByState(TaskStates.review_pending);
     expect(reviewPending.length).toBe(1);
 

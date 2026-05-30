@@ -6,7 +6,6 @@ import {
   DemoPrepOutputSchema,
   ExecutionOutputSchema,
   FileChangeSchema,
-  IntegrationOutputSchema,
   PhaseOutputSchema,
   PhaseSchema,
   Phases,
@@ -27,18 +26,10 @@ import { ActionClasses } from "../../../src/schemas/task.js";
 // ── Phase Enum ──────────────────────────────────────────────────────────────────
 
 describe("PhaseSchema", () => {
-  const validPhases = [
-    "requirements_gathering",
-    "research",
-    "planning",
-    "execution",
-    "self_review",
-    "demo_prep",
-    "integration",
-  ];
+  const validPhases = ["requirements_gathering", "research", "planning", "execution", "self_review", "demo_prep"];
 
-  it("has exactly 7 values", () => {
-    expect(PhaseSchema.options).toHaveLength(7);
+  it("has exactly 6 values", () => {
+    expect(PhaseSchema.options).toHaveLength(6);
   });
 
   it("accepts all valid phases (with underscores)", () => {
@@ -263,18 +254,6 @@ describe("DemoPrepOutputSchema", () => {
         }).artifacts[0]?.["type"],
       ).toBe(type);
     }
-  });
-});
-
-describe("IntegrationOutputSchema", () => {
-  it("parses valid output", () => {
-    const output = IntegrationOutputSchema.parse({
-      children_verified: ["01ABC", "01DEF"],
-      integration_tests: { passed: 5, failed: 0 },
-      conflicts_found: [],
-      resolution_actions: [],
-    });
-    expect(output.children_verified).toHaveLength(2);
   });
 });
 

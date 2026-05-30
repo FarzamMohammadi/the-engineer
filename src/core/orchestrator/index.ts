@@ -68,8 +68,8 @@ function createPreemptionGate(): WritablePreemptionGate {
 // ── Orchestrator ────────────────────────────────────────────────────────────
 
 /**
- * The brain of the system — a 7-phase pipeline that takes a task from intake
- * to integration.
+ * The brain of the system — a 6-phase pipeline that takes a task from intake
+ * to pull request.
  *
  * Derives from compiler front-end (multi-pass pipeline) + flight director
  * (coordination and communication). Delegates to focused subsystems:
@@ -180,7 +180,7 @@ export class Orchestrator {
     });
 
     // ── Build pipeline state ───────────────────────────────────────────────
-    // Gather repo context once — avoids 5 sync I/O ops × 7 phases per task.
+    // Gather repo context once — avoids 5 sync I/O ops × 6 phases per task.
     // Re-gathered after execution phase (the only phase that modifies files).
     const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
     const repoContext = gatherRepoContextSafe(worktreePath, tracedObserver);

@@ -35,15 +35,6 @@ describe("buildSkillsSection", () => {
     expect(result).not.toContain("Decision reversibility");
   });
 
-  it("should return section with commit skill path for integration phase", () => {
-    const result = buildSkillsSection(Phases.integration, skillsDir);
-    expect(result).not.toBeNull();
-    expect(result).toContain("### Skill: commit");
-    expect(result).toContain("commit/SKILL.md");
-    // Should not include expert-panel-review
-    expect(result).not.toContain("expert-panel-review");
-  });
-
   it("should return null for phases with no skills", () => {
     expect(buildSkillsSection(Phases.requirements_gathering, skillsDir)).toBeNull();
     expect(buildSkillsSection(Phases.research, skillsDir)).toBeNull();

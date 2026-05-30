@@ -61,7 +61,6 @@ const PHASE_DIR_MAP: Record<Phase, string> = {
   execution: "implementation",
   self_review: "review",
   demo_prep: "demo-prep",
-  integration: "integration",
 };
 
 /** Write valid session-result.json files to all phase directories under a worktree. */
@@ -75,7 +74,6 @@ function writeSessionResultFiles(
     "execution",
     "self_review",
     "demo_prep",
-    "integration",
   ],
 ): void {
   for (const phase of phases) {
@@ -83,7 +81,7 @@ function writeSessionResultFiles(
     mkdirSync(phaseDir, { recursive: true });
     const resultData = {
       status: "ready",
-      next_phase: phase === "integration" ? "integration" : "research",
+      next_phase: phase === "demo_prep" ? "demo_prep" : "research",
       summary: `Mock ${phase} complete`,
       complexity: Complexities.moderate,
     };
@@ -108,7 +106,7 @@ function writeSessionResultFiles(
 
 // ── Valid Phase Data Fixtures ─────────────────────────────────────────────────
 
-/** Valid phase output data for all 7 phases (passes Zod safeParse). */
+/** Valid phase output data for all 6 phases (passes Zod safeParse). */
 export const VALID_PHASE_DATA: Record<Phase, Record<string, unknown>> = {
   requirements_gathering: {
     deliverable_path: "thoughts/test/requirements.md",
@@ -144,12 +142,6 @@ export const VALID_PHASE_DATA: Record<Phase, Record<string, unknown>> = {
     artifacts: [{ type: "screenshot", location: "/tmp/demo.png", permanent: true }],
     pr_number: 42,
     pr_description: "Implements the requested feature",
-  },
-  integration: {
-    children_verified: [],
-    integration_tests: { passed: 3, failed: 0 },
-    conflicts_found: [],
-    resolution_actions: [],
   },
 };
 
@@ -304,7 +296,7 @@ export interface TestOrchestratorHandle {
   };
   /** Get the preemption.requested subscriber callback captured from subscribe(). */
   triggerPreemption: (targetTaskId: string, preemptingTaskId: string) => void;
-  /** Set LLM responses for all 7 phases (happy path). */
+  /** Set LLM responses for all 6 phases (happy path). */
   setAllPhaseResponses: () => void;
   /** Set a custom LLM response for a specific phase index (0-based call order). */
   setLlmResponseAtIndex: (index: number, data: Record<string, unknown>) => void;
@@ -546,7 +538,6 @@ export function createTestOrchestrator(): TestOrchestratorHandle {
       createLlmResponse(VALID_PHASE_DATA.execution),
       createLlmResponse(VALID_PHASE_DATA.self_review),
       createLlmResponse(VALID_PHASE_DATA.demo_prep),
-      createLlmResponse(VALID_PHASE_DATA.integration),
     ];
   };
 

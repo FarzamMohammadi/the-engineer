@@ -106,12 +106,10 @@ function buildOutputInstructions(thoughtsDir: string): string {
       "```json",
       "{",
       '  "status": "ready",',
-      '  "next_phase": "integration" (if this is a decomposed child task) or "demo_prep" (terminal — pipeline complete),',
+      '  "next_phase": "demo_prep" (terminal — pipeline complete),',
       '  "summary": "<PR #X created: title>"',
       "}",
       "```",
-      "",
-      'For most tasks, next_phase is "demo_prep" (terminal). Only set "integration" if this task has a parent that needs to merge child branches.',
     ].join("\n"),
   );
 }

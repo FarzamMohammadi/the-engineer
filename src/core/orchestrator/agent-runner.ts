@@ -20,7 +20,6 @@ const PHASE_DIR_MAP: Record<Phase, string> = {
   [Phases.execution]: "implementation",
   [Phases.self_review]: "review",
   [Phases.demo_prep]: "demo-prep",
-  [Phases.integration]: "integration",
 };
 
 /** Map phase → human-readable directory name for session traces. */
@@ -31,7 +30,6 @@ const PHASE_TRACE_DIR_MAP: Record<Phase, string> = {
   [Phases.execution]: "execution",
   [Phases.self_review]: "self-review",
   [Phases.demo_prep]: "demo-prep",
-  [Phases.integration]: "integration",
 };
 
 /** Maximum agent retry attempts for transient failures. */

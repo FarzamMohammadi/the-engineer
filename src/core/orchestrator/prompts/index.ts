@@ -16,11 +16,6 @@ export { buildPlanningPrompt, type PlanningPromptContext } from "./planning.js";
 export { buildExecutionPrompt, type ExecutionPromptContext } from "./execution.js";
 export { buildDemoPrepPrompt, type DemoPrepPromptContext } from "./demo-prep.js";
 export {
-  buildIntegrationPrompt,
-  type IntegrationPromptContext,
-  type ChildTaskSummary,
-} from "./integration.js";
-export {
   buildReviewSubPhasePrompt,
   type ReviewSubPhaseContext,
   buildRefinementPrompt,

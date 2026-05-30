@@ -471,7 +471,7 @@ async function tryCommitPushAndCreatePR(input: CommitPushPrInput): Promise<Phase
       taskId,
       message: `Changes pushed to branch${branchInfo} — PR creation skipped per config. No PR or review gate.`,
     });
-    return null; // Continue pipeline → integration → completed
+    return null; // Continue pipeline → completed
   }
 
   // Step 3: Create PR (or handle rework)
@@ -996,7 +996,7 @@ export async function runPhasePipeline(
     priorOutputs.set(phase, output);
 
     // Refresh cached repo context after execution (the only phase that modifies files).
-    // This ensures self_review, demo_prep, and integration see the updated state.
+    // This ensures self_review and demo_prep see the updated state.
     if (phase === Phases.execution) {
       const worktreePath = ctx.workspaceManager.getWorktreePath(taskId);
       currentState = {

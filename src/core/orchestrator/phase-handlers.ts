@@ -8,7 +8,6 @@ import {
   buildCliNativeSystemPrompt,
   buildDemoPrepPrompt,
   buildExecutionPrompt,
-  buildIntegrationPrompt,
   buildPlanningPrompt,
   buildRefinementPrompt,
   buildRequirementsGatheringPrompt,
@@ -238,30 +237,6 @@ export function createPhaseHandlers(agentRunner: AgentRunner, ctx: OrchestratorC
     });
   }
 
-  function handleIntegration(
-    taskId: string,
-    dispatch: Dispatch,
-    _priorOutputs: Map<Phase, PhaseOutput>,
-    state: PipelineState,
-  ): Promise<PhaseOutput> {
-    const thoughtsDir = state.thoughtsDir ?? "";
-
-    return agentRunner.runPhase({
-      phase: Phases.integration,
-      taskId,
-      systemPrompt: buildCliNativeSystemPrompt(Phases.integration),
-      prompt: buildIntegrationPrompt({
-        task: dispatch.task,
-        repoContext: state.repoContext,
-        thoughtsDir: absThoughts(taskId, thoughtsDir),
-        skillsDir,
-        childSummaries: [],
-      }),
-      state,
-      thoughtsDir,
-    });
-  }
-
   return {
     [Phases.requirements_gathering]: handleRequirementsGathering,
     [Phases.research]: handleResearch,
@@ -269,6 +244,5 @@ export function createPhaseHandlers(agentRunner: AgentRunner, ctx: OrchestratorC
     [Phases.execution]: handleExecution,
     [Phases.self_review]: handleSelfReview,
     [Phases.demo_prep]: handleDemoPrep,
-    [Phases.integration]: handleIntegration,
   };
 }

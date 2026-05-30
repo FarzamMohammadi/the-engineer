@@ -104,12 +104,6 @@ function makeOutput(phase: Phase, data?: Record<string, unknown>): PhaseOutput {
     },
     self_review: { findings: [], refactoring_applied: [], quality_assessment: "ship_it" },
     demo_prep: { artifacts: [], pr_number: 1, pr_description: "PR" },
-    integration: {
-      children_verified: [],
-      integration_tests: { passed: 1, failed: 0 },
-      conflicts_found: [],
-      resolution_actions: [],
-    },
   };
   return {
     phase,
@@ -182,7 +176,7 @@ function createDeps(
 
 describe("PhaseRunner", () => {
   describe("runPhasePipeline", () => {
-    it("runs all 7 phases in sequence and completes", async () => {
+    it("runs all 6 phases in sequence and completes", async () => {
       const ctx = createMockContext();
       const outputs = new Map<Phase, PhaseOutput>();
       for (const phase of PHASE_SEQUENCE) {
@@ -254,9 +248,9 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // All 7 phases should have checkpoints (no fast-path)
+      // All 6 phases should have checkpoints (no fast-path)
       const checkpointCalls = (ctx.sessionMemory.checkpoints.create as ReturnType<typeof vi.fn>).mock.calls;
-      expect(checkpointCalls.length).toBe(7);
+      expect(checkpointCalls.length).toBe(6);
     });
 
     it("loops back to execution on self_review needs_work", async () => {
@@ -675,9 +669,9 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // All 7 phases should have checkpoints
+      // All 6 phases should have checkpoints
       const checkpointCalls = (ctx.sessionMemory.checkpoints.create as ReturnType<typeof vi.fn>).mock.calls;
-      expect(checkpointCalls.length).toBe(7);
+      expect(checkpointCalls.length).toBe(6);
     });
   });
 
@@ -954,9 +948,9 @@ describe("PhaseRunner", () => {
       const result = await runPhasePipeline(createDispatch(), createState(), deps);
 
       expect(result.outcome).toBe("completed");
-      // All 7 phases should run — requirements_gathering runs once, then advances normally
+      // All 6 phases should run — requirements_gathering runs once, then advances normally
       const checkpointCalls = (ctx.sessionMemory.checkpoints.create as ReturnType<typeof vi.fn>).mock.calls;
-      expect(checkpointCalls.length).toBe(7);
+      expect(checkpointCalls.length).toBe(6);
     });
 
     it("self-review loopback lands on execution, not planning", async () => {
@@ -1044,13 +1038,13 @@ describe("PhaseRunner", () => {
   });
 
   describe("PHASE_SEQUENCE", () => {
-    it("has exactly 7 phases", () => {
-      expect(PHASE_SEQUENCE).toHaveLength(7);
+    it("has exactly 6 phases", () => {
+      expect(PHASE_SEQUENCE).toHaveLength(6);
     });
 
-    it("starts with requirements_gathering and ends with integration", () => {
+    it("starts with requirements_gathering and ends with demo_prep", () => {
       expect(PHASE_SEQUENCE[0]).toBe(Phases.requirements_gathering);
-      expect(PHASE_SEQUENCE[6]).toBe(Phases.integration);
+      expect(PHASE_SEQUENCE[5]).toBe(Phases.demo_prep);
     });
   });
 });

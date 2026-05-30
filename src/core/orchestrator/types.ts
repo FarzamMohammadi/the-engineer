@@ -118,7 +118,7 @@ export type ExecuteTaskResult =
 
 // ── Pipeline Constants ───────────────────────────────────────────────────
 
-/** The standard 7-phase pipeline sequence. */
+/** The standard 6-phase pipeline sequence. */
 export const PHASE_SEQUENCE: Phase[] = [
   Phases.requirements_gathering,
   Phases.research,
@@ -126,7 +126,6 @@ export const PHASE_SEQUENCE: Phase[] = [
   Phases.execution,
   Phases.self_review,
   Phases.demo_prep,
-  Phases.integration,
 ];
 
 /** Build the phase sequence, optionally skipping research for trivial tasks. */

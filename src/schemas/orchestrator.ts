@@ -9,7 +9,6 @@ export const PhaseSchema = z.enum([
   "execution",
   "self_review",
   "demo_prep",
-  "integration",
 ]);
 export type Phase = z.infer<typeof PhaseSchema>;
 
@@ -37,7 +36,6 @@ export const PHASE_DIRECTORIES = [
   "implementation",
   "review",
   "demo-prep",
-  "integration",
 ] as const;
 
 // ── Phase Output Envelope ───────────────────────────────────────────────────────
@@ -133,14 +131,6 @@ export const DemoPrepOutputSchema = z.object({
 });
 export type DemoPrepOutput = z.infer<typeof DemoPrepOutputSchema>;
 
-export const IntegrationOutputSchema = z.object({
-  children_verified: z.array(z.string()).default([]),
-  integration_tests: z.record(z.unknown()).default({}),
-  conflicts_found: z.array(z.string()).default([]),
-  resolution_actions: z.array(z.string()),
-});
-export type IntegrationOutput = z.infer<typeof IntegrationOutputSchema>;
-
 // ── Phase Output Map ────────────────────────────────────────────────────────────
 
 export type PhaseOutputMap = {
@@ -150,7 +140,6 @@ export type PhaseOutputMap = {
   execution: ExecutionOutput;
   self_review: SelfReviewOutput;
   demo_prep: DemoPrepOutput;
-  integration: IntegrationOutput;
 };
 
 // ── Communication Types ─────────────────────────────────────────────────────────

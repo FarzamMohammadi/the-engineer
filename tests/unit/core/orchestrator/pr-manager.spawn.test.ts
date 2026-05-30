@@ -314,9 +314,8 @@ describe("commitPushAndCreatePR", () => {
     expect(result.outcome).toBe("review_pending");
     if (result.outcome === "review_pending") {
       expect(result.phase).toBe(Phases.demo_prep);
-      // Should include phases up to demo_prep (6 of 7)
+      // All 6 phases run; demo_prep is the terminal phase before the PR exit
       expect(result.phaseOutputs.size).toBe(6);
-      expect(result.phaseOutputs.has(Phases.integration)).toBe(false);
     }
   });
 

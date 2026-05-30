@@ -40,8 +40,7 @@ function makeResponse(json: Record<string, unknown>): AgentRunResult {
 /**
  * Build responses for the phases that run after resuming from a `planning` checkpoint.
  * Sequence: execution → self_review (1 sub + 1 refinement) → demo_prep. After demo_prep
- * the orchestrator creates a PR and exits at `review_pending`; integration runs only
- * after PR merge.
+ * the orchestrator creates a PR and exits at `review_pending`.
  */
 function makeResumeFromPlanningResponses(): AgentRunResult[] {
   const ready = (extra: Record<string, unknown> = {}) => makeResponse({ status: "ready", ...extra });
@@ -262,7 +261,6 @@ describe("E2E: Crash recovery", () => {
     expect(ctx.fakes.llm.getCallCount()).toBe(RESUME_FROM_PLANNING_LLM_CALLS);
     expect(daemon2.getState().tasksCompleted).toBe(1);
     // After demo_prep the orchestrator created a PR and exited at review_pending.
-    // Integration runs only after PR merge.
     expect(ctx.taskEngine.getTask(taskId)?.state).toBe(TaskStates.review_pending);
   });
 

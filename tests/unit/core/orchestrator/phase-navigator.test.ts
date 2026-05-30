@@ -10,7 +10,6 @@ const ALL_PHASES: Phase[] = [
   Phases.execution,
   Phases.self_review,
   Phases.demo_prep,
-  Phases.integration,
 ];
 
 describe("PhaseNavigator", () => {
@@ -25,11 +24,11 @@ describe("PhaseNavigator", () => {
   });
 
   it("throws on startIndex beyond phases length", () => {
-    expect(() => new PhaseNavigator(ALL_PHASES, 8)).toThrow("out of bounds");
+    expect(() => new PhaseNavigator(ALL_PHASES, 7)).toThrow("out of bounds");
   });
 
   it("allows startIndex equal to phases length (exhausted from start)", () => {
-    const nav = new PhaseNavigator(ALL_PHASES, 7);
+    const nav = new PhaseNavigator(ALL_PHASES, 6);
     expect(nav.hasMore()).toBe(false);
   });
 
@@ -46,7 +45,7 @@ describe("PhaseNavigator", () => {
   });
 
   it("throws when cursor is past end", () => {
-    const nav = new PhaseNavigator(ALL_PHASES, 7);
+    const nav = new PhaseNavigator(ALL_PHASES, 6);
     expect(() => nav.current()).toThrow("past end of phases");
   });
 
@@ -151,11 +150,11 @@ describe("PhaseNavigator", () => {
 
   it("returns all remaining phases including current", () => {
     const nav = new PhaseNavigator(ALL_PHASES, 4); // self_review
-    expect(nav.phasesFromCursor()).toEqual([Phases.self_review, Phases.demo_prep, Phases.integration]);
+    expect(nav.phasesFromCursor()).toEqual([Phases.self_review, Phases.demo_prep]);
   });
 
   it("returns empty when exhausted", () => {
-    const nav = new PhaseNavigator(ALL_PHASES, 7);
+    const nav = new PhaseNavigator(ALL_PHASES, 6);
     expect(nav.phasesFromCursor()).toEqual([]);
   });
 

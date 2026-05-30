@@ -14,14 +14,7 @@ export type TaskState =
 export type SubState = "working" | "code";
 
 /** RRPIR pipeline phase. */
-export type Phase =
-  | "requirements_gathering"
-  | "research"
-  | "planning"
-  | "execution"
-  | "self_review"
-  | "demo_prep"
-  | "integration";
+export type Phase = "requirements_gathering" | "research" | "planning" | "execution" | "self_review" | "demo_prep";
 
 /** Lightweight task row for list views. */
 export interface TaskListItem {

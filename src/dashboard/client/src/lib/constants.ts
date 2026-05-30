@@ -41,7 +41,6 @@ export const PHASE_LABELS: Record<Phase, string> = {
   execution: "Execution",
   self_review: "Review",
   demo_prep: "Demo",
-  integration: "Integration",
 };
 
 /** Canonical ordering of pipeline phases from first to last. */
@@ -52,7 +51,6 @@ export const PHASE_ORDER: Phase[] = [
   "execution",
   "self_review",
   "demo_prep",
-  "integration",
 ];
 
 /** Human-readable short labels for each observation type in the timeline. */

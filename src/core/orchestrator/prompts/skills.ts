@@ -20,7 +20,6 @@ const SKILL_PHASE_MAP: Record<Phase, SkillName[]> = {
   [Phases.execution]: ["commit"],
   [Phases.self_review]: ["commit", "expert-panel-review"],
   [Phases.demo_prep]: [],
-  [Phases.integration]: ["commit"],
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────

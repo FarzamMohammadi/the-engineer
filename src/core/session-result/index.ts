@@ -77,7 +77,7 @@ export function backupSessionResult(phaseDir: string): void {
 export function writeSessionResultTemplate(phaseDir: string): void {
   const template = {
     status: "<ready | need_more_info | error>",
-    next_phase: "<requirements_gathering | research | planning | execution | self_review | demo_prep | integration>",
+    next_phase: "<requirements_gathering | research | planning | execution | self_review | demo_prep>",
     summary: "<one-line summary of what you accomplished>",
     complexity: "<trivial | moderate | complex>",
   };

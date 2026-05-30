@@ -119,9 +119,6 @@ const PHASE_GUIDANCE: Record<Phase, string> = {
 
   demo_prep:
     "Phase: demo preparation. Write a PR description that tells the full story — what changed, why, what was considered, how to test. Prepare clear artifacts that demonstrate the changes.",
-
-  integration:
-    "Phase: integration. Verify all changes integrate correctly. Run the full test suite. Check for conflicts. Ensure the codebase is clean. Nothing ships until integration is verified.",
 };
 
 // ── RRPIR Methodology ───────────────────────────────────────────────────────

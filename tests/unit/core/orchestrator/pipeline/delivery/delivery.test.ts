@@ -89,7 +89,9 @@ describe("delivery", () => {
     });
 
     it("completes the task once auto-merge has merged", () => {
-      expect(autoMergeNext()).toEqual({ go: "done" });
+      expect(autoMergeNext({ outcome: "ok", summary: "merged", data: { disposition: "merged" } })).toEqual({
+        go: "done",
+      });
     });
   });
 });

@@ -3,7 +3,13 @@ import { ulid } from "ulid";
 import type { AgentAdapter } from "../../adapters/agent.js";
 import { AdapterTypes, type AgentRunResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
-import { CommMessageSentPayloadSchema, CostIncurredPayloadSchema, EventTypes } from "../../schemas/events.js";
+import {
+  CommMessageSentPayloadSchema,
+  CostIncurredPayloadSchema,
+  EventTypes,
+  GitBranchDeletedPayloadSchema,
+  GitPrMergedPayloadSchema,
+} from "../../schemas/events.js";
 import type { PrEventType } from "../../schemas/git-hosting-event-types.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { type SessionEndReason, SessionEndReasons } from "../../schemas/session-memory.js";
@@ -48,6 +54,20 @@ export const EVENTS: EventDeclaration[] = [
     type: EventTypes["comm.message_sent"],
     description: "Emitted when a notification is sent to a communication channel",
     payloadSchema: CommMessageSentPayloadSchema,
+    publishers: ["orchestrator"],
+    subscribers: [],
+  },
+  {
+    type: EventTypes["git.pr_merged"],
+    description: "Emitted when auto-merge merges a task's pull request",
+    payloadSchema: GitPrMergedPayloadSchema,
+    publishers: ["orchestrator"],
+    subscribers: [],
+  },
+  {
+    type: EventTypes["git.branch_deleted"],
+    description: "Emitted when auto-merge deletes a task branch from the remote after merge",
+    payloadSchema: GitBranchDeletedPayloadSchema,
     publishers: ["orchestrator"],
     subscribers: [],
   },

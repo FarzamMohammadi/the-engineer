@@ -10,7 +10,6 @@ import {
   type Event,
   type EventPayloads,
   EventTypes,
-  GitBranchDeletedPayloadSchema,
   HealthStuckDetectedPayloadSchema,
   HealthTriggerFailurePayloadSchema,
   PreemptionCompletedPayloadSchema,
@@ -93,13 +92,6 @@ export const EVENTS: EventDeclaration[] = [
     description: "Emitted when notification retries are abandoned (max attempts, max age, or task terminal)",
     payloadSchema: CommRetryExhaustedPayloadSchema,
     publishers: ["notification-router"],
-    subscribers: [],
-  },
-  {
-    type: EventTypes["git.branch_deleted"],
-    description: "Emitted when the daemon deletes a task branch from the remote after merge",
-    payloadSchema: GitBranchDeletedPayloadSchema,
-    publishers: ["daemon"],
     subscribers: [],
   },
   {

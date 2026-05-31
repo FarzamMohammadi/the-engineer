@@ -20,10 +20,8 @@ import {
   HealthStuckDetectedPayloadSchema,
   HealthTriggerFailurePayloadSchema,
   PreemptionRequestedPayloadSchema,
-  ReviewPollCompletedPayloadSchema,
   SubscriptionSchema,
   TaskCreatedPayloadSchema,
-  TaskFeedbackReceivedPayloadSchema,
   TaskStateChangedPayloadSchema,
   TimeoutAlertPayloadSchema,
   TimeoutReminderPayloadSchema,
@@ -171,20 +169,6 @@ describe("TaskStateChangedPayloadSchema", () => {
         triggered_by: "test",
       }),
     ).toThrow();
-  });
-});
-
-describe("TaskFeedbackReceivedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      stage: "code",
-      feedback_type: "approved",
-      reviewer: "farzam",
-      content: null,
-      pr_number: 42,
-    };
-    expect(TaskFeedbackReceivedPayloadSchema.parse(valid)).toEqual(valid);
   });
 });
 
@@ -530,24 +514,6 @@ describe("CommMessageSentPayloadSchema", () => {
       channel: "telegram",
     };
     expect(CommMessageSentPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("ReviewPollCompletedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      pr_number: 51,
-      repo: "acme/webapp",
-      aggregate_state: "approved",
-      approvals: 1,
-      changes_requested_count: 0,
-      comment_count: 2,
-      reviewer_count: 1,
-      pr_draft: false,
-      dedup_skipped: false,
-    };
-    expect(ReviewPollCompletedPayloadSchema.parse(valid)).toEqual(valid);
   });
 });
 

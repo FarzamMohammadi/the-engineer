@@ -31,7 +31,6 @@ export type Subscription = z.infer<typeof SubscriptionSchema>;
 export const EventTypeSchema = z.enum([
   "task.created",
   "task.state_changed",
-  "task.feedback_received",
   "action.rejected",
   "cost.incurred",
   "cost.limit_reached",
@@ -64,7 +63,6 @@ export const EventTypeSchema = z.enum([
   "comm.send_failed",
   "comm.retry_succeeded",
   "comm.retry_exhausted",
-  "review.poll_completed",
   "evaluation.completed",
   "system.cleanup_completed",
 ]);
@@ -98,16 +96,6 @@ export const TaskStateChangedPayloadSchema = z.object({
   triggered_by: z.string(),
 });
 export type TaskStateChangedPayload = z.infer<typeof TaskStateChangedPayloadSchema>;
-
-export const TaskFeedbackReceivedPayloadSchema = z.object({
-  task_id: z.string(),
-  stage: z.literal("code"),
-  feedback_type: z.enum(["approved", "changes_requested", "comment"]),
-  reviewer: z.string(),
-  content: z.string().nullable(),
-  pr_number: z.number().int().positive(),
-});
-export type TaskFeedbackReceivedPayload = z.infer<typeof TaskFeedbackReceivedPayloadSchema>;
 
 // action.*
 
@@ -422,22 +410,6 @@ export const CommRetryExhaustedPayloadSchema = z.object({
 });
 export type CommRetryExhaustedPayload = z.infer<typeof CommRetryExhaustedPayloadSchema>;
 
-// review.*
-
-export const ReviewPollCompletedPayloadSchema = z.object({
-  task_id: z.string(),
-  pr_number: z.number().int().positive(),
-  repo: z.string(),
-  aggregate_state: z.enum(["approved", "changes_requested", "comment", "none"]),
-  approvals: z.number().int(),
-  changes_requested_count: z.number().int(),
-  comment_count: z.number().int(),
-  reviewer_count: z.number().int(),
-  pr_draft: z.boolean(),
-  dedup_skipped: z.boolean(),
-});
-export type ReviewPollCompletedPayload = z.infer<typeof ReviewPollCompletedPayloadSchema>;
-
 // evaluation.*
 
 export const EvaluationCompletedPayloadSchema = z.object({
@@ -469,7 +441,6 @@ export type SystemCleanupCompletedPayload = z.infer<typeof SystemCleanupComplete
 export type EventPayloads = {
   "task.created": TaskCreatedPayload;
   "task.state_changed": TaskStateChangedPayload;
-  "task.feedback_received": TaskFeedbackReceivedPayload;
   "action.rejected": ActionRejectedPayload;
   "cost.incurred": CostIncurredPayload;
   "cost.limit_reached": CostLimitReachedPayload;
@@ -502,7 +473,6 @@ export type EventPayloads = {
   "comm.send_failed": CommSendFailedPayload;
   "comm.retry_succeeded": CommRetrySucceededPayload;
   "comm.retry_exhausted": CommRetryExhaustedPayload;
-  "review.poll_completed": ReviewPollCompletedPayload;
   "evaluation.completed": EvaluationCompletedPayload;
   "system.cleanup_completed": SystemCleanupCompletedPayload;
 };
@@ -519,7 +489,6 @@ export type TypedEvent<T extends keyof EventPayloads> = Omit<Event, "payload" | 
 export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "task.created": TaskCreatedPayloadSchema,
   "task.state_changed": TaskStateChangedPayloadSchema,
-  "task.feedback_received": TaskFeedbackReceivedPayloadSchema,
   "action.rejected": ActionRejectedPayloadSchema,
   "cost.incurred": CostIncurredPayloadSchema,
   "cost.limit_reached": CostLimitReachedPayloadSchema,
@@ -552,7 +521,6 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "comm.send_failed": CommSendFailedPayloadSchema,
   "comm.retry_succeeded": CommRetrySucceededPayloadSchema,
   "comm.retry_exhausted": CommRetryExhaustedPayloadSchema,
-  "review.poll_completed": ReviewPollCompletedPayloadSchema,
   "evaluation.completed": EvaluationCompletedPayloadSchema,
   "system.cleanup_completed": SystemCleanupCompletedPayloadSchema,
 };

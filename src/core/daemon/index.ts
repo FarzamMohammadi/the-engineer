@@ -15,9 +15,6 @@ import {
   HealthTriggerFailurePayloadSchema,
   PreemptionCompletedPayloadSchema,
   PreemptionRequestedPayloadSchema,
-  ReviewPollCompletedPayloadSchema,
-  type TaskFeedbackReceivedPayload,
-  TaskFeedbackReceivedPayloadSchema,
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
 import { BlockReasons, TaskStates } from "../../schemas/task.js";
@@ -30,10 +27,10 @@ import { createRetryPolicy } from "../retry-policy/index.js";
 import { createCostLimitQueue } from "./cost-limit-queue.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
+import { createPrEventPoller } from "./pr-event-poller.js";
 import { type PendingPreemption, createPreemptionManager } from "./preemption-manager.js";
 import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 import { createResponsePoller } from "./response-poller.js";
-import { createReviewHandler } from "./review-handler.js";
 import { createTaskScheduler, isSlotConsuming } from "./task-scheduler.js";
 import { createTriggerPoller } from "./trigger-poller.js";
 import type { DaemonContext } from "./types.js";
@@ -74,20 +71,6 @@ export const EVENTS: EventDeclaration[] = [
     type: EventTypes["preemption.completed"],
     description: "Emitted when a preemption cycle completes (cooperative yield or forced transition)",
     payloadSchema: PreemptionCompletedPayloadSchema,
-    publishers: ["daemon"],
-    subscribers: [],
-  },
-  {
-    type: EventTypes["task.feedback_received"],
-    description: "Emitted when PR review feedback is processed",
-    payloadSchema: TaskFeedbackReceivedPayloadSchema,
-    publishers: ["daemon"],
-    subscribers: [],
-  },
-  {
-    type: EventTypes["review.poll_completed"],
-    description: "Emitted after polling PR review status",
-    payloadSchema: ReviewPollCompletedPayloadSchema,
     publishers: ["daemon"],
     subscribers: [],
   },
@@ -152,7 +135,6 @@ export interface Daemon {
   getState(): DaemonState;
 }
 
-export { deriveAggregateReviewState } from "./review-handler.js";
 export { evaluateTaskStuckness } from "./health-monitor.js";
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -234,7 +216,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   const triggerPoller = createTriggerPoller(ctx);
   const responsePoller = createResponsePoller(ctx, unblockResolver);
 
-  const reviewHandler = createReviewHandler(ctx, notifications);
+  const prEventPoller = createPrEventPoller(ctx, notifications);
 
   const healthMonitor = createDaemonHealthMonitor(ctx, notifications, () => scheduler.getActiveTaskIds());
 
@@ -324,11 +306,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       notifications.syncStateToCommPlugin(payload);
     });
 
-    eventBus.subscribe("daemon:feedback", EventTypes["task.feedback_received"], (event: Event) => {
-      const payload = event.payload as TaskFeedbackReceivedPayload;
-      reviewHandler.handleFeedbackEvent(payload);
-    });
-
     // ── Health event → owner notification (with cooldown dedup) ──────────
 
     function shouldNotifyHealth(key: string, now: number): boolean {
@@ -412,7 +389,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     eventBus.unsubscribe("daemon:cost");
     eventBus.unsubscribe("daemon:comm");
     eventBus.unsubscribe("daemon:state-sync");
-    eventBus.unsubscribe("daemon:feedback");
     eventBus.unsubscribe("daemon:health-trigger");
     eventBus.unsubscribe("daemon:health-stuck");
     eventBus.unsubscribe("daemon:hard-cap");
@@ -540,11 +516,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     const reviewPendingTasks = taskEngine.getBlockedTasksByReason(BlockReasons.pr_review_pending);
     healthMonitor.checkReviewPendingReminders(now, reviewPendingTasks);
 
-    // Step 7+8+8b: Check merges, feedback, and CI for approved tasks
-    reviewHandler.clearTickCache();
-    await reviewHandler.checkMerges(reviewPendingTasks);
-    await reviewHandler.checkFeedback(reviewPendingTasks);
-    await reviewHandler.checkApprovedCI();
+    // Step 7: Detect external PR events on review-pending tasks and re-enter them through the pipeline
+    await prEventPoller.poll(reviewPendingTasks);
 
     // Step 9: Cleanup expired seen keys and stale health cooldowns
     triggerPoller.cleanupExpiredKeys(now);

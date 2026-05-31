@@ -52,7 +52,7 @@ export type HealthMonitorContext = Pick<
 
 export type PreemptionManagerContext = Pick<DaemonContext, "config" | "eventBus" | "taskEngine" | "clock" | "observer">;
 
-export type ReviewHandlerContext = Pick<
+export type PrEventPollerContext = Pick<
   DaemonContext,
   | "config"
   | "workspaceConfig"

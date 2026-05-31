@@ -216,7 +216,6 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     // daemon:comm subscribes to comm.message_received — topology registration deferred until
     // CommunicationAdapter.receive capability is implemented (see future-considerations.md)
     eventTopology.registerSubscriber("daemon:state-sync", EventTypes["task.state_changed"]);
-    eventTopology.registerSubscriber("daemon:feedback", EventTypes["task.feedback_received"]);
 
     const eventDeclarations = eventTopology.getAllDeclarations();
     const publisherIds = new Set(eventDeclarations.flatMap((d) => d.publishers));

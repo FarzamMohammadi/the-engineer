@@ -97,7 +97,7 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
   const status = await hosting.getPRStatus(repo, prNumber);
   if (status.state === "merged") {
     ctx.observer.info("Pull request already merged — completing", { taskId: ctx.task.id, prNumber });
-    return done("merged", `PR #${String(prNumber)} is already merged`);
+    return resolved("merged", `PR #${String(prNumber)} is already merged`);
   }
 
   if (!ctx.safetyLayer.checkAutoMergeAllowed(repo)) {
@@ -111,17 +111,20 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
       taskId: ctx.task.id,
       message: `PR #${String(prNumber)} is approved and ready. Auto-merge is disabled for this repo — merge it when you're ready.`,
     });
-    return done(
+    return resolved(
       "auto_merge_disabled",
       `PR #${String(prNumber)} approved; auto-merge disabled — leaving the merge to a human`,
     );
   }
 
   if (status.checks_state === "failing") {
-    return done("ci_failure", `PR #${String(prNumber)} CI is failing — reworking before it can merge`);
+    return resolved("ci_failure", `PR #${String(prNumber)} CI is failing — reworking before it can merge`);
   }
   if (!status.mergeable) {
-    return done("merge_conflict", `PR #${String(prNumber)} no longer merges cleanly — reworking before it can merge`);
+    return resolved(
+      "merge_conflict",
+      `PR #${String(prNumber)} no longer merges cleanly — reworking before it can merge`,
+    );
   }
   if (status.checks_state !== "passing") {
     ctx.observer.info("PR not yet green — returning to the review wait", {
@@ -129,7 +132,7 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
       prNumber,
       checks: status.checks_state,
     });
-    return done(
+    return resolved(
       "retry_wait",
       `PR #${String(prNumber)} checks are not yet green (${status.checks_state}) — waiting to retry`,
     );
@@ -142,7 +145,7 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
   const result = await hosting.mergePR(repo, prNumber, strategy);
   if (!result.success) {
     if (result.error?.code === "merge_conflict") {
-      return done("merge_conflict", `Merge rejected as conflicting: ${result.error.message}`);
+      return resolved("merge_conflict", `Merge rejected as conflicting: ${result.error.message}`);
     }
     ctx.observer.warn("Merge did not complete — returning to the review wait to retry", {
       taskId: ctx.task.id,
@@ -150,11 +153,11 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
       code: result.error?.code,
       message: result.error?.message,
     });
-    return done("retry_wait", `Merge did not complete (${result.error?.code ?? "unknown"}) — waiting to retry`);
+    return resolved("retry_wait", `Merge did not complete (${result.error?.code ?? "unknown"}) — waiting to retry`);
   }
 
   recordMerge(ctx, repo, prNumber, strategy, result.merge_sha, record);
-  return done("merged", `Merged PR #${String(prNumber)}`);
+  return resolved("merged", `Merged PR #${String(prNumber)}`);
 }
 
 /** Remove the branch-introduced thoughts/ files before merge, when configured. Best-effort — a failure never blocks the merge. */
@@ -234,6 +237,6 @@ function deleteRemoteBranchAfterMerge(ctx: Ctx, repo: string, record: WorkspaceR
 }
 
 /** A merge attempt that ran cleanly: an `ok` result carrying the disposition `next` routes on. */
-function done(disposition: MergeDisposition, summary: string): SubPhaseResult {
+function resolved(disposition: MergeDisposition, summary: string): SubPhaseResult {
   return { outcome: "ok", summary, data: { disposition } };
 }

@@ -305,6 +305,27 @@ export const JournalConfigSchema = z.object({
 });
 export type JournalConfig = z.infer<typeof JournalConfigSchema>;
 
+/**
+ * The review lenses available to the pipeline's Review phase. Each value names a sub-phase
+ * file under `pipeline/review/`. `self-review` is the default lens; the rest are opt-in.
+ * Adding a lens is a file plus one value here.
+ */
+export const ReviewLensSchema = z.enum(["self-review", "security", "code-quality", "architecture"]);
+export type ReviewLens = z.infer<typeof ReviewLensSchema>;
+
+/** Constant enum values for ReviewLens. Use instead of raw strings. */
+export const ReviewLensNames = ReviewLensSchema.enum;
+
+export const ReviewConfigSchema = z.object({
+  lenses: z
+    .array(ReviewLensSchema)
+    .default(["self-review"])
+    .describe(
+      "Which review lenses run before delivery. Each runs as a focused agent pass that writes findings; `refine` then consolidates and fixes. Default: self-review only.",
+    ),
+});
+export type ReviewConfig = z.infer<typeof ReviewConfigSchema>;
+
 export const OrchestratorConfigSchema = z.object({
   rrpir: RrpirConfigSchema.default({}),
   notification: NotificationConfigSchema.default({}),
@@ -312,6 +333,7 @@ export const OrchestratorConfigSchema = z.object({
   demo: DemoConfigSchema.default({}),
   phases: PhasesConfigSchema.default({}),
   journal: JournalConfigSchema.default({}),
+  review: ReviewConfigSchema.default({}),
 });
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
 

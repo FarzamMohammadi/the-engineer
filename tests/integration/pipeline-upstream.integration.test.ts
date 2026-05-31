@@ -25,6 +25,11 @@ function groundingResult(complexity: string, gate: object): FakeResult {
   return { status: "ok", summary: "grounded", details: { complexity, verification: { commands: [gate] } } };
 }
 
+// This file isolates the upstream phases (requirements through execution) so its assertions stay
+// focused and stable. The full pipeline, including review and delivery, is driven end to end by
+// pipeline-review-delivery.integration.test.ts.
+const UPSTREAM = PIPELINE.slice(0, PIPELINE.findIndex((phase) => phase.phase === "execution") + 1);
+
 let harness: PipelineHarness;
 
 afterEach(() => {
@@ -40,7 +45,7 @@ describe("upstream pipeline (integration)", () => {
     );
     harness = createPipelineHarness(agent);
 
-    const outcome = await runPipeline(PIPELINE, harness.ctx);
+    const outcome = await runPipeline(UPSTREAM, harness.ctx);
 
     expect(outcome).toEqual({ kind: "completed" });
     // gather, investigate, design, implement, verify — every sub-phase ran and checkpointed.
@@ -57,7 +62,7 @@ describe("upstream pipeline (integration)", () => {
     );
     harness = createPipelineHarness(agent);
 
-    const outcome = await runPipeline(PIPELINE, harness.ctx);
+    const outcome = await runPipeline(UPSTREAM, harness.ctx);
 
     expect(outcome).toEqual({ kind: "completed" });
     // gather, implement, verify ran; investigate and design were skipped.
@@ -85,7 +90,7 @@ describe("upstream pipeline (integration)", () => {
     });
     harness = createPipelineHarness(agent);
 
-    const outcome = await runPipeline(PIPELINE, harness.ctx);
+    const outcome = await runPipeline(UPSTREAM, harness.ctx);
 
     expect(outcome).toEqual({ kind: "completed" });
     // First pass leaves the gate red → repeat → second pass writes MARKER → gate green → advance.

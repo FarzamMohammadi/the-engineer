@@ -1,6 +1,7 @@
 import type { Person } from "../../../../schemas/adapters.js";
 import { section } from "../../prompts/format.js";
 import {
+  buildCarrySection,
   buildGroundingSection,
   buildResultContract,
   buildSystemPrompt,
@@ -51,13 +52,18 @@ export function gatherNext(result: RoutableResult): Route {
 
 function buildPrompt(ctx: Ctx): string {
   const directory = resultDirectory(ctx, PHASE_DIR);
-  return [
-    buildGroundingSection(),
+  const parts = [buildGroundingSection()];
+  const carry = buildCarrySection(ctx);
+  if (carry) {
+    parts.push(carry);
+  }
+  parts.push(
     buildInstructions(directory),
     buildContactsSection(ctx.peopleDirectory.getAll()),
     buildResultContract({ directory, deliverable: DELIVERABLE, detailsHint: DETAILS_HINT }),
     buildTaskContext(ctx),
-  ].join("\n\n");
+  );
+  return parts.join("\n\n");
 }
 
 function buildInstructions(directory: string): string {

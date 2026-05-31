@@ -1,5 +1,11 @@
 import { section } from "../../prompts/format.js";
-import { buildResultContract, buildSystemPrompt, buildTaskContext, resultDirectory } from "../agent-prompt.js";
+import {
+  buildCarrySection,
+  buildResultContract,
+  buildSystemPrompt,
+  buildTaskContext,
+  resultDirectory,
+} from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
 import { isTrivial } from "../grounding.js";
 import {
@@ -53,12 +59,13 @@ export function designNext(result: RoutableResult): Route {
 
 function buildPrompt(ctx: Ctx): string {
   const directory = resultDirectory(ctx, PHASE_DIR);
-  return [
-    buildPriorWork(ctx),
-    buildInstructions(),
-    buildResultContract({ directory, deliverable: DELIVERABLE }),
-    buildTaskContext(ctx),
-  ].join("\n\n");
+  const parts = [buildPriorWork(ctx)];
+  const carry = buildCarrySection(ctx);
+  if (carry) {
+    parts.push(carry);
+  }
+  parts.push(buildInstructions(), buildResultContract({ directory, deliverable: DELIVERABLE }), buildTaskContext(ctx));
+  return parts.join("\n\n");
 }
 
 function buildPriorWork(ctx: Ctx): string {

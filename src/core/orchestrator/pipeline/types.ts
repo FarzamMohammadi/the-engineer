@@ -16,6 +16,9 @@ import type { OrchestratorContext } from "../types.js";
 export const PipelinePhaseSchema = z.enum(["requirements", "research", "planning", "execution", "review", "delivery"]);
 export type Phase = z.infer<typeof PipelinePhaseSchema>;
 
+/** Constant values for the pipeline phases. Use instead of raw strings. */
+export const Phases = PipelinePhaseSchema.enum;
+
 // ── Block Vocabulary ─────────────────────────────────────────────────────────
 
 /**

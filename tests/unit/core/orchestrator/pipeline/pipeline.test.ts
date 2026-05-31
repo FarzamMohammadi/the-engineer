@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { PIPELINE, Phases } from "../../../../../src/core/orchestrator/pipeline/pipeline.js";
+import { PIPELINE } from "../../../../../src/core/orchestrator/pipeline/pipeline.js";
+import { type Phase, Phases } from "../../../../../src/core/orchestrator/pipeline/types.js";
 
 // The pipeline map is the heart of the system — folders are phases, files are sub-phases.
-// This pins the upstream shape so an accidental reorder or a dropped sub-phase is caught.
-// Review and delivery join the map in the next session.
+// This pins the shape so an accidental reorder or a dropped sub-phase is caught. Delivery
+// joins the map in the next session.
 
 describe("PIPELINE", () => {
-  it("runs the upstream phases in order", () => {
+  it("runs the phases in order", () => {
     expect(PIPELINE.map((phase) => phase.phase)).toEqual([
       Phases.requirements,
       Phases.research,
       Phases.planning,
       Phases.execution,
+      Phases.review,
     ]);
   });
 
@@ -25,13 +27,15 @@ describe("PIPELINE", () => {
       research: ["investigate"],
       planning: ["design"],
       execution: ["implement", "verify"],
+      // Every lens is listed; the opt-in lenses skip themselves when not enabled in config.
+      review: ["self-review", "security", "code-quality", "architecture", "refine"],
     });
   });
 
-  it("lets execution loop implement on a red gate, but runs single-pass phases once", () => {
-    const execution = PIPELINE.find((phase) => phase.phase === Phases.execution);
-    const requirements = PIPELINE.find((phase) => phase.phase === Phases.requirements);
-    expect(execution?.maxIterations).toBe(3);
-    expect(requirements?.maxIterations).toBe(1);
+  it("loops the phases that converge by repeating, and runs single-pass phases once", () => {
+    const capOf = (phase: Phase) => PIPELINE.find((p) => p.phase === phase)?.maxIterations;
+    expect(capOf(Phases.execution)).toBe(3);
+    expect(capOf(Phases.review)).toBe(3);
+    expect(capOf(Phases.requirements)).toBe(1);
   });
 });

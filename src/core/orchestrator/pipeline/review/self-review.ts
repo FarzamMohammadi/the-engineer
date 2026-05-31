@@ -15,7 +15,7 @@ const INSTRUCTIONS = [
   "Review the full change through one question: does every part of it earn its keep?",
   "",
   "- **Does it do what was asked?** Walk the requirements against the diff. Flag anything missing, half-done, or beyond scope. Confirm tests cover the behavior that changed, not just the happy path.",
-  "- **Does it earn its keep?** A new file holding one tiny function, a wrapper that only forwards, an abstraction with a single caller, a flag never set to false, defensive code for a state that cannot happen — name each one. The best change is smaller than the first draft.",
+  "- **Does it earn its keep?** A new file holding one tiny function, a wrapper that only forwards, an abstraction with a single caller, a flag never set to false, defensive code for a state that cannot happen — name each one. The best change is smaller than the first draft. But do not over-cut: code that looks redundant can carry structural meaning — independent failure boundaries, a wrapper that unifies a wire shape, a comment naming a constraint that would otherwise be violated. Cut noise, not structure.",
   "- **Would it surprise the next reader?** A name that does not say what it means, a function doing two things, a clever line that needs a comment to be understood, a pattern that diverges from the code around it for no reason. Surprise is a defect.",
   "- **What ships, not just what changed?** Look at the whole commit, not only the diff: stray files, generated output, wrong lockfiles, leftover scaffolding, debug logging, uncommitted work. If a human reviewer would send it back for it, flag it.",
   "",

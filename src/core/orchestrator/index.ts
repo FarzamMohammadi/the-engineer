@@ -4,6 +4,7 @@ import type { AgentAdapter } from "../../adapters/agent.js";
 import { AdapterTypes, type AgentRunResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { CommMessageSentPayloadSchema, CostIncurredPayloadSchema, EventTypes } from "../../schemas/events.js";
+import type { PrEventType } from "../../schemas/git-hosting-event-types.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { type SessionEndReason, SessionEndReasons } from "../../schemas/session-memory.js";
 import {
@@ -13,6 +14,7 @@ import {
   type BlockReason,
   BlockReasons,
   type BlockedDetails,
+  type Task,
   TaskStates,
 } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
@@ -20,7 +22,8 @@ import type { EventDeclaration } from "../event-bus/topology.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { sendOutreach } from "./outreach-sender.js";
 import { PIPELINE } from "./pipeline/pipeline.js";
-import { type ResumeState, type RunnerOutcome, runPipeline } from "./pipeline/runner.js";
+import { entryFor, reentryCarry } from "./pipeline/pr-events.js";
+import { type Cursor, type ResumeState, type RunnerOutcome, runPipeline } from "./pipeline/runner.js";
 import type { BlockDetail, Ctx } from "./pipeline/types.js";
 import { type ExecuteTaskResult, type OrchestratorContext, Outcomes } from "./types.js";
 import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
@@ -70,6 +73,20 @@ function toBlockReason(category: BlockCategory): BlockReason {
   }
 }
 
+/** Locate the pipeline cursor for a phase plus optional sub-phase name. Undefined when the pipeline no longer declares them (a reshape). */
+function locateCursor(phase: string, subPhaseName: string | null): Cursor | undefined {
+  const phaseIndex = PIPELINE.findIndex((definition) => definition.phase === phase);
+  if (phaseIndex < 0) {
+    return undefined;
+  }
+  const phaseDef = PIPELINE[phaseIndex];
+  const subIndex = subPhaseName ? (phaseDef?.subPhases.findIndex((sub) => sub.name === subPhaseName) ?? -1) : 0;
+  if (subIndex < 0) {
+    return undefined;
+  }
+  return { phaseIndex, subIndex };
+}
+
 /**
  * Resolve where a resumed dispatch picks up. The latest checkpoint names the sub-phase that ran and
  * its counters; the runner re-runs from there, so re-applying its route reproduces the original flow.
@@ -80,22 +97,30 @@ function resolveResume(dispatch: Dispatch): ResumeState | undefined {
   if (!checkpoint) {
     return undefined;
   }
-  const phaseIndex = PIPELINE.findIndex((definition) => definition.phase === checkpoint.phase);
-  if (phaseIndex < 0) {
-    return undefined;
-  }
-  const phaseDef = PIPELINE[phaseIndex];
-  const subIndex = checkpoint.sub_phase
-    ? (phaseDef?.subPhases.findIndex((sub) => sub.name === checkpoint.sub_phase) ?? -1)
-    : 0;
-  if (subIndex < 0) {
+  const cursor = locateCursor(checkpoint.phase, checkpoint.sub_phase);
+  if (!cursor) {
     return undefined;
   }
   return {
-    cursor: { phaseIndex, subIndex },
+    cursor,
     phaseIteration: checkpoint.phase_iteration,
     totalReworks: checkpoint.total_reworks,
   };
+}
+
+/**
+ * Resolve an external PR-event re-entry into a starting ResumeState. The pending event type maps
+ * through {@link entryFor} to a fresh cursor (counters at zero — this is a new pass, not a mid-loop
+ * resume) and seeds the carry with the rework reason. Undefined when the event no longer maps to a
+ * declared sub-phase, so the caller logs and falls back rather than looping on a poison value.
+ */
+function resolveReentry(type: PrEventType, task: Task): ResumeState | undefined {
+  const entry = entryFor(type);
+  const cursor = locateCursor(entry.phase, entry.sub ?? null);
+  if (!cursor) {
+    return undefined;
+  }
+  return { cursor, phaseIteration: 0, totalReworks: 0, carry: reentryCarry(type, task) };
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -151,10 +176,11 @@ export class Orchestrator {
     this.notifyPickup(taskId, dispatch.task.title);
 
     const ctx = this.buildContext(dispatch, tracedObserver, sessionId, traceId);
+    const resume = this.resolveDispatchStart(dispatch, tracedObserver);
 
     let outcome: RunnerOutcome;
     try {
-      outcome = await runPipeline(PIPELINE, ctx, resolveResume(dispatch));
+      outcome = await runPipeline(PIPELINE, ctx, resume);
     } catch (error) {
       const reason = dispatch.signal.aborted ? SessionEndReasons.preempted : SessionEndReasons.crashed;
       this.endSession(sessionId, reason, taskId);
@@ -190,6 +216,34 @@ export class Orchestrator {
       thoughtsDir: record?.thoughtsDir ?? null,
       ...(dispatch.signal ? { signal: dispatch.signal } : {}),
     };
+  }
+
+  /**
+   * Decide where this dispatch starts. A pending external PR event takes precedence over a resume
+   * checkpoint — it is a fresh re-entry, not a mid-loop continuation — and is consumed (cleared) on
+   * read so it fires exactly once; if this dispatch is lost, the stateless poller re-derives it next
+   * tick. With no pending event, fall back to the resume checkpoint (then a fresh run).
+   */
+  private resolveDispatchStart(dispatch: Dispatch, observer: OrchestratorContext["observer"]): ResumeState | undefined {
+    const pending = dispatch.task.pending_pr_event;
+    if (!pending) {
+      return resolveResume(dispatch);
+    }
+    this.ctx.taskEngine.updateTaskField(dispatch.task.id, "pending_pr_event", null);
+    const reentry = resolveReentry(pending, dispatch.task);
+    if (!reentry) {
+      observer.warn("Pending PR event does not map to a pipeline entry — resuming normally", {
+        taskId: dispatch.task.id,
+        event: pending,
+      });
+      return resolveResume(dispatch);
+    }
+    observer.info("Re-entering pipeline from PR event", {
+      taskId: dispatch.task.id,
+      event: pending,
+      entryPhase: PIPELINE[reentry.cursor.phaseIndex]?.phase ?? null,
+    });
+    return reentry;
   }
 
   /** Tell the owner work has started, on their channels and on the source ticket. */

@@ -73,6 +73,7 @@ const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
   // TEXT columns
   phase: "text",
   sub_phase: "text",
+  pending_pr_event: "text",
   session_id: "text",
   description: "text",
   source_text: "text",
@@ -140,7 +141,7 @@ export class TaskEngine implements ITaskEngine {
         id, external_ref, idempotency_key, state, sub_state, phase, sub_phase,
         title, description, source_text, acceptance_criteria,
         team, related, decisions,
-        repo, clone_url, thoughts_id, workspace, review, blocked,
+        repo, clone_url, thoughts_id, workspace, review, blocked, pending_pr_event,
         phase_iteration, total_reworks,
         priority, agent_tokens, agent_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
@@ -150,7 +151,7 @@ export class TaskEngine implements ITaskEngine {
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?,
-        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
         ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -208,6 +209,7 @@ export class TaskEngine implements ITaskEngine {
       null, // workspace
       null, // review
       null, // blocked
+      null, // pending_pr_event
       0, // phase_iteration
       0, // total_reworks
       priority,
@@ -261,6 +263,7 @@ export class TaskEngine implements ITaskEngine {
       workspace: null,
       review: null,
       blocked: null,
+      pending_pr_event: null,
       phase_iteration: 0,
       total_reworks: 0,
       priority,

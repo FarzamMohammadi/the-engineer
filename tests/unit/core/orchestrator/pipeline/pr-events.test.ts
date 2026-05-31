@@ -5,9 +5,11 @@ import {
   dedupePrEvents,
   entryFor,
   findAuthorizedApproval,
+  reentryCarry,
 } from "../../../../../src/core/orchestrator/pipeline/pr-events.js";
 import type { PRComment } from "../../../../../src/schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../../../../src/schemas/git-hosting-events.js";
+import { createMockTask } from "../../../../helpers/mock-factories.js";
 import { createTestPeopleDirectory } from "../../../../helpers/test-people-directory.js";
 
 const comment = (id: string, author: string, body: string): PRComment => ({
@@ -28,17 +30,50 @@ const ev = {
 describe("PR-event policy", () => {
   describe("entryFor", () => {
     it("re-enters comments at requirements, where new scope is caught", () => {
-      expect(entryFor(ev.comments())).toEqual({ phase: "requirements" });
+      expect(entryFor(PrEventTypes.pr_comments)).toEqual({ phase: "requirements" });
     });
 
     it("re-enters CI failures and merge conflicts at execution to fix", () => {
-      expect(entryFor(ev.ciFailure())).toEqual({ phase: "execution", sub: "implement" });
-      expect(entryFor(ev.conflict())).toEqual({ phase: "execution", sub: "implement" });
+      expect(entryFor(PrEventTypes.pr_ci_failure)).toEqual({ phase: "execution", sub: "implement" });
+      expect(entryFor(PrEventTypes.pr_merge_conflict)).toEqual({ phase: "execution", sub: "implement" });
     });
 
     it("re-enters ready-to-merge and already-merged at delivery's auto-merge", () => {
-      expect(entryFor(ev.ready())).toEqual({ phase: "delivery", sub: "auto-merge" });
-      expect(entryFor(ev.merged())).toEqual({ phase: "delivery", sub: "auto-merge" });
+      expect(entryFor(PrEventTypes.pr_ready_to_merge)).toEqual({ phase: "delivery", sub: "auto-merge" });
+      expect(entryFor(PrEventTypes.pr_merged)).toEqual({ phase: "delivery", sub: "auto-merge" });
+    });
+  });
+
+  describe("reentryCarry", () => {
+    it("lists the task's outstanding feedback for a comments re-entry", () => {
+      const task = createMockTask({
+        review: {
+          pr_number: 7,
+          pr_state: "ready",
+          demo_artifacts: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+          feedback_rounds: [{ stage: "code", applied: false, comments: ["Tighten the error message", "Add a test"] }],
+        },
+      });
+      const carry = reentryCarry(PrEventTypes.pr_comments, task);
+      expect(carry.summary).toContain("Tighten the error message");
+      expect(carry.summary).toContain("Add a test");
+    });
+
+    it("falls back to a generic feedback prompt when no unapplied feedback is stored", () => {
+      const task = createMockTask({ review: null });
+      expect(reentryCarry(PrEventTypes.pr_comments, task).summary).toContain("New reviewer feedback");
+    });
+
+    it("tells the agent to reproduce the failing gates for a CI-failure re-entry", () => {
+      expect(reentryCarry(PrEventTypes.pr_ci_failure, createMockTask()).summary).toContain("CI checks are failing");
+    });
+
+    it("tells the agent to resolve conflicts for a merge-conflict re-entry", () => {
+      expect(reentryCarry(PrEventTypes.pr_merge_conflict, createMockTask()).summary).toContain(
+        "no longer merges cleanly",
+      );
     });
   });
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PRCommentSchema } from "./adapters.js";
+import { type PrEventType, PrEventTypeSchema, PrEventTypes } from "./git-hosting-event-types.js";
 
 // ── PR Events ──────────────────────────────────────────────────────────────────
 //
@@ -14,19 +15,13 @@ import { PRCommentSchema } from "./adapters.js";
 // and to find an authorized `/approve`. When a re-entered phase needs richer
 // platform detail (which checks failed, which files conflict), the agent fetches
 // it live through the plugin's query methods — it is not persisted on the task.
+//
+// The discriminant enum (`PrEventType`) lives in the dependency-free
+// `git-hosting-event-types.ts` leaf so the task schema can persist a pending
+// event's type without importing this file (which would cycle through the adapters
+// schema). It is re-exported here so this stays the one place to import the vocabulary.
 
-/** The kinds of PR event Core reacts to. The plugin computes which ones currently hold. */
-export const PrEventTypeSchema = z.enum([
-  "pr_comments", // actionable reviewer feedback
-  "pr_ci_failure", // checks are red
-  "pr_merge_conflict", // the base moved and the branch no longer merges
-  "pr_ready_to_merge", // approved AND CI green AND mergeable, all at once
-  "pr_merged", // merged, by us or externally
-]);
-export type PrEventType = z.infer<typeof PrEventTypeSchema>;
-
-/** Constant enum values for PrEventType. Use instead of raw strings. */
-export const PrEventTypes = PrEventTypeSchema.enum;
+export { type PrEventType, PrEventTypeSchema, PrEventTypes };
 
 /** Reviewer feedback to address — carries the comments so Core can dedup and find an authorized `/approve`. */
 export const PrCommentsEventSchema = z.object({

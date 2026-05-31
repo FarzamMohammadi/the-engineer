@@ -1,4 +1,5 @@
 import { fromSqliteJson } from "../../db/serialize.js";
+import type { PrEventType } from "../../schemas/git-hosting-event-types.js";
 import type {
   BlockedDetails,
   ExternalRef,
@@ -35,6 +36,7 @@ export interface TaskRow {
   workspace: string | null;
   review: string | null;
   blocked: string | null;
+  pending_pr_event: string | null;
   phase_iteration: number;
   total_reworks: number;
   priority: number;
@@ -89,6 +91,7 @@ export function rowToTask(row: TaskRow): Task {
     workspace: fromSqliteJson<TaskWorkspace>(row.workspace),
     review: fromSqliteJson<ReviewState>(row.review),
     blocked: fromSqliteJson<BlockedDetails>(row.blocked),
+    pending_pr_event: row.pending_pr_event as PrEventType | null,
     phase_iteration: row.phase_iteration,
     total_reworks: row.total_reworks,
     priority: row.priority,

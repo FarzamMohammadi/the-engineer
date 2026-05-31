@@ -27,11 +27,16 @@ export interface Cursor {
  * Where a resumed dispatch picks up. The cursor restores the position; the two counters restore the
  * iteration guards so a task that keeps getting preempted mid-loop still trips its cap. Absent on a
  * fresh dispatch — the runner starts at the first sub-phase with both counters at zero.
+ *
+ * `carry` seeds the first sub-phase's context. A preempt-resume leaves it undefined (re-running the
+ * checkpointed sub-phase reproduces the flow); an external PR-event re-entry sets it to the rework
+ * reason so the re-entered phase opens by addressing what came back, via the normal carry rendering.
  */
 export interface ResumeState {
   readonly cursor: Cursor;
   readonly phaseIteration: number;
   readonly totalReworks: number;
+  readonly carry?: Carry;
 }
 
 /** Thrown when a `next` function returns a structurally invalid route (a bug in the sub-phase). */
@@ -77,7 +82,7 @@ export async function runPipeline(
   let cursor = resume?.cursor ?? { phaseIndex: 0, subIndex: 0 };
   let phaseIteration = resume?.phaseIteration ?? 0;
   let totalReworks = resume?.totalReworks ?? 0;
-  let carry: Ctx["carry"];
+  let carry: Ctx["carry"] = resume?.carry;
 
   emitPhaseEnter(ctx, phaseAt(pipeline, cursor).phase);
 

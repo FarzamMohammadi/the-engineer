@@ -1,9 +1,10 @@
 import type { PRComment } from "../../../schemas/adapters.js";
 import { type PrEvent, type PrEventType, PrEventTypes } from "../../../schemas/git-hosting-events.js";
+import type { Task } from "../../../schemas/task.js";
 import type { IPeopleDirectory } from "../../interfaces/people-directory.interface.js";
 import { autoMerge } from "./delivery/auto-merge.js";
 import { implement } from "./execution/implement.js";
-import { type Entry, Phases } from "./types.js";
+import { type Carry, type Entry, Phases } from "./types.js";
 
 // ── PR-Event Core Policy ─────────────────────────────────────────────────────
 //
@@ -17,13 +18,13 @@ import { type Entry, Phases } from "./types.js";
 // lands at the external re-entry session; here they are pure, unit-tested policy.
 
 /**
- * Where each external PR event re-enters the pipeline. Comments may surface new scope, so they
- * re-enter at requirements (the trivial-skip gates forward as needed); CI failures and merge
- * conflicts re-enter at execution to fix; a ready-to-merge or already-merged event re-enters at
- * delivery's entry-only `auto-merge`.
+ * Where each external PR event re-enters the pipeline, keyed by the event type the task persists.
+ * Comments may surface new scope, so they re-enter at requirements (the trivial-skip gates forward as
+ * needed); CI failures and merge conflicts re-enter at execution to fix; a ready-to-merge or
+ * already-merged event re-enters at delivery's entry-only `auto-merge`.
  */
-export function entryFor(event: PrEvent): Entry {
-  switch (event.type) {
+export function entryFor(type: PrEventType): Entry {
+  switch (type) {
     case PrEventTypes.pr_comments:
       return { phase: Phases.requirements };
     case PrEventTypes.pr_ci_failure:
@@ -35,10 +36,53 @@ export function entryFor(event: PrEvent): Entry {
     case PrEventTypes.pr_merged:
       return { phase: Phases.delivery, sub: autoMerge.name };
     default: {
-      const exhaustive: never = event;
-      throw new Error(`Unhandled PR event "${JSON.stringify(exhaustive)}"`);
+      const exhaustive: never = type;
+      throw new Error(`Unhandled PR event type "${JSON.stringify(exhaustive)}"`);
     }
   }
+}
+
+/**
+ * The rework context a re-entered agent opens with, derived from the event type. Surfaced through the
+ * runner's carry, so the phase reached by {@link entryFor} starts by addressing what came back rather
+ * than from scratch. Comments carry their content (already sanitized in `review.feedback_rounds`);
+ * CI and conflict re-derive their detail live, per the thin-payload rule. The merge events carry a
+ * placeholder — `auto-merge` is an orchestrator step that does not read carry.
+ */
+export function reentryCarry(type: PrEventType, task: Task): Carry {
+  switch (type) {
+    case PrEventTypes.pr_comments:
+      return { summary: feedbackCarrySummary(task) };
+    case PrEventTypes.pr_ci_failure:
+      return {
+        summary:
+          "The open pull request's CI checks are failing. Reproduce the failures by running the project's own gates, fix the root cause, and let delivery re-push the branch.",
+      };
+    case PrEventTypes.pr_merge_conflict:
+      return {
+        summary:
+          "The open pull request no longer merges cleanly into its base branch. Update the branch against the base, resolve every conflict, and let delivery re-push.",
+      };
+    case PrEventTypes.pr_ready_to_merge:
+    case PrEventTypes.pr_merged:
+      return { summary: "The pull request is approved and being finalized for merge." };
+    default: {
+      const exhaustive: never = type;
+      throw new Error(`Unhandled PR event type "${JSON.stringify(exhaustive)}"`);
+    }
+  }
+}
+
+/** Render the task's outstanding (unapplied) review feedback into the rework summary the agent reads. */
+function feedbackCarrySummary(task: Task): string {
+  const comments = (task.review?.feedback_rounds ?? [])
+    .filter((round) => !round.applied)
+    .flatMap((round) => round.comments);
+  if (comments.length === 0) {
+    return "New reviewer feedback arrived on the open pull request. Re-read the PR conversation, address the feedback, and let delivery re-push.";
+  }
+  const list = comments.map((comment) => `- ${comment}`).join("\n");
+  return ["New reviewer feedback arrived on the open pull request. Address it before continuing:", "", list].join("\n");
 }
 
 /**

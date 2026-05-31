@@ -54,6 +54,7 @@ export type UpdatableField =
   | "workspace"
   | "review"
   | "blocked"
+  | "pending_pr_event"
   | "team"
   | "related"
   | "decisions"

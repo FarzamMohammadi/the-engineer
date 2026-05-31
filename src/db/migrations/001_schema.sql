@@ -36,6 +36,11 @@ CREATE TABLE tasks (
   -- Blocked
   blocked                 TEXT,
 
+  -- Pending external PR event — the type of the arbitrated PR event the next dispatch should
+  -- re-enter on (NULL when none pending). The daemon's PR-event poller sets it and re-queues;
+  -- the orchestrator reads it via entryFor, seeds the re-entry, and clears it.
+  pending_pr_event        TEXT,
+
   -- Tracking
   priority                INTEGER NOT NULL DEFAULT 50 CHECK(priority BETWEEN 1 AND 100),
   agent_tokens            INTEGER NOT NULL DEFAULT 0,

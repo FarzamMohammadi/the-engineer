@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { PrEventTypeSchema } from "./git-hosting-event-types.js";
+
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
 export const TaskStateSchema = z.enum(["requirements_gathering", "queued", "active", "blocked", "completed", "failed"]);
@@ -217,6 +219,13 @@ export const TaskSchema = z.object({
 
   // Blocked
   blocked: BlockedDetailsSchema.nullable(),
+
+  // Pending external PR event — when set, the next dispatch re-enters the pipeline at this event's
+  // entry point (via entryFor) instead of resuming a checkpoint. The daemon's PR-event poller writes
+  // the arbitrated winner's type here and re-queues the task; the orchestrator reads it, seeds the
+  // re-entry, and clears it. Only the type is stored (the routing signal): the rework content rides
+  // `review.feedback_rounds`, and richer CI/conflict detail is re-derived live, per the thin-payload rule.
+  pending_pr_event: PrEventTypeSchema.nullable().default(null),
 
   // Pipeline loop counters — persisted on the task row (and each checkpoint) so a preempt-and-resume
   // does not reset the caps. phase_iteration is the intra-phase repeat count (resets on phase entry);

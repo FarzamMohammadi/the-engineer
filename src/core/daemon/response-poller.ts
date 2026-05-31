@@ -2,7 +2,7 @@ import type { CommunicationAdapter } from "../../adapters/communication.js";
 import type { InboundMessage } from "../../schemas/adapters.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { ExternalRef } from "../../schemas/task.js";
-import { TaskStates } from "../../schemas/task.js";
+import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ResponsePollerContext } from "./types.js";
 import type { UnblockInput, UnblockResolver } from "./unblock-resolver.js";
@@ -95,7 +95,13 @@ export function createResponsePoller(ctx: ResponsePollerContext, unblockResolver
   async function pollCommPlugins(now: number): Promise<void> {
     // Always poll — comm plugins capture /start handshakes and general
     // messages even when no tasks are blocked.
-    const blockedTasks = taskEngine.getTasksByState(TaskStates.blocked);
+    //
+    // PR-review-pending tasks resume only through PR events (the PR-event poller), never a human comment, so
+    // they are excluded here: their channels are not polled and the sole-blocked-task fallback never targets
+    // them. The unblock-resolver guard is the authoritative backstop (it also covers the dashboard path).
+    const blockedTasks = taskEngine
+      .getTasksByState(TaskStates.blocked)
+      .filter((task) => task.blocked?.reason !== BlockReasons.pr_review_pending);
 
     // Build channel list from blocked tasks' external_ref (may be empty for Telegram-only tasks)
     const channels: string[] = [];

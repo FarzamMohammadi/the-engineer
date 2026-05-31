@@ -8,7 +8,7 @@ import {
   createUnblockResolver,
   externalRefsMatch,
 } from "../../../../src/core/daemon/unblock-resolver.js";
-import { TaskStates } from "../../../../src/schemas/task.js";
+import { BlockReasons, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -36,6 +36,18 @@ function makeBlockedTask(id: string, repo: string, externalId: string, thoughtsI
     state: TaskStates.blocked,
     external_ref: { type: "test_issue", repo, id: externalId },
     thoughts_id: thoughtsId,
+  };
+}
+
+function makeReviewPendingTask(id: string, repo: string, externalId: string) {
+  return {
+    ...makeBlockedTask(id, repo, externalId),
+    blocked: {
+      reason: BlockReasons.pr_review_pending,
+      category: "awaiting_pr_review",
+      sub_phase: "await-review",
+      needed: "waiting on the PR",
+    },
   };
 }
 
@@ -97,6 +109,23 @@ describe("UnblockResolver", () => {
         "daemon",
       );
       expect(mockCtx.taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "blocked", null);
+    });
+
+    it("does not unblock a PR-review-pending task — it resumes through PR events, not a comment", () => {
+      const task = makeReviewPendingTask("task-1", "test/repo", "42");
+      (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
+
+      const resolver = createUnblockResolver(mockCtx);
+      const result = resolver.tryUnblock({
+        by: "external_ref",
+        ref: { type: "test_issue", repo: "test/repo", id: "42" },
+        source: "github",
+        content: "looks good",
+      });
+
+      expect(result).toEqual({ unblocked: false, taskId: "task-1", reason: "pr_review_pending" });
+      expect(mockCtx.taskEngine.requestTransition).not.toHaveBeenCalled();
+      expect(mockCtx.taskEngine.updateTaskField).not.toHaveBeenCalled();
     });
 
     it("returns no_match when no blocked task matches", () => {
@@ -175,6 +204,17 @@ describe("UnblockResolver", () => {
         "dashboard_response_received",
         "daemon",
       );
+    });
+
+    it("does not unblock a PR-review-pending task by direct id", () => {
+      const task = makeReviewPendingTask("task-1", "test/repo", "42");
+      (mockCtx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
+
+      const resolver = createUnblockResolver(mockCtx);
+      const result = resolver.tryUnblock({ by: "task_id", taskId: "task-1", source: "dashboard" });
+
+      expect(result).toEqual({ unblocked: false, taskId: "task-1", reason: "pr_review_pending" });
+      expect(mockCtx.taskEngine.requestTransition).not.toHaveBeenCalled();
     });
 
     it("returns not_blocked when task is not in blocked state", () => {

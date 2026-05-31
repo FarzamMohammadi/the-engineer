@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildChannel, createResponsePoller, linkMessageToTask } from "../../../../src/core/daemon/response-poller.js";
 import type { ResponsePollerContext } from "../../../../src/core/daemon/types.js";
+import { BlockReasons } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -236,6 +237,33 @@ describe("ResponsePoller", () => {
     const poller = createResponsePoller(ctx, resolver);
     await poller.poll(100_000);
 
+    expect(resolver.tryUnblock).not.toHaveBeenCalled();
+  });
+
+  it("excludes a PR-review-pending task — its channel is not polled and the sole-blocked fallback skips it", async () => {
+    const reviewPending = {
+      ...makeBlockedTask("task-1", "owner/repo", "42"),
+      blocked: { reason: BlockReasons.pr_review_pending },
+    };
+    (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([reviewPending]);
+
+    const unlinkable = {
+      source: "telegram",
+      sender: "owner",
+      content: "ping",
+      timestamp: "2026-01-01T00:00:00Z",
+      reply_to: null,
+      platform_metadata: {},
+    };
+    const plugin = makeCommPlugin("telegram", [unlinkable]);
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([plugin]);
+
+    const poller = createResponsePoller(ctx, resolver);
+    await poller.poll(100_000);
+
+    // the review-pending task is filtered out: it is never the sole blocked task, so its issue channel
+    // is not polled and an unlinkable message is not misattributed to it
+    expect(plugin.pollMessages).toHaveBeenCalledWith([], expect.anything());
     expect(resolver.tryUnblock).not.toHaveBeenCalled();
   });
 

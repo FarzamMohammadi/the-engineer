@@ -6,7 +6,7 @@ import type { HealthMonitorContext } from "../../../../src/core/daemon/types.js"
 import { type DaemonConfig, TimeoutStageActions } from "../../../../src/schemas/config.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
-import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { BlockReasons, SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -318,6 +318,33 @@ describe("DaemonHealthMonitor", () => {
         "blocked_timeout_escalation",
         "daemon",
       );
+    });
+
+    it("never escalates a PR-review-pending task — it resumes via PR events, not the escalation ladder", () => {
+      const { ctx, taskEngine } = makeContext();
+      const notifications = makeNotifications();
+
+      const transitionTime = 1_000_000;
+      const now = transitionTime + 173_000_000; // past the escalation-to-failed stage
+      const task = makeTask({
+        id: "review-pending-1",
+        state: TaskStates.blocked,
+        blocked: {
+          reason: BlockReasons.pr_review_pending,
+          category: "awaiting_pr_review",
+          sub_phase: "await-review",
+          needed: "waiting on the PR",
+        },
+        last_transition_at: new Date(transitionTime).toISOString(),
+      });
+      taskEngine.getTasksByState.mockReturnValue([task]);
+
+      const getActiveTaskIds = vi.fn(() => []);
+      const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
+      hm.checkBlockedEscalation(now);
+
+      expect(notifications.notify).not.toHaveBeenCalled();
+      expect(taskEngine.requestTransition).not.toHaveBeenCalled();
     });
 
     it("cleans up escalation state for tasks no longer blocked", () => {

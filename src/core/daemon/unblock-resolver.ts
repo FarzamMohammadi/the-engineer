@@ -1,7 +1,7 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ExternalRef } from "../../schemas/task.js";
-import { TaskStates } from "../../schemas/task.js";
+import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
@@ -44,6 +44,16 @@ export function externalRefsMatch(a: ExternalRef, b: ExternalRef): boolean {
   return a.repo === b.repo && a.id === b.id;
 }
 
+/**
+ * Whether a blocked task is awaiting PR review. Such a task resumes only through PR events (the PR-event
+ * poller detects an approval, new feedback, or a CI result and re-enters it), never through a human comment
+ * or dashboard reply — so it must not be unblocked here. This is the single authoritative guard, covering
+ * every caller including the dashboard/event-bus path the response-poller's own scoping does not see.
+ */
+function isAwaitingPrReview(task: { blocked: { reason: string } | null }): boolean {
+  return task.blocked?.reason === BlockReasons.pr_review_pending;
+}
+
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResolver {
@@ -63,6 +73,9 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
     if (!match) {
       return { unblocked: false, taskId: null, reason: "no_match" };
     }
+    if (isAwaitingPrReview(match)) {
+      return ignoreReviewPending(match.id, source);
+    }
 
     return transitionAndClear(match.id, source, content);
   }
@@ -72,8 +85,20 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
     if (!task || task.state !== TaskStates.blocked) {
       return { unblocked: false, taskId, reason: "not_blocked" };
     }
+    if (isAwaitingPrReview(task)) {
+      return ignoreReviewPending(taskId, source);
+    }
 
     return transitionAndClear(taskId, source, content);
+  }
+
+  /** A response matched a PR-review-pending task — leave it for the PR-event poller and record why it was not unblocked. */
+  function ignoreReviewPending(taskId: string, source: string): UnblockResult {
+    observer.debug("Ignoring a response for a PR-review-pending task — it resumes through PR events, not comments", {
+      taskId,
+      source,
+    });
+    return { unblocked: false, taskId, reason: "pr_review_pending" };
   }
 
   /** Shared transition logic: write response first, then transition, then clear blocked. */

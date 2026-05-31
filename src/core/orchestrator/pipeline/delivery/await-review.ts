@@ -5,8 +5,9 @@ import { skipWhenPushOnly } from "./deliverable.js";
 //
 // await-review is where a PR-mode task waits. Its run reports that the PR is open
 // and waiting; its next parks the task in the awaiting_pr_review block and exits
-// the pipeline. The task resumes when an external review event re-enters it (a
-// later session wires that re-entry). Skipped in push-only mode.
+// the pipeline. The daemon's PR-event poller resumes it: it detects an external
+// review event, writes the event onto the task, and re-queues, re-entering the
+// pipeline at entryFor(event). Skipped in push-only mode.
 
 /** Delivery: park the task on its open PR until an external review event resumes it. Skipped in push-only mode. */
 export const awaitReview: SubPhase = {
@@ -29,8 +30,8 @@ export function awaitReviewNext(): Route {
   };
 }
 
-// TODO(farzam): external review events (GitHostingAdapter.detectPrEvents) re-enter the task via
-// entryFor at the external re-entry session; this shell only routes the task into the wait.
+// The poller (daemon/pr-event-poller.ts) detects external review events and re-enters the task via
+// entryFor; this step only parks it into the wait.
 function runAwaitReview(): Promise<SubPhaseResult> {
   return Promise.resolve({ outcome: "ok", summary: "Pull request open; awaiting an external review event" });
 }

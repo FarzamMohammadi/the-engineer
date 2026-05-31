@@ -115,9 +115,9 @@ export function arbitrate(events: readonly PrEvent[]): PrEvent | null {
  * PR state and acted on idempotently. A comments event survives if it carries at least one comment
  * the task has not yet seen; a pure state signal carrying no comments is left for the consumer.
  *
- * Dedup against the comment ids is the primitive Core owns now. The review-state dimension
- * (an unchanged changes-requested with no new comment) is reconciled when the review-handler is
- * refactored onto these events — that consumer owns `accommodated_review_state`.
+ * Dedup against the comment ids is the primitive Core owns. The PR-event poller handles the
+ * review-state dimension by waiting rather than reworking on a bare changes-requested that carries
+ * no comment text — there is nothing to act on — so dedup needs no separate review-state flag.
  */
 export function dedupePrEvents(events: readonly PrEvent[], accommodatedCommentIds: readonly string[]): PrEvent[] {
   const accommodated = new Set(accommodatedCommentIds);

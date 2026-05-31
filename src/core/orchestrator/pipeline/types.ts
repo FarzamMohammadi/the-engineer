@@ -156,3 +156,14 @@ export interface PhaseDefinition {
   /** Maximum `repeat` iterations for this phase before an over-cap repeat becomes a block. */
   readonly maxIterations: number;
 }
+
+/**
+ * Where an external PR event re-enters the pipeline: a phase, and optionally a specific
+ * sub-phase within it. Produced by `entryFor`; the daemon re-entry wiring (a later session)
+ * resolves it to a starting cursor and re-dispatches. `sub` omitted means "the phase's first
+ * sub-phase".
+ */
+export interface Entry {
+  readonly phase: Phase;
+  readonly sub?: string;
+}

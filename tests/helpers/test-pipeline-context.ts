@@ -75,8 +75,14 @@ export interface PipelineHarness {
   cleanup(): void;
 }
 
+/** Options for the pipeline harness. */
+export interface PipelineHarnessOptions {
+  /** Drive delivery in push-only mode (skip_pr_creation): only `push` runs, the PR sub-phases skip. */
+  readonly pushOnly?: boolean;
+}
+
 /** Stand up the pipeline over a real worktree and a real session database, driven by `agent`. */
-export function createPipelineHarness(agent: AgentAdapter): PipelineHarness {
+export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarnessOptions = {}): PipelineHarness {
   const workspace = createTestWorkspaceManager();
   const memory = createTestSessionMemory();
 
@@ -101,7 +107,9 @@ export function createPipelineHarness(agent: AgentAdapter): PipelineHarness {
       getPlugin: () => null,
     },
     config: OrchestratorConfigSchema.parse({}),
-    workspaceConfig: WorkspaceConfigSchema.parse({}),
+    workspaceConfig: WorkspaceConfigSchema.parse(
+      options.pushOnly ? { pr: { skip_pr_creation: { default: true } } } : {},
+    ),
     observationStore: null,
     tracesDir: null,
     eventBus: {},

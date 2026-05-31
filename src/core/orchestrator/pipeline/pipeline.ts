@@ -1,3 +1,4 @@
+import { type PrEvent, type PrEventType, PrEventTypes } from "../../../schemas/git-hosting-events.js";
 import { autoMerge } from "./delivery/auto-merge.js";
 import { awaitReview } from "./delivery/await-review.js";
 import { createPr } from "./delivery/create-pr.js";
@@ -13,7 +14,7 @@ import { codeQuality } from "./review/code-quality.js";
 import { refine } from "./review/refine.js";
 import { security } from "./review/security.js";
 import { selfReview } from "./review/self-review.js";
-import { type PhaseDefinition, Phases } from "./types.js";
+import { type Entry, type PhaseDefinition, Phases } from "./types.js";
 
 // ── Iteration Caps ───────────────────────────────────────────────────────────
 
@@ -66,3 +67,60 @@ export const PIPELINE: readonly PhaseDefinition[] = [
     maxIterations: SINGLE_PASS,
   },
 ];
+
+// ── External Re-entry ──────────────────────────────────────────────────────────
+//
+// How an external PR event becomes pipeline work. Events never call into the
+// orchestrator through a back channel — the daemon arbitrates a single winner,
+// writes it onto the task, and re-queues; on re-dispatch the pipeline starts at
+// entryFor's target. arbitrate and entryFor are pure Core policy, unit-tested
+// directly; the daemon wiring that calls them lands at the external re-entry session.
+
+/**
+ * Where each external PR event re-enters the pipeline. Comments may surface new scope, so they
+ * re-enter at requirements (the trivial-skip gates forward as needed); CI failures and merge
+ * conflicts re-enter at execution to fix; a ready-to-merge or already-merged event re-enters at
+ * delivery's entry-only `auto-merge`.
+ */
+export function entryFor(event: PrEvent): Entry {
+  switch (event.type) {
+    case PrEventTypes.pr_comments:
+      return { phase: Phases.requirements };
+    case PrEventTypes.pr_ci_failure:
+      return { phase: Phases.execution, sub: implement.name };
+    case PrEventTypes.pr_merge_conflict:
+      return { phase: Phases.execution, sub: implement.name };
+    case PrEventTypes.pr_ready_to_merge:
+      return { phase: Phases.delivery, sub: autoMerge.name };
+    case PrEventTypes.pr_merged:
+      return { phase: Phases.delivery, sub: autoMerge.name };
+    default: {
+      const exhaustive: never = event.type;
+      throw new Error(`Unhandled PR event type "${String(exhaustive)}"`);
+    }
+  }
+}
+
+/**
+ * Precedence over PR events that land in the same poll, highest first. A merge is terminal and
+ * wins outright; otherwise reviewer feedback and the blockers (conflict, CI) are addressed before
+ * a ready-to-merge is acted on, so a simultaneous approval never skips pending feedback.
+ */
+const PR_EVENT_PRECEDENCE: readonly PrEventType[] = [
+  PrEventTypes.pr_merged,
+  PrEventTypes.pr_comments,
+  PrEventTypes.pr_merge_conflict,
+  PrEventTypes.pr_ci_failure,
+  PrEventTypes.pr_ready_to_merge,
+];
+
+/** Pick the single event to act on when several arrive in one poll, by precedence. Null when none do. */
+export function arbitrate(events: readonly PrEvent[]): PrEvent | null {
+  for (const type of PR_EVENT_PRECEDENCE) {
+    const winner = events.find((event) => event.type === type);
+    if (winner) {
+      return winner;
+    }
+  }
+  return null;
+}

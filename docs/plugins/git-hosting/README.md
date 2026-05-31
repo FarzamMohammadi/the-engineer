@@ -21,12 +21,15 @@ The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors imp
 | `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ number, state, draft, mergeable, checks_state, url }` |
 | `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ approved, approvals, changes_requested, reviewers, comments }` |
 | `getPRComments` | `(repo: string, prNumber: number) => Promise<PRComment[]>` | Array of `{ id, author, body, created_at }` |
+| `detectPrEvents` | `(repo: string, prNumber: number) => Promise<PrEvent[]>` | Typed PR events that currently hold (see below) |
 | `commentOnPR` | `(repo: string, prNumber: number, comment: string, replyTo?: string) => Promise<CommentResult>` | `{ comment_id, url }` |
 | `dismissApprovals` | `(repo: string, prNumber: number, message: string) => Promise<void>` | -- |
 | `getBranchProtection` | `(repo: string, branch: string) => Promise<BranchProtection>` | `{ protected, required_reviews, required_checks, restrictions }` |
 | `getDefaultBranch` | `(repo: string) => Promise<string>` | Branch name (e.g. `"main"`) |
 
 The `repo` parameter uses `"owner/repo"` format throughout.
+
+`detectPrEvents` aggregates the platform's live PR state into the small typed vocabulary Core reacts to (`pr_comments`, `pr_ci_failure`, `pr_merge_conflict`, `pr_ready_to_merge`, `pr_merged`). The plugin reports **facts**, recomputed on every call so merge-readiness survives a daemon restart with no in-memory wait state: emit `pr_ready_to_merge` only when approval, green CI, and mergeability all hold at once. Core owns the **policy** — arbitrating a single winner when several hold, deduping already-accommodated feedback, and authorizing `/approve` comments against the people directory. A plugin never sees the people directory or The Engineer's `/approve` convention, so a new hosting plugin re-implements none of it.
 
 ### Lifecycle (inherited from BaseAdapter)
 
@@ -97,6 +100,16 @@ type BranchProtection = {
   required_checks: string[];
   restrictions: Record<string, unknown> | null;
 };
+
+// Typed PR events (discriminated union on `type`). Payloads are thin by design —
+// only pr_comments carries data (Core dedups it and scans it for `/approve`).
+// Other re-entered phases fetch richer detail live via the query methods above.
+type PrEvent =
+  | { type: "pr_comments"; comments: PRComment[] }
+  | { type: "pr_ci_failure" }
+  | { type: "pr_merge_conflict" }
+  | { type: "pr_ready_to_merge" }
+  | { type: "pr_merged" };
 ```
 
 ## Developing a New Plugin
@@ -125,6 +138,7 @@ import {
   type MergeStrategy,
   type ReviewStatus,
   type PRComment,
+  type PrEvent,
   type CommentResult,
   type BranchProtection,
   createAdapterError,
@@ -144,6 +158,9 @@ export class YourHostingPlugin extends GitHostingAdapter {
   protected async doGetPRStatus(repo: string, prNumber: number): Promise<PRStatus> { /* ... */ }
   protected async doGetReviewStatus(repo: string, prNumber: number): Promise<ReviewStatus> { /* ... */ }
   protected async doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]> { /* ... */ }
+
+  // ── PR Events ───────────────────────────────────────
+  protected async doDetectPrEvents(repo: string, prNumber: number): Promise<PrEvent[]> { /* aggregate live PR state into typed events */ }
 
   // ── PR Comments ─────────────────────────────────────
   protected async doCommentOnPR(repo: string, prNumber: number, comment: string, replyTo: string | undefined): Promise<CommentResult> { /* ... */ }
@@ -256,7 +273,7 @@ describe("YourHostingPlugin", () => {
 });
 ```
 
-The contract suite validates: lifecycle (init, health, shutdown), PR lifecycle (create, status, review, comments, comment, merge, dismiss approvals), and branch queries (default branch, protection).
+The contract suite validates: lifecycle (init, health, shutdown), PR lifecycle (create, status, review, comments, detect events, comment, merge, dismiss approvals), and branch queries (default branch, protection).
 
 ## Built-in Plugins
 
@@ -270,7 +287,7 @@ The GitHub implementation uses Octokit for all API calls. It parses `"owner/repo
 
 | File | Description |
 |---|---|
-| `src/adapters/git-hosting.ts` | Abstract class with 11 public methods + 11 protected abstract `do*` methods |
+| `src/adapters/git-hosting.ts` | Abstract class with 12 public methods + 12 protected abstract `do*` methods |
 | `src/adapters/base.ts` | `BaseAdapter` -- lifecycle template methods, manifest, `hasCapability()` |
 | `src/adapters/errors.ts` | `AdapterMethodError` and `createAdapterError()` |
 | `src/schemas/adapters.ts` | All Zod schemas: `PROptionsSchema`, `PRResultSchema`, `MergeResultSchema`, etc. |

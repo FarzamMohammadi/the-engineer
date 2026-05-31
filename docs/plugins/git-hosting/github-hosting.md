@@ -27,6 +27,7 @@ Every adapter method is implemented:
 | `dismissApprovals` | Dismisses all current approvals on a PR with a message explaining why |
 | `commentOnPR` | Posts a conversation comment or replies to an inline review comment |
 | `getPRComments` | Fetches both conversation-level and inline review comments (filters out bot comments) |
+| `detectPrEvents` | Aggregates live PR state into the typed events Core reacts to (comments, CI failure, conflict, ready-to-merge, merged) |
 | `getBranchProtection` | Returns protection rules: required reviews, required checks, push restrictions |
 | `getDefaultBranch` | Returns the repository's default branch name |
 
@@ -59,6 +60,8 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 **Approval dismissal.** `dismissApprovals` lists all reviews on the PR via `pulls.listReviews`, filters for those with state `APPROVED`, and calls `pulls.dismissReview` for each one with the provided message. No-ops when no approvals exist. Called by the PR manager after rework pushes new code — the old approval was for different code and must not authorize the changed PR.
 
 **Comments.** `commentOnPR` handles two cases: if `replyTo` is provided, it creates a reply to an inline review comment; otherwise, it posts a regular issue comment (PRs are issues in the GitHub API). `getPRComments` fetches both conversation-level (`issues.listComments`) and inline review comments (`pulls.listReviewComments`) in parallel, filtering out `github-actions[bot]`.
+
+**Event detection.** `detectPrEvents` fetches PR status, review status, and comments in parallel, then aggregates them statelessly into the typed `PrEvent` vocabulary. `pr_merged` short-circuits (terminal); otherwise it emits `pr_ci_failure` on red checks, `pr_merge_conflict` when not mergeable, `pr_comments` when changes are requested or an unapproved PR has comments (a formal approval suppresses non-blocking comments), and `pr_ready_to_merge` only when approval, green CI, and mergeability hold together. Readiness is recomputed every poll, so an "approved but CI still running" PR emits nothing and simply stays blocked — there is no in-memory wait state to lose on restart. The plugin reports facts only: `/approve` comments are surfaced raw inside `pr_comments` for Core to recognize and authorize against the people directory, and self-authored daemon comments are filtered by Core, not here.
 
 **Branch protection.** Queries branch protection rules. Returns required review count, required status check contexts, and push restrictions (users/teams). A 404 response means no protection is configured (returns safe defaults with `protected: false`).
 

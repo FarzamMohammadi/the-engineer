@@ -12,15 +12,17 @@ import type { PrEventPollerContext } from "./types.js";
 //
 // The daemon's bridge between an open PR and the pipeline. Each tick it asks the git
 // hosting plugin which PR events currently hold for every task parked in
-// blocked(pr_review_pending), filters them through Core policy (dedup already-handled
-// feedback, drop an /approve which is an approval and not rework), picks one winner by
+// blocked(pr_review_pending), filters them through Core policy, picks one winner by
 // precedence, and re-enters the task by writing the winning event's type onto it and
 // re-queuing — the orchestrator reads that on dispatch and starts at entryFor(event).
 //
-// This drives the rework events (new comments → requirements, CI failure / merge
-// conflict → execution). The merge events (ready-to-merge, already-merged) and the
-// /approve-to-merge promotion are handled when auto-merge lands; here they are
-// recognized and left for that path so a poll never spuriously reworks on an approval.
+// Two re-entry paths. Rework events re-enter the upstream pipeline (new comments →
+// requirements, CI failure / merge conflict → execution). The merge events re-enter at
+// delivery's auto-merge, which performs the merge. An authorized /approve is the
+// single-contributor approval path: when a live re-check confirms the PR is green and
+// mergeable, the poller promotes it to a merge (dropping the same-poll comments, which
+// would otherwise win precedence and route to requirements); a not-yet-green /approve
+// keeps the task waiting rather than attempting a doomed merge.
 
 /** Polls open PRs for events and re-enters their tasks. */
 export interface PrEventPoller {
@@ -29,7 +31,7 @@ export interface PrEventPoller {
 }
 
 export function createPrEventPoller(ctx: PrEventPollerContext, notifications: NotificationRouter): PrEventPoller {
-  const { registry, taskEngine, peopleDirectory, observer, clock } = ctx;
+  const { registry, taskEngine, peopleDirectory, safetyLayer, observer, clock } = ctx;
 
   const failureWindowMs = ctx.config.review_polling.failure_window_ms;
   const maxFailuresBeforePause = ctx.config.review_polling.max_failures_before_pause;
@@ -84,42 +86,95 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
       return;
     }
 
-    const winner = arbitrate(actionableEvents(task, events));
+    const winner = arbitrate(await actionableEvents(task, hosting, events));
     if (winner) {
       routeEvent(task, winner);
     }
   }
 
   /**
-   * Narrow the plugin's events to what is genuinely actionable now: drop feedback already accommodated,
-   * drop a comments event with nothing to act on (a bare changes-requested with no comment text — the
-   * task waits for the reviewer to say what), and drop a comments event carrying an authorized /approve
-   * (that is an approval, not rework; promotion to a merge is the merge path's concern).
+   * Narrow the plugin's events to what is genuinely actionable now. An authorized /approve on a PR a live
+   * re-check confirms is green and mergeable is promoted to pr_ready_to_merge — the merge path — and the
+   * same-poll comments are dropped (an approval is not rework, and precedence would otherwise route the
+   * comments to requirements). Otherwise: drop feedback already accommodated, drop a comments event with
+   * nothing to act on (a bare changes-requested), and drop a comments event carrying an authorized /approve
+   * (the task keeps waiting until the merge preconditions hold).
    */
-  function actionableEvents(task: Task, events: readonly PrEvent[]): PrEvent[] {
+  async function actionableEvents(
+    task: Task,
+    hosting: GitHostingAdapter,
+    events: readonly PrEvent[],
+  ): Promise<PrEvent[]> {
     const deduped = dedupePrEvents(events, task.review?.accommodated_comment_ids ?? []);
-    return deduped.filter((event) => {
-      if (event.type !== PrEventTypes.pr_comments) {
-        return true;
-      }
-      if (event.comments.length === 0) {
-        return false;
-      }
-      return findAuthorizedApproval(event.comments, peopleDirectory) === null;
-    });
+    if (await shouldPromoteApproval(task, hosting, deduped)) {
+      return [{ type: PrEventTypes.pr_ready_to_merge }];
+    }
+    return deduped.filter(isActionableRework);
+  }
+
+  /** A comments event is actionable rework only when it carries comments to address that are not an authorized /approve (an approval, not feedback). */
+  function isActionableRework(event: PrEvent): boolean {
+    if (event.type !== PrEventTypes.pr_comments) {
+      return true;
+    }
+    if (event.comments.length === 0) {
+      return false;
+    }
+    return findAuthorizedApproval(event.comments, peopleDirectory) === null;
+  }
+
+  /**
+   * Whether an authorized /approve in this poll should promote to a merge. /approve is the single-contributor
+   * approval path, gated by the enable_comment_approval safety flag; it triggers a merge only when a live
+   * re-check confirms the PR is open, green, and mergeable — the same preconditions the plugin computes for a
+   * formal approval's pr_ready_to_merge. A not-yet-green /approve does not promote, so the task keeps waiting
+   * rather than attempting a doomed merge.
+   */
+  async function shouldPromoteApproval(
+    task: Task,
+    hosting: GitHostingAdapter,
+    events: readonly PrEvent[],
+  ): Promise<boolean> {
+    if (!safetyLayer.isCommentApprovalEnabled()) {
+      return false;
+    }
+    const prNumber = task.review?.pr_number;
+    if (!(prNumber && task.repo && hasAuthorizedApproval(events))) {
+      return false;
+    }
+    try {
+      const status = await hosting.getPRStatus(task.repo, prNumber);
+      return status.state === "open" && status.checks_state === "passing" && status.mergeable;
+    } catch (error) {
+      observer.warn("Failed to re-check PR status for an /approve promotion — leaving the task waiting", {
+        taskId: task.id,
+        prNumber,
+        error: sanitizeErrorMessage(error),
+      });
+      return false;
+    }
+  }
+
+  /** Whether any comments event in the poll carries an authorized /approve. */
+  function hasAuthorizedApproval(events: readonly PrEvent[]): boolean {
+    return events.some(
+      (event) =>
+        event.type === PrEventTypes.pr_comments &&
+        event.comments.length > 0 &&
+        findAuthorizedApproval(event.comments, peopleDirectory) !== null,
+    );
   }
 
   function routeEvent(task: Task, winner: PrEvent): void {
-    const prNumber = task.review?.pr_number;
-    if (winner.type === PrEventTypes.pr_ready_to_merge || winner.type === PrEventTypes.pr_merged) {
-      observer.debug("PR reached a merge state — auto-merge wiring handles it", { taskId: task.id, type: winner.type });
-      return;
-    }
     if (winner.type === PrEventTypes.pr_comments) {
       accommodateFeedback(task, winner.comments);
     }
-    reenter(task, winner.type, reworkNotice(winner.type));
-    observer.info("Re-queued task for PR event", { taskId: task.id, prNumber, type: winner.type });
+    reenter(task, winner.type, eventNotice(winner.type));
+    observer.info("Re-queued task for PR event", {
+      taskId: task.id,
+      prNumber: task.review?.pr_number,
+      type: winner.type,
+    });
   }
 
   /**
@@ -158,7 +213,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
 }
 
 /** The ticket comment posted when a PR event re-queues a task, by event type. */
-function reworkNotice(type: PrEvent["type"]): string {
+function eventNotice(type: PrEvent["type"]): string {
   switch (type) {
     case PrEventTypes.pr_comments:
       return "Reviewer feedback received — reworking to address it.";
@@ -166,7 +221,13 @@ function reworkNotice(type: PrEvent["type"]): string {
       return "CI is failing on the pull request — reworking to fix it.";
     case PrEventTypes.pr_merge_conflict:
       return "The pull request has merge conflicts — reworking to resolve them.";
-    default:
-      return "Reworking the pull request.";
+    case PrEventTypes.pr_ready_to_merge:
+      return "Pull request approved with CI green — merging.";
+    case PrEventTypes.pr_merged:
+      return "Pull request merged — finalizing.";
+    default: {
+      const exhaustive: never = type;
+      throw new Error(`Unhandled PR event type "${JSON.stringify(exhaustive)}"`);
+    }
   }
 }

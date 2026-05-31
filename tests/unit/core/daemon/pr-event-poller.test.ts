@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
 import { createPrEventPoller } from "../../../../src/core/daemon/pr-event-poller.js";
 import type { PrEventPollerContext } from "../../../../src/core/daemon/types.js";
-import type { PRComment } from "../../../../src/schemas/adapters.js";
+import type { PRComment, PRStatus } from "../../../../src/schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../../../src/schemas/git-hosting-events.js";
 import { type ReviewState, TaskStates } from "../../../../src/schemas/task.js";
 import { createMockTask } from "../../../helpers/mock-factories.js";
@@ -31,6 +31,8 @@ interface SetupOptions {
   readonly detectThrows?: boolean;
   readonly review?: ReviewState;
   readonly people?: ReturnType<typeof createTestPeopleDirectory>;
+  readonly prStatus?: Partial<PRStatus>;
+  readonly commentApproval?: boolean;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -43,15 +45,28 @@ function setup(options: SetupOptions = {}) {
   const detectPrEvents = options.detectThrows
     ? vi.fn().mockRejectedValue(new Error("host down"))
     : vi.fn().mockResolvedValue(options.events ?? []);
+  const prStatus: PRStatus = {
+    number: 7,
+    state: "open",
+    draft: false,
+    mergeable: true,
+    checks_state: "passing",
+    url: "https://x/7",
+    ...options.prStatus,
+  };
+  const getPRStatus = vi.fn().mockResolvedValue(prStatus);
   const requestTransition = vi.fn().mockReturnValue({ success: true });
   const updateTaskField = vi.fn();
   const notify = vi.fn();
   const getBlockedTasksByReason = vi.fn().mockReturnValue([task]);
 
   const ctx = {
-    registry: { getPrimaryPlugin: (type: string) => (type === "git_hosting" ? { detectPrEvents } : null) },
+    registry: {
+      getPrimaryPlugin: (type: string) => (type === "git_hosting" ? { detectPrEvents, getPRStatus } : null),
+    },
     taskEngine: { getBlockedTasksByReason, updateTaskField, requestTransition },
     peopleDirectory: options.people ?? createTestPeopleDirectory([]),
+    safetyLayer: { isCommentApprovalEnabled: () => options.commentApproval ?? true },
     observer: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     clock: { now: () => 1000 },
     config: { review_polling: { failure_window_ms: 60_000, max_failures_before_pause: 3 } },
@@ -61,6 +76,7 @@ function setup(options: SetupOptions = {}) {
   return {
     poller: createPrEventPoller(ctx, notifications),
     detectPrEvents,
+    getPRStatus,
     requestTransition,
     updateTaskField,
     notify,
@@ -119,31 +135,72 @@ describe("PrEventPoller", () => {
     });
   });
 
-  describe("merge-class events are left for the auto-merge path", () => {
-    it("does not re-queue on ready-to-merge", async () => {
-      const { poller, requestTransition } = setup({ events: [{ type: PrEventTypes.pr_ready_to_merge }] });
+  describe("merge events re-enter at auto-merge", () => {
+    it("re-queues to auto-merge on ready-to-merge", async () => {
+      const { poller, requestTransition, updateTaskField } = setup({
+        events: [{ type: PrEventTypes.pr_ready_to_merge }],
+      });
+
+      await poller.poll();
+
+      expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ready_to_merge");
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_ready_to_merge"));
+    });
+
+    it("re-queues to auto-merge on an externally merged PR", async () => {
+      const { poller, requestTransition } = setup({ events: [{ type: PrEventTypes.pr_merged }] });
+      await poller.poll();
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_merged"));
+    });
+  });
+
+  describe("the /approve merge promotion", () => {
+    const approve = (): PrEvent => ({
+      type: PrEventTypes.pr_comments,
+      comments: [comment("c1", "solo-dev", "/approve")],
+    });
+
+    it("promotes an authorized /approve on a green, mergeable PR to a merge", async () => {
+      const { poller, requestTransition, updateTaskField, getPRStatus } = setup({ events: [approve()] });
+
+      await poller.poll();
+
+      expect(getPRStatus).toHaveBeenCalledWith("acme/app", 7);
+      expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ready_to_merge");
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_ready_to_merge"));
+      // an approval is not feedback — no rework round recorded
+      expect(updateTaskField).not.toHaveBeenCalledWith("t1", "review", expect.anything());
+    });
+
+    it("does not promote — the task waits — when the PR is not yet green", async () => {
+      const { poller, requestTransition } = setup({ events: [approve()], prStatus: { checks_state: "pending" } });
       await poller.poll();
       expect(requestTransition).not.toHaveBeenCalled();
     });
 
-    it("does not re-queue on an externally merged PR", async () => {
-      const { poller, requestTransition } = setup({ events: [{ type: PrEventTypes.pr_merged }] });
+    it("does not promote when comment approval is disabled", async () => {
+      const { poller, requestTransition, getPRStatus } = setup({ events: [approve()], commentApproval: false });
       await poller.poll();
+      expect(getPRStatus).not.toHaveBeenCalled();
       expect(requestTransition).not.toHaveBeenCalled();
+    });
+
+    it("reworks the real problem when an /approve lands alongside a CI failure", async () => {
+      const { poller, requestTransition } = setup({
+        events: [approve(), { type: PrEventTypes.pr_ci_failure }],
+        prStatus: { checks_state: "failing" },
+      });
+
+      await poller.poll();
+
+      // not green → no promotion; the CI failure routes the rework instead
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_ci_failure"));
     });
   });
 
   describe("nothing actionable", () => {
     it("does not rework on a bare changes-requested with no comment text", async () => {
       const { poller, requestTransition } = setup({ events: [{ type: PrEventTypes.pr_comments, comments: [] }] });
-      await poller.poll();
-      expect(requestTransition).not.toHaveBeenCalled();
-    });
-
-    it("does not rework on an authorized /approve — that is an approval, not feedback", async () => {
-      const { poller, requestTransition } = setup({
-        events: [{ type: PrEventTypes.pr_comments, comments: [comment("c1", "solo-dev", "/approve")] }],
-      });
       await poller.poll();
       expect(requestTransition).not.toHaveBeenCalled();
     });

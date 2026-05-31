@@ -221,7 +221,13 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
       "--yolo", // auto-approve tool calls (required for non-interactive)
     ];
 
-    return this.spawnAndParse(args, request.cwd ?? undefined, prompt, request.trace_output_path ?? undefined);
+    return this.spawnAndParse(
+      args,
+      request.cwd ?? undefined,
+      prompt,
+      request.trace_output_path ?? undefined,
+      request.signal,
+    );
   }
 
   getCapabilities(): AgentCapabilities {
@@ -306,6 +312,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
     cwd?: string,
     stdinContent?: string,
     traceOutputPath?: string,
+    signal?: AbortSignal,
   ): Promise<AgentRunResult> {
     const startMs = Date.now();
     return new Promise<AgentRunResult>((resolve, reject) => {
@@ -337,6 +344,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
         timeout: this.config.command_timeout_ms,
         env: buildAgentEnv(process.env),
         cwd,
+        signal,
       });
 
       this.activeProcesses.add(child);

@@ -119,7 +119,13 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
 
     // Prompt is piped via stdin (not as a CLI arg) to avoid OS argument length limits.
     // The claude CLI reads from stdin when no positional prompt argument is given.
-    return this.spawnAndParse(args, request.prompt, request.cwd ?? undefined, request.trace_output_path ?? undefined);
+    return this.spawnAndParse(
+      args,
+      request.prompt,
+      request.cwd ?? undefined,
+      request.trace_output_path ?? undefined,
+      request.signal,
+    );
   }
 
   getCapabilities(): AgentCapabilities {
@@ -223,6 +229,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
     stdinContent?: string,
     cwd?: string,
     traceOutputPath?: string,
+    signal?: AbortSignal,
   ): Promise<AgentRunResult> {
     const startMs = Date.now();
     return new Promise<AgentRunResult>((resolve, reject) => {
@@ -254,6 +261,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
         timeout: this.config.command_timeout_ms,
         env: this.cleanEnv(),
         cwd,
+        signal,
       });
 
       this.activeProcesses.add(child);

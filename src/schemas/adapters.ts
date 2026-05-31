@@ -211,6 +211,11 @@ export const AgentRunRequestSchema = z.object({
    *  Plugins that support tracing stream stdout to this path during execution.
    *  Plugins that don't support it ignore this field. Core generates the path. */
   trace_output_path: z.string().nullable().default(null),
+  /** Abort signal for the in-flight run. Plugins pass it to `spawn({ signal })` so a
+   *  preemption, shutdown, or cost-limit SIGTERMs the child instead of waiting it out.
+   *  Runtime-only and optional — this schema is never parsed, so carrying the handle on
+   *  the inferred type keeps the type as the single source of truth with no parse hazard. */
+  signal: z.instanceof(AbortSignal).optional(),
 });
 export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
 

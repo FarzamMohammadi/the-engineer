@@ -191,7 +191,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
 
     // Pipe prompt via stdin — avoids OS argument length limits on large orchestrator prompts.
     // OpenCode reads from stdin when no positional message args are given.
-    return this.spawnAndParse(args, prompt, request.trace_output_path ?? undefined);
+    return this.spawnAndParse(args, prompt, request.trace_output_path ?? undefined, request.signal);
   }
 
   getCapabilities(): AgentCapabilities {
@@ -253,7 +253,12 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
    * Spawn OpenCode CLI and stream-parse its NDJSON output.
    * Memory-safe: processes each line as it arrives. Optionally traces to disk.
    */
-  private spawnAndParse(args: string[], stdinContent?: string, traceOutputPath?: string): Promise<AgentRunResult> {
+  private spawnAndParse(
+    args: string[],
+    stdinContent?: string,
+    traceOutputPath?: string,
+    signal?: AbortSignal,
+  ): Promise<AgentRunResult> {
     const startMs = Date.now();
     return new Promise<AgentRunResult>((resolve, reject) => {
       // ── Streaming state ──
@@ -281,6 +286,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
         stdio: ["pipe", "pipe", "pipe"],
         timeout: this.config.command_timeout_ms,
         env: buildAgentEnv(process.env),
+        signal,
       });
 
       this.activeProcesses.add(child);

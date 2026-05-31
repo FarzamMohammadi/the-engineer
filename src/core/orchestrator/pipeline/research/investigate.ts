@@ -76,6 +76,7 @@ function buildInstructions(): string {
       "Map what this task touches and how it actually works, the way a senior engineer studies code before writing a line.",
       "",
       "- Find every file that must change, plus the files that give critical context — interfaces, types, tests, configs.",
+      "- Read wider than the task names. Every change has a blast radius: what else references this domain, routes to it, competes with it, or assumes it does not exist today? The dangerous gaps live in code nobody mentioned. Treat earlier phases' conclusions as claims to verify, not facts to inherit — if requirements marked something out of scope, confirm it by reading it rather than taking it on faith.",
       "- Trace the real execution path end to end. Read what the code does at runtime; do not infer behavior from type signatures alone.",
       "- Identify the conventions and the architecture of the files you will touch — how they organize logic, what they extract vs inline. New code that ignores them is a regression.",
       "- When the task changes instances of something, count every instance. The inventory is the contract for execution and review.",

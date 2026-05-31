@@ -88,6 +88,8 @@ function buildInstructions(): string {
   return section(
     "What To Do",
     [
+      "You own this plan. Earlier phases did their best, but you are the last check before code is written — verify their conclusions, fill the gaps they missed, and resolve every open question now. A plan that defers an ambiguity into implementation is not finished. Its value is the decisions it records, not its length.",
+      "",
       "1. Evaluate at least two approaches before committing:",
       "   - **Simplest** — the minimum change that fully meets the requirements. Fewest new files and abstractions. This is your baseline.",
       "   - **Alternative** — a different path worth considering only if it buys something concrete the simplest lacks.",
@@ -102,7 +104,7 @@ function buildInstructions(): string {
       "",
       "3. Pre-mortem: assume the implementation ships with a subtle flaw. Name the two or three most likely failure modes — concurrency, crash recovery, unbounded growth, stale state. Mitigate each in the plan, or say why it is acceptable.",
       "",
-      "4. Write a precise, ordered plan with concrete file paths and a verification step per part. Use checkboxes so execution can track progress. Do not write code.",
+      "4. Write a precise, ordered plan with concrete file paths and a verification step per part. Use checkboxes so execution can track progress. Record each meaningful decision — what you chose, what you rejected, and what it locks in — so execution inherits the reasoning, not just the result. Do not write code.",
       "",
       "Report `needs_human` only if a decision the plan genuinely depends on is not yours to make.",
     ].join("\n"),

@@ -484,3 +484,13 @@ This is also a philosophical gap. The Engineer's philosophy demands that "every 
 4. **Agent-agnostic design.** The stream capture works with any CLI tool's output format. When the plugin is swapped (Claude Code → Codex → another tool), the transparency layer adapts to whatever the new tool emits — the contract is "stream the child process output," not "parse Claude-specific events."
 
 ---
+
+## Asynchronous Verification Gates
+
+**Current state (v1):** The execution phase's verify step runs the project's verification gates (typecheck, lint, test) synchronously, blocking the daemon's event loop until each gate finishes. Fine at single-task concurrency, where the verifying task is the only thing running.
+
+**When it becomes relevant:** When the daemon runs tasks concurrently, or when a gate is slow enough that stalling the daemon's other work (trigger polling, other tasks) becomes noticeable.
+
+**What it enables:** Running the gates asynchronously so a long verify does not block the rest of the daemon — while the verdict stays orchestrator-owned and unfakeable.
+
+---

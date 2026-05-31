@@ -4,8 +4,7 @@ import { PIPELINE } from "../../../../../src/core/orchestrator/pipeline/pipeline
 import { type Phase, Phases } from "../../../../../src/core/orchestrator/pipeline/types.js";
 
 // The pipeline map is the heart of the system — folders are phases, files are sub-phases.
-// This pins the shape so an accidental reorder or a dropped sub-phase is caught. Delivery
-// joins the map in the next session.
+// This pins the shape so an accidental reorder or a dropped sub-phase is caught.
 
 describe("PIPELINE", () => {
   it("runs the phases in order", () => {
@@ -15,6 +14,7 @@ describe("PIPELINE", () => {
       Phases.planning,
       Phases.execution,
       Phases.review,
+      Phases.delivery,
     ]);
   });
 
@@ -29,6 +29,8 @@ describe("PIPELINE", () => {
       execution: ["implement", "verify"],
       // Every lens is listed; the opt-in lenses skip themselves when not enabled in config.
       review: ["self-review", "security", "code-quality", "architecture", "refine"],
+      // auto-merge is entry-only — listed last, reached by an external event, not by advance.
+      delivery: ["pr-description", "push", "create-pr", "await-review", "auto-merge"],
     });
   });
 

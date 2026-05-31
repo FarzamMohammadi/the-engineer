@@ -1,3 +1,8 @@
+import { autoMerge } from "./delivery/auto-merge.js";
+import { awaitReview } from "./delivery/await-review.js";
+import { createPr } from "./delivery/create-pr.js";
+import { prDescription } from "./delivery/pr-description.js";
+import { push } from "./delivery/push.js";
 import { implement } from "./execution/implement.js";
 import { verify } from "./execution/verify.js";
 import { design } from "./planning/design.js";
@@ -33,12 +38,17 @@ const SINGLE_PASS = 1;
 
 /**
  * The phase order and each phase's sub-phases — the map the runner drives. Folders under
- * `pipeline/` mirror these phases; the files within mirror the sub-phases. Delivery joins
- * the map in the next session.
+ * `pipeline/` mirror these phases; the files within mirror the sub-phases. This is the full
+ * upstream-to-delivery shape; the runner drives whatever this map declares.
  *
  * Review lists every lens; the opt-in lenses skip themselves when not enabled in
  * `review.lenses`, so the default run is `self-review → refine`. `refine` consolidates the
  * lenses' findings, fixes in place, and either ships, loops (capped), or hands back.
+ *
+ * Delivery's shape is config-driven: in PR mode the full sequence runs and parks at
+ * `await-review`; in push-only mode every PR-specific sub-phase skips, leaving just `push`.
+ * `auto-merge` is entry-only — the advance path blocks at `await-review` before reaching it;
+ * it runs only when an external `pr_ready_to_merge` event re-enters the task there.
  */
 export const PIPELINE: readonly PhaseDefinition[] = [
   { phase: Phases.requirements, subPhases: [gather], maxIterations: SINGLE_PASS },
@@ -49,5 +59,10 @@ export const PIPELINE: readonly PhaseDefinition[] = [
     phase: Phases.review,
     subPhases: [selfReview, security, codeQuality, architecture, refine],
     maxIterations: REVIEW_MAX_ITERATIONS,
+  },
+  {
+    phase: Phases.delivery,
+    subPhases: [prDescription, push, createPr, awaitReview, autoMerge],
+    maxIterations: SINGLE_PASS,
   },
 ];

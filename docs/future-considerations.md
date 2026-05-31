@@ -494,3 +494,27 @@ This is also a philosophical gap. The Engineer's philosophy demands that "every 
 **What it enables:** Running the gates asynchronously so a long verify does not block the rest of the daemon — while the verdict stays orchestrator-owned and unfakeable.
 
 ---
+
+## LLM Agent as Orchestrator
+
+**Current state (v1):** The Orchestrator is a deterministic state machine. Phases and sub-phases are a fixed graph; routing between them is explicit and code-defined; every transition is recorded as an audit event on the Event Bus. The orchestrator decides *what runs next* by static rules, then hands the actual engineering judgment to the agent within each phase. The control flow itself contains no judgment — it is invariant, inspectable, and reproducible. This is deliberate: the state machine *is* the Core, the part of the system that does not change when plugins swap.
+
+**The idea:** Replace (or partially replace) that fixed control flow with an LLM agent that orchestrates — one that decides which phase to run next, when to skip or repeat a phase, when to loop back, and how to route based on the actual shape of the task rather than a graph drawn in advance. The orchestrator stops being a graph and becomes a reasoning loop.
+
+**Why it's appealing:** A static graph can only encode the phase sequences we anticipated. Real tasks don't always fit — a trivial fix shouldn't march through the same heavyweight RRPIR sequence as a major feature; a task that reveals a planning flaw mid-implementation should be able to route *backward* without that edge being pre-drawn; some work wants phases the graph never modeled. An agent orchestrator could adapt routing to the work in front of it.
+
+**Why this is more than a swap — the real considerations:** This is not "drop an LLM in where the state machine was." It cuts against the foundations the current architecture rests on, and each of these is its own design problem:
+
+- **Determinism and reproducibility.** The state machine guarantees the same task shape routes the same way every time. An LLM orchestrator is non-deterministic by nature — the same task could route differently across runs. For a system whose value rests partly on being trustworthy and predictable, that's a real loss, not a detail.
+- **Auditability — the Event Bus contract.** Today every transition is a clean, structured audit record: this phase, then that one, because this rule fired. "The model decided to skip planning" is a fundamentally weaker audit trail than "the planning-skip rule fired on condition X." Radical Observability assumes the control flow is inspectable; an opaque reasoning loop erodes that.
+- **The Core/invariant boundary.** The three-tier model leans on the orchestrator being the invariant brain — the thing that *doesn't* change when plugins swap. Making orchestration itself agent-driven blurs the line between Core and plugin, and raises the question of whether the orchestrating agent is itself a swappable plugin (and if so, what its contract is).
+- **Testing and safety gates.** A deterministic graph is exhaustively testable; every path can be enumerated and asserted. An agent that invents routing can't be. Safety verdicts, approval gates, and re-queue/resume correctness all currently rely on the transition graph being finite and known.
+- **Cost and latency.** Every routing decision becomes an LLM call. The state machine routes for free; an agent orchestrator pays tokens and wall-clock time to decide what the graph decides instantly.
+
+**The likely shape — hybrid, not replacement.** The honest version of this is probably not "LLM instead of state machine" but "LLM *on top of* state machine." The agent proposes the next move; the state machine still owns the transition, records the audit event, and gates what is actually permitted. The deterministic layer becomes the guardrail and the ledger; the agent becomes the judgment about *which* legal move to make. That keeps reproducibility-at-the-boundary and a clean audit trail while buying adaptive routing. The design question is exactly where to draw that line — how much discretion the agent gets, and how the state machine constrains and records it.
+
+**When it becomes relevant:** When real autonomous sessions show the static phase graph is genuinely too rigid for the tasks that show up — tasks that want to skip phases, loop back, or take routes the graph never modeled, and where hand-extending the graph each time becomes the friction. Not before; a fixed graph that fits the work is strictly better than a reasoning loop that costs tokens to rediscover the same routes.
+
+**Key context:** This is the philosophical inverse of "Deterministic Sub-Engine for Operational Tasks" above. That entry adds *more* determinism beneath the agent (a declarative engine for plumbing work); this one removes determinism from *above* the agent (the control flow itself). The two could coexist — deterministic plumbing underneath, adaptive orchestration on top — but they pull on the same question from opposite ends: which parts of the system should be a fixed machine, and which should be judgment. Worth holding both in view when either is built.
+
+---

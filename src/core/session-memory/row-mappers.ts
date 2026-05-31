@@ -21,6 +21,9 @@ export interface CheckpointRow {
   session_id: string;
   task_id: string;
   phase: string;
+  sub_phase: string | null;
+  phase_iteration: number;
+  total_reworks: number;
   phase_progress: string;
   context_summary: string;
   key_findings: string;
@@ -58,6 +61,9 @@ export function rowToCheckpoint(row: CheckpointRow): Checkpoint {
     session_id: row.session_id,
     task_id: row.task_id,
     phase: row.phase,
+    sub_phase: row.sub_phase,
+    phase_iteration: row.phase_iteration,
+    total_reworks: row.total_reworks,
     phase_progress: row.phase_progress,
     context_summary: row.context_summary,
     key_findings: fromSqliteJson<string[]>(row.key_findings) ?? [],

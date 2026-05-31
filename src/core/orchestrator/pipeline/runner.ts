@@ -23,6 +23,17 @@ export interface Cursor {
   readonly subIndex: number;
 }
 
+/**
+ * Where a resumed dispatch picks up. The cursor restores the position; the two counters restore the
+ * iteration guards so a task that keeps getting preempted mid-loop still trips its cap. Absent on a
+ * fresh dispatch — the runner starts at the first sub-phase with both counters at zero.
+ */
+export interface ResumeState {
+  readonly cursor: Cursor;
+  readonly phaseIteration: number;
+  readonly totalReworks: number;
+}
+
 /** Thrown when a `next` function returns a structurally invalid route (a bug in the sub-phase). */
 export class InvalidRouteError extends Error {
   constructor(message: string) {
@@ -61,11 +72,11 @@ const MAX_STEPS = 10_000;
 export async function runPipeline(
   pipeline: readonly PhaseDefinition[],
   ctx: Ctx,
-  start: Cursor = { phaseIndex: 0, subIndex: 0 },
+  resume?: ResumeState,
 ): Promise<RunnerOutcome> {
-  let cursor = start;
-  let phaseIteration = 0;
-  let totalReworks = 0;
+  let cursor = resume?.cursor ?? { phaseIndex: 0, subIndex: 0 };
+  let phaseIteration = resume?.phaseIteration ?? 0;
+  let totalReworks = resume?.totalReworks ?? 0;
   let carry: Ctx["carry"];
 
   emitPhaseEnter(ctx, phaseAt(pipeline, cursor).phase);
@@ -96,6 +107,7 @@ export async function runPipeline(
 
     // ── run ──
     emitSubPhaseStart(ctx, phaseDef.phase, subPhase.name);
+    persistTaskPosition(ctx, phaseDef.phase, subPhase.name, phaseIteration, totalReworks);
     let result: SubPhaseResult;
     try {
       result = await subPhase.run(carry ? { ...ctx, carry } : ctx);
@@ -292,12 +304,11 @@ function planRoute(
   }
 }
 
-// ── Effects: checkpoint ──────────────────────────────────────────────────────
+// ── Effects: position ────────────────────────────────────────────────────────
 
 /**
- * Checkpoint after a sub-phase so a crash or preempt resumes here. The new `sub_phase` /
- * iteration dimensions ride in the existing string fields during the build-dark window;
- * they become typed checkpoint columns at the Session 5 cutover.
+ * Checkpoint after a sub-phase so a crash or preempt resumes at the right cursor with its caps intact.
+ * Position and counters ride in their own typed columns; `phase_progress` is the human one-liner.
  */
 function writeCheckpoint(
   ctx: Ctx,
@@ -311,7 +322,10 @@ function writeCheckpoint(
     sessionId: ctx.sessionId,
     taskId: ctx.task.id,
     phase,
-    phaseProgress: `${subPhase} (iteration ${String(phaseIteration)}, reworks ${String(totalReworks)})`,
+    subPhase,
+    phaseIteration,
+    totalReworks,
+    phaseProgress: `${phase}/${subPhase}`,
     contextSummary: result.summary,
     keyFindings: [],
     openQuestions: [],
@@ -321,6 +335,24 @@ function writeCheckpoint(
     reason: CheckpointReasons.phase_transition,
     journalOffset: 0,
   });
+}
+
+/**
+ * Mirror the live position onto the task row so `engineer status` and the dashboard see where a task
+ * is without reading its checkpoints. The checkpoint is the resume source of truth; this is the
+ * queryable snapshot. Written at each sub-phase start, so an active task reflects what is running now.
+ */
+function persistTaskPosition(
+  ctx: Ctx,
+  phase: Phase,
+  subPhase: string,
+  phaseIteration: number,
+  totalReworks: number,
+): void {
+  ctx.taskEngine.updateTaskField(ctx.task.id, "phase", phase);
+  ctx.taskEngine.updateTaskField(ctx.task.id, "sub_phase", subPhase);
+  ctx.taskEngine.updateTaskField(ctx.task.id, "phase_iteration", phaseIteration);
+  ctx.taskEngine.updateTaskField(ctx.task.id, "total_reworks", totalReworks);
 }
 
 // ── Effects: observability ───────────────────────────────────────────────────

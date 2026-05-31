@@ -59,8 +59,12 @@ export const CheckpointSchema = z.object({
   session_id: z.string(),
   task_id: z.string(),
 
-  // Position
+  // Position — phase + sub_phase form the resume cursor; the two counters let the iteration caps
+  // survive a preempt-and-resume. phase_progress is the human one-liner alongside them.
   phase: z.string(),
+  sub_phase: z.string().nullable(),
+  phase_iteration: z.number().int(),
+  total_reworks: z.number().int(),
   phase_progress: z.string(),
 
   // Context window reconstruction

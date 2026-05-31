@@ -13,6 +13,7 @@ CREATE TABLE tasks (
   state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','completed','failed')),
   sub_state               TEXT CHECK(sub_state IN ('working')),
   phase                   TEXT,
+  sub_phase               TEXT,
 
   -- Context
   title                   TEXT NOT NULL,
@@ -53,18 +54,15 @@ CREATE TABLE tasks (
   -- Optimistic locking
   version                 INTEGER NOT NULL DEFAULT 1,
 
-  -- Pipeline state
-  return_to_phase         TEXT,
-  loopback_count          INTEGER NOT NULL DEFAULT 0,
-  requirements_loop_count INTEGER NOT NULL DEFAULT 0,
+  -- Pipeline loop counters — persisted so the iteration caps survive a preempt-and-resume
+  -- (phase_iteration is intra-phase, total_reworks is inter-phase; both reset on a fresh dispatch).
+  phase_iteration         INTEGER NOT NULL DEFAULT 0,
+  total_reworks           INTEGER NOT NULL DEFAULT 0,
 
   -- Scheduling
   not_before              TEXT,
   consecutive_crash_count INTEGER NOT NULL DEFAULT 0,
-  consecutive_agent_unavailable_count INTEGER NOT NULL DEFAULT 0,
-
-  -- Complexity-based phase skipping
-  skip_research           INTEGER NOT NULL DEFAULT 0
+  consecutive_agent_unavailable_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_tasks_state ON tasks(state);
@@ -155,6 +153,9 @@ CREATE TABLE checkpoints (
   session_id      TEXT NOT NULL REFERENCES sessions(id),
   task_id         TEXT NOT NULL REFERENCES tasks(id),
   phase           TEXT NOT NULL,
+  sub_phase       TEXT,
+  phase_iteration INTEGER NOT NULL DEFAULT 0,
+  total_reworks   INTEGER NOT NULL DEFAULT 0,
   phase_progress  TEXT NOT NULL,
   context_summary TEXT NOT NULL,
   key_findings    TEXT NOT NULL DEFAULT '[]',

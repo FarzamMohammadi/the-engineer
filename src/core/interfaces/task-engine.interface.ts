@@ -46,6 +46,7 @@ export interface PermissionResult {
 /** Fields that can be updated via updateTaskField(). */
 export type UpdatableField =
   | "phase"
+  | "sub_phase"
   | "session_id"
   | "description"
   | "source_text"
@@ -60,10 +61,8 @@ export type UpdatableField =
   | "priority"
   | "repo"
   | "clone_url"
-  | "return_to_phase"
-  | "loopback_count"
-  | "requirements_loop_count"
-  | "skip_research"
+  | "phase_iteration"
+  | "total_reworks"
   | "not_before"
   | "consecutive_crash_count"
   | "consecutive_agent_unavailable_count";

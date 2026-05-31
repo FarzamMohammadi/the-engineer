@@ -112,10 +112,16 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
     ),
     observationStore: null,
     tracesDir: null,
-    eventBus: {},
+    // Live-context collaborators the runner and agentStep touch: gate the agent run, record cost, mirror position.
+    eventBus: { publish: () => undefined },
     safetyLayer: {},
-    actionPipeline: {},
-    taskEngine: {},
+    actionPipeline: {
+      execute: async (input: { executeFn: () => unknown }) => ({
+        outcome: "executed",
+        result: await input.executeFn(),
+      }),
+    },
+    taskEngine: { updateTaskField: () => undefined, updateTracking: () => undefined },
     skillsManager: { getDir: () => path.join(workspace.workspaceRoot, "skills") },
     peopleDirectory: {
       getAll: () => [],

@@ -106,7 +106,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     updateTaskField: vi.fn(),
   };
   const orchestrator = {
-    executeTask: vi.fn().mockResolvedValue({ outcome: "completed", phaseOutputs: new Map() }),
+    executeTask: vi.fn().mockResolvedValue({ outcome: "completed" }),
   };
   const sessionMemory = {
     checkpoints: {
@@ -267,7 +267,7 @@ describe("TaskScheduler", () => {
     const task = makeMockTask({ id: "t1", title: "Done task" });
     scheduler.dispatchTask(task);
 
-    const result: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
+    const result: ExecuteTaskResult = { outcome: "completed" };
     scheduler.handleTaskCompletion("t1", result);
 
     expect(taskEngine.requestTransition).toHaveBeenCalledWith(
@@ -630,7 +630,6 @@ describe("TaskScheduler", () => {
 
     const completedResult: ExecuteTaskResult = {
       outcome: "completed",
-      phaseOutputs: new Map(),
     };
     orchestrator.executeTask.mockResolvedValue(completedResult);
 
@@ -658,7 +657,7 @@ describe("TaskScheduler", () => {
     const task = makeMockTask({ id: "t1" });
     scheduler.dispatchTask(task);
 
-    const result: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
+    const result: ExecuteTaskResult = { outcome: "completed" };
 
     // Should not throw
     expect(() => scheduler.handleTaskCompletion("t1", result)).not.toThrow();
@@ -705,7 +704,7 @@ describe("TaskScheduler", () => {
     // Dispatch was { success: true }; now simulate completed transition failing (e.g. race condition)
     taskEngine.requestTransition.mockReturnValue({ success: false, reason: "already_completed" });
 
-    const result: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
+    const result: ExecuteTaskResult = { outcome: "completed" };
     scheduler.handleTaskCompletion("t1", result);
 
     // Notifications and cleanup must be skipped when the transition fails
@@ -832,7 +831,6 @@ describe("TaskScheduler", () => {
 
     const completedResult: ExecuteTaskResult = {
       outcome: "completed",
-      phaseOutputs: new Map(),
     };
     orchestrator.executeTask.mockResolvedValue(completedResult);
 
@@ -992,7 +990,7 @@ describe("handleTaskCompletion crash reset", () => {
     scheduler.dispatchTask(task);
 
     // Simulate successful completion callback
-    const completedResult: ExecuteTaskResult = { outcome: "completed", phaseOutputs: new Map() };
+    const completedResult: ExecuteTaskResult = { outcome: "completed" };
     scheduler.handleTaskCompletion("t1", completedResult);
 
     expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_crash_count", 0);

@@ -231,25 +231,6 @@ export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 // ── Orchestrator Config ─────────────────────────────────────────────────────────
 // Loaded from orchestrator.yaml. Startup-only — not hot-reloadable.
 
-export const ReviewPhaseNameSchema = z.enum([
-  "requirements_check",
-  "security_review",
-  "code_quality",
-  "architecture_review",
-]);
-export type ReviewPhaseName = z.infer<typeof ReviewPhaseNameSchema>;
-
-/** Constant enum values for ReviewPhaseName. Use instead of raw strings. */
-export const ReviewPhaseNames = ReviewPhaseNameSchema.enum;
-
-export const RrpirConfigSchema = z.object({
-  max_requirements_loops: z.number().int().positive().default(5),
-  include_thoughts_in_pr: z.boolean().default(true),
-  review_phases: z.array(ReviewPhaseNameSchema).default(["requirements_check"]),
-  max_review_loopbacks: z.number().int().positive().default(3),
-});
-export type RrpirConfig = z.infer<typeof RrpirConfigSchema>;
-
 export const QuietHoursConfigSchema = z.object({
   enabled: z.boolean().default(false),
   start: z.string().default("22:00"),
@@ -296,7 +277,6 @@ export const PhasesConfigSchema = z.object({
   checkpoint_on_transition: z.boolean().default(true),
   periodic_checkpoint_interval_ms: z.number().int().positive().default(900_000),
   max_loopbacks_before_alert: z.number().int().positive().default(3),
-  force_full_pipeline: z.boolean().default(false),
 });
 export type PhasesConfig = z.infer<typeof PhasesConfigSchema>;
 
@@ -327,7 +307,6 @@ export const ReviewConfigSchema = z.object({
 export type ReviewConfig = z.infer<typeof ReviewConfigSchema>;
 
 export const OrchestratorConfigSchema = z.object({
-  rrpir: RrpirConfigSchema.default({}),
   notification: NotificationConfigSchema.default({}),
   question_batching: QuestionBatchingConfigSchema.default({}),
   demo: DemoConfigSchema.default({}),

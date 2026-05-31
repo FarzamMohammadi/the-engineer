@@ -1,7 +1,11 @@
 import { z } from "zod";
 
-import type { Task } from "../../../schemas/task.js";
+import { BlockCategories, type BlockCategory, type Task } from "../../../schemas/task.js";
 import type { OrchestratorContext } from "../types.js";
+
+// Re-exported so the pipeline's internal sub-phases and runner name the block vocabulary through
+// `./types.js` while its single source of truth lives in the task schema, next to the coarse BlockReason.
+export { BlockCategories, type BlockCategory };
 
 // ── Phases ───────────────────────────────────────────────────────────────────
 
@@ -20,32 +24,8 @@ export type Phase = z.infer<typeof PipelinePhaseSchema>;
 export const Phases = PipelinePhaseSchema.enum;
 
 // ── Block Vocabulary ─────────────────────────────────────────────────────────
-
-/**
- * Why a task is blocked — the single, complete cause vocabulary. Every block carries
- * exactly one value; there is no "not applicable" case and nothing is ever null.
- *
- * The first group are failures (a sub-phase or the runner could not proceed). The last
- * two are expected waits (a person or an external event must act before work resumes).
- * The coarse `BlockReason` persisted on the task row for routing is derived from this at
- * wiring time, so this enum is the single source of truth for "why blocked".
- */
-export const BlockCategorySchema = z.enum([
-  // Failures — the pipeline could not make progress.
-  "no_result", // a CLI sub-phase produced no valid session-result.json
-  "details_invalid", // a CLI sub-phase's details failed its detailsSchema
-  "agent_failed", // a CLI sub-phase's agent reported status "failed"
-  "agent_unavailable", // the agent adapter stayed unavailable after retries
-  "orchestrator_error", // an orchestrator sub-phase's run threw
-  "iteration_cap_hit", // a phase repeated past its cap without converging
-  // Waits — expected, not a failure. Someone or something must act.
-  "awaiting_human", // a sub-phase needs a person to answer before it can proceed
-  "awaiting_pr_review", // delivery opened a PR and is waiting on an external review event
-]);
-export type BlockCategory = z.infer<typeof BlockCategorySchema>;
-
-/** Constant enum values for BlockCategory. Use instead of raw strings. */
-export const BlockCategories = BlockCategorySchema.enum;
+// BlockCategory (the complete cause enum) and BlockCategories live in the task schema and are
+// re-exported above. What stays here are the pipeline-internal derivations of it.
 
 /**
  * The subset of {@link BlockCategory} a sub-phase's own `run` can report as a failure.

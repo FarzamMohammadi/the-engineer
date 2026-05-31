@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import type { BlockedDetails, ExternalRef } from "../../schemas/task.js";
+import type { ExternalRef } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
@@ -9,8 +9,11 @@ import type { IObserver } from "../observer/index.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+/** Who outreach reached, for the dispatch log — an outreach concern, no longer stored on the block. */
+type Contacted = { person: string; channel: string; timestamp: string }[];
+
 export type OutreachResult =
-  | { delivered: true; contacted: BlockedDetails["contacted"] }
+  | { delivered: true; contacted: Contacted }
   | { delivered: false; reason: "no_files" | "no_contacts" };
 
 export interface OutreachDeps {
@@ -53,7 +56,7 @@ export async function sendOutreach(
     return { delivered: false, reason: "no_files" };
   }
 
-  const contacted: BlockedDetails["contacted"] = [];
+  const contacted: Contacted = [];
 
   for (const file of files) {
     // path.basename prevents path traversal from agent output

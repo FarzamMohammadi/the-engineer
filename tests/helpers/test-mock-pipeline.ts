@@ -125,7 +125,12 @@ function createSpyingSessionMemory(): SpyingSessionMemory {
 
 /** Build an AgentAdapter whose `run` is the given behavior (write a result, throw, honor the signal). */
 export function fakeAgent(run: (request: AgentRunRequest) => Promise<AgentRunResult>): AgentAdapter {
-  return { run: vi.fn(run) } as unknown as AgentAdapter;
+  return { run: vi.fn(run), manifest: { id: "fake-agent" } } as unknown as AgentAdapter;
+}
+
+/** A pass-through action pipeline: runs the gated function and reports it executed. */
+function passThroughActionPipeline(): { execute: (input: { executeFn: () => unknown }) => Promise<unknown> } {
+  return { execute: async (input) => ({ outcome: "executed", result: await input.executeFn() }) };
 }
 
 // ── Ctx Factory ──────────────────────────────────────────────────────────────
@@ -169,11 +174,11 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     workspaceConfig: WorkspaceConfigSchema.parse({}),
     observationStore: null,
     tracesDir: options.tracesDir ?? null,
-    // Stubs for the rest of the orchestrator infrastructure (unused by the dark core).
-    eventBus: {},
+    // Stubs the runner and agentStep touch: gate the agent run, record its cost, mirror task position.
+    eventBus: { publish: () => undefined },
     safetyLayer: {},
-    actionPipeline: {},
-    taskEngine: {},
+    actionPipeline: passThroughActionPipeline(),
+    taskEngine: { updateTaskField: () => undefined, updateTracking: () => undefined },
     workspaceManager: {},
     skillsManager: { getDir: () => "/tmp/skills" },
     peopleDirectory: {

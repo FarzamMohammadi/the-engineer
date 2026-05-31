@@ -17,8 +17,8 @@ import type { TriggerEvent } from "../../src/schemas/adapters.js";
 import { type DaemonConfig, TimeoutStageActions, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import { TaskStates } from "../../src/schemas/task.js";
 import { FakeClock } from "./fake-clock.js";
+import { createMockTask } from "./mock-factories.js";
 import { createTestObserverFacade } from "./test-observer-facade.js";
-import { createMockTask } from "./test-orchestrator.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -220,7 +220,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
   const orchestrator = {
     executeTask: vi.fn().mockResolvedValue({
       outcome: "completed",
-      phaseOutputs: new Map(),
     } satisfies ExecuteTaskResult),
     attemptSelfUnblock: vi.fn().mockResolvedValue(false),
     requestShutdown: vi.fn(),

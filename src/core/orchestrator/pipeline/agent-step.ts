@@ -4,7 +4,9 @@ import { z } from "zod";
 
 import type { AgentAdapter } from "../../../adapters/agent.js";
 import { AdapterMethodError } from "../../../adapters/index.js";
-import { AdapterTypes } from "../../../schemas/adapters.js";
+import { AdapterTypes, type AgentRunRequest, type AgentRunResult } from "../../../schemas/adapters.js";
+import { ActionClasses } from "../../../schemas/task.js";
+import type { PublishInput } from "../../interfaces/event-bus.interface.js";
 import type { Ctx, FailureCause, SubPhaseResult } from "./types.js";
 
 // ── The Handoff File ─────────────────────────────────────────────────────────
@@ -137,7 +139,7 @@ async function runAgent<TDetails>(
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_AGENT_RETRIES; attempt += 1) {
     try {
-      await agent.run(request);
+      await gatedRun(agent, request, options.stepName, ctx);
       return null;
     } catch (error) {
       lastError = error;
@@ -156,6 +158,52 @@ async function runAgent<TDetails>(
     }
   }
   return lastError;
+}
+
+/**
+ * Run the agent through the action pipeline so the safety layer gates it, then record what it cost.
+ * A pipeline `error` re-throws the original so the retry logic can judge it; a `rejected`/`ask_human`
+ * stop is a non-transient throw the runner blocks on.
+ */
+async function gatedRun(agent: AgentAdapter, request: AgentRunRequest, stepName: string, ctx: Ctx): Promise<void> {
+  const pipelineResult = await ctx.actionPipeline.execute<AgentRunResult>({
+    taskId: ctx.task.id,
+    actionClass: ActionClasses.read,
+    details: { operation: "agent_run", step: stepName },
+    requestedBy: "orchestrator",
+    executeFn: () => agent.run(request),
+  });
+  if (pipelineResult.outcome === "error") {
+    throw pipelineResult.error;
+  }
+  if (pipelineResult.outcome !== "executed") {
+    throw new Error(`Agent run ${pipelineResult.outcome}: ${pipelineResult.reason}`);
+  }
+  recordCost(agent, pipelineResult.result, ctx);
+}
+
+/** Emit cost.incurred carrying the real plugin id (Session 37 handoff), and accumulate task usage. */
+function recordCost(agent: AgentAdapter, result: AgentRunResult, ctx: Ctx): void {
+  const usage = result.usage;
+  ctx.eventBus.publish({
+    type: "cost.incurred",
+    source: "orchestrator",
+    task_id: ctx.task.id,
+    payload: {
+      task_id: ctx.task.id,
+      repo: ctx.task.repo ?? "",
+      provider_id: agent.manifest.id,
+      operation: "agent_step",
+      spend_usd: result.cost_usd,
+      duration_ms: result.duration_ms,
+      input_tokens: usage?.tokens.input_tokens ?? null,
+      output_tokens: usage?.tokens.output_tokens ?? null,
+      total_tokens: usage?.tokens.total_tokens ?? null,
+      cache_read_tokens: usage?.tokens.cache_read_tokens ?? null,
+      model_id: usage?.model_id ?? null,
+    },
+  } satisfies PublishInput<"cost.incurred">);
+  ctx.taskEngine.updateTracking(ctx.task.id, usage?.tokens.total_tokens ?? 0, result.cost_usd ?? 0, result.duration_ms);
 }
 
 /** Transient failures (network, rate limit) are worth a retry; everything else is not. */

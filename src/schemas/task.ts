@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { PhaseSchema } from "./orchestrator.js";
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -33,20 +32,46 @@ export type ActionClass = z.infer<typeof ActionClassSchema>;
 export const ActionClasses = ActionClassSchema.enum;
 
 /**
- * Why a task is blocked. Closed enum so blocked tasks can be queried and routed by reason.
- * `pr_review_pending` marks a task waiting on an external PR event (the collapsed review state);
- * the others mark a task waiting on human input or recovery.
+ * The coarse reason a task is blocked — the routing dimension the daemon switches on. Closed enum so
+ * blocked tasks can be queried and routed. `pr_review_pending` is an expected wait on an external PR
+ * event; `agent_unavailable` drives retry-policy backoff; `need_more_info` and `pipeline_failed` both
+ * wait on the owner via the escalation ladder. Derived from the finer {@link BlockCategory} at the
+ * pipeline boundary.
  */
 export const BlockReasonSchema = z.enum([
   "need_more_info",
   "agent_unavailable",
-  "pr_workflow_failed",
+  "pipeline_failed",
   "pr_review_pending",
 ]);
 export type BlockReason = z.infer<typeof BlockReasonSchema>;
 
 /** Constant enum values for BlockReason. Use instead of raw strings. */
 export const BlockReasons = BlockReasonSchema.enum;
+
+/**
+ * The complete cause vocabulary behind a block — every block carries exactly one value, never null.
+ * The first group are failures (a sub-phase or the runner could not proceed); the last two are
+ * expected waits (a person or an external event must act before work resumes). The coarse
+ * {@link BlockReason} the daemon routes on is derived from this; this is the single source of truth
+ * for "why blocked", shared by the pipeline runner and the persisted block payload.
+ */
+export const BlockCategorySchema = z.enum([
+  // Failures — the pipeline could not make progress.
+  "no_result", // a CLI sub-phase produced no valid session-result.json
+  "details_invalid", // a CLI sub-phase's details failed its detailsSchema
+  "agent_failed", // a CLI sub-phase's agent reported status "failed"
+  "agent_unavailable", // the agent adapter stayed unavailable after retries
+  "orchestrator_error", // an orchestrator sub-phase's run threw
+  "iteration_cap_hit", // a phase repeated past its cap without converging
+  // Waits — expected, not a failure. Someone or something must act.
+  "awaiting_human", // a sub-phase needs a person to answer before it can proceed
+  "awaiting_pr_review", // delivery opened a PR and is waiting on an external review event
+]);
+export type BlockCategory = z.infer<typeof BlockCategorySchema>;
+
+/** Constant enum values for BlockCategory. Use instead of raw strings. */
+export const BlockCategories = BlockCategorySchema.enum;
 
 // ── Sub-schemas ────────────────────────────────────────────────────────────────
 
@@ -142,18 +167,16 @@ export const ReviewStateSchema = z.object({
 });
 export type ReviewState = z.infer<typeof ReviewStateSchema>;
 
+/**
+ * The typed payload persisted on a blocked task. `reason` is the coarse routing value the daemon
+ * switches on; `category` is the complete cause; `sub_phase` names where it blocked; `needed` is the
+ * operator-facing next step. Typed keys, not prose, so the dashboard and alerting query them directly.
+ */
 export const BlockedDetailsSchema = z.object({
   reason: BlockReasonSchema,
-  efforts_made: z.array(z.string()),
-  contacted: z.array(
-    z.object({
-      person: z.string(),
-      channel: z.string(),
-      timestamp: z.string().datetime(),
-    }),
-  ),
+  category: BlockCategorySchema,
+  sub_phase: z.string(),
   needed: z.string(),
-  waiting_for: z.string(),
 });
 export type BlockedDetails = z.infer<typeof BlockedDetailsSchema>;
 
@@ -171,6 +194,7 @@ export const TaskSchema = z.object({
   state: TaskStateSchema,
   sub_state: SubStateSchema.nullable(),
   phase: z.string().nullable(),
+  sub_phase: z.string().nullable(),
 
   // Context
   title: z.string(),
@@ -194,15 +218,11 @@ export const TaskSchema = z.object({
   // Blocked
   blocked: BlockedDetailsSchema.nullable(),
 
-  // Universal fallback: phase to return to after requirements_gathering unblocks
-  return_to_phase: PhaseSchema.nullable(),
-
-  // Pipeline loop counters (persisted across crashes)
-  loopback_count: z.number().int().default(0),
-  requirements_loop_count: z.number().int().default(0),
-
-  // Complexity-based research skip (persisted for crash recovery)
-  skip_research: z.boolean().default(false),
+  // Pipeline loop counters — persisted on the task row (and each checkpoint) so a preempt-and-resume
+  // does not reset the caps. phase_iteration is the intra-phase repeat count (resets on phase entry);
+  // total_reworks is the inter-phase backward-jump count for one dispatch. Both reset on a fresh dispatch.
+  phase_iteration: z.number().int().default(0),
+  total_reworks: z.number().int().default(0),
 
   // Tracking
   priority: z.number().int().min(1).max(100).default(50),

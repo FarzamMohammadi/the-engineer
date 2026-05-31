@@ -7,9 +7,9 @@ import { deriveAggregateReviewState } from "../../../../src/core/daemon/review-h
 import { isSlotConsuming } from "../../../../src/core/daemon/task-scheduler.js";
 import type { ExecuteTaskResult } from "../../../../src/core/orchestrator/index.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
-import { BlockReasons, SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { BlockCategories, BlockReasons, SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { createMockTask } from "../../../helpers/mock-factories.js";
 import { createMockTriggerPlugin, createTestDaemon, createTestTriggerEvent } from "../../../helpers/test-daemon.js";
-import { createMockTask } from "../../../helpers/test-orchestrator.js";
 
 // ── Pure Function Tests ───────────────────────────────────────────────────────
 
@@ -193,7 +193,6 @@ describe("Daemon", () => {
       handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task1]);
       handle.orchestrator.executeTask.mockResolvedValueOnce({
         outcome: "completed",
-        phaseOutputs: new Map(),
       });
 
       await handle.daemon.tick(); // Dispatch task-1
@@ -206,7 +205,6 @@ describe("Daemon", () => {
       handle.taskEngine.getQueuedByPriority.mockReturnValue([task2]);
       handle.orchestrator.executeTask.mockResolvedValueOnce({
         outcome: "completed",
-        phaseOutputs: new Map(),
       });
 
       await handle.daemon.tick();
@@ -1008,10 +1006,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         title: "Needs review",
         last_transition_at: oneDayAgo,
@@ -1064,10 +1061,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         title: "Too early",
         last_transition_at: recentTime,
@@ -1105,10 +1101,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         title: "Repeat check",
         last_transition_at: oneDayAgo,
@@ -1177,10 +1172,9 @@ describe("Daemon", () => {
           sub_state: null,
           blocked: {
             reason: BlockReasons.pr_review_pending,
-            efforts_made: [],
-            contacted: [],
+            category: BlockCategories.awaiting_pr_review,
+            sub_phase: "await-review",
             needed: "review",
-            waiting_for: "human",
           },
         }),
       );
@@ -1225,10 +1219,9 @@ describe("Daemon", () => {
           sub_state: null,
           blocked: {
             reason: BlockReasons.pr_review_pending,
-            efforts_made: [],
-            contacted: [],
+            category: BlockCategories.awaiting_pr_review,
+            sub_phase: "await-review",
             needed: "review",
-            waiting_for: "human",
           },
         }),
       );
@@ -1252,10 +1245,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         title: "Merged task",
         repo: "org/repo",
@@ -1316,10 +1308,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         review: {
           pr_number: 42,
@@ -1386,10 +1377,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         repo: "owner/repo",
         review: {
@@ -1563,10 +1553,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         repo: "owner/repo",
         review: {
@@ -1629,10 +1618,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         repo: "owner/repo",
         review: {
@@ -1686,10 +1674,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         repo: "owner/repo",
         review: {
@@ -1765,10 +1752,9 @@ describe("Daemon", () => {
         sub_state: null,
         blocked: {
           reason: BlockReasons.pr_review_pending,
-          efforts_made: [],
-          contacted: [],
+          category: BlockCategories.awaiting_pr_review,
+          sub_phase: "await-review",
           needed: "review",
-          waiting_for: "human",
         },
         repo: "owner/repo",
         review: {

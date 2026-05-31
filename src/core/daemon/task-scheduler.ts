@@ -240,7 +240,7 @@ export function createTaskScheduler(
   }
 
   function handlePrReviewPendingBlocked(taskId: string): void {
-    // The phase-runner already blocked the task as pr_review_pending after opening the PR.
+    // The orchestrator already blocked the task as pr_review_pending when delivery parked at await-review.
     // A successful run means the agent was available — reset the unavailability counter.
     retryPolicy.recordSuccess("agent_unavailable", taskId);
     // Trigger evaluation — the worktree survives while the PR awaits review.
@@ -410,7 +410,7 @@ export function createTaskScheduler(
     } else if (result.outcome === Outcomes.terminated) {
       handleTerminatedOutcome(taskId, result.reason, result.lastPhase);
     } else if (result.outcome === Outcomes.blocked) {
-      // Task already transitioned to blocked by the phase-runner; route on the block reason.
+      // Task already transitioned to blocked by the orchestrator; route on the block reason.
       const blockedTask = taskEngine.getTask(taskId);
       const blockedReason = blockedTask?.blocked?.reason;
 

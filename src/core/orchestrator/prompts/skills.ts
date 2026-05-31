@@ -1,8 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Phase } from "../../../schemas/orchestrator.js";
-import { Phases } from "../../../schemas/orchestrator.js";
+import { type Phase, Phases } from "../pipeline/types.js";
 import { section } from "./format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -12,14 +11,14 @@ export type SkillName = "commit" | "expert-panel-review";
 
 // ── Phase-to-Skill Mapping ──────────────────────────────────────────────────
 
-/** Which skills are relevant to each RRPIR phase. */
+/** Which skills are relevant to each pipeline phase. */
 const SKILL_PHASE_MAP: Record<Phase, SkillName[]> = {
-  [Phases.requirements_gathering]: [],
+  [Phases.requirements]: [],
   [Phases.research]: [],
   [Phases.planning]: [],
   [Phases.execution]: ["commit"],
-  [Phases.self_review]: ["commit", "expert-panel-review"],
-  [Phases.demo_prep]: [],
+  [Phases.review]: ["commit", "expert-panel-review"],
+  [Phases.delivery]: [],
 };
 
 // ── Public API ───────────────────────────────────────────────────────────────

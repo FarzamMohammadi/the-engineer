@@ -14,10 +14,10 @@ export class CheckpointStore {
   constructor(db: Database.Database) {
     this.insertStmt = db.prepare(`
       INSERT INTO checkpoints (
-        id, session_id, task_id, phase, phase_progress,
+        id, session_id, task_id, phase, sub_phase, phase_iteration, total_reworks, phase_progress,
         context_summary, key_findings, open_questions, next_action,
         last_event_id, workspace_ref, reason, timestamp, journal_offset
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.getLatestByTaskStmt = db.prepare("SELECT * FROM checkpoints WHERE task_id = ? ORDER BY rowid DESC LIMIT 1");
@@ -33,6 +33,9 @@ export class CheckpointStore {
       input.sessionId,
       input.taskId,
       input.phase,
+      input.subPhase,
+      input.phaseIteration,
+      input.totalReworks,
       input.phaseProgress,
       input.contextSummary,
       toSqliteJson(input.keyFindings),
@@ -50,6 +53,9 @@ export class CheckpointStore {
       session_id: input.sessionId,
       task_id: input.taskId,
       phase: input.phase,
+      sub_phase: input.subPhase,
+      phase_iteration: input.phaseIteration,
+      total_reworks: input.totalReworks,
       phase_progress: input.phaseProgress,
       context_summary: input.contextSummary,
       key_findings: input.keyFindings,

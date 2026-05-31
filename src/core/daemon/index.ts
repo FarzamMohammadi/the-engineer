@@ -650,10 +650,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Stop data lifecycle manager
     dataLifecycleManager?.stop();
 
-    // Signal orchestrator to yield between phases
-    ctx.orchestrator.requestShutdown();
-
-    // Drain active dispatches with shutdown timeout
+    // Drain active dispatches — the dispatch-tracker aborts each in-flight signal, which SIGTERMs
+    // the agent subprocess so the pipeline yields mid-run instead of waiting for the phase to finish.
     await scheduler.drainForShutdown(config.shutdown_timeout_ms);
 
     // Drain active evaluations (shorter timeout — evaluations are non-critical)

@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
-import { createAndonCord } from "../../../../src/core/orchestrator/andon-cord.js";
+import { Phases } from "../../../../src/core/orchestrator/pipeline/types.js";
 import type { OrchestratorContext } from "../../../../src/core/orchestrator/types.js";
 import { createWorkspaceLifecycle } from "../../../../src/core/orchestrator/workspace-lifecycle.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
 import type { Dispatch } from "../../../../src/schemas/ephemeral.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
-import { Phases } from "../../../../src/schemas/orchestrator.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import type { Task } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
@@ -272,30 +271,5 @@ describe("WorkspaceLifecycle", () => {
         }),
       ).not.toThrow();
     });
-  });
-});
-
-describe("AndonCord", () => {
-  it("starts not pulled", () => {
-    const cord = createAndonCord();
-    expect(cord.isPulled()).toBe(false);
-    expect(cord.getReason()).toBeNull();
-  });
-
-  it("can be pulled with a reason", () => {
-    const cord = createAndonCord();
-    cord.pull("secret detected");
-    expect(cord.isPulled()).toBe(true);
-    expect(cord.getReason()).toBe("secret detected");
-  });
-
-  it("can be reset after pulling", () => {
-    const cord = createAndonCord();
-    cord.pull("workspace corruption");
-    expect(cord.isPulled()).toBe(true);
-
-    cord.reset();
-    expect(cord.isPulled()).toBe(false);
-    expect(cord.getReason()).toBeNull();
   });
 });

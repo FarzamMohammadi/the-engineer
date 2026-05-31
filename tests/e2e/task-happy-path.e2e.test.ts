@@ -48,29 +48,19 @@ function makeResponse(json: Record<string, unknown>): AgentRunResult {
   };
 }
 
+/** Number of agent calls in a full happy-path pipeline (see makeFullPipelineResponses). */
+const FULL_PIPELINE_LLM_CALLS = 7;
+
 /**
  * Build canned responses for one full happy-path pipeline run.
  *
- * The CLI-native pipeline makes 7 LLM calls in order: requirements, research, planning,
- * execution, self-review (1 sub-phase + 1 refinement), demo-prep. After demo-prep the
- * orchestrator commits/pushes and creates a PR — the pipeline exits at `review_pending`
- * for human review.
+ * The pipeline makes 7 agent calls in order: gather, investigate, design, implement, self-review,
+ * refine, pr-description. The session-result each writes is produced by writeSessionResultFromPrompt;
+ * these canned results just carry the per-call cost. Delivery then parks at await-review.
  */
 function makeFullPipelineResponses(): AgentRunResult[] {
-  const ready = (extra: Record<string, unknown> = {}) => makeResponse({ status: "ready", ...extra });
-  return [
-    ready(), // requirements_gathering
-    ready(), // research
-    ready({ decomposition_plan: null }), // planning
-    ready(), // execution
-    ready({ findings: [], quality_assessment: "ship_it" }), // self-review sub-phase
-    ready({ quality_assessment: "ship_it" }), // self-review refinement
-    ready(), // demo_prep
-  ];
+  return Array.from({ length: FULL_PIPELINE_LLM_CALLS }, () => makeResponse({}));
 }
-
-/** Number of LLM calls in a full happy-path pipeline (see makeFullPipelineResponses). */
-const FULL_PIPELINE_LLM_CALLS = 7;
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -126,15 +116,14 @@ describe("E2E: Task happy path", () => {
     expect(ctx.daemon.getState().tasksCompleted).toBe(1);
     expect(ctx.fakes.llm.getCallCount()).toBe(FULL_PIPELINE_LLM_CALLS);
 
-    // After demo_prep the orchestrator created a PR via fake-git-hosting, so the
-    // task is waiting on human review.
+    // Delivery parks at await-review, so the task is blocked waiting on an external PR review.
     const reviewPending = ctx.taskEngine.getBlockedTasksByReason("pr_review_pending");
     expect(reviewPending.length).toBe(1);
 
     const taskId = reviewPending[0]!.id;
     const checkpoint = ctx.sessionMemory.checkpoints.getLatest(taskId);
     expect(checkpoint).not.toBeNull();
-    expect(checkpoint?.phase).toBe("demo_prep");
+    expect(checkpoint?.phase).toBe("delivery");
   });
 
   // ── Dispatch and routing tests ─────────────────────────────────────────────

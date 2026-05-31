@@ -4,9 +4,9 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { Phases } from "../../../src/core/orchestrator/pipeline/types.js";
 import { DatabaseError, MigrationError, createDatabase, createInMemoryDatabase } from "../../../src/db/database.js";
 import type { DatabaseHandle } from "../../../src/db/database.js";
-import { Phases } from "../../../src/schemas/orchestrator.js";
 import { CheckpointReasons, JournalEntryTypes } from "../../../src/schemas/session-memory.js";
 import { TaskStates } from "../../../src/schemas/task.js";
 
@@ -207,6 +207,7 @@ describe("table structure", () => {
       "state",
       "sub_state",
       "phase",
+      "sub_phase",
       "title",
       "description",
       "source_text",
@@ -230,13 +231,11 @@ describe("table structure", () => {
       "last_transition_at",
       "session_id",
       "version",
-      "return_to_phase",
-      "loopback_count",
-      "requirements_loop_count",
+      "phase_iteration",
+      "total_reworks",
       "not_before",
       "consecutive_crash_count",
       "consecutive_agent_unavailable_count",
-      "skip_research",
     ];
     expect(columns).toEqual(expected);
   });

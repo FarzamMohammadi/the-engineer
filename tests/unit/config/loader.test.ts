@@ -374,7 +374,7 @@ describe("loadConfigDir", () => {
     // Empty dir — all files missing, all defaults
     const result = loadConfigDir(tmpDir);
     expect(result.bundle.daemon.tick_interval_ms).toBe(5_000);
-    expect(result.bundle.orchestrator.rrpir.max_requirements_loops).toBe(5);
+    expect(result.bundle.orchestrator.review.lenses).toEqual(["self-review"]);
     expect(result.bundle.workspace.branch_prefix).toBe("engineer/");
     expect(result.bundle.safety.merge.auto_merge_after_approval.default).toBe(false);
     expect(result.bundle.people).toEqual([]);
@@ -408,7 +408,7 @@ describe("loadConfigDir", () => {
     // daemon from file
     expect(result.bundle.daemon.tick_interval_ms).toBe(10_000);
     // orchestrator from defaults (missing file)
-    expect(result.bundle.orchestrator.rrpir.max_requirements_loops).toBe(5);
+    expect(result.bundle.orchestrator.review.lenses).toEqual(["self-review"]);
     // safety from file
     expect(result.bundle.safety.cost_limits.per_task.cost_usd).toBe(5.0);
     // No safety warning

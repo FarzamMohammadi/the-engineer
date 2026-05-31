@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -32,6 +32,9 @@ describe("removeThoughtsAndPush", () => {
     const thoughtsDir = join(record.worktreePath, record.thoughtsDir!);
     expect(existsSync(thoughtsDir)).toBe(true);
 
+    // Write a thoughts file (the phase subdirs start empty) so git has something branch-added to track.
+    writeFileSync(join(thoughtsDir, "requirements", "requirements.md"), "# Requirements\n");
+
     // Commit the thoughts dir so git diff sees it as branch-added
     execSync("git add -A && git commit -m 'add thoughts'", {
       cwd: record.worktreePath,
@@ -45,7 +48,7 @@ describe("removeThoughtsAndPush", () => {
     );
 
     expect(result).toBe(true);
-    expect(existsSync(thoughtsDir)).toBe(false);
+    expect(existsSync(join(thoughtsDir, "requirements", "requirements.md"))).toBe(false);
   });
 
   it("returns false when branch has no thoughts files added", () => {

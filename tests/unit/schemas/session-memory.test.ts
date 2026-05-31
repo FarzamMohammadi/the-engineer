@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Phases } from "../../../src/schemas/orchestrator.js";
+import { Phases } from "../../../src/core/orchestrator/pipeline/types.js";
 import {
   CheckpointReasonSchema,
   CheckpointReasons,
@@ -117,6 +117,9 @@ describe("CheckpointSchema", () => {
     session_id: "01SESSION",
     task_id: "01TASK",
     phase: Phases.research,
+    sub_phase: "investigate",
+    phase_iteration: 0,
+    total_reworks: 0,
     phase_progress: "researched auth module, found 3 patterns",
     context_summary: "Investigating authentication patterns in the codebase",
     key_findings: ["Uses JWT tokens", "Middleware pattern for auth"],

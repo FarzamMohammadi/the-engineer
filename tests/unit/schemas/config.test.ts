@@ -22,8 +22,6 @@ import {
   QuestionBatchingConfigSchema,
   QuietHoursConfigSchema,
   ResponseTimeoutSchema,
-  ReviewPhaseNames,
-  RrpirConfigSchema,
   SafetyConfigSchema,
   ScopeBoundariesSchema,
   TimeoutStageActions,
@@ -86,35 +84,6 @@ describe("DaemonConfigSchema", () => {
 });
 
 // ── Orchestrator Config ─────────────────────────────────────────────────────────
-
-describe("RrpirConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = RrpirConfigSchema.parse({});
-    expect(config.max_requirements_loops).toBe(5);
-    expect(config.include_thoughts_in_pr).toBe(true);
-    expect(config.review_phases).toEqual([ReviewPhaseNames.requirements_check]);
-    expect(config.max_review_loopbacks).toBe(3);
-  });
-
-  it("accepts custom review_phases", () => {
-    const config = RrpirConfigSchema.parse({
-      review_phases: [
-        ReviewPhaseNames.requirements_check,
-        ReviewPhaseNames.security_review,
-        ReviewPhaseNames.code_quality,
-      ],
-    });
-    expect(config.review_phases).toEqual([
-      ReviewPhaseNames.requirements_check,
-      ReviewPhaseNames.security_review,
-      ReviewPhaseNames.code_quality,
-    ]);
-  });
-
-  it("rejects invalid review phase names", () => {
-    expect(() => RrpirConfigSchema.parse({ review_phases: ["nonexistent"] })).toThrow();
-  });
-});
 
 describe("QuietHoursConfigSchema", () => {
   it("produces valid defaults from empty input", () => {
@@ -184,7 +153,7 @@ describe("JournalConfigSchema", () => {
 describe("OrchestratorConfigSchema", () => {
   it("produces valid config from empty input with all nested defaults", () => {
     const config = OrchestratorConfigSchema.parse({});
-    expect(config.rrpir.max_requirements_loops).toBe(5);
+    expect(config.review.lenses).toEqual(["self-review"]);
     expect(config.notification.milestone_based).toBe(true);
     expect(config.question_batching.enabled).toBe(true);
     expect(config.demo.always_create).toBe(true);
@@ -194,10 +163,9 @@ describe("OrchestratorConfigSchema", () => {
 
   it("allows partial nested override", () => {
     const config = OrchestratorConfigSchema.parse({
-      rrpir: { max_requirements_loops: 10 },
+      review: { lenses: ["self-review", "security"] },
     });
-    expect(config.rrpir.max_requirements_loops).toBe(10);
-    expect(config.rrpir.include_thoughts_in_pr).toBe(true);
+    expect(config.review.lenses).toEqual(["self-review", "security"]);
     expect(config.notification.milestone_based).toBe(true);
   });
 });

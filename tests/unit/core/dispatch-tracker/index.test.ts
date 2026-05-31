@@ -26,7 +26,7 @@ function defer<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e:
 }
 
 function makeCompletedResult(): ExecuteTaskResult {
-  return { outcome: "completed", phaseOutputs: new Map() };
+  return { outcome: "completed" };
 }
 
 // ── register + natural completion ───────────────────────────────────────────
@@ -46,7 +46,7 @@ describe("DispatchTracker.register", () => {
     settled.resolve(makeCompletedResult());
     await new Promise((r) => setImmediate(r));
 
-    expect(onCompleted).toHaveBeenCalledWith("task-1", { outcome: "completed", phaseOutputs: new Map() });
+    expect(onCompleted).toHaveBeenCalledWith("task-1", { outcome: "completed" });
     expect(onError).not.toHaveBeenCalled();
     expect(tracker.isInFlight("task-1")).toBe(false);
   });
@@ -203,7 +203,7 @@ describe("DispatchTracker identity", () => {
     await new Promise((r) => setImmediate(r));
 
     expect(secondOnCompleted).toHaveBeenCalledTimes(1);
-    expect(secondOnCompleted).toHaveBeenCalledWith("task-1", { outcome: "completed", phaseOutputs: new Map() });
+    expect(secondOnCompleted).toHaveBeenCalledWith("task-1", { outcome: "completed" });
   });
 });
 

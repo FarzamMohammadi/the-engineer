@@ -72,19 +72,18 @@ export const EVENTS: EventDeclaration[] = [
 const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
   // TEXT columns
   phase: "text",
+  sub_phase: "text",
   session_id: "text",
   description: "text",
   source_text: "text",
   repo: "text",
   clone_url: "text",
-  return_to_phase: "text",
   not_before: "text",
 
   // INTEGER columns (includes boolean-as-integer)
   priority: "integer",
-  loopback_count: "integer",
-  requirements_loop_count: "integer",
-  skip_research: "boolean",
+  phase_iteration: "integer",
+  total_reworks: "integer",
   consecutive_crash_count: "integer",
   consecutive_agent_unavailable_count: "integer",
 
@@ -138,21 +137,21 @@ export class TaskEngine implements ITaskEngine {
 
     this.insertTaskStmt = db.prepare(`
       INSERT INTO tasks (
-        id, external_ref, idempotency_key, state, sub_state, phase,
+        id, external_ref, idempotency_key, state, sub_state, phase, sub_phase,
         title, description, source_text, acceptance_criteria,
         team, related, decisions,
         repo, clone_url, thoughts_id, workspace, review, blocked,
-        return_to_phase,
+        phase_iteration, total_reworks,
         priority, agent_tokens, agent_cost_usd, compute_time_ms,
         created_at, started_at, completed_at, last_transition_at,
         not_before, consecutive_crash_count, consecutive_agent_unavailable_count,
         session_id, version
       ) VALUES (
-        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?,
+        ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?,
@@ -195,6 +194,7 @@ export class TaskEngine implements ITaskEngine {
       TaskStates.requirements_gathering,
       null, // sub_state
       null, // phase
+      null, // sub_phase
       input.title,
       description,
       sourceText,
@@ -208,7 +208,8 @@ export class TaskEngine implements ITaskEngine {
       null, // workspace
       null, // review
       null, // blocked
-      null, // return_to_phase
+      0, // phase_iteration
+      0, // total_reworks
       priority,
       0, // agent_tokens
       0.0, // agent_cost_usd
@@ -246,6 +247,7 @@ export class TaskEngine implements ITaskEngine {
       state: TaskStates.requirements_gathering,
       sub_state: null,
       phase: null,
+      sub_phase: null,
       title: input.title,
       description,
       source_text: sourceText,
@@ -259,10 +261,8 @@ export class TaskEngine implements ITaskEngine {
       workspace: null,
       review: null,
       blocked: null,
-      return_to_phase: null,
-      loopback_count: 0,
-      requirements_loop_count: 0,
-      skip_research: false,
+      phase_iteration: 0,
+      total_reworks: 0,
       priority,
       agent_tokens: 0,
       agent_cost_usd: 0,

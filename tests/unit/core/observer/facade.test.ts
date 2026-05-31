@@ -107,7 +107,7 @@ describe("Observer.withTrace", () => {
     const observer = createObserverFacade(createTestObserverFacade("orchestrator").pino, "orchestrator");
     (observer as Observer).upgrade(store);
 
-    observer.withTrace("trace-deep").child("phase-runner").observe("lifecycle", "x", {});
+    observer.withTrace("trace-deep").child("pr-manager").observe("lifecycle", "x", {});
 
     expect(spans[0]?.options?.trace_id).toBe("trace-deep");
   });

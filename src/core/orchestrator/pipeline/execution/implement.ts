@@ -1,4 +1,3 @@
-import { Phases } from "../../../../schemas/orchestrator.js";
 import { section } from "../../prompts/format.js";
 import { buildSkillsSection } from "../../prompts/skills.js";
 import {
@@ -10,7 +9,7 @@ import {
 } from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
 import { isTrivial } from "../grounding.js";
-import { BlockCategories, type Ctx, type RoutableResult, type Route, type SubPhase } from "../types.js";
+import { BlockCategories, type Ctx, Phases, type RoutableResult, type Route, type SubPhase } from "../types.js";
 
 // ── The Sub-Phase ────────────────────────────────────────────────────────────
 

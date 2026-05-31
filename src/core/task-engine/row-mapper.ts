@@ -1,5 +1,4 @@
-import { fromSqliteBoolean, fromSqliteJson } from "../../db/serialize.js";
-import type { Phase } from "../../schemas/orchestrator.js";
+import { fromSqliteJson } from "../../db/serialize.js";
 import type {
   BlockedDetails,
   ExternalRef,
@@ -22,6 +21,7 @@ export interface TaskRow {
   state: string;
   sub_state: string | null;
   phase: string | null;
+  sub_phase: string | null;
   title: string;
   description: string;
   source_text: string;
@@ -35,10 +35,8 @@ export interface TaskRow {
   workspace: string | null;
   review: string | null;
   blocked: string | null;
-  return_to_phase: string | null;
-  loopback_count: number;
-  requirements_loop_count: number;
-  skip_research: number;
+  phase_iteration: number;
+  total_reworks: number;
   priority: number;
   agent_tokens: number;
   agent_cost_usd: number;
@@ -77,6 +75,7 @@ export function rowToTask(row: TaskRow): Task {
     state: row.state as TaskState,
     sub_state: row.sub_state as SubState | null,
     phase: row.phase,
+    sub_phase: row.sub_phase,
     title: row.title,
     description: row.description,
     source_text: row.source_text,
@@ -90,10 +89,8 @@ export function rowToTask(row: TaskRow): Task {
     workspace: fromSqliteJson<TaskWorkspace>(row.workspace),
     review: fromSqliteJson<ReviewState>(row.review),
     blocked: fromSqliteJson<BlockedDetails>(row.blocked),
-    return_to_phase: row.return_to_phase as Phase | null,
-    loopback_count: row.loopback_count,
-    requirements_loop_count: row.requirements_loop_count,
-    skip_research: fromSqliteBoolean(row.skip_research),
+    phase_iteration: row.phase_iteration,
+    total_reworks: row.total_reworks,
     priority: row.priority,
     agent_tokens: row.agent_tokens,
     agent_cost_usd: row.agent_cost_usd,

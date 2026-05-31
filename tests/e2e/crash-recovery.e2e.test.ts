@@ -43,17 +43,14 @@ function makeResponse(json: Record<string, unknown>): AgentRunResult {
  * the orchestrator creates a PR and exits at `review_pending`.
  */
 function makeResumeFromPlanningResponses(): AgentRunResult[] {
-  const ready = (extra: Record<string, unknown> = {}) => makeResponse({ status: "ready", ...extra });
-  return [
-    ready(), // execution
-    ready({ quality_assessment: "ship_it" }), // self-review sub-phase
-    ready({ quality_assessment: "ship_it" }), // self-review refinement
-    ready(), // demo_prep
-  ];
+  // Resuming at the planning checkpoint re-runs planning/design, then runs the rest:
+  // design, implement, self-review, refine, pr-description. The session-results are written by
+  // writeSessionResultFromPrompt; these canned results just carry the per-call cost.
+  return Array.from({ length: RESUME_FROM_PLANNING_LLM_CALLS }, () => makeResponse({}));
 }
 
 /** Number of LLM calls when resuming from a `planning` checkpoint. */
-const RESUME_FROM_PLANNING_LLM_CALLS = 4;
+const RESUME_FROM_PLANNING_LLM_CALLS = 5;
 
 interface CreateOrphanOptions {
   title?: string;
@@ -112,6 +109,9 @@ function createOrphanedTask(ctx: IntegrationContext, options?: CreateOrphanOptio
     sessionId: session.id,
     taskId: task.id,
     phase: checkpointPhase,
+    subPhase: null,
+    phaseIteration: 0,
+    totalReworks: 0,
     phaseProgress: `Completed ${checkpointPhase} phase fully`,
     contextSummary: `Task was working on ${title}. Completed through ${checkpointPhase}.`,
     keyFindings: ["test finding"],
@@ -251,16 +251,16 @@ describe("E2E: Crash recovery", () => {
     // Recovery transitioned the orphan back to queued.
     expect(ctx.taskEngine.getTask(taskId)?.state).toBe(TaskStates.queued);
 
-    // Tick to dispatch the queued task — orchestrator resumes from the planning
-    // checkpoint, skipping requirements/research/planning. Advance past the
-    // first-crash retry-policy backoff (~1 minute) so the task is eligible.
+    // Tick to dispatch the queued task — the orchestrator resumes at the planning checkpoint,
+    // re-running planning/design and continuing from there. Advance past the first-crash
+    // retry-policy backoff (~1 minute) so the task is eligible.
     ctx.clock.advance(60_000 + 1_000);
     await daemon2.tick();
     await waitForIdle(daemon2);
 
     expect(ctx.fakes.llm.getCallCount()).toBe(RESUME_FROM_PLANNING_LLM_CALLS);
     expect(daemon2.getState().tasksCompleted).toBe(1);
-    // After demo_prep the orchestrator created a PR and blocked at pr_review_pending.
+    // Delivery parks at await-review, so the resumed task ends blocked on the PR review.
     expect(ctx.taskEngine.getTask(taskId)?.state).toBe(TaskStates.blocked);
     expect(ctx.taskEngine.getTask(taskId)?.blocked?.reason).toBe("pr_review_pending");
   });

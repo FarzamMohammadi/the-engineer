@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { CreateCheckpointInput } from "../../../../src/core/interfaces/session-memory.interface.js";
-import { Phases } from "../../../../src/schemas/orchestrator.js";
+import { Phases } from "../../../../src/core/orchestrator/pipeline/types.js";
 import { CheckpointReasons, JournalEntryTypes, SessionEndReasons } from "../../../../src/schemas/session-memory.js";
 import type { TestSessionMemoryHandle } from "../../../helpers/test-session-memory.js";
 import { createTestSessionMemory } from "../../../helpers/test-session-memory.js";
@@ -128,6 +128,9 @@ function makeCheckpointInput(
     sessionId,
     taskId,
     phase: Phases.research,
+    subPhase: "investigate",
+    phaseIteration: 0,
+    totalReworks: 0,
     phaseProgress: "researched auth module, found 3 patterns",
     contextSummary: "Exploring auth patterns in the codebase",
     keyFindings: ["Uses JWT", "No refresh tokens"],

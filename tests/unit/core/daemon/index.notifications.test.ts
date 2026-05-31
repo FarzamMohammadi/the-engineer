@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExecuteTaskResult } from "../../../../src/core/orchestrator/index.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { createMockTask } from "../../../helpers/mock-factories.js";
 import { type TestDaemonHandle, createTestDaemon } from "../../../helpers/test-daemon.js";
-import { createMockTask } from "../../../helpers/test-orchestrator.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,7 +77,7 @@ describe("Daemon Notifications", () => {
         id: "farzam",
         contacts: [{ channel: "telegram", handle: "@farzam" }],
       });
-      setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
+      setupTaskDispatch(handle, { outcome: "completed" });
 
       await handle.daemon.tick();
       await flush();
@@ -93,7 +93,7 @@ describe("Daemon Notifications", () => {
       const commPlugin = createMockCommPlugin({ capabilities: ["send", "ticket_management"] });
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
-      setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
+      setupTaskDispatch(handle, { outcome: "completed" });
 
       await handle.daemon.tick();
       await flush();
@@ -109,7 +109,7 @@ describe("Daemon Notifications", () => {
       const commPlugin = createMockCommPlugin();
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue(null);
-      setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
+      setupTaskDispatch(handle, { outcome: "completed" });
 
       await handle.daemon.tick();
       await flush();
@@ -127,7 +127,7 @@ describe("Daemon Notifications", () => {
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
       setupTaskDispatch(
         handle,
-        { outcome: "completed", phaseOutputs: new Map() },
+        { outcome: "completed" },
         {
           external_ref: null,
         },
@@ -147,7 +147,7 @@ describe("Daemon Notifications", () => {
         id: "farzam",
         contacts: [{ channel: "telegram", handle: "@farzam" }],
       });
-      setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
+      setupTaskDispatch(handle, { outcome: "completed" });
 
       // Should not throw
       await handle.daemon.tick();
@@ -353,7 +353,7 @@ describe("Daemon Notifications", () => {
       });
       handle.registry.getPluginsByType.mockReturnValue([sendOnlyPlugin, issuePlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
-      setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
+      setupTaskDispatch(handle, { outcome: "completed" });
 
       await handle.daemon.tick();
       await flush();
@@ -369,7 +369,7 @@ describe("Daemon Notifications", () => {
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
       setupTaskDispatch(
         handle,
-        { outcome: "completed", phaseOutputs: new Map() },
+        { outcome: "completed" },
         {
           external_ref: { type: "test_issue", repo: "acme/widgets", id: "99" },
         },
@@ -391,7 +391,7 @@ describe("Daemon Notifications", () => {
       commPlugin.commentOnTicket.mockRejectedValue(new Error("GitHub API down"));
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
-      setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
+      setupTaskDispatch(handle, { outcome: "completed" });
 
       // Should not throw
       await handle.daemon.tick();
@@ -402,7 +402,7 @@ describe("Daemon Notifications", () => {
       const commPlugin = createMockCommPlugin({ capabilities: ["send"] });
       handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
       handle.peopleDirectory.getOwner.mockReturnValue({ id: "farzam", contacts: [] });
-      setupTaskDispatch(handle, { outcome: "completed", phaseOutputs: new Map() });
+      setupTaskDispatch(handle, { outcome: "completed" });
 
       await handle.daemon.tick();
       await flush();

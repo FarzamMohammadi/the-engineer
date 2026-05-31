@@ -271,9 +271,8 @@ export function createDispatchTracker(deps: DispatchTrackerDeps): DispatchTracke
  */
 function buildTerminatedResult(natural: ExecuteTaskResult, reason: TerminationReason): ExecuteTaskResult {
   if (natural.outcome === "terminated") {
-    // Runner already routed as terminated (e.g., phase-runner's cooperative
-    // checkpoint path returns terminated/cooperative_preemption). Trust the
-    // recorded reason from `terminate()` — that's the request that won.
+    // A dispatch that itself surfaced as terminated keeps that shape; trust the reason
+    // recorded by `terminate()` — that request is the one that won.
     return { ...natural, reason };
   }
   const lastPhase = "phase" in natural ? natural.phase : null;

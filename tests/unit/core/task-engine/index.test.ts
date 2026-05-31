@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EventBus } from "../../../../src/core/event-bus/index.js";
+import { Phases } from "../../../../src/core/orchestrator/pipeline/types.js";
 import type { CreateTaskInput } from "../../../../src/core/task-engine/index.js";
 import { TaskEngine, isValidTransition } from "../../../../src/core/task-engine/index.js";
 import { createInMemoryDatabase } from "../../../../src/db/database.js";
 import { EventTypes } from "../../../../src/schemas/events.js";
-import { Phases } from "../../../../src/schemas/orchestrator.js";
 import type { ActionClass, SubState, Task, TaskState } from "../../../../src/schemas/task.js";
 import { ActionClasses, SubStates, TaskStates, ValidTransitions } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
@@ -765,18 +765,6 @@ describe("TaskEngine", () => {
       expect(updated.title).toBe("Original");
       expect(updated.priority).toBe(75);
       expect(updated.state).toBe(TaskStates.requirements_gathering);
-    });
-
-    it("coerces boolean values to integers for SQLite", () => {
-      const task = engine.createTask(makeInput());
-      // better-sqlite3 rejects JS booleans — updateTaskField must coerce to 0/1
-      engine.updateTaskField(task.id, "skip_research", true);
-      const updated = assertDefined(engine.getTask(task.id), "task");
-      expect(updated.skip_research).toBe(true); // rowToTask converts INTEGER back to boolean
-
-      engine.updateTaskField(task.id, "skip_research", false);
-      const updated2 = assertDefined(engine.getTask(task.id), "task");
-      expect(updated2.skip_research).toBe(false);
     });
 
     it("warns on non-existent task", () => {

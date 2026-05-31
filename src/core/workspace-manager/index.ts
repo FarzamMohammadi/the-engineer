@@ -24,7 +24,6 @@ import type {
   WorkspaceVerification,
 } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
-import { writeSessionResultTemplate } from "../session-result/index.js";
 import { WorkspaceCreationError, WorkspaceNotFoundError } from "./errors.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -268,9 +267,7 @@ export class WorkspaceManager implements IWorkspaceManager {
       thoughtsDirRelative = `thoughts/${dateStr}-${thoughtsId}`;
       const thoughtsDirAbsolute = path.join(worktreePath, thoughtsDirRelative);
       for (const phase of PHASE_DIRECTORIES) {
-        const phaseDir = path.join(thoughtsDirAbsolute, phase);
-        mkdirSync(phaseDir, { recursive: true });
-        writeSessionResultTemplate(phaseDir);
+        mkdirSync(path.join(thoughtsDirAbsolute, phase), { recursive: true });
       }
       this.observer.debug("Created thoughts/ directory structure", {
         taskId,

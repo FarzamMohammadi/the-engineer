@@ -302,13 +302,12 @@ describe("ReviewStateSchema", () => {
 });
 
 describe("BlockedDetailsSchema", () => {
-  it("parses valid data with nested contacted array", () => {
+  it("parses the typed block payload", () => {
     const valid = {
       reason: "need_more_info",
-      efforts_made: ["Checked docs", "Searched codebase"],
-      contacted: [{ person: "farzam", channel: "telegram", timestamp: "2026-03-10T12:00:00.000Z" }],
+      category: "awaiting_human",
+      sub_phase: "gather",
       needed: "AWS credentials for staging",
-      waiting_for: "Farzam to share credentials",
     };
     expect(BlockedDetailsSchema.parse(valid)).toEqual(valid);
   });
@@ -324,6 +323,7 @@ describe("TaskSchema", () => {
     state: TaskStates.requirements_gathering,
     sub_state: null,
     phase: null,
+    sub_phase: null,
     title: "Fix auth bug",
     description: "Users can't log in",
     source_text: "Issue body text",
@@ -335,10 +335,8 @@ describe("TaskSchema", () => {
     workspace: null,
     review: null,
     blocked: null,
-    return_to_phase: null,
-    loopback_count: 0,
-    requirements_loop_count: 0,
-    skip_research: false,
+    phase_iteration: 0,
+    total_reworks: 0,
     priority: 50,
     agent_tokens: 0,
     agent_cost_usd: 0,

@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runWhy } from "../../../../src/cli/commands/why.js";
 import { createOutput, resetOutput } from "../../../../src/cli/output.js";
+import { Phases } from "../../../../src/core/orchestrator/pipeline/types.js";
 import { createDatabase } from "../../../../src/db/database.js";
-import { Phases } from "../../../../src/schemas/orchestrator.js";
 import { JournalEntryTypes } from "../../../../src/schemas/session-memory.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { Phases } from "../../../src/core/orchestrator/pipeline/types.js";
 import { DispatchSchema } from "../../../src/schemas/ephemeral.js";
-import { Phases } from "../../../src/schemas/orchestrator.js";
 import { CheckpointReasons } from "../../../src/schemas/session-memory.js";
 import { SubStates, TaskStates } from "../../../src/schemas/task.js";
 
@@ -13,6 +13,7 @@ describe("DispatchSchema", () => {
     state: TaskStates.active,
     sub_state: SubStates.working,
     phase: Phases.execution,
+    sub_phase: "implement",
     title: "Fix auth bug",
     description: "Users can't log in",
     source_text: "Issue body",
@@ -24,7 +25,8 @@ describe("DispatchSchema", () => {
     workspace: null,
     review: null,
     blocked: null,
-    return_to_phase: null,
+    phase_iteration: 0,
+    total_reworks: 0,
     priority: 50,
     agent_tokens: 0,
     agent_cost_usd: 0,
@@ -53,6 +55,9 @@ describe("DispatchSchema", () => {
       session_id: "01SESSION",
       task_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
       phase: Phases.execution,
+      sub_phase: "implement",
+      phase_iteration: 0,
+      total_reworks: 0,
       phase_progress: "50% through file changes",
       context_summary: "Implementing OAuth",
       key_findings: ["Found existing middleware"],

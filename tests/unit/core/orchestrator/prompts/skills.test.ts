@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { Phases } from "../../../../../src/core/orchestrator/pipeline/types.js";
 import { buildSkillsSection } from "../../../../../src/core/orchestrator/prompts/skills.js";
-import { Phases } from "../../../../../src/schemas/orchestrator.js";
 import { resolveSkillsDir } from "../../../../helpers/test-skills-dir.js";
 
 const skillsDir = resolveSkillsDir();
@@ -17,7 +17,7 @@ describe("buildSkillsSection", () => {
   });
 
   it("should return section with both skill paths for self_review phase", () => {
-    const result = buildSkillsSection(Phases.self_review, skillsDir);
+    const result = buildSkillsSection(Phases.review, skillsDir);
     expect(result).not.toBeNull();
     expect(result).toContain("### Skill: commit");
     expect(result).toContain("commit/SKILL.md");
@@ -26,7 +26,7 @@ describe("buildSkillsSection", () => {
   });
 
   it("should include persona file paths in expert-panel-review skill", () => {
-    const result = buildSkillsSection(Phases.self_review, skillsDir);
+    const result = buildSkillsSection(Phases.review, skillsDir);
     expect(result).not.toBeNull();
     expect(result).toContain("personas/critical-reviewer.md");
     expect(result).toContain("personas/pragmatic-senior-engineer.md");
@@ -36,10 +36,10 @@ describe("buildSkillsSection", () => {
   });
 
   it("should return null for phases with no skills", () => {
-    expect(buildSkillsSection(Phases.requirements_gathering, skillsDir)).toBeNull();
+    expect(buildSkillsSection(Phases.requirements, skillsDir)).toBeNull();
     expect(buildSkillsSection(Phases.research, skillsDir)).toBeNull();
     expect(buildSkillsSection(Phases.planning, skillsDir)).toBeNull();
-    expect(buildSkillsSection(Phases.demo_prep, skillsDir)).toBeNull();
+    expect(buildSkillsSection(Phases.delivery, skillsDir)).toBeNull();
   });
 
   it("should contain absolute paths using the provided skillsDir", () => {

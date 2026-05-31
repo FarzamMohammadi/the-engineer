@@ -1,26 +1,28 @@
+import path from "node:path";
 import { ulid } from "ulid";
 import type { AgentAdapter } from "../../adapters/agent.js";
 import { AdapterTypes, type AgentRunResult } from "../../schemas/adapters.js";
 import type { Dispatch } from "../../schemas/ephemeral.js";
-import {
-  CommMessageSentPayloadSchema,
-  CostIncurredPayloadSchema,
-  type Event,
-  EventTypes,
-} from "../../schemas/events.js";
+import { CommMessageSentPayloadSchema, CostIncurredPayloadSchema, EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { SessionEndReasons } from "../../schemas/session-memory.js";
-import { ActionClasses, TaskStates } from "../../schemas/task.js";
+import { type SessionEndReason, SessionEndReasons } from "../../schemas/session-memory.js";
+import {
+  ActionClasses,
+  BlockCategories,
+  type BlockCategory,
+  type BlockReason,
+  BlockReasons,
+  type BlockedDetails,
+  TaskStates,
+} from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
-import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
-import { type AgentRunner, createAgentRunner } from "./agent-runner.js";
-import { type AndonCord, createAndonCord } from "./andon-cord.js";
-import { createPhaseHandlers } from "./phase-handlers.js";
-import { type PhaseHandlerRegistry, createPhaseHandlerRegistry, runPhasePipeline } from "./phase-runner.js";
-import { type PrManager, createPrManager } from "./pr-manager.js";
-import { gatherRepoContextSafe } from "./prompts/index.js";
-import type { ExecuteTaskResult, OrchestratorContext, PipelineState, WritablePreemptionGate } from "./types.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import { sendOutreach } from "./outreach-sender.js";
+import { PIPELINE } from "./pipeline/pipeline.js";
+import { type ResumeState, type RunnerOutcome, runPipeline } from "./pipeline/runner.js";
+import type { BlockDetail, Ctx } from "./pipeline/types.js";
+import { type ExecuteTaskResult, type OrchestratorContext, Outcomes } from "./types.js";
 import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
@@ -48,205 +50,237 @@ export const EVENTS: EventDeclaration[] = [
   },
 ];
 
-// ── PreemptionGate Factory ────────────────────────────────────────────────
+// ── Block Reason Derivation ───────────────────────────────────────────────────
 
-/** Create a PreemptionGate — cooperative preemption state container (Protocol P8). */
-function createPreemptionGate(): WritablePreemptionGate {
-  const entries = new Map<string, { target_task_id: string; preempting_task_id: string }>();
+/**
+ * Collapse the complete {@link BlockCategory} into the coarse {@link BlockReason} the daemon routes
+ * on. The waits map one-to-one; an unavailable agent drives retry-policy backoff; every other failure
+ * is a generic pipeline failure the owner must look at.
+ */
+function toBlockReason(category: BlockCategory): BlockReason {
+  switch (category) {
+    case BlockCategories.awaiting_pr_review:
+      return BlockReasons.pr_review_pending;
+    case BlockCategories.agent_unavailable:
+      return BlockReasons.agent_unavailable;
+    case BlockCategories.awaiting_human:
+      return BlockReasons.need_more_info;
+    default:
+      return BlockReasons.pipeline_failed;
+  }
+}
+
+/**
+ * Resolve where a resumed dispatch picks up. The latest checkpoint names the sub-phase that ran and
+ * its counters; the runner re-runs from there, so re-applying its route reproduces the original flow.
+ * An unknown phase/sub-phase (a pipeline reshape) falls back to a fresh run.
+ */
+function resolveResume(dispatch: Dispatch): ResumeState | undefined {
+  const checkpoint = dispatch.resume_from;
+  if (!checkpoint) {
+    return undefined;
+  }
+  const phaseIndex = PIPELINE.findIndex((definition) => definition.phase === checkpoint.phase);
+  if (phaseIndex < 0) {
+    return undefined;
+  }
+  const phaseDef = PIPELINE[phaseIndex];
+  const subIndex = checkpoint.sub_phase
+    ? (phaseDef?.subPhases.findIndex((sub) => sub.name === checkpoint.sub_phase) ?? -1)
+    : 0;
+  if (subIndex < 0) {
+    return undefined;
+  }
   return {
-    isRequested: (taskId) => entries.has(taskId),
-    getPayload: (taskId) => entries.get(taskId) ?? null,
-    reset(taskId) {
-      entries.delete(taskId);
-    },
-    request(p) {
-      entries.set(p.target_task_id, p);
-    },
+    cursor: { phaseIndex, subIndex },
+    phaseIteration: checkpoint.phase_iteration,
+    totalReworks: checkpoint.total_reworks,
   };
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
 
 /**
- * The brain of the system — a 6-phase pipeline that takes a task from intake
- * to pull request.
+ * The brain of the system — drives a task through the sub-phase pipeline from intake to delivery.
  *
- * Derives from compiler front-end (multi-pass pipeline) + flight director
- * (coordination and communication). Delegates to focused subsystems:
- * - AgentRunner: agent invocation, retry, cost, validation
- * - WorkspaceLifecycle: workspace setup, session management
- * - NotificationRouter: centralized milestone notifications, issue comments, outreach
- * - PrManager: commit, push, PR creation
- * - PhaseRunner: phase pipeline orchestration
- *
- * Protocols implemented:
- * - P4 (Phase Transition): checkpoint → journal → update task.phase → next phase
- * - P8 (Preemption): cooperative yield via flag check between phases
- * - P9 (Task Resume): reconstruct from checkpoint, skip completed phases
+ * It sets up the session and workspace, assembles the per-dispatch {@link Ctx}, runs {@link PIPELINE}
+ * through the generic runner, and maps the runner's outcome onto the daemon's {@link ExecuteTaskResult}.
+ * The runner owns the pipeline logic and observability; the Orchestrator owns the task-state writes
+ * (block, complete) the runner deliberately does not perform.
  */
 export class Orchestrator {
   private readonly ctx: OrchestratorContext;
-  private readonly agentRunner: AgentRunner;
   private readonly workspaceLifecycle: WorkspaceLifecycle;
-  private readonly notifications: NotificationRouter;
-  private readonly prManager: PrManager;
-  private readonly andonCord: AndonCord;
-  private readonly preemption: WritablePreemptionGate;
-  private shutdownRequested = false;
-
-  /** Phase handler dispatch map — one method per phase. */
-  private readonly phaseHandlers: PhaseHandlerRegistry;
 
   constructor(ctx: OrchestratorContext) {
     this.ctx = ctx;
-
-    // Create subsystems
-    this.agentRunner = createAgentRunner(this.ctx);
     this.workspaceLifecycle = createWorkspaceLifecycle(this.ctx);
-    this.notifications = this.ctx.notifications;
-    this.prManager = createPrManager(this.ctx, this.notifications);
-    this.andonCord = createAndonCord();
-
-    // Cooperative preemption state (Protocol P8)
-    this.preemption = createPreemptionGate();
-    this.ctx.eventBus.subscribe("orchestrator", EventTypes["preemption.requested"], (event: Event) => {
-      const p = event.payload as {
-        target_task_id: string;
-        preempting_task_id: string;
-      };
-      this.preemption.request(p);
-    });
-
-    // Sync portable skills to {workspace_root}/skills/ before phase handlers resolve paths
+    // Sync portable skills to {workspace_root}/skills/ before any sub-phase resolves their paths.
     this.ctx.skillsManager.sync();
-
-    // Build phase handler registry from extracted phase-handlers module
-    this.phaseHandlers = createPhaseHandlerRegistry(createPhaseHandlers(this.agentRunner, this.ctx));
-  }
-
-  /** Signal cooperative shutdown — phases will yield at the next boundary. */
-  requestShutdown(): void {
-    this.shutdownRequested = true;
   }
 
   /**
-   * Execute a task through the phase pipeline.
-   *
-   * Entry point called by the Daemon. Handles new tasks and resumed tasks.
-   * Returns when the pipeline completes, is preempted, or encounters an error.
+   * Execute a task through the pipeline. Entry point called by the daemon for new and resumed tasks.
+   * Returns `completed` or `blocked`; a preemption/shutdown aborts the in-flight agent and re-throws so
+   * the dispatch-tracker routes the termination; a genuine crash re-throws to crash recovery.
    */
   async executeTask(dispatch: Dispatch): Promise<ExecuteTaskResult> {
     const taskId = dispatch.task.id;
     const traceId = ulid();
-    const isResume = !!dispatch.resume_from;
-    const isRework = (dispatch.task.review?.feedback_rounds ?? []).some((r) => !r.applied) ?? false;
-
     const tracedObserver = this.ctx.observer.withTrace(traceId);
-
     tracedObserver.info("Task execution starting", {
       taskId,
       title: dispatch.task.title,
-      isResume,
+      isResume: !!dispatch.resume_from,
       resumeFromPhase: dispatch.resume_from?.phase ?? null,
-      isRework,
     });
 
-    // ── Session setup ──────────────────────────────────────────────────────
     const session = this.workspaceLifecycle.createSession(dispatch);
     const sessionId = session.id;
     this.ctx.taskEngine.updateTaskField(taskId, "session_id", sessionId);
-    tracedObserver.debug("Session created", { taskId, sessionId });
 
-    // ── Workspace setup (D144) ──────────────────────────────────────────
-    // If workspace creation fails (git failure, disk full, auth error), close the
-    // session before re-throwing so it doesn't remain open indefinitely.
+    // Workspace setup. A failure here (git, disk, auth) closes the session before re-throwing so it
+    // does not linger open; the dispatch-tracker routes the throw to crash recovery.
     try {
       this.workspaceLifecycle.setupWorkspace(dispatch);
     } catch (workspaceError) {
-      this.ctx.sessionMemory.sessions.end(sessionId, SessionEndReasons.crashed);
+      this.endSession(sessionId, SessionEndReasons.crashed, taskId);
       throw workspaceError;
     }
 
-    // Notify task pickup (D152) — personal channels + GitHub issue comment
-    this.notifications.notify({
+    this.notifyPickup(taskId, dispatch.task.title);
+
+    const ctx = this.buildContext(dispatch, tracedObserver, sessionId, traceId);
+
+    let outcome: RunnerOutcome;
+    try {
+      outcome = await runPipeline(PIPELINE, ctx, resolveResume(dispatch));
+    } catch (error) {
+      const reason = dispatch.signal.aborted ? SessionEndReasons.preempted : SessionEndReasons.crashed;
+      this.endSession(sessionId, reason, taskId);
+      throw error;
+    }
+
+    if (outcome.kind === "completed") {
+      this.endSession(sessionId, SessionEndReasons.completed, taskId);
+      return { outcome: Outcomes.completed };
+    }
+    return this.blockTask(ctx, sessionId, outcome.detail);
+  }
+
+  // ── Dispatch Helpers ────────────────────────────────────────────────────────
+
+  /** Assemble the per-dispatch context the pipeline runs on from the shared context plus this run's state. */
+  private buildContext(
+    dispatch: Dispatch,
+    observer: OrchestratorContext["observer"],
+    sessionId: string,
+    traceId: string,
+  ): Ctx {
+    const taskId = dispatch.task.id;
+    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
+    const record = this.ctx.workspaceManager.getWorkspaceRecord(taskId);
+    return {
+      ...this.ctx,
+      observer,
+      task: dispatch.task,
+      sessionId,
+      traceId,
+      worktreePath,
+      thoughtsDir: record?.thoughtsDir ?? null,
+      ...(dispatch.signal ? { signal: dispatch.signal } : {}),
+    };
+  }
+
+  /** Tell the owner work has started, on their channels and on the source ticket. */
+  private notifyPickup(taskId: string, title: string): void {
+    this.ctx.notifications.notify({
       kind: NotificationKinds.milestone,
       taskId,
-      message: `Starting work on: ${dispatch.task.title}`,
+      message: `Starting work on: ${title}`,
     });
-    this.notifications.notify({
+    this.ctx.notifications.notify({
       kind: NotificationKinds.ticket_comment,
       taskId,
       message: "Starting work on this ticket.",
     });
+  }
 
-    // ── Build pipeline state ───────────────────────────────────────────────
-    // Gather repo context once — avoids 5 sync I/O ops × 6 phases per task.
-    // Re-gathered after execution phase (the only phase that modifies files).
-    const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
-    const repoContext = gatherRepoContextSafe(worktreePath, tracedObserver);
+  /** Transition a blocked task, persist the typed block payload, and deliver any pending outreach. */
+  private async blockTask(ctx: Ctx, sessionId: string, detail: BlockDetail): Promise<ExecuteTaskResult> {
+    const reason = toBlockReason(detail.category);
+    if (detail.category === BlockCategories.awaiting_human) {
+      await this.deliverOutreach(ctx);
+    }
+    this.ctx.taskEngine.requestTransition(ctx.task.id, TaskStates.blocked, null, detail.category, "orchestrator");
+    this.ctx.taskEngine.updateTaskField(ctx.task.id, "blocked", {
+      reason,
+      category: detail.category,
+      sub_phase: detail.sub_phase,
+      needed: detail.needed,
+    } satisfies BlockedDetails);
+    this.endSession(sessionId, SessionEndReasons.blocked, ctx.task.id);
+    return { outcome: Outcomes.blocked, phase: detail.sub_phase, reason };
+  }
 
-    // Read thoughtsDir from the workspace record (set during workspace creation)
-    // to avoid midnight-boundary date mismatch with workspace-manager.
-    const workspaceRecord = this.ctx.workspaceManager.getWorkspaceRecord(taskId);
-    const thoughtsDir = workspaceRecord?.thoughtsDir ?? null;
-
-    const state: PipelineState = {
-      traceId,
-      sessionId,
-      loopbackCount: 0,
-      requirementsLoopCount: 0,
-      thoughtsDir,
-      repoContext,
-      returnToPhase: null,
-      phaseSequence: 0,
-    };
-
-    // ── Run phase pipeline ─────────────────────────────────────────────────
-    const tracedCtx: OrchestratorContext = { ...this.ctx, observer: tracedObserver };
-    return runPhasePipeline(dispatch, state, {
-      ctx: tracedCtx,
-      handlers: this.phaseHandlers,
-      prManager: this.prManager,
-      andonCord: this.andonCord,
-      preemption: this.preemption,
-      shutdown: { isRequested: () => this.shutdownRequested },
+  /** Deliver the questions the requirements phase wrote to its outreach directory, if any. */
+  private async deliverOutreach(ctx: Ctx): Promise<void> {
+    if (!(ctx.worktreePath && ctx.thoughtsDir)) {
+      return;
+    }
+    const outreachDir = path.join(ctx.worktreePath, ctx.thoughtsDir, "requirements", "outreach");
+    const result = await sendOutreach(ctx.task.id, outreachDir, ctx.task.external_ref, {
+      peopleDirectory: this.ctx.peopleDirectory,
+      notifications: this.ctx.notifications,
+      eventBus: this.ctx.eventBus,
+      observer: ctx.observer,
     });
+    if (!result.delivered) {
+      ctx.observer.warn("Task blocked on a human, but no outreach was delivered", {
+        taskId: ctx.task.id,
+        reason: result.reason,
+      });
+    }
+  }
+
+  /** Close a session, never letting a close failure swallow the outcome that earned it. */
+  private endSession(sessionId: string, reason: SessionEndReason, taskId: string): void {
+    try {
+      this.ctx.sessionMemory.sessions.end(sessionId, reason);
+    } catch (error) {
+      this.ctx.observer.error("Failed to close session", {
+        taskId,
+        sessionId,
+        error: sanitizeErrorMessage(error),
+      });
+    }
   }
 
   // ── Self-Unblock ──────────────────────────────────────────────────────────
 
   /**
-   * Attempt to self-diagnose and resolve a blocked task.
-   *
-   * Called by the Daemon during Stage 2 of blocked timeout escalation.
-   * Returns `true` if the block was resolved, `false` otherwise.
+   * Attempt to self-diagnose and resolve a blocked task. Called by the daemon during blocked-timeout
+   * escalation. Returns `true` if the block looks auto-resolvable, `false` otherwise.
    */
   async attemptSelfUnblock(taskId: string): Promise<boolean> {
     const task = this.ctx.taskEngine.getTask(taskId);
     if (!task || task.state !== TaskStates.blocked) {
       return false;
     }
-
-    this.ctx.observer.info("Attempting self-unblock", {
-      taskId,
-      blockedReason: task.blocked?.reason ?? "unknown",
-    });
-
     const agent = this.ctx.registry.getPrimaryPlugin<AgentAdapter>(AdapterTypes.agent);
     if (!agent) {
       return false;
     }
 
-    const journalEntries = this.ctx.sessionMemory.journal.query(taskId);
-    const recentEntries = journalEntries.slice(-5);
-    const blockedReason = task.blocked?.reason ?? "unknown";
+    this.ctx.observer.info("Attempting self-unblock", { taskId, blockedReason: task.blocked?.reason ?? "unknown" });
 
+    const recentEntries = this.ctx.sessionMemory.journal.query(taskId).slice(-5);
     const prompt = sanitizeSecrets(
       [
         "A task is blocked and needs diagnosis.",
         `Task: "${task.title}"`,
-        `Blocked reason: ${blockedReason}`,
-        `Recent activity: ${JSON.stringify(recentEntries.map((e) => ({ type: e.type, summary: e.summary })))}`,
+        `Blocked reason: ${task.blocked?.reason ?? "unknown"}`,
+        `Recent activity: ${JSON.stringify(recentEntries.map((entry) => ({ type: entry.type, summary: entry.summary })))}`,
         "",
         "Can this be automatically resolved? Respond with JSON:",
         '{ "can_resolve": boolean, "action": "description of resolution or why not" }',
@@ -259,31 +293,49 @@ export class Orchestrator {
         actionClass: ActionClasses.read,
         details: { operation: "self_unblock_diagnosis" },
         requestedBy: "orchestrator",
-        executeFn: () =>
-          agent.run({
-            prompt,
-            system_prompt: null,
-            cwd: null,
-            trace_output_path: null,
-          }),
+        executeFn: () => agent.run({ prompt, system_prompt: null, cwd: null, trace_output_path: null }),
       });
-
       if (pipelineResult.outcome !== "executed") {
         return false;
       }
-
-      this.agentRunner.emitCostIncurred(taskId, pipelineResult.result);
-
+      this.emitCost(taskId, agent, pipelineResult.result, "self_unblock");
       const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean };
       const canResolve = parsed.can_resolve === true;
       this.ctx.observer.info("Self-unblock diagnosis result", { taskId, canResolve });
       return canResolve;
-    } catch (err) {
-      this.ctx.observer.warn("Self-unblock failed", {
-        taskId,
-        error: sanitizeErrorMessage(err),
-      });
+    } catch (error) {
+      this.ctx.observer.warn("Self-unblock failed", { taskId, error: sanitizeErrorMessage(error) });
       return false;
     }
+  }
+
+  /** Emit cost.incurred for an agent run, carrying the real plugin id (Session 37 handoff). */
+  private emitCost(taskId: string, agent: AgentAdapter, result: AgentRunResult, operation: string): void {
+    const repo = this.ctx.taskEngine.getTask(taskId)?.repo ?? "";
+    const usage = result.usage;
+    this.ctx.eventBus.publish({
+      type: "cost.incurred",
+      source: "orchestrator",
+      task_id: taskId,
+      payload: {
+        task_id: taskId,
+        repo,
+        provider_id: agent.manifest.id,
+        operation,
+        spend_usd: result.cost_usd,
+        duration_ms: result.duration_ms,
+        input_tokens: usage?.tokens.input_tokens ?? null,
+        output_tokens: usage?.tokens.output_tokens ?? null,
+        total_tokens: usage?.tokens.total_tokens ?? null,
+        cache_read_tokens: usage?.tokens.cache_read_tokens ?? null,
+        model_id: usage?.model_id ?? null,
+      },
+    } satisfies PublishInput<"cost.incurred">);
+    this.ctx.taskEngine.updateTracking(
+      taskId,
+      usage?.tokens.total_tokens ?? 0,
+      result.cost_usd ?? 0,
+      result.duration_ms,
+    );
   }
 }

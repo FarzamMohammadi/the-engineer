@@ -1,7 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
 
-import { Phases as LegacyPhases } from "../../../../schemas/orchestrator.js";
 import { section } from "../../prompts/format.js";
 import { buildSkillsSection } from "../../prompts/skills.js";
 import {
@@ -106,7 +105,7 @@ function buildPrompt(ctx: Ctx): string {
     buildResultContract({ directory, deliverable: DELIVERABLE, detailsHint: DETAILS_HINT }),
     buildTaskContext(ctx),
   );
-  const skills = buildSkillsSection(LegacyPhases.self_review, ctx.skillsManager.getDir());
+  const skills = buildSkillsSection(Phases.review, ctx.skillsManager.getDir());
   if (skills) {
     parts.push(skills);
   }

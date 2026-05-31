@@ -90,11 +90,6 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # All fields are optional — defaults shown as comments
 # Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
-# --- RRPIR methodology ---
-# rrpir:
-#   max_requirements_loops: 5         # Max requirement-gathering loops (default: 5)
-#   include_thoughts_in_pr: true      # Include thoughts in PR description (default: true)
-
 # --- Notifications ---
 # notification:
 #   milestone_based: true             # Notify only on milestones (not every step)
@@ -411,11 +406,6 @@ export const EXAMPLE_ORCHESTRATOR = `# ┌────────────�
 # │  All fields are optional — defaults are applied automatically.            │
 # │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
-
-# ── RRPIR Methodology ────────────────────────────────────────────────────────
-rrpir:
-  max_requirements_loops: 5               # Max requirement-gathering loops (default: 5)
-  include_thoughts_in_pr: true            # Include thoughts in PR description (default: true)
 
 # ── Notifications ────────────────────────────────────────────────────────────
 notification:

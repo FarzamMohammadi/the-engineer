@@ -17,6 +17,9 @@ export interface CreateCheckpointInput {
   sessionId: string;
   taskId: string;
   phase: string;
+  subPhase: string | null;
+  phaseIteration: number;
+  totalReworks: number;
   phaseProgress: string;
   contextSummary: string;
   keyFindings: string[];

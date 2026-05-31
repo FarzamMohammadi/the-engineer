@@ -43,26 +43,6 @@ export function buildTaskBrief(task: TaskBriefInput): string {
   return section("Task", lines.join("\n"));
 }
 
-// ── Shared Prompt Helpers ───────────────────────────────────────────────────
-
-/**
- * Build the RRPIR overview section for a phase prompt.
- *
- * Provides a brief orientation: which phase this is and where the thoughts
- * directory lives. The full RRPIR methodology is in the system prompt.
- */
-export function buildRRPIROverview(phaseName: string, thoughtsDir: string): string {
-  return section(
-    "How The Engineer Works",
-    [
-      `You are the ${phaseName} session in the RRPIR pipeline (Requirements Gathering -> Research -> Planning -> Implementation -> Review). Each phase is a separate CLI session with file-based handoffs. The full methodology is in your system prompt.`,
-      "",
-      `Thoughts directory: \`${thoughtsDir}/\``,
-      "You have full CLI capabilities: read files, write files, search code, run commands. Use them freely.",
-    ].join("\n"),
-  );
-}
-
 /**
  * Build the repository overview section from gathered repo context.
  *

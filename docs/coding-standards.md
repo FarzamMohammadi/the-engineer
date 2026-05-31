@@ -247,6 +247,34 @@ throw new Error(`invalid value: ${value}`);
 
 Let errors bubble unless you can meaningfully handle them (retry, fallback, translate for a different boundary). Never catch just to log and rethrow. Boundary layers (CLI handlers, daemon loop, API routes) are the natural catch-all points.
 
+### Isolated Failure Boundaries
+
+When several independent operations each must survive the others failing, give each its own try/catch — not one block around all of them. Inside a single block, the first failure exits it and everything after silently never runs.
+
+```typescript
+// Wrong — the first failure skips the rest
+try {
+  await writeToPrimary(record);
+  await writeToAudit(record);
+} catch (error) {
+  observer.warn("Sink write failed", { error });
+}
+
+// Right — each operation fails on its own; the others still run
+try {
+  await writeToPrimary(record);
+} catch (error) {
+  observer.warn("Primary sink failed", { error });
+}
+try {
+  await writeToAudit(record);
+} catch (error) {
+  observer.warn("Audit sink failed", { error });
+}
+```
+
+The repeated blocks are the contract, not duplication to factor away — operation B must survive operation A's failure.
+
 ### Propagation Through Boundaries
 
 Errors travel outward through the three-tier model. Each boundary translates for its consumer — never swallows, never exposes internals upward.
@@ -398,6 +426,10 @@ tests/core/task-engine/fixtures/sample-task.ts
 ### Philosophy
 
 Minimal. A comment earns its place only when the code cannot express the WHY — hidden constraints, non-obvious workarounds, "we tried X and it broke because Y."
+
+### Encode Contracts in Code
+
+When a comment promises a cross-cutting rule — "every handler below validates its input," "each of these records its own failure metric" — prefer making that rule true by construction: a wrapper, a base class, a type, a higher-order function. The construct's name becomes the contract, and a function that does not obey it visibly does not. A comment is a promise the next person has to remember to keep; code is a promise the compiler keeps for them.
 
 ### JSDoc
 

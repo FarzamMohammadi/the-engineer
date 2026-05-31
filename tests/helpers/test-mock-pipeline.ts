@@ -18,7 +18,7 @@ import type {
   SubPhase,
   SubPhaseResult,
 } from "../../src/core/orchestrator/pipeline/types.js";
-import type { AgentRunRequest, AgentRunResult } from "../../src/schemas/adapters.js";
+import type { AgentRunRequest, AgentRunResult, Person } from "../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import type { Task } from "../../src/schemas/task.js";
 import { createMockTask } from "./mock-factories.js";
@@ -138,6 +138,7 @@ export interface MockCtxOptions {
   readonly tracesDir?: string | null;
   readonly signal?: AbortSignal;
   readonly agent?: AgentAdapter | null;
+  readonly people?: readonly Person[];
 }
 
 /** Everything a test needs to drive the runner or agentStep and assert what it emitted. */
@@ -174,8 +175,15 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     actionPipeline: {},
     taskEngine: {},
     workspaceManager: {},
-    skillsManager: {},
-    peopleDirectory: {},
+    skillsManager: { getDir: () => "/tmp/skills" },
+    peopleDirectory: {
+      getAll: () => options.people ?? [],
+      getPerson: () => null,
+      getByRole: () => [],
+      getOwner: () => null,
+      getReviewers: () => [],
+      resolveContact: () => null,
+    },
     notifications: {},
     // Per-dispatch state.
     task: createMockTask(options.task),

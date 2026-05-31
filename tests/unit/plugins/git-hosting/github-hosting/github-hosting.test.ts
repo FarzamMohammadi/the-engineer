@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GitHubHostingPlugin } from "../../../../../src/plugins/git-hosting/github-hosting/github-hosting.js";
-import type { PROptions, PluginManifest } from "../../../../../src/schemas/adapters.js";
+import {
+  GitHubHostingPlugin,
+  derivePrEvents,
+} from "../../../../../src/plugins/git-hosting/github-hosting/github-hosting.js";
+import type {
+  PRComment,
+  PROptions,
+  PRStatus,
+  PluginManifest,
+  ReviewStatus,
+} from "../../../../../src/schemas/adapters.js";
+import { PrEventTypes } from "../../../../../src/schemas/git-hosting-events.js";
 import { runGitHostingContractSuite } from "../../../../helpers/contract-suites/git-hosting-contract.js";
 import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
@@ -520,5 +530,98 @@ describe("GitHubHostingPlugin", () => {
         expect((error as { adapterError: { code: string } }).adapterError.code).toBe("invalid_input");
       }
     });
+  });
+
+  describe("detectPrEvents()", () => {
+    it("aggregates an approved, green, mergeable PR into pr_ready_to_merge", async () => {
+      const events = await plugin.detectPrEvents("acme/webapp", 51);
+      expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_ready_to_merge]);
+    });
+
+    it("reports a merge as the single terminal event", async () => {
+      mockOctokit.pulls.get.mockResolvedValueOnce({
+        data: {
+          number: 51,
+          state: "closed",
+          merged: true,
+          draft: false,
+          mergeable: true,
+          html_url: "u",
+          head: { sha: "s" },
+        },
+      });
+      const events = await plugin.detectPrEvents("acme/webapp", 51);
+      expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_merged]);
+    });
+  });
+});
+
+// ── derivePrEvents (the stateless aggregation policy, pure) ───────────────────
+
+describe("derivePrEvents", () => {
+  const status = (over: Partial<PRStatus> = {}): PRStatus => ({
+    number: 51,
+    state: "open",
+    draft: false,
+    mergeable: true,
+    checks_state: "passing",
+    url: "https://fake.git/acme/webapp/pull/51",
+    ...over,
+  });
+  const review = (over: Partial<ReviewStatus> = {}): ReviewStatus => ({
+    approved: false,
+    approvals: 0,
+    changes_requested: false,
+    reviewers: [],
+    comments: [],
+    ...over,
+  });
+  const approved = review({ approved: true, approvals: 1 });
+  const comment = (id: string): PRComment => ({
+    id,
+    author: "alice",
+    body: "please fix",
+    created_at: "2026-05-31T00:00:00Z",
+  });
+
+  it("reports a merge as the single terminal event", () => {
+    expect(derivePrEvents(status({ state: "merged" }), approved, [])).toEqual([{ type: PrEventTypes.pr_merged }]);
+  });
+
+  it("reports nothing for a PR closed without merging", () => {
+    expect(derivePrEvents(status({ state: "closed" }), review(), [])).toEqual([]);
+  });
+
+  it("emits pr_ready_to_merge only when approved, CI green, and mergeable hold together", () => {
+    expect(derivePrEvents(status(), approved, [])).toEqual([{ type: PrEventTypes.pr_ready_to_merge }]);
+  });
+
+  it("withholds readiness while CI is still pending — the stateless wait", () => {
+    expect(derivePrEvents(status({ checks_state: "pending" }), approved, [])).toEqual([]);
+  });
+
+  it("reports a CI failure and withholds readiness", () => {
+    const events = derivePrEvents(status({ checks_state: "failing" }), approved, []);
+    expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_ci_failure]);
+  });
+
+  it("reports a merge conflict and withholds readiness", () => {
+    const events = derivePrEvents(status({ mergeable: false }), approved, []);
+    expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_merge_conflict]);
+  });
+
+  it("surfaces changes-requested as feedback", () => {
+    const events = derivePrEvents(status(), review({ changes_requested: true }), []);
+    expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_comments]);
+  });
+
+  it("surfaces unaddressed comments on an unapproved PR, carrying them for Core", () => {
+    const comments = [comment("c1")];
+    expect(derivePrEvents(status(), review(), comments)).toEqual([{ type: PrEventTypes.pr_comments, comments }]);
+  });
+
+  it("lets an approval suppress non-blocking comments so readiness wins", () => {
+    const events = derivePrEvents(status(), approved, [comment("c1")]);
+    expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_ready_to_merge]);
   });
 });

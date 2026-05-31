@@ -19,6 +19,7 @@ import type {
   ReviewStatus,
 } from "../../../src/schemas/adapters.js";
 import { AdapterErrorSeverities, MergeStrategies } from "../../../src/schemas/adapters.js";
+import { type PrEvent, PrEventTypes } from "../../../src/schemas/git-hosting-events.js";
 import { SecureValue } from "../../../src/utils/secure-value.js";
 
 class TestGitHostingAdapter extends GitHostingAdapter {
@@ -94,6 +95,11 @@ class TestGitHostingAdapter extends GitHostingAdapter {
   protected doGetPRComments(_repo: string, _prNumber: number): Promise<PRComment[]> {
     this.maybeThrow("getPRComments");
     return Promise.resolve([]);
+  }
+
+  protected doDetectPrEvents(_repo: string, _prNumber: number): Promise<PrEvent[]> {
+    this.maybeThrow("detectPrEvents");
+    return Promise.resolve([{ type: PrEventTypes.pr_ready_to_merge }]);
   }
 
   protected doDismissApprovals(_repo: string, _prNumber: number, _message: string): Promise<void> {
@@ -243,6 +249,13 @@ describe("GitHostingAdapter", () => {
       adapter.manifest = createManifest();
       const branch = await adapter.getDefaultBranch("test/repo");
       expect(branch).toBe("main");
+    });
+
+    it("detectPrEvents", async () => {
+      const adapter = new TestGitHostingAdapter();
+      adapter.manifest = createManifest();
+      const events = await adapter.detectPrEvents("test/repo", 42);
+      expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_ready_to_merge]);
     });
   });
 

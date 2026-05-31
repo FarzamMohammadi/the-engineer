@@ -100,5 +100,15 @@ export {
   type ReviewerState,
 } from "../schemas/adapters.js";
 
+// ── Git Hosting Events (the typed PR-event vocabulary detectPrEvents produces) ──
+export {
+  PrEventSchema,
+  PrEventTypeSchema,
+  PrEventTypes,
+  type PrCommentsEvent,
+  type PrEvent,
+  type PrEventType,
+} from "../schemas/git-hosting-events.js";
+
 // ── Event Payload Types (for plugins that need them) ──────────────────────
 export type { TaskStateChangedPayload } from "../schemas/events.js";

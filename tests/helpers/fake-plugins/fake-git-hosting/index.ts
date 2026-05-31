@@ -13,6 +13,7 @@ import type {
   PRUpdates,
   ReviewStatus,
 } from "../../../../src/schemas/adapters.js";
+import { type PrEvent, PrEventTypes } from "../../../../src/schemas/git-hosting-events.js";
 import { injectAuth } from "../../../../src/utils/git-url.js";
 import { SecureValue } from "../../../../src/utils/secure-value.js";
 
@@ -164,6 +165,32 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
 
   protected doGetPRComments(_repo: string, _prNumber: number): Promise<PRComment[]> {
     return Promise.resolve([]);
+  }
+
+  /** Minimal stateless derivation from stored PR state — a test double mirroring the contract semantics. */
+  protected doDetectPrEvents(repo: string, prNumber: number): Promise<PrEvent[]> {
+    const { status, reviews } = this.getPR(repo, prNumber);
+    if (status.state === "merged") {
+      return Promise.resolve([{ type: PrEventTypes.pr_merged }]);
+    }
+    if (status.state === "closed") {
+      return Promise.resolve([]);
+    }
+
+    const events: PrEvent[] = [];
+    if (status.checks_state === "failing") {
+      events.push({ type: PrEventTypes.pr_ci_failure });
+    }
+    if (!status.mergeable) {
+      events.push({ type: PrEventTypes.pr_merge_conflict });
+    }
+    if (reviews.changes_requested) {
+      events.push({ type: PrEventTypes.pr_comments, comments: [] });
+    }
+    if (reviews.approved && status.checks_state === "passing" && status.mergeable) {
+      events.push({ type: PrEventTypes.pr_ready_to_merge });
+    }
+    return Promise.resolve(events);
   }
 
   protected doDismissApprovals(repo: string, prNumber: number, message: string): Promise<void> {

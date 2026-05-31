@@ -14,6 +14,8 @@ import {
   type PRResult,
   type PRStatus,
   type PRUpdates,
+  type PrEvent,
+  PrEventTypes,
   type ReviewStatus,
   createAdapterError,
 } from "../../../adapters/index.js";
@@ -326,6 +328,28 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
     return [...conversation, ...inline];
   }
 
+  protected async doDetectPrEvents(repo: string, prNumber: number): Promise<PrEvent[]> {
+    const [status, review, comments] = await Promise.all([
+      this.doGetPRStatus(repo, prNumber),
+      this.doGetReviewStatus(repo, prNumber),
+      this.doGetPRComments(repo, prNumber),
+    ]);
+
+    const events = derivePrEvents(status, review, comments);
+    this.context.logger.debug("PR events detected", {
+      repo,
+      prNumber,
+      types: events.map((event) => event.type),
+      state: status.state,
+      checksState: status.checks_state,
+      mergeable: status.mergeable,
+      approved: review.approved,
+      changesRequested: review.changes_requested,
+      commentCount: comments.length,
+    });
+    return events;
+  }
+
   protected async doDismissApprovals(repo: string, prNumber: number, message: string): Promise<void> {
     const [owner, repoName] = splitRepo(repo);
     const { data: reviews } = await this.octokit.pulls.listReviews({
@@ -448,6 +472,49 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 }
 
 // ── Module-level helpers ────────────────────────────────────────────────────
+
+/**
+ * Aggregate the normalized PR facts into the typed events Core reacts to. Pure — the
+ * plugin's stateless readiness policy, recomputed from the live PR on every poll.
+ *
+ * `pr_ready_to_merge` is emitted only when approval, green CI, and mergeability hold
+ * *together*; "approved but CI still running" emits nothing, so the task simply stays
+ * blocked and waiting — there is no in-memory wait-state to lose on restart. A formal
+ * approval suppresses non-blocking comments (the reviewer is done), but changes-requested
+ * always surfaces as feedback. `/approve` comments are surfaced raw inside `pr_comments`;
+ * recognizing and authorizing them is Core policy, not the plugin's.
+ *
+ * A closed-without-merge PR maps to no event — it is outside the v1 vocabulary; the task
+ * stays blocked and the operator sees it. Self-authored daemon comments are filtered by
+ * Core (it knows what it posted), not here.
+ */
+export function derivePrEvents(status: PRStatus, review: ReviewStatus, comments: PRComment[]): PrEvent[] {
+  if (status.state === "merged") {
+    return [{ type: PrEventTypes.pr_merged }];
+  }
+  if (status.state === "closed") {
+    return [];
+  }
+
+  const events: PrEvent[] = [];
+  if (status.checks_state === "failing") {
+    events.push({ type: PrEventTypes.pr_ci_failure });
+  }
+  if (!status.mergeable) {
+    events.push({ type: PrEventTypes.pr_merge_conflict });
+  }
+
+  const hasActionableFeedback = review.changes_requested || (!review.approved && comments.length > 0);
+  if (hasActionableFeedback) {
+    events.push({ type: PrEventTypes.pr_comments, comments });
+  }
+
+  if (review.approved && status.checks_state === "passing" && status.mergeable) {
+    events.push({ type: PrEventTypes.pr_ready_to_merge });
+  }
+
+  return events;
+}
 
 function splitRepo(repo: string): [string, string] {
   const [owner, name] = repo.split("/");

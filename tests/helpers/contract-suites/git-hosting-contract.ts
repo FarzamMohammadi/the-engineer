@@ -11,6 +11,7 @@ import {
   type PluginManifest,
   ReviewStatusSchema,
 } from "../../../src/schemas/adapters.js";
+import { PrEventSchema } from "../../../src/schemas/git-hosting-events.js";
 import { SecureValue } from "../../../src/utils/secure-value.js";
 import { createTestPluginContext } from "../test-plugin-context.js";
 
@@ -110,6 +111,17 @@ export function runGitHostingContractSuite(
         expect(Array.isArray(comments)).toBe(true);
         for (const comment of comments) {
           const parsed = PRCommentSchema.safeParse(comment);
+          expect(parsed.success).toBe(true);
+        }
+      });
+
+      it("detectPrEvents() returns a valid PrEvent array", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const pr = await adapter.createPR(fixtures.prOptions);
+        const events = await adapter.detectPrEvents(fixtures.prOptions.repo, pr.pr_number);
+        expect(Array.isArray(events)).toBe(true);
+        for (const event of events) {
+          const parsed = PrEventSchema.safeParse(event);
           expect(parsed.success).toBe(true);
         }
       });

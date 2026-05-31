@@ -11,6 +11,7 @@ import {
   type PRUpdates,
   type ReviewStatus,
 } from "../schemas/adapters.js";
+import type { PrEvent } from "../schemas/git-hosting-events.js";
 import type { SecureValue } from "../utils/secure-value.js";
 import { BaseAdapter } from "./base.js";
 import { AdapterMethodError, createAdapterError } from "./errors.js";
@@ -79,6 +80,22 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     return wrapAsync(() => this.doGetPRComments(repo, prNumber));
   }
 
+  // ── PR Events ─────────────────────────────────────────────────────────────
+
+  /**
+   * Aggregate the platform's current PR state into the typed events Core reacts to.
+   *
+   * The plugin computes which events hold right now — merged, CI red, conflicting,
+   * actionable comments, or ready-to-merge (approved AND CI green AND mergeable, all
+   * at once). Readiness is recomputed from the live PR on every call, so there is no
+   * in-memory wait-state to lose across a daemon restart. Core arbitrates a single
+   * winner, dedups against already-accommodated feedback, and authorizes `/approve`
+   * comments — the plugin reports facts, never policy.
+   */
+  async detectPrEvents(repo: string, prNumber: number): Promise<PrEvent[]> {
+    return wrapAsync(() => this.doDetectPrEvents(repo, prNumber));
+  }
+
   // ── PR Comments ───────────────────────────────────────────────────────────
 
   async commentOnPR(repo: string, prNumber: number, comment: string, replyTo?: string): Promise<CommentResult> {
@@ -130,6 +147,7 @@ export abstract class GitHostingAdapter extends BaseAdapter {
     replyTo: string | undefined,
   ): Promise<CommentResult>;
   protected abstract doGetPRComments(repo: string, prNumber: number): Promise<PRComment[]>;
+  protected abstract doDetectPrEvents(repo: string, prNumber: number): Promise<PrEvent[]>;
   protected abstract doDismissApprovals(repo: string, prNumber: number, message: string): Promise<void>;
   protected abstract doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection>;
   protected abstract doGetDefaultBranch(repo: string): Promise<string>;

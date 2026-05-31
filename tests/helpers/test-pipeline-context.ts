@@ -86,23 +86,32 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
   const workspace = createTestWorkspaceManager();
   const memory = createTestSessionMemory();
 
-  const workspaceTaskId = ulid();
-  workspace.setupTask(workspaceTaskId, { title: "Pipeline integration task" });
-  const record = workspace.workspaceManager.createWorkspace(workspaceTaskId, workspace.repoName, {
+  // One task id across session memory and the workspace, so getWorkspaceRecord(ctx.task.id) resolves —
+  // create-pr and push read the record by the task's own id.
+  const taskId = ulid();
+  workspace.setupTask(taskId, { title: "Pipeline integration task" });
+  const record = workspace.workspaceManager.createWorkspace(taskId, workspace.repoName, {
     title: "Pipeline integration task",
     thoughtsId: "integration",
   });
 
-  const taskId = memory.insertTask("Pipeline integration task");
+  memory.insertTask("Pipeline integration task", taskId);
   const session = memory.sessionMemory.sessions.create({ taskId });
   const observer = createRecordingObserver();
+
+  // Minimal git-hosting stub: in PR mode, create-pr opens a PR through it so the runner can advance
+  // past create-pr to await-review. The create-pr unit tests assert its body (composition, rework) in detail.
+  const hostingStub = {
+    createPR: () => Promise.resolve({ pr_number: 101, url: "https://example.test/pr/101" }),
+    dismissApprovals: () => Promise.resolve(undefined),
+  };
 
   const ctx = {
     observer,
     sessionMemory: memory.sessionMemory,
     workspaceManager: workspace.workspaceManager,
     registry: {
-      getPrimaryPlugin: (type: string) => (type === "agent" ? agent : null),
+      getPrimaryPlugin: (type: string) => (type === "agent" ? agent : type === "git_hosting" ? hostingStub : null),
       getPluginsByType: () => [],
       getPlugin: () => null,
     },
@@ -131,7 +140,7 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
       getReviewers: () => [],
       resolveContact: () => null,
     },
-    notifications: {},
+    notifications: { notify: () => undefined },
     task: createMockTask({ id: taskId, title: "Pipeline integration task", description: "Integration test task" }),
     sessionId: session.id,
     traceId: "trace-integration",

@@ -10,9 +10,10 @@ export interface TestSessionMemoryHandle {
   db: Database.Database;
   /**
    * Insert a minimal task row to satisfy the FK constraint on sessions.task_id.
-   * Returns the generated task ID.
+   * Returns the task ID — the caller's `id` when given (to align with a workspace under the same id),
+   * otherwise a generated one.
    */
-  insertTask(title?: string): string;
+  insertTask(title?: string, id?: string): string;
   /** Close the database. Call in afterEach. */
   cleanup(): void;
 }
@@ -45,11 +46,11 @@ export function createTestSessionMemory(): TestSessionMemoryHandle {
     sessionMemory,
     db: testDb.db,
 
-    insertTask(title?: string): string {
-      const id = ulid();
+    insertTask(title?: string, id?: string): string {
+      const taskId = id ?? ulid();
       const now = new Date().toISOString();
-      insertTaskStmt.run(id, `test:${id}`, title ?? "Test task", now, now);
-      return id;
+      insertTaskStmt.run(taskId, `test:${taskId}`, title ?? "Test task", now, now);
+      return taskId;
     },
 
     cleanup() {

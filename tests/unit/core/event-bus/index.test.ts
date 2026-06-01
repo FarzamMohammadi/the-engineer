@@ -62,7 +62,7 @@ describe("matchesPattern", () => {
   });
 
   it("does not match different exact type", () => {
-    expect(matchesPattern("task.created", "git.pushed")).toBe(false);
+    expect(matchesPattern("task.created", "git.branch_deleted")).toBe(false);
   });
 
   it("matches glob with wildcard segment", () => {
@@ -71,7 +71,7 @@ describe("matchesPattern", () => {
   });
 
   it("does not match glob across different groups", () => {
-    expect(matchesPattern("task.*", "git.pushed")).toBe(false);
+    expect(matchesPattern("task.*", "git.branch_deleted")).toBe(false);
   });
 
   it("does not match glob with wrong segment count", () => {
@@ -89,7 +89,7 @@ describe("matchesPattern", () => {
 
   it("matches universal wildcard *", () => {
     expect(matchesPattern("*", "task.created")).toBe(true);
-    expect(matchesPattern("*", "git.pushed")).toBe(true);
+    expect(matchesPattern("*", "git.branch_deleted")).toBe(true);
     expect(matchesPattern("*", "anything")).toBe(true);
   });
 });
@@ -195,16 +195,13 @@ describe("EventBus", () => {
     it("assigns ISO 8601 timestamp", () => {
       setup();
       const event = bus.publish({
-        type: EventTypes["git.pushed"],
+        type: EventTypes["git.branch_deleted"],
         source: "workspace_manager",
         task_id: "task-1",
         payload: {
           task_id: "task-1",
           repo: "owner/repo",
           branch: "main",
-          remote: "origin",
-          commits: 1,
-          head_sha: "abc123",
         },
       });
 
@@ -262,15 +259,13 @@ describe("EventBus", () => {
       for (let i = 0; i < 5; i++) {
         events.push(
           bus.publish({
-            type: EventTypes["git.committed"],
+            type: EventTypes["git.branch_deleted"],
             source: "workspace_manager",
             task_id: "task-1",
             payload: {
               task_id: "task-1",
               repo: "owner/repo",
-              sha: `sha-${i}`,
-              message: `commit ${i}`,
-              files_changed: 1,
+              branch: `branch-${i}`,
             },
           }),
         );
@@ -290,15 +285,13 @@ describe("EventBus", () => {
       const sequences = new Set<number>();
       for (let i = 0; i < 10; i++) {
         const event = bus.publish({
-          type: EventTypes["git.committed"],
+          type: EventTypes["git.branch_deleted"],
           source: "test",
           task_id: "task-1",
           payload: {
             task_id: "task-1",
             repo: "r",
-            sha: `s${i}`,
-            message: `m${i}`,
-            files_changed: 1,
+            branch: `b${i}`,
           },
         });
         sequences.add(event.sequence);
@@ -363,7 +356,7 @@ describe("EventBus", () => {
     it("does not deliver to non-matching subscriber", () => {
       setup();
       const received: Event[] = [];
-      bus.subscribe("test-sub", "git.pushed", (e) => received.push(e));
+      bus.subscribe("test-sub", "git.branch_deleted", (e) => received.push(e));
 
       bus.publish({
         type: EventTypes["task.created"],
@@ -469,7 +462,7 @@ describe("EventBus", () => {
       setup();
       const received: Event[] = [];
       bus.subscribe("test-sub", "task.created", (e) => received.push(e));
-      bus.subscribe("test-sub", "git.pushed", (e) => received.push(e));
+      bus.subscribe("test-sub", "git.branch_deleted", (e) => received.push(e));
 
       bus.unsubscribe("test-sub");
 
@@ -488,16 +481,13 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: EventTypes["git.pushed"],
+        type: EventTypes["git.branch_deleted"],
         source: "test",
         task_id: "task-1",
         payload: {
           task_id: "task-1",
           repo: "r",
           branch: "main",
-          remote: "origin",
-          commits: 1,
-          head_sha: "abc",
         },
       });
 
@@ -695,15 +685,13 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: EventTypes["git.committed"],
+        type: EventTypes["git.branch_deleted"],
         source: "test",
         task_id: "task-1",
         payload: {
           task_id: "task-1",
           repo: "r",
-          sha: "abc",
-          message: "fix",
-          files_changed: 1,
+          branch: "feat",
         },
       });
 
@@ -735,10 +723,10 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: EventTypes["git.committed"],
+        type: EventTypes["git.branch_deleted"],
         source: "test",
         task_id: "task-1",
-        payload: { task_id: "task-1", repo: "r", sha: "abc", message: "fix", files_changed: 1 },
+        payload: { task_id: "task-1", repo: "r", branch: "feat" },
       });
 
       const received: Event[] = [];
@@ -747,7 +735,7 @@ describe("EventBus", () => {
 
       // Should only get the second event (sequence > e1.sequence)
       expect(received).toHaveLength(1);
-      expect(received[0]?.type).toBe(EventTypes["git.committed"]);
+      expect(received[0]?.type).toBe(EventTypes["git.branch_deleted"]);
     });
 
     it("is a no-op when no events match", () => {
@@ -808,10 +796,10 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: EventTypes["git.committed"],
+        type: EventTypes["git.branch_deleted"],
         source: "test",
         task_id: "task-1",
-        payload: { task_id: "task-1", repo: "r", sha: "abc", message: "fix", files_changed: 1 },
+        payload: { task_id: "task-1", repo: "r", branch: "feat" },
       });
       // Different task
       bus.publish({
@@ -832,7 +820,7 @@ describe("EventBus", () => {
       const events = bus.getEventsForTask("task-1");
       expect(events).toHaveLength(2);
       expect(events[0]?.type).toBe(EventTypes["task.created"]);
-      expect(events[1]?.type).toBe(EventTypes["git.committed"]);
+      expect(events[1]?.type).toBe(EventTypes["git.branch_deleted"]);
     });
 
     it("returns empty array for unknown task_id", () => {
@@ -860,22 +848,19 @@ describe("EventBus", () => {
         },
       });
       bus.publish({
-        type: EventTypes["git.pushed"],
+        type: EventTypes["git.branch_deleted"],
         source: "test",
         task_id: "task-1",
         payload: {
           task_id: "task-1",
           repo: "r",
           branch: "main",
-          remote: "origin",
-          commits: 1,
-          head_sha: "abc",
         },
       });
 
       const events = bus.getEventsSince(e1.sequence);
       expect(events).toHaveLength(1);
-      expect(events[0]?.type).toBe(EventTypes["git.pushed"]);
+      expect(events[0]?.type).toBe(EventTypes["git.branch_deleted"]);
     });
 
     it("returns empty array when no events exist after sequence", () => {

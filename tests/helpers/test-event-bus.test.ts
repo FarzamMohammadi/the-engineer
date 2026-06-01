@@ -37,16 +37,13 @@ describe("createTestEventBus", () => {
       },
     });
     handle.eventBus.publish({
-      type: EventTypes["git.pushed"],
+      type: EventTypes["git.branch_deleted"],
       source: "test",
       task_id: "task-1",
       payload: {
         task_id: "task-1",
         repo: "r",
         branch: "main",
-        remote: "origin",
-        commits: 1,
-        head_sha: "abc",
       },
     });
 
@@ -72,16 +69,13 @@ describe("createTestEventBus", () => {
       },
     });
     handle.eventBus.publish({
-      type: EventTypes["git.pushed"],
+      type: EventTypes["git.branch_deleted"],
       source: "test",
       task_id: "task-1",
       payload: {
         task_id: "task-1",
         repo: "r",
         branch: "main",
-        remote: "origin",
-        commits: 1,
-        head_sha: "abc",
       },
     });
 

@@ -10,13 +10,7 @@ import {
   EventSchema,
   EventTypeSchema,
   EventTypes,
-  GitBranchCreatedPayloadSchema,
-  GitCommittedPayloadSchema,
-  GitMergeCompletedPayloadSchema,
   GitPrMergedPayloadSchema,
-  GitPrOpenedPayloadSchema,
-  GitPrUpdatedPayloadSchema,
-  GitPushedPayloadSchema,
   HealthStuckDetectedPayloadSchema,
   HealthTriggerFailurePayloadSchema,
   PreemptionRequestedPayloadSchema,
@@ -29,7 +23,6 @@ import {
   TriggerNewEventPayloadSchema,
   WorkspaceCleanedPayloadSchema,
   WorkspaceCreatedPayloadSchema,
-  WorkspaceMergeConflictPayloadSchema,
   WorkspaceVerifiedPayloadSchema,
   eventPayloadSchemas,
 } from "../../../src/schemas/events.js";
@@ -342,88 +335,6 @@ describe("WorkspaceCleanedPayloadSchema", () => {
   });
 });
 
-describe("WorkspaceMergeConflictPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      source_branch: "engineer/42-auth",
-      target_branch: "main",
-      conflicting_files: ["src/auth.ts", "src/middleware.ts"],
-    };
-    expect(WorkspaceMergeConflictPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("GitBranchCreatedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      repo: "owner/repo",
-      branch: "engineer/42-auth",
-      from_ref: "main",
-      commit_sha: "abc123",
-    };
-    expect(GitBranchCreatedPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("GitCommittedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      repo: "owner/repo",
-      sha: "abc123",
-      message: "fix: auth middleware",
-      files_changed: 3,
-    };
-    expect(GitCommittedPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("GitPushedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      repo: "owner/repo",
-      branch: "engineer/42-auth",
-      remote: "origin",
-      commits: 2,
-      head_sha: "abc123",
-    };
-    expect(GitPushedPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("GitPrOpenedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      repo: "owner/repo",
-      pr_number: 42,
-      draft: true,
-      title: "fix: auth middleware",
-      url: "https://github.com/owner/repo/pull/42",
-      base_branch: "main",
-      head_branch: "engineer/42-auth",
-    };
-    expect(GitPrOpenedPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("GitPrUpdatedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      repo: "owner/repo",
-      pr_number: 42,
-      draft: false,
-      previous_draft: true,
-      update_type: "marked_ready",
-    };
-    expect(GitPrUpdatedPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
 describe("GitPrMergedPayloadSchema", () => {
   it("parses valid data", () => {
     const valid = {
@@ -435,20 +346,6 @@ describe("GitPrMergedPayloadSchema", () => {
       into_branch: "main",
     };
     expect(GitPrMergedPayloadSchema.parse(valid)).toEqual(valid);
-  });
-});
-
-describe("GitMergeCompletedPayloadSchema", () => {
-  it("parses valid data", () => {
-    const valid = {
-      task_id: "01TASK",
-      repo: "owner/repo",
-      source_branch: "engineer/42-auth",
-      target_branch: "main",
-      merge_sha: "abc123",
-      strategy: MergeStrategies.merge,
-    };
-    expect(GitMergeCompletedPayloadSchema.parse(valid)).toEqual(valid);
   });
 });
 

@@ -226,7 +226,7 @@ Add your plugin to `src/plugins/builtin.ts`:
   requirements: [{ type: "env", name: "YOUR_API_TOKEN" }],
   entry: "builtin",
   adapter_meta: { action_classes: ["git-remote", "merge"] },
-  contributes: { events: ["git.pr_opened", "git.pr_updated", "git.pr_merged"] },
+  contributes: { events: ["git.pr_merged"] },
 }
 
 // In factories map:

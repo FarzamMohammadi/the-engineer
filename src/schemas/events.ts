@@ -44,14 +44,7 @@ export const EventTypeSchema = z.enum([
   "workspace.created",
   "workspace.verified",
   "workspace.cleaned",
-  "workspace.merge_conflict",
-  "git.branch_created",
-  "git.committed",
-  "git.pushed",
-  "git.pr_opened",
-  "git.pr_updated",
   "git.pr_merged",
-  "git.merge_completed",
   "git.branch_deleted",
   "health.stuck_detected",
   "health.trigger_failure",
@@ -231,65 +224,7 @@ export const WorkspaceCleanedPayloadSchema = z.object({
 });
 export type WorkspaceCleanedPayload = z.infer<typeof WorkspaceCleanedPayloadSchema>;
 
-export const WorkspaceMergeConflictPayloadSchema = z.object({
-  task_id: z.string(),
-  source_branch: z.string(),
-  target_branch: z.string(),
-  conflicting_files: z.array(z.string()),
-});
-export type WorkspaceMergeConflictPayload = z.infer<typeof WorkspaceMergeConflictPayloadSchema>;
-
 // git.*
-
-export const GitBranchCreatedPayloadSchema = z.object({
-  task_id: z.string(),
-  repo: z.string(),
-  branch: z.string(),
-  from_ref: z.string(),
-  commit_sha: z.string(),
-});
-export type GitBranchCreatedPayload = z.infer<typeof GitBranchCreatedPayloadSchema>;
-
-export const GitCommittedPayloadSchema = z.object({
-  task_id: z.string(),
-  repo: z.string(),
-  sha: z.string(),
-  message: z.string(),
-  files_changed: z.number().int(),
-});
-export type GitCommittedPayload = z.infer<typeof GitCommittedPayloadSchema>;
-
-export const GitPushedPayloadSchema = z.object({
-  task_id: z.string(),
-  repo: z.string(),
-  branch: z.string(),
-  remote: z.string(),
-  commits: z.number().int(),
-  head_sha: z.string(),
-});
-export type GitPushedPayload = z.infer<typeof GitPushedPayloadSchema>;
-
-export const GitPrOpenedPayloadSchema = z.object({
-  task_id: z.string(),
-  repo: z.string(),
-  pr_number: z.number().int().positive(),
-  draft: z.boolean(),
-  title: z.string(),
-  url: z.string(),
-  base_branch: z.string(),
-  head_branch: z.string(),
-});
-export type GitPrOpenedPayload = z.infer<typeof GitPrOpenedPayloadSchema>;
-
-export const GitPrUpdatedPayloadSchema = z.object({
-  task_id: z.string(),
-  repo: z.string(),
-  pr_number: z.number().int().positive(),
-  draft: z.boolean(),
-  previous_draft: z.boolean(),
-  update_type: z.enum(["commits_added", "marked_ready", "description_updated"]),
-});
-export type GitPrUpdatedPayload = z.infer<typeof GitPrUpdatedPayloadSchema>;
 
 export const GitPrMergedPayloadSchema = z.object({
   task_id: z.string(),
@@ -300,16 +235,6 @@ export const GitPrMergedPayloadSchema = z.object({
   into_branch: z.string(),
 });
 export type GitPrMergedPayload = z.infer<typeof GitPrMergedPayloadSchema>;
-
-export const GitMergeCompletedPayloadSchema = z.object({
-  task_id: z.string(),
-  repo: z.string(),
-  source_branch: z.string(),
-  target_branch: z.string(),
-  merge_sha: z.string(),
-  strategy: z.enum(["merge", "rebase"]),
-});
-export type GitMergeCompletedPayload = z.infer<typeof GitMergeCompletedPayloadSchema>;
 
 export const GitBranchDeletedPayloadSchema = z.object({
   task_id: z.string(),
@@ -454,14 +379,7 @@ export type EventPayloads = {
   "workspace.created": WorkspaceCreatedPayload;
   "workspace.verified": WorkspaceVerifiedPayload;
   "workspace.cleaned": WorkspaceCleanedPayload;
-  "workspace.merge_conflict": WorkspaceMergeConflictPayload;
-  "git.branch_created": GitBranchCreatedPayload;
-  "git.committed": GitCommittedPayload;
-  "git.pushed": GitPushedPayload;
-  "git.pr_opened": GitPrOpenedPayload;
-  "git.pr_updated": GitPrUpdatedPayload;
   "git.pr_merged": GitPrMergedPayload;
-  "git.merge_completed": GitMergeCompletedPayload;
   "git.branch_deleted": GitBranchDeletedPayload;
   "health.stuck_detected": HealthStuckDetectedPayload;
   "health.trigger_failure": HealthTriggerFailurePayload;
@@ -502,14 +420,7 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "workspace.created": WorkspaceCreatedPayloadSchema,
   "workspace.verified": WorkspaceVerifiedPayloadSchema,
   "workspace.cleaned": WorkspaceCleanedPayloadSchema,
-  "workspace.merge_conflict": WorkspaceMergeConflictPayloadSchema,
-  "git.branch_created": GitBranchCreatedPayloadSchema,
-  "git.committed": GitCommittedPayloadSchema,
-  "git.pushed": GitPushedPayloadSchema,
-  "git.pr_opened": GitPrOpenedPayloadSchema,
-  "git.pr_updated": GitPrUpdatedPayloadSchema,
   "git.pr_merged": GitPrMergedPayloadSchema,
-  "git.merge_completed": GitMergeCompletedPayloadSchema,
   "git.branch_deleted": GitBranchDeletedPayloadSchema,
   "health.stuck_detected": HealthStuckDetectedPayloadSchema,
   "health.trigger_failure": HealthTriggerFailurePayloadSchema,

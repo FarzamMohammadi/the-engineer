@@ -116,7 +116,7 @@ const manifests = [
     combined_with: ["github-trigger", "github-comm"],
     entry: "builtin",
     adapter_meta: { action_classes: ["git-remote", "merge"] },
-    contributes: { events: ["git.pr_opened", "git.pr_updated", "git.pr_merged"] },
+    contributes: { events: ["git.pr_merged"] },
   },
 ] as const;
 

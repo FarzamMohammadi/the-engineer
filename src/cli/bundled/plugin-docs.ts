@@ -44,7 +44,7 @@ Defined in \`src/schemas/adapters.ts\` (\`TriggerEventSchema\`).
 | \`repo\` | \`string\` | Repository identifier (\`owner/name\`). |
 | \`clone_url\` | \`string\` | HTTPS clone URL. Must start with \`https://\`. |
 | \`thoughts_id\` | \`string \\| null\` | Identifier for the thoughts directory (e.g. \`issue-42\`). |
-| \`metadata\` | \`Record<string, unknown>\` | Arbitrary platform-specific data (labels, assignees, timestamps). |
+| \`metadata\` | \`Record<string, unknown> \\| null\` | Arbitrary platform-specific data (labels, assignees, timestamps). |
 
 ### InitResult
 
@@ -375,7 +375,7 @@ Agent adapters are inference-only providers. The Engineer is the agent -- agent 
 | \`doShutdown()\` | \`() => Promise<void>\` | Yes | Kill active child process, clean up. |
 | \`doHealthCheck()\` | \`() => Promise<HealthStatus>\` | Yes | Verify CLI is installed (e.g. \`spawn("cli", ["--version"])\`). Must resolve within 5 seconds. |
 
-The public \`infer()\` wrapper catches errors: \`AdapterMethodError\` is rethrown as-is, anything else is wrapped with \`code: "internal_error"\` and \`severity: "fatal"\`.
+The public \`run()\` wrapper catches errors: \`AdapterMethodError\` is rethrown as-is, anything else is wrapped with \`code: "internal_error"\` and \`severity: "fatal"\`.
 
 ### Three-Layer Usage Contract
 
@@ -706,7 +706,7 @@ Path: \`tests/helpers/contract-suites/agent-contract.ts\`.
 
 \`\`\`typescript
 // tests/unit/plugins/agent/my-agent/my-agent.test.ts
-import { runAgentContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
+import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { MyAgentPlugin } from "./my-agent.js";
 
 const manifest = {
@@ -721,7 +721,7 @@ const manifest = {
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },
 };
 
-runAgentContractSuite(
+runContractSuite(
   () => new MyAgentPlugin(),
   {
     manifest,
@@ -736,7 +736,7 @@ The contract suite validates:
 - \`initialize()\` succeeds/fails correctly with valid/invalid config
 - \`healthCheck()\` returns \`HealthStatus\` with all required fields, resolves within 5 seconds
 - \`shutdown()\` resolves without throwing
-- \`infer()\` returns a valid \`AgentRunResult\` (schema-validated), always includes \`cost_usd\` and \`duration_ms\`
+- \`run()\` returns a valid \`AgentRunResult\` (schema-validated), always includes \`cost_usd\` and \`duration_ms\`
 - \`usage\` is \`null\` or valid \`AgentRunUsage\` with all token fields
 - \`getCapabilities()\` returns valid \`AgentCapabilities\` with all fields
 - \`getQuotaStatus()\` returns \`null\` or valid \`QuotaStatus\`
@@ -779,7 +779,7 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 
 ### Quota reporting details
 
-- **Claude Code**: Two sources. Primary: Anthropic's \`/api/oauth/usage\` endpoint (real percentages, cached 30 min). Fallback: \`rate_limit_event\` from last \`infer()\` call (status + reset time, no percentages). OAuth token read from macOS Keychain or \`~/.claude/.credentials.json\`.
+- **Claude Code**: Two sources. Primary: Anthropic's \`/api/oauth/usage\` endpoint (real percentages, cached 30 min). Fallback: \`rate_limit_event\` from last \`run()\` call (status + reset time, no percentages). OAuth token read from macOS Keychain or \`~/.claude/.credentials.json\`.
 - **Gemini CLI**: Sets a \`rateLimited\` flag when stdout result has \`status: "error"\` matching rate limit patterns, or stderr matches. Reports via \`getQuotaStatus()\` as a single \`gemini_model_quota\` window with \`is_exhausted: true\`. No reset time available.
 - **OpenCode**: No quota reporting. Default \`getQuotaStatus()\` returns \`null\`.
 
@@ -1632,15 +1632,19 @@ The abstract class \`GitHostingAdapter\` extends \`BaseAdapter\`. Plugin authors
 | \`updatePR\` | \`(repo: string, prNumber: number, updates: PRUpdates) => Promise<void>\` | -- |
 | \`mergePR\` | \`(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>\` | \`{ merge_sha, success, error }\` |
 | \`closePR\` | \`(repo: string, prNumber: number) => Promise<void>\` | -- |
-| \`getPRStatus\` | \`(repo: string, prNumber: number) => Promise<PRStatus>\` | \`{ number, state, draft, mergeable, checks_state, url }\` |
-| \`getReviewStatus\` | \`(repo: string, prNumber: number) => Promise<ReviewStatus>\` | \`{ approved, approvals, changes_requested, reviewers, comments }\` |
+| \`getPRStatus\` | \`(repo: string, prNumber: number) => Promise<PRStatus>\` | \`{ state, checks_state, mergeable, sha }\` |
+| \`getReviewStatus\` | \`(repo: string, prNumber: number) => Promise<ReviewStatus>\` | \`{ state, approvals, changes_requested_count, comments }\` |
 | \`getPRComments\` | \`(repo: string, prNumber: number) => Promise<PRComment[]>\` | Array of \`{ id, author, body, created_at }\` |
+| \`detectPrEvents\` | \`(repo: string, prNumber: number) => Promise<PrEvent[]>\` | Typed PR events that currently hold (see below) |
 | \`commentOnPR\` | \`(repo: string, prNumber: number, comment: string, replyTo?: string) => Promise<CommentResult>\` | \`{ comment_id, url }\` |
 | \`dismissApprovals\` | \`(repo: string, prNumber: number, message: string) => Promise<void>\` | -- |
-| \`getBranchProtection\` | \`(repo: string, branch: string) => Promise<BranchProtection>\` | \`{ protected, required_reviews, required_checks, restrictions }\` |
+| \`getBranchProtection\` | \`(repo: string, branch: string) => Promise<BranchProtection>\` | \`{ required_reviews, required_status_checks, enforce_admins, restrictions }\` |
 | \`getDefaultBranch\` | \`(repo: string) => Promise<string>\` | Branch name (e.g. \`"main"\`) |
+| \`getAuthenticatedRemoteUrl\` | \`(remoteUrl: string) => SecureValue\` | Authenticated remote URL (token wrapped in a \`SecureValue\` so it never leaks through logs). Synchronous. |
 
 The \`repo\` parameter uses \`"owner/repo"\` format throughout.
+
+\`detectPrEvents\` aggregates the platform's live PR state into the small typed vocabulary Core reacts to (\`pr_comments\`, \`pr_ci_failure\`, \`pr_merge_conflict\`, \`pr_ready_to_merge\`, \`pr_merged\`). The plugin reports **facts**, recomputed on every call so merge-readiness survives a daemon restart with no in-memory wait state: emit \`pr_ready_to_merge\` only when approval, green CI, and mergeability all hold at once. Core owns the **policy** — arbitrating a single winner when several hold, deduping already-accommodated feedback, and authorizing \`/approve\` comments against the people directory. A plugin never sees the people directory or The Engineer's \`/approve\` convention, so a new hosting plugin re-implements none of it.
 
 ### Lifecycle (inherited from BaseAdapter)
 

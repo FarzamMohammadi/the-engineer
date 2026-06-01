@@ -90,7 +90,7 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # All fields are optional — defaults shown as comments
 # Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
-# --- Notifications ---
+# --- Notifications ---  (RESERVED for Slice 10 — validated but not yet honored)
 # notification:
 #   milestone_based: true             # Notify only on milestones (not every step)
 #   suppress_window_ms: "5m"          # Suppress duplicate notifications (default: 5m)
@@ -107,26 +107,11 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 #     channel: telegram
 #     include: [completed, blocked, failed]
 
-# --- Question batching ---
+# --- Question batching ---  (RESERVED for Slice 10 — validated but not yet honored)
 # question_batching:
 #   enabled: true
 #   batch_window_ms: "30s"            # Batch questions before asking (default: 30s)
 #   max_batch_size: 5
-
-# --- Demo gate ---
-# demo:
-#   always_create: true               # Always create demo artifact
-#   tui_base_project: null            # Base project for TUI demos
-
-# --- Phase pipeline ---
-# phases:
-#   checkpoint_on_transition: true    # Checkpoint on every phase transition
-#   periodic_checkpoint_interval_ms: "15m"  # Periodic checkpoints (default: 15m)
-#   max_loopbacks_before_alert: 3     # Alert after N phase loopbacks
-
-# --- Journal ---
-# journal:
-#   aggregate_file_reads: true        # Aggregate file read entries
 `;
 
 export const SAFETY_TEMPLATE = `# Safety configuration for The Engineer
@@ -407,7 +392,7 @@ export const EXAMPLE_ORCHESTRATOR = `# ┌────────────�
 # │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
-# ── Notifications ────────────────────────────────────────────────────────────
+# ── Notifications ──  (RESERVED for Slice 10 — validated but not yet honored)
 notification:
   milestone_based: true                   # Notify only on milestones (default: true)
   suppress_window_ms: "5m"                # Suppress duplicate notifications (default: 5m)
@@ -427,26 +412,11 @@ notification:
       - blocked
       - failed
 
-# ── Question Batching ───────────────────────────────────────────────────────
+# ── Question Batching ──  (RESERVED for Slice 10 — validated but not yet honored)
 question_batching:
   enabled: true                           # Batch questions before asking (default: true)
   batch_window_ms: "30s"                  # Batch window (default: 30s)
   max_batch_size: 5                       # Max questions per batch (default: 5)
-
-# ── Demo Gate ────────────────────────────────────────────────────────────────
-demo:
-  always_create: true                     # Always create demo artifact (default: true)
-  tui_base_project: null                  # Base project for TUI demos (default: null)
-
-# ── Phase Pipeline ───────────────────────────────────────────────────────────
-phases:
-  checkpoint_on_transition: true          # Checkpoint on every phase transition (default: true)
-  periodic_checkpoint_interval_ms: "15m"  # Periodic checkpoint interval (default: 15m)
-  max_loopbacks_before_alert: 3           # Alert after N phase loopbacks (default: 3)
-
-# ── Journal ──────────────────────────────────────────────────────────────────
-journal:
-  aggregate_file_reads: true              # Aggregate file read journal entries (default: true)
 `;
 
 export const EXAMPLE_SAFETY = `# ┌─────────────────────────────────────────────────────────────────────────────┐

@@ -1,10 +1,5 @@
 # Orchestrator configuration
 # All fields optional — Zod defaults apply when missing.
 
-fast_path:
-  enabled: true
-  max_files: 2
-  skip_demo: true
-
 notification:
   milestone_based: true

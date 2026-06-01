@@ -143,15 +143,7 @@ export const TaskWorkspaceSchema = z.object({
 });
 export type TaskWorkspace = z.infer<typeof TaskWorkspaceSchema>;
 
-export const DemoArtifactSchema = z.object({
-  type: z.enum(["screenshot", "recording", "tui", "preview_url"]),
-  location: z.string(),
-  permanent: z.boolean(),
-});
-export type DemoArtifact = z.infer<typeof DemoArtifactSchema>;
-
 export const FeedbackRoundSchema = z.object({
-  stage: z.literal("code"),
   comments: z.array(z.string()),
   applied: z.boolean(),
 });
@@ -159,8 +151,6 @@ export type FeedbackRound = z.infer<typeof FeedbackRoundSchema>;
 
 export const ReviewStateSchema = z.object({
   pr_number: z.number().int().positive().nullable(),
-  pr_state: z.enum(["ready", "merged"]).nullable(),
-  demo_artifacts: z.array(DemoArtifactSchema),
   feedback_rounds: z.array(FeedbackRoundSchema),
   /** PR comment IDs already accommodated (queued for rework). Prevents re-processing same feedback. */
   accommodated_comment_ids: z.array(z.string()).default([]),

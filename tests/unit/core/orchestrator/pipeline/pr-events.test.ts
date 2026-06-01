@@ -49,11 +49,9 @@ describe("PR-event policy", () => {
       const task = createMockTask({
         review: {
           pr_number: 7,
-          pr_state: "ready",
-          demo_artifacts: [],
           accommodated_comment_ids: [],
           accommodated_review_state: null,
-          feedback_rounds: [{ stage: "code", applied: false, comments: ["Tighten the error message", "Add a test"] }],
+          feedback_rounds: [{ applied: false, comments: ["Tighten the error message", "Add a test"] }],
         },
       });
       const carry = reentryCarry(PrEventTypes.pr_comments, task);

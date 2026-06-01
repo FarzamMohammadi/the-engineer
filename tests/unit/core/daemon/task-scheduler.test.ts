@@ -325,71 +325,7 @@ describe("TaskScheduler", () => {
     );
   });
 
-  // 7. handleTaskCompletion on "error" outcome
-  it("handleTaskCompletion on error outcome transitions to blocked and sends error notification", () => {
-    const { ctx, taskEngine } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Broken task" }));
-
-    const scheduler = makeScheduler(ctx, notifications, callbacks);
-    const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task);
-
-    const result: ExecuteTaskResult = {
-      outcome: "error",
-      phase: "execution",
-      reason: "build_failed",
-    };
-    scheduler.handleTaskCompletion("t1", result);
-
-    expect(taskEngine.requestTransition).toHaveBeenCalledWith("t1", TaskStates.blocked, null, "build_failed", "daemon");
-    expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: NotificationKinds.task_error,
-        taskId: "t1",
-        reason: "build_failed",
-      }),
-    );
-    expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: NotificationKinds.ticket_comment,
-        taskId: "t1",
-        message: "Task encountered an error: build_failed",
-      }),
-    );
-  });
-
-  it("handleTaskCompletion on error truncates long reasons in notifications", () => {
-    const { ctx, taskEngine } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Task with huge error" }));
-
-    const scheduler = makeScheduler(ctx, notifications, callbacks);
-    const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task);
-
-    const hugeReason = "x".repeat(5000);
-    const result: ExecuteTaskResult = {
-      outcome: "error",
-      phase: "execution",
-      reason: hugeReason,
-    };
-    scheduler.handleTaskCompletion("t1", result);
-
-    // task_error notification reason should be truncated
-    const errorNotifyCall = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.find(
-      (c: unknown[]) => (c[0] as { kind: string }).kind === NotificationKinds.task_error,
-    );
-    const notifiedReason = (errorNotifyCall?.[0] as { reason: string }).reason;
-    expect(notifiedReason.length).toBeLessThan(2200);
-    expect(notifiedReason).toContain("see logs for full details");
-  });
-
-  // 8. handleTaskError increments crash count, sets backoff, transitions to queued
+  // 7. handleTaskError increments crash count, sets backoff, transitions to queued
   it("handleTaskError increments crash count and schedules backoff retry", () => {
     const { ctx, taskEngine, eventBus, clock } = makeContext();
     const notifications = makeNotifications();
@@ -718,37 +654,7 @@ describe("TaskScheduler", () => {
     expect(postDispatchCalls).toHaveLength(0);
   });
 
-  // 26. F1: handleErrorOutcome skips notifications when transition fails
-  it("handleTaskCompletion on error skips notifications when blocked transition fails", () => {
-    const { ctx, taskEngine } = makeContext();
-    const notifications = makeNotifications();
-    const callbacks = makeCallbacks();
-
-    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Broken task" }));
-
-    const scheduler = makeScheduler(ctx, notifications, callbacks);
-    const task = makeMockTask({ id: "t1" });
-    scheduler.dispatchTask(task as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
-
-    taskEngine.requestTransition.mockReturnValue({ success: false, reason: "invalid" });
-
-    const result: ExecuteTaskResult = {
-      outcome: "error",
-      phase: "execution",
-      reason: "build_failed",
-    };
-    scheduler.handleTaskCompletion("t1", result);
-
-    const postDispatchErrorCalls = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c: unknown[]) => {
-        const kind = (c[0] as { kind: string }).kind;
-        return kind === NotificationKinds.task_error || kind === NotificationKinds.ticket_comment;
-      },
-    );
-    expect(postDispatchErrorCalls).toHaveLength(0);
-  });
-
-  // 27. F2: unknown outcome transitions task to blocked instead of silently dropping it
+  // 26. F2: unknown outcome transitions task to blocked instead of silently dropping it
   it("handleTaskCompletion on unknown outcome transitions task to blocked", () => {
     const { ctx, taskEngine } = makeContext();
     const notifications = makeNotifications();

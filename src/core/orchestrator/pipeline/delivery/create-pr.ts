@@ -115,8 +115,6 @@ async function openNewPr(ctx: Ctx, hosting: GitHostingAdapter, record: Workspace
 
   ctx.taskEngine.updateTaskField(ctx.task.id, "review", {
     pr_number: result.pr_number,
-    pr_state: "ready",
-    demo_artifacts: [],
     feedback_rounds: [],
     accommodated_comment_ids: [],
     accommodated_review_state: null,
@@ -133,11 +131,7 @@ async function openNewPr(ctx: Ctx, hosting: GitHostingAdapter, record: Workspace
     message: `PR created: ${result.url}`,
   });
   ctx.observer.info("Pull request created", { taskId: ctx.task.id, prNumber: result.pr_number, url: result.url });
-  return {
-    outcome: "ok",
-    summary: `Opened PR #${String(result.pr_number)}`,
-    data: { pr_number: result.pr_number, url: result.url },
-  };
+  return { outcome: "ok", summary: `Opened PR #${String(result.pr_number)}` };
 }
 
 /** Read the PR narrative the pr-description sub-phase wrote, or null when it is absent. */

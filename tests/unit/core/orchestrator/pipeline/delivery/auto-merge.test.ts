@@ -14,8 +14,6 @@ const okResult = (disposition: string): RoutableResult => ({ outcome: "ok", summ
 
 const readyReview: ReviewState = {
   pr_number: 7,
-  pr_state: "ready",
-  demo_artifacts: [],
   feedback_rounds: [],
   accommodated_comment_ids: [],
   accommodated_review_state: null,
@@ -112,13 +110,12 @@ describe("auto-merge next", () => {
 
 describe("auto-merge run", () => {
   it("merges a green, mergeable PR and publishes the merge and branch-delete audit events", async () => {
-    const { ctx, mergePR, deleteRemoteBranch, updateTaskField, published } = mockCtx();
+    const { ctx, mergePR, deleteRemoteBranch, published } = mockCtx();
 
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "merged" } });
     expect(mergePR).toHaveBeenCalledWith("acme/app", 7, "squash");
-    expect(updateTaskField).toHaveBeenCalledWith("t1", "review", expect.objectContaining({ pr_state: "merged" }));
     expect(deleteRemoteBranch).toHaveBeenCalledWith("t1");
     expect(published).toEqual(["git.pr_merged", "git.branch_deleted"]);
   });

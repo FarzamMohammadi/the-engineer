@@ -1251,8 +1251,6 @@ describe("Daemon", () => {
         },
         review: {
           pr_number: 42,
-          pr_state: "ready",
-          demo_artifacts: [],
           feedback_rounds: [],
           accommodated_comment_ids: [],
           accommodated_review_state: null,

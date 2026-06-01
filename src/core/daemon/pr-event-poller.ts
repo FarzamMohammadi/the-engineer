@@ -189,7 +189,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     const lines = comments.map((comment) => `@${comment.author}: ${sanitizeSecrets(comment.body.trim())}`);
     taskEngine.updateTaskField(task.id, "review", {
       ...task.review,
-      feedback_rounds: [...task.review.feedback_rounds, { stage: "code", applied: false, comments: lines }],
+      feedback_rounds: [...task.review.feedback_rounds, { applied: false, comments: lines }],
       accommodated_comment_ids: comments.map((comment) => comment.id),
     });
   }

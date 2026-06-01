@@ -9,14 +9,11 @@ import {
   CostLimitValueSchema,
   CostLimitsSchema,
   DaemonConfigSchema,
-  DemoConfigSchema,
   DigestConfigSchema,
-  JournalConfigSchema,
   MergePolicySchema,
   MultiRepoConfigSchema,
   NotificationConfigSchema,
   OrchestratorConfigSchema,
-  PhasesConfigSchema,
   PrConfigSchema,
   ProviderLimitSchema,
   QuestionBatchingConfigSchema,
@@ -126,39 +123,12 @@ describe("QuestionBatchingConfigSchema", () => {
   });
 });
 
-describe("DemoConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = DemoConfigSchema.parse({});
-    expect(config.always_create).toBe(true);
-    expect(config.tui_base_project).toBeNull();
-  });
-});
-
-describe("PhasesConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = PhasesConfigSchema.parse({});
-    expect(config.checkpoint_on_transition).toBe(true);
-    expect(config.periodic_checkpoint_interval_ms).toBe(900_000);
-    expect(config.max_loopbacks_before_alert).toBe(3);
-  });
-});
-
-describe("JournalConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = JournalConfigSchema.parse({});
-    expect(config.aggregate_file_reads).toBe(true);
-  });
-});
-
 describe("OrchestratorConfigSchema", () => {
   it("produces valid config from empty input with all nested defaults", () => {
     const config = OrchestratorConfigSchema.parse({});
     expect(config.review.lenses).toEqual(["self-review"]);
     expect(config.notification.milestone_based).toBe(true);
     expect(config.question_batching.enabled).toBe(true);
-    expect(config.demo.always_create).toBe(true);
-    expect(config.phases.checkpoint_on_transition).toBe(true);
-    expect(config.journal.aggregate_file_reads).toBe(true);
   });
 
   it("allows partial nested override", () => {

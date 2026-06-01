@@ -267,24 +267,6 @@ export const QuestionBatchingConfigSchema = z.object({
 });
 export type QuestionBatchingConfig = z.infer<typeof QuestionBatchingConfigSchema>;
 
-export const DemoConfigSchema = z.object({
-  always_create: z.boolean().default(true),
-  tui_base_project: z.string().nullable().default(null),
-});
-export type DemoConfig = z.infer<typeof DemoConfigSchema>;
-
-export const PhasesConfigSchema = z.object({
-  checkpoint_on_transition: z.boolean().default(true),
-  periodic_checkpoint_interval_ms: z.number().int().positive().default(900_000),
-  max_loopbacks_before_alert: z.number().int().positive().default(3),
-});
-export type PhasesConfig = z.infer<typeof PhasesConfigSchema>;
-
-export const JournalConfigSchema = z.object({
-  aggregate_file_reads: z.boolean().default(true),
-});
-export type JournalConfig = z.infer<typeof JournalConfigSchema>;
-
 /**
  * The review lenses available to the pipeline's Review phase. Each value names a sub-phase
  * file under `pipeline/review/`. `self-review` is the default lens; the rest are opt-in.
@@ -307,11 +289,12 @@ export const ReviewConfigSchema = z.object({
 export type ReviewConfig = z.infer<typeof ReviewConfigSchema>;
 
 export const OrchestratorConfigSchema = z.object({
+  // RESERVED for Slice 10 (Communication). `notification` and `question_batching` are validated today
+  // but NOT yet honored — the notification-router sends messages without reading these policy knobs
+  // (quiet hours, suppression/batch windows, digest). Slice 10 wires them. Documented as reserved in
+  // docs/configuration/orchestrator.md; do not delete as "dead" — they are forward-scaffolding.
   notification: NotificationConfigSchema.default({}),
   question_batching: QuestionBatchingConfigSchema.default({}),
-  demo: DemoConfigSchema.default({}),
-  phases: PhasesConfigSchema.default({}),
-  journal: JournalConfigSchema.default({}),
   review: ReviewConfigSchema.default({}),
 });
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
@@ -328,13 +311,16 @@ export const PrConfigSchema = z.object({
     .boolean()
     .default(true)
     .describe("Delete the task branch after its PR is merged. Default: true."),
+  // RESERVED for Slice 9 (Completion & Cleanup): validated today, honored by the cleanup reaper there.
   branch_retention_days: z
     .number()
     .int()
     .positive()
     .nullable()
     .default(null)
-    .describe("Days to retain merged branches before cleanup. Null means no automatic deletion. Default: null."),
+    .describe(
+      "Reserved for Slice 9. Days to retain merged branches before the cleanup reaper deletes them. Null means no automatic deletion. Default: null.",
+    ),
   skip_pr_creation: z
     .object({
       default: z.boolean().default(false),

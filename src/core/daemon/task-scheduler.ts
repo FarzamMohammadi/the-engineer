@@ -217,28 +217,6 @@ export function createTaskScheduler(
     });
   }
 
-  function handleErrorOutcome(taskId: string, result: ExecuteTaskResult): void {
-    const reason = "reason" in result ? (result.reason as string) : "unknown";
-    const phase = "phase" in result ? result.phase : undefined;
-    observer.error("Task error", { taskId, phase, reason: reason.slice(0, 500) });
-    const transition = taskEngine.requestTransition(taskId, TaskStates.blocked, null, reason, "daemon");
-    if (!transition.success) {
-      observer.warn("Failed to transition task to blocked — skipping notifications", {
-        taskId,
-        reason: transition.reason,
-      });
-      return;
-    }
-    // Truncate reason for notifications — full error details are in logs and journal entries
-    const notifyReason = reason.length > 2000 ? `${reason.slice(0, 2000)}... [see logs for full details]` : reason;
-    notifications.notify({ kind: NotificationKinds.task_error, taskId, reason: notifyReason });
-    notifications.notify({
-      kind: NotificationKinds.ticket_comment,
-      taskId,
-      message: `Task encountered an error: ${notifyReason}`,
-    });
-  }
-
   function handlePrReviewPendingBlocked(taskId: string): void {
     // The orchestrator already blocked the task as pr_review_pending when delivery parked at await-review.
     // A successful run means the agent was available — reset the unavailability counter.
@@ -426,8 +404,6 @@ export function createTaskScheduler(
           reason: "reason" in result ? result.reason : undefined,
         });
       }
-    } else if (result.outcome === Outcomes.error) {
-      handleErrorOutcome(taskId, result);
     } else {
       handleUnknownOutcome(taskId, (result as { outcome: string }).outcome);
     }

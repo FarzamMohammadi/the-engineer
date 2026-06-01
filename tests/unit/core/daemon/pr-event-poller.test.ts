@@ -18,8 +18,6 @@ const comment = (id: string, author: string, body: string): PRComment => ({
 
 const review = (over: Partial<ReviewState> = {}): ReviewState => ({
   pr_number: 7,
-  pr_state: "ready",
-  demo_artifacts: [],
   feedback_rounds: [],
   accommodated_comment_ids: [],
   accommodated_review_state: null,

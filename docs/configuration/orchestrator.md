@@ -5,7 +5,7 @@
 **File:** `~/.engineer/config/orchestrator.yaml`
 **Hot-reload:** No — requires a daemon restart.
 
-Today only [`review.lenses`](#review) changes behavior. The communication settings ([Notifications](#notifications), [Question Batching](#question-batching)) are validated on load but [not yet honored](#notifications) — they are reserved for the communication layer. A few [legacy keys](#not-currently-consumed) remain in the schema but are no longer read.
+Today only [`review.lenses`](#review) changes behavior. The communication settings ([Notifications](#notifications), [Question Batching](#question-batching)) are validated on load but [not yet honored](#notifications) — they are reserved for the communication layer.
 
 ## Review
 
@@ -55,19 +55,6 @@ The Review phase runs one or more **lenses** — focused agent passes that each 
 | `question_batching.enabled` | boolean | `true` | Batch multiple questions before asking the owner, reducing interruptions. |
 | `question_batching.batch_window_ms` | integer (ms) | `30000` (30s) | Wait window before sending a question batch. |
 | `question_batching.max_batch_size` | integer | `5` | Maximum questions per batch. |
-
-## Not currently consumed
-
-These keys are still in the schema but are no longer read by any code — leftovers from an earlier pipeline model. **Setting them has no effect.**
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `demo.always_create` | boolean | `true` | Legacy: the demo-prep phase that read this was removed. |
-| `demo.tui_base_project` | string \| null | `null` | Legacy: reserved for TUI demos; never wired. |
-| `phases.checkpoint_on_transition` | boolean | `true` | Legacy: the pipeline now checkpoints after every sub-phase, unconditionally. |
-| `phases.periodic_checkpoint_interval_ms` | integer (ms) | `900000` (15m) | Legacy: there is no periodic-checkpoint timer. |
-| `phases.max_loopbacks_before_alert` | integer | `3` | Legacy: loop caps now live in the pipeline runner, per phase. |
-| `journal.aggregate_file_reads` | boolean | `true` | Legacy: no longer read. |
 
 ## Example
 

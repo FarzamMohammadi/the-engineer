@@ -105,7 +105,7 @@ describe("create-pr run", () => {
     expect(updateTaskField).toHaveBeenCalledWith(
       "t1",
       "review",
-      expect.objectContaining({ pr_number: 42, pr_state: "ready" }),
+      expect.objectContaining({ pr_number: 42, feedback_rounds: [] }),
     );
     expect(notify).toHaveBeenCalled();
   });
@@ -114,9 +114,7 @@ describe("create-pr run", () => {
     const { ctx, createPR, dismissApprovals, updateTaskField } = mockCtx({
       review: {
         pr_number: 7,
-        pr_state: "ready",
-        demo_artifacts: [],
-        feedback_rounds: [{ stage: "code", applied: false, comments: ["fix it"] }],
+        feedback_rounds: [{ applied: false, comments: ["fix it"] }],
         accommodated_comment_ids: [],
         accommodated_review_state: null,
       },

@@ -57,16 +57,14 @@ export const Outcomes = {
   completed: "completed",
   terminated: "terminated",
   blocked: "blocked",
-  error: "error",
 } as const;
 
 export type Outcome = (typeof Outcomes)[keyof typeof Outcomes];
 
 /**
  * The result the daemon's dispatch path consumes. `executeTask` produces `completed` or `blocked`;
- * `terminated` is synthesized by the dispatch-tracker when a run is force-ended; `error` is the
- * defensive terminal the scheduler routes to blocked. Phases are plain strings — the pipeline owns
- * the phase vocabulary.
+ * `terminated` is synthesized by the dispatch-tracker when a run is force-ended. Phases are plain
+ * strings — the pipeline owns the phase vocabulary.
  */
 export type ExecuteTaskResult =
   | { outcome: typeof Outcomes.completed }
@@ -76,5 +74,4 @@ export type ExecuteTaskResult =
       lastPhase: string | null;
       checkpointId: string | null;
     }
-  | { outcome: typeof Outcomes.blocked; phase: string; reason: string }
-  | { outcome: typeof Outcomes.error; phase: string; reason: string };
+  | { outcome: typeof Outcomes.blocked; phase: string; reason: string };

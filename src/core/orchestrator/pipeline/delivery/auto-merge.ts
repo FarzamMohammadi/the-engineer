@@ -126,15 +126,17 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
       `PR #${String(prNumber)} no longer merges cleanly — reworking before it can merge`,
     );
   }
-  if (status.checks_state !== "passing") {
-    ctx.observer.info("PR not yet green — returning to the review wait", {
+  // "passing" and "none" (a repo with no CI configured — nothing to wait on) both proceed to merge.
+  // Only "pending" (checks still running) returns to the wait for the stateless poller to retry.
+  if (status.checks_state === "pending") {
+    ctx.observer.info("PR checks still running — returning to the review wait", {
       taskId: ctx.task.id,
       prNumber,
       checks: status.checks_state,
     });
     return resolved(
       "retry_wait",
-      `PR #${String(prNumber)} checks are not yet green (${status.checks_state}) — waiting to retry`,
+      `PR #${String(prNumber)} checks are still running (${status.checks_state}) — waiting to retry`,
     );
   }
 
@@ -188,9 +190,6 @@ function recordMerge(
   mergeSha: string,
   record: WorkspaceRecord | null,
 ): void {
-  if (ctx.task.review) {
-    ctx.taskEngine.updateTaskField(ctx.task.id, "review", { ...ctx.task.review, pr_state: "merged" });
-  }
   ctx.eventBus.publish({
     type: EventTypes["git.pr_merged"],
     source: "orchestrator",

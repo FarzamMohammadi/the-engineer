@@ -263,9 +263,7 @@ describe("ReviewStateSchema", () => {
   it("parses valid data", () => {
     const input = {
       pr_number: 42,
-      pr_state: "ready" as const,
-      demo_artifacts: [{ type: "screenshot" as const, location: "/tmp/demo.png", permanent: false }],
-      feedback_rounds: [{ stage: "code" as const, comments: ["looks good"], applied: true }],
+      feedback_rounds: [{ comments: ["looks good"], applied: true }],
     };
     expect(ReviewStateSchema.parse(input)).toEqual({
       ...input,
@@ -277,8 +275,6 @@ describe("ReviewStateSchema", () => {
   it("accepts null pr fields", () => {
     const input = {
       pr_number: null,
-      pr_state: null,
-      demo_artifacts: [],
       feedback_rounds: [],
     };
     expect(ReviewStateSchema.parse(input)).toEqual({
@@ -291,8 +287,6 @@ describe("ReviewStateSchema", () => {
   it("preserves accommodated fields when provided", () => {
     const input = {
       pr_number: 42,
-      pr_state: "ready" as const,
-      demo_artifacts: [],
       feedback_rounds: [],
       accommodated_comment_ids: ["comment-1", "comment-2"],
       accommodated_review_state: "changes_requested",

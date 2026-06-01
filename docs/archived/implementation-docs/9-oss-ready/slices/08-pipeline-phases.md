@@ -525,11 +525,26 @@ sessions is not.
 
 ### Outbound (parked for downstream slices, post-renumber)
 
-- **Slice 8 → Slice 9 (was 11):** terminal-state cleanup — workspace removal on
-  merged/completed, terminal notifications. Slice 8 produces a clean `completed` state;
-  Slice 9 owns the reaper.
-- **Slice 8 → Slice 10 (was 12):** notification-kind audit; reply-token + unblock check;
-  response-poller integration with the typed-event surface.
+- **Slice 8 → Slice 9 (was 11): terminal-state cleanup / the reaper.** Slice 8 produces a
+  clean `completed` state; Slice 9 owns workspace removal on merged/completed + terminal
+  notifications. **Reserved surface waiting to be wired (validated today, NOT honored):**
+  - `workspaceConfig.pr.branch_retention_days` (`schemas/config.ts`, marked `RESERVED for
+    Slice 9`; documented in `docs/configuration/workspace.md`) — days to retain a merged
+    branch before the reaper deletes it; `null` = keep forever. Parsed, read by nothing yet.
+  - **External-merge audit gap** (sweep finding, left for the reaper): when a PR is merged
+    *outside* The Engineer, `delivery/auto-merge.run` short-circuits to `done` without
+    emitting `git.pr_merged` or deleting the remote branch (it skips `recordMerge`). The
+    reaper is the natural owner of "branch cleanup + audit for a task that reached
+    `completed` by any path"; decide there whether to backfill the audit event.
+- **Slice 8 → Slice 10 (was 12): the communication layer.** notification-kind audit;
+  reply-token + unblock check; response-poller integration with the typed-event surface.
+  **Reserved surface waiting to be wired (validated today, NOT honored):**
+  - `OrchestratorConfig.notification.*` (`milestone_based`, `suppress_window_ms`,
+    `batch_window_ms`, `quiet_hours.*`, `digest.*`) and `OrchestratorConfig.question_batching.*`
+    (`enabled`, `batch_window_ms`, `max_batch_size`) — `schemas/config.ts`, marked `RESERVED
+    for Slice 10`. The notification router sends messages today *without* reading any of
+    these policy knobs; documented as "Validated but not yet honored" in
+    `docs/configuration/orchestrator.md`. Slice 10 makes the router honor them.
 - **Slice 8 → Slice 13 (was 15):** ALL dashboard UI for the new shape — `phase` /
   `sub_phase` / `phase_iteration` / `total_reworks` visibility, the simplified state
   machine (no `review_pending` row), block-reason taxonomy display, the routing-decision
@@ -606,14 +621,62 @@ value is. Refined in `.claude/temp/create-plan/slice-08-pipeline-phases.md`.
 
 ## Closing Standards Sweep
 
-Mirrors Slice 7's closing pattern: full-file line-by-line audit of every file the slice
-created or changed against `docs/coding-standards.md`, `docs/anti-patterns.md`,
-`docs/philosophy.md`, and the principle-driven checks in `approach.md` (every documented
-reference matches code; every manifest matches behavior; every swallowed error logged;
-every constant single-sourced; no stale counts; no vestigial scaffolding; no
-backward-compat re-exports). Two-pass discipline (Slice 7 Session 36 lesson — the second
-pass finds the structural defects the first pass reads past). Update
-`feedback_slice_closing_standards_sweep.md` if a new defect class surfaces.
+**Sessions 10–11 (overall 50), green in four fix commits on `slice8-s10-sweep`
+(`ec9212c`, `95f3b17`, `2f54a04`, `790a81a`) plus the wrap.** A genuine co-owner audit of
+the full slice diff (98 touched `src/` files) — not a checklist pass, not bounded by the
+captured follow-ups. **Method:** two background workflows (a ~43-agent audit fanned across
+the sub-phases / daemon / plugin / CLI with each finding adversarially re-verified, then a
+5-lane disjoint-file fix workflow) plus the coupled schema-and-core work done by hand;
+every agent finding re-verified against source before acting.
+
+**Three real bugs found and fixed** (re-verified against source, not trusted from the audit):
+- `execution/verify` orphan-`blocked` a task on a *gate timeout* instead of reworking — a
+  slow or hung gate could wedge a task. `runGate` now propagates a true abort, treats a
+  timeout-kill as a gate failure ("Gate timed out after Xms"), and only throws on a real
+  spawn failure.
+- `engineer retry` wrote NULL primary keys into `state_transitions` (missing `id`); fixed
+  the INSERT (ULID) and set `last_transition_at`.
+- The dashboard **Cancel** endpoint 500'd every click — it referenced nonexistent
+  `from_sub_state`/`to_sub_state` columns; corrected to `from_sub`/`to_sub` (+ test).
+
+**Two more core bugs:** the runner dropped `carry` on a skipped sub-phase (lost revise
+context when self-review was disabled) — `carry` now survives skips; and
+`attemptSelfUnblock` ran the agent with no abort signal — now threaded with a 5-minute
+timeout.
+
+**Cleanup** (the captured follow-ups + what the audit surfaced): removed vestigial config
+(`demo`/`phases`/`journal`), write-only fields (`demo_artifacts`, `pr_state`,
+`FeedbackRound.stage`), the genuinely-dead `error` `ExecuteTaskResult` variant, a dead seed
+key, dead agent-plugin parse helpers, and stale RRPIR comments; single-sourced the
+`cost.incurred` payload (`agent-cost.ts`) and the trivial-skip factory (`skipIfTrivial`);
+and **deleted the seven never-emitted/never-subscribed bus events**
+(`workspace.merge_conflict`, `git.branch_created`/`committed`/`pushed`/`pr_opened`/`pr_updated`/`merge_completed`),
+trimming `github-hosting`'s `contributes.events` to the live `git.pr_merged` (manifest +
+bundled mirror + README source) and migrating the bus tests to `git.branch_deleted`.
+
+**A captured follow-up was wrong — caught it.** The prior session flagged the `terminated`
+branch in `task-scheduler.ts` as dead. It is the LIVE routing surface for every forced
+termination: the dispatch-tracker *synthesizes* a `terminated` result into the late
+`onCompleted` callback. Kept it; deleted only the genuinely-dead `error` sibling. Recorded
+as a new defect class in `feedback_slice_closing_standards_sweep.md` ("a captured follow-up
+is a hypothesis — grep for ALL producers, including synthesized / `as`-cast / late-callback
+/ DB-re-queue values, before deleting").
+
+**Forward-scaffolding kept and documented** (not deleted) per
+`feedback_forward_scaffolding_vs_dead_residue.md`: the reserved config surface with named
+owning slices — `branch_retention_days` → Slice 9, `notification.*` / `question_batching.*`
+→ Slice 10 — carries `RESERVED for Slice N` markers in `schemas/config.ts` and is
+inventoried in **Cross-Slice Handoffs → Outbound** above. The dead-events cluster (no named
+owner) was the genuine fork; Farzam's call was delete.
+
+**Deferred, honestly** (LOW / future hardening): the external-merge audit gap (a PR merged
+outside The Engineer skips `recordMerge` — handed to Slice 9's reaper, see Outbound); the
+synchronous `verify` gates (`docs/future-considerations.md` → Asynchronous Verification
+Gates); a few defensive dead branches left as established Fail-Loud patterns.
+
+**Gates:** lint 0 (biome + tsc + tsc-test + knip + madge, all clean), 2188 unit + 47
+integration + 16 e2e, build OK. The unit drop is the deleted old-shape fixtures + the seven
+dead-event schema tests; knip confirms no orphaned exports.
 
 ## Lens Check
 

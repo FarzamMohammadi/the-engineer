@@ -50,7 +50,7 @@ function runPush(ctx: Ctx): SubPhaseResult {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Cannot push branch "${record.branch}": ${detail}`);
   }
-  return { outcome: "ok", summary: `Pushed ${record.branch}`, data: { committed } };
+  return { outcome: "ok", summary: `Pushed ${record.branch}` };
 }
 
 /**

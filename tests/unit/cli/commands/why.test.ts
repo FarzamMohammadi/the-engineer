@@ -193,6 +193,103 @@ describe("runWhy", () => {
     expect(output).toContain("research");
   });
 
+  it("surfaces why a task is blocked in human mode", () => {
+    const dbPath = join(tempDir, "data", "engineer.db");
+    const handle = createDatabase(dbPath);
+    insertTask(handle.db, "task-blocked", { state: TaskStates.blocked });
+
+    handle.db.prepare("UPDATE tasks SET blocked = ?, phase = ?, sub_phase = ? WHERE id = ?").run(
+      JSON.stringify({
+        reason: "need_more_info",
+        category: "awaiting_human",
+        sub_phase: "scoping",
+        needed: "Confirm the target repo before planning.",
+      }),
+      "requirements",
+      "scoping",
+      "task-blocked",
+    );
+
+    handle.close();
+
+    const code = runWhy(tempDir, "task-blocked");
+    expect(code).toBe(0);
+
+    const output = stdoutWrites.join("");
+    expect(output).toContain("need_more_info");
+    expect(output).toContain("awaiting_human");
+    expect(output).toContain("Confirm the target repo before planning.");
+    expect(output).toContain("requirements");
+    expect(output).toContain("scoping");
+  });
+
+  it("includes parsed blocked details and a projected journal in JSON mode", () => {
+    resetOutput();
+    createOutput({ mode: "json" });
+
+    const dbPath = join(tempDir, "data", "engineer.db");
+    const handle = createDatabase(dbPath);
+    insertTask(handle.db, "task-blocked-json", { state: TaskStates.blocked });
+
+    handle.db.prepare("UPDATE tasks SET blocked = ?, phase = ?, sub_phase = ? WHERE id = ?").run(
+      JSON.stringify({
+        reason: "need_more_info",
+        category: "awaiting_human",
+        sub_phase: "scoping",
+        needed: "Confirm the target repo.",
+      }),
+      "requirements",
+      "scoping",
+      "task-blocked-json",
+    );
+
+    handle.db
+      .prepare("INSERT INTO sessions (id, task_id, started_at) VALUES (?, ?, ?)")
+      .run("session-block", "task-blocked-json", "2026-01-15T10:30:00Z");
+    handle.db
+      .prepare(
+        `INSERT INTO journal_entries (id, session_id, task_id, type, summary, detail, phase, error_detail, tags, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "j-block",
+        "session-block",
+        "task-blocked-json",
+        JournalEntryTypes.phase_change,
+        "Entered research",
+        "Detail text",
+        Phases.research,
+        "internal error trace",
+        "[]",
+        "2026-01-15T10:31:00Z",
+      );
+
+    handle.close();
+
+    const code = runWhy(tempDir, "task-blocked-json");
+    expect(code).toBe(0);
+
+    const parsed = JSON.parse(stdoutWrites.join("")) as {
+      task: { phase: string; sub_phase: string; blocked: { reason: string; category: string; needed: string } };
+      journal: Record<string, unknown>[];
+    };
+    expect(parsed.task.phase).toBe("requirements");
+    expect(parsed.task.sub_phase).toBe("scoping");
+    expect(parsed.task.blocked.reason).toBe("need_more_info");
+    expect(parsed.task.blocked.category).toBe("awaiting_human");
+    expect(parsed.task.blocked.needed).toBe("Confirm the target repo.");
+
+    // Journal rows are projected to a clean shape — no internal columns leak.
+    const entry = parsed.journal[0];
+    if (!entry) {
+      throw new Error("expected a projected journal entry");
+    }
+    expect(Object.keys(entry).sort()).toEqual(["detail", "phase", "summary", "timestamp", "type"]);
+    expect(entry["error_detail"]).toBeUndefined();
+    expect(entry["session_id"]).toBeUndefined();
+    expect(entry["task_id"]).toBeUndefined();
+  });
+
   it("resolves a task by ID prefix", () => {
     const dbPath = join(tempDir, "data", "engineer.db");
     const handle = createDatabase(dbPath);

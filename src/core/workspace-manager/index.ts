@@ -260,7 +260,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     // Defense-in-depth: validate the created worktree resolves within workspace root
     validateWorkspacePath(worktreePath, this.config.workspace_root);
 
-    // Create thoughts/ directory structure for RRPIR file-based handoffs
+    // Create thoughts/ directory structure for pipeline file-based handoffs
     let thoughtsDirRelative: string | null = null;
     if (thoughtsId) {
       const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD

@@ -1,6 +1,6 @@
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { type TaskState, TaskStates } from "../../schemas/task.js";
+import { type Task, type TaskState, TaskStates } from "../../schemas/task.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -32,8 +32,8 @@ export function handleQuery(payload: CommMessageReceivedPayload, deps: QueryHand
 
   const taskMatch = PROGRESS_RE.exec(content);
   if (taskMatch) {
-    const taskNum = taskMatch[1] ?? taskMatch[2];
-    response = formatProgressResponse(taskEngine, taskNum as string);
+    const issueNumber = taskMatch[1] ?? taskMatch[2];
+    response = formatProgressResponse(taskEngine, issueNumber as string);
   } else if (content.includes("cost")) {
     response = formatCostResponse(safetyLayer);
   } else if (content.includes("status")) {
@@ -72,19 +72,45 @@ function formatStatusResponse(taskEngine: ITaskEngine): string {
   return counts.length > 0 ? `Task status:\n${counts.join("\n")}` : "No tasks found.";
 }
 
-function formatProgressResponse(taskEngine: ITaskEngine, taskId: string): string {
-  const task = taskEngine.getTask(taskId);
+/**
+ * Resolve a "progress #N" query, where N is the external issue number (e.g. issue 42),
+ * not the internal task id (a ULID). Tasks carry the issue number on `external_ref.id`,
+ * so match against that across all states. v1 keyword-match preview — Slice 10 owns the
+ * real comms-query design.
+ */
+function formatProgressResponse(taskEngine: ITaskEngine, issueNumber: string): string {
+  const task = findTaskByIssueNumber(taskEngine, issueNumber);
   if (!task) {
-    return `Task #${taskId} not found.`;
+    return `Issue #${issueNumber} not found.`;
   }
   return [
-    `Task #${taskId}: ${task.title}`,
+    `Issue #${issueNumber}: ${task.title}`,
     `State: ${task.state}${task.sub_state ? ` (${task.sub_state})` : ""}`,
     `Priority: ${String(task.priority)}`,
     task.phase ? `Phase: ${task.phase}` : null,
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** Find the task whose external reference matches the given issue number, scanning all states. */
+function findTaskByIssueNumber(taskEngine: ITaskEngine, issueNumber: string): Task | null {
+  const states: TaskState[] = [
+    TaskStates.requirements_gathering,
+    TaskStates.queued,
+    TaskStates.active,
+    TaskStates.blocked,
+    TaskStates.completed,
+    TaskStates.failed,
+  ];
+  for (const state of states) {
+    for (const task of taskEngine.getTasksByState(state)) {
+      if (task.external_ref?.id === issueNumber) {
+        return task;
+      }
+    }
+  }
+  return null;
 }
 
 function formatCostResponse(safetyLayer: ISafetyLayer): string {

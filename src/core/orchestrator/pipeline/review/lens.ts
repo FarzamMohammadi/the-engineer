@@ -74,7 +74,7 @@ export function lensNext(result: RoutableResult): Route {
 }
 
 /** Absolute directory holding a lens's findings and result file — one subdirectory per lens. */
-export function lensDirectory(ctx: Ctx, name: ReviewLens): string {
+function lensDirectory(ctx: Ctx, name: ReviewLens): string {
   return resultDirectory(ctx, path.join(REVIEW_DIR, name));
 }
 

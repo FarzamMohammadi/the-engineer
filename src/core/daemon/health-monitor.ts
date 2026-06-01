@@ -95,7 +95,7 @@ export function createDaemonHealthMonitor(
 
   function emitStuckDetected(
     taskId: string,
-    condition: "no_journal_entries" | "stale_journal" | "no_state_transition" | "orchestrator_crash",
+    condition: "no_journal_entries" | "stale_journal" | "no_state_transition",
     elapsedMs: number,
   ): void {
     eventBus.publish({
@@ -203,6 +203,7 @@ export function createDaemonHealthMonitor(
               "daemon",
             );
             if (result.success) {
+              taskEngine.updateTaskField(taskId, "blocked", null);
               blockedEscalationState.delete(taskId);
               observer.info("Task self-unblocked", { taskId });
             } else {

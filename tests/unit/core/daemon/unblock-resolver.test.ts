@@ -25,7 +25,7 @@ function createMockContext(): UnblockResolverContext {
       getWorktreePath: vi.fn().mockReturnValue(null),
       getWorkspaceRecord: vi.fn().mockReturnValue(null),
     },
-    observer: createTestObserverFacade("unblock-resolver"),
+    observer: createTestObserverFacade("daemon"),
   } as unknown as UnblockResolverContext;
 }
 

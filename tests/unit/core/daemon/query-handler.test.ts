@@ -8,7 +8,6 @@ function createMockDeps(): QueryHandlerDeps {
   return {
     taskEngine: {
       getTasksByState: vi.fn().mockReturnValue([]),
-      getTask: vi.fn().mockReturnValue(null),
     } as unknown as QueryHandlerDeps["taskEngine"],
     safetyLayer: {
       consultJudgment: vi.fn().mockReturnValue({
@@ -63,15 +62,24 @@ describe("handleQuery", () => {
     expect(notification.message).toContain("active: 1");
   });
 
-  it("responds to 'progress #42' with task details", () => {
+  it("responds to 'progress #42' with task details, matching the issue number on external_ref", () => {
     const deps = createMockDeps();
-    (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      id: "42",
-      title: "Fix login bug",
-      state: TaskStates.active,
-      sub_state: SubStates.working,
-      priority: 50,
-      phase: "execution",
+    // Task ids are ULIDs; the issue number lives on external_ref.id. "progress #42" → issue 42.
+    (deps.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockImplementation((state: string) => {
+      if (state === TaskStates.active) {
+        return [
+          {
+            id: "01J0000000000000000000ABCD",
+            external_ref: { type: "issue", repo: "owner/repo", id: "42" },
+            title: "Fix login bug",
+            state: TaskStates.active,
+            sub_state: SubStates.working,
+            priority: 50,
+            phase: "execution",
+          },
+        ];
+      }
+      return [];
     });
 
     handleQuery(payload("progress #42"), deps);
@@ -79,6 +87,7 @@ describe("handleQuery", () => {
     const notification = (deps.notifications.notify as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
       message: string;
     };
+    expect(notification.message).toContain("Issue #42");
     expect(notification.message).toContain("Fix login bug");
     expect(notification.message).toContain("active");
     expect(notification.message).toContain("execution");
@@ -114,7 +123,8 @@ describe("handleQuery", () => {
 
   it("handles task not found for progress query", () => {
     const deps = createMockDeps();
-    (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    // No task carries issue #999 on its external_ref.
+    (deps.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([]);
 
     handleQuery(payload("progress #999"), deps);
 
@@ -126,18 +136,30 @@ describe("handleQuery", () => {
 
   it("handles '#42 progress' format (reversed)", () => {
     const deps = createMockDeps();
-    (deps.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({
-      id: "42",
-      title: "Test",
-      state: TaskStates.queued,
-      sub_state: null,
-      priority: 50,
-      phase: null,
+    (deps.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockImplementation((state: string) => {
+      if (state === TaskStates.queued) {
+        return [
+          {
+            id: "01J0000000000000000000ABCD",
+            external_ref: { type: "issue", repo: "owner/repo", id: "42" },
+            title: "Test",
+            state: TaskStates.queued,
+            sub_state: null,
+            priority: 50,
+            phase: null,
+          },
+        ];
+      }
+      return [];
     });
 
     handleQuery(payload("#42 progress"), deps);
 
-    expect(deps.taskEngine.getTask).toHaveBeenCalledWith("42");
+    const notification = (deps.notifications.notify as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      message: string;
+    };
+    expect(notification.message).toContain("Issue #42");
+    expect(notification.message).toContain("Test");
   });
 
   it("sends status_response notification kind", () => {

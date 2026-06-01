@@ -54,16 +54,7 @@ export type PreemptionManagerContext = Pick<DaemonContext, "config" | "eventBus"
 
 export type PrEventPollerContext = Pick<
   DaemonContext,
-  | "config"
-  | "workspaceConfig"
-  | "eventBus"
-  | "registry"
-  | "taskEngine"
-  | "safetyLayer"
-  | "workspaceManager"
-  | "peopleDirectory"
-  | "clock"
-  | "observer"
+  "config" | "registry" | "taskEngine" | "safetyLayer" | "peopleDirectory" | "clock" | "observer"
 >;
 
 export type ResponsePollerContext = Pick<DaemonContext, "config" | "eventBus" | "registry" | "taskEngine" | "observer">;

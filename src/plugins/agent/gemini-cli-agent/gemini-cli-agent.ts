@@ -17,6 +17,8 @@ import { killProcess } from "../../../utils/process.js";
 import { appendStderr, buildAgentEnv } from "../subprocess.js";
 import { type GeminiCliAgentConfig, GeminiCliAgentConfigSchema } from "./config.js";
 
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-pro";
+
 /** Rate limit patterns — hoisted for performance. */
 const RATE_LIMIT_STDERR_RE = /exhausted your capacity|rate.?limit|quota/i;
 const RATE_LIMIT_STDOUT_RE = /exhausted.*capacity|quota|rate.?limit/i;
@@ -105,91 +107,6 @@ export function processGeminiNdjsonLine(line: string, currentModelId: string | n
   }
 }
 
-// ── Output parsing (retained for backward compatibility + tests) ────────────
-
-/** Parsed output from Gemini CLI's stream-json format (NDJSON). */
-export interface ParsedGeminiCliOutput {
-  content: string;
-  usage: AgentRunUsage | null;
-  rateLimited: boolean;
-  rateLimitMessage: string | null;
-}
-
-/**
- * Parse NDJSON output from `gemini -p <prompt> -o stream-json`.
- *
- * NOTE: Retained for backward compatibility and testing.
- * The live streaming path uses processGeminiNdjsonLine() instead.
- */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON parser handling multiple event types
-export function parseGeminiCliOutput(raw: string): ParsedGeminiCliOutput {
-  const lines = raw.split("\n").filter((line) => line.trim().length > 0);
-  const contentParts: string[] = [];
-  let usage: AgentRunUsage | null = null;
-  let modelId: string | null = null;
-  let rateLimited = false;
-  let rateLimitMessage: string | null = null;
-
-  for (const line of lines) {
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-
-      if (parsed["type"] === "init") {
-        if (typeof parsed["model"] === "string") {
-          modelId = parsed["model"];
-        }
-      } else if (parsed["type"] === "message" && parsed["role"] === "assistant") {
-        const content = parsed["content"];
-        if (typeof content === "string") {
-          contentParts.push(content);
-        }
-      } else if (parsed["type"] === "result") {
-        // Check for error result (e.g. rate limiting, quota exhaustion)
-        if (parsed["status"] === "error") {
-          const err = parsed["error"] as Record<string, unknown> | undefined;
-          const msg = typeof err?.["message"] === "string" ? err["message"] : "";
-          if (RATE_LIMIT_STDOUT_RE.test(msg)) {
-            rateLimited = true;
-            rateLimitMessage = msg;
-          }
-        }
-
-        const stats = parsed["stats"] as Record<string, unknown> | undefined;
-        if (stats) {
-          const inputTokens = typeof stats["input_tokens"] === "number" ? stats["input_tokens"] : 0;
-          const outputTokens = typeof stats["output_tokens"] === "number" ? stats["output_tokens"] : 0;
-          const totalTokens = typeof stats["total_tokens"] === "number" ? stats["total_tokens"] : 0;
-          const cached = typeof stats["cached"] === "number" ? stats["cached"] : 0;
-
-          usage = {
-            tokens: {
-              input_tokens: inputTokens,
-              output_tokens: outputTokens,
-              cache_read_tokens: cached,
-              cache_creation_tokens: 0,
-              total_tokens: totalTokens,
-            },
-            model_id: modelId,
-            service_tier: null,
-          };
-        }
-      }
-    } catch {
-      // Skip non-JSON lines (e.g. "Loaded cached credentials.")
-    }
-  }
-
-  const content = contentParts.join("");
-
-  if (!rateLimited && content.length === 0 && usage === null) {
-    throw new AdapterMethodError(
-      createAdapterError("internal_error", "No assistant message or result event found in Gemini CLI output"),
-    );
-  }
-
-  return { content, usage, rateLimited, rateLimitMessage };
-}
-
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 /**
@@ -232,7 +149,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
 
   getCapabilities(): AgentCapabilities {
     return {
-      model_id: this.config?.model ?? "gemini-2.5-pro",
+      model_id: this.config?.model ?? DEFAULT_GEMINI_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: true,
       context_window: null,

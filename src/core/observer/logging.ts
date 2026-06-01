@@ -12,22 +12,15 @@ export type ComponentTag =
   | "orchestrator"
   | "task-engine"
   | "safety-layer"
-  | "session-memory"
   | "workspace-manager"
   | "skills"
   | "event-bus"
-  | "people-directory"
-  | "config"
   | "cli"
   | "action-pipeline"
   | "plugin"
-  | "observer"
-  | "pr-manager"
   | "plugin-loader"
   | "data-lifecycle"
   | "notifications"
-  | "response-poller"
-  | "unblock-resolver"
   | "dashboard";
 
 /** Logging config shape from DaemonConfigSchema. */

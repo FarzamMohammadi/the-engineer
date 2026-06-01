@@ -28,7 +28,14 @@ export function runStatus(engineerHome: string, options?: StatusOptions): number
   const isRunning = pid !== null && isProcessRunning(pid);
 
   const dbPath = join(engineerHome, "data", "engineer.db");
-  const tasks = existsSync(dbPath) ? getTaskList(dbPath, showAll) : [];
+  let tasks: TaskRow[];
+  try {
+    tasks = existsSync(dbPath) ? getTaskList(dbPath, showAll) : [];
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    out.error(`Could not read tasks from ${dbPath}: ${detail}`);
+    return 1;
+  }
 
   if (out.mode === "json") {
     out.data({
@@ -74,33 +81,35 @@ export function runStatus(engineerHome: string, options?: StatusOptions): number
   return 0;
 }
 
+/**
+ * Reads the task list directly from the database. Throws on any DB failure
+ * (corrupt/locked file, query error) rather than swallowing it — the caller
+ * surfaces a clear message so "could not read tasks" never masquerades as
+ * "no tasks".
+ */
 function getTaskList(dbPath: string, showAll: boolean): TaskRow[] {
-  try {
-    const db = new BetterSqlite3(dbPath, { readonly: true });
+  const db = new BetterSqlite3(dbPath, { readonly: true });
 
-    try {
-      const whereClause = showAll ? "" : "WHERE state NOT IN ('completed', 'failed')";
-      return db
-        .prepare(
-          `SELECT id, state, title, created_at FROM tasks
-           ${whereClause}
-           ORDER BY
-             CASE state
-               WHEN 'active' THEN 1
-               WHEN 'blocked' THEN 2
-               WHEN 'requirements_gathering' THEN 3
-               WHEN 'queued' THEN 4
-               WHEN 'failed' THEN 5
-               WHEN 'completed' THEN 6
-             END,
-             created_at ASC`,
-        )
-        .all() as TaskRow[];
-    } finally {
-      db.close();
-    }
-  } catch {
-    return [];
+  try {
+    const whereClause = showAll ? "" : "WHERE state NOT IN ('completed', 'failed')";
+    return db
+      .prepare(
+        `SELECT id, state, title, created_at FROM tasks
+         ${whereClause}
+         ORDER BY
+           CASE state
+             WHEN 'active' THEN 1
+             WHEN 'blocked' THEN 2
+             WHEN 'requirements_gathering' THEN 3
+             WHEN 'queued' THEN 4
+             WHEN 'failed' THEN 5
+             WHEN 'completed' THEN 6
+           END,
+           created_at ASC`,
+      )
+      .all() as TaskRow[];
+  } finally {
+    db.close();
   }
 }
 

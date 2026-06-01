@@ -110,9 +110,14 @@ describe("runRetry", () => {
     expect(row["consecutive_crash_count"]).toBe(0);
     expect(row["consecutive_agent_unavailable_count"]).toBe(0);
 
+    expect(typeof row["last_transition_at"]).toBe("string");
+    expect(row["last_transition_at"]).not.toBe("2026-01-15T10:30:00Z");
+
     const transition = handle.db
       .prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY rowid DESC LIMIT 1")
       .get("task-blocked") as Record<string, unknown>;
+    expect(transition["id"]).toEqual(expect.any(String));
+    expect(transition["id"]).not.toBeNull();
     expect(transition["from_state"]).toBe(TaskStates.blocked);
     expect(transition["to_state"]).toBe(TaskStates.queued);
     expect(transition["reason"]).toBe("cli_retry");

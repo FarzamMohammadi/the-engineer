@@ -24,7 +24,7 @@ function createMockContext(): ResponsePollerContext {
       getWorktreePath: vi.fn().mockReturnValue(null),
     },
     peopleDirectory: {},
-    observer: createTestObserverFacade("response-poller"),
+    observer: createTestObserverFacade("daemon"),
   } as unknown as ResponsePollerContext;
 }
 

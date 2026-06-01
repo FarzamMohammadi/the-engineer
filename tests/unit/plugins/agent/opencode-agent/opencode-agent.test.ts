@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AdapterMethodError } from "../../../../../src/adapters/index.js";
-import {
-  OpenCodeAgentPlugin,
-  parseOpenCodeOutput,
-} from "../../../../../src/plugins/agent/opencode-agent/opencode-agent.js";
+import { OpenCodeAgentPlugin } from "../../../../../src/plugins/agent/opencode-agent/opencode-agent.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { createMockAgentRunRequest } from "../../../../helpers/mock-factories.js";
@@ -155,50 +152,5 @@ describe("OpenCodeAgentPlugin", () => {
     plugin.context = createTestPluginContext();
     const result = await plugin.initialize({ command_timeout_ms: -1 });
     expect(result.success).toBe(false);
-  });
-});
-
-// ── parseOpenCodeOutput unit tests ───────────────────────────────────────────
-
-describe("parseOpenCodeOutput", () => {
-  it("parses multi-event NDJSON", () => {
-    const raw = [
-      '{"type":"step_start","part":{"type":"step-start"}}',
-      '{"type":"text","part":{"type":"text","text":"Hello "}}',
-      '{"type":"text","part":{"type":"text","text":"world"}}',
-      '{"type":"step_finish","part":{"type":"step-finish","cost":0.05,"tokens":{"total":100,"input":80,"output":20,"reasoning":0,"cache":{"read":10,"write":5}}}}',
-    ].join("\n");
-    const result = parseOpenCodeOutput(raw);
-    expect(result.content).toBe("Hello world");
-    expect(result.cost_usd).toBe(0.05);
-    expect(result.usage?.tokens.input_tokens).toBe(80);
-    expect(result.usage?.tokens.output_tokens).toBe(20);
-    expect(result.usage?.tokens.total_tokens).toBe(100);
-    expect(result.usage?.tokens.cache_read_tokens).toBe(10);
-    expect(result.usage?.tokens.cache_creation_tokens).toBe(5);
-  });
-
-  it("throws on empty output", () => {
-    expect(() => parseOpenCodeOutput("")).toThrow(AdapterMethodError);
-  });
-
-  it("handles missing cost gracefully", () => {
-    const raw = [
-      '{"type":"text","part":{"type":"text","text":"response"}}',
-      '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":10,"input":8,"output":2,"reasoning":0,"cache":{"read":0,"write":0}}}}',
-    ].join("\n");
-    const result = parseOpenCodeOutput(raw);
-    expect(result.content).toBe("response");
-    expect(result.cost_usd).toBeNull();
-  });
-
-  it("skips non-JSON lines", () => {
-    const raw = [
-      "some log message",
-      '{"type":"text","part":{"type":"text","text":"ok"}}',
-      '{"type":"step_finish","part":{"type":"step-finish","cost":0.01,"tokens":{"total":5,"input":4,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}}',
-    ].join("\n");
-    const result = parseOpenCodeOutput(raw);
-    expect(result.content).toBe("ok");
   });
 });

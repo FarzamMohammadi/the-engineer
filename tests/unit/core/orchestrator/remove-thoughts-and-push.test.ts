@@ -43,7 +43,7 @@ describe("removeThoughtsAndPush", () => {
     });
 
     const result = removeThoughtsAndPush(
-      { workspaceManager: h.workspaceManager, observer: createTestObserverFacade("pr-manager") },
+      { workspaceManager: h.workspaceManager, observer: createTestObserverFacade("orchestrator") },
       "task-1",
     );
 
@@ -58,7 +58,7 @@ describe("removeThoughtsAndPush", () => {
 
     // No thoughtsId → no thoughts directory, nothing added to branch
     const result = removeThoughtsAndPush(
-      { workspaceManager: h.workspaceManager, observer: createTestObserverFacade("pr-manager") },
+      { workspaceManager: h.workspaceManager, observer: createTestObserverFacade("orchestrator") },
       "task-1",
     );
 
@@ -69,7 +69,7 @@ describe("removeThoughtsAndPush", () => {
     const h = setup();
     expect(() =>
       removeThoughtsAndPush(
-        { workspaceManager: h.workspaceManager, observer: createTestObserverFacade("pr-manager") },
+        { workspaceManager: h.workspaceManager, observer: createTestObserverFacade("orchestrator") },
         "unknown-task",
       ),
     ).toThrow();

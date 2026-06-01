@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AdapterMethodError } from "../../../../../src/adapters/index.js";
-import {
-  ClaudeCodeAgentPlugin,
-  parseCliOutput,
-} from "../../../../../src/plugins/agent/claude-code-agent/claude-code-agent.js";
+import { ClaudeCodeAgentPlugin } from "../../../../../src/plugins/agent/claude-code-agent/claude-code-agent.js";
 import { buildAgentEnv } from "../../../../../src/plugins/agent/subprocess.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
@@ -123,13 +120,6 @@ describe("ClaudeCodeAgentPlugin", () => {
     const result = await plugin.run(createMockAgentRunRequest());
     expect(result.content).toBe("Mock LLM response");
     expect(result.cost_usd).toBe(0.005);
-  });
-
-  it("handles missing cost data gracefully (null, not crash)", () => {
-    const raw = '{"type":"result","subtype":"success","result":{"type":"text","text":"hello"}}\n';
-    const result = parseCliOutput(raw);
-    expect(result.content).toBe("hello");
-    expect(result.cost_usd).toBeNull();
   });
 
   it("CLI exit code non-zero throws AdapterMethodError with cli_error", async () => {
@@ -269,57 +259,6 @@ describe("ClaudeCodeAgentPlugin", () => {
       // Error message should be bounded — code prefix + truncated stderr ≤ ~2050 chars
       expect(adapterErr.adapterError.message.length).toBeLessThan(2100);
     }
-  });
-});
-
-describe("parseCliOutput", () => {
-  it("extracts result from multi-line NDJSON", () => {
-    const raw = [
-      '{"type":"system","subtype":"init"}',
-      '{"type":"assistant","message":"thinking..."}',
-      '{"type":"result","subtype":"success","cost_usd":0.01,"result":{"type":"text","text":"Answer"}}',
-    ].join("\n");
-    const result = parseCliOutput(raw);
-    expect(result.content).toBe("Answer");
-    expect(result.cost_usd).toBe(0.01);
-  });
-
-  it("throws when no result event found", () => {
-    const raw = '{"type":"system","subtype":"init"}\n';
-    expect(() => parseCliOutput(raw)).toThrow("No result event found");
-  });
-
-  it("throws when result event has error subtype", () => {
-    const raw = '{"type":"result","subtype":"error","error":"rate limited"}\n';
-    expect(() => parseCliOutput(raw)).toThrow("rate limited");
-  });
-
-  it("handles empty content gracefully", () => {
-    const raw = '{"type":"result","subtype":"success","result":{"type":"text","text":""}}\n';
-    const result = parseCliOutput(raw);
-    expect(result.content).toBe("");
-  });
-
-  it("skips non-JSON lines without crashing", () => {
-    const raw = [
-      "Some debug output",
-      '{"type":"result","subtype":"success","cost_usd":0.0,"result":{"type":"text","text":"ok"}}',
-    ].join("\n");
-    const result = parseCliOutput(raw);
-    expect(result.content).toBe("ok");
-  });
-
-  it("extracts content when result is a string (--print mode)", () => {
-    const raw = '{"type":"result","subtype":"success","cost_usd":0.05,"result":"{\\"action\\":\\"done\\"}"}\n';
-    const result = parseCliOutput(raw);
-    expect(result.content).toBe('{"action":"done"}');
-    expect(result.cost_usd).toBe(0.05);
-  });
-
-  it("extracts content when result is a plain string without JSON", () => {
-    const raw = '{"type":"result","subtype":"success","result":"Hello world"}\n';
-    const result = parseCliOutput(raw);
-    expect(result.content).toBe("Hello world");
   });
 });
 

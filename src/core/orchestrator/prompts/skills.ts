@@ -24,13 +24,13 @@ const SKILL_PHASE_MAP: Record<Phase, SkillName[]> = {
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Build the skills section for a given RRPIR phase.
+ * Build the skills section for a given pipeline phase.
  *
  * Returns a formatted section containing absolute path references to all
  * skills relevant to the phase, or null if no skills apply. The CLI reads
  * skill files on demand from these paths — content is never inlined.
  *
- * @param phase - The RRPIR phase to build skills for.
+ * @param phase - The pipeline phase to build skills for.
  * @param skillsDir - Absolute path to the skills directory (e.g., `{workspace_root}/skills/`).
  */
 export function buildSkillsSection(phase: Phase, skillsDir: string): string | null {
@@ -67,7 +67,7 @@ export function buildSkillsSection(phase: Phase, skillsDir: string): string | nu
  * Build a path-reference block for a single skill.
  *
  * Lists the SKILL.md path and any persona file paths found in the
- * `personas/` subdirectory. Returns null on any error (logs a warning).
+ * `personas/` subdirectory. Returns null on any error.
  */
 function buildSkillPathBlock(skillName: SkillName, skillsDir: string): string | null {
   try {

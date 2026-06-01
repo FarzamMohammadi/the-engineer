@@ -68,6 +68,24 @@ describe("runStatus", () => {
     expect(stdoutWrites.join("")).toContain("Tasks: none");
   });
 
+  it("surfaces a read error instead of masquerading as 'Tasks: none'", () => {
+    createOutput({ mode: "human", color: false });
+    const stderrWrites: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    });
+
+    const dbPath = join(tempDir, "data", "engineer.db");
+    mkdirSync(join(tempDir, "data"), { recursive: true });
+    writeFileSync(dbPath, "this is not a sqlite database");
+
+    const code = runStatus(tempDir);
+    expect(code).toBe(1);
+    expect(stderrWrites.join("")).toContain("Could not read tasks");
+    expect(stdoutWrites.join("")).not.toContain("Tasks: none");
+  });
+
   it("lists non-terminal tasks with ID prefix, title, and age", () => {
     createOutput({ mode: "human", color: false });
     const dbPath = join(tempDir, "data", "engineer.db");

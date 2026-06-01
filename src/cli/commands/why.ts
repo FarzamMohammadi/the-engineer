@@ -4,7 +4,7 @@ import { join } from "node:path";
 import BetterSqlite3 from "better-sqlite3";
 
 import { timeAgo } from "../format.js";
-import { getOutput } from "../output.js";
+import { type Output, getOutput } from "../output.js";
 import { resolveTaskId } from "../resolve-task.js";
 
 // ── Row Types ────────────────────────────────────────────────────────────────
@@ -13,10 +13,13 @@ interface TaskRow {
   readonly id: string;
   readonly state: string;
   readonly sub_state: string | null;
+  readonly phase: string | null;
+  readonly sub_phase: string | null;
   readonly priority: number;
   readonly title: string;
   readonly description: string | null;
   readonly repo: string | null;
+  readonly blocked: string | null;
   readonly created_at: string;
   readonly agent_tokens: number;
   readonly agent_cost_usd: number;
@@ -68,8 +71,9 @@ export function runWhy(engineerHome: string, taskId: string): number {
   let db: BetterSqlite3.Database;
   try {
     db = new BetterSqlite3(dbPath, { readonly: true });
-  } catch {
-    out.error(`Failed to open database at ${dbPath}.`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    out.error(`Failed to open database at ${dbPath}: ${detail}`);
     return 1;
   }
 
@@ -109,36 +113,69 @@ function queryAndDisplay(db: BetterSqlite3.Database, taskIdInput: string): numbe
     .prepare("SELECT * FROM journal_entries WHERE task_id = ? ORDER BY timestamp ASC LIMIT 5")
     .all(taskId) as JournalRow[];
 
-  // JSON mode
   if (out.mode === "json") {
-    out.data({
-      task: {
-        id: task.id,
-        state: task.state,
-        sub_state: task.sub_state,
-        priority: task.priority,
-        description: task.description,
-        repo: task.repo,
-        created_at: task.created_at,
-      },
-      transitions,
-      events: events.map((e) => ({
-        type: e.type,
-        source: e.source,
-        timestamp: e.timestamp,
-        payload: e.payload ? safeJsonParse(e.payload) : null,
-      })),
-      journal,
-      cost: { tokens: task.agent_tokens, usd: task.agent_cost_usd },
-    });
-    return 0;
+    renderJson(out, task, transitions, events, journal);
+  } else {
+    renderHuman(out, task, transitions, events, journal);
   }
+  return 0;
+}
 
-  // Human mode
+/** Emit the task's full activity as one JSON object — projected to clean shapes, no internal columns leaked. */
+function renderJson(
+  out: Output,
+  task: TaskRow,
+  transitions: TransitionRow[],
+  events: EventRow[],
+  journal: JournalRow[],
+): void {
+  out.data({
+    task: {
+      id: task.id,
+      state: task.state,
+      sub_state: task.sub_state,
+      phase: task.phase,
+      sub_phase: task.sub_phase,
+      priority: task.priority,
+      description: task.description,
+      repo: task.repo,
+      blocked: task.blocked ? safeJsonParse(task.blocked) : null,
+      created_at: task.created_at,
+    },
+    transitions,
+    events: events.map((e) => ({
+      type: e.type,
+      source: e.source,
+      timestamp: e.timestamp,
+      payload: e.payload ? safeJsonParse(e.payload) : null,
+    })),
+    journal: journal.map((j) => ({
+      type: j.type,
+      summary: j.summary,
+      detail: j.detail,
+      phase: j.phase,
+      timestamp: j.timestamp,
+    })),
+    cost: { tokens: task.agent_tokens, usd: task.agent_cost_usd },
+  });
+}
+
+/** Render the task's header, block reason, timeline, journal, and cost for a human reader. */
+function renderHuman(
+  out: Output,
+  task: TaskRow,
+  transitions: TransitionRow[],
+  events: EventRow[],
+  journal: JournalRow[],
+): void {
   out.blank();
   out.keyValue("Task", task.id);
   const stateDisplay = task.sub_state ? `${task.state} (${task.sub_state})` : task.state;
   out.keyValue("State", stateDisplay);
+  if (task.phase) {
+    const phaseDisplay = task.sub_phase ? `${task.phase} (${task.sub_phase})` : task.phase;
+    out.keyValue("Phase", phaseDisplay);
+  }
   out.keyValue("Priority", String(task.priority));
   out.keyValue("Created", `${task.created_at} (${timeAgo(task.created_at)})`);
   if (task.repo) {
@@ -147,37 +184,29 @@ function queryAndDisplay(db: BetterSqlite3.Database, taskIdInput: string): numbe
   if (task.description) {
     out.keyValue("Description", task.description);
   }
+  renderBlocked(out, task.blocked);
 
-  // Timeline (merge transitions + events by timestamp)
   out.blank();
   const timeline = buildTimeline(transitions, events);
-
   if (timeline.length === 0) {
     out.log("  No activity recorded.");
   } else {
     out.heading("Timeline:");
     for (const entry of timeline) {
-      const time = formatTime(entry.timestamp);
-      out.log(`  ${time}  ${entry.summary}`);
+      out.log(`  ${formatTime(entry.timestamp)}  ${entry.summary}`);
     }
   }
 
-  // Journal
   if (journal.length > 0) {
     out.blank();
     out.heading(`Journal (last ${String(journal.length)} entries):`);
     for (const entry of journal) {
-      const time = formatTime(entry.timestamp);
-      const phase = `[${entry.phase}]`;
-      out.log(`  ${time}  ${phase.padEnd(16)} ${entry.summary}`);
+      out.log(`  ${formatTime(entry.timestamp)}  ${`[${entry.phase}]`.padEnd(16)} ${entry.summary}`);
     }
   }
 
-  // Cost
   out.blank();
   out.keyValue("Cost", `$${task.agent_cost_usd.toFixed(2)} total (${String(task.agent_tokens)} tokens)`);
-
-  return 0;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -227,5 +256,33 @@ function safeJsonParse(str: string): unknown {
     return JSON.parse(str);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Surfaces the typed block payload for a blocked task: why it stopped (reason),
+ * the precise cause (category), and what it needs to proceed (needed). A malformed
+ * or empty payload prints nothing rather than failing — `why` must stay readable.
+ */
+function renderBlocked(out: Output, blockedRaw: string | null): void {
+  if (!blockedRaw) {
+    return;
+  }
+  const parsed = safeJsonParse(blockedRaw);
+  if (!parsed || typeof parsed !== "object") {
+    return;
+  }
+  const blocked = parsed as Record<string, unknown>;
+  const reason = typeof blocked["reason"] === "string" ? blocked["reason"] : null;
+  const category = typeof blocked["category"] === "string" ? blocked["category"] : null;
+  const needed = typeof blocked["needed"] === "string" ? blocked["needed"] : null;
+
+  if (reason) {
+    out.keyValue("Blocked", category ? `${reason} (${category})` : reason);
+  } else if (category) {
+    out.keyValue("Blocked", category);
+  }
+  if (needed) {
+    out.keyValue("Needs", needed);
   }
 }

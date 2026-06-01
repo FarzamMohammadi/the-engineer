@@ -343,7 +343,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
           if (resultEvent && resultEvent["subtype"] !== "error") {
             this.lastRateLimits = rateLimits;
             this.context.logger.info("CLI exited non-zero but result event captured — salvaging", { code });
-            resolve(buildAgentRunResult(resultEvent, rateLimits, durationMs));
+            resolve(buildAgentRunResult(resultEvent, durationMs));
             return;
           }
 
@@ -378,7 +378,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
         }
 
         this.lastRateLimits = rateLimits;
-        resolve(buildAgentRunResult(resultEvent, rateLimits, durationMs));
+        resolve(buildAgentRunResult(resultEvent, durationMs));
       });
 
       child.on("error", (err) => {
@@ -452,11 +452,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
 // ── Module-level helpers ─────────────────────────────────────────────────
 
 /** Build an AgentRunResult from a parsed result event. */
-function buildAgentRunResult(
-  resultEvent: Record<string, unknown>,
-  _rateLimits: RateLimitInfo[],
-  durationMs: number,
-): AgentRunResult {
+function buildAgentRunResult(resultEvent: Record<string, unknown>, durationMs: number): AgentRunResult {
   const content = extractContent(resultEvent);
   const costUsd =
     typeof resultEvent["total_cost_usd"] === "number"
@@ -467,75 +463,6 @@ function buildAgentRunResult(
   const usage = extractUsage(resultEvent);
 
   return { content, cost_usd: costUsd, duration_ms: durationMs, usage };
-}
-
-/** Parsed output from the Claude CLI stream-json format. */
-export interface ParsedCliOutput {
-  content: string;
-  cost_usd: number | null;
-  usage: AgentRunUsage | null;
-  rateLimits: RateLimitInfo[];
-}
-
-/**
- * Parse NDJSON output from `claude --print --output-format stream-json --verbose`.
- *
- * Output is newline-delimited JSON events. We extract:
- * - `type: "result"` — content, cost, full token/model usage breakdown
- * - `type: "rate_limit_event"` — quota window status and reset times
- *
- * Returns content, cost, usage details, and rate limit info.
- * duration_ms is measured by the caller (spawnAndParse).
- *
- * NOTE: This function is retained for backward compatibility and testing.
- * The live streaming path uses processNdjsonLine() instead.
- */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON parser handling multiple event types and result formats
-export function parseCliOutput(raw: string): ParsedCliOutput {
-  const lines = raw.split("\n").filter((line) => line.trim().length > 0);
-  let resultEvent: Record<string, unknown> | null = null;
-  const rateLimits: RateLimitInfo[] = [];
-
-  for (const line of lines) {
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (parsed["type"] === "result") {
-        resultEvent = parsed;
-      } else if (parsed["type"] === "rate_limit_event") {
-        const info = parsed["rate_limit_info"] as Record<string, unknown> | undefined;
-        if (info) {
-          rateLimits.push({
-            rateLimitType: typeof info["rateLimitType"] === "string" ? info["rateLimitType"] : "unknown",
-            status: typeof info["status"] === "string" ? info["status"] : "unknown",
-            resetsAt: typeof info["resetsAt"] === "number" ? info["resetsAt"] : null,
-          });
-        }
-      }
-    } catch {
-      // Skip non-JSON lines
-    }
-  }
-
-  if (!resultEvent) {
-    throw new AdapterMethodError(createAdapterError("internal_error", "No result event found in CLI output"));
-  }
-
-  if (resultEvent["subtype"] === "error") {
-    throw new AdapterMethodError(
-      createAdapterError("internal_error", `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`),
-    );
-  }
-
-  const content = extractContent(resultEvent);
-  const costUsd =
-    typeof resultEvent["total_cost_usd"] === "number"
-      ? resultEvent["total_cost_usd"]
-      : typeof resultEvent["cost_usd"] === "number"
-        ? resultEvent["cost_usd"]
-        : null;
-  const usage = extractUsage(resultEvent);
-
-  return { content, cost_usd: costUsd, usage, rateLimits };
 }
 
 /** Extract text content from a result event's `result` field. */
@@ -653,16 +580,16 @@ function parseUsageApiResponse(data: Record<string, unknown>): QuotaStatus {
   const windows: QuotaWindow[] = [];
 
   // Map known API fields to our QuotaWindow format
-  const windowMappings: Array<{ key: string; displayType: string }> = [
-    { key: "five_hour", displayType: "five_hour" },
-    { key: "seven_day", displayType: "seven_day" },
-    { key: "seven_day_sonnet", displayType: "seven_day_sonnet" },
-    { key: "seven_day_opus", displayType: "seven_day_opus" },
-    { key: "seven_day_oauth_apps", displayType: "seven_day_oauth_apps" },
+  const windowMappings: string[] = [
+    "five_hour",
+    "seven_day",
+    "seven_day_sonnet",
+    "seven_day_opus",
+    "seven_day_oauth_apps",
   ];
 
-  for (const mapping of windowMappings) {
-    const entry = data[mapping.key] as Record<string, unknown> | null | undefined;
+  for (const key of windowMappings) {
+    const entry = data[key] as Record<string, unknown> | null | undefined;
     if (!entry) {
       continue;
     }
@@ -672,7 +599,7 @@ function parseUsageApiResponse(data: Record<string, unknown>): QuotaStatus {
     const resetsAtSec = resetsAtStr ? Math.floor(new Date(resetsAtStr).getTime() / 1000) : null;
 
     windows.push({
-      window_type: mapping.displayType,
+      window_type: key,
       resets_at: resetsAtSec,
       is_exhausted: utilization !== null && utilization >= 100,
       used_percentage: utilization,

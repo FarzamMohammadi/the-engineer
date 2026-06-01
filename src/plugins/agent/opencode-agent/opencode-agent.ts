@@ -16,6 +16,8 @@ import { killProcess } from "../../../utils/process.js";
 import { appendStderr, buildAgentEnv } from "../subprocess.js";
 import { type OpenCodeAgentConfig, OpenCodeAgentConfigSchema } from "./config.js";
 
+const DEFAULT_OPENCODE_MODEL = "opencode/gemini-3.1-pro";
+
 /** Rate limit pattern for stderr detection — hoisted for performance. */
 const RATE_LIMIT_STDERR_RE = /exhausted your capacity|rate.?limit|quota/i;
 
@@ -87,84 +89,6 @@ export function processOpenCodeNdjsonLine(line: string): OpenCodeNdjsonLineResul
   }
 }
 
-// ── Output parsing (retained for backward compatibility + tests) ────────────
-
-/** Parsed output from OpenCode CLI's JSON format (NDJSON). */
-export interface ParsedOpenCodeOutput {
-  content: string;
-  cost_usd: number | null;
-  usage: AgentRunUsage | null;
-}
-
-/**
- * Parse NDJSON output from `opencode run --format json`.
- *
- * NOTE: Retained for backward compatibility and testing.
- * The live streaming path uses processOpenCodeNdjsonLine() instead.
- */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON parser handling multiple event types
-export function parseOpenCodeOutput(raw: string): ParsedOpenCodeOutput {
-  const lines = raw.split("\n").filter((line) => line.trim().length > 0);
-  const textParts: string[] = [];
-  let costUsd: number | null = null;
-  let usage: AgentRunUsage | null = null;
-
-  for (const line of lines) {
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      const part = parsed["part"] as Record<string, unknown> | undefined;
-      if (!part) {
-        continue;
-      }
-
-      if (parsed["type"] === "text") {
-        const text = part["text"];
-        if (typeof text === "string") {
-          textParts.push(text);
-        }
-      } else if (parsed["type"] === "step_finish") {
-        if (typeof part["cost"] === "number") {
-          costUsd = part["cost"];
-        }
-
-        const tokens = part["tokens"] as Record<string, unknown> | undefined;
-        if (tokens) {
-          const inputTokens = typeof tokens["input"] === "number" ? tokens["input"] : 0;
-          const outputTokens = typeof tokens["output"] === "number" ? tokens["output"] : 0;
-          const totalTokens = typeof tokens["total"] === "number" ? tokens["total"] : 0;
-          const cache = tokens["cache"] as Record<string, unknown> | undefined;
-          const cacheRead = typeof cache?.["read"] === "number" ? cache["read"] : 0;
-          const cacheWrite = typeof cache?.["write"] === "number" ? cache["write"] : 0;
-
-          usage = {
-            tokens: {
-              input_tokens: inputTokens,
-              output_tokens: outputTokens,
-              cache_read_tokens: cacheRead,
-              cache_creation_tokens: cacheWrite,
-              total_tokens: totalTokens,
-            },
-            model_id: null,
-            service_tier: null,
-          };
-        }
-      }
-    } catch {
-      // Skip non-JSON lines
-    }
-  }
-
-  const content = textParts.join("");
-
-  if (content.length === 0 && costUsd === null) {
-    throw new AdapterMethodError(
-      createAdapterError("internal_error", "No text or step_finish event found in OpenCode output"),
-    );
-  }
-
-  return { content, cost_usd: costUsd, usage };
-}
-
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 /**
@@ -196,7 +120,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
 
   getCapabilities(): AgentCapabilities {
     return {
-      model_id: this.config?.model ?? "opencode/gemini-3.1-pro",
+      model_id: this.config?.model ?? DEFAULT_OPENCODE_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: false,
       context_window: null,

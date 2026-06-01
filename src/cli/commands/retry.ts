@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import BetterSqlite3 from "better-sqlite3";
+import { ulid } from "ulid";
 
 import { TaskStates } from "../../schemas/task.js";
 import { getOutput } from "../output.js";
@@ -78,14 +79,13 @@ function retryTask(db: BetterSqlite3.Database, taskIdInput: string): number {
 
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO state_transitions (task_id, from_state, to_state, reason, triggered_by, timestamp)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(taskId, previousState, TaskStates.queued, "cli_retry", "cli", now);
+      `INSERT INTO state_transitions (id, task_id, from_state, to_state, reason, triggered_by, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(ulid(), taskId, previousState, TaskStates.queued, "cli_retry", "cli", now);
 
-    db.prepare("UPDATE tasks SET state = ?, sub_state = NULL, not_before = NULL WHERE id = ?").run(
-      TaskStates.queued,
-      taskId,
-    );
+    db.prepare(
+      "UPDATE tasks SET state = ?, sub_state = NULL, not_before = NULL, last_transition_at = ? WHERE id = ?",
+    ).run(TaskStates.queued, now, taskId);
 
     if (previousState === TaskStates.blocked) {
       clearBlockedPreservingContacts(db, taskId, task.blocked);

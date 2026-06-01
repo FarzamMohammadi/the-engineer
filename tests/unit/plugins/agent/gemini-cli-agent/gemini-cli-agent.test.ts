@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AdapterMethodError } from "../../../../../src/adapters/index.js";
-import {
-  GeminiCliAgentPlugin,
-  parseGeminiCliOutput,
-} from "../../../../../src/plugins/agent/gemini-cli-agent/gemini-cli-agent.js";
+import { GeminiCliAgentPlugin } from "../../../../../src/plugins/agent/gemini-cli-agent/gemini-cli-agent.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { createMockAgentRunRequest } from "../../../../helpers/mock-factories.js";
@@ -158,63 +155,5 @@ describe("GeminiCliAgentPlugin", () => {
     plugin.context = createTestPluginContext();
     const result = await plugin.initialize({ command_timeout_ms: -1 });
     expect(result.success).toBe(false);
-  });
-});
-
-// ── parseGeminiCliOutput unit tests ──────────────────────────────────────────
-
-describe("parseGeminiCliOutput", () => {
-  it("parses multi-event NDJSON with model from init", () => {
-    const raw = [
-      '{"type":"init","model":"gemini-2.5-pro"}',
-      '{"type":"message","role":"user","content":"Hello"}',
-      '{"type":"message","role":"assistant","content":"Hi ","delta":true}',
-      '{"type":"message","role":"assistant","content":"there","delta":true}',
-      '{"type":"result","status":"success","stats":{"total_tokens":100,"input_tokens":80,"output_tokens":20,"cached":5,"duration_ms":1000}}',
-    ].join("\n");
-    const result = parseGeminiCliOutput(raw);
-    expect(result.content).toBe("Hi there");
-    expect(result.usage?.tokens.input_tokens).toBe(80);
-    expect(result.usage?.tokens.output_tokens).toBe(20);
-    expect(result.usage?.tokens.total_tokens).toBe(100);
-    expect(result.usage?.tokens.cache_read_tokens).toBe(5);
-    expect(result.usage?.model_id).toBe("gemini-2.5-pro");
-    expect(result.rateLimited).toBe(false);
-  });
-
-  it("detects rate limiting from error result", () => {
-    const raw = [
-      '{"type":"init","model":"gemini-2.5-pro"}',
-      '{"type":"message","role":"user","content":"Hello"}',
-      '{"type":"result","status":"error","error":{"type":"Error","message":"[API Error: You have exhausted your capacity on this model. Your quota will reset after 23h25m24s.]"},"stats":{"total_tokens":0,"input_tokens":0,"output_tokens":0,"cached":0}}',
-    ].join("\n");
-    const result = parseGeminiCliOutput(raw);
-    expect(result.rateLimited).toBe(true);
-    expect(result.rateLimitMessage).toContain("exhausted your capacity");
-  });
-
-  it("throws on empty output", () => {
-    expect(() => parseGeminiCliOutput("")).toThrow(AdapterMethodError);
-  });
-
-  it("skips non-JSON lines like credential messages", () => {
-    const raw = [
-      "Loaded cached credentials.",
-      '{"type":"init","model":"gemini-2.5-flash"}',
-      '{"type":"message","role":"assistant","content":"ok"}',
-      '{"type":"result","status":"success","stats":{"total_tokens":10,"input_tokens":8,"output_tokens":2,"cached":0}}',
-    ].join("\n");
-    const result = parseGeminiCliOutput(raw);
-    expect(result.content).toBe("ok");
-  });
-
-  it("handles missing init event (no model_id)", () => {
-    const raw = [
-      '{"type":"message","role":"assistant","content":"hello"}',
-      '{"type":"result","status":"success","stats":{"total_tokens":10,"input_tokens":8,"output_tokens":2,"cached":0}}',
-    ].join("\n");
-    const result = parseGeminiCliOutput(raw);
-    expect(result.content).toBe("hello");
-    expect(result.usage?.model_id).toBeNull();
   });
 });

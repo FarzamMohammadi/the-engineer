@@ -352,7 +352,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
 
       deps.writeDb
         .prepare(
-          `INSERT INTO state_transitions (id, task_id, from_state, from_sub_state, to_state, to_sub_state, reason, triggered_by, timestamp)
+          `INSERT INTO state_transitions (id, task_id, from_state, from_sub, to_state, to_sub, reason, triggered_by, timestamp)
            VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
         )
         .run(

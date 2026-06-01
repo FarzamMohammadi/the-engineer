@@ -862,7 +862,7 @@ command_timeout_ms: 7200000
 
 **Inference**: The plugin spawns \`claude --print --output-format stream-json --verbose --model <model> --setting-sources user --dangerously-skip-permissions\` with an optional \`--system-prompt\` flag. The prompt is written to stdin, then stdin is closed. The CLI streams NDJSON events to stdout.
 
-**Output parsing**: The parser (\`parseCliOutput\`) scans for two event types:
+**Output parsing**: The per-line parser (\`processNdjsonLine\`) scans for two event types:
 - \`type: "result"\` -- the final output containing content (string or \`{text}\` object), \`total_cost_usd\`, and \`usage\` (token counts, cache stats, service tier). The \`modelUsage\` field provides the actual model ID.
 - \`type: "rate_limit_event"\` -- quota window status (allowed/exhausted) with reset timestamps.
 
@@ -951,7 +951,7 @@ command_timeout_ms: 600000
 
 **System prompt handling**: OpenCode has no \`--system-prompt\` flag. When a system prompt is provided, the plugin prepends it to the user prompt wrapped in \`[SYSTEM INSTRUCTIONS]...[END SYSTEM INSTRUCTIONS]\` markers.
 
-**Output parsing**: The parser (\`parseOpenCodeOutput\`) scans for two NDJSON event types:
+**Output parsing**: The per-line parser (\`processOpenCodeNdjsonLine\`) scans for two NDJSON event types:
 - \`type: "text"\` -- content fragments in \`part.text\`, concatenated into the final response.
 - \`type: "step_finish"\` -- cost (\`part.cost\`) and token breakdown (\`part.tokens\` with input, output, total, and cache read/write).
 
@@ -1042,7 +1042,7 @@ command_timeout_ms: 600000
 
 **System prompt handling**: Gemini CLI has no \`--system-prompt\` flag. When a system prompt is provided, the plugin prepends it to the user prompt wrapped in \`[SYSTEM INSTRUCTIONS]...[END SYSTEM INSTRUCTIONS]\` markers.
 
-**Output parsing**: The parser (\`parseGeminiCliOutput\`) scans for three NDJSON event types:
+**Output parsing**: The per-line parser (\`processGeminiNdjsonLine\`) scans for three NDJSON event types:
 - \`type: "init"\` -- session metadata including the model ID.
 - \`type: "message", role: "assistant"\` -- response content, concatenated into the final output.
 - \`type: "result"\` -- token stats (\`stats.input_tokens\`, \`stats.output_tokens\`, \`stats.total_tokens\`, \`stats.cached\`). Also checked for \`status: "error"\` with rate limit messages.

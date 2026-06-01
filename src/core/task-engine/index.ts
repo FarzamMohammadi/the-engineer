@@ -349,11 +349,10 @@ export class TaskEngine implements ITaskEngine {
   // ── Field Updates ──────────────────────────────────────────────────────────
 
   /**
-   * Update a single field on a task.
+   * Update a single persisted field on a task.
    *
-   * JSON fields (workspace, review, blocked, team, related, decisions,
-   * acceptance_criteria, external_ref) are automatically serialized.
-   * Scalar fields (phase, session_id, description, source_text) are written directly.
+   * Valid fields are the keys of FIELD_TYPES. JSON-typed fields are automatically
+   * serialized before storage; scalar fields are written directly.
    */
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void {
     const stmt = this.updateFieldStmts.get(field);

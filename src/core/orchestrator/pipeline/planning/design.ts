@@ -7,15 +7,8 @@ import {
   resultDirectory,
 } from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
-import { isTrivial } from "../grounding.js";
-import {
-  BlockCategories,
-  type Ctx,
-  type RoutableResult,
-  type Route,
-  type SkipReason,
-  type SubPhase,
-} from "../types.js";
+import { skipIfTrivial } from "../grounding.js";
+import { BlockCategories, type Ctx, type RoutableResult, type Route, type SubPhase } from "../types.js";
 
 // ── The Sub-Phase ────────────────────────────────────────────────────────────
 
@@ -28,7 +21,7 @@ const ROLE =
 /** Planning: design the approach and stress-test it in one session. Skipped for trivial tasks. */
 export const design: SubPhase = {
   name: "design",
-  skip: skipWhenTrivial,
+  skip: skipIfTrivial("requirements assessed this task as trivial — execution can proceed without a plan"),
   run: agentStep({
     stepName: "design",
     directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
@@ -37,11 +30,6 @@ export const design: SubPhase = {
   }),
   next: designNext,
 };
-
-/** Trivial tasks skip planning — requirements judged the scope small enough to execute directly. */
-export function skipWhenTrivial(ctx: Ctx): SkipReason | null {
-  return isTrivial(ctx) ? "requirements assessed this task as trivial — execution can proceed without a plan" : null;
-}
 
 /** `needs_human` blocks for a decision; otherwise advance to execution. */
 export function designNext(result: RoutableResult): Route {

@@ -3,23 +3,19 @@ import path from "node:path";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import type { ExternalRef } from "../../schemas/task.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
-import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { IObserver } from "../observer/index.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-/** Who outreach reached, for the dispatch log — an outreach concern, no longer stored on the block. */
+/** Internal tally of who outreach reached — its count gates the delivered decision. */
 type Contacted = { person: string; channel: string; timestamp: string }[];
 
-export type OutreachResult =
-  | { delivered: true; contacted: Contacted }
-  | { delivered: false; reason: "no_files" | "no_contacts" };
+export type OutreachResult = { delivered: true } | { delivered: false; reason: "no_files" | "no_contacts" };
 
 export interface OutreachDeps {
   peopleDirectory: IPeopleDirectory;
   notifications: NotificationRouter;
-  eventBus: IEventBus;
   observer: IObserver;
 }
 
@@ -101,8 +97,8 @@ export async function sendOutreach(
     }
   }
 
-  // Post outreach summary as a comment on the source trigger ticket
-  if (externalRef && files.length > 0) {
+  // Post outreach summary as a comment on the source trigger ticket (files is already non-empty here).
+  if (externalRef) {
     const summary = files.map((f) => `- ${f.replace(TXT_SUFFIX_RE, "")}`).join("\n");
     notifications.notify({
       kind: NotificationKinds.ticket_comment,
@@ -112,7 +108,7 @@ export async function sendOutreach(
   }
 
   if (contacted.length > 0) {
-    return { delivered: true, contacted };
+    return { delivered: true };
   }
   return { delivered: false, reason: "no_contacts" };
 }

@@ -102,7 +102,9 @@ export async function runPipeline(
         return emitCompleted(ctx, phaseDef.phase);
       }
       cursor = moved.cursor;
-      carry = undefined;
+      // carry is deliberately NOT cleared here: a repeat/jump seeds carry for the phase's first
+      // sub-phase, and if that sub-phase skips (e.g. an opt-in lens disabled in config) the carry
+      // must still reach the first sub-phase that actually runs. A run consuming it is what clears it.
       if (moved.enteredNewPhase) {
         phaseIteration = 0;
         emitPhaseEnter(ctx, phaseAt(pipeline, cursor).phase);

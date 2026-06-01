@@ -25,7 +25,7 @@ import {
 } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
-import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import { emitAgentCost } from "./agent-cost.js";
 import { sendOutreach } from "./outreach-sender.js";
 import { PIPELINE } from "./pipeline/pipeline.js";
 import { entryFor, reentryCarry } from "./pipeline/pr-events.js";
@@ -72,6 +72,9 @@ export const EVENTS: EventDeclaration[] = [
     subscribers: [],
   },
 ];
+
+/** Bound a hung self-unblock diagnosis: abort the agent run after this long so a stuck diagnosis cannot wedge escalation. */
+const SELF_UNBLOCK_TIMEOUT_MS = 300_000; // 5 minutes
 
 // ── Block Reason Derivation ───────────────────────────────────────────────────
 
@@ -306,7 +309,6 @@ export class Orchestrator {
     const result = await sendOutreach(ctx.task.id, outreachDir, ctx.task.external_ref, {
       peopleDirectory: this.ctx.peopleDirectory,
       notifications: this.ctx.notifications,
-      eventBus: this.ctx.eventBus,
       observer: ctx.observer,
     });
     if (!result.delivered) {
@@ -361,18 +363,30 @@ export class Orchestrator {
       ].join("\n"),
     );
 
+    // No dispatch owns this call (the task is blocked, not running), so bound it with a local
+    // AbortController + timeout — that signal threads into the agent spawn (slice-8 signal honoring),
+    // so a hung diagnosis SIGTERMs the child instead of wedging escalation.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SELF_UNBLOCK_TIMEOUT_MS);
     try {
       const pipelineResult = await this.ctx.actionPipeline.execute<AgentRunResult>({
         taskId,
         actionClass: ActionClasses.read,
         details: { operation: "self_unblock_diagnosis" },
         requestedBy: "orchestrator",
-        executeFn: () => agent.run({ prompt, system_prompt: null, cwd: null, trace_output_path: null }),
+        executeFn: () =>
+          agent.run({ prompt, system_prompt: null, cwd: null, trace_output_path: null, signal: controller.signal }),
       });
       if (pipelineResult.outcome !== "executed") {
         return false;
       }
-      this.emitCost(taskId, agent, pipelineResult.result, "self_unblock");
+      emitAgentCost(this.ctx.eventBus, this.ctx.taskEngine, {
+        taskId,
+        repo: this.ctx.taskEngine.getTask(taskId)?.repo ?? "",
+        providerId: agent.manifest.id,
+        operation: "self_unblock",
+        result: pipelineResult.result,
+      });
       const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean };
       const canResolve = parsed.can_resolve === true;
       this.ctx.observer.info("Self-unblock diagnosis result", { taskId, canResolve });
@@ -380,36 +394,8 @@ export class Orchestrator {
     } catch (error) {
       this.ctx.observer.warn("Self-unblock failed", { taskId, error: sanitizeErrorMessage(error) });
       return false;
+    } finally {
+      clearTimeout(timeout);
     }
-  }
-
-  /** Emit cost.incurred for an agent run, carrying the real plugin id (Session 37 handoff). */
-  private emitCost(taskId: string, agent: AgentAdapter, result: AgentRunResult, operation: string): void {
-    const repo = this.ctx.taskEngine.getTask(taskId)?.repo ?? "";
-    const usage = result.usage;
-    this.ctx.eventBus.publish({
-      type: "cost.incurred",
-      source: "orchestrator",
-      task_id: taskId,
-      payload: {
-        task_id: taskId,
-        repo,
-        provider_id: agent.manifest.id,
-        operation,
-        spend_usd: result.cost_usd,
-        duration_ms: result.duration_ms,
-        input_tokens: usage?.tokens.input_tokens ?? null,
-        output_tokens: usage?.tokens.output_tokens ?? null,
-        total_tokens: usage?.tokens.total_tokens ?? null,
-        cache_read_tokens: usage?.tokens.cache_read_tokens ?? null,
-        model_id: usage?.model_id ?? null,
-      },
-    } satisfies PublishInput<"cost.incurred">);
-    this.ctx.taskEngine.updateTracking(
-      taskId,
-      usage?.tokens.total_tokens ?? 0,
-      result.cost_usd ?? 0,
-      result.duration_ms,
-    );
   }
 }

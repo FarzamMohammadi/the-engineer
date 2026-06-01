@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  investigateNext,
-  skipWhenTrivial,
-} from "../../../../../../src/core/orchestrator/pipeline/research/investigate.js";
+import { investigate, investigateNext } from "../../../../../../src/core/orchestrator/pipeline/research/investigate.js";
 import type { Ctx } from "../../../../../../src/core/orchestrator/pipeline/types.js";
 import { createMockPipeline } from "../../../../../helpers/test-mock-pipeline.js";
 
@@ -45,13 +42,13 @@ describe("investigate", () => {
     });
   });
 
-  describe("skipWhenTrivial", () => {
+  describe("skip", () => {
     it("skips when requirements assessed the task as trivial", () => {
-      expect(skipWhenTrivial(ctxWithComplexity("trivial"))).toContain("trivial");
+      expect(investigate.skip?.(ctxWithComplexity("trivial"))).toContain("trivial");
     });
 
     it("runs for a non-trivial task", () => {
-      expect(skipWhenTrivial(ctxWithComplexity("moderate"))).toBeNull();
+      expect(investigate.skip?.(ctxWithComplexity("moderate"))).toBeNull();
     });
   });
 });

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { designNext, skipWhenTrivial } from "../../../../../../src/core/orchestrator/pipeline/planning/design.js";
+import { design, designNext } from "../../../../../../src/core/orchestrator/pipeline/planning/design.js";
 import type { Ctx } from "../../../../../../src/core/orchestrator/pipeline/types.js";
 import { createMockPipeline } from "../../../../../helpers/test-mock-pipeline.js";
 
@@ -42,13 +42,13 @@ describe("design", () => {
     });
   });
 
-  describe("skipWhenTrivial", () => {
+  describe("skip", () => {
     it("skips planning for a trivial task", () => {
-      expect(skipWhenTrivial(ctxWithComplexity("trivial"))).toContain("trivial");
+      expect(design.skip?.(ctxWithComplexity("trivial"))).toContain("trivial");
     });
 
     it("runs for a non-trivial task", () => {
-      expect(skipWhenTrivial(ctxWithComplexity("complex"))).toBeNull();
+      expect(design.skip?.(ctxWithComplexity("complex"))).toBeNull();
     });
   });
 });

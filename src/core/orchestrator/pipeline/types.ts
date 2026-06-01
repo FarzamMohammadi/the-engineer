@@ -10,12 +10,8 @@ export { BlockCategories, type BlockCategory };
 // ── Phases ───────────────────────────────────────────────────────────────────
 
 /**
- * The six pipeline phases, in order. The folders under `pipeline/` mirror these
- * names exactly — the folder tree *is* the pipeline.
- *
- * These are the post-rename names. During the build-dark window they coexist with
- * the legacy `PhaseSchema` (old names) in `schemas/orchestrator.ts`; the legacy enum
- * is deleted at the Session 5 cutover, leaving this as the canonical vocabulary.
+ * The six pipeline phases, in order — the canonical phase vocabulary. The folders under
+ * `pipeline/` mirror these names exactly, so the folder tree *is* the pipeline.
  */
 export const PipelinePhaseSchema = z.enum(["requirements", "research", "planning", "execution", "review", "delivery"]);
 export type Phase = z.infer<typeof PipelinePhaseSchema>;

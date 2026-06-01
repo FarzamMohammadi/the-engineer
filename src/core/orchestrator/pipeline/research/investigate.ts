@@ -1,15 +1,8 @@
 import { section } from "../../prompts/format.js";
 import { buildResultContract, buildSystemPrompt, buildTaskContext, resultDirectory } from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
-import { isTrivial } from "../grounding.js";
-import {
-  BlockCategories,
-  type Ctx,
-  type RoutableResult,
-  type Route,
-  type SkipReason,
-  type SubPhase,
-} from "../types.js";
+import { skipIfTrivial } from "../grounding.js";
+import { BlockCategories, type Ctx, type RoutableResult, type Route, type SubPhase } from "../types.js";
 
 // ── The Sub-Phase ────────────────────────────────────────────────────────────
 
@@ -22,7 +15,7 @@ const ROLE =
 /** Research: study the codebase with observations-vs-inferences discipline. Skipped for trivial tasks. */
 export const investigate: SubPhase = {
   name: "investigate",
-  skip: skipWhenTrivial,
+  skip: skipIfTrivial("requirements assessed this task as trivial — research adds nothing"),
   run: agentStep({
     stepName: "investigate",
     directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
@@ -31,11 +24,6 @@ export const investigate: SubPhase = {
   }),
   next: investigateNext,
 };
-
-/** Trivial tasks skip research — requirements already judged the scope too small to study. */
-export function skipWhenTrivial(ctx: Ctx): SkipReason | null {
-  return isTrivial(ctx) ? "requirements assessed this task as trivial — research adds nothing" : null;
-}
 
 /** `needs_human` blocks for the missing information; otherwise advance to planning. */
 export function investigateNext(result: RoutableResult): Route {

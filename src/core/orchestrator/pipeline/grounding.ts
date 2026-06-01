@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import { ComplexitySchema } from "../../../schemas/orchestrator.js";
-import type { Ctx } from "./types.js";
+import type { Ctx, SkipReason } from "./types.js";
 
 // ── The Grounding Handoff ────────────────────────────────────────────────────
 //
@@ -61,6 +61,11 @@ export function readGrounding(ctx: Ctx): Grounding | null {
 /** Whether requirements assessed the task as trivial — the signal research and planning skip on. */
 export function isTrivial(ctx: Ctx): boolean {
   return readGrounding(ctx)?.complexity === "trivial";
+}
+
+/** Build a sub-phase `skip` predicate that fires on a trivial task, carrying the phase's own reason. */
+export function skipIfTrivial(reason: string): (ctx: Ctx) => SkipReason | null {
+  return (ctx) => (isTrivial(ctx) ? reason : null);
 }
 
 /** The verification commands requirements learned, or an empty list when none were recorded. */

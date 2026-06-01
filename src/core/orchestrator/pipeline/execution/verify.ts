@@ -78,7 +78,10 @@ interface GateResult {
   readonly output: string;
 }
 
-/** Run one gate via its real binary. A non-zero exit is a failure; a spawn failure (missing tool) throws. */
+/**
+ * Run one gate via its real binary. A non-zero exit OR a timeout is a gate *failure* (routes back to
+ * `implement`); a dispatch abort propagates; only a spawn failure (the tool will not start) is an error.
+ */
 function runGate(gate: GateCommand, cwd: string, signal?: AbortSignal): GateResult {
   try {
     execFileSync(gate.command, gate.args, {
@@ -90,10 +93,16 @@ function runGate(gate: GateCommand, cwd: string, signal?: AbortSignal): GateResu
     });
     return { name: gate.name, passed: true, output: "" };
   } catch (error) {
+    if (signal?.aborted) {
+      throw error; // dispatch abort (preemption / shutdown / cost-limit) — let the runner propagate it
+    }
     if (isExitFailure(error)) {
       return { name: gate.name, passed: false, output: captureOutput(error) };
     }
-    throw new Error(`Cannot run verification gate "${gate.name}" (${gate.command}): ${describe(error)}`);
+    if (isTimeoutKill(error)) {
+      return { name: gate.name, passed: false, output: `Gate timed out after ${String(GATE_TIMEOUT_MS)}ms` };
+    }
+    throw new Error(`Cannot run verification gate "${gate.name}" (${gate.command})`, { cause: error });
   }
 }
 
@@ -102,15 +111,17 @@ function isExitFailure(error: unknown): boolean {
   return typeof (error as { status?: unknown }).status === "number";
 }
 
+/** The gate ran but was killed by its own timeout (status is null, not a number) — counts as a failure, not a no-run. */
+function isTimeoutKill(error: unknown): boolean {
+  const killed = error as { killed?: unknown; signal?: unknown; code?: unknown };
+  return killed.killed === true || killed.signal === "SIGTERM" || killed.code === "ETIMEDOUT";
+}
+
 /** Combine stdout and stderr from a failed gate, keeping the tail where the error usually lands. */
 function captureOutput(error: unknown): string {
   const streams = error as { stdout?: string; stderr?: string };
   const combined = `${streams.stdout ?? ""}${streams.stderr ?? ""}`.trim();
   return combined.length > OUTPUT_LIMIT ? combined.slice(-OUTPUT_LIMIT) : combined;
-}
-
-function describe(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
 /** Render the failing gates and their output for the carry back to `implement`. */

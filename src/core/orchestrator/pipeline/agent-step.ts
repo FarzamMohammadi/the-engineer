@@ -6,7 +6,7 @@ import type { AgentAdapter } from "../../../adapters/agent.js";
 import { AdapterMethodError } from "../../../adapters/index.js";
 import { AdapterTypes, type AgentRunRequest, type AgentRunResult } from "../../../schemas/adapters.js";
 import { ActionClasses } from "../../../schemas/task.js";
-import type { PublishInput } from "../../interfaces/event-bus.interface.js";
+import { emitAgentCost } from "../agent-cost.js";
 import type { Ctx, FailureCause, SubPhaseResult } from "./types.js";
 
 // ── The Handoff File ─────────────────────────────────────────────────────────
@@ -179,31 +179,14 @@ async function gatedRun(agent: AgentAdapter, request: AgentRunRequest, stepName:
   if (pipelineResult.outcome !== "executed") {
     throw new Error(`Agent run ${pipelineResult.outcome}: ${pipelineResult.reason}`);
   }
-  recordCost(agent, pipelineResult.result, ctx);
-}
-
-/** Emit cost.incurred carrying the real plugin id (Session 37 handoff), and accumulate task usage. */
-function recordCost(agent: AgentAdapter, result: AgentRunResult, ctx: Ctx): void {
-  const usage = result.usage;
-  ctx.eventBus.publish({
-    type: "cost.incurred",
-    source: "orchestrator",
-    task_id: ctx.task.id,
-    payload: {
-      task_id: ctx.task.id,
-      repo: ctx.task.repo ?? "",
-      provider_id: agent.manifest.id,
-      operation: "agent_step",
-      spend_usd: result.cost_usd,
-      duration_ms: result.duration_ms,
-      input_tokens: usage?.tokens.input_tokens ?? null,
-      output_tokens: usage?.tokens.output_tokens ?? null,
-      total_tokens: usage?.tokens.total_tokens ?? null,
-      cache_read_tokens: usage?.tokens.cache_read_tokens ?? null,
-      model_id: usage?.model_id ?? null,
-    },
-  } satisfies PublishInput<"cost.incurred">);
-  ctx.taskEngine.updateTracking(ctx.task.id, usage?.tokens.total_tokens ?? 0, result.cost_usd ?? 0, result.duration_ms);
+  // Cost event carries the real plugin id (Session 37 handoff); the payload shape is single-sourced in agent-cost.
+  emitAgentCost(ctx.eventBus, ctx.taskEngine, {
+    taskId: ctx.task.id,
+    repo: ctx.task.repo ?? "",
+    providerId: agent.manifest.id,
+    operation: "agent_step",
+    result: pipelineResult.result,
+  });
 }
 
 /** Transient failures (network, rate limit) are worth a retry; everything else is not. */

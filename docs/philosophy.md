@@ -170,7 +170,7 @@ Some deviations are larger than a single decision — deliberate narrowings of s
 
 ### Orchestrate, Don't Build
 
-The Engineer stays lean by orchestrating, not building. coding agent CLIs from providers like Anthropic (Claude Code), OpenAI (Codex), OpenCode, and others are full autonomous agents with native capabilities — code execution, file manipulation, web search, reasoning. They improve constantly without us lifting a finger. We capture that value by design.
+The Engineer stays lean by orchestrating, not building. coding agent CLIs like Claude Code (Anthropic), OpenCode (multi-provider), Gemini CLI (Google), and others are full autonomous agents with native capabilities — code execution, file manipulation, web search, reasoning. They improve constantly without us lifting a finger. We capture that value by design.
 
 - **Delegate the work.** The Engineer provides context, instructions, and phase sequencing. The CLI agent does the work. We never rebuild what an external tool already does better — and they will always do it better, because that's their entire focus.
 - **Master the tools.** These CLI tools are The Engineer's instruments — just as a real engineer learns the depths of their tools to extract maximum value, The Engineer must continuously evolve how it uses them. Study their flags, their output formats, their strengths and limitations. Find the absolute best ways to leverage each tool for the highest-quality outcome. The tools improve, and so must our use of them.
@@ -231,7 +231,7 @@ Violating this poisons the entire three-tier model.
 
 The entire value proposition of the three-tier model (see [`architecture/three-tier-model.md`](architecture/three-tier-model.md)) is that plugins are the ecosystem — swappable, community-contributed, independently developed. The moment Core contains knowledge about a specific plugin, every future plugin must either (a) be known to Core (defeating the purpose) or (b) be a second-class citizen that Core doesn't accommodate. Both outcomes destroy extensibility.
 
-The adapter contract IS the integration boundary. Everything Core needs from the outside world is defined there: `TriggerAdapter.poll()`, `CommunicationAdapter.sendMessage()`, `AgentAdapter.run()`. The plugin behind the contract is irrelevant to Core. GitHub today, GitLab tomorrow, a custom webhook next week — Core's code does not change.
+The adapter contract IS the integration boundary. Everything Core needs from the outside world is defined there: `TriggerAdapter.poll()`, `CommunicationAdapter.sendMessage()`, `AgentAdapter.run()`, `GitHostingAdapter.detectPrEvents()`. The plugin behind the contract is irrelevant to Core. GitHub today, GitLab tomorrow, a custom webhook next week — Core's code does not change.
 
 **The test:** Before merging any code, ask: "If I deleted every plugin and replaced them with completely different implementations for different platforms, would Core still compile and function?" If the answer is no, the code violates this principle.
 

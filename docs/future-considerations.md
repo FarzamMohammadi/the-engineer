@@ -249,7 +249,7 @@ emits.
 
 ## GitHubCommPlugin `receive` Capability
 
-**Current state (v1):** GitHubCommPlugin supports `send`, `sync`, and `issue_management` capabilities. The `receive` capability is omitted.
+**Current state (v1):** GitHubCommPlugin supports `send`, `sync`, and `ticket_management` capabilities. The `receive` capability is omitted.
 
 **What `receive` enables:** People in the People Directory communicating *with* The Engineer via GitHub issue/PR comments mid-flow. This is human-to-agent communication — interrupts, questions, direction, feedback — not triggering (that's TriggerAdapter's domain). Examples: a reviewer commenting "hold off on merging, I want to rethink the API" mid-execution, or the owner asking "what's the status of this?" on a tracked issue.
 
@@ -321,7 +321,7 @@ emits.
 Each adapter type needs an agent-executable "How to build a plugin" guide so contributors can add new integrations without reading Core code. The **AgentAdapter** guide exists and is the reference pattern. Three remain:
 
 - **TriggerAdapter** — poll for events, produce `TriggerEvent[]` with a stable `idempotency_key` (identity/dedup) and optional `external_ref` (descriptive), plus watermarks. Example: a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
-- **CommunicationAdapter** — send messages, format for your platform, capability gates for send/receive/sync/issue_management. Example: a Slack, Discord, or email plugin.
+- **CommunicationAdapter** — send messages, format for your platform, capability gates for send/receive/sync/ticket_management. Example: a Slack, Discord, or email plugin.
 - **GitHostingAdapter** — PR lifecycle (create, update, merge, get status, list comments). Example: a GitLab hosting plugin.
 
 **Format:** follow the AgentAdapter guide — adapter interface, required vs optional methods, capability gates, manifest format, config schema, a minimal working example, and how to register/test, written as an agent-executable prompt. Guides live alongside the existing AgentAdapter guide in the contribution docs.
@@ -427,7 +427,7 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 **Current state (v1):** Dedup is active-scoped — a completed/failed task frees its `idempotency_key`, so a re-triggered source (a reopened issue) spawns a fresh task. This handles the *forward* case. There is no detection for the *inverse*: the signal that created a task is reversed (issue closed/resolved, or a "stop" action that does not exist yet) while the task is still in flight, so the work goes stale.
 
-**Scenario:** A GitHub issue triggers a task; the task reaches `review_pending` with an open PR. Meanwhile the issue is closed, resolved by someone else, or relabeled out of scope. Nothing notices — the task keeps living, the PR sits open and stale, and effort may continue on work nobody wants anymore.
+**Scenario:** A GitHub issue triggers a task; the task opens a PR and is waiting on review (blocked with reason `pr_review_pending`). Meanwhile the issue is closed, resolved by someone else, or relabeled out of scope. Nothing notices — the task keeps living, the PR sits open and stale, and effort may continue on work nobody wants anymore.
 
 **When it becomes relevant:** When tasks run against real issues with human oversight and sources change state mid-flight.
 

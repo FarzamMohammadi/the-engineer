@@ -15,7 +15,7 @@ Agent adapters wrap autonomous coding agent CLIs (Claude Code, OpenCode, Gemini 
 | `doShutdown()` | `() => Promise<void>` | Yes | Kill active child process, clean up. |
 | `doHealthCheck()` | `() => Promise<HealthStatus>` | Yes | Verify CLI is installed (e.g. `spawn("cli", ["--version"])`). Must resolve within 5 seconds. |
 
-The public `infer()` wrapper catches errors: `AdapterMethodError` is rethrown as-is, anything else is wrapped with `code: "internal_error"` and `severity: "fatal"`.
+The public `run()` wrapper catches errors: `AdapterMethodError` is rethrown as-is, anything else is wrapped with `code: "internal_error"` and `severity: "fatal"`.
 
 ### Three-Layer Usage Contract
 
@@ -52,6 +52,8 @@ Each layer is optional. Core degrades gracefully when data is missing.
 | `prompt` | `string` | The full prompt text. **Always pipe via stdin** -- see critical warning below. |
 | `system_prompt` | `string \| null` | System-level instructions. Use CLI's `--system-prompt` flag if available, otherwise prepend to prompt. |
 | `cwd` | `string \| null` | Working directory for the CLI process. Set as `spawn()` cwd so the CLI loads the target repo's project context. |
+| `trace_output_path` | `string \| null` | Optional file path to stream raw CLI output to for tracing. Plugins that support it stream stdout here; plugins that don't ignore it. Core generates the path. |
+| `signal` | `AbortSignal \| undefined` | Optional abort signal. Pass it to `spawn(cmd, args, { signal })` so a preemption, shutdown, or cost-limit aborts the child (`SIGTERM`) instead of waiting it out. A plugin that ignores it cannot be terminated mid-run. |
 
 ### AgentRunResult
 
@@ -346,7 +348,7 @@ Path: `tests/helpers/contract-suites/agent-contract.ts`.
 
 ```typescript
 // tests/unit/plugins/agent/my-agent/my-agent.test.ts
-import { runAgentContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
+import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { MyAgentPlugin } from "./my-agent.js";
 
 const manifest = {
@@ -361,7 +363,7 @@ const manifest = {
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },
 };
 
-runAgentContractSuite(
+runContractSuite(
   () => new MyAgentPlugin(),
   {
     manifest,
@@ -376,7 +378,7 @@ The contract suite validates:
 - `initialize()` succeeds/fails correctly with valid/invalid config
 - `healthCheck()` returns `HealthStatus` with all required fields, resolves within 5 seconds
 - `shutdown()` resolves without throwing
-- `infer()` returns a valid `AgentRunResult` (schema-validated), always includes `cost_usd` and `duration_ms`
+- `run()` returns a valid `AgentRunResult` (schema-validated), always includes `cost_usd` and `duration_ms`
 - `usage` is `null` or valid `AgentRunUsage` with all token fields
 - `getCapabilities()` returns valid `AgentCapabilities` with all fields
 - `getQuotaStatus()` returns `null` or valid `QuotaStatus`
@@ -419,7 +421,7 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 
 ### Quota reporting details
 
-- **Claude Code**: Two sources. Primary: Anthropic's `/api/oauth/usage` endpoint (real percentages, cached 30 min). Fallback: `rate_limit_event` from last `infer()` call (status + reset time, no percentages). OAuth token read from macOS Keychain or `~/.claude/.credentials.json`.
+- **Claude Code**: Two sources. Primary: Anthropic's `/api/oauth/usage` endpoint (real percentages, cached 30 min). Fallback: `rate_limit_event` from last `run()` call (status + reset time, no percentages). OAuth token read from macOS Keychain or `~/.claude/.credentials.json`.
 - **Gemini CLI**: Sets a `rateLimited` flag when stdout result has `status: "error"` matching rate limit patterns, or stderr matches. Reports via `getQuotaStatus()` as a single `gemini_model_quota` window with `is_exhausted: true`. No reset time available.
 - **OpenCode**: No quota reporting. Default `getQuotaStatus()` returns `null`.
 

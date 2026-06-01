@@ -12,13 +12,13 @@ How to write GitHub issues that The Engineer can pick up and execute well.
 
 What's wrong, or what's missing. Why does this matter? One or two sentences.
 
-> Running the full 7-phase pipeline during development wastes tokens and time. Phases like `self_review` and `demo_prep` are valuable in production but unnecessary when iterating.
+> `engineer status` only prints a human table. Scripts and dashboards that want to read task state have to scrape that text, which breaks whenever the formatting changes.
 
 ### 2. What We Want
 
 The desired outcome in plain language. Focus on behavior, not code.
 
-> Skip the `self_review` and `demo_prep` phases during pipeline execution — but PR creation must still happen.
+> Add a `--json` option to `engineer status` that prints the same task data as machine-readable JSON.
 
 ### 3. Constraints
 
@@ -33,8 +33,8 @@ Non-negotiable boundaries. These prevent The Engineer from going off-track.
 
 Checkboxes that define "done." Be specific enough that they're testable.
 
-- [ ] `self_review` and `demo_prep` phases are skipped
-- [ ] PR is still created after execution completes
+- [ ] `engineer status --json` prints valid JSON with each task's id, state, title, and created_at timestamp
+- [ ] `engineer status` with no flag prints the human table exactly as before
 - [ ] All existing tests pass
 
 ## What to Leave Out
@@ -42,27 +42,27 @@ Checkboxes that define "done." Be specific enough that they're testable.
 ### Don't prescribe the implementation
 
 Bad:
-> In `src/core/orchestrator/types.ts`, add a `skipSelfReview` parameter to `buildPhaseSequence()`. Then in `phase-runner.ts` at line 143, pass `true` for that parameter.
+> In `src/cli/commands/status.ts`, add a `--json` option to the command definition, then branch at line 88 to call `JSON.stringify()` instead of the table renderer.
 
 Good:
-> Skip the `self_review` phase during pipeline execution.
+> Add a `--json` option to `engineer status` that prints the task data as JSON.
 
-The Engineer will find `buildPhaseSequence()`, understand the pattern, and implement it. Telling it which lines to edit makes the ticket fragile and prevents it from finding a better approach.
+The Engineer will find the status command, understand how it renders output, and implement the flag. Telling it which lines to edit makes the ticket fragile and prevents it from finding a better approach.
 
 ### Don't explain the codebase
 
 Bad:
-> The `PhaseNavigator` class in `phase-navigator.ts` has a `replaceSequence()` method that allows dynamic phase sequence modification. The existing `skipResearch` pattern filters phases in `buildPhaseSequence()`.
+> The status command builds its output through a table renderer in `output.ts`. There's a shared `TaskView` type the command maps each task onto before rendering — reuse that for the JSON shape.
 
 The Engineer reads the code. It will discover these patterns during its research phase. Explaining them in the ticket adds noise and can mislead if the code has changed since you wrote it.
 
 ### Don't over-constrain
 
 Bad:
-> Must use the exact same pattern as research skipping. Must add a boolean parameter. Must update exactly 3 files.
+> Must reuse the exact `TaskView` mapping. Must add one boolean option. Must update exactly 2 files.
 
 Good:
-> Must not break existing tests. No config schema changes.
+> The default (no-flag) output must not change. No config schema changes.
 
 Constrain the boundaries, not the path.
 
@@ -70,9 +70,9 @@ Constrain the boundaries, not the path.
 
 Sometimes you know something The Engineer might miss — a hidden dependency, a subtle invariant, an edge case you've hit before. **These belong in the ticket**, framed as constraints or context.
 
-> **Important: PR Creation.** Currently, PR creation is triggered after `demo_prep` or after `self_review` when it's the last phase. With both skipped, `execution` becomes the last phase — so PR creation must still be triggered.
+> **Important: scripts depend on exit codes.** Some CI scripts already call `engineer status` and check its exit code. The `--json` flag must keep the same exit-code behavior, or those scripts break.
 
-This isn't prescribing the solution — it's flagging a non-obvious consequence that could lead to a broken PR workflow. The Engineer still decides *how* to handle it.
+This isn't prescribing the solution — it's flagging a non-obvious consequence that could lead to a broken workflow. The Engineer still decides *how* to handle it.
 
 ## Sizing
 
@@ -94,10 +94,13 @@ Mechanical tickets can be more specific about scope because the "how" is inheren
 
 ## Labels
 
-The Engineer uses labels to track issue state:
+The Engineer uses labels to track issue state. The label name is the task state with the configured prefix (default `engineer:`), so the full set mirrors the task state machine:
 
+- `engineer:requirements_gathering` — clarifying the request before it's queued
 - `engineer:queued` — picked up, waiting for execution
 - `engineer:active` — currently being worked on
+- `engineer:blocked` — paused, waiting on you (a question, a decision, or PR review)
 - `engineer:completed` — done, PR merged or closed
+- `engineer:failed` — could not be completed
 
-You don't need to add these manually — The Engineer manages them.
+You don't need to add these manually — The Engineer manages them, adding the new state label and removing the old one on each transition.

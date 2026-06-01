@@ -2,7 +2,7 @@
 
 The three-tier model that governs how The Engineer integrates with the outside world. This is the authoritative reference for the Core / Adapter / Plugin separation.
 
-Part of **Layer 1** — see [`../layers.md`](../layers.md) for where this fits. For the foundational intent behind this separation, see [`../0-foundation/goals.md`](../0-foundation/goals.md) § The Skeleton and Plugins.
+The companion to the [architecture overview](overview.md) and [the pipeline](pipeline.md). The original layer-by-layer design treatment is preserved in the [build journal archive](../archived/).
 
 ---
 
@@ -47,17 +47,17 @@ The Core and Adapters are the product. The Plugins are the ecosystem.
 
 Nine components that are always present, invariant across all configurations.
 
-| Component | Role | Layer 2 Design |
-|-----------|------|----------------|
-| **Daemon** | Always-running process. Polls triggers, dispatches tasks, manages lifecycle. The heartbeat. | [`daemon-scheduler.md`](../2-components/daemon-scheduler.md) |
-| **Task Engine** | Manages tasks from trigger to completion. State ownership, permissions, hierarchy. | [`task-engine.md`](../2-components/task-engine.md) |
-| **Orchestrator** | The brain. Phase pipeline, agent reasoning, decision-making, communication. | [`orchestrator.md`](../2-components/orchestrator.md) |
-| **Event Bus** | The nervous system. All inter-component communication flows as events. The event stream IS the audit trail. | [`event-bus.md`](../2-components/event-bus.md) |
-| **Session/Memory** | State persistence, checkpoints, journal. Crash recovery foundation. | [`session-memory.md`](../2-components/session-memory.md) |
-| **Safety Layer** | Guardrails, permissions, policy enforcement. Gate 2 in the Action Pipeline. Config-driven. | [`safety-layer.md`](../2-components/safety-layer.md) |
-| **People Directory** | Who to talk to, their roles, how to reach them. Contact resolution for all communication. Config-driven. | [`adapter-contracts.md`](../3-interactions/adapter-contracts.md) § People Directory |
-| **Workspace Manager** | Per-task git isolation via branches and worktrees. Local git operations (clone, branch, commit, push). | [`workspace-manager.md`](../2-components/workspace-manager.md) |
-| **Registry** | Plugin lifecycle management. Registration, discovery, health monitoring, shutdown. The bridge between Core and the Adapter/Plugin boundary. | [`adapter-contracts.md`](../3-interactions/adapter-contracts.md) § Registry |
+| Component | Role |
+|-----------|------|
+| **Daemon** | Always-running process. Polls triggers, dispatches tasks, manages lifecycle. The heartbeat. See [scheduling & dispatch](scheduling-dispatch.md). |
+| **Task Engine** | Manages tasks from trigger to completion. State ownership, permissions, hierarchy. |
+| **Orchestrator** | The brain. Phase pipeline, agent reasoning, decision-making, communication. See [the pipeline](pipeline.md). |
+| **Event Bus** | The nervous system. All inter-component communication flows as events. The event stream IS the audit trail. |
+| **Session/Memory** | State persistence, checkpoints, journal. Crash recovery foundation. |
+| **Safety Layer** | Guardrails, permissions, policy enforcement. Gate 2 in the Action Pipeline. Config-driven. |
+| **People Directory** | Who to talk to, their roles, how to reach them. Contact resolution for all communication. Config-driven. |
+| **Workspace Manager** | Per-task git isolation via branches and worktrees. Local git operations (clone, branch, commit, push). |
+| **Registry** | Plugin lifecycle management. Registration, discovery, health monitoring, shutdown. The bridge between Core and the Adapter/Plugin boundary. |
 
 **Why these are Core:** They are required for basic operation, invariant across all use cases, and cannot be swapped or removed. Together they define The Engineer's identity — its ability to receive work, reason about it, execute safely, persist state, and communicate results.
 
@@ -69,7 +69,7 @@ Nine components that are always present, invariant across all configurations.
 
 The adapter tier is **open-ended** — the list below captures today's known integration boundaries, but new adapter types can be added as The Engineer's capabilities evolve. Adding a new adapter type means defining a new contract that extends the Universal Adapter Contract and registering a new type in the Registry. No changes to Core logic, existing adapters, or existing plugins are required.
 
-Four adapter types are currently defined, each representing a category of external integration where technologies vary. Full contract specifications live in [`adapter-contracts.md`](../3-interactions/adapter-contracts.md).
+Four adapter types are currently defined, each representing a category of external integration where technologies vary. Full contract specifications live in the [plugin docs](../plugins/) (each adapter's `README.md`).
 
 | Adapter | Core Consumer | What It Abstracts |
 |---------|--------------|-------------------|
@@ -117,18 +117,17 @@ Some adapters define optional methods that Core only calls after checking the ad
 | Capability | Required Methods | Purpose |
 |------------|-----------------|---------|
 | `"send"` | `sendMessage()`, `formatMessage()` | All communication adapters (required) |
-| `"receive"` | `startListening()`, `stopListening()` | Inbound messages from humans |
-| `"query"` | _(routed via Daemon, not adapter method)_ | Real-time status queries |
+| `"receive"` | `startListening()`, `stopListening()`, `pollMessages()` | Inbound messages from humans |
 | `"sync"` | `syncTaskState()`, `reconcileState()` | State sync to external platform |
-| `"issue_management"` | `commentOnIssue()`, `createIssue()`, `updateIssue()` | Issue tracking integration |
+| `"ticket_management"` | `commentOnTicket()`, `createTicket()`, `updateTicket()` | Ticket/issue tracking integration |
 
-Core checks capability before calling: if a CommunicationAdapter declares `["send", "receive"]` but not `"issue_management"`, Core never calls `createIssue()` on it. The adapter contract is explicit about what's required per capability — no guessing.
+Core checks capability before calling: if a CommunicationAdapter declares `["send", "receive"]` but not `"ticket_management"`, Core never calls `createTicket()` on it. The adapter contract is explicit about what's required per capability — no guessing.
 
 ---
 
 ## Plugin Tier
 
-Plugins are concrete implementations that satisfy an adapter contract. One plugin per adapter contract (Decision #43). Mix and match freely — the Core doesn't know or care which plugins are behind the adapters.
+Plugins are concrete implementations that satisfy an adapter contract. Mix and match freely — the Core doesn't know or care which plugins are behind the adapters.
 
 | Adapter | Example Plugins | Swap Scenario |
 |---------|----------------|---------------|
@@ -137,7 +136,7 @@ Plugins are concrete implementations that satisfy an adapter contract. One plugi
 | AgentAdapter | ClaudeCodeAgentPlugin, _(future: OpenRouterAgentPlugin, OllamaAgentPlugin)_ | Switch from Claude to a local Ollama model |
 | GitHostingAdapter | GitHubHostingPlugin, _(future: GitLabHostingPlugin, GiteaHostingPlugin)_ | Switch from GitHub to self-hosted Gitea |
 
-**The accessibility promise:** A contributor building a new plugin (say, a Slack communication plugin) needs only the CommunicationAdapter contract from [`adapter-contracts.md`](../3-interactions/adapter-contracts.md). They don't need to understand the Orchestrator, Task Engine, Event Bus, or any Core internals. The adapter boundary is all they need.
+**The accessibility promise:** A contributor building a new plugin (say, a Slack communication plugin) needs only the CommunicationAdapter contract from the [communication plugin docs](../plugins/communication/). They don't need to understand the Orchestrator, Task Engine, Event Bus, or any Core internals. The adapter boundary is all they need.
 
 ---
 
@@ -156,7 +155,7 @@ Intent (Core component decides to act)
   └─ Notify — Post-action event on Event Bus
 ```
 
-Core components never bypass the pipeline to reach adapters directly (except read-only operations, which skip Gate 2). See [`event-catalog.md`](../3-interactions/event-catalog.md) § Action Pipeline.
+Core components never bypass the pipeline to reach adapters directly (except read-only operations, which skip Gate 2).
 
 ### Registry: Adapter/Plugin Lifecycle Manager
 
@@ -224,6 +223,6 @@ Two plugin categories from [`overview.md`](overview.md) are acknowledged but do 
 - **Workflow Phases** — Reorderable, swappable phases in the Orchestrator's pipeline
 - **Observability Backends** — Logging, dashboards, monitoring webhooks
 
-These are deferred to Layer 4 (Implementation Design), when the implementation details are clearer. See Decision #64.
+These are acknowledged but deferred — no adapter contract is defined for either yet.
 
 Beyond these known types, **The Engineer's needs will evolve in ways we cannot fully predict today.** The architecture explicitly accommodates this — adding a new adapter type is a well-defined, low-impact operation that follows the same pattern as the four existing types. The question for any future integration boundary is simple: "Does technology vary here across different users' stacks?" If yes, it's an adapter.

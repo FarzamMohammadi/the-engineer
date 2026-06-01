@@ -30,6 +30,7 @@ Every adapter method is implemented:
 | `detectPrEvents` | Aggregates live PR state into the typed events Core reacts to (comments, CI failure, conflict, ready-to-merge, merged) |
 | `getBranchProtection` | Returns protection rules: required reviews, required checks, push restrictions |
 | `getDefaultBranch` | Returns the repository's default branch name |
+| `getAuthenticatedRemoteUrl` | Injects the token into a remote URL, returning a `SecureValue` so it never leaks through logs |
 
 ## Configuration
 
@@ -53,11 +54,11 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 **Merging.** Calls `pulls.merge` with the configured merge strategy (`squash`, `merge`, or `rebase`). The plugin never force-merges. If branch protection requirements are not satisfied (required reviews, status checks), the merge returns an error with `pr_not_mergeable` or `merge_conflict` -- it does not bypass protections.
 
-**PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified `open | closed | merged` enum. CI check status is determined by the combined status API (`repos.getCombinedStatusForRef`).
+**PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified `open | closed | merged` enum. CI check status is determined by querying both the Status API (`repos.getCombinedStatusForRef`) and the Checks API (`checks.listForRef`) in parallel, then combining them worst-state-wins (so a single failing check anywhere fails the gate).
 
 **Review aggregation.** Fetches all reviews chronologically and tracks the latest meaningful state per reviewer (`APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`). A PR is considered approved only when at least one reviewer approved AND no reviewer has `changes_requested` as their latest state. Review body text is collected as feedback comments.
 
-**Approval dismissal.** `dismissApprovals` lists all reviews on the PR via `pulls.listReviews`, filters for those with state `APPROVED`, and calls `pulls.dismissReview` for each one with the provided message. No-ops when no approvals exist. Called by the PR manager after rework pushes new code — the old approval was for different code and must not authorize the changed PR.
+**Approval dismissal.** `dismissApprovals` lists all reviews on the PR via `pulls.listReviews`, filters for those with state `APPROVED`, and calls `pulls.dismissReview` for each one with the provided message. No-ops when no approvals exist. Called by the delivery phase's `create-pr` sub-phase after a rework pushes new code — the old approval was for different code and must not authorize the changed PR.
 
 **Comments.** `commentOnPR` handles two cases: if `replyTo` is provided, it creates a reply to an inline review comment; otherwise, it posts a regular issue comment (PRs are issues in the GitHub API). `getPRComments` fetches both conversation-level (`issues.listComments`) and inline review comments (`pulls.listReviewComments`) in parallel, filtering out `github-actions[bot]`.
 

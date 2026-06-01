@@ -55,6 +55,16 @@ counters. The same applies at boot — orphaned active tasks are routed through 
 crash category, so a persistent boot-loop on a poison task exhausts the budget and
 ends in `failed` rather than restarting forever.
 
+## Notification Retry
+
+When a notification cannot be delivered to a contact's channel, it is queued and retried.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `notification_retry.interval_ms` | integer (ms) | `30000` (30s) | How often to retry a failed notification send. |
+| `notification_retry.max_attempts` | integer | `120` | Maximum retry attempts per notification (~1 hour at 30s intervals). |
+| `notification_retry.max_age_ms` | integer (ms) | `3600000` (1h) | Maximum age of a retry entry before it is discarded. |
+
 ## Polling
 
 | Field | Type | Default | Description |
@@ -105,6 +115,12 @@ ends in `failed` rather than restarting forever.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `database.cache_size_mb` | integer | `64` | SQLite cache size in MB. |
+
+## Evaluation
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `evaluation.enabled` | boolean | `false` | Run an AI-as-Judge evaluation after each task completes — two independent CLI sessions (a blind plan, then a comparison verdict). Results are stored under `~/.engineer/evaluations/`. |
 
 ## Other
 

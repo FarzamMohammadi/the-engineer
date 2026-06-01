@@ -1,504 +1,130 @@
-# PR Management — End-to-End Flow
+# PR Management Flow
 
-PR management spans three phases of The Engineer's pipeline: **demo_prep** (creation), **review_pending** (polling, feedback, CI gate), and **completion** (merge, cleanup). This document covers every code path, decision point, and notification in the lifecycle.
+How The Engineer turns a reviewed change into a merged pull request — and how it reacts to everything that happens on that PR after it opens.
 
-## Key Files
+PR management is two cooperating pieces:
 
-| Component | File | Role |
+- The pipeline's **delivery phase** — the sub-phases that describe, push, open, and (on approval) merge the pull request.
+- The daemon's **PR-event poller** — a background loop that watches each open PR and feeds review feedback, CI results, approvals, and merges back into the task.
+
+Everything upstream of delivery (requirements → research → planning → execution → review) is identical no matter how the work ships. Only delivery changes shape, and it changes by configuration, not by branching code.
+
+## The two deliverables
+
+The whole pipeline exists to produce **one of two deliverables**, chosen by `workspace.pr.skip_pr_creation` (global default, per-repo override):
+
+| Mode | Setting | Deliverable | Done when |
+|------|---------|-------------|-----------|
+| **PR mode** (default) | `skip_pr_creation: false` | A reviewed, merged pull request | The PR is merged |
+| **Push-only mode** | `skip_pr_creation: true` | A pushed branch — no PR, no review, no merge | The branch is pushed |
+
+In push-only mode, every PR-specific delivery sub-phase skips and the task completes as soon as the branch is pushed. It is a deliberate escape hatch for operators who own the downstream PR process themselves.
+
+## Delivery sub-phases
+
+In PR mode, delivery runs four sub-phases in order, then waits:
+
+1. **`pr-description`** — an agent pass that writes the PR narrative to a deliverable file (`thoughts/delivery/pr-description.md`) that `create-pr` later reads.
+2. **`push`** — commits anything the agent left uncommitted (a safety net; execution commits as it goes), then pushes the branch through the workspace manager's authenticated push. Runs in **both** modes — it is the entire deliverable in push-only mode. A push that cannot run throws, and the task blocks loud and recoverable; nothing to push is a clean advance.
+3. **`create-pr`** — opens the pull request: it composes the title and body (plugin decorations + a trigger reference + the agent's narrative + a footer), opens the PR through the git hosting plugin, records the PR number on the task, and notifies. On a **rework re-entry** (the PR already exists), it instead dismisses the now-stale approval and marks the addressed feedback applied — see [The rework loop](#the-rework-loop).
+4. **`await-review`** — parks the task in the `awaiting_pr_review` block and exits the pipeline. This is an expected wait, not a failure and not a separate state: the task is `blocked`, and the poller resumes it when an external event arrives.
+
+A fifth sub-phase, **`auto-merge`**, is **entry-only** — the normal advance path stops at `await-review` and never reaches it. It runs only when an external `pr_ready_to_merge` or `pr_merged` event re-enters the task there.
+
+In push-only mode, `pr-description`, `create-pr`, `await-review`, and `auto-merge` all skip; only `push` runs, and the task completes.
+
+### Key files
+
+| Concern | File |
+|---|---|
+| Delivery sub-phases | `src/core/orchestrator/pipeline/delivery/{pr-description,push,create-pr,await-review,auto-merge}.ts` |
+| PR-vs-push-only skip gate | `src/core/orchestrator/pipeline/delivery/deliverable.ts` |
+| Background PR-event polling | `src/core/daemon/pr-event-poller.ts` |
+| Core PR-event policy (routing, arbitration, dedup, `/approve`) | `src/core/orchestrator/pipeline/pr-events.ts` |
+| Re-entry wiring (consume the pending event, start at its entry point) | `src/core/orchestrator/index.ts` |
+
+## Waiting and re-entry
+
+Once the PR is open, the task sits in `blocked(awaiting_pr_review)`. The daemon's PR-event poller drives everything from here.
+
+Each tick, for every task waiting on review, the poller asks the git hosting plugin **what events currently hold** on the PR (`detectPrEvents`), filters them through Core policy, picks a single winner, and re-enters the task by writing the winning event's **type** onto it (`pending_pr_event`) and re-queuing it. On the next dispatch, the orchestrator reads that type, starts the pipeline at the event's entry point, and clears it.
+
+The event vocabulary is small and typed. Only `pr_comments` carries data (the comments, so Core can dedup and find an authorized `/approve`); the rest are bare signals whose detail is re-derived live when needed:
+
+| Event | Means | Re-enters at |
 |---|---|---|
-| PR creation | `src/core/orchestrator/pr-manager.ts` | commitAndPush + createPullRequest (split workflow) |
-| Review polling | `src/core/daemon/review-handler.ts` | Detect reviews, approvals, merges |
-| CI gate + merge | `src/core/daemon/review-handler.ts` | Check CI, attempt merge, pipeline fix |
-| GitHub API | `src/plugins/git-hosting/github-hosting/github-hosting.ts` | All GitHub REST operations |
-| Notifications | `src/core/daemon/notification-router.ts` | Route milestone notifications |
-| Workspace/git | `src/core/workspace-manager/index.ts` | Worktrees, push, branch cleanup |
-| Safety policy | `src/core/safety-layer/policy-engine.ts` | Auto-merge config, scope checks |
+| `pr_comments` | Actionable reviewer feedback | requirements |
+| `pr_ci_failure` | Checks are red | execution (`implement`) |
+| `pr_merge_conflict` | The base moved; the branch no longer merges | execution (`implement`) |
+| `pr_ready_to_merge` | Approved **and** CI green **and** mergeable, all at once | delivery (`auto-merge`) |
+| `pr_merged` | Merged, by us or externally | delivery (`auto-merge`) |
 
----
+Three Core policies shape this, all living in `pr-events.ts` so a hosting plugin never re-implements them:
 
-## 1. PR Creation
+- **Arbitration.** Several events can hold in one poll (a comment *and* an approval). `arbitrate` picks one winner by precedence — `pr_merged` > `pr_comments` > `pr_merge_conflict` > `pr_ci_failure` > `pr_ready_to_merge` — so pending feedback is always addressed before a merge proceeds.
+- **Dedup.** `pr_comments` is filtered against the task's `accommodated_comment_ids`, so the same feedback never reworks the task twice.
+- **Stateless readiness.** The plugin reports `pr_ready_to_merge` only when approval, green CI, and mergeability all hold *at the same time*, recomputed every poll. "Approved but CI still running" reports nothing — the task simply keeps waiting.
 
-The PR workflow is split into two independent steps: **commit+push** and **PR creation**. Each step returns a discriminated result that the phase runner matches on — errors block the task and notify the owner instead of silently continuing.
+Re-entry flows entirely through the database (write the event, re-queue, re-dispatch). There is no back-channel call from the daemon into the orchestrator, so the boundary stays one-directional and crash-safe: the pending event lives on the task row and survives a restart.
 
-**Entry points:** `commitAndPush()` and `createPullRequest()` in `pr-manager.ts`
+## The merge
 
-Called by `tryCommitPushAndCreatePR()` in `phase-runner.ts` after the demo_prep phase completes.
+`auto-merge` performs the merge. Because it is reached only by a `pr_ready_to_merge` / `pr_merged` re-entry, the PR was just observed ready — but state can shift in the moment between the signal and the merge, so `auto-merge` **re-derives readiness from the live PR** before acting, then routes on what it finds:
 
-### Step 1: commitAndPush
+| What `auto-merge` finds | What it does |
+|---|---|
+| Already merged | Completes the task |
+| Auto-merge disabled for the repo | Notifies the owner and completes — the human merges manually |
+| CI failing | Reworks: jumps back to execution to fix it |
+| Not mergeable (conflict) | Reworks: jumps back to execution to resolve it |
+| Checks not yet green | Returns to the review wait; the poller retries when the PR is ready |
+| Green and mergeable | Removes branch thoughts (if configured), merges with the configured strategy, records the merge |
 
-```
-commitAndPush(sessionId, taskId, dispatch)
-  |
-  +-- No workspace path?  → nothing_to_push (skip — continue pipeline)
-  +-- No workspace record? → nothing_to_push (skip — continue pipeline)
-  |
-  +-- git add -A
-  +-- git diff --cached --quiet  (anything to commit?)
-  |     |
-  |     +-- YES: git commit -m "feat: {title}" (or "fix: address review feedback" for rework)
-  |     +-- NO:  check rev-list count ahead of base
-  |               +-- 0 ahead: nothing_to_push (skip)
-  |
-  +-- workspaceManager.pushBranch(taskId)  (token injected at operation time, never persisted)
-  |
-  +-- Returns: { outcome: "pushed", committed: boolean }
-  |            { outcome: "nothing_to_push" }
-  |            { outcome: "error", step: "commit"|"push", reason: string }
-```
+A successful merge marks the PR merged on the task, publishes **`git.pr_merged`**, and — when `workspace.pr.delete_branch_after_merge` is set — deletes the remote branch and publishes **`git.branch_deleted`**. Both events are published by the **orchestrator**. The local worktree is reaped separately by the scheduler's normal completion path; only the merge-specific cleanup lives in `auto-merge`.
 
-**On error:** Task transitions to `blocked`, owner notified via `task_error`, session ends. The task waits for human resolution (e.g., fix credentials) and can be unblocked to retry from the same phase.
+**Auto-merge is off by default.** `safety.merge.auto_merge_after_approval` defaults to `false`, so by default an approval *completes* the task and the owner merges the PR themselves. The merge strategy (`squash` / `merge` / `rebase`) comes from `workspace.pr.default_merge_strategy`; `safety.merge.exclude_thoughts_on_merge` removes branch-introduced `thoughts/` files before the merge.
 
-### Step 2: createPullRequest
+## The rework loop
 
-Only called after `commitAndPush` returns `"pushed"`.
+When a review event needs work rather than a merge, the task re-enters the pipeline and runs forward again:
 
-```
-createPullRequest(sessionId, taskId, demoPrepOutput, dispatch)
-  |
-  +-- Is rework? (task.review.pr_number exists?)
-  |     |
-  |     +-- YES: dismiss stale approvals (gitHosting.dismissApprovals)
-  |     |        mark all feedback_rounds as applied
-  |     |        notify "Pushed rework"
-  |     |        → rework_pushed
-  |     +-- NO:  continue to PR creation
-  |
-  +-- No git hosting plugin? → no_hosting_plugin (skip — continue pipeline)
-  |
-  +-- Resolve PR description (demoPrepOutput > deliverable file > default)
-  +-- Sanitize secrets from description
-  +-- Apply pr_decorations if present (plugin-opaque, all values opaque):
-  |     +-- title: [title_prefix] <AI title> [title_suffix]  (space-joined)
-  |     +-- description: [description_prefix] > trigger ref > AI description > [description_suffix] > --- > branding
-  +-- gitHosting.createPR({ repo, branch, base, title, body, draft: false })
-  +-- Update task: review = { pr_number, pr_state: "ready", ... }
-  +-- Notify: "PR created: {url}" (milestone + ticket comment)
-  |
-  +-- Returns: { outcome: "created", pr_number, url }
-  |            { outcome: "rework_pushed" }
-  |            { outcome: "no_hosting_plugin" }
-  |            { outcome: "error", step: "pr_creation", reason: string }
-```
+- **New feedback** (`pr_comments`) re-enters at **requirements** — feedback can change scope, so it runs the full pipeline forward (trivial-complexity skip-gates carry it past research/planning as needed). The feedback rides into the re-entered phase as context.
+- **CI failure / merge conflict** re-enters at **execution** (`implement`) to fix the root cause and re-push.
 
-**On error:** Same as commitAndPush — task blocks, owner notified, awaits human resolution.
+When the rework reaches delivery again, `create-pr` sees the PR already exists: it **dismisses the stale approval** (the code changed, so the prior sign-off no longer applies) and marks the addressed feedback applied, then `await-review` parks the task again. A human re-approves to re-trigger the merge — that human gate is what bounds the loop, alongside a global `total_reworks` ceiling on a single dispatch.
 
-### Phase Runner Orchestration
+## The `/approve` path
 
-```
-tryCommitPushAndCreatePR()  (phase-runner.ts)
-  |
-  +-- commitAndPush()
-  |     +-- nothing_to_push → return null (continue pipeline to integration)
-  |     +-- error           → blockForPrWorkflowError() (task blocked, owner notified)
-  |     +-- pushed          → continue to step 2
-  |
-  +-- skip_pr_creation enabled for repo?
-  |     +-- YES → notify "pushed to branch", return null (continue pipeline → completed)
-  |     +-- NO  → continue to step 3
-  |
-  +-- createPullRequest()
-        +-- no_hosting_plugin → return null (continue pipeline)
-        +-- error             → blockForPrWorkflowError() (task blocked, owner notified)
-        +-- created / rework_pushed → exit with review_pending
-```
+A sole contributor cannot formally approve their own PR on the host, so The Engineer recognizes a `/approve` (or `/approved`) comment as an approval. This path is **gated by `safety.merge.enable_comment_approval`** (off by default — with it off, `/approve` comments are ignored).
 
-### Notifications
+When enabled, the poller promotes an authorized `/approve` to a merge only after a **live re-check** confirms the PR is open, green, and mergeable — the same preconditions a formal approval must meet. A not-yet-green `/approve` leaves the task waiting rather than attempting a doomed merge. Authorization is Core policy: when an owner or reviewer is configured, the commenter's GitHub handle must match one of them; when no one is configured, any `/approve` counts (a permissive floor for the single-contributor case). The plugin only reports the comment as a fact — it never learns the `/approve` convention or sees the people directory.
 
-| Event | Kind | Message |
+## Notifications
+
+Every transition the owner cares about leaves a trail. The owner's channels receive **milestones**; the source ticket receives **comments**:
+
+| When | Channel | Message |
 |---|---|---|
-| PR created | `milestone` + `ticket_comment` | "PR created: {url}" |
-| Rework pushed | `ticket_comment` | "Pushed rework addressing review feedback." |
-| Commit/push/PR failed | `task_error` | "PR workflow failed at {step}: {reason}" |
-
----
-
-## 2. Review Polling
-
-**Entry point:** `checkFeedback()` — called every daemon tick for all `review_pending` tasks.
-
-### Aggregate State Resolution
-
-For each task, three API calls in parallel:
-1. `hosting.getReviewStatus()` — formal GitHub reviews
-2. `getCachedPRStatus()` — PR state, CI status (cached per tick)
-3. `fetchFilteredPRComments()` — PR comments as `PRComment[]` with IDs (self-authored filtered out)
-
-**Precedence:**
-```
-changes_requested  >  approved  >  comment  >  null (no action)
-```
-
-### Comment-Based Approval
-
-When `enable_comment_approval: true` in safety config:
-- Detects `/approve` or `/approved` as standalone comment
-- Validates author against People Directory (owners + reviewers)
-- If no people configured, anyone can approve (solo dev mode)
-- Formal reviews always take precedence over comment commands
-
-### Feedback Accommodation Tracking
-
-Two-tier dedup prevents both per-tick redundancy and cross-rework-cycle infinite loops:
-
-**Tier 1 — Persistent accommodation (survives restarts and rework cycles):**
-- `task.review.accommodated_comment_ids` — PR comment IDs already queued for rework
-- `task.review.accommodated_review_state` — last aggregate state that was processed
-- `hasUnaccommodatedFeedback()` checks: are there new comment IDs not in the set? Has the aggregate state changed? If neither → skip emission entirely.
-- Updated when new feedback is detected, before event emission.
-
-**Tier 2 — In-memory dedup (within a single review_pending stay):**
-- `emittedFeedbackKeys` map: `"${aggregateState}:${commentCount}"` per task
-- Same state + same comment count = no re-emission within the same cycle
-- Cleared on rework (`handleFeedbackRework`) and merge failure (`allowApprovalRetry()`)
-- Pruned each tick for tasks no longer in `review_pending`
-
-Tier 1 is the primary gate — it prevents the infinite rework loop where persistent PR comments are re-detected as "new" after rework completes. Tier 2 is a cheap optimization that prevents redundant event emission within a single polling cycle.
-
-### Merge Detection
-
-`checkMerges()` — also called every tick. If PR state is `"merged"` (someone merged manually on GitHub), complete the task immediately with reason `"pr_merged"`. Both auto-merge and manual merge paths converge through `finalizeTaskCompletion()`, which handles remote branch deletion (if `delete_branch_after_merge` is enabled), workspace cleanup, notifications, and children-done checks.
-
----
-
-## 3. CI Gate
-
-**Entry point:** `handleCodeApproval()` — called when an `approved` feedback event fires.
-
-### Decision Tree
-
-```
-PR Approved
-  |
-  +-- auto_merge_after_approval enabled?
-  |     |
-  |     +-- NO:  complete task, notify "Code review approved — ready to merge."
-  |     +-- YES: continue
-  |
-  +-- Fetch PR status (cached) — checks_state AND mergeable
-  +-- checks_state?
-        |
-        +-- "pending":  add to approvedAwaitingCI map
-        |               notify "Code approved — waiting for CI pipeline to complete before merging."
-        |               (checkApprovedCI() polls on subsequent ticks — evaluates ALL checks when CI resolves)
-        |
-        +-- CI resolved (passing/failing/none):
-              evaluatePostApprovalChecks(checks_state, mergeable)
-              |
-              +-- No failures:  attemptMerge() immediately
-              +-- Failures found:  handlePostApprovalFailures(taskId, failures)
-                                   (groups CI failure + merge conflict into ONE rework cycle)
-```
-
-### CI Polling Loop (`checkApprovedCI`)
-
-Called every tick after `checkFeedback()`. For each task in the `approvedAwaitingCI` map:
-
-```
-Poll PR status (checks_state + mergeable)
-  |
-  +-- "pending":  keep in map, check again next tick
-  |
-  +-- CI resolved:  evaluatePostApprovalChecks(checks_state, mergeable)
-        |
-        +-- No failures:  notify "CI pipeline passed — proceeding with merge."
-        |                 attemptMerge()
-        |
-        +-- Failures:     handlePostApprovalFailures()
-                          (e.g., CI failing + merge conflicts → ONE grouped rework)
-```
-
-The map is pruned each tick — tasks no longer in `review_pending` are removed.
-
-**Daemon restart:** the map is in-memory only. On restart, `checkFeedback()` re-detects the approval and re-enters the CI gate flow. Naturally idempotent.
-
-### Tri-State Checks
-
-`checks_state` in `PRStatus` schema is an enum: `"passing" | "failing" | "pending" | "none"`.
-
-Resolved by querying **both** GitHub APIs in parallel (repos with GitHub Actions use the Checks API, while some use the legacy Status API — or both):
-
-**Status API** (`repos.getCombinedStatusForRef`) — legacy commit statuses:
-- `"success"` + total_count > 0 → `"passing"`
-- `"pending"` + total_count > 0 → `"pending"`
-- `"failure"` / `"error"` → `"failing"`
-- total_count = 0 → `"none"`
-
-**Checks API** (`checks.listForRef`) — GitHub Actions and third-party check runs:
-- All completed with `success`/`skipped`/`neutral` → `"passing"`
-- Any `in_progress`/`queued` → `"pending"`
-- Any completed with `failure`/`cancelled`/`timed_out`/`action_required` → `"failing"`
-- No check runs → `"none"`
-
-**Combining:** worst state wins (`failing` > `pending` > `passing` > `none`). Both `"none"` = `"none"` (no CI configured). API exception → `"failing"` (fail-safe).
-
----
-
-## 4. Merge Execution
-
-**Entry point:** `attemptMerge()` — called when CI passes (or no CI).
-
-### Pre-Merge: Thoughts Cleanup
-
-If `exclude_thoughts_on_merge: true`:
-1. Find files added by this branch (not pre-existing): `git diff --name-only --diff-filter=A origin/{base} -- thoughts/`
-2. `git rm` those files
-3. Commit: "chore: remove engineering thoughts before merge"
-4. Push (token injected)
-
-Non-fatal — merge proceeds even if cleanup fails.
-
-### Merge Flow
-
-```
-tryRemoveThoughtsBeforeMerge()
-  |
-  v
-hosting.mergePR(repo, prNumber, "squash")
-  |
-  +-- API exception:
-  |     warn + allowApprovalRetry() + notify "will retry"
-  |     (leave in review_pending, next tick retries)
-  |
-  +-- result.success = false:
-  |     +-- "merge_conflict" (409):  handlePostApprovalFailures() — re-queue for resolution
-  |     +-- "pr_not_mergeable" (405) / "network_error":  allowApprovalRetry() + notify, retry next tick
-  |
-  +-- result.success = true:
-        update review.pr_state = "merged"
-        transition to completed (reason: "code_approved_merged")
-        finalizeTaskCompletion:
-          delete remote branch (if delete_branch_after_merge, best-effort)
-          workspace cleanup + notify + children-done check
-```
-
-### `allowApprovalRetry()`
-
-On any merge failure, deletes the dedup key for this task. Without this, the next tick sees the same approval state, dedup suppresses re-emission, and `handleCodeApproval` never runs again — the task gets stuck.
-
----
-
-## 5. Post-Approval Fix
-
-**Entry point:** `handlePostApprovalFailures()` — called when post-approval checks detect issues (CI failure, merge conflicts, or both).
-
-**Evaluation:** `evaluatePostApprovalChecks(checksState, mergeable)` — pure function that returns an array of `PostApprovalCheckFailure` objects. Extensible: adding a future check = adding one `if` block.
-
-### Retry Counting
-
-Counts `post_approval_fix` transitions in the task's state history (DB-persisted, survives restarts). Also counts legacy `pipeline_fix` for backward compatibility with in-flight tasks.
-
-- Max retries: **3** (`MAX_POST_APPROVAL_FIX_RETRIES`)
-- After 3 failures: complete task, notify listing all unresolved issues + "Please fix and merge manually."
-
-### Rework Flow
-
-```
-evaluatePostApprovalChecks(checks_state, mergeable)
-  |
-  +-- Returns failure array (e.g., ["ci_pipeline", "merge_conflict"])
-  |
-  v
-handlePostApprovalFailures(taskId, failures)
-  |
-  +-- Count post_approval_fix + pipeline_fix attempts in state history
-  +-- attempt > 3?  complete task, give up
-  |
-  +-- Build ONE synthetic unapplied feedback round with ALL failure instructions:
-  |     {
-  |       stage: "code",
-  |       applied: false,
-  |       comments: [
-  |         "Post-approval fix attempt N/3 — M issue(s) to resolve:",
-  |         ...CI failure instructions (if applicable),
-  |         ...merge conflict instructions (if applicable)
-  |       ]
-  |     }
-  |
-  +-- Reset accommodation state:
-  |     accommodated_review_state = null
-  |     accommodated_comment_ids = []
-  |     (ensures fresh approval is detectable after rework)
-  |
-  +-- Transition: review_pending -> queued (reason: "post_approval_fix")
-  +-- Clear dedup key + approvedAwaitingCI entry
-  +-- Notify: "Post-approval issues: {list} — reworking (attempt N/3)."
-```
-
-**Key design:** Multiple issues are grouped into a single RRPIR cycle. This is critical for cost — each cycle consumes significant tokens. Without grouping, CI failure and merge conflicts would trigger separate cycles.
-
-### How the Orchestrator Handles It
-
-The synthetic unapplied feedback round triggers the existing rework path in the task scheduler:
-
-1. `hasUnappliedFeedback = true` → checkpoint cleared → no resume
-2. Orchestrator starts from **requirements_gathering** (full reflection)
-3. The agent sees the CI failure context in the feedback round
-4. It investigates, fixes, pushes to the same branch
-5. PR manager dismisses stale approvals on GitHub (the old approval was for different code)
-6. Returns to `review_pending` → accommodation state is reset → awaits fresh approval
-7. Reviewer re-reviews the updated PR → new approval detected → CI gate re-evaluates
-
-The old approval is explicitly invalidated — changed code must not ride on a stale approval. This reuses the same code path as reviewer feedback rework, with the addition of approval dismissal on push.
-
----
-
-## 6. Configuration
-
-### workspace.yaml — PR Workflow
-
-```yaml
-pr:
-  skip_pr_creation:
-    default: false                     # Global default — PR created as usual
-    repos:
-      owner/internal-tools: true       # Push-only for this repo (no PR)
-```
-
-When `skip_pr_creation` is enabled for a repo (or globally), the pipeline skips `createPullRequest` after a successful push. The task continues to the integration phase and completes with outcome `completed` instead of `review_pending`. The owner receives a "changes pushed to branch" notification.
-
-> **Warning:** This bypasses the review gate entirely. Code pushed with this config enabled lands on the remote branch without a pull request, without human review, and without CI checks on the merge path. A warning-level log is emitted each time this fires. Use this only for repos where branch protection or other external gates provide equivalent safety.
-
-When disabled (default), behavior is unchanged — the full PR workflow runs as documented above.
-
-Per-repo values override the global default. Repos not listed in `repos` fall back to `default`.
-
-### safety.yaml — Merge Policy
-
-```yaml
-merge:
-  auto_merge_after_approval:
-    default: false                     # Global default (safety-first)
-    repos:
-      owner/internal-docs: true        # Per-repo override
-  enable_comment_approval: false       # Allow /approve in PR comments
-  exclude_thoughts_on_merge: false     # Remove thoughts/ before merge
-```
-
-### daemon.yaml — Review Polling
-
-```yaml
-review_polling:
-  failure_window_ms: 300_000           # 5-minute sliding window
-  max_failures_before_pause: 3         # Pause after 3 API failures in window
-```
-
-### scope.yaml — Branch Protection
-
-```yaml
-branches:
-  merge_to: ["main"]                   # Only merge to these branches
-```
-
----
-
-## 7. Notification Matrix
-
-Every notification the owner receives during PR lifecycle:
-
-| Milestone | Kind | Message |
-|---|---|---|
-| PR created | milestone + ticket | "PR created: {url}" |
-| PR skipped (config) | milestone + ticket | "Changes pushed to branch — PR creation skipped per config." |
+| Work picked up | milestone + ticket | "Starting work on: {title}" / "Starting work on this ticket." |
+| PR opened | milestone + ticket | "PR created: {url}" |
+| Reviewer feedback re-queues the task | ticket | "Reviewer feedback received — reworking to address it." |
+| CI failure re-queues the task | ticket | "CI is failing on the pull request — reworking to fix it." |
+| Merge conflict re-queues the task | ticket | "The pull request has merge conflicts — reworking to resolve them." |
 | Rework pushed | ticket | "Pushed rework addressing review feedback." |
-| Commit/push/PR failed | task_error | "PR workflow failed at {step}: {reason}" — task blocked |
-| Stale approvals dismissed | (logged, not notified) | Dismissed via GitHub API with "Re-review required" message |
-| Approved, no auto-merge | completion + ticket | "Code review approved — ready to merge." |
-| Approved, CI pending | ticket | "Code approved — waiting for CI pipeline to complete before merging." |
-| CI passed (after wait) | ticket | "CI pipeline passed — proceeding with merge." |
-| Post-approval issues | ticket | "Post-approval issues: {list} — reworking (attempt N/3)." |
-| Fix retry limit hit | completion + ticket | "Post-approval issues ({list}) unresolved after N fix attempts. Please fix and merge manually." |
-| Merge succeeded | completion + ticket | "Code approved — PR #X auto-merged." |
-| Merge rejected | ticket | "Auto-merge rejected: {reason}. Will retry." |
-| Merge API failed | ticket | "Auto-merge API call failed — will retry." |
-| PR merged (detected) | completion + ticket | "PR merged — task completed." |
-| Reviewer feedback | ticket | "Reviewer feedback received ({type}) — reworking." |
+| Approval + green re-queues for merge | ticket | "Pull request approved with CI green — merging." |
+| External merge detected | ticket | "Pull request merged — finalizing." |
+| Auto-merge disabled, PR ready | ticket | "PR #{n} is approved and ready. Auto-merge is disabled for this repo — merge it when you're ready." |
+| Merge completed | milestone | "Merged PR #{n}" |
 
----
+## Resilience
 
-## 8. State Transitions
+Readiness is computed statelessly from the live PR on every poll, so there is no in-memory wait-state to lose. An earlier design tracked "approved, waiting on CI" in a daemon-memory map; a restart mid-wait could strand a task forever with nothing to alert. That class of bug cannot occur here — after a restart, the poller simply re-derives readiness from the PR.
 
-```
-                    +-----------+
-                    |  active   |
-                    | (working) |
-                    +-----+-----+
-                          |
-                    demo_prep completes
-                          |
-               +----------+----------+
-               |                     |
-          commit/push/PR         PR created
-          failed (error)         or rework pushed
-               |                     |
-               v                     v
-          +---------+       +----------------+
-          | blocked |       | review_pending |<------ merge failure retry (same tick)
-          | (human) |       |    (code)      |<------ CI pending (deferred, next tick)
-          +----+----+       +-------+--------+
-               |
-          owner fixes
-          issue, unblocks
-               |
-               v
-           +--------+
-           | queued  |  (re-dispatched, resumes at demo_prep)
-           +--------+
-                         |
-          +--------------+--------------+
-          |              |              |
-     PR approved    PR approved    changes_requested
-     all clear    CI/merge issues   or comment feedback
-          |              |              |
-          v              v              v
-    attemptMerge   post_approval   feedback_rework
-          |           _fix              |
-     +----+----+    +----+----+    +----+----+
-     |         |    |         |    |         |
-  success   failure queued    give up  queued
-     |         |    (rework)  (3 max)  (rework)
-     v         |       |         |        |
- completed   retry     v         v        v
-             next   active    completed  active
-             tick  (working)            (working)
-                      |                    |
-                   ...loop...          ...loop...
-```
+## Configuration
 
----
+PR management reads its configuration from two files (documented there, not duplicated here):
 
-## 9. Edge Cases
+- **[`safety.yaml`](../../configuration/safety.md) → `merge.*`** — `auto_merge_after_approval`, `enable_comment_approval`, `exclude_thoughts_on_merge`.
+- **[`workspace.yaml`](../../configuration/workspace.md) → `pr.*`** — `default_merge_strategy`, `delete_branch_after_merge`, `skip_pr_creation`.
 
-### PR workflow failure (commit, push, or PR creation)
-- Each step returns a discriminated result: `nothing_to_push` (skip), `error` (block), or success
-- On error: task transitions to `blocked`, owner receives `task_error` notification with the failing step and reason
-- Blocked metadata includes `reason: "pr_workflow_failed"` and `waiting_for: "human"`
-- On unblock: task re-dispatches, resumes at demo_prep, retries the full commit+push+PR flow
-- Git operations are naturally idempotent — re-committing with no changes is a no-op, re-pushing is safe
-- "Nothing to do" cases (no workspace, no changes ahead of base) continue the pipeline without blocking
-
-### Daemon restart with pending CI
-- `approvedAwaitingCI` map is in-memory — lost on restart
-- Next tick: `checkFeedback()` re-detects approval, `handleCodeApproval()` re-evaluates CI
-- Flow is naturally idempotent
-
-### Merge conflicts after approval
-- Detected pre-merge via `PRStatus.mergeable === false` (from adapter contract, not GitHub-specific)
-- Detected mid-merge via HTTP 409 (`merge_conflict`) as a safety net
-- Both routes trigger `handlePostApprovalFailures()` — the agent resolves conflicts, rebases, and pushes
-- If CI is also failing, both issues are grouped into one rework cycle
-
-### Concurrent reviewers
-- Accommodation tracking uses comment IDs — only genuinely new comments trigger rework
-- If reviewer B adds a comment after A approves, new comment ID detected → rework triggered
-- Same comments after rework → suppressed by accommodation check
-
-### Stale approval after post-approval rework
-- When post-approval fixes push new code, the PR content has changed
-- The old approval is dismissed on GitHub via `dismissApprovals()` (graceful degradation if API fails)
-- Accommodation state is reset (`accommodated_review_state = null`) so the system can detect a fresh approval
-- The reviewer sees the dismissal message on GitHub and knows re-review is needed
-- Without these two mechanisms, the task would be stuck forever in `review_pending` (accommodation gate blocks re-detection of the same "approved" state)
-
-### Manual merge on GitHub
-- `checkMerges()` detects `state === "merged"` before feedback polling
-- Task completes with reason `"pr_merged"` regardless of CI state
+The review-polling circuit breaker (`review_polling.*`) lives in [`daemon.yaml`](../../configuration/daemon.md).

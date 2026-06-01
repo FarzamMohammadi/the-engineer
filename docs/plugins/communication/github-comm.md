@@ -33,7 +33,7 @@ label_prefix: "engineer:"          # Prefix for state labels (default: "engineer
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `github_token` | `string` | -- (required) | GitHub PAT. Use `${GITHUB_TOKEN}` to reference the env var. |
-| `label_prefix` | `string` | `"engineer:"` | Prefix prepended to task state names when managing labels. For example, state `executing` becomes label `engineer:executing`. |
+| `label_prefix` | `string` | `"engineer:"` | Prefix prepended to task state names when managing labels. For example, state `active` becomes label `engineer:active`. |
 
 ## How It Works
 

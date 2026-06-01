@@ -78,9 +78,9 @@ Core verifies each adapter has a plugin registered — nothing more. The specifi
 
 1. **Trigger and schedule.** The daemon polls the trigger plugin. New work lands as a task on an OS-scheduler-inspired state machine — priority sets the order, with preemption when something more urgent arrives (preempted tasks pause between phases and resume from their last checkpoint). Crashes and transient failures retry with bounded backoff.
 2. **Isolate the workspace.** Each task gets its own git worktree — concurrent runs don't collide, and your main checkout stays untouched.
-3. **Run the engineering pipeline.** Seven phases — requirements → research → planning → execution → self-review → demo prep → integration — with a checkpointed session journal carrying context across them. Anywhere in the pipeline, if the agent hits something it can't resolve alone — most commonly during requirements — the task moves to `blocked`. The system reaches out via your comms plugins to whoever can unblock the task, and work resumes when they respond.
-4. **Iterate until ready.** Any phase can re-route via `next_phase` in its session-result (used sparingly — typically self-review back to execution). After the pull request opens, review comments, CI failures, and merge conflicts retrigger the engineering pipeline. Each new push dismisses stale approvals. Rework is bounded — past the ceiling, the task escalates to you.
-5. **Merge after sign-off.** Humans stay in the loop on requirements, key decisions, and the final pull request approval.
+3. **Run the engineering pipeline.** Six phases — requirements → research → planning → execution → review → delivery — with a checkpointed session journal carrying context across them. Anywhere in the pipeline, if the agent hits something it can't resolve alone — most commonly during requirements — the task moves to `blocked`. The system reaches out via your comms plugins to whoever can unblock the task, and work resumes when they respond.
+4. **Iterate until ready.** Work can be handed back to an earlier phase when review finds the root cause lives upstream — the agent reports an outcome and the orchestrator decides the route (it never picks a phase itself). After the pull request opens, review comments, CI failures, and merge conflicts re-enter the pipeline as typed events. Each new push dismisses stale approvals. Rework is bounded — past the ceiling, the task escalates to you.
+5. **Merge after sign-off.** Humans stay in the loop on requirements, key decisions, and the final approval. When a pull request is approved with CI green, The Engineer can merge it automatically — auto-merge is off by default, so by default the approval completes the task and you merge — and an external merge is detected and finalized too.
 
 Architecture guide: **[docs/architecture/overview.md](docs/architecture/overview.md)** · Three-tier model: **[docs/architecture/three-tier-model.md](docs/architecture/three-tier-model.md)** · Scheduling: **[docs/architecture/scheduling-dispatch.md](docs/architecture/scheduling-dispatch.md)**
 
@@ -94,7 +94,7 @@ Autonomous operation requires the CLI to skip its own permission prompts — Cla
 
 **Cost ceilings.** Every agent call emits a `cost.incurred` event. Spending accumulates per task, per day, per month, plus per-provider request budgets. At 80% of any limit, The Engineer warns. At 100%, it terminates the in-flight dispatch and notifies you immediately — before the agent's current call settles.
 
-Scope boundaries, merge policy, and autonomy categories are configurable in `safety.yaml` but not yet enforced at runtime — Core doesn't gate the CLI's internal actions today. Runtime enforcement and sandboxed task execution are on the roadmap — see [docs/future-considerations.md](docs/future-considerations.md) for what's planned next.
+Scope boundaries and autonomy categories are configurable in `safety.yaml` but not yet enforced at runtime — Core doesn't gate the CLI's internal actions today. (Merge policy and cost ceilings *are* enforced.) Runtime enforcement and sandboxed task execution are on the roadmap — see [docs/future-considerations.md](docs/future-considerations.md) for what's planned next.
 
 ## Observability
 

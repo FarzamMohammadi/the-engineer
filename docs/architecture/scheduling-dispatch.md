@@ -38,10 +38,10 @@ The tracker gives every dispatch three things:
   dispatch's state. Mismatched callbacks no-op.
 - **An `AbortSignal`** owned by the tracker and passed to the dispatch runner. The
   signal lives on the `Dispatch` object handed to the orchestrator; it is the contract
-  by which the scheduler force-ends in-flight work. Honoring the signal through the
-  full call chain (phase-runner → agent-runner → agent plugins) lands in Slice 8 — until
-  then, the signal is set on abort but the orchestrator finishes its current call
-  before observing it. Best-effort termination, by design.
+  by which the scheduler force-ends in-flight work. It is threaded through the full call
+  chain — the pipeline runner hands it to `agentStep`, which passes it to the agent
+  plugin's `spawn({ signal })`, so an abort sends `SIGTERM` to the in-flight CLI rather
+  than waiting for it to finish.
 - **One terminate path.** `terminate(taskId, reason)` records the reason, aborts the
   signal, and lets the late callback route the dispatch through `Outcomes.terminated`
   to the right recovery state. Calling terminate twice is harmless — the first reason
@@ -97,9 +97,9 @@ When the safety layer raises `cost.limit_reached`, the cost-limit-queue drains i
 the next tick: it calls `dispatchTracker.terminate(taskId, "cost_limit_reached")`
 **and** fires owner-facing notifications immediately — the owner must hear about
 the limit *now*, not whenever the in-flight agent run eventually settles. The state
-transition to `blocked` happens later through the standard late-callback path. Once
-Slice 8 plumbs the signal through the orchestrator, the gap between "owner notified"
-and "task settled" closes to near-zero.
+transition to `blocked` happens later through the standard late-callback path. Because
+the signal is threaded into the agent spawn, the abort `SIGTERM`s the in-flight CLI, so
+the gap between "owner notified" and "task settled" is small.
 
 ---
 
@@ -118,10 +118,9 @@ the drain:
 - Every in-flight signal is aborted in parallel.
 - If a dispatch's promise settles within the timeout, its late callback routes
   through the standard `graceful_shutdown` path → re-queues the task.
-- If a dispatch's promise refuses to settle (the v1 best-effort case until Slice 8
-  lands), the drain synthesizes the late callback so the task is still re-queued
-  cleanly. The daemon must shut down even when an in-flight agent run cannot be
-  killed.
+- If a dispatch's promise refuses to settle (a CLI that does not honor `SIGTERM`),
+  the drain synthesizes the late callback so the task is still re-queued cleanly. The
+  daemon must shut down even when an in-flight agent run cannot be killed.
 
 After drain returns, every dispatched task is in `queued` and will resume from its
 last checkpoint on the next start.

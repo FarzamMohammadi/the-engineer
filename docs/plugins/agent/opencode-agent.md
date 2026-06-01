@@ -38,6 +38,7 @@ Config file: `~/.engineer/config/plugins/opencode-agent.yaml`
 | `model` | `string` | `opencode/gemini-3.1-pro` | No | Model in `provider/model` format. |
 | `cli_path` | `string` | `opencode` | No | Path to the OpenCode CLI binary. |
 | `command_timeout_ms` | `number` | `600000` | No | Timeout for each CLI invocation (10 minutes). |
+| `max_cli_output_bytes` | `number` | `500000000` | No | Maximum bytes of CLI stdout before the process is killed (default 500 MB). Prevents memory blowups from runaway output. |
 
 ### Minimal config
 
@@ -54,6 +55,7 @@ All fields have defaults. An empty config file works:
 model: opencode/gemini-3.1-pro
 cli_path: opencode
 command_timeout_ms: 600000
+max_cli_output_bytes: 500000000
 ```
 
 ## How It Works

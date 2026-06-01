@@ -58,6 +58,8 @@ The constraint is on the *number of humans*, and nothing else:
 - **Outreach** — every message to a human targets the owner.
 - **PR approval** — a sole contributor cannot approve their own pull request on the host, so a
   `/approve` (or `/approved`) comment is treated as an approval, equal to a formal review approval.
+  Recognizing `/approve` is gated by the `safety.merge.enable_comment_approval` flag — off by
+  default, so the comment is ignored unless you turn it on.
   Either path moves a green, mergeable PR to merge. Authorization is permissive for this case —
   when no people are configured, any `/approve` counts — but once an owner or reviewer is
   configured, only their `/approve` counts, so a drive-by `/approve` on a public repo never

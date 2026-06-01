@@ -7,7 +7,7 @@ The Engineer uses YAML configuration files stored in `~/.engineer/config/`. All 
 | File | Purpose |
 |------|---------|
 | [daemon.yaml](daemon.md) | Daemon runtime: concurrency, tick loop, logging, polling |
-| [orchestrator.yaml](orchestrator.md) | RRPIR pipeline, notifications, phases |
+| [orchestrator.yaml](orchestrator.md) | Review lenses, notifications |
 | [safety.yaml](safety.md) | Cost limits, scope boundaries, autonomy, merge policy |
 | [workspace.yaml](workspace.md) | Git operations, branch naming, PR settings, cleanup |
 | [people.yaml](people.md) | People directory: roles, contacts, notification preferences |
@@ -16,7 +16,7 @@ Plugin-specific configs live in `~/.engineer/config/plugins/` and are documented
 
 ## How Config Loading Works
 
-On `engineer start`, all config files are loaded from `~/.engineer/config/` (or the directory specified by the `--config-dir` flag / `ENGINEER_CONFIG_DIR` env var). Missing files are not errors — Zod defaults apply for every field.
+On `engineer start`, all config files are loaded from `~/.engineer/config/` by default. The location can be overridden directly with the `--config-dir <path>` flag or the `ENGINEER_CONFIG_DIR` env var; otherwise it follows the data directory (`--home <path>` / `ENGINEER_HOME`, then `~/.engineer`) and reads its `config/` subdirectory. Missing files are not errors — Zod defaults apply for every field.
 
 The load order:
 1. Read YAML file (if it exists)

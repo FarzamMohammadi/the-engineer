@@ -96,7 +96,7 @@ autonomy:
 
 ## Response Timeouts
 
-Configure escalation stages for blocked and review-pending tasks.
+Configure escalation timing for blocked tasks. The `blocked` stages apply when a task is waiting on a human (for example, an unanswered requirements question); the `review_pending` settings apply when a task is waiting on an open pull request's review (blocked with reason `pr_review_pending`).
 
 ### Blocked Tasks
 
@@ -113,6 +113,8 @@ Each stage has: `name`, `after_ms`, `action` (`send_reminder` | `evaluate_self_u
 
 ### Review Pending Tasks
 
+Reminder cadence for a task that has opened a pull request and is waiting on its review.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `response_timeout.review_pending.reminder_after_ms` | integer (ms) | `86400000` (1d) | Time before first review reminder. |
@@ -126,7 +128,7 @@ Controls PR approval and merge behavior.
 |-------|------|---------|-------------|
 | `merge.auto_merge_after_approval.default` | boolean | `false` | Auto-merge PRs after approval (global default). |
 | `merge.auto_merge_after_approval.repos` | Record<string, boolean> | `{}` | Per-repo overrides (e.g., `"owner/repo": true`). |
-| `merge.enable_comment_approval` | boolean | `false` | Allow `/approve` or `/approved` PR comments as approval signals. Designed for solo developers who cannot formally approve their own PRs on GitHub. The commenter must be authorized in People Directory (github handle match). |
+| `merge.enable_comment_approval` | boolean | `false` | Allow a `/approve` or `/approved` PR comment to count as an approval. Designed for a solo developer who cannot formally approve their own PR on GitHub. When on, an authorized `/approve` on a green, mergeable PR triggers the merge; with it off (the default), `/approve` comments are ignored. Authorization: when an owner or reviewer is configured, the commenter's github handle must match one of them; when no one is configured, any `/approve` counts. |
 | `merge.exclude_thoughts_on_merge` | boolean | `false` | Remove branch-introduced `thoughts/` files before merge. Thoughts remain in PR history for reviewer context but do not land in the target branch. Only files added by the branch are removed — pre-existing thoughts are untouched. |
 
 ```yaml

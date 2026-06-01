@@ -91,15 +91,7 @@ issue #42 still active  → re-emitted while task A is live → suppressed  ✓
 The inverse case — the source is closed/resolved while a task is still in flight, so the work
 goes stale — is **not** handled in v1. See `docs/future-considerations.md`.
 
-## 4. Tasks Without a Trigger
-
-Decomposition is the only other task producer. When a task is split into children
-(`src/core/orchestrator/decomposition-handler.ts`), each child is given a deterministic key of
-the form `decomposition:{parentId}:{index}`. This satisfies the same `NOT NULL` identity rule
-and means a decomposition that re-runs after a crash collides on the active index instead of
-silently duplicating children.
-
-## 5. What a Plugin Author Must Guarantee
+## 4. What a Plugin Author Must Guarantee
 
 To get crash-safe exactly-once for free, a trigger plugin only has to:
 

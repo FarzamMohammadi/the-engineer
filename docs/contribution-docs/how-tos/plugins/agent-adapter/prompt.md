@@ -17,7 +17,7 @@ Then help me set up an agent plugin by doing the following:
 
 3. Verify the CLI tool is installed by running its version command (e.g. `claude --version`, `opencode --version`, `gemini --version`).
 
-4. If the CLI tool already has a built-in plugin (check the "Available Agent Plugins" section in the README), skip to step 6 — just configure it.
+4. If the CLI tool already has a built-in plugin (check the per-plugin pages under docs/plugins/agent/ — e.g. claude-code-agent, opencode-agent, gemini-cli-agent), skip to step 6 — just configure it.
 
 5. If building a NEW plugin for a CLI tool that doesn't have one yet:
 
@@ -35,7 +35,7 @@ Then help me set up an agent plugin by doing the following:
       - If the CLI has no --system-prompt flag, prepend with [SYSTEM INSTRUCTIONS]...[END SYSTEM INSTRUCTIONS] delimiters
       - Copy the buildAgentEnv() env isolation pattern into the plugin
       - Export the output parser function for unit testing
-      - plugin.test.ts with mock CLI scripts + contract compliance suite (runAgentContractSuite)
+      - plugin.test.ts with mock CLI scripts + contract compliance suite (runContractSuite)
 
    d. Register in src/plugins/builtin.ts:
       - Import the plugin class
@@ -47,7 +47,7 @@ Then help me set up an agent plugin by doing the following:
 6. Walk me through configuration:
    - Ask for any provider-specific settings (model, timeout, CLI path if non-default)
    - Check if credentials/authentication are set up for the CLI tool
-   - Generate the plugin config for ~/.engineer/config/plugins.yaml
+   - Generate the plugin config at ~/.engineer/config/plugins/<plugin-id>.yaml (one file per plugin, e.g. claude-code-agent.yaml)
 
 7. If quota/usage tracking is available for this CLI tool, set that up too — explain what data will be visible on the dashboard and what won't be available.
 

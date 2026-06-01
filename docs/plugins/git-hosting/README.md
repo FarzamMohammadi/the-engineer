@@ -18,14 +18,15 @@ The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors imp
 | `updatePR` | `(repo: string, prNumber: number, updates: PRUpdates) => Promise<void>` | -- |
 | `mergePR` | `(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>` | `{ merge_sha, success, error }` |
 | `closePR` | `(repo: string, prNumber: number) => Promise<void>` | -- |
-| `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ number, state, draft, mergeable, checks_state, url }` |
-| `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ approved, approvals, changes_requested, reviewers, comments }` |
+| `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ state, checks_state, mergeable, sha }` |
+| `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ state, approvals, changes_requested_count, comments }` |
 | `getPRComments` | `(repo: string, prNumber: number) => Promise<PRComment[]>` | Array of `{ id, author, body, created_at }` |
 | `detectPrEvents` | `(repo: string, prNumber: number) => Promise<PrEvent[]>` | Typed PR events that currently hold (see below) |
 | `commentOnPR` | `(repo: string, prNumber: number, comment: string, replyTo?: string) => Promise<CommentResult>` | `{ comment_id, url }` |
 | `dismissApprovals` | `(repo: string, prNumber: number, message: string) => Promise<void>` | -- |
-| `getBranchProtection` | `(repo: string, branch: string) => Promise<BranchProtection>` | `{ protected, required_reviews, required_checks, restrictions }` |
+| `getBranchProtection` | `(repo: string, branch: string) => Promise<BranchProtection>` | `{ required_reviews, required_status_checks, enforce_admins, restrictions }` |
 | `getDefaultBranch` | `(repo: string) => Promise<string>` | Branch name (e.g. `"main"`) |
+| `getAuthenticatedRemoteUrl` | `(remoteUrl: string) => SecureValue` | Authenticated remote URL (token wrapped in a `SecureValue` so it never leaks through logs). Synchronous. |
 
 The `repo` parameter uses `"owner/repo"` format throughout.
 
@@ -171,6 +172,7 @@ export class YourHostingPlugin extends GitHostingAdapter {
   // ── Branch Queries ──────────────────────────────────
   protected async doGetBranchProtection(repo: string, branch: string): Promise<BranchProtection> { /* ... */ }
   protected async doGetDefaultBranch(repo: string): Promise<string> { /* ... */ }
+  protected doGetAuthenticatedRemoteUrl(remoteUrl: string): SecureValue { /* synchronous; wrap token in SecureValue */ }
 
   // ── Lifecycle ───────────────────────────────────────
   protected async doInitialize(config: Record<string, unknown>): Promise<InitResult> {
@@ -287,7 +289,7 @@ The GitHub implementation uses Octokit for all API calls. It parses `"owner/repo
 
 | File | Description |
 |---|---|
-| `src/adapters/git-hosting.ts` | Abstract class with 12 public methods + 12 protected abstract `do*` methods |
+| `src/adapters/git-hosting.ts` | Abstract class with 13 public methods + 13 protected abstract `do*` methods |
 | `src/adapters/base.ts` | `BaseAdapter` -- lifecycle template methods, manifest, `hasCapability()` |
 | `src/adapters/errors.ts` | `AdapterMethodError` and `createAdapterError()` |
 | `src/schemas/adapters.ts` | All Zod schemas: `PROptionsSchema`, `PRResultSchema`, `MergeResultSchema`, etc. |

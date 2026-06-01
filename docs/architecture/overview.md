@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Engineer is an autonomous software engineering agent. It receives tasks (typically via GitHub issues), researches the codebase, plans a solution, executes changes, self-reviews its work, and ships pull requests. It runs as a background daemon that polls for new work, schedules tasks by priority, and dispatches them through a seven-phase pipeline.
+The Engineer is an autonomous software engineering agent. It receives tasks (typically via GitHub issues), researches the codebase, plans a solution, executes changes, reviews its own work, and ships pull requests. It runs as a background daemon that polls for new work, schedules tasks by priority, and dispatches them through a six-phase pipeline.
 
 The system is designed around three principles: **modularity** (every external integration is a swappable plugin), **safety** (two authorization gates before any side effect), and **auditability** (every action is an event persisted to the database).
 
@@ -82,7 +82,7 @@ graph LR
 | Component | Responsibility |
 |-----------|---------------|
 | **Daemon** | Tick loop: poll triggers, schedule tasks, dispatch to Orchestrator, monitor health |
-| **Orchestrator** | Seven-phase task execution pipeline, agent loop, workspace lifecycle |
+| **Orchestrator** | Six-phase task execution pipeline, agent loop, workspace lifecycle |
 | **TaskEngine** | Task state machine, transitions, permissions, priority queries |
 | **RetryPolicy** | Single source of truth for task-level retry semantics — per-category backoff schedules, ceilings, and terminal disposition. Called by the scheduler (crash + agent-unavailable) and by boot recovery |
 | **DispatchTracker** | Single owner of in-flight dispatch lifecycle. Mints a per-dispatch identity so late callbacks are idempotent across re-dispatch, owns the `AbortSignal` exposed to the orchestrator, and exposes one `terminate(taskId, reason)` path that routes preemption, cost-limit, hard-cap, and graceful-shutdown through `Outcomes.terminated`. Drains on shutdown with a single shared timeout. See [scheduling-dispatch.md](scheduling-dispatch.md). |
@@ -98,31 +98,31 @@ graph LR
 
 ## Task Lifecycle
 
-Each task flows through a seven-phase pipeline inside the Orchestrator. Trivial tasks (assessed during requirements gathering) skip the research phase — planning always runs.
+Each task flows through a six-phase pipeline inside the Orchestrator. Trivial tasks (assessed during requirements) skip both research and planning.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> requirements_gathering
-    requirements_gathering --> research : Moderate/Complex
-    requirements_gathering --> planning : Trivial (skip research)
-    research --> planning : Codebase understood
-    planning --> execution : Plan approved
-    execution --> self_review : Changes complete
-    self_review --> execution : Needs work (max 3 loops)
-    self_review --> demo_prep : Quality passes
-    demo_prep --> integration : PR ready
-    integration --> [*] : Task complete
+    [*] --> requirements
+    requirements --> research : Moderate / Complex
+    requirements --> execution : Trivial (skip research + planning)
+    research --> planning
+    planning --> execution
+    execution --> review
+    review --> execution : refine reworks
+    review --> delivery : ship
+    delivery --> [*] : merged (or pushed, in push-only mode)
 ```
 
 **Phases:**
 
-1. **Intake Analysis** — Parse requirements, identify gaps, determine complexity
-2. **Research** — Explore codebase, read documentation, understand context
-3. **Planning** — Design solution, create implementation plan
-4. **Execution** — Write code, run tests, iterate on failures
-5. **Self-Review** — Review own changes as a code reviewer (loops back to execution if issues found)
-6. **Demo Prep** — Create draft PR, write description, prepare for review
-7. **Integration** — Finalize PR, notify stakeholders, clean up
+1. **Requirements** — Understand the task, ground in the codebase, assess complexity, and ask the owner only if a decision genuinely needs a person.
+2. **Research** — Study the code the change touches (skipped for trivial tasks).
+3. **Planning** — Design the approach and stress-test it (skipped for trivial tasks).
+4. **Execution** — Write the code, then prove it by running the project's own gates.
+5. **Review** — Lenses find issues; `refine` fixes them in place and decides whether to ship.
+6. **Delivery** — Write the PR description, push, open the pull request, and merge on approval — or, in push-only mode, just push.
+
+See [the pipeline architecture](pipeline.md) for the full model: sub-phases, routing, loop caps, and external re-entry.
 
 ## Task State Machine
 
@@ -134,17 +134,14 @@ stateDiagram-v2
     requirements_gathering --> queued : Requirements gathered
     requirements_gathering --> failed : Cannot proceed
     queued --> active : Scheduled
-    active --> blocked : Waiting on external
-    blocked --> active : Unblocked
-    blocked --> queued : Re-queue
-    blocked --> failed : Escalation timeout
+    active --> blocked : Needs a human, or awaiting PR review
     active --> queued : Preempted
-    active --> review_pending : PR created
-    review_pending --> active : Feedback received
-    review_pending --> queued : Rework needed
-    review_pending --> completed : Approved + merged
     active --> completed : Direct completion
     active --> failed : Unrecoverable error
+    blocked --> active : Unblocked / re-dispatched
+    blocked --> queued : Re-queued (e.g. external PR event)
+    blocked --> completed : Completed from the wait
+    blocked --> failed : Escalation timeout
     failed --> queued : engineer retry
 ```
 
@@ -155,43 +152,42 @@ stateDiagram-v2
 | `requirements_gathering` | — | Initial state. Clarifying intent before scheduling. |
 | `queued` | — | Ready for execution, waiting to be scheduled |
 | `active` | `working` | Currently being worked on by the Orchestrator |
-| `blocked` | — | Waiting on external input (human response, review feedback) |
-| `review_pending` | `code` | PR created, awaiting review |
-| `completed` | — | Successfully completed, PR merged |
+| `blocked` | — | Waiting — either on a human (a question or decision) or on an external PR event (review, CI, approval, merge). The block reason distinguishes them. |
+| `completed` | — | Successfully completed (PR merged, or branch pushed in push-only mode) |
 | `failed` | — | Failed after exhausting recovery options |
 
 ## Plugin System
 
-Plugins implement adapter contracts and are discovered via manifest files.
+Each plugin implements one adapter contract. Plugins are registered in `src/plugins/builtin.ts` — a manifest object plus a factory function per plugin — and validated against `PluginManifestSchema` at import time.
 
-**Manifest** (`engineer.plugin.yaml`):
+**Manifest** (a TypeScript object in `builtin.ts`):
 
-```yaml
-id: my-trigger
-type: trigger
-version: "1.0.0"
-name: My Custom Trigger
-description: Polls a custom source for new tasks
-critical: true
-requirements:
-  - type: binary
-    name: my-trigger-cli
-entry: index.ts
-poll_interval_ms: 60000      # daemon's per-plugin poll cadence (falls back to global config)
-contributes:
-  events:
-    - trigger.new_event
+```ts
+{
+  id: "github-trigger",
+  type: "trigger",                       // adapter type: trigger | communication | agent | git_hosting
+  version: "1.0.0",
+  name: "GitHub Trigger",
+  description: "Polls GitHub for assigned issues",
+  critical: true,                        // abort startup on failure (vs. degrade)
+  requirements: [{ type: "env", name: "GITHUB_TOKEN" }],
+  combined_with: ["github-comm", "github-hosting"],
+  entry: "builtin",
+  poll_interval_ms: 30_000,              // daemon's per-plugin poll cadence (falls back to global config)
+  adapter_meta: {},                      // e.g. capabilities / channel for comm plugins
+  contributes: { events: ["trigger.new_event"] },
+}
 ```
 
-**Five-phase loading:**
+**Loading:**
 
-1. **Discover** — Scan configured directories for `engineer.plugin.yaml` manifests
-2. **Validate** — Check unique IDs, type validity, entry point existence
-3. **Order** — Sort by adapter type (Communication > Agent > GitHosting > Trigger)
-4. **Load** — Dynamic import, call `createPlugin()` factory function
-5. **Initialize** — Validate config, resolve env vars, call `plugin.initialize(config)`
+1. **Select** — `discoverEnabledPlugins` reads the plugin-config directory and keeps the built-in plugins whose `id` matches an enabled config file.
+2. **Register** — each enabled plugin is registered with the Registry (manifest + factory).
+3. **Initialize** — config is validated, env vars are resolved, and `initialize()` is called; health monitoring starts.
 
-**Health state machine:** `healthy` > `unhealthy` (1 failed check) > `failed` (3 consecutive failures). Health checks run every 60 seconds.
+**Health state machine:** `healthy` > `unhealthy` (1 failed check) > `failed` (3 consecutive failures). Health checks run on the configured interval.
+
+To add a plugin, see the per-adapter guides under [docs/plugins/](../plugins/) — each ends with a "Registration in builtin.ts" section.
 
 ## Event Bus
 
@@ -214,6 +210,7 @@ The SafetyLayer tracks cost across configurable time windows and can escalate to
 
 ## Further Reading
 
+- [The Pipeline](pipeline.md) — How a task flows through the six phases: sub-phases, routing, loop caps, and external re-entry
 - [Plugin Documentation](../plugins/) — Adapter contracts, per-plugin references, development guides
 - [Philosophy](../philosophy.md) — Core beliefs driving every decision
 - [Build Journal — Archive](../archived/) — Phase-by-phase development history (not authoritative; read code and `docs/` for ground truth)

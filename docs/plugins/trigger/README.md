@@ -34,7 +34,7 @@ Defined in `src/schemas/adapters.ts` (`TriggerEventSchema`).
 | `repo` | `string` | Repository identifier (`owner/name`). |
 | `clone_url` | `string` | HTTPS clone URL. Must start with `https://`. |
 | `thoughts_id` | `string \| null` | Identifier for the thoughts directory (e.g. `issue-42`). |
-| `metadata` | `Record<string, unknown>` | Arbitrary platform-specific data (labels, assignees, timestamps). |
+| `metadata` | `Record<string, unknown> \| null` | Arbitrary platform-specific data (labels, assignees, timestamps). |
 
 ### InitResult
 

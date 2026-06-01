@@ -109,22 +109,22 @@ parentSpan.end({ exitCode: 0 });
 
 // Decision (structured choice with reasoning)
 observer.recordDecision(
-  "decomposition_strategy",          // name
-  "Task too complex for single PR",  // context
+  "route:verify",                     // name
+  'execution/verify reported "ok"',  // context
   [                                   // alternatives
-    { id: "single", description: "Handle in one task" },
-    { id: "decompose", description: "Split into subtasks" },
+    { id: "advance", description: "Move to the next sub-phase or phase" },
+    { id: "repeat", description: "Loop this phase from its start" },
   ],
-  "decompose",                        // chosen
-  "3 independent concerns detected",  // reasoning
-  0.85,                               // confidence
-  { task_id: taskId, phase: "planning" },
+  "advance",                          // chosen
+  "All verification gates passed",    // reasoning
+  1,                                  // confidence
+  { task_id: taskId, phase: "execution" },
 );
 
 // Error with recovery info
 observer.recordError(
   error,
-  { operation: "pr_creation", component: "pr-manager" },
+  { operation: "create_pr", component: "orchestrator" },
   { action: "retry_with_backoff", success: true },
   { task_id: taskId },
 );
@@ -148,7 +148,7 @@ myObserver.info("Task created", { taskId });
 
 **File:** `src/schemas/observer.ts`
 
-13 types — use the one that best describes what you're recording:
+14 types — use the one that best describes what you're recording:
 
 | Type | When to use |
 |------|-------------|
@@ -190,19 +190,19 @@ interface SpanOptions {
 Every observer child is tagged with a `ComponentTag` — a TypeScript string union:
 
 ```
-daemon, registry, orchestrator, task-engine, safety, session-memory,
-workspace-manager, event-bus, people-directory, config, cli,
-action-pipeline, hooks, observer, pr-manager, phase-runner,
-agent-runner, agent-loop, plugin-loader
+daemon, registry, orchestrator, task-engine, safety-layer, session-memory,
+workspace-manager, skills, event-bus, people-directory, config, cli,
+action-pipeline, plugin, observer, pr-manager, plugin-loader,
+data-lifecycle, notifications, response-poller, unblock-resolver, dashboard
 ```
 
-Tags appear in every log line's `component` field. Use the existing tag for your component. If adding a new component, add its tag to the union in `src/core/logging.ts`.
+Tags appear in every log line's `component` field. Use the existing tag for your component. If adding a new component, add its tag to the `ComponentTag` union in `src/core/observer/logging.ts`.
 
 ---
 
 ## Bootstrap Lifecycle
 
-**File:** `src/cli/bootstrap.ts`
+**File:** `src/cli/commands/start/bootstrap.ts`
 
 The observer has a two-phase lifecycle because pino is available immediately but the SQLite observation store requires the database:
 
@@ -294,7 +294,7 @@ interface LoggingConfig {
 
 ### SQLite Table
 
-**File:** `src/db/migrations/003_observer.sql`
+**File:** `src/db/migrations/002_observations.sql`
 
 ```sql
 CREATE TABLE observations (
@@ -354,7 +354,7 @@ The frontend uses TanStack Query for data fetching with SSE-driven cache invalid
 ### Unit Tests (no tracing needed)
 
 ```typescript
-import { createTestObserverFacade } from "../../test/helpers/test-observer-facade.js";
+import { createTestObserverFacade } from "../../tests/helpers/test-observer-facade.js";
 
 const observer = createTestObserverFacade("my-component");
 // Silent pino (no output), no observation store (tracing is no-op)
@@ -368,7 +368,7 @@ expect(warnSpy).toHaveBeenCalledWith("expected message", { expectedData });
 ### Integration Tests (with tracing)
 
 ```typescript
-import { createTestObserver } from "../../test/helpers/test-observer.js";
+import { createTestObserver } from "../../tests/helpers/test-observer.js";
 
 const handle = createTestObserver();
 // In-memory SQLite + temp dir blob store — full tracing
@@ -390,7 +390,7 @@ handle.cleanup(); // Closes DB + removes temp dir
 2. **Observer is always required** — never `observer?: IObserver`, always `observer: IObserver`
 3. **Message first, data second** — `observer.info("message", { data })`, not pino's `(data, message)`
 4. **Structured data** — put values in the data object, not in the message string
-5. **Use the right observation type** — pick from the 13 types, don't overload `lifecycle` for everything
+5. **Use the right observation type** — pick from the 14 types, don't overload `lifecycle` for everything
 6. **Include SpanOptions** — always pass `task_id` and `trace_id` when available for correlation
 7. **Spans must end** — always call `span.end()` (use try/finally if needed)
 8. **No circular logging** — `ObserverStream` silently swallows subscriber errors (can't log its own errors)
@@ -404,7 +404,7 @@ handle.cleanup(); // Closes DB + removes temp dir
 |------|---------|
 | `src/core/observer/facade.ts` | `IObserver` interface + `Observer` class (the unified facade) |
 | `src/core/observer/types.ts` | `IObservationStore` + `ObservationSpan` interfaces |
-| `src/core/observer/index.ts` | `ObservationStore` class (SQLite persistence) |
+| `src/core/observer/observation-store.ts` | `ObservationStore` class (SQLite persistence; re-exported from `index.ts`) |
 | `src/core/observer/store.ts` | `ObserverStore` (prepared statements, SQL layer) |
 | `src/core/observer/stream.ts` | `ObserverStream` (real-time pub/sub for dashboard SSE) |
 | `src/schemas/observer.ts` | Zod schemas, observation types enum, row mapper |
@@ -412,5 +412,5 @@ handle.cleanup(); // Closes DB + removes temp dir
 | `src/core/observer/logging.ts` | `ComponentTag` type, `createLogger`, `createSilentLogger` |
 | `src/core/observer/blob-store.ts` | Content-addressable blob storage (SHA-256) |
 | `src/cli/bootstrap.ts` | Observer creation, upgrade, and threading to all components |
-| `test/helpers/test-observer-facade.ts` | Test helper: silent observer (no tracing) |
-| `test/helpers/test-observer.ts` | Test helper: full observer with in-memory DB |
+| `tests/helpers/test-observer-facade.ts` | Test helper: silent observer (no tracing) |
+| `tests/helpers/test-observer.ts` | Test helper: full observer with in-memory DB |

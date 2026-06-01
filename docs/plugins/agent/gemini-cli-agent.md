@@ -1,6 +1,6 @@
 # Gemini CLI Agent
 
-The Gemini CLI agent plugin uses Google's Gemini CLI tool for agent execution. It runs on the free tier -- there is no cost data (cost_usd is always null). The plugin invokes `gemini -p "" -o stream-json --yolo` with the prompt piped via stdin, parses NDJSON output for content and token usage, and detects rate limits from both stdout and stderr.
+The Gemini CLI agent plugin uses Google's Gemini CLI tool for agent execution. It runs on the free tier -- there is no cost data (cost_usd is always null). The plugin invokes `gemini -p "" -o stream-json --model <model> --yolo` with the prompt piped via stdin, parses NDJSON output for content and token usage, and detects rate limits from both stdout and stderr.
 
 Use this plugin for zero-cost experimentation or as a fallback when paid providers hit quota limits.
 
@@ -38,6 +38,7 @@ Config file: `~/.engineer/config/plugins/gemini-cli-agent.yaml`
 | `model` | `string` | `gemini-2.5-pro` | No | Gemini model identifier passed to `--model`. |
 | `cli_path` | `string` | `gemini` | No | Path to the Gemini CLI binary. |
 | `command_timeout_ms` | `number` | `600000` | No | Timeout for each CLI invocation (10 minutes). |
+| `max_cli_output_bytes` | `number` | `500000000` | No | Maximum bytes of CLI stdout before the process is killed (default 500 MB). Prevents memory blowups from runaway output. |
 
 ### Minimal config
 
@@ -55,6 +56,7 @@ All fields have defaults. An empty config file works:
 model: gemini-2.5-pro
 cli_path: gemini
 command_timeout_ms: 600000
+max_cli_output_bytes: 500000000
 ```
 
 ## How It Works

@@ -36,6 +36,7 @@ Config file: `~/.engineer/config/plugins/claude-code-agent.yaml`
 | `model` | `string` | `claude-sonnet-4-6` | No | Model identifier passed to `--model`. |
 | `cli_path` | `string` | `claude` | No | Path to the Claude CLI binary. Change if it is not on your PATH. |
 | `command_timeout_ms` | `number` | `7200000` | No | Maximum time per CLI invocation (default 2 hours). Lower if you want a hard cap on phase duration. |
+| `max_cli_output_bytes` | `number` | `500000000` | No | Maximum bytes of CLI stdout before the process is killed (default 500 MB). Guards against runaway output exhausting memory. |
 
 ### Minimal config
 
@@ -52,6 +53,7 @@ All fields have defaults. An empty config file works:
 model: claude-sonnet-4-6
 cli_path: claude
 command_timeout_ms: 7200000
+max_cli_output_bytes: 500000000
 ```
 
 ## How It Works
@@ -72,7 +74,7 @@ command_timeout_ms: 7200000
 - Quota API access depends on having valid OAuth credentials in the Claude Code credential store. API key users will not get quota percentages (only rate_limit_event fallback).
 - The 30-minute quota cache means utilization percentages can be stale during heavy usage.
 - Non-zero exit codes from the CLI trigger output salvage: if valid NDJSON was produced, the result is used. Signal kills (SIGTERM/SIGKILL) are not retried.
-- No per-invocation timeout — the daemon's `max_active_duration_ms` and stuck detection handle runaway tasks at the right level.
+- A per-invocation timeout (`command_timeout_ms`, default 2 hours) kills a single CLI call that runs too long; the daemon's `max_active_duration_ms` and stuck detection are the higher-level backstops for a runaway task across calls.
 
 ## Related Plugins
 

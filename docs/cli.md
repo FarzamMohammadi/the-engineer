@@ -73,7 +73,7 @@ engineer start
 That's it. On first run, `start` detects there's no config and launches guided setup:
 
 1. **Environment detection** — scans PATH for coding agent CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars
-2. **Plugin selection** — one prompt per adapter type (agent, trigger, hosting, communication, tools), grouped by category, with detection status shown
+2. **Plugin selection** — one prompt per adapter type (agent, trigger, communication, git hosting), grouped by category, with detection status shown
 3. **Per-plugin config** — prompts for required fields (repos to watch, etc.)
 4. **People Directory** — configures the owner (the single person The Engineer reaches) and optional additional people. For each person: name, identifier, roles, and a handle for each selected communication channel (derived from plugin manifests). Generates `people.yaml` with real values instead of placeholders.
 5. **Secret collection** — prompts for token values with masked input (e.g., `GITHUB_TOKEN`). Tokens already set in your shell are captured and persisted to `~/.engineer/.env` automatically. Permissions: `0o600`.
@@ -121,7 +121,7 @@ engineer start --seed ./seed-example/    # Non-interactive setup from seed direc
 
 **Signal handling:** `SIGTERM` and `SIGINT` trigger graceful shutdown — active tasks transition to `queued`, plugins shut down, PID file cleaned up.
 
-Source: [`src/cli/commands/start.ts`](../src/cli/commands/start.ts), [`src/cli/bootstrap.ts`](../src/cli/bootstrap.ts)
+Source: [`src/cli/commands/start/start.ts`](../src/cli/commands/start/start.ts), [`src/cli/commands/start/bootstrap.ts`](../src/cli/commands/start/bootstrap.ts)
 
 ### stop
 

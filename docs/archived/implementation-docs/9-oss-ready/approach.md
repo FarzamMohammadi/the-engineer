@@ -134,22 +134,24 @@ Each slice is "done done" when:
 
 ### The Slices
 
-1. **Standards Alignment** — Probe Farzam for coding style, naming, patterns, expectations. Establish the law for all subsequent slices.
-2. **Repo Readiness** — CI, git hooks, linters, dependency audit, migration consolidation, quality guardrails. The enforcement layer everything else benefits from.
-3. **Dashboard** — Complete rewrite. Exposes all API/data gaps that inform later slices.
-4. **Startup & Configuration** — CLI entry, bootstrap, plugin loading, daemon startup. First impressions.
-5. **Trigger & Requirements Flow** — Trigger polling, dedup, task creation, requirements gathering contacts.
-6. **Scheduling & Dispatch** — Priority, eligibility, slot management, concurrency.
-7. **Workspace & Session** — Worktree lifecycle, session setup, resume, thoughts/ directory.
-8. **RRPIR Phases** — Requirements → Research → Planning → Implementation → Review pipeline.
-9. **Demo & PR** — Commit, push, draft PR, PR narrative from thoughts/ files.
-10. **Review & Feedback (External)** — External review polling, feedback detection, rework loop.
-11. **Completion & Cleanup** — Terminal states, notifications, workspace cleanup, parent integration.
-12. **Communication** — Notification wiring, message formatting, channel routing.
-13. **Background Services** — Cost tracking, data lifecycle, health monitoring.
-14. **Agent Readiness** — All docs work as agent prompts. Contribution guides are executable.
-15. **Dashboard Revisit + Final Polish** — Docs site (VitePress on GitHub Pages), demo mode, license, design-history archive.
-16. **npm Publish Readiness** — Build output, public API surface, exports, package structure, metadata, registry prep. Real engineering if restructuring is needed.
+> **Status + renumber (current as of Session 50).** Slices 1–8 are DONE. **Slice 8 ("Pipeline Phases") absorbed original items 9 (Demo & PR) and 10 (Review & Feedback External)** — they shipped as its delivery sub-phases + typed PR-event re-entry loop. Everything from item 11 down therefore **renumbers down by 2**; the original design numbers are kept below as the record, and the `→ Slice N` tag gives the current number. **Next up: current Slice 9 = item 11 (Completion & Cleanup).**
+
+1. **Standards Alignment** *(DONE — Slice 1)* — Probe Farzam for coding style, naming, patterns, expectations. Establish the law for all subsequent slices.
+2. **Repo Readiness** *(DONE — Slice 2)* — CI, git hooks, linters, dependency audit, migration consolidation, quality guardrails. The enforcement layer everything else benefits from.
+3. **Dashboard** *(DONE — Slice 3)* — Complete rewrite. Exposes all API/data gaps that inform later slices.
+4. **Startup & Configuration** *(DONE — Slice 4)* — CLI entry, bootstrap, plugin loading, daemon startup. First impressions.
+5. **Trigger & Requirements Flow** *(DONE — Slice 5)* — Trigger polling, dedup, task creation, requirements gathering contacts.
+6. **Scheduling & Dispatch** *(DONE — Slice 6)* — Priority, eligibility, slot management, concurrency.
+7. **Workspace & Session** *(DONE — Slice 7)* — Worktree lifecycle, session setup, resume, thoughts/ directory.
+8. **RRPIR Phases** *(DONE — Slice 8, "Pipeline Phases")* — Requirements → Research → Planning → Implementation → Review pipeline.
+9. **Demo & PR** *(DONE — absorbed into Slice 8)* — Commit, push, draft PR, PR narrative from thoughts/ files.
+10. **Review & Feedback (External)** *(DONE — absorbed into Slice 8)* — External review polling, feedback detection, rework loop.
+11. **Completion & Cleanup** *(→ **Slice 9, NEXT**)* — Terminal states, notifications, workspace cleanup. *(NOTE: the original "parent integration" is moot — decomposition / child-tasks were cut in Slice 6, so there are no child branches to integrate. Reconcile in RRP. Inherits `branch_retention_days` + the external-merge audit gap; see `slices/08-pipeline-phases.md` § Outbound.)*
+12. **Communication** *(→ Slice 10)* — Notification wiring, message formatting, channel routing. Honors the reserved `notification.*` / `question_batching.*` config.
+13. **Background Services** *(→ Slice 11)* — Cost tracking, data lifecycle, health monitoring.
+14. **Agent Readiness** *(→ Slice 12)* — All docs work as agent prompts. Contribution guides are executable.
+15. **Dashboard Revisit + Final Polish** *(→ Slice 13)* — Docs site (VitePress on GitHub Pages), demo mode, license, design-history archive. Also the new-shape dashboard UI deferred from Slice 8 (`phase`/`sub_phase`/counters, the simplified state machine, legacy `self_review`/`demo_prep` label cleanup).
+16. **npm Publish Readiness** *(→ Slice 14)* — Build output, public API surface, exports, package structure, metadata, registry prep. Real engineering if restructuring is needed.
 
 ### Cross-Slice Discovery
 

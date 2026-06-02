@@ -41,6 +41,28 @@ export const DatabaseTuningConfigSchema = z.object({
 });
 export type DatabaseTuningConfig = z.infer<typeof DatabaseTuningConfigSchema>;
 
+// ── Telemetry Config ────────────────────────────────────────────────────────────
+// Opt-in projection of the observation tree to an external OTLP backend (e.g. Jaeger v2)
+// for a live flame-graph view. Off by default, additive, best-effort: a down or slow
+// endpoint never affects a task or startup. One swappable OTLP endpoint — point it at
+// any OTLP/HTTP backend by URL. The backend is a disposable lens; SQLite stays the
+// system of record. The Engineer does not download or supervise the backend; the user
+// brings it (e.g. `brew install jaeger && jaeger`).
+
+export const TelemetryConfigSchema = z.object({
+  enabled: z
+    .boolean()
+    .default(false)
+    .describe("Export the observation tree to an external OTLP backend for a live flame-graph view. Default: off."),
+  endpoint: z
+    .string()
+    .default("http://localhost:4318")
+    .describe(
+      "OTLP/HTTP base URL of the trace backend. Spans are POSTed to `<endpoint>/v1/traces`. Any OTLP backend works; the default targets a local Jaeger v2.",
+    ),
+});
+export type TelemetryConfig = z.infer<typeof TelemetryConfigSchema>;
+
 // ── Daemon Config ───────────────────────────────────────────────────────────────
 // Loaded from daemon.yaml. Startup-only — not hot-reloadable.
 
@@ -159,6 +181,9 @@ export const DaemonConfigSchema = z.object({
 
   // Database tuning (R10)
   database: DatabaseTuningConfigSchema.default({}),
+
+  // Telemetry — opt-in OTLP trace export (off by default, best-effort, one endpoint)
+  telemetry: TelemetryConfigSchema.default({}),
 
   // EventBus subscriber slow-callback warning threshold in ms (R10)
   subscriber_warn_threshold_ms: z

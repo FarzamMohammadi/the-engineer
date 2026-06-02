@@ -20,6 +20,7 @@ import {
   ResponseTimeoutSchema,
   SafetyConfigSchema,
   ScopeBoundariesSchema,
+  TelemetryConfigSchema,
   TimeoutStageActions,
   TimeoutStageSchema,
   WorkspaceConfigSchema,
@@ -64,6 +65,12 @@ describe("DaemonConfigSchema", () => {
     expect(config.workspace_reaper.interval_ms).toBe(3_600_000);
   });
 
+  it("produces telemetry defaults from empty input (off, default endpoint)", () => {
+    const config = DaemonConfigSchema.parse({});
+    expect(config.telemetry.enabled).toBe(false);
+    expect(config.telemetry.endpoint).toBe("http://localhost:4318");
+  });
+
   it("allows partial override while keeping other defaults", () => {
     const config = DaemonConfigSchema.parse({ tick_interval_ms: 10_000 });
     expect(config.tick_interval_ms).toBe(10_000);
@@ -83,6 +90,25 @@ describe("DaemonConfigSchema", () => {
 
   it("rejects invalid logging level", () => {
     expect(() => DaemonConfigSchema.parse({ logging: { level: "verbose" } })).toThrow();
+  });
+});
+
+describe("TelemetryConfigSchema", () => {
+  it("produces valid defaults from empty input (off, default endpoint)", () => {
+    const config = TelemetryConfigSchema.parse({});
+    expect(config.enabled).toBe(false);
+    expect(config.endpoint).toBe("http://localhost:4318");
+  });
+
+  it("accepts enabled with a custom endpoint", () => {
+    const config = TelemetryConfigSchema.parse({ enabled: true, endpoint: "http://collector:4318" });
+    expect(config.enabled).toBe(true);
+    expect(config.endpoint).toBe("http://collector:4318");
+  });
+
+  it("rejects a non-boolean enabled and a non-string endpoint", () => {
+    expect(() => TelemetryConfigSchema.parse({ enabled: "yes" })).toThrow();
+    expect(() => TelemetryConfigSchema.parse({ endpoint: 4318 })).toThrow();
   });
 });
 

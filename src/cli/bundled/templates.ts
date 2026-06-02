@@ -76,6 +76,11 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # database:
 #   cache_size_mb: 64                  # SQLite cache size in MB (default: 64)
 
+# --- Telemetry (opt-in OTLP trace export to a flame-graph backend like Jaeger v2) ---
+# telemetry:
+#   enabled: false                     # Export the observation tree to an OTLP backend (default: false)
+#   endpoint: "http://localhost:4318"  # OTLP/HTTP base URL; spans POSTed to <endpoint>/v1/traces (default: http://localhost:4318)
+
 # --- Event bus ---
 # subscriber_warn_threshold_ms: 50    # Warn if a subscriber callback takes longer than this (default: 50)
 
@@ -371,6 +376,17 @@ workspace_reaper:
 # ── Database Tuning ─────────────────────────────────────────────────────────
 database:
   cache_size_mb: 64                       # SQLite cache size in MB (default: 64)
+
+# ── Telemetry (opt-in OTLP trace export) ────────────────────────────────────
+# Project the observation tree to an external OTLP backend (e.g. Jaeger v2) for a
+# live flame-graph view. Off by default, additive, best-effort: a down or slow
+# endpoint never affects a task or startup. One swappable endpoint — point it at
+# any OTLP/HTTP backend. The Engineer does not download or run the backend; bring
+# your own (e.g. "brew install jaeger && jaeger"). Remote endpoints ship trace data
+# off-machine — keep it local unless you intend otherwise.
+telemetry:
+  enabled: false                          # Export the observation tree to an OTLP backend (default: false)
+  endpoint: "http://localhost:4318"       # OTLP/HTTP base URL; spans POSTed to <endpoint>/v1/traces (default: http://localhost:4318)
 
 # ── Event Bus ───────────────────────────────────────────────────────────────
 subscriber_warn_threshold_ms: 50          # Warn if a subscriber callback exceeds this (ms). 0 = disabled. (default: 50)

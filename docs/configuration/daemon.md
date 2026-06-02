@@ -131,6 +131,19 @@ The reaper performs the terminal-task cleanup that cannot happen inline: it dele
 |-------|------|---------|-------------|
 | `evaluation.enabled` | boolean | `false` | Run an AI-as-Judge evaluation after each task completes — two independent CLI sessions (a blind plan, then a comparison verdict). Results are stored under `~/.engineer/evaluations/`. |
 
+## Telemetry
+
+Opt-in projection of the daemon's observation tree to an external OTLP backend (e.g. [Jaeger v2](https://www.jaegertracing.io/)) for a live flame-graph view. This is a *projection* of observations already recorded in SQLite, not new instrumentation — SQLite stays the system of record and the backend is a disposable lens. It is **off by default**, additive, and **best-effort**: a down or slow endpoint never affects a task or daemon startup.
+
+The endpoint is a single, swappable OTLP/HTTP target. Point it at any OTLP backend by URL — that one URL is the entire integration surface. The Engineer does not download, install, or supervise the backend; you bring it (e.g. `brew install jaeger && jaeger`, the official download, or `docker run`). When telemetry is enabled but the endpoint is unreachable, the daemon still starts and prints a friendly install pointer.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `telemetry.enabled` | boolean | `false` | Export the observation tree to the OTLP backend. When off (the default), nothing is exported and the pipeline is unchanged. |
+| `telemetry.endpoint` | string | `"http://localhost:4318"` | OTLP/HTTP base URL of the trace backend. Spans are POSTed to `<endpoint>/v1/traces`. The default targets a local Jaeger v2. |
+
+> **Data leaves the machine.** A non-localhost endpoint ships trace data — including span attributes derived from task input and output — off your machine. Keep the endpoint local unless you intend to export. Attribute values are sanitized at the export boundary, but treat any remote endpoint as a trust boundary.
+
 ## Other
 
 | Field | Type | Default | Description |

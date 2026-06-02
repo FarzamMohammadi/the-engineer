@@ -6,7 +6,7 @@ The Engineer uses YAML configuration files stored in `~/.engineer/config/`. All 
 
 | File | Purpose |
 |------|---------|
-| [daemon.yaml](daemon.md) | Daemon runtime: concurrency, tick loop, logging, polling, workspace reaper |
+| [daemon.yaml](daemon.md) | Daemon runtime: concurrency, tick loop, logging, polling, workspace reaper, telemetry |
 | [orchestrator.yaml](orchestrator.md) | Review lenses, notifications |
 | [safety.yaml](safety.md) | Cost limits, scope boundaries, autonomy, merge policy |
 | [workspace.yaml](workspace.md) | Git operations, branch naming, PR settings, branch retention |

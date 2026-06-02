@@ -59,6 +59,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
       agent_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
     },
     evaluation: { enabled: false },
+    telemetry: { enabled: false, endpoint: "http://localhost:4318" },
     ...overrides,
   };
 }

@@ -284,26 +284,26 @@ describe("buildResourceSpans", () => {
     const payload = buildResourceSpans([span]);
 
     expect(payload.resourceSpans).toHaveLength(1);
-    const resourceSpan = payload.resourceSpans[0];
+    const resourceSpan = payload.resourceSpans[0]!;
     expect(resourceSpan.scopeSpans).toHaveLength(1);
-    expect(resourceSpan.scopeSpans[0].spans).toEqual([span]);
+    expect(resourceSpan.scopeSpans[0]!.spans).toEqual([span]);
   });
 
   it("stamps service.name = the-engineer on the resource", () => {
     const payload = buildResourceSpans([]);
-    const serviceAttr = payload.resourceSpans[0].resource.attributes.find((a) => a.key === "service.name");
+    const serviceAttr = payload.resourceSpans[0]!.resource.attributes.find((a) => a.key === "service.name");
     expect(serviceAttr?.value).toEqual({ stringValue: SERVICE_NAME });
     expect(SERVICE_NAME).toBe("the-engineer");
   });
 
   it("stamps the instrumentation scope name", () => {
     const payload = buildResourceSpans([]);
-    expect(payload.resourceSpans[0].scopeSpans[0].scope.name).toBe(SCOPE_NAME);
+    expect(payload.resourceSpans[0]!.scopeSpans[0]!.scope.name).toBe(SCOPE_NAME);
   });
 
   it("produces a valid empty-but-well-formed payload for an empty batch", () => {
     const payload = buildResourceSpans([]);
-    expect(payload.resourceSpans[0].scopeSpans[0].spans).toEqual([]);
+    expect(payload.resourceSpans[0]!.scopeSpans[0]!.spans).toEqual([]);
   });
 
   it("serializes to JSON with string nanos (no precision loss on the wire)", () => {
@@ -312,7 +312,7 @@ describe("buildResourceSpans", () => {
     const roundTripped = JSON.parse(JSON.stringify(buildResourceSpans([span]))) as ReturnType<
       typeof buildResourceSpans
     >;
-    const wireSpan = roundTripped.resourceSpans[0].scopeSpans[0].spans[0];
+    const wireSpan = roundTripped.resourceSpans[0]!.scopeSpans[0]!.spans[0]!;
     expect(typeof wireSpan.startTimeUnixNano).toBe("string");
   });
 });

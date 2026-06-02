@@ -620,6 +620,7 @@ function makeSafeBundle() {
         agent_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
       },
       evaluation: { enabled: false },
+      telemetry: { enabled: false, endpoint: "http://localhost:4318" },
     },
     orchestrator: {} as ReturnType<typeof import("../../../../src/schemas/config.js").OrchestratorConfigSchema.parse>,
     workspace: {} as ReturnType<typeof import("../../../../src/schemas/config.js").WorkspaceConfigSchema.parse>,

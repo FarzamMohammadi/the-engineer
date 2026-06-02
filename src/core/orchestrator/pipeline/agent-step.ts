@@ -148,6 +148,7 @@ function endAgentSpan(span: ObservationSpan, scope: AgentSpanScope, result: SubP
     cost_usd: spend?.cost_usd ?? null,
     tokens_in: spend?.tokens_in ?? null,
     tokens_out: spend?.tokens_out ?? null,
+    cache_read_tokens: spend?.cache_read ?? null,
     result_blob: captureFileBlob(ctx, "result", path.join(directory, RESULT_FILE)),
     transcript_blob: captureFileBlob(ctx, "transcript", traceOutputPath),
   });
@@ -159,6 +160,7 @@ interface AgentSpend {
   readonly cost_usd: number | null;
   readonly tokens_in: number | null;
   readonly tokens_out: number | null;
+  readonly cache_read: number | null;
 }
 
 /** Distil an AgentRunResult into the spend the agent_call span carries (null tokens when the CLI doesn't report them). */
@@ -167,6 +169,7 @@ function toAgentSpend(result: AgentRunResult): AgentSpend {
     cost_usd: result.cost_usd,
     tokens_in: result.usage?.tokens.input_tokens ?? null,
     tokens_out: result.usage?.tokens.output_tokens ?? null,
+    cache_read: result.usage?.tokens.cache_read_tokens ?? null,
   };
 }
 

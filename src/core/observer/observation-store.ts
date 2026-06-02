@@ -149,7 +149,9 @@ export class ObservationStore implements IObservationStore {
         stack: extractStack(error),
         recovery: recovery ?? null,
       },
-      opts,
+      // An error observation is always level "error". buildObservation lets options.level win, so force it
+      // here — a caller-supplied opts.level must never downgrade an error below "error".
+      { ...opts, level: ObservationLevels.error },
       ObservationLevels.error,
       ObservationStatuses.error,
     );

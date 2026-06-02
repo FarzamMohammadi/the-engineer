@@ -27,7 +27,10 @@ export function SystemBar({ sseConnected }: SystemBarProps): React.JSX.Element {
       <Separator orientation="vertical" className="h-4" />
 
       <span className="text-xs text-muted-foreground">
-        Spend <span className="font-mono tabular-nums text-foreground">{formatCurrency(status?.total_spend_usd)}</span>
+        Spend{" "}
+        <span className="font-mono tabular-nums text-foreground">
+          {status?.total_spend_usd == null ? "—" : formatCurrency(status.total_spend_usd)}
+        </span>
       </span>
 
       <div className="ml-auto flex items-center gap-1.5">

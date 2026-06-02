@@ -33,20 +33,29 @@ export interface TokenTotals {
 export interface AgentCostAggregate {
   readonly todaySpend: number;
   readonly monthSpend: number;
-  readonly totalSpend: number;
+  /** Total spend, or null when no agent_call reported a numeric cost (so the UI shows "no data", not a wrong $0). */
+  readonly totalSpend: number | null;
   readonly perDay: DaySpend[];
   readonly perPhase: PhaseSpend[];
   readonly tokenTotals: TokenTotals;
 }
 
-/** Read one agent_call observation's spend off its span output (with input as the observe()-path fallback). */
-function readSpend(obs: Observation): { cost: number; tokensIn: number; tokensOut: number; cacheRead: number } {
+/**
+ * Read one agent_call observation's spend off its span output (with input as the observe()-path fallback).
+ * `costUsd` is null when no numeric cost was reported (a CLI that omits pricing) — distinct from a real $0 run.
+ */
+function readSpend(obs: Observation): {
+  costUsd: number | null;
+  tokensIn: number;
+  tokensOut: number;
+  cacheRead: number;
+} {
   // observe() stores data in `input`; span.end() stores in `output`. The agent_call span ends with output.
   const out = (obs.output ?? obs.input) as Record<string, unknown> | null;
   if (!out) {
-    return { cost: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0 };
+    return { costUsd: null, tokensIn: 0, tokensOut: 0, cacheRead: 0 };
   }
-  const cost = typeof out["cost_usd"] === "number" ? out["cost_usd"] : 0;
+  const costUsd = typeof out["cost_usd"] === "number" ? out["cost_usd"] : null;
   const tokensIn =
     typeof out["tokens_in"] === "number"
       ? out["tokens_in"]
@@ -60,25 +69,17 @@ function readSpend(obs: Observation): { cost: number; tokensIn: number; tokensOu
         ? out["output_tokens"]
         : 0;
   const cacheRead = typeof out["cache_read_tokens"] === "number" ? out["cache_read_tokens"] : 0;
-  return { cost, tokensIn, tokensOut, cacheRead };
+  return { costUsd, tokensIn, tokensOut, cacheRead };
 }
 
-/** Sum total spend across every agent_call observation — the one number system status reports. */
-export function totalAgentSpend(observations: readonly Observation[]): number {
-  let total = 0;
-  for (const obs of observations) {
-    total += readSpend(obs).cost;
-  }
-  return total;
-}
-
-/** Aggregate per-day, per-phase, and token totals from agent_call observations. */
+/** Aggregate per-day, per-phase, total spend, and token totals from agent_call observations — the one cost source. */
 export function aggregateAgentCost(observations: readonly Observation[]): AgentCostAggregate {
   const dayMap = new Map<string, { spend_usd: number }>();
   const phaseMap = new Map<string, { spend_usd: number; duration_ms: number; agent_calls: number }>();
   let todaySpend = 0;
   let monthSpend = 0;
   let totalSpend = 0;
+  let hasNumericCost = false;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCacheReadTokens = 0;
@@ -87,7 +88,11 @@ export function aggregateAgentCost(observations: readonly Observation[]): AgentC
   const month = new Date().toISOString().slice(0, 7);
 
   for (const obs of observations) {
-    const { cost, tokensIn, tokensOut, cacheRead } = readSpend(obs);
+    const { costUsd, tokensIn, tokensOut, cacheRead } = readSpend(obs);
+    const cost = costUsd ?? 0;
+    if (costUsd !== null) {
+      hasNumericCost = true;
+    }
     totalInputTokens += tokensIn;
     totalOutputTokens += tokensOut;
     totalCacheReadTokens += cacheRead;
@@ -130,7 +135,7 @@ export function aggregateAgentCost(observations: readonly Observation[]): AgentC
   return {
     todaySpend,
     monthSpend,
-    totalSpend,
+    totalSpend: hasNumericCost ? totalSpend : null,
     perDay,
     perPhase,
     tokenTotals: {

@@ -56,4 +56,36 @@ describe("Daemon — agent quota poll", () => {
     await handle.daemon.stop().catch(() => undefined);
     handle.cleanup();
   });
+
+  it("polls on a slow cadence, not on every tick", async () => {
+    const handle = createTestDaemon(undefined, { observer: queryableObserver() });
+    const agent = { manifest: { id: "claude-code-agent" }, getQuotaStatus: vi.fn().mockResolvedValue(QUOTA) };
+    handle.registry.getPrimaryPlugin.mockImplementation((type: string) => (type === "agent" ? agent : null));
+
+    // The first tick polls; the immediate next tick must be gated out by the cadence.
+    await handle.daemon.tick();
+    await handle.daemon.tick();
+
+    expect(agent.getQuotaStatus).toHaveBeenCalledOnce();
+
+    await handle.daemon.stop().catch(() => undefined);
+    handle.cleanup();
+  });
+
+  it("survives a quota poll rejection without crashing the tick or emitting an observation", async () => {
+    const handle = createTestDaemon(undefined, { observer: queryableObserver() });
+    const agent = {
+      manifest: { id: "claude-code-agent" },
+      getQuotaStatus: vi.fn().mockRejectedValue(new Error("quota api down")),
+    };
+    handle.registry.getPrimaryPlugin.mockImplementation((type: string) => (type === "agent" ? agent : null));
+
+    await expect(handle.daemon.tick()).resolves.toBeUndefined();
+
+    expect(agent.getQuotaStatus).toHaveBeenCalledOnce();
+    expect(observerHandle.observer.query({ type: "quota_status" })).toHaveLength(0);
+
+    await handle.daemon.stop().catch(() => undefined);
+    handle.cleanup();
+  });
 });

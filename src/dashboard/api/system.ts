@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { ObservationTypes } from "../../schemas/observer.js";
-import { totalAgentSpend } from "./agent-cost-aggregation.js";
+import { aggregateAgentCost } from "./agent-cost-aggregation.js";
 
 export interface SystemRoutesDeps {
   db: Database.Database;
@@ -21,7 +21,6 @@ export interface SystemRoutesDeps {
 export function systemRoutes(deps: SystemRoutesDeps): Hono {
   const app = new Hono();
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: aggregation + PID check logic
   app.get("/status", (c) => {
     // Aggregate stats from observations table
     const tasksByState = deps.db.prepare("SELECT state, COUNT(*) as count FROM tasks GROUP BY state").all() as Array<{
@@ -44,10 +43,11 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       .prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'agent_call'")
       .get() as { count: number } | undefined;
 
-    // Total spend derives from agent_call spans (the same source the cost page uses, so the two never disagree).
-    // null — not 0 — when no agent has run yet, so the UI shows "no data" rather than a confidently-wrong $0.
+    // Total spend derives from agent_call spans via the shared aggregator (the same source the cost page uses, so
+    // the two never disagree). It is null — not 0 — when no agent_call reported a numeric cost, so the UI shows
+    // "no data" rather than a confidently-wrong $0.
     const agentObs = deps.observationStore.query({ type: ObservationTypes.agent_call, limit: 50000 });
-    const totalSpend: number | null = agentObs.length > 0 ? totalAgentSpend(agentObs) : null;
+    const totalSpend: number | null = aggregateAgentCost(agentObs).totalSpend;
 
     // Check if daemon is running via PID file
     let daemonRunning = false;

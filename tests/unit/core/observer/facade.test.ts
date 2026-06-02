@@ -1,3 +1,4 @@
+import pino from "pino";
 import { describe, expect, it } from "vitest";
 
 import { type Observer, createObserverFacade } from "../../../../src/core/observer/facade.js";
@@ -125,5 +126,36 @@ describe("Observer.withTrace", () => {
 
     expect(spans).toHaveLength(1);
     expect(spans[0]?.options?.trace_id).toBe("trace-late");
+  });
+});
+
+// The pino-binding half of the fold: log LINES must carry component, trace_id, and plugin_id.
+describe("Observer pino bindings", () => {
+  function capturingObserver(): { observer: Observer; lines: Record<string, unknown>[] } {
+    const lines: Record<string, unknown>[] = [];
+    const stream = {
+      write(chunk: string): void {
+        lines.push(JSON.parse(chunk) as Record<string, unknown>);
+      },
+    };
+    return { observer: createObserverFacade(pino({ level: "debug" }, stream), "cli"), lines };
+  }
+
+  it("binds component and trace_id onto a traced child's log lines", () => {
+    const { observer, lines } = capturingObserver();
+    observer.withTrace("trace-pino").child("orchestrator").info("phase started");
+    const last = lines.at(-1);
+    expect(last?.["component"]).toBe("orchestrator");
+    expect(last?.["trace_id"]).toBe("trace-pino");
+    expect(last?.["msg"]).toBe("phase started");
+  });
+
+  it("binds plugin_id, component plugin, and trace_id onto a traced plugin child's log lines", () => {
+    const { observer, lines } = capturingObserver();
+    observer.withTrace("trace-plug").childPlugin("github-trigger").warn("retrying");
+    const last = lines.at(-1);
+    expect(last?.["component"]).toBe("plugin");
+    expect(last?.["plugin_id"]).toBe("github-trigger");
+    expect(last?.["trace_id"]).toBe("trace-plug");
   });
 });

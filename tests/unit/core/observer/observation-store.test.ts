@@ -382,6 +382,15 @@ describe("Observer", () => {
       });
       expect(id).toMatch(ULID_PATTERN);
     });
+
+    it("forces level error even when a caller-supplied opts.level would downgrade it", () => {
+      handle.observer.recordError(new Error("must stay error"), { operation: "test", component: "test" }, undefined, {
+        level: "warn",
+      });
+
+      const results = handle.observer.query({ type: "error" });
+      expect(results[0]?.level).toBe("error");
+    });
   });
 
   // ── Security: secret sanitization in error paths ──────────────────────────

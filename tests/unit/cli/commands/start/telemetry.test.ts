@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type ProbeFetch,
   probeEndpointReachable,
+  traceInstallCommand,
   traceInstallPointer,
 } from "../../../../../src/cli/commands/start/telemetry.js";
 
@@ -57,5 +58,24 @@ describe("traceInstallPointer", () => {
   it("states that telemetry is on but no backend is reachable", () => {
     expect(traceInstallPointer("darwin")).toContain("no trace backend is reachable");
     expect(traceInstallPointer("linux")).toContain("no trace backend is reachable");
+  });
+});
+
+describe("traceInstallCommand", () => {
+  it("gives the brew one-liner on macOS", () => {
+    expect(traceInstallCommand("darwin")).toBe("brew install jaeger && jaeger");
+  });
+
+  it("downloads and runs ./jaeger on Linux", () => {
+    const cmd = traceInstallCommand("linux");
+    expect(cmd).toContain("https://www.jaegertracing.io/download/");
+    expect(cmd).toContain("./jaeger");
+    expect(cmd).not.toContain("brew");
+  });
+
+  it("downloads and runs jaeger.exe on Windows", () => {
+    const cmd = traceInstallCommand("win32");
+    expect(cmd).toContain("https://www.jaegertracing.io/download/");
+    expect(cmd).toContain("jaeger.exe");
   });
 });

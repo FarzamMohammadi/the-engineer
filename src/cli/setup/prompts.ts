@@ -3,6 +3,7 @@ import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 import type { BuiltinPlugin } from "../../plugins/builtin.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { ALL_TEMPLATES } from "../bundled/templates.js";
+import { traceInstallCommand } from "../commands/start/telemetry.js";
 import { getOutput } from "../output.js";
 import { checkRequirementsMet } from "./requirements.js";
 import type { AdapterTypeConfig, DetectionResult, GuidedSetupResult, PersonSetupEntry } from "./types.js";
@@ -61,6 +62,8 @@ export async function runGuidedSetup(
     }).map((t) => t.content);
     const secrets = await promptForSecrets(selectedTemplateContent);
 
+    const enableTelemetry = await promptForTelemetry();
+
     // Summary
     out.blank();
     out.log("  Selected plugins:");
@@ -79,6 +82,7 @@ export async function runGuidedSetup(
     }
     out.blank();
     out.log("  Safety: conservative (default)");
+    out.log(`  Trace visualization: ${enableTelemetry ? "enabled" : "disabled"}`);
     out.blank();
 
     const proceed = await confirm({
@@ -90,13 +94,37 @@ export async function runGuidedSetup(
       return null;
     }
 
-    return { selectedPlugins: allSelected, pluginConfigs, secrets, people };
+    return { selectedPlugins: allSelected, pluginConfigs, secrets, people, enableTelemetry };
   } catch (error) {
     if (error instanceof Error && error.name === "ExitPromptError") {
       return null;
     }
     throw error;
   }
+}
+
+// ── Telemetry (optional observability opt-in) ────────────────────────────────
+
+/**
+ * Final, optional setup step: offer live trace visualization (OTLP export to a
+ * local flame-graph UI like Jaeger). Off by default — opt-in, matching the
+ * additive/best-effort design. On yes, show the OS-aware command to get a backend
+ * running and make explicit that a missing backend only warns, never blocks.
+ */
+async function promptForTelemetry(): Promise<boolean> {
+  const out = getOutput();
+  out.blank();
+  out.log("  Observability — live trace visualization (optional):");
+  out.log("    See each task as a flame graph in a local trace UI (Jaeger). Off by default.");
+  const enable = await confirm({
+    message: "Enable live trace visualization?",
+    default: false,
+  });
+  if (enable) {
+    out.log(`    To view traces, run a backend: ${traceInstallCommand()}`);
+    out.log("    No backend yet? The Engineer still runs — you'll get a warning, never a crash.");
+  }
+  return enable;
 }
 
 // ── Detection Summary ────────────────────────────────────────────────────────

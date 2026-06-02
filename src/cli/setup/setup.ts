@@ -113,7 +113,12 @@ export async function runFirstTimeSetup(options: SetupOptions): Promise<boolean>
     return false;
   }
 
-  const files = generateConfigFiles(result.selectedPlugins, result.pluginConfigs, result.people);
+  const files = generateConfigFiles(
+    result.selectedPlugins,
+    result.pluginConfigs,
+    result.people,
+    result.enableTelemetry,
+  );
 
   if (dryRun) {
     out.blank();
@@ -444,6 +449,7 @@ export function generateConfigFiles(
   selectedPlugins: string[],
   pluginConfigs: Record<string, Record<string, unknown>>,
   people?: PersonSetupEntry[],
+  enableTelemetry = false,
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
 
@@ -454,6 +460,10 @@ export function generateConfigFiles(
     }
     if (template.relativePath === "config/people.yaml" && people && people.length > 0) {
       files.push({ relativePath: template.relativePath, content: generatePeopleYaml(people) });
+      continue;
+    }
+    if (template.relativePath === "config/daemon.yaml" && enableTelemetry) {
+      files.push({ relativePath: template.relativePath, content: activateTelemetryBlock(template.content) });
       continue;
     }
     files.push({ relativePath: template.relativePath, content: template.content });
@@ -508,6 +518,41 @@ function generatePeopleYaml(people: PersonSetupEntry[]): string {
     })),
   };
   return `# People configuration\n# Hot-reloadable — changes take effect without restart.\n\n${yamlStringify(peopleConfig)}`;
+}
+
+/** Matches a single leading "# " comment marker, for uncommenting daemon.yaml lines. */
+const COMMENT_MARKER_RE = /^# ?/;
+
+/**
+ * Activate the telemetry block in a daemon.yaml template. The template ships the
+ * block commented out (opt-in default); when the user enables trace visualization
+ * during setup, uncomment `# telemetry:` and its children and flip `enabled` to
+ * true, preserving the inline documentation. No-op if no commented block exists.
+ */
+export function activateTelemetryBlock(daemonYaml: string): string {
+  const lines = daemonYaml.split("\n");
+  const result: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (line.trim() !== "# telemetry:") {
+      result.push(line);
+      continue;
+    }
+    // Uncomment the `# telemetry:` parent and its `#   ...` children, enabling it.
+    result.push(uncommentLine(line));
+    let j = i + 1;
+    while (j < lines.length && (lines[j] ?? "").startsWith("#   ")) {
+      result.push(uncommentLine(lines[j] ?? "").replace("enabled: false", "enabled: true"));
+      j++;
+    }
+    i = j - 1;
+  }
+  return result.join("\n");
+}
+
+/** Strip a single leading "# " comment marker, preserving the indentation that follows. */
+function uncommentLine(line: string): string {
+  return line.replace(COMMENT_MARKER_RE, "");
 }
 
 /** Generate a single plugin config file from user config and/or template. */

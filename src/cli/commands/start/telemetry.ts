@@ -10,9 +10,7 @@
  * export and NEVER blocks startup (short timeout, total-catch).
  */
 
-import { detectOperatingSystem } from "../../setup/os-detection.js";
-
-/** Official download page, shown to non-macOS users who have no `brew` one-liner. */
+/** Official Jaeger v2 download page, used for the non-macOS install command. */
 const JAEGER_DOWNLOAD_URL = "https://www.jaegertracing.io/download/";
 
 /** How long the reachability probe waits before giving up. Kept short so a slow or
@@ -47,14 +45,26 @@ export async function probeEndpointReachable(
 }
 
 /**
- * OS-aware install pointer for when the backend is unreachable. macOS gets the
- * `brew` one-liner; every other platform gets the official download link. Reuses
- * the setup OS detection so the classification stays single-sourced.
+ * OS-aware command to get a local Jaeger v2 trace backend running. macOS has a
+ * Homebrew formula; other platforms download the single binary (run as `./jaeger`
+ * on Linux, `jaeger.exe` on Windows). Single-sourced so the wizard's "how to
+ * enable" hint and the runtime "backend unreachable" pointer never drift.
+ */
+export function traceInstallCommand(platform: NodeJS.Platform = process.platform): string {
+  if (platform === "darwin") {
+    return "brew install jaeger && jaeger";
+  }
+  if (platform === "win32") {
+    return `download Jaeger v2 from ${JAEGER_DOWNLOAD_URL} and run jaeger.exe`;
+  }
+  return `download Jaeger v2 from ${JAEGER_DOWNLOAD_URL} and run ./jaeger`;
+}
+
+/**
+ * Runtime pointer shown at startup (and as the `doctor` remedy) when telemetry is
+ * on but no backend answered the probe — states the situation plus the OS-aware
+ * fix. Best-effort: a missing backend warns, it never blocks startup or a task.
  */
 export function traceInstallPointer(platform: NodeJS.Platform = process.platform): string {
-  const os = detectOperatingSystem(platform);
-  if (os.platform === "darwin") {
-    return "Telemetry is on, but no trace backend is reachable. Install one: brew install jaeger && jaeger";
-  }
-  return `Telemetry is on, but no trace backend is reachable. Install Jaeger v2: ${JAEGER_DOWNLOAD_URL}`;
+  return `Telemetry is on, but no trace backend is reachable. Install one: ${traceInstallCommand(platform)}`;
 }

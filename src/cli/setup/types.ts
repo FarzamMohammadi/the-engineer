@@ -33,10 +33,12 @@ export interface PersonSetupEntry {
   readonly contacts: Array<{ readonly channel: string; readonly handle: string }>;
 }
 
-/** Final output of the guided setup flow — selected plugins, configs, secrets, and people. */
+/** Final output of the guided setup flow — selected plugins, configs, secrets, people, and opt-ins. */
 export interface GuidedSetupResult {
   readonly selectedPlugins: string[];
   readonly pluginConfigs: Record<string, Record<string, unknown>>;
   readonly secrets: Record<string, string>;
   readonly people: PersonSetupEntry[];
+  /** Whether the user opted into live trace visualization — writes `telemetry.enabled: true` to daemon.yaml. */
+  readonly enableTelemetry: boolean;
 }

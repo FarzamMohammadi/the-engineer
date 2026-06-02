@@ -8,3 +8,11 @@ trigger_poll_interval_ms: 30000
 logging:
   level: info
   console: false
+
+# Telemetry — opt-in OTLP trace export to a flame-graph backend (e.g. Jaeger v2).
+# Off by default; best-effort, so a down backend never blocks a task or startup.
+# Bring your own backend: brew install jaeger && jaeger (or jaegertracing.io/download).
+telemetry:
+  enabled: false
+  endpoint: "http://localhost:4318"   # OTLP/HTTP ingest; spans POSTed to <endpoint>/v1/traces
+  ui_base: "http://localhost:16686"   # Trace web-UI base for "View trace" links

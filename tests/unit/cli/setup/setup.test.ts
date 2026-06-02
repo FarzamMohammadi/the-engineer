@@ -3,9 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parse as yamlParse } from "yaml";
 
+import { DAEMON_TEMPLATE } from "../../../../src/cli/bundled/templates.js";
 import {
   ADAPTER_TYPE_CONFIGS,
+  activateTelemetryBlock,
   detectEnvironment,
   generateConfigFiles,
   needsSetup,
@@ -569,5 +572,46 @@ describe("comm plugin manifests declare channel", () => {
     const github = BUILTIN_PLUGINS.find((p) => p.manifest.id === "github-comm");
     expect(github).toBeDefined();
     expect(github!.manifest.adapter_meta["channel"]).toBe("github");
+  });
+});
+
+// ── Telemetry activation (wizard opt-in) ─────────────────────────────────────
+
+describe("activateTelemetryBlock", () => {
+  it("uncomments and enables the telemetry block, parsing as valid YAML", () => {
+    const activated = activateTelemetryBlock(DAEMON_TEMPLATE);
+    const parsed = yamlParse(activated) as {
+      telemetry?: { enabled?: boolean; endpoint?: string; ui_base?: string };
+    };
+    expect(parsed.telemetry?.enabled).toBe(true);
+    expect(parsed.telemetry?.endpoint).toBe("http://localhost:4318");
+    expect(parsed.telemetry?.ui_base).toBe("http://localhost:16686");
+  });
+
+  it("leaves no commented telemetry block once activated", () => {
+    const activated = activateTelemetryBlock(DAEMON_TEMPLATE);
+    expect(activated).not.toContain("# telemetry:");
+    expect(activated).toMatch(/^telemetry:/m);
+  });
+
+  it("is a no-op when there is no commented telemetry block", () => {
+    const input = "max_concurrent: 1\nlogging:\n  level: info\n";
+    expect(activateTelemetryBlock(input)).toBe(input);
+  });
+});
+
+describe("generateConfigFiles telemetry opt-in", () => {
+  it("keeps telemetry commented (opt-in off) by default", () => {
+    const daemon = generateConfigFiles([], {}).find((f) => f.relativePath === "config/daemon.yaml");
+    expect(daemon).toBeDefined();
+    expect(daemon!.content).toContain("# telemetry:");
+    expect(daemon!.content).not.toMatch(/^telemetry:/m);
+  });
+
+  it("activates telemetry in daemon.yaml when the user opts in", () => {
+    const daemon = generateConfigFiles([], {}, undefined, true).find((f) => f.relativePath === "config/daemon.yaml");
+    expect(daemon).toBeDefined();
+    expect(daemon!.content).toMatch(/^telemetry:/m);
+    expect(daemon!.content).toMatch(/^ {2}enabled: true/m);
   });
 });

@@ -16,6 +16,10 @@ export interface SystemRoutesDeps {
   db: Database.Database;
   observationStore: ObservationStore;
   runDir: string;
+  /** Whether trace export is on — gates the "View trace in Jaeger" link in the dashboard. */
+  telemetryEnabled: boolean;
+  /** Jaeger v2 web-UI base the link points at (distinct from the OTLP ingest endpoint). */
+  telemetryUiBase: string;
 }
 
 export function systemRoutes(deps: SystemRoutesDeps): Hono {
@@ -86,6 +90,11 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       total_action_traces: actionCount?.count ?? 0,
       total_agent_traces: agentCallCount?.count ?? 0,
       total_spend_usd: totalSpend,
+      // Telemetry surface for the dashboard's "View trace in Jaeger" deep-link: whether export is on, and the
+      // Jaeger web-UI base to point at. Static per process (config is startup-only), but carried here so the
+      // client learns it from the API it already polls rather than from a second source.
+      telemetry_enabled: deps.telemetryEnabled,
+      telemetry_ui_base: deps.telemetryUiBase,
     });
   });
 

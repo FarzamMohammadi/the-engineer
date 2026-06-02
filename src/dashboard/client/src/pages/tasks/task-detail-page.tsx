@@ -1,10 +1,11 @@
-import { ArrowLeft, Ban } from "lucide-react";
+import { ArrowLeft, Ban, GanttChartSquare } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { PhasePipeline } from "../../components/shared/phase-pipeline";
 import { StateBadge } from "../../components/shared/state-badge";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { useSystemStatus } from "../../hooks/use-system-status";
 import { useCancelTask, useTaskDetail } from "../../hooks/use-tasks";
 import { ROUTES } from "../../lib/routes";
 import type { TaskDetail } from "../../types/api";
@@ -23,6 +24,7 @@ export function TaskDetailPage(): React.JSX.Element {
   const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
   const navigate = useNavigate();
   const { data: task, isLoading } = useTaskDetail(taskId);
+  const { data: systemStatus } = useSystemStatus();
   const cancelMutation = useCancelTask(taskId ?? "");
 
   const activeTab: TabValue = TAB_ROUTES.includes(tab as TabValue) ? (tab as TabValue) : "overview";
@@ -52,6 +54,14 @@ export function TaskDetailPage(): React.JSX.Element {
   const isBlocked = typedTask.state === "blocked";
   const isCancellable = typedTask.state === "active" || typedTask.state === "queued" || typedTask.state === "blocked";
 
+  // The Jaeger deep-link. Shown only when export is on AND this task has a trace yet. The OTLP id is derived
+  // server-side from the dispatch's trace ULID (via the exporter's own deriveTraceId), so the link matches the
+  // exported trace by construction. The UI base is the Jaeger web UI, distinct from the OTLP ingest endpoint.
+  const traceUrl =
+    systemStatus?.telemetry_enabled && typedTask.trace_otlp_id
+      ? `${systemStatus.telemetry_ui_base}/trace/${typedTask.trace_otlp_id}`
+      : null;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -68,6 +78,14 @@ export function TaskDetailPage(): React.JSX.Element {
             <PhasePipeline currentPhase={typedTask.phase} phasesRan={phasesFromDetail(typedTask)} />
           </div>
         </div>
+        {traceUrl && (
+          <Button variant="outline" size="sm" asChild={true}>
+            <a href={traceUrl} target="_blank" rel="noreferrer">
+              <GanttChartSquare size={14} />
+              View trace in Jaeger
+            </a>
+          </Button>
+        )}
         {isCancellable && (
           <Button
             variant="destructive"

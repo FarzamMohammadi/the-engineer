@@ -175,7 +175,7 @@ async function runForeground(
   }
 
   // Start dashboard alongside daemon
-  const { cleanup: cleanupDashboard } = launchDashboard(dirs, observer);
+  const { cleanup: cleanupDashboard } = launchDashboard(dirs, observer, bundle.daemon.telemetry);
 
   // NOTE: Signal handlers are registered after bootstrap completes. If the process
   // receives SIGTERM/SIGINT during bootstrap, cleanup won't run. This is an accepted

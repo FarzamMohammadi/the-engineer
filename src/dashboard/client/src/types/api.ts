@@ -61,6 +61,12 @@ export interface TaskDetail {
   last_transition_reason: string | null;
   last_transition_by: string | null;
   last_transition_from: TaskState | null;
+  /**
+   * OTLP trace id (32-char hex) of the task's most recent dispatch, ready to drop into the Jaeger deep-link.
+   * Derived server-side from the dispatch's trace ULID via the same code the exporter uses, so the link can
+   * never drift. Null when the task has not been dispatched (no trace yet).
+   */
+  trace_otlp_id: string | null;
 }
 
 // ── System Status ────────────────────────────────────────────────────────────
@@ -75,6 +81,10 @@ export interface SystemStatus {
   total_action_traces: number;
   total_agent_traces: number;
   total_spend_usd: number | null;
+  /** Whether trace export is on — gates the task page's "View trace in Jaeger" link. */
+  telemetry_enabled: boolean;
+  /** Jaeger v2 web-UI base the trace link points at (distinct from the OTLP ingest endpoint). */
+  telemetry_ui_base: string;
 }
 
 // ── Metrics ──────────────────────────────────────────────────────────────────

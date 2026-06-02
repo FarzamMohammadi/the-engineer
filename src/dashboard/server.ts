@@ -32,6 +32,13 @@ export interface DashboardConfig {
   tracesDir: string;
   runDir: string;
   observer: IObserver;
+  /**
+   * Telemetry surface for the "View trace in Jaeger" deep-link. Mirrors `daemon.telemetry.enabled` and the
+   * Jaeger v2 web-UI base (distinct from the OTLP ingest endpoint) so the client knows whether to show the
+   * link and where to point it. The exporter wiring is the daemon's job; this is the read-only view of it.
+   */
+  telemetryEnabled: boolean;
+  telemetryUiBase: string;
 }
 
 /** Creates the Hono app with all API routes, static file serving, and database connections. */
@@ -59,7 +66,16 @@ export function createDashboardApp(config: DashboardConfig): {
   app.use("/*", cors({ origin: ["http://localhost:3847", "http://localhost:5173"] }));
 
   // Mount API routes
-  app.route("/api/system", systemRoutes({ db, observationStore, runDir: config.runDir }));
+  app.route(
+    "/api/system",
+    systemRoutes({
+      db,
+      observationStore,
+      runDir: config.runDir,
+      telemetryEnabled: config.telemetryEnabled,
+      telemetryUiBase: config.telemetryUiBase,
+    }),
+  );
   app.route("/api/tasks", taskRoutes({ db, writeDb, observationStore }));
   app.route("/api/events", eventRoutes({ db }));
   app.route("/api/metrics", metricsRoutes({ db, observationStore }));

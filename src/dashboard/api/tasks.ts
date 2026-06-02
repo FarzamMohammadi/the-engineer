@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
+import { deriveTraceId } from "../../core/observer/otlp/index.js";
 import { cancelTask } from "../../core/task-engine/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { TaskStates } from "../../schemas/task.js";
@@ -100,6 +101,32 @@ function mapFullTask(row: Record<string, unknown>): Record<string, unknown> {
     }
   }
   return result;
+}
+
+/**
+ * Resolve the OTLP trace id of a task's most recent dispatch, or null.
+ *
+ * The newest observation that carries a `trace_id` belongs to the latest dispatch (a re-dispatch mints a new
+ * trace ULID); its decode is the trace the user most likely wants to open. Decoding goes through the shared
+ * `deriveTraceId` so the deep-link matches the exported span byte-for-byte. A non-ULID stored id throws in the
+ * decoder — we treat that as "no link" rather than failing the whole detail response.
+ */
+function latestTraceOtlpId(db: Database.Database, taskId: string): string | null {
+  const row = db
+    .prepare(
+      `SELECT trace_id FROM observations
+       WHERE task_id = ? AND trace_id IS NOT NULL
+       ORDER BY rowid DESC LIMIT 1`,
+    )
+    .get(taskId) as { trace_id: string } | undefined;
+  if (!row) {
+    return null;
+  }
+  try {
+    return deriveTraceId(row.trace_id);
+  } catch {
+    return null;
+  }
 }
 
 /** Registers task listing, detail, timeline, phase, trace, and cancel endpoints. */
@@ -202,6 +229,13 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       task["last_transition_by"] = lastTransition["triggered_by"];
       task["last_transition_from"] = lastTransition["from_state"];
     }
+
+    // The OTLP trace id for the "View trace in Jaeger" deep-link. A task carries no trace_id of its own
+    // (each dispatch mints a fresh trace ULID into its observations), so we take the most-recent dispatch's
+    // trace_id and decode it through the SAME deriveTraceId the exporter used — never a reimplementation, so
+    // the link can never drift from the exported span. Null when the task has never been dispatched, or if a
+    // stored id ever fails the strict ULID decode (we swallow rather than 500 a detail page over a link).
+    task["trace_otlp_id"] = latestTraceOtlpId(deps.db, taskId);
 
     return c.json({ task });
   });

@@ -71,7 +71,13 @@ describe("systemRoutes — GET /status total_spend_usd", () => {
 
   beforeEach(() => {
     handle = createTestObserver();
-    app = systemRoutes({ db: handle.db.db, observationStore: handle.observer, runDir: "/tmp/does-not-exist" });
+    app = systemRoutes({
+      db: handle.db.db,
+      observationStore: handle.observer,
+      runDir: "/tmp/does-not-exist",
+      telemetryEnabled: false,
+      telemetryUiBase: "http://localhost:16686",
+    });
   });
 
   afterEach(() => {
@@ -93,5 +99,42 @@ describe("systemRoutes — GET /status total_spend_usd", () => {
     const body = (await res.json()) as { total_spend_usd: number | null };
 
     expect(body.total_spend_usd).toBeNull();
+  });
+});
+
+describe("systemRoutes — GET /status telemetry surface", () => {
+  let handle: TestObserverHandle;
+
+  beforeEach(() => {
+    handle = createTestObserver();
+  });
+
+  afterEach(() => {
+    handle.cleanup();
+  });
+
+  async function statusBody(telemetryEnabled: boolean, telemetryUiBase: string): Promise<Record<string, unknown>> {
+    const app = systemRoutes({
+      db: handle.db.db,
+      observationStore: handle.observer,
+      runDir: "/tmp/does-not-exist",
+      telemetryEnabled,
+      telemetryUiBase,
+    });
+    const res = await app.request("/status");
+    return (await res.json()) as Record<string, unknown>;
+  }
+
+  it("surfaces telemetry_enabled and telemetry_ui_base so the client can build the Jaeger link", async () => {
+    const body = await statusBody(true, "http://localhost:16686");
+
+    expect(body["telemetry_enabled"]).toBe(true);
+    expect(body["telemetry_ui_base"]).toBe("http://localhost:16686");
+  });
+
+  it("reports telemetry_enabled false when export is off (the link stays hidden)", async () => {
+    const body = await statusBody(false, "http://localhost:16686");
+
+    expect(body["telemetry_enabled"]).toBe(false);
   });
 });

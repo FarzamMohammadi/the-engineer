@@ -37,7 +37,22 @@ function insertTask(db: Database.Database, id: string, overrides: Record<string,
   );
 }
 
-// The cancel endpoint never touches the observation store; a bare stub satisfies the type.
+/** Insert an observation row carrying a trace_id (the dispatch's trace ULID). */
+function insertObservation(
+  db: Database.Database,
+  id: string,
+  taskId: string,
+  traceId: string | null,
+  startTime: string,
+): void {
+  db.prepare(
+    `INSERT INTO observations (id, trace_id, type, name, task_id, start_time)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, traceId, "task_execution", "dispatch", taskId, startTime);
+}
+
+// The detail and cancel endpoints query deps.db directly and never touch the observation store; a bare stub
+// satisfies the type.
 const observationStoreStub = {} as unknown as ObservationStore;
 
 // ── Tests ────────────────────────────────────────────────────────────────────────
@@ -124,5 +139,58 @@ describe("taskRoutes — POST /:id/cancel", () => {
 
     expect(res.status).toBe(404);
     expect((await res.json()) as { error: string }).toMatchObject({ error: "Task not found" });
+  });
+});
+
+describe("taskRoutes — GET /:id trace_otlp_id", () => {
+  let handle: DatabaseHandle;
+  let app: ReturnType<typeof taskRoutes>;
+
+  beforeEach(() => {
+    handle = createInMemoryDatabase();
+    app = taskRoutes({ db: handle.db, writeDb: handle.db, observationStore: observationStoreStub });
+  });
+
+  afterEach(() => {
+    handle.close();
+  });
+
+  async function detailTraceId(taskId: string): Promise<unknown> {
+    const res = await app.request(`/${taskId}`);
+    const body = (await res.json()) as { task: { trace_otlp_id: unknown } };
+    return body.task.trace_otlp_id;
+  }
+
+  it("derives the OTLP trace id from the task's dispatch via the shared deriveTraceId (no drift)", async () => {
+    insertTask(handle.db, "task-traced");
+    // The canonical ULID spec vector; deriveTraceId decodes it to this exact hex (asserted in the otlp tests).
+    insertObservation(handle.db, "obs-1", "task-traced", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "2026-01-15T10:30:00Z");
+
+    expect(await detailTraceId("task-traced")).toBe("01563e3ab5d3d6764c61efb99302bd5b");
+  });
+
+  it("uses the most recent dispatch when a task has been dispatched more than once", async () => {
+    insertTask(handle.db, "task-multi");
+    insertObservation(handle.db, "obs-old", "task-multi", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "2026-01-15T10:30:00Z");
+    // A later dispatch mints a fresh trace ULID; the link should open it, not the stale one.
+    insertObservation(handle.db, "obs-new", "task-multi", "01BX5ZZKBKACTAV9WEVGEMMVRZ", "2026-01-15T12:00:00Z");
+
+    const otlpId = await detailTraceId("task-multi");
+    expect(otlpId).not.toBe("01563e3ab5d3d6764c61efb99302bd5b");
+    expect(otlpId).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("is null when the task has no observation carrying a trace_id", async () => {
+    insertTask(handle.db, "task-untraced");
+    insertObservation(handle.db, "obs-null", "task-untraced", null, "2026-01-15T10:30:00Z");
+
+    expect(await detailTraceId("task-untraced")).toBeNull();
+  });
+
+  it("is null (does not 500) when a stored trace_id is not a valid ULID", async () => {
+    insertTask(handle.db, "task-bad");
+    insertObservation(handle.db, "obs-bad", "task-bad", "not-a-ulid", "2026-01-15T10:30:00Z");
+
+    expect(await detailTraceId("task-bad")).toBeNull();
   });
 });

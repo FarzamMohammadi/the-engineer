@@ -1,6 +1,6 @@
 # Observability
 
-How logging, tracing, and real-time observation work in The Engineer.
+How logging, tracing, and real-time observation work in The Engineer — the API, the methods, and the rules for adding an emission. For the conceptual picture (the three systems, why SQLite is the system of record, one-trace-per-dispatch, how external export stays non-blocking), read the [observability architecture blueprint](../../architecture/observability.md) first.
 
 ---
 

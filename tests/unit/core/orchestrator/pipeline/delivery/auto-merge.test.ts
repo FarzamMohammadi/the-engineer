@@ -9,6 +9,7 @@ import {
 } from "../../../../../../src/core/orchestrator/pipeline/types.js";
 import type { MergeResult, PRStatus } from "../../../../../../src/schemas/adapters.js";
 import type { ReviewState } from "../../../../../../src/schemas/task.js";
+import { createRecordingObserver } from "../../../../../helpers/test-mock-pipeline.js";
 
 const okResult = (disposition: string): RoutableResult => ({ outcome: "ok", summary: "", data: { disposition } });
 
@@ -48,6 +49,7 @@ function mockCtx(options: MockOptions = {}) {
   const updateTaskField = vi.fn();
   const notify = vi.fn();
   const published: string[] = [];
+  const observer = createRecordingObserver();
 
   const hosting = options.hosting === false ? null : { getPRStatus, mergePR };
   const ctx = {
@@ -66,11 +68,11 @@ function mockCtx(options: MockOptions = {}) {
     eventBus: { publish: vi.fn((event: { type: string }) => published.push(event.type)) },
     taskEngine: { updateTaskField },
     notifications: { notify },
-    observer: { info: vi.fn(), warn: vi.fn() },
+    observer,
     task: { id: "t1", repo: "acme/app", review: options.review === undefined ? readyReview : options.review },
   } as unknown as Ctx;
 
-  return { ctx, getPRStatus, mergePR, deleteRemoteBranch, updateTaskField, notify, published };
+  return { ctx, getPRStatus, mergePR, deleteRemoteBranch, updateTaskField, notify, published, observer };
 }
 
 describe("auto-merge next", () => {
@@ -219,5 +221,14 @@ describe("auto-merge run", () => {
   it("throws so the runner blocks when the task has no PR on record", async () => {
     const { ctx } = mockCtx({ review: null });
     await expect(autoMerge.run(ctx)).rejects.toThrow("no PR number or repo");
+  });
+
+  it("records the merge-readiness decision with the chosen disposition and its alternatives", async () => {
+    const { ctx, observer } = mockCtx({ status: { checks_state: "failing" } });
+
+    await autoMerge.run(ctx);
+
+    const decision = observer.decisions.find((entry) => entry.name === "merge_readiness");
+    expect(decision?.chosen).toBe("ci_failure");
   });
 });

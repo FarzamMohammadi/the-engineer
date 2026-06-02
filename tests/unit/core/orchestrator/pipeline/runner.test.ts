@@ -234,4 +234,56 @@ describe("runPipeline", () => {
       expect(sessionMemory.checkpoints.create).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe("observability instrumentation", () => {
+    it("logs a genuine failure block at error level and an expected wait at info level", async () => {
+      const failing = mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "failed",
+            summary: "no result",
+            category: "no_result",
+            detail: "missing",
+          }),
+      });
+      const waiting = mockSubPhase("await-review", {
+        next: () => ({ go: "block", category: "awaiting_pr_review", needed: "waiting" }) satisfies Route,
+      });
+
+      const fail = createMockPipeline();
+      await runPipeline([mockPhase("execution", [failing])], fail.ctx);
+      expect(fail.observer.logs.some((entry) => entry.level === "error" && entry.msg === "Task blocked")).toBe(true);
+
+      const wait = createMockPipeline();
+      await runPipeline([mockPhase("delivery", [waiting])], wait.ctx);
+      expect(wait.observer.logs.some((entry) => entry.level === "info" && entry.msg === "Task blocked")).toBe(true);
+      expect(wait.observer.logs.some((entry) => entry.level === "error" && entry.msg === "Task blocked")).toBe(false);
+    });
+
+    it("records an error observation and blocks at error level when a sub-phase throws", async () => {
+      const throwing = mockSubPhase("verify", { run: () => Promise.reject(new Error("gate exploded")) });
+      const { ctx, observer } = createMockPipeline();
+
+      const outcome = await runPipeline([mockPhase("execution", [throwing])], ctx);
+
+      expect(outcome).toMatchObject({ kind: "blocked", detail: { category: "orchestrator_error" } });
+      expect(observer.errors.some((e) => e.operation === "sub_phase:verify" && e.component === "orchestrator")).toBe(
+        true,
+      );
+      expect(observer.logs.some((entry) => entry.level === "error" && entry.msg === "Task blocked")).toBe(true);
+    });
+
+    it("carries the sub-phase result data into the sub_phase_result observation", async () => {
+      const verdict = mockSubPhase("refine", {
+        run: () => Promise.resolve<SubPhaseResult>({ outcome: "ok", summary: "ship it", data: { verdict: "ship" } }),
+        next: () => ({ go: "done" }) satisfies Route,
+      });
+      const { ctx, observer } = createMockPipeline();
+
+      await runPipeline([mockPhase("review", [verdict])], ctx);
+
+      const result = observer.observations.find((o) => o.name === "sub_phase_result");
+      expect(result?.data["data"]).toEqual({ verdict: "ship" });
+    });
+  });
 });

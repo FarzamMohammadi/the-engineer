@@ -85,4 +85,24 @@ describe("verify", () => {
       await expect(verify.run(ctx)).rejects.toThrow(/Cannot run verification gate/);
     });
   });
+
+  describe("observability", () => {
+    it("emits a safety_verdict naming the failed gate and a tool_execution span per gate", async () => {
+      const { ctx, observer } = withGates([
+        { name: "typecheck", command: process.execPath, args: ["-e", "process.exit(0)"] },
+        { name: "test", command: process.execPath, args: ["-e", "process.exit(1)"] },
+      ]);
+
+      await verify.run(ctx);
+
+      const verdict = observer.observations.find((o) => o.name === "verify_gates");
+      expect(verdict?.type).toBe("safety_verdict");
+      expect(verdict?.data["passed"]).toBe(false);
+      expect(verdict?.data["failed_gates"]).toEqual(["test"]);
+
+      const gateSpans = observer.spans.filter((s) => s.type === "tool_execution" && s.name.startsWith("gate:"));
+      expect(gateSpans.map((s) => s.name)).toEqual(["gate:typecheck", "gate:test"]);
+      expect(gateSpans.find((s) => s.name === "gate:test")?.errored).toBe(true);
+    });
+  });
 });

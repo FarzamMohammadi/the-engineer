@@ -39,16 +39,34 @@ export interface RecordedObservation {
   readonly data: Record<string, unknown>;
 }
 
+/** A captured `startSpan` call and the state it ended in. */
+export interface RecordedSpan {
+  readonly type: string;
+  readonly name: string;
+  readonly input?: Record<string, unknown> | undefined;
+  output?: Record<string, unknown> | undefined;
+  errored?: boolean;
+}
+
 /** A captured log call. */
 export interface RecordedLog {
   readonly level: "info" | "warn" | "error" | "debug";
   readonly msg: string;
 }
 
+/** A captured `recordError` call. */
+export interface RecordedError {
+  readonly operation: string;
+  readonly component: string;
+}
+
 /** An IObserver that records every emission so tests can assert what the runner produced. */
 export interface RecordingObserver extends IObserver {
   readonly decisions: RecordedDecision[];
   readonly observations: RecordedObservation[];
+  readonly spans: RecordedSpan[];
+  readonly blobs: string[];
+  readonly errors: RecordedError[];
   readonly logs: RecordedLog[];
 }
 
@@ -72,6 +90,9 @@ const NO_OP_SPAN: ObservationSpan = {
 export function createRecordingObserver(): RecordingObserver {
   const decisions: RecordedDecision[] = [];
   const observations: RecordedObservation[] = [];
+  const spans: RecordedSpan[] = [];
+  const blobs: string[] = [];
+  const errors: RecordedError[] = [];
   const logs: RecordedLog[] = [];
 
   const log = (level: RecordedLog["level"]) => (msg: string) => {
@@ -81,12 +102,33 @@ export function createRecordingObserver(): RecordingObserver {
   const observer: RecordingObserver = {
     decisions,
     observations,
+    spans,
+    blobs,
+    errors,
     logs,
     info: log("info"),
     warn: log("warn"),
     error: log("error"),
     debug: log("debug"),
-    startSpan: () => NO_OP_SPAN,
+    startSpan: (type, name, input) => {
+      const record: RecordedSpan = { type, name, input };
+      spans.push(record);
+      return {
+        id: "",
+        end(output) {
+          record.output = output;
+        },
+        startChild() {
+          return NO_OP_SPAN;
+        },
+        addEvent() {
+          /* no-op */
+        },
+        setError() {
+          record.errored = true;
+        },
+      };
+    },
     observe: (type, name, data) => {
       observations.push({ type, name, data });
       return "";
@@ -95,7 +137,15 @@ export function createRecordingObserver(): RecordingObserver {
       decisions.push({ name, chosen, reasoning });
       return "";
     },
-    recordError: () => "",
+    recordError: (_error, context) => {
+      errors.push({ operation: context.operation, component: context.component });
+      return "";
+    },
+    storeBlob: (content) => {
+      blobs.push(content);
+      return `blob-${String(blobs.length)}`;
+    },
+    readBlob: () => null,
     child: () => observer,
     childPlugin: () => observer,
     withTrace: () => observer,

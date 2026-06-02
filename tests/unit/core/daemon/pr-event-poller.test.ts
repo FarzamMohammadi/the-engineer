@@ -7,6 +7,7 @@ import type { PRComment, PRStatus } from "../../../../src/schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../../../src/schemas/git-hosting-events.js";
 import { type ReviewState, TaskStates } from "../../../../src/schemas/task.js";
 import { createMockTask } from "../../../helpers/mock-factories.js";
+import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 import { createTestPeopleDirectory } from "../../../helpers/test-people-directory.js";
 
 const comment = (id: string, author: string, body: string): PRComment => ({
@@ -66,7 +67,7 @@ function setup(options: SetupOptions = {}) {
     taskEngine: { getBlockedTasksByReason, updateTaskField, requestTransition },
     peopleDirectory: options.people ?? createTestPeopleDirectory([]),
     safetyLayer: { isCommentApprovalEnabled: () => options.commentApproval ?? true },
-    observer: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    observer: createTestObserverFacade("daemon"),
     clock: { now: () => 1000 },
     config: { review_polling: { failure_window_ms: 60_000, max_failures_before_pause: 3 } },
   } as unknown as PrEventPollerContext;

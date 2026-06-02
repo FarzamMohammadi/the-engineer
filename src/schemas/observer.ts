@@ -11,7 +11,6 @@ import { fromSqliteJson } from "../db/serialize.js";
 
 export const ObservationTypeSchema = z.enum([
   "task_execution",
-  "agent_iteration",
   "agent_call",
   "tool_execution",
   "phase_transition",
@@ -21,9 +20,7 @@ export const ObservationTypeSchema = z.enum([
   "workspace_op",
   "plugin_call",
   "error",
-  "cost_snapshot",
   "lifecycle",
-  "config_change",
   "quota_status",
 ]);
 export type ObservationTypeValue = z.infer<typeof ObservationTypeSchema>;

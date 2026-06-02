@@ -84,13 +84,12 @@ export interface CostMetrics {
   today_spend_usd: number;
   month_spend_usd: number;
   per_task: Array<{ id: string; title: string; agent_cost_usd: number; agent_tokens: number }>;
-  per_day: Array<{ day: string; spend_usd: number; duration_ms: number }>;
+  per_day: Array<{ day: string; spend_usd: number }>;
   per_phase: Array<{
     phase: string;
     spend_usd: number;
     duration_ms: number;
-    agent_iterations: number;
-    executions: number;
+    agent_calls: number;
   }>;
   token_totals: {
     input: number;
@@ -111,7 +110,7 @@ export interface QuotaStatus {
 
 /** Observation types recorded by the observer. */
 export type ObservationType =
-  | "agent_iteration"
+  | "task_execution"
   | "agent_call"
   | "tool_execution"
   | "phase_transition"
@@ -121,9 +120,7 @@ export type ObservationType =
   | "workspace_op"
   | "plugin_call"
   | "error"
-  | "cost_snapshot"
   | "lifecycle"
-  | "config_change"
   | "quota_status";
 
 /** Log severity level for observations. */

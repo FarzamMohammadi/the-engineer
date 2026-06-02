@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { ObservationTypes } from "../../schemas/observer.js";
+import { aggregateAgentCost } from "./agent-cost-aggregation.js";
 
 /** Dependencies injected into metrics API route handlers. */
 export interface MetricsRoutesDeps {
@@ -18,8 +19,7 @@ export interface MetricsRoutesDeps {
 export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
   const app = new Hono();
 
-  /** Cost aggregations: per task, per day, per phase. */
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: aggregation logic is inherently branchy
+  /** Cost aggregations: per task, per day, per phase — all sourced from the agent_call span's real spend. */
   app.get("/cost", (c) => {
     // Per-task cost (top 20 by spend)
     const perTask = deps.db
@@ -30,134 +30,30 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
       )
       .all() as Record<string, unknown>[];
 
-    // Aggregate cost from phase_transition observations
-    const phaseObs = deps.observationStore.query({
-      type: ObservationTypes.phase_transition,
-      limit: 10000,
-    });
-
-    // Per-day cost
-    const dayMap = new Map<string, { spend_usd: number; duration_ms: number }>();
-    // Per-phase cost
-    const phaseMap = new Map<
-      string,
-      {
-        spend_usd: number;
-        duration_ms: number;
-        agent_iterations: number;
-        executions: number;
-      }
-    >();
-    let todaySpend = 0;
-    let monthSpend = 0;
-
-    const today = new Date().toISOString().slice(0, 10);
-    const month = new Date().toISOString().slice(0, 7);
-
-    for (const obs of phaseObs) {
-      const output = obs.output as Record<string, unknown> | null;
-      if (!output) {
-        continue;
-      }
-      const spend = typeof output["spend_usd"] === "number" ? output["spend_usd"] : 0;
-      const durationMs = typeof output["duration_ms"] === "number" ? output["duration_ms"] : 0;
-      const agentIter = typeof output["agent_iterations"] === "number" ? output["agent_iterations"] : 0;
-
-      if (spend === 0) {
-        continue;
-      }
-
-      // Per-day
-      const day = obs.start_time.slice(0, 10);
-      const dayEntry = dayMap.get(day) ?? { spend_usd: 0, duration_ms: 0 };
-      dayEntry.spend_usd += spend;
-      dayEntry.duration_ms += durationMs;
-      dayMap.set(day, dayEntry);
-
-      // Per-phase
-      const phaseName = obs.name;
-      const phaseEntry = phaseMap.get(phaseName) ?? {
-        spend_usd: 0,
-        duration_ms: 0,
-        agent_iterations: 0,
-        executions: 0,
-      };
-      phaseEntry.spend_usd += spend;
-      phaseEntry.duration_ms += durationMs;
-      phaseEntry.agent_iterations += agentIter;
-      phaseEntry.executions += 1;
-      phaseMap.set(phaseName, phaseEntry);
-
-      // Today / month
-      if (day === today) {
-        todaySpend += spend;
-      }
-      if (obs.start_time.slice(0, 7) === month) {
-        monthSpend += spend;
-      }
-    }
-
-    const perDay = [...dayMap.entries()]
-      .map(([day, v]) => ({ day, ...v }))
-      .sort((a, b) => b.day.localeCompare(a.day))
-      .slice(0, 30);
-
-    const perPhase = [...phaseMap.entries()]
-      .map(([phase, v]) => ({ phase, ...v }))
-      .sort((a, b) => b.spend_usd - a.spend_usd);
-
-    // Aggregate token totals from agent_call observations
+    // Every cost number derives from agent_call spans (the only observation that carries real per-run spend).
     const agentObs = deps.observationStore.query({ type: ObservationTypes.agent_call, limit: 50000 });
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalCacheReadTokens = 0;
-
-    for (const obs of agentObs) {
-      // observe() stores data in `input`; span.end() stores in `output`. Check both.
-      const out = (obs.output ?? obs.input) as Record<string, unknown> | null;
-      if (!out) {
-        continue;
-      }
-      if (typeof out["input_tokens"] === "number") {
-        totalInputTokens += out["input_tokens"];
-      } else if (typeof out["tokens_in"] === "number") {
-        totalInputTokens += out["tokens_in"];
-      }
-      if (typeof out["output_tokens"] === "number") {
-        totalOutputTokens += out["output_tokens"];
-      } else if (typeof out["tokens_out"] === "number") {
-        totalOutputTokens += out["tokens_out"];
-      }
-      if (typeof out["cache_read_tokens"] === "number") {
-        totalCacheReadTokens += out["cache_read_tokens"];
-      }
-    }
+    const cost = aggregateAgentCost(agentObs);
 
     return c.json({
-      today_spend_usd: todaySpend,
-      month_spend_usd: monthSpend,
+      today_spend_usd: cost.todaySpend,
+      month_spend_usd: cost.monthSpend,
       per_task: perTask,
-      per_day: perDay,
-      per_phase: perPhase,
-      token_totals: {
-        input: totalInputTokens,
-        output: totalOutputTokens,
-        cache_read: totalCacheReadTokens,
-        total: totalInputTokens + totalOutputTokens,
-      },
+      per_day: cost.perDay,
+      per_phase: cost.perPhase,
+      token_totals: cost.tokenTotals,
     });
   });
 
   /**
    * Quota status — pure data reader. Reads from:
-   * 1. quota_status observations (written by Core after each agent run + daemon polling)
+   * 1. quota_status observations (emitted by the daemon's periodic agent-quota poll)
    * 2. cost.quota_exhausted events (hard limit breaches)
    *
-   * Dashboard never fetches data itself. Plugin gets it, Core stores it, dashboard reads it.
+   * Dashboard never fetches data itself. The daemon asks the plugin, Core stores it, the dashboard reads it.
    */
   app.get("/quota", (c) => {
     try {
-      // Latest quota status from observations (written by orchestrator + daemon)
+      // Latest quota status from observations (emitted by the daemon's quota poll)
       const latestObs = deps.observationStore.query({
         type: ObservationTypes.quota_status,
         limit: 1,

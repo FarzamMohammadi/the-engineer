@@ -175,5 +175,47 @@ describe("agentStep", () => {
       expect(span?.output?.["outcome"]).toBe("ok");
       expect(observer.blobs.some((blob) => blob.includes("do the work"))).toBe(true);
     });
+
+    it("ends the agent_call span carrying the run's cost and token spend for the metrics page", async () => {
+      const result: AgentRunResult = {
+        content: "",
+        cost_usd: 0.42,
+        duration_ms: 1,
+        usage: {
+          tokens: {
+            input_tokens: 1500,
+            output_tokens: 300,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            total_tokens: 1800,
+          },
+          model_id: "claude",
+          service_tier: null,
+        },
+      };
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "did it" });
+        return Promise.resolve(result);
+      });
+      const { ctx, observer } = createMockPipeline({ agent, worktreePath: dir });
+
+      await step()(ctx);
+
+      const span = observer.spans.find((s) => s.type === "agent_call");
+      expect(span?.output).toMatchObject({ cost_usd: 0.42, tokens_in: 1500, tokens_out: 300 });
+    });
+
+    it("ends the agent_call span with null spend when the run reports no usage", async () => {
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "did it" });
+        return Promise.resolve({ content: "", cost_usd: null, duration_ms: 1, usage: null });
+      });
+      const { ctx, observer } = createMockPipeline({ agent, worktreePath: dir });
+
+      await step()(ctx);
+
+      const span = observer.spans.find((s) => s.type === "agent_call");
+      expect(span?.output).toMatchObject({ cost_usd: null, tokens_in: null, tokens_out: null });
+    });
   });
 });

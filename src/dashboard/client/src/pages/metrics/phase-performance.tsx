@@ -8,8 +8,7 @@ interface PhasePerformanceProps {
     phase: string;
     spend_usd: number;
     duration_ms: number;
-    agent_iterations: number;
-    executions: number;
+    agent_calls: number;
   }>;
   isLoading: boolean;
 }
@@ -50,14 +49,14 @@ export function PhasePerformance({ data, isLoading }: PhasePerformanceProps): Re
       <CardContent>
         <div className="space-y-3">
           {data.map((phase) => {
-            const avgCost = phase.executions > 0 ? phase.spend_usd / phase.executions : 0;
-            const avgDuration = phase.executions > 0 ? phase.duration_ms / phase.executions : 0;
+            const avgCost = phase.agent_calls > 0 ? phase.spend_usd / phase.agent_calls : 0;
+            const avgDuration = phase.agent_calls > 0 ? phase.duration_ms / phase.agent_calls : 0;
             return (
               <div key={phase.phase} className="flex items-center justify-between rounded-md border border-border p-3">
                 <div>
                   <p className="text-sm font-medium capitalize">{phase.phase.replace(/_/g, " ")}</p>
                   <p className="text-xs text-muted-foreground">
-                    {phase.executions} run{phase.executions !== 1 ? "s" : ""} · {phase.agent_iterations} agent calls
+                    {phase.agent_calls} agent call{phase.agent_calls !== 1 ? "s" : ""}
                   </p>
                 </div>
                 <div className="text-right">

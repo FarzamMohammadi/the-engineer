@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import type { ObservationStore } from "../../core/observer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { ObservationTypes } from "../../schemas/observer.js";
+import { totalAgentSpend } from "./agent-cost-aggregation.js";
 
 export interface SystemRoutesDeps {
   db: Database.Database;
@@ -43,18 +44,10 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
       .prepare("SELECT COUNT(*) as count FROM observations WHERE type = 'agent_call'")
       .get() as { count: number } | undefined;
 
-    // Sum spend from phase_transition observations (stored in output JSON)
-    const phaseObs = deps.observationStore.query({
-      type: ObservationTypes.phase_transition,
-      limit: 10000,
-    });
-    let totalSpend: number | null = null;
-    for (const obs of phaseObs) {
-      const output = obs.output as Record<string, unknown> | null;
-      if (output && typeof output["spend_usd"] === "number") {
-        totalSpend = (totalSpend ?? 0) + output["spend_usd"];
-      }
-    }
+    // Total spend derives from agent_call spans (the same source the cost page uses, so the two never disagree).
+    // null — not 0 — when no agent has run yet, so the UI shows "no data" rather than a confidently-wrong $0.
+    const agentObs = deps.observationStore.query({ type: ObservationTypes.agent_call, limit: 50000 });
+    const totalSpend: number | null = agentObs.length > 0 ? totalAgentSpend(agentObs) : null;
 
     // Check if daemon is running via PID file
     let daemonRunning = false;

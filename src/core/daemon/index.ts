@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { PluginHealthStates } from "../../schemas/adapters.js";
+import type { AgentAdapter } from "../../adapters/agent.js";
+import { AdapterTypes, PluginHealthStates } from "../../schemas/adapters.js";
 import {
   CommRetryExhaustedPayloadSchema,
   CommRetrySucceededPayloadSchema,
@@ -16,6 +17,7 @@ import {
   PreemptionRequestedPayloadSchema,
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import { createDispatchTracker } from "../dispatch-tracker/index.js";
@@ -159,6 +161,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   const MEMORY_CRITICAL_BYTES = 4 * 1024 * 1024 * 1024;
   /** Log RSS every N ticks. */
   const MEMORY_LOG_INTERVAL = 10;
+  /** Poll the agent plugin's quota every N ticks — quota windows move slowly, so a per-tick call is wasteful. */
+  const QUOTA_POLL_INTERVAL = 20;
   // Note: Signal handling is the CLI's responsibility (src/cli/commands/start.ts).
   // When using the daemon programmatically, the caller must call daemon.stop() on shutdown signals.
 
@@ -493,6 +497,34 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   // ── Tick Loop ─────────────────────────────────────────────────────────
 
   /**
+   * On a slow cadence, poll the primary agent plugin's quota and emit it as a `quota_status` observation so
+   * the dashboard's quota widget and `/quota` reader light up. Self-gated by the tick count so `tick` stays
+   * flat. A plugin without quota support returns null (emit nothing, silently); a thrown error degrades to no
+   * fresh reading this cycle (logged, never crashes the tick).
+   */
+  async function pollQuotaOnCadence(currentTick: number): Promise<void> {
+    if (currentTick % QUOTA_POLL_INTERVAL !== 0) {
+      return;
+    }
+    const agent = registry.getPrimaryPlugin<AgentAdapter>(AdapterTypes.agent);
+    if (!agent) {
+      return;
+    }
+    try {
+      const quota = await agent.getQuotaStatus();
+      if (quota) {
+        observer.observe(ObservationTypes.quota_status, "quota_polled", { ...quota, provider_id: agent.manifest.id });
+      }
+    } catch (error) {
+      observer.warn("Agent quota poll failed — dashboard quota status may be stale until the next poll", {
+        pluginId: agent.manifest.id,
+        capability: "quota reporting",
+        error: sanitizeErrorMessage(error),
+      });
+    }
+  }
+
+  /**
    * Abort the in-flight dispatch of any task the owner cancelled from another process. The dashboard and
    * `engineer cancel` flip the DB to `cancelled`; the daemon owns the running agent, so it must SIGTERM it
    * here. terminate() is idempotent, so re-detecting each tick until the dispatch settles is a safe no-op —
@@ -552,7 +584,10 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       }
     }
 
-    // Step 10: Memory instrumentation
+    // Step 10: Poll agent quota on a slow cadence so the dashboard quota widget stays fresh
+    await pollQuotaOnCadence(tickCount);
+
+    // Step 11: Memory instrumentation
     tickCount++;
     if (tickCount % MEMORY_LOG_INTERVAL === 0) {
       const rss = process.memoryUsage().rss;

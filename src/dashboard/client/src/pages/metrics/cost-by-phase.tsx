@@ -5,7 +5,7 @@ import { CHART_COLORS, ChartContainer, ChartTooltip } from "../../components/ui/
 import { Skeleton } from "../../components/ui/skeleton";
 
 interface CostByPhaseProps {
-  data: Array<{ phase: string; spend_usd: number; executions: number }>;
+  data: Array<{ phase: string; spend_usd: number; agent_calls: number }>;
   isLoading: boolean;
 }
 
@@ -60,7 +60,7 @@ export function CostByPhase({ data, isLoading }: CostByPhaseProps): React.JSX.El
             <ChartTooltip
               formatter={(value: number, name: string) => [
                 name === "spend_usd" ? `$${value.toFixed(4)}` : String(value),
-                name === "spend_usd" ? "Cost" : "Executions",
+                name === "spend_usd" ? "Cost" : "Agent calls",
               ]}
             />
             <Bar dataKey="spend_usd" fill={CHART_COLORS[2]} radius={[3, 3, 0, 0]} />

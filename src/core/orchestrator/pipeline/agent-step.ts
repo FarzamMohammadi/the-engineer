@@ -87,27 +87,33 @@ async function runStep<TDetails>(options: AgentStepOptions<TDetails>, ctx: Ctx):
   );
 
   try {
-    const agentError = await runAgent(agent, { prompt, systemPrompt, traceOutputPath }, options.stepName, ctx);
+    const run = await runAgent(agent, { prompt, systemPrompt, traceOutputPath }, options.stepName, ctx);
     const parsed = readResult(directory);
+    const spanScope: AgentSpanScope = {
+      ctx,
+      directory,
+      traceOutputPath,
+      spend: run.result ? toAgentSpend(run.result) : null,
+    };
 
     // The agent may have written a valid result before dying — prefer the work over the error.
     if (parsed !== null && parsed !== "invalid") {
-      return endAgentSpan(span, ctx, directory, traceOutputPath, mapResult(parsed, options.detailsSchema));
+      return endAgentSpan(span, spanScope, mapResult(parsed, options.detailsSchema));
     }
 
     // No usable result. An abort means preemption — re-throw so the caller checkpoints and resumes.
-    if (agentError) {
+    if (run.error) {
       if (ctx.signal?.aborted) {
-        throw agentError;
+        throw run.error;
       }
-      return endAgentSpan(span, ctx, directory, traceOutputPath, failed("agent_unavailable", describe(agentError)));
+      return endAgentSpan(span, spanScope, failed("agent_unavailable", describe(run.error)));
     }
 
     const reason =
       parsed === "invalid"
         ? "session-result.json was not updated by the agent (still a template or malformed)"
         : "session-result.json was not created by the agent";
-    return endAgentSpan(span, ctx, directory, traceOutputPath, failed("no_result", reason));
+    return endAgentSpan(span, spanScope, failed("no_result", reason));
   } catch (error) {
     // The abort re-thrown above, or any unexpected throw — close the span errored before it propagates.
     span.setError(error);
@@ -118,24 +124,50 @@ async function runStep<TDetails>(options: AgentStepOptions<TDetails>, ctx: Ctx):
 
 // ── Agent-call Observation ───────────────────────────────────────────────────
 
-/** Close the agent_call span with the outcome and the drill-down blobs (the agent's result and full transcript). */
-function endAgentSpan(
-  span: ObservationSpan,
-  ctx: Ctx,
-  directory: string,
-  traceOutputPath: string | null,
-  result: SubPhaseResult,
-): SubPhaseResult {
+/** Everything the agent_call span needs to close: where the drill-down files live and what the run cost. */
+interface AgentSpanScope {
+  readonly ctx: Ctx;
+  readonly directory: string;
+  readonly traceOutputPath: string | null;
+  /** The run's cost/token spend, or null when the run never produced a result (e.g. a hard failure). */
+  readonly spend: AgentSpend | null;
+}
+
+/**
+ * Close the agent_call span with the outcome, the cost/token spend the metrics page aggregates per phase,
+ * and the drill-down blobs (the agent's result and full transcript).
+ */
+function endAgentSpan(span: ObservationSpan, scope: AgentSpanScope, result: SubPhaseResult): SubPhaseResult {
+  const { ctx, directory, traceOutputPath, spend } = scope;
   if (result.outcome === "failed") {
     span.setError(new Error(result.summary));
   }
   span.end({
     outcome: result.outcome,
     summary: result.summary,
+    cost_usd: spend?.cost_usd ?? null,
+    tokens_in: spend?.tokens_in ?? null,
+    tokens_out: spend?.tokens_out ?? null,
     result_blob: captureFileBlob(ctx, "result", path.join(directory, RESULT_FILE)),
     transcript_blob: captureFileBlob(ctx, "transcript", traceOutputPath),
   });
   return result;
+}
+
+/** One agent run's cost and token spend, distilled from the AgentRunResult for the agent_call span. */
+interface AgentSpend {
+  readonly cost_usd: number | null;
+  readonly tokens_in: number | null;
+  readonly tokens_out: number | null;
+}
+
+/** Distil an AgentRunResult into the spend the agent_call span carries (null tokens when the CLI doesn't report them). */
+function toAgentSpend(result: AgentRunResult): AgentSpend {
+  return {
+    cost_usd: result.cost_usd,
+    tokens_in: result.usage?.tokens.input_tokens ?? null,
+    tokens_out: result.usage?.tokens.output_tokens ?? null,
+  };
 }
 
 /** Combine the system and user prompts into one payload for the drill-down blob. */
@@ -208,8 +240,19 @@ interface AgentRequestParts {
   readonly traceOutputPath: string | null;
 }
 
-/** Run the agent with retry/backoff. Returns the final error (caller decides recovery), or null on success. */
-async function runAgent(agent: AgentAdapter, parts: AgentRequestParts, stepName: string, ctx: Ctx): Promise<unknown> {
+/** The outcome of the retry loop: the agent run's result on success, or the final error the caller recovers from. */
+interface AgentRunOutcome {
+  readonly result: AgentRunResult | null;
+  readonly error: unknown;
+}
+
+/** Run the agent with retry/backoff. Returns the run's result on success, or the final error for the caller to recover. */
+async function runAgent(
+  agent: AgentAdapter,
+  parts: AgentRequestParts,
+  stepName: string,
+  ctx: Ctx,
+): Promise<AgentRunOutcome> {
   const request = {
     prompt: parts.prompt,
     system_prompt: parts.systemPrompt,
@@ -221,13 +264,12 @@ async function runAgent(agent: AgentAdapter, parts: AgentRequestParts, stepName:
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_AGENT_RETRIES; attempt += 1) {
     try {
-      await gatedRun(agent, request, stepName, ctx);
-      return null;
+      return { result: await gatedRun(agent, request, stepName, ctx), error: null };
     } catch (error) {
       lastError = error;
       const isLastAttempt = attempt === MAX_AGENT_RETRIES - 1;
       if (ctx.signal?.aborted || isLastAttempt || !isRetryable(error)) {
-        return error;
+        return { result: null, error };
       }
       const delayMs = RETRY_BASE_MS * 2 ** attempt;
       ctx.observer.warn("Agent run failed — retrying", {
@@ -239,15 +281,21 @@ async function runAgent(agent: AgentAdapter, parts: AgentRequestParts, stepName:
       await sleep(delayMs, ctx.signal);
     }
   }
-  return lastError;
+  return { result: null, error: lastError };
 }
 
 /**
  * Run the agent through the action pipeline so the safety layer gates it, then record what it cost.
- * A pipeline `error` re-throws the original so the retry logic can judge it; a `rejected`/`ask_human`
- * stop is a non-transient throw the runner blocks on.
+ * Returns the run's result (cost/tokens) so the agent_call span can carry the spend. A pipeline `error`
+ * re-throws the original so the retry logic can judge it; a `rejected`/`ask_human` stop is a non-transient
+ * throw the runner blocks on.
  */
-async function gatedRun(agent: AgentAdapter, request: AgentRunRequest, stepName: string, ctx: Ctx): Promise<void> {
+async function gatedRun(
+  agent: AgentAdapter,
+  request: AgentRunRequest,
+  stepName: string,
+  ctx: Ctx,
+): Promise<AgentRunResult> {
   const pipelineResult = await ctx.actionPipeline.execute<AgentRunResult>({
     taskId: ctx.task.id,
     actionClass: ActionClasses.read,
@@ -269,6 +317,7 @@ async function gatedRun(agent: AgentAdapter, request: AgentRunRequest, stepName:
     operation: "agent_step",
     result: pipelineResult.result,
   });
+  return pipelineResult.result;
 }
 
 /** Transient failures (network, rate limit) are worth a retry; everything else is not. */

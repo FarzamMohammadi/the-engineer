@@ -55,7 +55,7 @@ export const PHASE_ORDER: Phase[] = [
 
 /** Human-readable short labels for each observation type in the timeline. */
 export const OBSERVATION_TYPE_LABELS: Record<ObservationType, string> = {
-  agent_iteration: "Agent Loop",
+  task_execution: "Task",
   agent_call: "Agent Call",
   tool_execution: "Tool",
   phase_transition: "Phase",
@@ -65,9 +65,7 @@ export const OBSERVATION_TYPE_LABELS: Record<ObservationType, string> = {
   workspace_op: "Workspace",
   plugin_call: "Plugin",
   error: "Error",
-  cost_snapshot: "Cost",
   lifecycle: "Lifecycle",
-  config_change: "Config",
   quota_status: "Quota",
 };
 

@@ -1,5 +1,5 @@
 /**
- * Generic observations query API route — exposes all 13 observation types.
+ * Generic observations query API route — exposes every observation type.
  */
 import { Hono } from "hono";
 
@@ -13,7 +13,7 @@ export interface ObservationRoutesDeps {
 export function observationRoutes(deps: ObservationRoutesDeps): Hono {
   const app = new Hono();
 
-  /** Query observations with filters. Supports all 13 observation types. */
+  /** Query observations with filters. Supports filtering by any observation type. */
   app.get("/", (c) => {
     const type = c.req.query("type");
     const taskId = c.req.query("task_id");

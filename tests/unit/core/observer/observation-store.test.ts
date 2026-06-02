@@ -21,9 +21,18 @@ describe("Observer", () => {
   // ── ObservationTypes ───────────────────────────────────────────────────────
 
   describe("ObservationTypes", () => {
-    it("includes task_execution and every other observation type", () => {
-      expect(Object.keys(ObservationTypes)).toContain("task_execution");
-      expect(Object.keys(ObservationTypes)).toHaveLength(15);
+    it("includes the emitted span and quota types", () => {
+      const keys = Object.keys(ObservationTypes);
+      expect(keys).toContain("task_execution");
+      expect(keys).toContain("agent_call");
+      expect(keys).toContain("quota_status");
+    });
+
+    it("excludes the cut config_change, agent_iteration, and cost_snapshot types", () => {
+      const keys = Object.keys(ObservationTypes);
+      expect(keys).not.toContain("config_change");
+      expect(keys).not.toContain("agent_iteration");
+      expect(keys).not.toContain("cost_snapshot");
     });
 
     it("values are lowercase_snake_case strings", () => {
@@ -174,7 +183,7 @@ describe("Observer", () => {
 
   describe("startChild()", () => {
     it("sets parent_observation_id to parent span id", () => {
-      const parent = handle.observer.startSpan("agent_iteration", "iter-1");
+      const parent = handle.observer.startSpan("phase_transition", "iter-1");
       const child = parent.startChild("agent_call", "completion");
       child.end();
       parent.end();
@@ -185,7 +194,7 @@ describe("Observer", () => {
     });
 
     it("supports multiple children under one parent", () => {
-      const parent = handle.observer.startSpan("agent_iteration", "iter-1");
+      const parent = handle.observer.startSpan("phase_transition", "iter-1");
       const child1 = parent.startChild("agent_call", "call-1");
       const child2 = parent.startChild("tool_execution", "bash");
       child1.end();
@@ -199,7 +208,7 @@ describe("Observer", () => {
 
     it("supports grandchild nesting", () => {
       const parent = handle.observer.startSpan("phase_transition", "execution");
-      const child = parent.startChild("agent_iteration", "iter-1");
+      const child = parent.startChild("phase_transition", "iter-1");
       const grandchild = child.startChild("agent_call", "completion");
       grandchild.end();
       child.end();
@@ -213,7 +222,7 @@ describe("Observer", () => {
     });
 
     it("inherits parent options", () => {
-      const parent = handle.observer.startSpan("agent_iteration", "iter-1", undefined, {
+      const parent = handle.observer.startSpan("phase_transition", "iter-1", undefined, {
         task_id: "task-1",
         trace_id: "trace-1",
       });
@@ -231,7 +240,7 @@ describe("Observer", () => {
 
   describe("addEvent()", () => {
     it("creates an instant observation with parent_observation_id", () => {
-      const span = handle.observer.startSpan("agent_iteration", "iter-1");
+      const span = handle.observer.startSpan("phase_transition", "iter-1");
       span.addEvent("parsed_response", { action: "read_file" });
       span.end();
 
@@ -242,7 +251,7 @@ describe("Observer", () => {
     });
 
     it("works without data", () => {
-      const span = handle.observer.startSpan("agent_iteration", "iter-1");
+      const span = handle.observer.startSpan("phase_transition", "iter-1");
       span.addEvent("checkpoint");
       span.end();
 
@@ -484,7 +493,7 @@ describe("Observer", () => {
     });
 
     it("returns empty array when no matches", () => {
-      const results = handle.observer.query({ type: "config_change" });
+      const results = handle.observer.query({ type: "safety_verdict" });
       expect(results).toEqual([]);
     });
   });

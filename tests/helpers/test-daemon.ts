@@ -8,6 +8,7 @@ import { createNotificationRouter } from "../../src/core/daemon/notification-rou
 import type { EventBus, EventCallback } from "../../src/core/event-bus/index.js";
 import type { ISafetyLayer } from "../../src/core/interfaces/safety-layer.interface.js";
 import type { ITaskEngine, TransitionResult } from "../../src/core/interfaces/task-engine.interface.js";
+import type { Observer } from "../../src/core/observer/index.js";
 import type { ExecuteTaskResult, Orchestrator } from "../../src/core/orchestrator/index.js";
 import type { PeopleDirectory } from "../../src/core/people-directory/index.js";
 import type { Registry } from "../../src/core/registry/index.js";
@@ -154,8 +155,17 @@ function defaultTestConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
 
 let taskCounter = 0;
 
+/** Optional overrides for the test daemon's collaborators (beyond config). */
+export interface TestDaemonOverrides {
+  /** Inject a queryable observer (e.g. from createTestObserver) so a test can assert what the daemon emitted. */
+  readonly observer?: Observer;
+}
+
 /** Create a Daemon with all-mock dependencies for testing. */
-export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestDaemonHandle {
+export function createTestDaemon(
+  configOverrides?: Partial<DaemonConfig>,
+  overrides?: TestDaemonOverrides,
+): TestDaemonHandle {
   taskCounter = 0;
   const clock = new FakeClock();
   const subscriptions = new Map<string, { eventType: string; callback: EventCallback }>();
@@ -302,7 +312,7 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
 
   // ── Build Daemon ──────────────────────────────────────────────────────
   const config = defaultTestConfig(configOverrides);
-  const observer = createTestObserverFacade("daemon");
+  const observer = overrides?.observer ?? createTestObserverFacade("daemon");
 
   const notifications = createNotificationRouter({
     registry: registry as unknown as Registry,

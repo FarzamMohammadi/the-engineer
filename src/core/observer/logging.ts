@@ -22,7 +22,8 @@ export type ComponentTag =
   | "data-lifecycle"
   | "workspace-reaper"
   | "notifications"
-  | "dashboard";
+  | "dashboard"
+  | "trace-export";
 
 /** Logging config shape from DaemonConfigSchema. */
 export interface LoggingConfig {

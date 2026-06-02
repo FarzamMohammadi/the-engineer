@@ -21,6 +21,7 @@ import type { BootstrapResult, ProgressCallback } from "./bootstrap.js";
 import { bootstrap } from "./bootstrap.js";
 import { DASHBOARD_PORT, launchDashboard } from "./dashboard.js";
 import { registerShutdownHandlers } from "./shutdown.js";
+import { TRACE_UI_URL, probeEndpointReachable, traceInstallPointer } from "./telemetry.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -204,6 +205,10 @@ async function runForeground(
     out.blank();
     out.success(`The Engineer is ready. Dashboard: ${dashboardUrl}`);
 
+    // Telemetry line: trace UI URL if the backend answers, else an install pointer.
+    // The probe is short-timeout + total-catch — it never blocks "ready".
+    await reportTelemetry(bundle.daemon.telemetry, observer);
+
     if (startupHints.length > 0) {
       out.blank();
       out.log("  Startup hints:");
@@ -286,6 +291,31 @@ function runDryRun(_engineerHome: string, dirs: EngineerDirectories, preFlightRe
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Report the telemetry trace UI alongside the dashboard URL. When telemetry is on
+ * and the OTLP endpoint answers a short probe, print the trace UI URL; when it does
+ * not answer, print a friendly OS-aware install pointer. No-op when telemetry is
+ * off. The probe is short-timeout + total-catch, so this never blocks "ready" and
+ * never affects whether export actually runs (the exporter is best-effort already).
+ */
+async function reportTelemetry(
+  telemetry: ConfigBundle["daemon"]["telemetry"],
+  observer: BootstrapResult["observer"],
+): Promise<void> {
+  if (!telemetry.enabled) {
+    return;
+  }
+  const out = getOutput();
+  const reachable = await probeEndpointReachable(telemetry.endpoint);
+  if (reachable) {
+    observer.info("Trace backend reachable", { endpoint: telemetry.endpoint, traceUi: TRACE_UI_URL });
+    out.success(`Traces: ${TRACE_UI_URL}`);
+  } else {
+    observer.warn("Trace backend not reachable at startup", { endpoint: telemetry.endpoint });
+    out.warn(traceInstallPointer());
+  }
+}
 
 /** Handle first-run setup if needed. Returns exit code or null to continue. */
 async function handleFirstRunSetup(engineerHome: string, options: StartOptions): Promise<number | null> {

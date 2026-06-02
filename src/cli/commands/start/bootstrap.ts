@@ -8,8 +8,14 @@ import { EVENTS as DAEMON_EVENTS, createDaemon } from "../../../core/daemon/inde
 import { createNotificationRouter } from "../../../core/daemon/notification-router.js";
 import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../../../core/data-lifecycle/index.js";
 import type { AuthUrlProvider } from "../../../core/interfaces/workspace-manager.interface.js";
-import type { IObserver } from "../../../core/observer/index.js";
-import { BlobStore, createLogger, createObservationStore, createObserverFacade } from "../../../core/observer/index.js";
+import type { IObserver, TraceExportHandle } from "../../../core/observer/index.js";
+import {
+  BlobStore,
+  createLogger,
+  createObservationStore,
+  createObserverFacade,
+  startTraceExport,
+} from "../../../core/observer/index.js";
 import { EVENTS as ORCHESTRATOR_EVENTS, Orchestrator } from "../../../core/orchestrator/index.js";
 import { PeopleDirectory, inspectPeopleDirectory } from "../../../core/people-directory/index.js";
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../../../core/registry/index.js";
@@ -24,6 +30,8 @@ import { EventTypes } from "../../../schemas/events.js";
 import { RealClock } from "../../../utils/clock.js";
 import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
 import { SecureValue } from "../../../utils/secure-value.js";
+
+import { DASHBOARD_PORT } from "./dashboard.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +86,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   // Handles declared before try block so they can be cleaned up on failure
   let dbHandle: DatabaseHandle | undefined;
   let registry: Registry | undefined;
+  let traceExport: TraceExportHandle | undefined;
 
   try {
     // 2. Database
@@ -140,6 +149,20 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     observer.upgrade(observationStore);
     milestones["observability"] = Date.now() - bootstrapStartMs;
     observer.info("Observer upgraded — tracing enabled");
+
+    // 5b. Trace export (opt-in OTLP projection of the observation tree).
+    //     Poll-based side-channel READER of the observations table — never on the
+    //     pipeline write path. Off by default; when on, it is best-effort and a
+    //     down/slow backend cannot affect task latency or startup. One endpoint.
+    if (config.daemon.telemetry.enabled) {
+      traceExport = startTraceExport({
+        db: dbHandle.db,
+        endpoint: config.daemon.telemetry.endpoint,
+        observer: observer.child("trace-export"),
+        dashboardBaseUrl: `http://localhost:${String(DASHBOARD_PORT)}`,
+      });
+      observer.info("Trace export enabled", { endpoint: config.daemon.telemetry.endpoint });
+    }
 
     // 6. People Directory
     const peopleDirectory = new PeopleDirectory({ people: config.people });
@@ -279,6 +302,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       daemon,
       observer,
       cleanup() {
+        // Stop the exporter before the db closes — it reads the observations table.
+        traceExport?.stop();
         dbHandle?.close();
         loggerHandle.close();
       },
@@ -298,6 +323,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
         });
       }
     }
+    // Stop the exporter (if started) before the db closes — it reads the db.
+    traceExport?.stop();
     dbHandle?.close();
     loggerHandle.close();
     throw error;

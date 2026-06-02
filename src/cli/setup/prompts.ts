@@ -114,15 +114,18 @@ export async function runGuidedSetup(
 async function promptForTelemetry(): Promise<boolean> {
   const out = getOutput();
   out.blank();
-  out.log("  Observability — live trace visualization (optional):");
-  out.log("    See each task as a flame graph in a local trace UI (Jaeger). Off by default.");
+  out.log("  Observability — task flame graphs (optional)");
+  out.log("  See each task's trace in a local Jaeger UI. Off by default.");
+  out.blank();
   const enable = await confirm({
     message: "Enable live trace visualization?",
     default: false,
   });
   if (enable) {
-    out.log(`    To view traces, run a backend: ${traceInstallCommand()}`);
-    out.log("    No backend yet? The Engineer still runs — you'll get a warning, never a crash.");
+    out.blank();
+    out.log("  You'll need Jaeger running to view the traces.");
+    out.log("  Install and start it:");
+    out.log(`    ${traceInstallCommand()}`);
   }
   return enable;
 }

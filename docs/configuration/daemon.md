@@ -140,7 +140,8 @@ The endpoint is a single, swappable OTLP/HTTP target. Point it at any OTLP backe
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `telemetry.enabled` | boolean | `false` | Export the observation tree to the OTLP backend. When off (the default), nothing is exported and the pipeline is unchanged. |
-| `telemetry.endpoint` | string | `"http://localhost:4318"` | OTLP/HTTP base URL of the trace backend. Spans are POSTed to `<endpoint>/v1/traces`. The default targets a local Jaeger v2. |
+| `telemetry.endpoint` | string | `"http://localhost:4318"` | OTLP/HTTP ingest base URL of the trace backend. Spans are POSTed to `<endpoint>/v1/traces`. The default targets a local Jaeger v2. |
+| `telemetry.ui_base` | string | `"http://localhost:16686"` | Web-UI base URL of the trace backend, distinct from the OTLP ingest `endpoint`. The start output and the dashboard's "View trace in Jaeger" deep-link point here. The default targets a local Jaeger v2 web UI. |
 
 > **Data leaves the machine.** A non-localhost endpoint ships trace data — including span attributes derived from task input and output — off your machine. Keep the endpoint local unless you intend to export. Attribute values are sanitized at the export boundary, but treat any remote endpoint as a trust boundary.
 

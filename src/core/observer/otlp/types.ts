@@ -41,6 +41,12 @@ export type OtlpStatusCode = (typeof OtlpStatusCodes)[keyof typeof OtlpStatusCod
 /** OTLP span status. */
 export interface OtlpStatus {
   code: OtlpStatusCode;
+  /**
+   * Human-readable error description, carried only on an error status. Sourced from
+   * the observation's `error_message` column and sanitized at the export boundary
+   * (the same gate the attributes pass through). Omitted on an OK status.
+   */
+  message?: string;
 }
 
 /** A single OTLP span — one observation projected onto the wire. */

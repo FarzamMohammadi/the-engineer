@@ -79,7 +79,8 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # --- Telemetry (opt-in OTLP trace export to a flame-graph backend like Jaeger v2) ---
 # telemetry:
 #   enabled: false                     # Export the observation tree to an OTLP backend (default: false)
-#   endpoint: "http://localhost:4318"  # OTLP/HTTP base URL; spans POSTed to <endpoint>/v1/traces (default: http://localhost:4318)
+#   endpoint: "http://localhost:4318"  # OTLP/HTTP ingest base URL; spans POSTed to <endpoint>/v1/traces (default: http://localhost:4318)
+#   ui_base: "http://localhost:16686"  # Trace web-UI base for the "View trace" links (distinct from endpoint) (default: http://localhost:16686)
 
 # --- Event bus ---
 # subscriber_warn_threshold_ms: 50    # Warn if a subscriber callback takes longer than this (default: 50)
@@ -386,7 +387,8 @@ database:
 # off-machine — keep it local unless you intend otherwise.
 telemetry:
   enabled: false                          # Export the observation tree to an OTLP backend (default: false)
-  endpoint: "http://localhost:4318"       # OTLP/HTTP base URL; spans POSTed to <endpoint>/v1/traces (default: http://localhost:4318)
+  endpoint: "http://localhost:4318"       # OTLP/HTTP ingest base URL; spans POSTed to <endpoint>/v1/traces (default: http://localhost:4318)
+  ui_base: "http://localhost:16686"       # Trace web-UI base for the "View trace" links (distinct from endpoint) (default: http://localhost:16686)
 
 # ── Event Bus ───────────────────────────────────────────────────────────────
 subscriber_warn_threshold_ms: 50          # Warn if a subscriber callback exceeds this (ms). 0 = disabled. (default: 50)

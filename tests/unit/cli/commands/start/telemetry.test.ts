@@ -1,7 +1,8 @@
 /**
  * Unit tests for the start-command telemetry helpers: the reachability probe and
  * the OS-aware install pointer. These are the load-bearing pieces of the start
- * output — a reachable backend yields the trace UI URL, an absent one yields a
+ * output — a reachable backend yields the trace UI URL (configured via
+ * `telemetry.ui_base`, asserted in the config schema test), an absent one yields a
  * friendly, platform-correct install pointer. The probe must never throw and never
  * block beyond its short timeout.
  */
@@ -10,16 +11,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   type ProbeFetch,
-  TRACE_UI_URL,
   probeEndpointReachable,
   traceInstallPointer,
 } from "../../../../../src/cli/commands/start/telemetry.js";
-
-describe("TRACE_UI_URL", () => {
-  it("points at the Jaeger v2 UI port, not the OTLP ingest port", () => {
-    expect(TRACE_UI_URL).toBe("http://localhost:16686");
-  });
-});
 
 describe("probeEndpointReachable", () => {
   it("returns true when the endpoint answers (any response counts)", async () => {

@@ -410,7 +410,10 @@ describe("checkTelemetry", () => {
 
   it("passes (informational) when telemetry is disabled, without probing", async () => {
     const probe = vi.fn() as unknown as ProbeFetch;
-    const result = await checkTelemetry({ enabled: false, endpoint: "http://localhost:4318" }, probe);
+    const result = await checkTelemetry(
+      { enabled: false, endpoint: "http://localhost:4318", ui_base: "http://localhost:16686" },
+      probe,
+    );
     expect(result.category).toBe("Telemetry");
     expect(result.checks[0]?.status).toBe("pass");
     expect(result.checks[0]?.message).toContain("Disabled");
@@ -418,20 +421,29 @@ describe("checkTelemetry", () => {
   });
 
   it("passes when telemetry is on and the backend answers", async () => {
-    const result = await checkTelemetry({ enabled: true, endpoint: "http://localhost:4318" }, reachableFetch);
+    const result = await checkTelemetry(
+      { enabled: true, endpoint: "http://localhost:4318", ui_base: "http://localhost:16686" },
+      reachableFetch,
+    );
     expect(result.checks[0]?.status).toBe("pass");
     expect(result.checks[0]?.message).toContain("http://localhost:4318");
   });
 
   it("warns (never fails) when telemetry is on but the backend is unreachable", async () => {
-    const result = await checkTelemetry({ enabled: true, endpoint: "http://localhost:4318" }, unreachableFetch);
+    const result = await checkTelemetry(
+      { enabled: true, endpoint: "http://localhost:4318", ui_base: "http://localhost:16686" },
+      unreachableFetch,
+    );
     const check = result.checks[0];
     expect(check?.status).toBe("warn");
     expect(result.checks.some((c) => c.status === "fail")).toBe(false);
   });
 
   it("names the consequence and includes the install pointer when unreachable", async () => {
-    const result = await checkTelemetry({ enabled: true, endpoint: "http://localhost:4318" }, unreachableFetch);
+    const result = await checkTelemetry(
+      { enabled: true, endpoint: "http://localhost:4318", ui_base: "http://localhost:16686" },
+      unreachableFetch,
+    );
     const check = result.checks[0];
     // Consequence: spans go nowhere.
     expect(check?.message).toContain("dropped");
@@ -620,7 +632,7 @@ function makeSafeBundle() {
         agent_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },
       },
       evaluation: { enabled: false },
-      telemetry: { enabled: false, endpoint: "http://localhost:4318" },
+      telemetry: { enabled: false, endpoint: "http://localhost:4318", ui_base: "http://localhost:16686" },
     },
     orchestrator: {} as ReturnType<typeof import("../../../../src/schemas/config.js").OrchestratorConfigSchema.parse>,
     workspace: {} as ReturnType<typeof import("../../../../src/schemas/config.js").WorkspaceConfigSchema.parse>,

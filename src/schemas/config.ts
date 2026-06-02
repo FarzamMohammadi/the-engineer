@@ -60,6 +60,12 @@ export const TelemetryConfigSchema = z.object({
     .describe(
       "OTLP/HTTP base URL of the trace backend. Spans are POSTed to `<endpoint>/v1/traces`. Any OTLP backend works; the default targets a local Jaeger v2.",
     ),
+  ui_base: z
+    .string()
+    .default("http://localhost:16686")
+    .describe(
+      "Web-UI base URL of the trace backend, distinct from the OTLP ingest `endpoint`. The start output and the dashboard's 'View trace in Jaeger' deep-link point here. The default targets a local Jaeger v2 web UI.",
+    ),
 });
 export type TelemetryConfig = z.infer<typeof TelemetryConfigSchema>;
 

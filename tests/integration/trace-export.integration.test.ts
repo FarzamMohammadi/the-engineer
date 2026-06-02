@@ -286,6 +286,33 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     await expect(pollPromise).resolves.toBeUndefined();
   });
 
+  it("a slow cycle blocks an overlapping poll (no concurrent POSTs)", async () => {
+    const receiver = createFakeReceiver("hung");
+    const ex = start(receiver);
+
+    store.observe("lifecycle", "first", {});
+
+    // Cycle 1: its POST hangs forever, so the cycle stays mid-flight.
+    let firstSettled = false;
+    const first = ex.pollOnce().then(() => {
+      firstSettled = true;
+    });
+    await Promise.resolve();
+    expect(receiver.calls).toBe(1);
+    expect(firstSettled).toBe(false);
+
+    // A NEW row arrives while cycle 1 is still in flight.
+    store.observe("lifecycle", "second", {});
+
+    // Cycle 2 must early-return on the overlap guard: NO second concurrent POST.
+    await expect(ex.pollOnce()).resolves.toBeUndefined();
+    expect(receiver.calls).toBe(1);
+
+    // stop() aborts the hung POST so the first cycle settles and the guard clears.
+    ex.stop();
+    await expect(first).resolves.toBeUndefined();
+  });
+
   // ── (d) rehydration replays the bounded window (and nothing older) ───────────
 
   it("rehydrates the bounded recent window and skips older observations", async () => {

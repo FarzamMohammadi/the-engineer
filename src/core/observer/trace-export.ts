@@ -25,12 +25,18 @@
  *     (`WHERE id IN (...) AND end_time IS NOT NULL`); the now-complete ones are
  *     exported with their real duration and dropped from `pending`.
  *
- * Net: every observation is exported EXACTLY ONCE, when complete, with a real
+ * Net: every observation is exported AT MOST ONCE, when complete, with a real
  * duration — no reliance on backend (traceId,spanId) dedup.
  *
- * Best-effort: the poll loop is total-catch (never throws out of the timer); a
- * failed/slow POST (per-POST AbortSignal timeout) is caught, rate-limited-warned,
- * dropped, and retried next cycle. One endpoint, no fan-out.
+ * Best-effort, at-most-once (NOT at-least-once): the poll loop is total-catch
+ * (never throws out of the timer); a failed/slow POST (per-POST AbortSignal
+ * timeout) is caught, rate-limited-warned, and DROPPED. A COMPLETE observation
+ * whose POST fails is gone from the export stream — its rowid is already past the
+ * cursor and it is not re-queued. SQLite remains the system of record, so nothing
+ * is lost there; only the live projection has a gap. The one thing that DOES
+ * re-attempt naturally is a still-open span: it stays in `pending` until it
+ * completes, so its (later) export is independent of any earlier failed POST.
+ * One endpoint, no fan-out.
  *
  * Rehydration: on start the cursor is set BACK by a bounded recent window so the
  * first polls replay recent COMPLETE observations into a freshly-started
@@ -195,17 +201,68 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
   const tracesUrl = `${endpoint.replace(TRAILING_SLASHES, "")}/v1/traces`;
   const attrCtx: AttributeContext = { dashboardBaseUrl: dashboardBaseUrl.replace(TRAILING_SLASHES, "") };
 
+  // ── Rehydration cursor (lives in the factory so a broken read warns once) ───
+
+  /**
+   * Compute the start cursor: the largest rowid OLDER than the rehydrate window,
+   * so a `rowid > cursor` poll replays exactly the recent window (and nothing
+   * before it). The window anchors on `start_time` — a span that STARTED before
+   * the window is excluded even if it COMPLETED recently (we never rehydrate a
+   * long-running span whose root predates the window). Falls back to the current
+   * max rowid (live tail only) when the window is empty or the query fails — never
+   * replays full history. A query failure is a one-shot WARN (Fail Loud), not a
+   * silent fallback: a broken rehydrate read would otherwise hide as "no recent
+   * history" with no signal.
+   */
+  function computeRehydrateCursor(windowMs: number): number {
+    try {
+      const cutoffISO = new Date(clock.now() - windowMs).toISOString();
+      const row = db.prepare("SELECT MAX(rowid) AS rowid FROM observations WHERE start_time < ?").get(cutoffISO) as
+        | { rowid: number | null }
+        | undefined;
+      if (row?.rowid != null) {
+        return row.rowid;
+      }
+      // No rows older than the cutoff: either the table is empty, or everything is
+      // within the window. Start from 0 so the whole (bounded) window replays.
+      return 0;
+    } catch (error) {
+      // Fail Loud: a broken rehydrate read must be visible, not swallowed. Warn
+      // once, then fall back to the live tail (current max rowid) so we can never
+      // replay unbounded history or crash startup.
+      observer.warn("Trace export rehydrate-cursor read failed; falling back to live tail", {
+        error: sanitizeErrorMessage(error),
+      });
+      try {
+        const row = db.prepare("SELECT MAX(rowid) AS rowid FROM observations").get() as
+          | { rowid: number | null }
+          | undefined;
+        return row?.rowid ?? 0;
+      } catch {
+        return 0;
+      }
+    }
+  }
+
   // ── State (single cursor unifies rehydrate + live tail) ─────────────────────
 
   // High-water mark: the largest rowid we have already SEEN (not necessarily
   // exported — an open span is seen but deferred to `pending`).
-  let cursor = computeRehydrateCursor(db, clock, rehydrateWindowMs);
+  let cursor = computeRehydrateCursor(rehydrateWindowMs);
   // Ids of open spans seen but not yet exported (insertion-order for FIFO drop).
   const pending = new Set<string>();
   // Aborts the current in-flight POST on stop(). One POST at a time per cycle.
   let inFlight: AbortController | null = null;
   let stopped = false;
   let lastWarnAt = 0;
+  // Re-entrancy guard: true while a poll cycle is mid-flight. A slow backend can
+  // make a POST outlast the poll interval, so the timer would otherwise fire a
+  // SECOND overlapping pollOnce — concurrent POSTs, and a racy `cursor`/`pending`
+  // read mid-mutation. The guard makes the new cycle return early and lets the
+  // running one finish. It also makes the "collect synchronously, THEN await"
+  // invariant explicit: rows are read into a batch before any await, so the
+  // single in-flight cycle owns the cursor for its whole duration.
+  let isPolling = false;
 
   // ── Warnings (rate-limited so a down backend cannot spam) ───────────────────
 
@@ -239,10 +296,12 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
         warnRateLimited("Trace export POST rejected by backend", new Error(`HTTP ${String(res.status)}`));
       }
     } catch (error) {
-      // Network error, timeout/abort, or a thrown fetch — drop, warn, retry next
-      // cycle. The dropped spans are NOT re-queued: an instant is already past
-      // the cursor, and a span stays in `pending` until it completes, so the
-      // next cycle re-attempts naturally.
+      // Network error, timeout/abort, or a thrown fetch — drop and warn. At-most-once:
+      // these spans are NOT re-queued. A complete observation in this batch is already
+      // past the cursor, so its failed POST is a permanent gap in the live projection
+      // (SQLite still has it — the backend is a disposable lens, not the record). Only a
+      // still-open span re-attempts later, and only because it lingers in `pending` until
+      // it completes — never as a retry of THIS failed POST.
       warnRateLimited("Trace export POST failed", error);
     } finally {
       clearTimeout(timeoutId);
@@ -321,7 +380,19 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
     if (stopped) {
       return;
     }
+    // Overlap guard: if the previous cycle's POST is still in flight (a slow
+    // backend outlasting the poll interval), skip this tick rather than fire a
+    // second concurrent POST that races the same cursor/pending state. The running
+    // cycle finishes and the next tick picks up from where it left off.
+    if (isPolling) {
+      return;
+    }
+    isPolling = true;
     try {
+      // Collect SYNCHRONOUSLY (no await) before any POST: collectNewRows advances
+      // `cursor` and collectCompletedPending mutates `pending`, so this whole batch
+      // must be read in one synchronous pass that the single in-flight cycle owns
+      // for its duration — the overlap guard above is what keeps that invariant true.
       const observations = [...collectNewRows(), ...collectCompletedPending()];
       if (observations.length === 0) {
         return;
@@ -342,6 +413,8 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
     } catch (error) {
       // Any unexpected throw (a SQLite read failure, etc.): warn and keep going.
       warnRateLimited("Trace export cycle failed", error);
+    } finally {
+      isPolling = false;
     }
   }
 
@@ -365,38 +438,4 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
     },
     pollOnce,
   };
-}
-
-// ── Rehydration cursor ────────────────────────────────────────────────────────
-
-/**
- * Compute the start cursor: the largest rowid OLDER than the rehydrate window,
- * so a `rowid > cursor` poll replays exactly the recent window (and nothing
- * before it). Falls back to the current max rowid (live tail only) when the
- * window is empty or the query fails — never replays full history.
- */
-function computeRehydrateCursor(db: Database.Database, clock: ExportClock, windowMs: number): number {
-  try {
-    const cutoffISO = new Date(clock.now() - windowMs).toISOString();
-    const row = db.prepare("SELECT MAX(rowid) AS rowid FROM observations WHERE start_time < ?").get(cutoffISO) as
-      | { rowid: number | null }
-      | undefined;
-    if (row?.rowid != null) {
-      return row.rowid;
-    }
-    // No rows older than the cutoff: either the table is empty, or everything is
-    // within the window. Start from 0 so the whole (bounded) window replays.
-    return 0;
-  } catch {
-    // On any query failure, fall back to the live tail (current max rowid) so a
-    // broken rehydrate can never replay unbounded history or crash startup.
-    try {
-      const row = db.prepare("SELECT MAX(rowid) AS rowid FROM observations").get() as
-        | { rowid: number | null }
-        | undefined;
-      return row?.rowid ?? 0;
-    } catch {
-      return 0;
-    }
-  }
 }

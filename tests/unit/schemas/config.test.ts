@@ -65,10 +65,11 @@ describe("DaemonConfigSchema", () => {
     expect(config.workspace_reaper.interval_ms).toBe(3_600_000);
   });
 
-  it("produces telemetry defaults from empty input (off, default endpoint)", () => {
+  it("produces telemetry defaults from empty input (off, default endpoint and ui_base)", () => {
     const config = DaemonConfigSchema.parse({});
     expect(config.telemetry.enabled).toBe(false);
     expect(config.telemetry.endpoint).toBe("http://localhost:4318");
+    expect(config.telemetry.ui_base).toBe("http://localhost:16686");
   });
 
   it("allows partial override while keeping other defaults", () => {
@@ -94,16 +95,22 @@ describe("DaemonConfigSchema", () => {
 });
 
 describe("TelemetryConfigSchema", () => {
-  it("produces valid defaults from empty input (off, default endpoint)", () => {
+  it("produces valid defaults from empty input (off, default endpoint and ui_base)", () => {
     const config = TelemetryConfigSchema.parse({});
     expect(config.enabled).toBe(false);
     expect(config.endpoint).toBe("http://localhost:4318");
+    expect(config.ui_base).toBe("http://localhost:16686");
   });
 
-  it("accepts enabled with a custom endpoint", () => {
-    const config = TelemetryConfigSchema.parse({ enabled: true, endpoint: "http://collector:4318" });
+  it("accepts enabled with a custom endpoint and ui_base", () => {
+    const config = TelemetryConfigSchema.parse({
+      enabled: true,
+      endpoint: "http://collector:4318",
+      ui_base: "http://collector:16686",
+    });
     expect(config.enabled).toBe(true);
     expect(config.endpoint).toBe("http://collector:4318");
+    expect(config.ui_base).toBe("http://collector:16686");
   });
 
   it("rejects a non-boolean enabled and a non-string endpoint", () => {

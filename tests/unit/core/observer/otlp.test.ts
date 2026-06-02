@@ -80,6 +80,17 @@ describe("deriveTraceId", () => {
     expect(() => deriveTraceId("not-a-ulid")).toThrow(/Invalid ULID/);
     expect(() => deriveTraceId("")).toThrow(/Invalid ULID/);
   });
+
+  it("clamps an out-of-range ULID to exactly 32 hex chars (16 bytes)", () => {
+    // A canonical ULID's leading char is ≤ '7' (128 bits fit the encoding). A
+    // leading char of '8'..'Z' decodes past 128 bits and would otherwise produce
+    // 33+ hex chars — an invalid OTLP trace id. The 128-bit mask must clamp it.
+    // 26 'Z's is the maximum-value 26-char Crockford string (well above 2^128).
+    const outOfRange = "Z".repeat(26);
+    const traceId = deriveTraceId(outOfRange);
+    expect(traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(traceId).toHaveLength(32);
+  });
 });
 
 describe("deriveSpanId", () => {
@@ -242,9 +253,27 @@ describe("mapObservationToSpan", () => {
     expect(span.status).toEqual({ code: "STATUS_CODE_OK" });
   });
 
-  it("maps status error → STATUS_CODE_ERROR", () => {
-    const span = mapObservationToSpan(makeObservation({ status: "error" }), CTX);
+  it("maps status error → STATUS_CODE_ERROR (no message when error_message is null)", () => {
+    const span = mapObservationToSpan(makeObservation({ status: "error", error_message: null }), CTX);
     expect(span.status).toEqual({ code: "STATUS_CODE_ERROR" });
+  });
+
+  it("carries the error_message column as the sanitized status.message on an error span", () => {
+    const span = mapObservationToSpan(
+      makeObservation({ status: "error", error_message: "lint failed: 3 errors" }),
+      CTX,
+    );
+    expect(span.status).toEqual({ code: "STATUS_CODE_ERROR", message: "lint failed: 3 errors" });
+  });
+
+  it("sanitizes a planted secret in the error_message before it rides on status.message", () => {
+    const secret = `ghp_${"c".repeat(36)}`;
+    const span = mapObservationToSpan(
+      makeObservation({ status: "error", error_message: `auth failed with ${secret}` }),
+      CTX,
+    );
+    expect(span.status.message).toBeDefined();
+    expect(span.status.message).not.toContain(secret);
   });
 
   it("drops the always-null metadata (never emits a metadata attribute)", () => {
@@ -268,6 +297,16 @@ describe("mapObservationToSpan", () => {
     const obs = makeObservation({ trace_id: null });
     const span = mapObservationToSpan(obs, CTX);
     expect(span.traceId).toBe(deriveTraceId(obs.id));
+  });
+
+  it("omits parentSpanId for an untraced span even when it carries a parent (clean root)", () => {
+    // trace_id null → the span is its own single-span trace. Its parent lives in a
+    // DIFFERENT trace, so linking to it would dangle. Must be a clean root.
+    const obs = makeObservation({ trace_id: null, parent_observation_id: ulid() });
+    const span = mapObservationToSpan(obs, CTX);
+    expect(span.traceId).toBe(deriveTraceId(obs.id));
+    expect(span.parentSpanId).toBeUndefined();
+    expect("parentSpanId" in span).toBe(false);
   });
 
   it("throws on an invalid ISO timestamp", () => {

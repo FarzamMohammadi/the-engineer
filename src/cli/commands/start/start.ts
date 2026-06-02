@@ -21,7 +21,7 @@ import type { BootstrapResult, ProgressCallback } from "./bootstrap.js";
 import { bootstrap } from "./bootstrap.js";
 import { DASHBOARD_PORT, launchDashboard } from "./dashboard.js";
 import { registerShutdownHandlers } from "./shutdown.js";
-import { TRACE_UI_URL, probeEndpointReachable, traceInstallPointer } from "./telemetry.js";
+import { probeEndpointReachable, traceInstallPointer } from "./telemetry.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -309,8 +309,8 @@ async function reportTelemetry(
   const out = getOutput();
   const reachable = await probeEndpointReachable(telemetry.endpoint);
   if (reachable) {
-    observer.info("Trace backend reachable", { endpoint: telemetry.endpoint, traceUi: TRACE_UI_URL });
-    out.success(`Traces: ${TRACE_UI_URL}`);
+    observer.info("Trace backend reachable", { endpoint: telemetry.endpoint, traceUi: telemetry.ui_base });
+    out.success(`Traces: ${telemetry.ui_base}`);
   } else {
     observer.warn("Trace backend not reachable at startup", { endpoint: telemetry.endpoint });
     out.warn(traceInstallPointer());

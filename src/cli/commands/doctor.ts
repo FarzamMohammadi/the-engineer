@@ -733,12 +733,13 @@ function checkEscalationCoherence(
 
 /**
  * Telemetry (OTLP trace export) category. Informational and non-blocking: when
- * telemetry is off, that is a clean pass; when it is on, we localhost-probe the
- * configured OTLP endpoint and WARN (never fail) if no backend answers, naming
- * the consequence (spans go nowhere) and pointing at the install fix. The probe
- * is short-timeout + total-catch (reused from the start command) so a missing or
- * slow backend never stalls `engineer doctor`. No GitHub fetch — the backend is a
- * local lens the user brings, not a dependency we resolve over the network.
+ * telemetry is off, that is a clean pass; when it is on, we probe the configured
+ * OTLP `endpoint` (wherever it points — local by default, but a remote URL is
+ * probed there, not at localhost) and WARN (never fail) if no backend answers,
+ * naming the consequence (spans go nowhere) and pointing at the install fix. The
+ * probe is short-timeout + total-catch (reused from the start command) so a
+ * missing or slow backend never stalls `engineer doctor`. No GitHub fetch — the
+ * backend is a lens the user brings, not a dependency we resolve over the network.
  *
  * Async because it makes one bounded network probe; appended after the synchronous
  * categories in the doctor action rather than inside {@link runAllChecks}. When the

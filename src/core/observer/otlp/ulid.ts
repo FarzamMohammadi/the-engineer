@@ -21,6 +21,9 @@ const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 /** A ULID is always 26 Crockford base32 characters (128 bits). */
 const ULID_LENGTH = 26;
 
+/** Mask to the low 128 bits — an OTLP trace id is exactly 16 bytes / 32 hex. */
+const MASK_128 = (1n << 128n) - 1n;
+
 /** Reverse lookup: Crockford char → 5-bit value. Built once. */
 const CHAR_TO_VALUE: ReadonlyMap<string, number> = new Map([...CROCKFORD].map((char, index) => [char, index]));
 
@@ -60,11 +63,16 @@ function toHex(value: bigint, bytes: number): string {
 /**
  * Derive the 32-char OTLP trace id (16 bytes hex) from a `trace_id` ULID.
  *
- * Lossless decode of the full 128 bits. Deterministic — the same ULID always
- * yields the same hex, so the dashboard deep-link and the exported span match.
+ * Decode of the full 128 bits, masked to 128 bits. The Crockford encoding has
+ * 130 bits of space (26 × 5), so a leading character above `7` (decoding to a
+ * value ≥ 8 in its top 3 bits) would push the decode to 129+ bits and yield 33+
+ * hex chars — an invalid OTLP trace id. The mask clamps to exactly 16 bytes; a
+ * canonical, monotonic ULID (leading char ≤ `7`) is unaffected. Deterministic —
+ * the same ULID always yields the same hex, so the dashboard deep-link and the
+ * exported span match.
  */
 export function deriveTraceId(traceId: string): string {
-  return toHex(decodeUlid(traceId), 16);
+  return toHex(decodeUlid(traceId) & MASK_128, 16);
 }
 
 /**

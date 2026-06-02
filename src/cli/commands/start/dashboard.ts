@@ -7,7 +7,6 @@ import type { TelemetryConfig } from "../../../schemas/config.js";
 import { sanitizeErrorMessage } from "../../../utils/sanitize.js";
 import type { EngineerDirectories } from "../../home.js";
 import { getOutput } from "../../output.js";
-import { TRACE_UI_URL } from "./telemetry.js";
 
 export const DASHBOARD_PORT = 3847;
 
@@ -30,10 +29,10 @@ export function launchDashboard(
           tracesDir: dirs.traces,
           runDir: dirs.run,
           observer: observer.child("dashboard"),
-          // The link is shown only when export is on; the UI base is the same Jaeger v2 web-UI the start
-          // output points at, kept single-sourced in telemetry.ts (distinct from the OTLP ingest endpoint).
+          // The link is shown only when export is on; the UI base is the same configured trace web-UI the
+          // start output points at (config `telemetry.ui_base`, distinct from the OTLP ingest endpoint).
           telemetryEnabled: telemetry.enabled,
-          telemetryUiBase: TRACE_UI_URL,
+          telemetryUiBase: telemetry.ui_base,
         },
         DASHBOARD_PORT,
       );

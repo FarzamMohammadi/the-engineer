@@ -22,6 +22,11 @@ export { ObservationStore, createObservationStore } from "./observation-store.js
 
 export { BlobStore } from "./blob-store.js";
 
+// ── Trace Export (poll-based OTLP exporter — the live observability lens) ────
+
+export { startTraceExport } from "./trace-export.js";
+export type { TraceExportDeps, TraceExportHandle } from "./trace-export.js";
+
 // ── Logger ──────────────────────────────────────────────────────────────────
 
 export { createLogger, createSilentLogger } from "./logging.js";

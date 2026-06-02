@@ -207,28 +207,32 @@ export function createResponsePoller(ctx: ResponsePollerContext, unblockResolver
   }
 
   /** Scan event bus for comm.message_received events from non-plugin sources (dashboard). */
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: nested conditionals for event filtering are inherent to the logic
   function scanEventBus(): void {
     const rows = eventBus.getEventsSince(lastEventSeq);
     for (const row of rows) {
-      if (row.type === "comm.message_received" && row.source !== "daemon") {
-        // Events from "daemon" source are ones WE published (from plugin messages above).
-        // Only process events from other sources (e.g., "dashboard").
-        const payload = row.payload as {
-          source?: string;
-          task_id?: string | null;
-          content?: string;
-        };
-        if (payload.task_id) {
-          unblockResolver.tryUnblock({
-            by: "task_id",
-            taskId: payload.task_id,
-            source: payload.source ?? "unknown",
-            ...(payload.content ? { content: payload.content } : {}),
-          });
-        }
-      }
+      // Advance the cursor for every scanned row up front, before any filter — the next poll
+      // must never re-read a row we have already inspected, whether or not it matched.
       lastEventSeq = row.sequence;
+
+      // Events from "daemon" source are ones WE published (from plugin messages above).
+      // Only process comm.message_received from other sources (e.g., "dashboard").
+      if (row.type !== "comm.message_received" || row.source === "daemon") {
+        continue;
+      }
+      const payload = row.payload as {
+        source?: string;
+        task_id?: string | null;
+        content?: string;
+      };
+      if (!payload.task_id) {
+        continue;
+      }
+      unblockResolver.tryUnblock({
+        by: "task_id",
+        taskId: payload.task_id,
+        source: payload.source ?? "unknown",
+        ...(payload.content ? { content: payload.content } : {}),
+      });
     }
   }
 

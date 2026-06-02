@@ -301,4 +301,27 @@ describe("ResponsePoller", () => {
       }),
     );
   });
+
+  it("advances the scan cursor past a filtered-out row so the next poll does not re-read it", async () => {
+    const getEventsSince = ctx.eventBus.getEventsSince as ReturnType<typeof vi.fn>;
+    // Construct against an empty bus so the startup cursor begins at 0.
+    const poller = createResponsePoller(ctx, resolver);
+
+    // First scan returns a daemon-sourced row — filtered out (we published it), but the cursor must
+    // still advance past it so the next poll resumes after, not before, the filtered row.
+    getEventsSince.mockReturnValue([
+      { type: "comm.message_received", source: "daemon", sequence: 7, payload: { task_id: "task-1" } },
+    ]);
+    await poller.poll(100_000);
+
+    // The filtered row never unblocks anything.
+    expect(resolver.tryUnblock).not.toHaveBeenCalled();
+
+    // The second scan resumes from the advanced cursor (7), not from before the filtered row.
+    getEventsSince.mockClear();
+    getEventsSince.mockReturnValue([]);
+    await poller.poll(200_000);
+
+    expect(getEventsSince).toHaveBeenCalledWith(7);
+  });
 });

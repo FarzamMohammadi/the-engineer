@@ -399,21 +399,25 @@ export function createTaskScheduler(
     });
   }
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: discriminated union routing over the outcome types — extraction would fragment related state handling
+  /**
+   * Reset the retry counters a non-crash dispatch settle has earned. The crash counter always resets —
+   * reaching `handleTaskCompletion` at all means the dispatch did not crash. The agent_unavailable counter
+   * resets on every non-blocked outcome; a blocked outcome leaves it to {@link handleAgentUnavailableBlocked},
+   * which owns that counter and may need to advance (not reset) it.
+   */
+  function resetRetryCountersForOutcome(taskId: string, outcome: ExecuteTaskResult["outcome"]): void {
+    retryPolicy.recordSuccess("crash", taskId);
+    if (outcome !== Outcomes.blocked) {
+      retryPolicy.recordSuccess("agent_unavailable", taskId);
+    }
+  }
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the irreducible cost is routing the discriminated `ExecuteTaskResult` union — its outcome arm plus the nested terminated and blocked sub-routings. Each arm already delegates to a dedicated handler; the only residual branching is the discrimination itself, which must stay co-located to keep the routing table readable as one surface.
   function handleTaskCompletion(taskId: string, result: ExecuteTaskResult): void {
     // dispatch-tracker already removed the entry and verified dispatch identity
     // before invoking this callback — no local cleanup needed.
     tasksCompleted++;
-
-    // Reset both retry counters on any successful (non-crash, non-agent_unavailable) outcome.
-    // The agent_unavailable path manages its own counter inside handleAgentUnavailableBlocked below.
-    if (result.outcome !== Outcomes.blocked) {
-      retryPolicy.recordSuccess("crash", taskId);
-      retryPolicy.recordSuccess("agent_unavailable", taskId);
-    } else {
-      // Blocked outcome: reset crash counter (this wasn't a crash), leave agent_unavailable to its own handler.
-      retryPolicy.recordSuccess("crash", taskId);
-    }
+    resetRetryCountersForOutcome(taskId, result.outcome);
 
     if (result.outcome === Outcomes.completed) {
       handleCompletedOutcome(taskId);

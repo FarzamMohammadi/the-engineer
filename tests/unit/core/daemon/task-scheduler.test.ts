@@ -292,6 +292,29 @@ describe("TaskScheduler", () => {
     expect(scheduler.getTasksCompleted()).toBe(1);
   });
 
+  // 5b. A completed outcome resets both retry counters; a blocked outcome resets only crash,
+  // leaving the agent_unavailable counter to handleAgentUnavailableBlocked (which may advance it).
+  it("handleTaskCompletion resets both retry counters on completed but only crash on blocked", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks);
+
+    // Completed: both counters reset to 0.
+    scheduler.handleTaskCompletion("t1", { outcome: "completed" });
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_crash_count", 0);
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t1", "consecutive_agent_unavailable_count", 0);
+
+    taskEngine.updateTaskField.mockClear();
+
+    // Human-blocked (non-agent_unavailable): crash counter resets, agent_unavailable counter is left alone.
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t2", blocked: { reason: BlockReasons.need_more_info } }));
+    scheduler.handleTaskCompletion("t2", { outcome: "blocked", phase: "execution", reason: "need_more_info" });
+    expect(taskEngine.updateTaskField).toHaveBeenCalledWith("t2", "consecutive_crash_count", 0);
+    expect(taskEngine.updateTaskField).not.toHaveBeenCalledWith("t2", "consecutive_agent_unavailable_count", 0);
+  });
+
   // 6. handleTaskCompletion on a blocked(pr_review_pending) outcome
   it("handleTaskCompletion on pr_review_pending blocked outcome notifies the reviewer", () => {
     const { ctx, taskEngine } = makeContext();

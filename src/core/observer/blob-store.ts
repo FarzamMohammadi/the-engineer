@@ -68,9 +68,4 @@ export class BlobStore {
     }
     return readFileSync(filePath, "utf-8");
   }
-
-  /** Check if a blob exists. */
-  exists(ref: string): boolean {
-    return existsSync(refToPath(ref, this.blobsDir));
-  }
 }

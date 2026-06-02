@@ -14,7 +14,7 @@
 export { Observer, createObserverFacade } from "./facade.js";
 export type { IObserver } from "./facade.js";
 
-// ── Observation Store (persistence + streaming) ─────────────────────────────
+// ── Observation Store (SQLite persistence powering dashboard queries) ───────
 
 export { ObservationStore, createObservationStore } from "./observation-store.js";
 

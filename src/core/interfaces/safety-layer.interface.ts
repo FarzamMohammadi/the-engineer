@@ -33,7 +33,6 @@ export interface CostStatus {
 export interface ISafetyLayer {
   evaluateAction(taskId: string, actionClass: ActionClass, details: Record<string, unknown>): SafetyVerdict;
   consultJudgment(query: SafetyQuery): SafetyVerdict;
-  getCostStatus(taskId?: string): CostStatus;
   getTimeoutPolicy(): ResponseTimeout;
   checkAutoMergeAllowed(repo: string): boolean;
   /** Whether /approve PR comments are treated as approval signals (solo-dev workflow). */

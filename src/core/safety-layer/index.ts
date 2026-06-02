@@ -7,7 +7,7 @@ import { ActionClassSchema, ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
-import type { CostStatus, ISafetyLayer, SafetyQuery, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
+import type { ISafetyLayer, SafetyQuery, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { IObserver } from "../observer/index.js";
 import { type ICostTracker, createCostTracker } from "./cost-tracker.js";
 import { PolicyEngine } from "./policy-engine.js";
@@ -44,7 +44,6 @@ export { getDailyWindowStart, getMonthlyWindowStart } from "./cost-tracker.js";
 export { createCostTracker } from "./cost-tracker.js";
 export type { ICostTracker, CostLimitCheckResult, CostTrackerDeps } from "./cost-tracker.js";
 export { PolicyEngine } from "./policy-engine.js";
-export { SafetyError, CostLimitExceededError, ScopeDeniedError, CorruptSnapshotError } from "./errors.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 
@@ -164,6 +163,10 @@ export class SafetyLayer implements ISafetyLayer {
         });
 
       case "should_i_ask": {
+        // RESERVED SCAFFOLDING: built but unwired. No production caller issues a
+        // should_i_ask query today — only cost_check is live. The autonomy path
+        // (evaluateAutonomy, findRepoOverride, autonomy_policy emission) is kept
+        // intact pending Slice 10 (Communication), which wires owner consultation.
         const verdict = this.policyEngine.evaluateAutonomy(query);
         const category = query.context.decision_category ?? "unknown";
         this.observer.recordDecision(
@@ -187,13 +190,6 @@ export class SafetyLayer implements ISafetyLayer {
       default:
         return { allowed: false, action: "deny", reason: "unknown query type" };
     }
-  }
-
-  // ── Cost Status ────────────────────────────────────────────────────────────
-
-  /** Get current cost status for a task or globally. */
-  getCostStatus(taskId?: string): CostStatus {
-    return this.costTracker.getCostStatus(taskId);
   }
 
   // ── Timeout Policy ─────────────────────────────────────────────────────────

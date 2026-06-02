@@ -12,6 +12,9 @@
  * - Observer class: the concrete implementation, also exposes upgrade() for bootstrap
  * - SharedContext: shared mutable container for late-binding the observation store
  *   (logging works from second 1, tracing joins when DB is ready)
+ * - Trace binding: an optional traceId threads into every span/decision/error; all
+ *   children share the SAME SharedContext by reference, so a late upgrade(store) on
+ *   the root reaches traced children too.
  */
 import type { Logger } from "pino";
 
@@ -120,10 +123,19 @@ export interface IObserver {
 export class Observer implements IObserver {
   readonly pino: Logger;
   private readonly ctx: SharedContext;
+  private readonly component: ComponentTag;
+  /** Extra pino bindings beyond `component` (e.g. plugin_id), carried into children. */
+  private readonly bindings: Record<string, unknown>;
+  /** Bound trace_id threaded into every span/decision/error; undefined when untraced. */
+  private readonly traceId: string | undefined;
 
-  constructor(ctx: SharedContext, component: ComponentTag, bindings?: Record<string, unknown>) {
+  constructor(ctx: SharedContext, component: ComponentTag, bindings?: Record<string, unknown>, traceId?: string) {
     this.ctx = ctx;
-    this.pino = ctx.rootPino.child(bindings ? { component, ...bindings } : { component });
+    this.component = component;
+    this.bindings = bindings ?? {};
+    this.traceId = traceId;
+    const traceBinding = traceId === undefined ? undefined : { trace_id: traceId };
+    this.pino = ctx.rootPino.child({ component, ...this.bindings, ...traceBinding });
   }
 
   // ── Logging ─────────────────────────────────────────────────────────
@@ -168,134 +180,6 @@ export class Observer implements IObserver {
     input?: Record<string, unknown>,
     options?: SpanOptions,
   ): ObservationSpan {
-    return this.ctx.store?.startSpan(type, name, input, options) ?? NO_OP_SPAN;
-  }
-
-  observe(type: ObservationTypeValue, name: string, data: Record<string, unknown>, options?: SpanOptions): string {
-    return this.ctx.store?.observe(type, name, data, options) ?? "";
-  }
-
-  recordDecision(
-    name: string,
-    context: string,
-    options: ReadonlyArray<{ id: string; description: string }>,
-    chosen: string,
-    reasoning: string,
-    confidence: number,
-    opts?: SpanOptions,
-  ): string {
-    return this.ctx.store?.recordDecision(name, context, options, chosen, reasoning, confidence, opts) ?? "";
-  }
-
-  recordError(
-    error: unknown,
-    context: { operation: string; component: string },
-    recovery?: { action: string; success: boolean },
-    opts?: SpanOptions,
-  ): string {
-    // DUAL: always log to pino, regardless of store availability.
-    // Sanitize the error message to prevent secret leakage to log files
-    // (e.g., HTTP errors containing token-bearing URLs).
-    const sanitizedMsg = sanitizeErrorMessage(error);
-    this.pino.error(
-      { err: sanitizedMsg, operation: context.operation, component: context.component },
-      `Error in ${context.operation}`,
-    );
-    return this.ctx.store?.recordError(error, context, recovery, opts) ?? "";
-  }
-
-  // ── Blobs ───────────────────────────────────────────────────────────
-
-  storeBlob(content: string): string {
-    return this.ctx.store?.storeBlob(content) ?? "";
-  }
-
-  readBlob(ref: string): string | null {
-    return this.ctx.store?.readBlob(ref) ?? null;
-  }
-
-  // ── Child ───────────────────────────────────────────────────────────
-
-  child(component: ComponentTag): IObserver {
-    return new Observer(this.ctx, component);
-  }
-
-  childPlugin(pluginId: string): IObserver {
-    return new Observer(this.ctx, "plugin", { plugin_id: pluginId });
-  }
-
-  withTrace(traceId: string): IObserver {
-    return new TracedObserver(this.ctx, this.pino, traceId);
-  }
-
-  // ── Lifecycle (only called on the root instance from bootstrap) ─────
-
-  /**
-   * Attach the observation store after DB initialization.
-   * All existing children automatically gain tracing capabilities
-   * because they share the same context object.
-   */
-  upgrade(store: IObservationStore): void {
-    this.ctx.store = store;
-  }
-}
-
-// ── TracedObserver ───────────────────────────────────────────────────────
-
-/** Observer with a bound trace_id — every pino log line and span inherits it. */
-class TracedObserver implements IObserver {
-  readonly pino: Logger;
-  private readonly ctx: SharedContext;
-  private readonly traceId: string;
-
-  constructor(ctx: SharedContext, parentPino: Logger, traceId: string) {
-    this.ctx = ctx;
-    this.traceId = traceId;
-    this.pino = parentPino.child({ trace_id: traceId });
-  }
-
-  info(msg: string, data?: Record<string, unknown>): void {
-    if (data) {
-      this.pino.info(data, msg);
-    } else {
-      this.pino.info(msg);
-    }
-  }
-
-  warn(msg: string, data?: Record<string, unknown>): void {
-    if (data) {
-      this.pino.warn(data, msg);
-    } else {
-      this.pino.warn(msg);
-    }
-  }
-
-  error(msg: string, data?: Record<string, unknown>): void {
-    if (data) {
-      this.pino.error(data, msg);
-    } else {
-      this.pino.error(msg);
-    }
-  }
-
-  debug(msg: string, data?: Record<string, unknown>): void {
-    if (data) {
-      this.pino.debug(data, msg);
-    } else {
-      this.pino.debug(msg);
-    }
-  }
-
-  private mergeTrace(options?: SpanOptions): SpanOptions {
-    return { ...options, trace_id: options?.trace_id ?? this.traceId };
-  }
-
-  startSpan(
-    type: ObservationTypeValue,
-    name: string,
-    input?: Record<string, unknown>,
-    options?: SpanOptions,
-  ): ObservationSpan {
     return this.ctx.store?.startSpan(type, name, input, this.mergeTrace(options)) ?? NO_OP_SPAN;
   }
 
@@ -323,6 +207,9 @@ class TracedObserver implements IObserver {
     recovery?: { action: string; success: boolean },
     opts?: SpanOptions,
   ): string {
+    // DUAL: always log to pino, regardless of store availability.
+    // Sanitize the error message to prevent secret leakage to log files
+    // (e.g., HTTP errors containing token-bearing URLs).
     const sanitizedMsg = sanitizeErrorMessage(error);
     this.pino.error(
       { err: sanitizedMsg, operation: context.operation, component: context.component },
@@ -330,6 +217,8 @@ class TracedObserver implements IObserver {
     );
     return this.ctx.store?.recordError(error, context, recovery, this.mergeTrace(opts)) ?? "";
   }
+
+  // ── Blobs ───────────────────────────────────────────────────────────
 
   storeBlob(content: string): string {
     return this.ctx.store?.storeBlob(content) ?? "";
@@ -339,18 +228,43 @@ class TracedObserver implements IObserver {
     return this.ctx.store?.readBlob(ref) ?? null;
   }
 
+  // ── Child ───────────────────────────────────────────────────────────
+  //
+  // Children share this.ctx by REFERENCE (never a copy), so a late
+  // upgrade(store) on the root reaches every child — traced or not. A bound
+  // traceId carries into the child's pino bindings and span threading.
+
   child(component: ComponentTag): IObserver {
-    const childPino = this.ctx.rootPino.child({ component, trace_id: this.traceId });
-    return new TracedObserver({ ...this.ctx }, childPino, this.traceId);
+    return new Observer(this.ctx, component, undefined, this.traceId);
   }
 
   childPlugin(pluginId: string): IObserver {
-    const childPino = this.ctx.rootPino.child({ component: "plugin", plugin_id: pluginId, trace_id: this.traceId });
-    return new TracedObserver({ ...this.ctx }, childPino, this.traceId);
+    return new Observer(this.ctx, "plugin", { plugin_id: pluginId }, this.traceId);
   }
 
   withTrace(traceId: string): IObserver {
-    return new TracedObserver(this.ctx, this.pino.child({}), traceId);
+    return new Observer(this.ctx, this.component, this.bindings, traceId);
+  }
+
+  // ── Lifecycle (only called on the root instance from bootstrap) ─────
+
+  /**
+   * Attach the observation store after DB initialization.
+   * All existing children automatically gain tracing capabilities
+   * because they share the same context object.
+   */
+  upgrade(store: IObservationStore): void {
+    this.ctx.store = store;
+  }
+
+  // ── Private ──────────────────────────────────────────────────────────
+
+  /** Thread the bound trace_id into span options, letting an explicit option win. */
+  private mergeTrace(options?: SpanOptions): SpanOptions | undefined {
+    if (this.traceId === undefined) {
+      return options;
+    }
+    return { ...options, trace_id: options?.trace_id ?? this.traceId };
   }
 }
 

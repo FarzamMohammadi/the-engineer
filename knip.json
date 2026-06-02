@@ -5,7 +5,6 @@
     "src/schemas/*.ts",
     "src/core/observer/logging.ts",
     "src/core/orchestrator/types.ts",
-    "src/core/safety-layer/errors.ts",
     "src/core/task-engine/errors.ts"
   ],
   "project": ["src/**/*.ts"],

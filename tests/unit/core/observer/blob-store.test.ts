@@ -80,17 +80,6 @@ describe("BlobStore", () => {
     });
   });
 
-  describe("exists", () => {
-    it("returns true for stored blob", () => {
-      const ref = store.store("some data");
-      expect(store.exists(ref)).toBe(true);
-    });
-
-    it("returns false for missing blob", () => {
-      expect(store.exists("00/missing")).toBe(false);
-    });
-  });
-
   it("creates blobs directory on construction", () => {
     const newDir = mkdtempSync(join(tmpdir(), "blob-new-"));
     const newStore = new BlobStore(newDir);

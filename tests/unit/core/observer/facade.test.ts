@@ -51,7 +51,6 @@ function createCapturingStore(): { store: IObservationStore; spans: CapturedSpan
       return "err-1";
     },
     query: (): Observation[] => [],
-    subscribe: () => () => {},
     storeBlob: () => "",
     readBlob: () => null,
   };
@@ -110,5 +109,21 @@ describe("Observer.withTrace", () => {
     observer.withTrace("trace-deep").child("orchestrator").observe("lifecycle", "x", {});
 
     expect(spans[0]?.options?.trace_id).toBe("trace-deep");
+  });
+
+  it("traced child created before upgrade still traces once the root upgrades", () => {
+    const { store, spans } = createCapturingStore();
+    const root = createObserverFacade(createTestObserverFacade("orchestrator").pino, "orchestrator");
+
+    // Take a traced child BEFORE the observation store exists (shared-ctx hazard).
+    const tracedChild = root.withTrace("trace-late").child("orchestrator");
+
+    // The store joins later — the child shares the root's context by reference.
+    (root as Observer).upgrade(store);
+
+    tracedChild.observe("lifecycle", "after-upgrade", {});
+
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.options?.trace_id).toBe("trace-late");
   });
 });

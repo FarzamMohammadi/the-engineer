@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { SafetyVerdict } from "../../../../src/core/interfaces/safety-layer.interface.js";
 import {
   SafetyLayer,
   evaluateThreshold,
@@ -314,60 +315,63 @@ describe("SafetyLayer — checkAutoMergeAllowed", () => {
 });
 
 // ── Cost Accumulation ────────────────────────────────────────────────────────
+//
+// SafetyLayer exposes accumulated spend only through consultJudgment("cost_check")
+// (the live consultation path). Exact per-window USD totals are asserted directly
+// against the cost tracker in cost-tracker.test.ts; here we assert the verdicts the
+// SafetyLayer surfaces from that accumulation.
+
+function costCheck(handle: TestSafetyLayerHandle, taskId: string): SafetyVerdict {
+  return handle.safetyLayer.consultJudgment({
+    type: "cost_check",
+    context: { task_id: taskId, repo: "owner/repo", details: {} },
+  });
+}
 
 describe("SafetyLayer — cost accumulation", () => {
-  it("accumulates API spend per task", () => {
-    handle = createTestSafetyLayer();
+  it("denies once accumulated per-task spend crosses the limit", () => {
+    handle = createTestSafetyLayer({ cost_limits: { per_task: { cost_usd: 0.12 } } });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.05 });
 
-    const status = handle.safetyLayer.getCostStatus("task-1");
-    expect(status.per_task_usd).toBeCloseTo(0.15);
+    expect(costCheck(handle, "task-1").action).toBe("deny");
   });
 
-  it("accumulates API spend across tasks for daily/monthly", () => {
-    handle = createTestSafetyLayer();
+  it("denies once accumulated daily spend across tasks crosses the limit", () => {
+    handle = createTestSafetyLayer({ cost_limits: { daily: { cost_usd: 0.25 } } });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
     handle.simulateCostEvent({ task_id: "task-2", spend_usd: 0.2 });
 
-    const status = handle.safetyLayer.getCostStatus();
-    expect(status.daily_usd).toBeCloseTo(0.3);
-    expect(status.monthly_usd).toBeCloseTo(0.3);
+    expect(costCheck(handle, "task-1").action).toBe("deny");
   });
 
   it("keeps per-task accumulators independent", () => {
-    handle = createTestSafetyLayer();
+    handle = createTestSafetyLayer({ cost_limits: { per_task: { cost_usd: 0.15 } } });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
     handle.simulateCostEvent({ task_id: "task-2", spend_usd: 0.2 });
 
-    expect(handle.safetyLayer.getCostStatus("task-1").per_task_usd).toBeCloseTo(0.1);
-    expect(handle.safetyLayer.getCostStatus("task-2").per_task_usd).toBeCloseTo(0.2);
+    // task-2 breached its limit; task-1 stayed under its own.
+    expect(costCheck(handle, "task-1").action).toBe("proceed");
+    expect(costCheck(handle, "task-2").action).toBe("deny");
   });
 
   it("tracks provider usage without affecting spend when spend_usd is null", () => {
-    handle = createTestSafetyLayer();
-    handle.simulateCostEvent({
-      provider_id: "claude-code",
-      spend_usd: null,
-    });
-    handle.simulateCostEvent({
-      provider_id: "claude-code",
-      spend_usd: null,
-    });
+    handle = createTestSafetyLayer({ cost_limits: { daily: { cost_usd: 0.01 } } });
+    handle.simulateCostEvent({ provider_id: "claude-code", spend_usd: null });
+    handle.simulateCostEvent({ provider_id: "claude-code", spend_usd: null });
 
-    // Null spend doesn't affect cost accumulators
-    const status = handle.safetyLayer.getCostStatus("task-1");
-    expect(status.daily_usd).toBe(0);
+    // Null spend doesn't accumulate cost, so the daily limit is not breached.
+    expect(costCheck(handle, "task-1").action).toBe("proceed");
   });
 
   it("ignores events with zero or null spend for API", () => {
-    handle = createTestSafetyLayer();
-    handle.simulateCostEvent({ spend_usd: null });
-    handle.simulateCostEvent({ spend_usd: 0 });
-    handle.simulateCostEvent({ spend_usd: 0.05 });
+    handle = createTestSafetyLayer({ cost_limits: { per_task: { cost_usd: 0.04 } } });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: null });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0 });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.05 });
 
-    const status = handle.safetyLayer.getCostStatus("task-1");
-    expect(status.per_task_usd).toBeCloseTo(0.05);
+    // Only the 0.05 event counts, which alone crosses the 0.04 limit.
+    expect(costCheck(handle, "task-1").action).toBe("deny");
   });
 });
 
@@ -480,35 +484,32 @@ describe("SafetyLayer — cost limit detection", () => {
 // ── Snapshot Save/Restore ────────────────────────────────────────────────────
 
 describe("SafetyLayer — snapshot", () => {
-  it("round-trips: save → new instance → accumulators match", () => {
+  function restoredCostCheck(handle: TestSafetyLayerHandle, taskId: string): SafetyVerdict {
+    const config = SafetyConfigSchema.parse({ cost_limits: { per_task: { cost_usd: 0.2 } } });
+    const restored = new SafetyLayer(handle.db, handle.eventBus, config, createTestObserverFacade("safety-layer"));
+    return restored.consultJudgment({
+      type: "cost_check",
+      context: { task_id: taskId, repo: "owner/repo", details: {} },
+    });
+  }
+
+  it("round-trips: a new instance restores per-task spend from the snapshot", () => {
     handle = createTestSafetyLayer();
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.25 });
     handle.simulateCostEvent({ task_id: "task-2", spend_usd: 0.1 });
 
-    // Create new SafetyLayer on same DB — should restore from snapshot
-    const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config, createTestObserverFacade("safety-layer"));
-
-    const status1 = restored.getCostStatus("task-1");
-    expect(status1.per_task_usd).toBeCloseTo(0.25);
-
-    const status2 = restored.getCostStatus("task-2");
-    expect(status2.per_task_usd).toBeCloseTo(0.1);
+    // task-1 (0.25) breached the restored 0.2 limit; task-2 (0.1) did not.
+    expect(restoredCostCheck(handle, "task-1").action).toBe("deny");
+    expect(restoredCostCheck(handle, "task-2").action).toBe("proceed");
   });
 
-  it("replays events after snapshot", () => {
+  it("replays events accumulated after the snapshot", () => {
     handle = createTestSafetyLayer();
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.15 });
     handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
 
-    // Simulate: new event arrives after snapshot was taken
-    // (We can't easily test this perfectly, but we can verify the
-    // new instance sees the right total by adding another event before constructing)
-    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.05 });
-
-    const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config, createTestObserverFacade("safety-layer"));
-    const status = restored.getCostStatus("task-1");
-    expect(status.per_task_usd).toBeCloseTo(0.15);
+    // Both events (0.25 total) restore, crossing the 0.2 limit.
+    expect(restoredCostCheck(handle, "task-1").action).toBe("deny");
   });
 
   it("handles missing snapshot gracefully (full replay)", () => {
@@ -517,7 +518,7 @@ describe("SafetyLayer — snapshot", () => {
     // Manually delete the snapshot from _meta
     handle.db.prepare("DELETE FROM _meta WHERE key = 'safety_snapshot'").run();
 
-    // Publish some events directly (bypasses snapshot saving by the original instance)
+    // Publish an event directly (bypasses snapshot saving by the original instance)
     handle.eventBus.publish({
       type: "cost.incurred" as const,
       source: "test",
@@ -532,26 +533,19 @@ describe("SafetyLayer — snapshot", () => {
       },
     });
 
-    // New instance should replay from sequence 0 and find the event
-    const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config, createTestObserverFacade("safety-layer"));
-    const status = restored.getCostStatus("task-1");
-    // Should include both the original events' amounts and the new 0.30
-    expect(status.per_task_usd).toBeGreaterThan(0);
+    // New instance replays from sequence 0 and finds the 0.3 event, crossing 0.2.
+    expect(restoredCostCheck(handle, "task-1").action).toBe("deny");
   });
 
   it("handles corrupt snapshot gracefully", () => {
     handle = createTestSafetyLayer();
-    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.25 });
 
     // Corrupt the snapshot
     handle.db.prepare("UPDATE _meta SET value = 'not-json' WHERE key = 'safety_snapshot'").run();
 
-    // Should not throw — falls back to full replay
-    const config = SafetyConfigSchema.parse({});
-    const restored = new SafetyLayer(handle.db, handle.eventBus, config, createTestObserverFacade("safety-layer"));
-    const status = restored.getCostStatus("task-1");
-    expect(status.per_task_usd).toBeCloseTo(0.1);
+    // Should not throw — falls back to full replay and still sees the 0.25 spend.
+    expect(restoredCostCheck(handle, "task-1").action).toBe("deny");
   });
 });
 

@@ -72,7 +72,6 @@ export interface TestDaemonHandle {
     evaluateAction: Mock;
     consultJudgment: Mock;
     getTimeoutPolicy: Mock;
-    getCostStatus: Mock;
     updateConfig: Mock;
     checkAutoMergeAllowed: Mock;
     isCommentApprovalEnabled: Mock;
@@ -275,7 +274,6 @@ export function createTestDaemon(configOverrides?: Partial<DaemonConfig>): TestD
         repeat_interval_ms: 86_400_000,
       },
     }),
-    getCostStatus: vi.fn().mockReturnValue({}),
     updateConfig: vi.fn(),
     checkAutoMergeAllowed: vi.fn().mockReturnValue(false),
     isCommentApprovalEnabled: vi.fn().mockReturnValue(false),

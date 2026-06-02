@@ -1,9 +1,9 @@
 /**
  * Centralized Observer — the dashboard's data source.
  *
- * Every component calls observer.startSpan() or observer.observe() to report
- * what's happening. The Observer persists to SQLite, notifies real-time
- * subscribers, and powers dashboard queries.
+ * Every component calls observer.startSpan() or observe() to report what's
+ * happening. The Observer persists observations to SQLite, which the dashboard
+ * reads back via query() (and the dashboard's SSE route polls directly).
  *
  * Complements (does not replace) EventBus (audit trail) and Logger (ops logs).
  */
@@ -12,7 +12,6 @@ import { ObservationLevels, ObservationStatuses, ObservationTypes } from "../../
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { BlobStore } from "./blob-store.js";
 import { ObserverStore } from "./store.js";
-import { ObserverStream } from "./stream.js";
 import type { Observation, ObservationQuery, ObservationTypeValue, SpanOptions } from "./types.js";
 import type { IObservationStore, ObservationSpan } from "./types.js";
 
@@ -69,12 +68,10 @@ function buildObservation(
 
 export class ObservationStore implements IObservationStore {
   private readonly store: ObserverStore;
-  private readonly stream: ObserverStream;
   private readonly blobStore: BlobStore | null;
 
   constructor(db: import("better-sqlite3").Database, blobStore: BlobStore | null) {
     this.store = new ObserverStore(db);
-    this.stream = new ObserverStream();
     this.blobStore = blobStore;
   }
 
@@ -97,9 +94,8 @@ export class ObservationStore implements IObservationStore {
     );
 
     this.store.insertObservation(obs);
-    this.stream.notify(obs);
 
-    return this.createSpan(id, type, name, startMs, options, obs);
+    return this.createSpan(id, startMs, options);
   }
 
   observe(type: ObservationTypeValue, name: string, data: Record<string, unknown>, options?: SpanOptions): string {
@@ -109,7 +105,6 @@ export class ObservationStore implements IObservationStore {
     obs.end_time = now;
 
     this.store.insertObservation(obs);
-    this.stream.notify(obs);
 
     return id;
   }
@@ -154,7 +149,7 @@ export class ObservationStore implements IObservationStore {
         stack: extractStack(error),
         recovery: recovery ?? null,
       },
-      { ...opts, level: ObservationLevels.error },
+      opts,
       ObservationLevels.error,
       ObservationStatuses.error,
     );
@@ -162,17 +157,12 @@ export class ObservationStore implements IObservationStore {
     obs.error_message = sanitizeErrorMessage(error);
 
     this.store.insertObservation(obs);
-    this.stream.notify(obs);
 
     return id;
   }
 
   query(filters: ObservationQuery): Observation[] {
     return this.store.queryObservations(filters);
-  }
-
-  subscribe(callback: (obs: Observation) => void): () => void {
-    return this.stream.subscribe(callback);
   }
 
   storeBlob(content: string): string {
@@ -190,14 +180,7 @@ export class ObservationStore implements IObservationStore {
   }
 
   /** Create an ObservationSpan closure with idempotent end(). */
-  private createSpan(
-    id: string,
-    _type: ObservationTypeValue,
-    _name: string,
-    startMs: number,
-    options: SpanOptions | undefined,
-    initialObs: Observation,
-  ): ObservationSpan {
+  private createSpan(id: string, startMs: number, options: SpanOptions | undefined): ObservationSpan {
     let ended = false;
     let errorMessage: string | null = null;
     let status: Observation["status"] = ObservationStatuses.ok;
@@ -217,16 +200,6 @@ export class ObservationStore implements IObservationStore {
         const endTime = new Date().toISOString();
 
         self.store.updateSpanEnd(id, endTime, durationMs, output ?? null, status, errorMessage);
-
-        const completedObs: Observation = {
-          ...initialObs,
-          end_time: endTime,
-          duration_ms: durationMs,
-          output: output ?? null,
-          status,
-          error_message: errorMessage,
-        };
-        self.stream.notify(completedObs);
       },
 
       startChild(

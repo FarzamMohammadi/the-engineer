@@ -36,7 +36,7 @@ export interface ObservationSpan {
 
 // ── IObservationStore ─────────────────────────────────────────────────────────
 
-/** Observation-only store contract (SQLite persistence + real-time streaming for dashboard). */
+/** Observation-only store contract (SQLite persistence powering dashboard queries). */
 export interface IObservationStore {
   /** Start an observation span. Returns a handle with end(). Duration auto-recorded. */
   startSpan(
@@ -77,9 +77,6 @@ export interface IObservationStore {
   query(
     filters: import("../../schemas/observer.js").ObservationQuery,
   ): import("../../schemas/observer.js").Observation[];
-
-  /** Subscribe to real-time observations. Returns unsubscribe function. */
-  subscribe(callback: (obs: import("../../schemas/observer.js").Observation) => void): () => void;
 
   /** Store large content (agent prompts/responses) in blob store. */
   storeBlob(content: string): string;

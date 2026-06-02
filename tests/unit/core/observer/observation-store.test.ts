@@ -1,15 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ObserverStream } from "../../../../src/core/observer/stream.js";
 import { ObservationTypes } from "../../../../src/core/observer/types.js";
-import type { Observation } from "../../../../src/core/observer/types.js";
 import { ObservationLevels } from "../../../../src/schemas/observer.js";
 import { type TestObserverHandle, createTestObserver } from "../../../helpers/test-observer.js";
 
 const ULID_PATTERN = /^[0-9A-Z]{26}$/;
 const SNAKE_CASE_PATTERN = /^[a-z_]+$/;
-
-const noop = () => {};
 
 describe("Observer", () => {
   let handle: TestObserverHandle;
@@ -490,169 +486,6 @@ describe("Observer", () => {
     it("returns empty array when no matches", () => {
       const results = handle.observer.query({ type: "config_change" });
       expect(results).toEqual([]);
-    });
-  });
-
-  // ── subscribe() ────────────────────────────────────────────────────────────
-
-  describe("subscribe()", () => {
-    it("receives observations from observe()", () => {
-      const received: Observation[] = [];
-      handle.observer.subscribe((obs) => received.push(obs));
-
-      handle.observer.observe("lifecycle", "test", {});
-      expect(received).toHaveLength(1);
-      expect(received[0]?.name).toBe("test");
-    });
-
-    it("receives span start and end notifications", () => {
-      const received: Observation[] = [];
-      handle.observer.subscribe((obs) => received.push(obs));
-
-      const span = handle.observer.startSpan("agent_call", "test");
-      expect(received).toHaveLength(1);
-
-      span.end({ result: "ok" });
-      expect(received).toHaveLength(2);
-      expect(received[1]?.duration_ms).toBeTypeOf("number");
-    });
-
-    it("unsubscribe stops delivery", () => {
-      const received: Observation[] = [];
-      const unsub = handle.observer.subscribe((obs) => received.push(obs));
-
-      handle.observer.observe("lifecycle", "first", {});
-      expect(received).toHaveLength(1);
-
-      unsub();
-      handle.observer.observe("lifecycle", "second", {});
-      expect(received).toHaveLength(1);
-    });
-
-    it("multiple subscribers all receive", () => {
-      const received1: Observation[] = [];
-      const received2: Observation[] = [];
-      handle.observer.subscribe((obs) => received1.push(obs));
-      handle.observer.subscribe((obs) => received2.push(obs));
-
-      handle.observer.observe("lifecycle", "test", {});
-      expect(received1).toHaveLength(1);
-      expect(received2).toHaveLength(1);
-    });
-
-    it("subscriber errors do not propagate to caller", () => {
-      handle.observer.subscribe(() => {
-        throw new Error("subscriber boom");
-      });
-
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(noop);
-      // Should not throw
-      expect(() => {
-        handle.observer.observe("lifecycle", "test", {});
-      }).not.toThrow();
-      consoleSpy.mockRestore();
-    });
-
-    it("subscriber errors do not affect other subscribers", () => {
-      const received: Observation[] = [];
-
-      handle.observer.subscribe(() => {
-        throw new Error("boom");
-      });
-      handle.observer.subscribe((obs) => received.push(obs));
-
-      // Suppress console.error from fire-and-forget handler
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(noop);
-      handle.observer.observe("lifecycle", "test", {});
-      consoleSpy.mockRestore();
-
-      expect(received).toHaveLength(1);
-    });
-  });
-
-  // ── ObserverStream direct tests ──────────────────────────────────────────
-
-  describe("ObserverStream", () => {
-    it("clear() removes all subscribers", () => {
-      const stream = new ObserverStream();
-      stream.subscribe(() => {});
-      stream.subscribe(() => {});
-      expect(stream.subscriberCount()).toBe(2);
-
-      stream.clear();
-      expect(stream.subscriberCount()).toBe(0);
-    });
-
-    it("clear() prevents delivery to previously-registered subscribers", () => {
-      const stream = new ObserverStream();
-      const received: string[] = [];
-      stream.subscribe((obs) => received.push(obs.name));
-
-      stream.clear();
-      stream.notify({ name: "after-clear" } as Observation);
-      expect(received).toHaveLength(0);
-    });
-
-    it("auto-removes subscriber after 3 consecutive errors", () => {
-      const stream = new ObserverStream();
-      stream.subscribe(() => {
-        throw new Error("dead subscriber");
-      });
-      expect(stream.subscriberCount()).toBe(1);
-
-      // First two errors: subscriber survives
-      stream.notify({ name: "1" } as Observation);
-      expect(stream.subscriberCount()).toBe(1);
-      stream.notify({ name: "2" } as Observation);
-      expect(stream.subscriberCount()).toBe(1);
-
-      // Third consecutive error: auto-removed
-      stream.notify({ name: "3" } as Observation);
-      expect(stream.subscriberCount()).toBe(0);
-    });
-
-    it("resets error count on successful delivery", () => {
-      const stream = new ObserverStream();
-      let shouldThrow = true;
-      stream.subscribe(() => {
-        if (shouldThrow) {
-          throw new Error("intermittent");
-        }
-      });
-
-      // Two errors
-      stream.notify({ name: "1" } as Observation);
-      stream.notify({ name: "2" } as Observation);
-      expect(stream.subscriberCount()).toBe(1);
-
-      // One success resets the counter
-      shouldThrow = false;
-      stream.notify({ name: "3" } as Observation);
-      expect(stream.subscriberCount()).toBe(1);
-
-      // Two more errors: still alive (counter was reset)
-      shouldThrow = true;
-      stream.notify({ name: "4" } as Observation);
-      stream.notify({ name: "5" } as Observation);
-      expect(stream.subscriberCount()).toBe(1);
-    });
-
-    it("auto-removal does not affect healthy subscribers", () => {
-      const stream = new ObserverStream();
-      const received: string[] = [];
-
-      stream.subscribe(() => {
-        throw new Error("dead");
-      });
-      stream.subscribe((obs) => received.push(obs.name));
-
-      // Trigger auto-removal of the failing subscriber
-      stream.notify({ name: "a" } as Observation);
-      stream.notify({ name: "b" } as Observation);
-      stream.notify({ name: "c" } as Observation);
-
-      expect(stream.subscriberCount()).toBe(1);
-      expect(received).toEqual(["a", "b", "c"]);
     });
   });
 

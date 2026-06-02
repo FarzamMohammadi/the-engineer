@@ -200,7 +200,13 @@ export class PolicyEngine {
     return null;
   }
 
-  /** Autonomy evaluation for should_i_ask queries. */
+  /**
+   * Autonomy evaluation for should_i_ask queries.
+   *
+   * RESERVED SCAFFOLDING: built but unwired pending Slice 10 (Communication).
+   * Reached only via consultJudgment("should_i_ask"), which has no production
+   * caller yet — only the cost_check path is live today.
+   */
   evaluateAutonomy(query: SafetyQuery): SafetyVerdict {
     const category = query.context.decision_category;
     if (!category) {

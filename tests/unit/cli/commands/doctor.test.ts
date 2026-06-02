@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   type DoctorCategory,
@@ -13,12 +13,14 @@ import {
   checkPluginManifests,
   checkRequiredSecrets,
   checkRiskyConfig,
+  checkTelemetry,
   checkWorkspace,
   computeExitCode,
   formatDoctorResults,
   runAllChecks,
   runPreFlightChecks,
 } from "../../../../src/cli/commands/doctor.js";
+import type { ProbeFetch } from "../../../../src/cli/commands/start/telemetry.js";
 import { createOutput, resetOutput } from "../../../../src/cli/output.js";
 import { TimeoutStageActions } from "../../../../src/schemas/config.js";
 
@@ -397,6 +399,53 @@ describe("checkRiskyConfig", () => {
     const result = checkRiskyConfig(bundle);
     const warn = result.checks.find((c) => c.label === "Escalation endpoint");
     expect(warn).toBeUndefined();
+  });
+});
+
+// ── Telemetry ─────────────────────────────────────────────────────────────
+
+describe("checkTelemetry", () => {
+  const reachableFetch: ProbeFetch = vi.fn().mockResolvedValue({ ok: false });
+  const unreachableFetch: ProbeFetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+
+  it("passes (informational) when telemetry is disabled, without probing", async () => {
+    const probe = vi.fn() as unknown as ProbeFetch;
+    const result = await checkTelemetry({ enabled: false, endpoint: "http://localhost:4318" }, probe);
+    expect(result.category).toBe("Telemetry");
+    expect(result.checks[0]?.status).toBe("pass");
+    expect(result.checks[0]?.message).toContain("Disabled");
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("passes when telemetry is on and the backend answers", async () => {
+    const result = await checkTelemetry({ enabled: true, endpoint: "http://localhost:4318" }, reachableFetch);
+    expect(result.checks[0]?.status).toBe("pass");
+    expect(result.checks[0]?.message).toContain("http://localhost:4318");
+  });
+
+  it("warns (never fails) when telemetry is on but the backend is unreachable", async () => {
+    const result = await checkTelemetry({ enabled: true, endpoint: "http://localhost:4318" }, unreachableFetch);
+    const check = result.checks[0];
+    expect(check?.status).toBe("warn");
+    expect(result.checks.some((c) => c.status === "fail")).toBe(false);
+  });
+
+  it("names the consequence and includes the install pointer when unreachable", async () => {
+    const result = await checkTelemetry({ enabled: true, endpoint: "http://localhost:4318" }, unreachableFetch);
+    const check = result.checks[0];
+    // Consequence: spans go nowhere.
+    expect(check?.message).toContain("dropped");
+    // Install pointer (OS-aware, single-sourced from start/telemetry).
+    expect(check?.remedy).toBeDefined();
+    expect(check?.remedy).toContain("no trace backend is reachable");
+  });
+
+  it("falls back to schema defaults (off) when no config is provided", async () => {
+    const probe = vi.fn() as unknown as ProbeFetch;
+    const result = await checkTelemetry(undefined, probe);
+    expect(result.checks[0]?.status).toBe("pass");
+    expect(result.checks[0]?.message).toContain("Disabled");
+    expect(probe).not.toHaveBeenCalled();
   });
 });
 

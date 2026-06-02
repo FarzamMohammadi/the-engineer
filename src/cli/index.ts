@@ -9,7 +9,7 @@ import { loadEnvFile } from "../config/env.js";
 import type { ConfigBundle } from "../config/loader.js";
 import { loadConfigDir } from "../config/loader.js";
 import { runCancel } from "./commands/cancel.js";
-import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
+import { checkTelemetry, computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
 import { runRetry } from "./commands/retry.js";
 import { runStart } from "./commands/start/index.js";
@@ -158,7 +158,7 @@ program
 program
   .command("doctor")
   .description("Run health checks on the system")
-  .action(() => {
+  .action(async () => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const dirs = resolveDirectories(home);
@@ -181,6 +181,12 @@ program
     }
 
     const categories = runAllChecks(home, bundle);
+
+    // Telemetry is async (a short localhost probe) and informational, so it runs
+    // outside the synchronous runAllChecks. checkTelemetry falls back to schema
+    // defaults when the bundle failed to load, so the category always reports.
+    categories.push(await checkTelemetry(bundle?.daemon.telemetry));
+
     const code = computeExitCode(categories);
 
     if (out.mode === "json") {

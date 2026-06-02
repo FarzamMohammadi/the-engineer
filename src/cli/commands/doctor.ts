@@ -17,8 +17,11 @@ import {
   SafetyConfigSchema,
   WorkspaceConfigSchema,
 } from "../../schemas/config.js";
+import type { TelemetryConfig } from "../../schemas/config.js";
+import { TelemetryConfigSchema } from "../../schemas/config.js";
 import { YAML_EXTENSION_PATTERN } from "../constants.js";
 import { resolveDirectories } from "../home.js";
+import { type ProbeFetch, probeEndpointReachable, traceInstallPointer } from "./start/telemetry.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -724,4 +727,62 @@ function checkEscalationCoherence(
       remedy: "Add a stage with action: escalation_alert to response_timeout.blocked.stages in safety.yaml",
     });
   }
+}
+
+// ── Check: Telemetry ─────────────────────────────────────────────────────────
+
+/**
+ * Telemetry (OTLP trace export) category. Informational and non-blocking: when
+ * telemetry is off, that is a clean pass; when it is on, we localhost-probe the
+ * configured OTLP endpoint and WARN (never fail) if no backend answers, naming
+ * the consequence (spans go nowhere) and pointing at the install fix. The probe
+ * is short-timeout + total-catch (reused from the start command) so a missing or
+ * slow backend never stalls `engineer doctor`. No GitHub fetch — the backend is a
+ * local lens the user brings, not a dependency we resolve over the network.
+ *
+ * Async because it makes one bounded network probe; appended after the synchronous
+ * categories in the doctor action rather than inside {@link runAllChecks}. When the
+ * config bundle failed to load, the caller omits `telemetry` and we fall back to
+ * schema defaults (off) so the category still reports.
+ */
+export async function checkTelemetry(telemetry?: TelemetryConfig, probeFetch?: ProbeFetch): Promise<DoctorCategory> {
+  const resolved = telemetry ?? TelemetryConfigSchema.parse({});
+  if (!resolved.enabled) {
+    return {
+      category: "Telemetry",
+      checks: [
+        {
+          label: "Trace export",
+          status: "pass",
+          message: "Disabled — no traces exported (set daemon telemetry.enabled: true to opt in)",
+        },
+      ],
+    };
+  }
+
+  const reachable = await probeEndpointReachable(resolved.endpoint, probeFetch);
+  if (reachable) {
+    return {
+      category: "Telemetry",
+      checks: [
+        {
+          label: "Trace backend",
+          status: "pass",
+          message: `Reachable at ${resolved.endpoint}`,
+        },
+      ],
+    };
+  }
+
+  return {
+    category: "Telemetry",
+    checks: [
+      {
+        label: "Trace backend",
+        status: "warn",
+        message: `Telemetry is on but no OTLP backend answered at ${resolved.endpoint} — spans will be dropped until one is reachable`,
+        remedy: traceInstallPointer(),
+      },
+    ],
+  };
 }

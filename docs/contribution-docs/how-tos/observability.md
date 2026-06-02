@@ -15,9 +15,10 @@ IObserver (what components use)
     │
     └── Tracing ──→ ObservationStore ──→ SQLite (observations table)
                         │
-                        ├── ObserverStream ──→ SSE to dashboard (real-time)
                         └── BlobStore ──→ content-addressable files (agent prompts/responses)
 ```
+
+The dashboard server is a **separate process** that polls the SQLite `observations` table by rowid and pushes new rows to the browser over HTTP SSE. There is no in-process pub/sub — durable SQLite rows are the only path to the dashboard, so anything not written to the table is invisible to the owner.
 
 **Three distinct systems, one entry point:**
 
@@ -157,20 +158,17 @@ Pick the type that names what you're recording — never overload `lifecycle` as
 | Type | When to use |
 |------|-------------|
 | `task_execution` | The root span of one dispatch — the whole task, start to outcome. Every other observation for the dispatch nests under it. |
-| `agent_iteration` | One cycle of the agent execution loop |
-| `agent_call` | One agent run — emitted per agent sub-phase, carrying the prompt and the result/transcript as blob refs |
-| `tool_execution` | One external action — a verify gate, a merge call, a git push |
+| `agent_call` | One agent run — emitted per agent sub-phase, carrying the prompt, the result/transcript as blob refs, and the run's cost/token spend |
+| `tool_execution` | One external action — a verify gate, a git push, a PR create, a merge call, a branch delete |
 | `phase_transition` | Pipeline phase/sub-phase enter, start, and result |
 | `decision_point` | A structured decision with alternatives and reasoning (via `recordDecision`) |
 | `safety_verdict` | A gate result — e.g. the verify gates' pass/fail verdict |
 | `state_transition` | Task state machine transition (e.g. a block) |
-| `workspace_op` | Git worktree create/verify/cleanup |
+| `workspace_op` | Git worktree create, cleanup, and branch delete (emitted by the workspace manager) |
 | `plugin_call` | Adapter/plugin method invocation |
 | `error` | Error observation (use `recordError()`) |
-| `cost_snapshot` | Cost tracking data point |
-| `lifecycle` | Generic lifecycle event (startup, shutdown) |
-| `config_change` | Configuration change detected |
-| `quota_status` | Provider quota / rate-limit status |
+| `lifecycle` | Generic lifecycle event (startup, shutdown, task pickup) |
+| `quota_status` | Provider quota / rate-limit status (emitted by the daemon's periodic agent-quota poll) |
 
 ### SpanOptions
 
@@ -196,8 +194,9 @@ Every task dispatch is one trace. The orchestrator opens a root `task_execution`
 **What the pipeline emits, by construction:**
 
 - The runner records every phase enter, sub-phase start/result, **routing and skip decision** (`recordDecision`), loop, and block — so a sub-phase cannot forget to be observed. A block's log level follows its cause: an expected wait is `info`, the loop cap is `warn`, a genuine failure is `error`.
-- Each **agent run** is an `agent_call` span carrying the full prompt and the result/transcript as blob refs.
+- Each **agent run** is an `agent_call` span carrying the full prompt and the result/transcript as blob refs, plus the run's cost and token spend (what the per-phase cost breakdown aggregates).
 - The **verify gates** emit a `safety_verdict` (which gates ran, which passed) plus a `tool_execution` span per gate.
+- **Delivery** spans its external git and host actions as `tool_execution`: the `git_push`, the `create_pr` (carrying the PR number and url), and a rework's `dismiss_approvals`.
 - **auto-merge** records a `merge_readiness` decision (the live PR status, the disposition chosen, its alternatives) and a `tool_execution` span for the merge call.
 - The **PR-event poller** records `pr_event_arbitration` (which event won among competitors) and `approve_comment_promotion` (a `/approve` turned into a merge).
 
@@ -418,7 +417,7 @@ handle.cleanup(); // Closes DB + removes temp dir
 5. **Use the right observation type** — pick the one that names the thing, don't overload `lifecycle` for everything
 6. **Include SpanOptions** — always pass `task_id` and `trace_id` when available for correlation
 7. **Spans must end** — always call `span.end()` (use try/finally if needed)
-8. **No circular logging** — `ObserverStream` silently swallows subscriber errors (can't log its own errors)
+8. **Stored is not surfaced** — an observation no dashboard view queries (or a view nothing emits) is dead data; wire the emission and the view it feeds together as one unit of work
 9. **Adapters use local interface** — `AdapterObserver` to avoid tier import violations
 
 ---
@@ -431,7 +430,6 @@ handle.cleanup(); // Closes DB + removes temp dir
 | `src/core/observer/types.ts` | `IObservationStore` + `ObservationSpan` interfaces |
 | `src/core/observer/observation-store.ts` | `ObservationStore` class (SQLite persistence; re-exported from `index.ts`) |
 | `src/core/observer/store.ts` | `ObserverStore` (prepared statements, SQL layer) |
-| `src/core/observer/stream.ts` | `ObserverStream` (real-time pub/sub for dashboard SSE) |
 | `src/schemas/observer.ts` | Zod schemas, observation types enum, row mapper |
 | `src/db/migrations/003_observer.sql` | Database schema (table + 8 indexes) |
 | `src/core/observer/logging.ts` | `ComponentTag` type, `createLogger`, `createSilentLogger` |

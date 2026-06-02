@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 
+import { ObservationTypes } from "../../../../schemas/observer.js";
 import { sanitizeSecrets } from "../../../../utils/sanitize.js";
+import { traceScope } from "../observability.js";
 import type { Ctx, Route, SubPhase, SubPhaseResult } from "../types.js";
 
 // ── The Sub-Phase ────────────────────────────────────────────────────────────
@@ -44,12 +46,23 @@ function runPush(ctx: Ctx): SubPhaseResult {
   }
 
   ctx.observer.info("Pushing branch", { taskId: ctx.task.id, branch: record.branch });
+  // The push is the whole deliverable in push-only mode — span it so the observer sees the git push,
+  // its branch and repo, and whether it landed, the same way verify spans every gate it runs.
+  const span = ctx.observer.startSpan(
+    ObservationTypes.tool_execution,
+    "git_push",
+    { branch: record.branch, repo: record.repo },
+    traceScope(ctx),
+  );
   try {
     ctx.workspaceManager.pushBranch(ctx.task.id);
   } catch (error) {
+    span.setError(error);
+    span.end({ pushed: false });
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Cannot push branch "${record.branch}": ${detail}`, { cause: error });
   }
+  span.end({ pushed: true, branch: record.branch });
   return { outcome: "ok", summary: `Pushed ${record.branch}` };
 }
 

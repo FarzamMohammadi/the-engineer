@@ -169,7 +169,6 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       workspaceManager,
       skillsManager,
       peopleDirectory,
-      observationStore,
       observer: observer.child("orchestrator"),
       notifications,
       tracesDir,

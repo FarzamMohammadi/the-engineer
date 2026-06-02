@@ -27,8 +27,10 @@ export function removeThoughtsAndPush(deps: RemoveThoughtsDeps, taskId: string):
     throw new WorkspaceNotFoundError(taskId);
   }
 
+  // A sequence of raw git commands (diff / rm / commit) plus a push — an external tool action, not a
+  // plugin/adapter call — so it is a tool_execution span, like the gate and merge spans elsewhere.
   const span = observer.startSpan(
-    ObservationTypes.plugin_call,
+    ObservationTypes.tool_execution,
     "remove_thoughts_and_push",
     { taskId, branch: record.branch, base: record.baseBranch },
     { task_id: taskId },

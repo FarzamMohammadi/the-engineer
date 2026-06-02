@@ -189,8 +189,6 @@ export class Orchestrator {
       throw workspaceError;
     }
 
-    this.notifyPickup(taskId, dispatch.task.title);
-
     // Root span for the whole dispatch — the end-to-end "tracer bullet". Every phase, sub-phase, agent run,
     // decision, and action nests under it (via Ctx.rootObservationId), so the observer can open one task and
     // see its complete trace from intake to outcome, and so the trace can later be exported whole.
@@ -200,6 +198,23 @@ export class Orchestrator {
       { taskId, title: dispatch.task.title, isResume: !!dispatch.resume_from },
       { task_id: taskId, trace_id: traceId, session_id: sessionId },
     );
+
+    // The pickup moment — the engine took this task and told the owner — is the first beat of the run, so it
+    // anchors the trace under the root span rather than sitting outside it. The notification behavior is
+    // unchanged; this only moves it inside the span and records the lifecycle observation alongside it.
+    const pickupScope = {
+      task_id: taskId,
+      trace_id: traceId,
+      session_id: sessionId,
+      parent_observation_id: rootSpan.id,
+    };
+    tracedObserver.observe(
+      ObservationTypes.lifecycle,
+      "task_picked_up",
+      { title: dispatch.task.title, isResume: !!dispatch.resume_from },
+      pickupScope,
+    );
+    this.notifyPickup(taskId, dispatch.task.title);
 
     const ctx = this.buildContext(dispatch, tracedObserver, sessionId, traceId, rootSpan.id);
     const resume = this.resolveDispatchStart(dispatch, tracedObserver);
@@ -396,9 +411,23 @@ export class Orchestrator {
         operation: "self_unblock",
         result: pipelineResult.result,
       });
-      const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean };
+      const parsed = JSON.parse(pipelineResult.result.content) as { can_resolve?: boolean; action?: string };
       const canResolve = parsed.can_resolve === true;
-      this.ctx.observer.info("Self-unblock diagnosis result", { taskId, canResolve });
+      // This is a real autonomy fork — resume a blocked task on its own, or leave it escalated to the owner.
+      // Record it as a decision (not a log line) so the road not taken stays inspectable, with the agent's
+      // own reasoning carried in.
+      this.ctx.observer.recordDecision(
+        "self_unblock_diagnosis",
+        `Blocked task "${task.title}" (${task.blocked?.reason ?? "unknown"})`,
+        [
+          { id: "auto_resolve", description: "Engine believes the block is self-resolvable and will resume it" },
+          { id: "escalate", description: "Leave the task blocked for the owner" },
+        ],
+        canResolve ? "auto_resolve" : "escalate",
+        parsed.action ?? "no reasoning given",
+        1,
+        { task_id: taskId },
+      );
       return canResolve;
     } catch (error) {
       this.ctx.observer.warn("Self-unblock failed", { taskId, error: sanitizeErrorMessage(error) });

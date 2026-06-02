@@ -166,7 +166,6 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
     workspaceManager,
     skillsManager,
     peopleDirectory,
-    observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
     notifications,
     tracesDir: null,

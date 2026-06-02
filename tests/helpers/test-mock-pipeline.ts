@@ -30,6 +30,8 @@ export interface RecordedDecision {
   readonly name: string;
   readonly chosen: string;
   readonly reasoning: string;
+  /** The alternatives offered — so a test can assert the road not taken is recorded. */
+  readonly options: ReadonlyArray<{ id: string; description: string }>;
 }
 
 /** A captured `observe` call. */
@@ -133,8 +135,8 @@ export function createRecordingObserver(): RecordingObserver {
       observations.push({ type, name, data });
       return "";
     },
-    recordDecision: (name, _context, _options, chosen, reasoning) => {
-      decisions.push({ name, chosen, reasoning });
+    recordDecision: (name, _context, options, chosen, reasoning) => {
+      decisions.push({ name, chosen, reasoning, options: [...options] });
       return "";
     },
     recordError: (_error, context) => {
@@ -222,7 +224,6 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     registry,
     config: OrchestratorConfigSchema.parse({}),
     workspaceConfig: WorkspaceConfigSchema.parse({}),
-    observationStore: null,
     tracesDir: options.tracesDir ?? null,
     // Stubs the runner and agentStep touch: gate the agent run, record its cost, mirror task position.
     eventBus: { publish: () => undefined },

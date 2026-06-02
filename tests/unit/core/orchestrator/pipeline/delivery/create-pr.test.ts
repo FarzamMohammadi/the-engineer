@@ -7,7 +7,9 @@ import {
   formatTriggerReference,
 } from "../../../../../../src/core/orchestrator/pipeline/delivery/create-pr.js";
 import type { Ctx } from "../../../../../../src/core/orchestrator/pipeline/types.js";
+import { ObservationTypes } from "../../../../../../src/schemas/observer.js";
 import type { ExternalRef, ReviewState } from "../../../../../../src/schemas/task.js";
+import { createRecordingObserver } from "../../../../../helpers/test-mock-pipeline.js";
 
 const ref = (over: Partial<ExternalRef> = {}): ExternalRef => ({ type: "issue", repo: "acme/app", id: "42", ...over });
 
@@ -71,6 +73,7 @@ function mockCtx(options: MockCtxOptions = {}) {
   const dismissApprovals = vi.fn().mockResolvedValue(undefined);
   const updateTaskField = vi.fn();
   const notify = vi.fn();
+  const observer = createRecordingObserver();
   const hosting = options.hosting === false ? null : { createPR, dismissApprovals };
   const ctx = {
     registry: { getPrimaryPlugin: (type: string) => (type === "git_hosting" ? hosting : null) },
@@ -81,7 +84,7 @@ function mockCtx(options: MockCtxOptions = {}) {
     thoughtsDir: "thoughts/x",
     taskEngine: { updateTaskField },
     notifications: { notify },
-    observer: { info: vi.fn(), warn: vi.fn() },
+    observer,
     task: {
       id: "t1",
       title: "Add feature",
@@ -89,7 +92,7 @@ function mockCtx(options: MockCtxOptions = {}) {
       review: options.review ?? null,
     },
   } as unknown as Ctx;
-  return { ctx, createPR, dismissApprovals, updateTaskField, notify };
+  return { ctx, createPR, dismissApprovals, updateTaskField, notify, observer };
 }
 
 describe("create-pr run", () => {
@@ -136,5 +139,48 @@ describe("create-pr run", () => {
   it("throws so the runner blocks when no git hosting plugin is registered", async () => {
     const { ctx } = mockCtx({ hosting: false });
     await expect(createPr.run(ctx)).rejects.toThrow("no git hosting plugin");
+  });
+
+  it("spans the PR creation as a tool_execution carrying the resulting pr_number and url", async () => {
+    const { ctx, observer } = mockCtx({ review: null });
+
+    await createPr.run(ctx);
+
+    const span = observer.spans.find((s) => s.name === "create_pr");
+    expect(span?.type).toBe(ObservationTypes.tool_execution);
+    expect(span?.input).toMatchObject({ repo: "acme/app", branch: "feat/x", base: "main" });
+    expect(span?.output).toMatchObject({ pr_number: 42, url: "https://x/42" });
+    expect(span?.errored).toBeFalsy();
+  });
+
+  it("ends the create_pr span errored when the host rejects the PR", async () => {
+    const { ctx, createPR, observer } = mockCtx({ review: null });
+    createPR.mockRejectedValueOnce(new Error("host down"));
+
+    await expect(createPr.run(ctx)).rejects.toThrow("host down");
+
+    const span = observer.spans.find((s) => s.name === "create_pr");
+    expect(span?.errored).toBe(true);
+  });
+
+  it("spans the approval dismissal on rework and records the dismissal on the result data", async () => {
+    const { ctx, dismissApprovals, observer } = mockCtx({
+      review: {
+        pr_number: 7,
+        merged_at: null,
+        feedback_rounds: [{ applied: false, comments: ["fix it"] }],
+        accommodated_comment_ids: [],
+        accommodated_review_state: null,
+      },
+    });
+
+    const result = await createPr.run(ctx);
+
+    expect(dismissApprovals).toHaveBeenCalled();
+    const span = observer.spans.find((s) => s.name === "dismiss_approvals");
+    expect(span?.type).toBe(ObservationTypes.tool_execution);
+    expect(span?.output).toMatchObject({ dismissed: true });
+    expect(result.outcome).toBe("ok");
+    expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ approval_dismissed: true });
   });
 });

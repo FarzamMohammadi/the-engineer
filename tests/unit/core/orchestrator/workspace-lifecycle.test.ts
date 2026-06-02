@@ -72,7 +72,6 @@ function createMockContext(): OrchestratorContext {
       getOwner: vi.fn().mockReturnValue(null),
       resolveContact: vi.fn().mockReturnValue(null),
     } as unknown as OrchestratorContext["peopleDirectory"],
-    observationStore: null,
     observer: createTestObserverFacade("orchestrator"),
     notifications: { notify: vi.fn(), syncStateToCommPlugin: vi.fn() },
     tracesDir: null,

@@ -119,7 +119,6 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
     workspaceConfig: WorkspaceConfigSchema.parse(
       options.pushOnly ? { pr: { skip_pr_creation: { default: true } } } : {},
     ),
-    observationStore: null,
     tracesDir: null,
     // Live-context collaborators the runner and agentStep touch: gate the agent run, record cost, mirror position.
     eventBus: { publish: () => undefined },

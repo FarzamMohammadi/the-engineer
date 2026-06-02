@@ -6,6 +6,7 @@ import path from "node:path";
 import type { z } from "zod";
 import { EventBus, type EventRow, rowToEvent } from "../../src/core/event-bus/index.js";
 import type { AuthUrlProvider } from "../../src/core/interfaces/workspace-manager.interface.js";
+import type { IObserver } from "../../src/core/observer/index.js";
 import { TaskEngine } from "../../src/core/task-engine/index.js";
 import { WorkspaceManager } from "../../src/core/workspace-manager/index.js";
 import type { WorkspaceConfigSchema } from "../../src/schemas/config.js";
@@ -62,7 +63,13 @@ function git(args: string, cwd: string): string {
  * - An initial commit on `main` pushed to the bare remote
  * - An in-memory database + EventBus for event tracking
  */
-export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
+/** Options for the test workspace manager. */
+export interface TestWorkspaceManagerOptions {
+  /** Observer the WorkspaceManager emits through. Defaults to a silent facade; pass a store-backed one to query workspace_op observations. */
+  readonly observer?: IObserver;
+}
+
+export function createTestWorkspaceManager(options: TestWorkspaceManagerOptions = {}): TestWorkspaceManagerHandle {
   const baseDir = mkdtempSync(path.join(tmpdir(), "eng-ws-"));
   const bareRepoDir = path.join(baseDir, "remote.git");
   const workspaceRoot = path.join(baseDir, "workspaces");
@@ -115,7 +122,7 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
     return new WorkspaceManager({
       eventBus,
       config,
-      observer: createTestObserverFacade("workspace-manager"),
+      observer: options.observer ?? createTestObserverFacade("workspace-manager"),
       authUrlProvider,
       taskEngine,
     });

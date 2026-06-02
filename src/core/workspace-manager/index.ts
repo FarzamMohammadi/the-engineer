@@ -11,6 +11,7 @@ import {
   WorkspaceCreatedPayloadSchema,
   WorkspaceVerifiedPayloadSchema,
 } from "../../schemas/events.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { PHASE_DIRECTORIES } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
@@ -227,6 +228,7 @@ export class WorkspaceManager implements IWorkspaceManager {
     const branch = branchName(this.config.branch_prefix, taskId, slug);
     const repoCloneDir = path.join(this.config.workspace_root, repo);
     const worktreePath = path.join(this.config.workspace_root, "worktrees", repo, `${taskId}-${slug}`);
+    const createStart = Date.now();
 
     this.observer.info("Creating workspace", {
       taskId,
@@ -311,6 +313,12 @@ export class WorkspaceManager implements IWorkspaceManager {
     };
 
     this.observer.info("Workspace created", { taskId, repo, branch, worktreePath, baseCommit });
+    this.observer.observe(
+      ObservationTypes.workspace_op,
+      "worktree_created",
+      { taskId, repo, branch, worktreePath, durationMs: Date.now() - createStart },
+      { task_id: taskId },
+    );
 
     this.eventBus.publish({
       type: EventTypes["workspace.created"],
@@ -465,18 +473,25 @@ export class WorkspaceManager implements IWorkspaceManager {
       }
     }
 
-    this.observer.debug("Workspace cleaned", {
-      taskId,
-      elapsedMs: Date.now() - cleanupStart,
-    });
+    this.recordCleanup(taskId, record.branch, preserveBranch ?? false, Date.now() - cleanupStart);
+  }
 
+  /** Record a completed cleanup at its three sinks: the debug log, the workspace_op observation, and the audit event. */
+  private recordCleanup(taskId: string, branch: string, branchPreserved: boolean, durationMs: number): void {
+    this.observer.debug("Workspace cleaned", { taskId, elapsedMs: durationMs });
+    this.observer.observe(
+      ObservationTypes.workspace_op,
+      "worktree_cleaned",
+      { taskId, branch, branchPreserved, durationMs },
+      { task_id: taskId },
+    );
     this.eventBus.publish({
       type: EventTypes["workspace.cleaned"],
       source: "workspace_manager",
       task_id: taskId,
       payload: {
         task_id: taskId,
-        branch_preserved: preserveBranch ?? false,
+        branch_preserved: branchPreserved,
       },
     } satisfies PublishInput<"workspace.cleaned">);
   }
@@ -607,6 +622,7 @@ export class WorkspaceManager implements IWorkspaceManager {
           taskId,
           branch: record.branch,
         });
+        this.emitBranchDeleted(taskId, record.branch, Date.now() - deleteStart, true);
         return;
       }
       throw error;
@@ -617,6 +633,17 @@ export class WorkspaceManager implements IWorkspaceManager {
       branch: record.branch,
       elapsedMs: Date.now() - deleteStart,
     });
+    this.emitBranchDeleted(taskId, record.branch, Date.now() - deleteStart, false);
+  }
+
+  /** Record the remote branch deletion as a workspace_op — `alreadyGone` distinguishes a real delete from the already-absent end-state. */
+  private emitBranchDeleted(taskId: string, branch: string, durationMs: number, alreadyGone: boolean): void {
+    this.observer.observe(
+      ObservationTypes.workspace_op,
+      "branch_deleted",
+      { taskId, branch, alreadyGone, durationMs },
+      { task_id: taskId },
+    );
   }
 
   // ── Queries ──────────────────────────────────────────────────────────────

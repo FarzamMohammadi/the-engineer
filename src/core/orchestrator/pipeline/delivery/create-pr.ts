@@ -2,13 +2,18 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import type { GitHostingAdapter } from "../../../../adapters/git-hosting.js";
-import { AdapterTypes } from "../../../../schemas/adapters.js";
+import { AdapterTypes, type PRResult } from "../../../../schemas/adapters.js";
 import { NotificationKinds } from "../../../../schemas/notifications.js";
+import { ObservationTypes } from "../../../../schemas/observer.js";
 import type { ExternalRef } from "../../../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../../../utils/sanitize.js";
 import type { WorkspaceRecord } from "../../../interfaces/workspace-manager.interface.js";
+import { traceScope } from "../observability.js";
 import type { Ctx, Route, SubPhase, SubPhaseResult } from "../types.js";
 import { skipWhenPushOnly } from "./deliverable.js";
+
+/** The reason dismissApprovals carries to the host — also recorded on the rework result so it is inspectable. */
+const DISMISS_REASON = "New commits pushed — the prior approval is for outdated code, re-review required.";
 
 // ── The Sub-Phase ────────────────────────────────────────────────────────────
 //
@@ -67,19 +72,7 @@ async function reworkExistingPr(
   repo: string,
   prNumber: number,
 ): Promise<SubPhaseResult> {
-  try {
-    await hosting.dismissApprovals(
-      repo,
-      prNumber,
-      "New commits pushed — the prior approval is for outdated code, re-review required.",
-    );
-  } catch (error) {
-    ctx.observer.warn("Failed to dismiss stale approvals after rework push — proceeding", {
-      taskId: ctx.task.id,
-      prNumber,
-      error: sanitizeErrorMessage(error),
-    });
-  }
+  const approvalDismissed = await dismissStaleApproval(ctx, hosting, repo, prNumber);
 
   if (ctx.task.review) {
     ctx.taskEngine.updateTaskField(ctx.task.id, "review", {
@@ -94,7 +87,44 @@ async function reworkExistingPr(
     message: "Pushed rework addressing review feedback.",
   });
   ctx.observer.info("Rework pushed to existing PR", { taskId: ctx.task.id, prNumber });
-  return { outcome: "ok", summary: `Pushed rework to PR #${String(prNumber)}` };
+  return {
+    outcome: "ok",
+    summary: `Pushed rework to PR #${String(prNumber)}`,
+    data: { approval_dismissed: approvalDismissed, reason: DISMISS_REASON },
+  };
+}
+
+/**
+ * Dismiss the stale approval inside a tool_execution span — best-effort, but recorded: the observer sees the
+ * dismissal attempt, the PR it targeted, and whether it landed. A failure never blocks the rework; it returns
+ * false so the result data records that the prior approval may still stand.
+ */
+async function dismissStaleApproval(
+  ctx: Ctx,
+  hosting: GitHostingAdapter,
+  repo: string,
+  prNumber: number,
+): Promise<boolean> {
+  const span = ctx.observer.startSpan(
+    ObservationTypes.tool_execution,
+    "dismiss_approvals",
+    { repo, prNumber },
+    traceScope(ctx),
+  );
+  try {
+    await hosting.dismissApprovals(repo, prNumber, DISMISS_REASON);
+    span.end({ dismissed: true });
+    return true;
+  } catch (error) {
+    span.setError(error);
+    span.end({ dismissed: false });
+    ctx.observer.warn("Failed to dismiss stale approvals after rework push — proceeding", {
+      taskId: ctx.task.id,
+      prNumber,
+      error: sanitizeErrorMessage(error),
+    });
+    return false;
+  }
 }
 
 /** New-PR path: compose the title and body from the description deliverable, open the PR, and record it on the task. */
@@ -102,16 +132,32 @@ async function openNewPr(ctx: Ctx, hosting: GitHostingAdapter, record: Workspace
   const description = sanitizeSecrets(readPrDescription(ctx) ?? `PR for: ${ctx.task.title}`);
   ctx.observer.info("Creating pull request", { taskId: ctx.task.id, repo: record.repo, branch: record.branch });
 
-  const result = await hosting.createPR({
-    repo: record.repo,
-    branch: record.branch,
-    base: record.baseBranch,
-    title: composePrTitle(ctx.task.title, ctx.task.external_ref),
-    body: composePrBody(description, ctx.task.external_ref),
-    draft: false,
-    labels: null,
-    reviewers: null,
-  });
+  // Opening the PR is delivery's central external action — span it so the observer sees the PR call, the
+  // branch and base it targeted, and the PR number and url it produced (or the error that stopped it).
+  const span = ctx.observer.startSpan(
+    ObservationTypes.tool_execution,
+    "create_pr",
+    { repo: record.repo, branch: record.branch, base: record.baseBranch },
+    traceScope(ctx),
+  );
+  let result: PRResult;
+  try {
+    result = await hosting.createPR({
+      repo: record.repo,
+      branch: record.branch,
+      base: record.baseBranch,
+      title: composePrTitle(ctx.task.title, ctx.task.external_ref),
+      body: composePrBody(description, ctx.task.external_ref),
+      draft: false,
+      labels: null,
+      reviewers: null,
+    });
+  } catch (error) {
+    span.setError(error);
+    span.end({});
+    throw error;
+  }
+  span.end({ pr_number: result.pr_number, url: result.url });
 
   ctx.taskEngine.updateTaskField(ctx.task.id, "review", {
     pr_number: result.pr_number,

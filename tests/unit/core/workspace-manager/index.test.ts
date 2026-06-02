@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { Observer, createSilentLogger } from "../../../../src/core/observer/index.js";
 import { branchName, slugify, validateWorkspacePath } from "../../../../src/core/workspace-manager/index.js";
+import { ObservationTypes } from "../../../../src/schemas/observer.js";
+import { createTestObserver } from "../../../helpers/test-observer.js";
 import type { TestWorkspaceManagerHandle } from "../../../helpers/test-workspace-manager.js";
 import { createTestWorkspaceManager } from "../../../helpers/test-workspace-manager.js";
 
@@ -458,5 +461,64 @@ describe("createWorkspace branch rollback on worktree failure (F13)", () => {
       encoding: "utf-8",
     });
     expect(branches).not.toContain("task-fail");
+  });
+});
+
+// ── workspace_op observations ─────────────────────────────────────────────────
+// The dashboard ships an empty "Workspace" filter; these assert the worktree git ops now feed it.
+
+describe("workspace_op observations", () => {
+  let store: ReturnType<typeof createTestObserver> | undefined;
+
+  afterEach(() => {
+    store?.cleanup();
+    store = undefined;
+  });
+
+  /** A workspace manager whose observer writes to a queryable observation store. */
+  function setupWithStore(): TestWorkspaceManagerHandle {
+    const observerStore = createTestObserver();
+    store = observerStore;
+    const observer = new Observer({ rootPino: createSilentLogger().logger, store: null }, "workspace-manager");
+    observer.upgrade(observerStore.observer);
+    handle = createTestWorkspaceManager({ observer });
+    return handle;
+  }
+
+  it("emits a worktree_created workspace_op carrying the branch and a duration", () => {
+    const h = setupWithStore();
+    h.setupTask("task-1");
+
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Dark Mode" });
+
+    const ops = store?.observer.query({ type: ObservationTypes.workspace_op, task_id: "task-1" }) ?? [];
+    const created = ops.find((op) => op.name === "worktree_created");
+    expect(created?.input).toMatchObject({ branch: "engineer/task-1-dark-mode", repo: h.repoName });
+    expect(typeof created?.input?.["durationMs"]).toBe("number");
+  });
+
+  it("emits a worktree_cleaned workspace_op when a workspace is cleaned up", () => {
+    const h = setupWithStore();
+    h.setupTask("task-1");
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Dark Mode" });
+
+    h.workspaceManager.cleanupWorkspace("task-1");
+
+    const ops = store?.observer.query({ type: ObservationTypes.workspace_op, task_id: "task-1" }) ?? [];
+    const cleaned = ops.find((op) => op.name === "worktree_cleaned");
+    expect(cleaned?.input).toMatchObject({ branch: "engineer/task-1-dark-mode", branchPreserved: false });
+  });
+
+  it("emits a branch_deleted workspace_op when the remote branch is deleted", () => {
+    const h = setupWithStore();
+    h.setupTask("task-1");
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Dark Mode" });
+    h.workspaceManager.pushBranch("task-1");
+
+    h.workspaceManager.deleteRemoteBranch("task-1");
+
+    const ops = store?.observer.query({ type: ObservationTypes.workspace_op, task_id: "task-1" }) ?? [];
+    const deleted = ops.find((op) => op.name === "branch_deleted");
+    expect(deleted?.input).toMatchObject({ branch: "engineer/task-1-dark-mode", alreadyGone: false });
   });
 });

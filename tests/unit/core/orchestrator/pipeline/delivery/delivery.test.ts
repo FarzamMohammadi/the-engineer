@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { execSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { autoMerge, autoMergeNext } from "../../../../../../src/core/orchestrator/pipeline/delivery/auto-merge.js";
 import {
@@ -13,6 +16,10 @@ import {
 } from "../../../../../../src/core/orchestrator/pipeline/delivery/pr-description.js";
 import { push, pushNext } from "../../../../../../src/core/orchestrator/pipeline/delivery/push.js";
 import type { Ctx } from "../../../../../../src/core/orchestrator/pipeline/types.js";
+import { ObservationTypes } from "../../../../../../src/schemas/observer.js";
+import { createRecordingObserver } from "../../../../../helpers/test-mock-pipeline.js";
+import type { TestWorkspaceManagerHandle } from "../../../../../helpers/test-workspace-manager.js";
+import { createTestWorkspaceManager } from "../../../../../helpers/test-workspace-manager.js";
 
 /** A minimal ctx carrying only the skip_pr_creation config and the repo the deliverable resolution reads. */
 function ctxWith(skip: { default: boolean; repos?: Record<string, boolean> }, repo: string | null = "acme/app"): Ctx {
@@ -92,6 +99,67 @@ describe("delivery", () => {
       expect(autoMergeNext({ outcome: "ok", summary: "merged", data: { disposition: "merged" } })).toEqual({
         go: "done",
       });
+    });
+  });
+
+  describe("push run", () => {
+    let handle: TestWorkspaceManagerHandle | undefined;
+
+    afterEach(() => {
+      handle?.cleanup();
+      handle = undefined;
+    });
+
+    /** Stand up a real worktree with one branch-added commit so runPush reaches the actual push. */
+    function pushCtx(): { ctx: Ctx; observer: ReturnType<typeof createRecordingObserver>; branch: string } {
+      const h = createTestWorkspaceManager();
+      handle = h;
+      h.setupTask("t1", { title: "Add feature" });
+      const record = h.workspaceManager.createWorkspace("t1", h.repoName, { title: "Add feature" });
+      // A real commit ahead of base, so hasCommitsAheadOfBase is true and the push runs.
+      writeFileSync(join(record.worktreePath, "feature.txt"), "feature\n");
+      execSync("git add -A && git commit -m 'feat: add feature'", {
+        cwd: record.worktreePath,
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+      const observer = createRecordingObserver();
+      const ctx = {
+        observer,
+        workspaceManager: h.workspaceManager,
+        worktreePath: record.worktreePath,
+        task: { id: "t1", title: "Add feature", review: null },
+      } as unknown as Ctx;
+      return { ctx, observer, branch: record.branch };
+    }
+
+    it("spans the branch push as a tool_execution carrying the branch it pushed", async () => {
+      const { ctx, observer, branch } = pushCtx();
+
+      const result = await push.run(ctx);
+
+      expect(result.outcome).toBe("ok");
+      const span = observer.spans.find((s) => s.name === "git_push");
+      expect(span?.type).toBe(ObservationTypes.tool_execution);
+      expect(span?.input).toMatchObject({ branch, repo: "test-repo" });
+      expect(span?.output).toMatchObject({ pushed: true, branch });
+      expect(span?.errored).toBeFalsy();
+    });
+
+    it("ends the git_push span errored when the push fails, then rethrows", async () => {
+      const { ctx, observer, branch } = pushCtx();
+      // Force the push to fail by pointing the workspace manager at a missing remote.
+      (ctx.workspaceManager as { pushBranch: (id: string) => void }).pushBranch = () => {
+        throw new Error("remote rejected");
+      };
+
+      // runPush is synchronous and rethrows, so push.run throws before producing a promise; await the call
+      // wrapped so either a sync throw or a rejection is caught.
+      await expect(Promise.resolve().then(() => push.run(ctx))).rejects.toThrow(`Cannot push branch "${branch}"`);
+
+      const span = observer.spans.find((s) => s.name === "git_push");
+      expect(span?.errored).toBe(true);
+      expect(span?.output).toMatchObject({ pushed: false });
     });
   });
 });

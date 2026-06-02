@@ -11,6 +11,7 @@ import {
   StateTransitionSchema,
   SubStateSchema,
   SubStates,
+  TERMINAL_STATES,
   TaskDecisionSchema,
   TaskSchema,
   TaskStateSchema,
@@ -19,27 +20,44 @@ import {
   TeamMemberRoles,
   TeamMemberSchema,
   ValidTransitions,
+  isTerminal,
 } from "../../../src/schemas/task.js";
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
 describe("TaskStateSchema", () => {
-  const validStates = ["requirements_gathering", "queued", "active", "blocked", "completed", "failed"];
+  const validStates = ["requirements_gathering", "queued", "active", "blocked", "completed", "failed", "cancelled"];
 
-  it("accepts all 6 valid states", () => {
+  it("accepts all 7 valid states", () => {
     for (const state of validStates) {
       expect(TaskStateSchema.parse(state)).toBe(state);
     }
   });
 
-  it("has exactly 6 values", () => {
-    expect(TaskStateSchema.options).toHaveLength(6);
+  it("has exactly 7 values", () => {
+    expect(TaskStateSchema.options).toHaveLength(7);
   });
 
   it("rejects invalid values", () => {
     expect(() => TaskStateSchema.parse("running")).toThrow();
     expect(() => TaskStateSchema.parse("")).toThrow();
     expect(() => TaskStateSchema.parse(42)).toThrow();
+  });
+});
+
+describe("isTerminal / TERMINAL_STATES", () => {
+  it("treats completed, failed, and cancelled as terminal", () => {
+    expect(TERMINAL_STATES).toEqual([TaskStates.completed, TaskStates.failed, TaskStates.cancelled]);
+    expect(isTerminal(TaskStates.completed)).toBe(true);
+    expect(isTerminal(TaskStates.failed)).toBe(true);
+    expect(isTerminal(TaskStates.cancelled)).toBe(true);
+  });
+
+  it("treats pre-terminal states as non-terminal", () => {
+    expect(isTerminal(TaskStates.requirements_gathering)).toBe(false);
+    expect(isTerminal(TaskStates.queued)).toBe(false);
+    expect(isTerminal(TaskStates.active)).toBe(false);
+    expect(isTerminal(TaskStates.blocked)).toBe(false);
   });
 });
 
@@ -267,6 +285,7 @@ describe("ReviewStateSchema", () => {
     };
     expect(ReviewStateSchema.parse(input)).toEqual({
       ...input,
+      merged_at: null,
       accommodated_comment_ids: [],
       accommodated_review_state: null,
     });
@@ -279,6 +298,7 @@ describe("ReviewStateSchema", () => {
     };
     expect(ReviewStateSchema.parse(input)).toEqual({
       ...input,
+      merged_at: null,
       accommodated_comment_ids: [],
       accommodated_review_state: null,
     });
@@ -287,11 +307,22 @@ describe("ReviewStateSchema", () => {
   it("preserves accommodated fields when provided", () => {
     const input = {
       pr_number: 42,
+      merged_at: null,
       feedback_rounds: [],
       accommodated_comment_ids: ["comment-1", "comment-2"],
       accommodated_review_state: "changes_requested",
     };
     expect(ReviewStateSchema.parse(input)).toEqual(input);
+  });
+
+  it("defaults merged_at to null and accepts a recorded merge timestamp", () => {
+    expect(ReviewStateSchema.parse({ pr_number: 7, feedback_rounds: [] }).merged_at).toBeNull();
+    const merged = ReviewStateSchema.parse({
+      pr_number: 7,
+      feedback_rounds: [],
+      merged_at: "2026-06-01T00:00:00.000Z",
+    });
+    expect(merged.merged_at).toBe("2026-06-01T00:00:00.000Z");
   });
 });
 
@@ -339,6 +370,7 @@ describe("TaskSchema", () => {
     created_at: "2026-03-10T12:00:00.000Z",
     started_at: null,
     completed_at: null,
+    reaped_at: null,
     last_transition_at: "2026-03-10T12:00:00.000Z",
     clone_url: null,
     thoughts_id: null,
@@ -368,6 +400,13 @@ describe("TaskSchema", () => {
   it("defaults priority to 50 when omitted", () => {
     const { priority: _priority, ...noPriority } = minimalTask;
     expect(TaskSchema.parse(noPriority).priority).toBe(50);
+  });
+
+  it("defaults reaped_at to null when omitted and round-trips a timestamp", () => {
+    const { reaped_at: _reaped, ...noReaped } = minimalTask;
+    expect(TaskSchema.parse(noReaped).reaped_at).toBeNull();
+    const reaped = "2026-06-01T00:00:00.000Z";
+    expect(TaskSchema.parse({ ...minimalTask, reaped_at: reaped }).reaped_at).toBe(reaped);
   });
 
   it("rejects priority below 1 (DB CHECK lower bound)", () => {
@@ -439,6 +478,18 @@ describe("ValidTransitions", () => {
     expect(failedEdges[0]!.to).toBe(TaskStates.queued);
   });
 
+  it("cancelled is never a 'from' state (terminal, non-retryable)", () => {
+    const fromStates = new Set<string>(ValidTransitions.map((t) => t.from));
+    expect(fromStates.has(TaskStates.cancelled)).toBe(false);
+  });
+
+  it("every non-terminal state can transition to cancelled", () => {
+    const cancellableFrom = new Set(ValidTransitions.filter((t) => t.to === TaskStates.cancelled).map((t) => t.from));
+    expect(cancellableFrom).toEqual(
+      new Set([TaskStates.requirements_gathering, TaskStates.queued, TaskStates.active, TaskStates.blocked]),
+    );
+  });
+
   it("intake is never a 'to' state", () => {
     const toStates = new Set<string>(ValidTransitions.map((t) => t.to));
     expect(toStates.has(TaskStates.requirements_gathering)).toBe(false);
@@ -470,6 +521,7 @@ describe("PermissionTable", () => {
       [TaskStates.blocked, null],
       [TaskStates.completed, null],
       [TaskStates.failed, null],
+      [TaskStates.cancelled, null],
     ];
 
     const actualPairs = PermissionTable.map((e) => [e.state, e.sub_state]);
@@ -479,6 +531,11 @@ describe("PermissionTable", () => {
   it("completed state has no allowed actions", () => {
     const completed = PermissionTable.find((e) => e.state === TaskStates.completed);
     expect(completed?.allowed).toEqual([]);
+  });
+
+  it("cancelled state has no allowed actions", () => {
+    const cancelled = PermissionTable.find((e) => e.state === TaskStates.cancelled);
+    expect(cancelled?.allowed).toEqual([]);
   });
 
   it("failed state only allows communicate", () => {

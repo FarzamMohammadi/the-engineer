@@ -114,6 +114,7 @@ describe("create-pr run", () => {
     const { ctx, createPR, dismissApprovals, updateTaskField } = mockCtx({
       review: {
         pr_number: 7,
+        merged_at: null,
         feedback_rounds: [{ applied: false, comments: ["fix it"] }],
         accommodated_comment_ids: [],
         accommodated_review_state: null,

@@ -144,7 +144,7 @@ export class TaskEngine implements ITaskEngine {
         repo, clone_url, thoughts_id, workspace, review, blocked, pending_pr_event,
         phase_iteration, total_reworks,
         priority, agent_tokens, agent_cost_usd, compute_time_ms,
-        created_at, started_at, completed_at, last_transition_at,
+        created_at, started_at, completed_at, reaped_at, last_transition_at,
         not_before, consecutive_crash_count, consecutive_agent_unavailable_count,
         session_id, version
       ) VALUES (
@@ -154,7 +154,7 @@ export class TaskEngine implements ITaskEngine {
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?
       )
@@ -219,6 +219,7 @@ export class TaskEngine implements ITaskEngine {
       now, // created_at
       null, // started_at
       null, // completed_at
+      null, // reaped_at
       now, // last_transition_at
       null, // not_before
       0, // consecutive_crash_count
@@ -273,6 +274,7 @@ export class TaskEngine implements ITaskEngine {
       created_at: now,
       started_at: null,
       completed_at: null,
+      reaped_at: null,
       last_transition_at: now,
       not_before: null,
       consecutive_crash_count: 0,

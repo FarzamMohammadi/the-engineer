@@ -4,6 +4,7 @@ import { join } from "node:path";
 import BetterSqlite3 from "better-sqlite3";
 import chalk from "chalk";
 
+import { TERMINAL_STATES } from "../../schemas/task.js";
 import { timeAgo } from "../format.js";
 import { getOutput } from "../output.js";
 import { isProcessRunning, readPidFile } from "../pid.js";
@@ -91,7 +92,8 @@ function getTaskList(dbPath: string, showAll: boolean): TaskRow[] {
   const db = new BetterSqlite3(dbPath, { readonly: true });
 
   try {
-    const whereClause = showAll ? "" : "WHERE state NOT IN ('completed', 'failed')";
+    const terminalList = TERMINAL_STATES.map((state) => `'${state}'`).join(", ");
+    const whereClause = showAll ? "" : `WHERE state NOT IN (${terminalList})`;
     return db
       .prepare(
         `SELECT id, state, title, created_at FROM tasks
@@ -104,6 +106,7 @@ function getTaskList(dbPath: string, showAll: boolean): TaskRow[] {
              WHEN 'queued' THEN 4
              WHEN 'failed' THEN 5
              WHEN 'completed' THEN 6
+             WHEN 'cancelled' THEN 7
            END,
            created_at ASC`,
       )

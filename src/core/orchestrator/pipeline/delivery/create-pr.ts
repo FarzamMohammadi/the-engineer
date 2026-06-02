@@ -115,6 +115,7 @@ async function openNewPr(ctx: Ctx, hosting: GitHostingAdapter, record: Workspace
 
   ctx.taskEngine.updateTaskField(ctx.task.id, "review", {
     pr_number: result.pr_number,
+    merged_at: null,
     feedback_rounds: [],
     accommodated_comment_ids: [],
     accommodated_review_state: null,

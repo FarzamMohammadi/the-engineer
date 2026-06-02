@@ -229,6 +229,7 @@ describe("table structure", () => {
       "created_at",
       "started_at",
       "completed_at",
+      "reaped_at",
       "last_transition_at",
       "session_id",
       "version",

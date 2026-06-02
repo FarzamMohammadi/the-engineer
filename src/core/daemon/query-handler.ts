@@ -1,6 +1,6 @@
 import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { type Task, type TaskState, TaskStates } from "../../schemas/task.js";
+import { type Task, TaskStateSchema } from "../../schemas/task.js";
 import type { ISafetyLayer } from "../interfaces/safety-layer.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -54,16 +54,8 @@ export function handleQuery(payload: CommMessageReceivedPayload, deps: QueryHand
 // ── Response Formatters ───────────────────────────────────────────────────
 
 function formatStatusResponse(taskEngine: ITaskEngine): string {
-  const states: TaskState[] = [
-    TaskStates.requirements_gathering,
-    TaskStates.queued,
-    TaskStates.active,
-    TaskStates.blocked,
-    TaskStates.completed,
-    TaskStates.failed,
-  ];
   const counts: string[] = [];
-  for (const state of states) {
+  for (const state of TaskStateSchema.options) {
     const tasks = taskEngine.getTasksByState(state);
     if (tasks.length > 0) {
       counts.push(`${state}: ${String(tasks.length)}`);
@@ -95,15 +87,7 @@ function formatProgressResponse(taskEngine: ITaskEngine, issueNumber: string): s
 
 /** Find the task whose external reference matches the given issue number, scanning all states. */
 function findTaskByIssueNumber(taskEngine: ITaskEngine, issueNumber: string): Task | null {
-  const states: TaskState[] = [
-    TaskStates.requirements_gathering,
-    TaskStates.queued,
-    TaskStates.active,
-    TaskStates.blocked,
-    TaskStates.completed,
-    TaskStates.failed,
-  ];
-  for (const state of states) {
+  for (const state of TaskStateSchema.options) {
     for (const task of taskEngine.getTasksByState(state)) {
       if (task.external_ref?.id === issueNumber) {
         return task;

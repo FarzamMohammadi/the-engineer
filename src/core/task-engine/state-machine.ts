@@ -3,7 +3,7 @@ import { ulid } from "ulid";
 
 import { EventTypes } from "../../schemas/events.js";
 import type { SubState, TaskState } from "../../schemas/task.js";
-import { TaskStates, ValidTransitions } from "../../schemas/task.js";
+import { TaskStates, ValidTransitions, isTerminal } from "../../schemas/task.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { TransitionResult } from "../interfaces/task-engine.interface.js";
@@ -131,7 +131,7 @@ export class StateMachine {
         this.setStartedAtStmt.run(now, taskId);
       }
 
-      if (toState === TaskStates.completed || toState === TaskStates.failed) {
+      if (isTerminal(toState)) {
         this.setCompletedAtStmt.run(now, taskId);
       }
 

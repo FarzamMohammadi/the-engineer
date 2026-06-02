@@ -33,7 +33,7 @@ Every enum-like value follows a three-part export:
 // 1. Zod schema (source of truth)
 export const TaskStateSchema = z.enum([
   "requirements_gathering", "queued", "active",
-  "blocked", "completed", "failed",
+  "blocked", "completed", "failed", "cancelled",
 ]);
 
 // 2. TypeScript type (inferred, never manual)

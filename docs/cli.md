@@ -140,7 +140,7 @@ Shows whether the daemon is running and lists non-terminal tasks with their 8-ch
 
 ```bash
 engineer status                          # Non-terminal tasks (active, queued, blocked, etc.)
-engineer status --all                    # Include completed and failed tasks
+engineer status --all                    # Include completed, failed, and cancelled tasks
 ```
 
 Example output:

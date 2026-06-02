@@ -4,7 +4,7 @@ import type { MessageType } from "../../schemas/adapters.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
 import { type Notification, NotificationKinds, recipientsForKind } from "../../schemas/notifications.js";
-import { TaskStates } from "../../schemas/task.js";
+import { isTerminal } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
@@ -417,7 +417,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
 
       // Check task terminal state
       const task = taskEngine.getTask(entryTaskId);
-      if (!task || task.state === TaskStates.completed || task.state === TaskStates.failed) {
+      if (!task || isTerminal(task.state)) {
         retryQueue.splice(i, 1);
         eventBus.publish({
           type: "comm.retry_exhausted",

@@ -4,7 +4,7 @@ import { fromSqliteJson, toSqliteJson } from "../../db/serialize.js";
 import type { CostLimits } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { CostIncurredPayload, Event, TaskStateChangedPayload } from "../../schemas/events.js";
-import { TaskStates } from "../../schemas/task.js";
+import { isTerminal } from "../../schemas/task.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { CostStatus, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { IObserver } from "../observer/index.js";
@@ -253,7 +253,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
 
   function onTaskStateChanged(event: Event): void {
     const payload = event.payload as unknown as TaskStateChangedPayload;
-    if (payload.to_state === TaskStates.completed || payload.to_state === TaskStates.failed) {
+    if (isTerminal(payload.to_state)) {
       accumulators.per_task.delete(payload.task_id);
     }
   }

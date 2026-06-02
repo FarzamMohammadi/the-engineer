@@ -1,7 +1,14 @@
 // ── Task ─────────────────────────────────────────────────────────────────────
 
 /** Valid task lifecycle states. */
-export type TaskState = "requirements_gathering" | "queued" | "active" | "blocked" | "completed" | "failed";
+export type TaskState =
+  | "requirements_gathering"
+  | "queued"
+  | "active"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 /** Task sub-state when active. */
 export type SubState = "working";

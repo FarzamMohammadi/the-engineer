@@ -124,6 +124,14 @@ describe("isValidTransition", () => {
   it("rejects transition with wrong sub-state", () => {
     expect(isValidTransition(TaskStates.queued, null, TaskStates.active, null)).toBe(false);
   });
+
+  it("allows active.working → cancelled", () => {
+    expect(isValidTransition(TaskStates.active, SubStates.working, TaskStates.cancelled, null)).toBe(true);
+  });
+
+  it("rejects cancelled → queued (terminal, non-retryable)", () => {
+    expect(isValidTransition(TaskStates.cancelled, null, TaskStates.queued, null)).toBe(false);
+  });
 });
 
 // ── StateMachine Tests ───────────────────────────────────────────────────────
@@ -190,6 +198,16 @@ describe("StateMachine", () => {
     stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "go", "test");
     stateMachine.requestTransition(id, TaskStates.blocked, null, "pr_review_pending", "test");
     stateMachine.requestTransition(id, TaskStates.completed, null, "done", "test");
+
+    const row = dbHandle.db.prepare("SELECT completed_at FROM tasks WHERE id = ?").get(id) as {
+      completed_at: string | null;
+    };
+    expect(row.completed_at).not.toBeNull();
+  });
+
+  it("sets completed_at on transition to cancelled", () => {
+    const id = insertTask(dbHandle.db);
+    stateMachine.requestTransition(id, TaskStates.cancelled, null, "user_cancelled", "test");
 
     const row = dbHandle.db.prepare("SELECT completed_at FROM tasks WHERE id = ?").get(id) as {
       completed_at: string | null;

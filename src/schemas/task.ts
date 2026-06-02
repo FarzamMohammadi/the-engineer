@@ -4,11 +4,33 @@ import { PrEventTypeSchema } from "./git-hosting-event-types.js";
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
-export const TaskStateSchema = z.enum(["requirements_gathering", "queued", "active", "blocked", "completed", "failed"]);
+export const TaskStateSchema = z.enum([
+  "requirements_gathering",
+  "queued",
+  "active",
+  "blocked",
+  "completed",
+  "failed",
+  "cancelled",
+]);
 export type TaskState = z.infer<typeof TaskStateSchema>;
 
 /** Constant enum values for TaskState. Use instead of raw strings. */
 export const TaskStates = TaskStateSchema.enum;
+
+/**
+ * Terminal states — a task that has finished its lifecycle. `failed` is terminal yet independently
+ * retryable (`failed → queued`); `completed` and `cancelled` have no exit. The single source of truth
+ * for terminal-ness: the app-level `state NOT IN (…)` clauses (task-engine queries, `engineer status`)
+ * derive from this. Its one hand-kept sibling is `001_schema.sql` (the `:83` dedup index plus the
+ * `state` CHECKs) — SQL a TypeScript constant cannot reach — kept in lockstep and guarded by tests.
+ */
+export const TERMINAL_STATES = [TaskStates.completed, TaskStates.failed, TaskStates.cancelled] as const;
+
+/** Whether a task has reached a terminal (finished) state. */
+export function isTerminal(state: TaskState): boolean {
+  return (TERMINAL_STATES as readonly TaskState[]).includes(state);
+}
 
 export const SubStateSchema = z.enum(["working"]);
 export type SubState = z.infer<typeof SubStateSchema>;
@@ -151,6 +173,8 @@ export type FeedbackRound = z.infer<typeof FeedbackRoundSchema>;
 
 export const ReviewStateSchema = z.object({
   pr_number: z.number().int().positive().nullable(),
+  /** When the PR was merged (ISO 8601). The reaper's retention clock; null until a merge is recorded. */
+  merged_at: z.string().datetime().nullable().default(null),
   feedback_rounds: z.array(FeedbackRoundSchema),
   /** PR comment IDs already accommodated (queued for rework). Prevents re-processing same feedback. */
   accommodated_comment_ids: z.array(z.string()).default([]),
@@ -179,7 +203,7 @@ export const TaskSchema = z.object({
   id: z.string(),
   external_ref: ExternalRefSchema.nullable(),
   /** Stable dedup identity. Every task carries one; uniqueness is enforced among
-   *  non-terminal tasks (a completed/failed task frees its key for re-triggering). */
+   *  non-terminal tasks (a terminal task frees its key for re-triggering). */
   idempotency_key: z.string(),
 
   // State
@@ -233,6 +257,11 @@ export const TaskSchema = z.object({
   created_at: z.string().datetime(),
   started_at: z.string().datetime().nullable(),
   completed_at: z.string().datetime().nullable(),
+  // The reaper's all-or-nothing reconciliation marker: set only after a fully-successful reap
+  // (worktree + branch + any PR close). NULL means "not yet reconciled" — the reaper reconsiders the
+  // task next sweep, so a partial reap retries instead of orphaning a branch. `workspace` is preserved
+  // for the audit trail, so this column — not a nulled workspace — is the loop-termination signal.
+  reaped_at: z.string().datetime().nullable().default(null),
   last_transition_at: z.string().datetime(),
 
   // Scheduling
@@ -265,15 +294,19 @@ export type StateTransition = z.infer<typeof StateTransitionSchema>;
 export const ValidTransitions = [
   { from: TaskStates.requirements_gathering, to: TaskStates.queued },
   { from: TaskStates.requirements_gathering, to: TaskStates.failed },
+  { from: TaskStates.requirements_gathering, to: TaskStates.cancelled },
   { from: TaskStates.queued, to: TaskStates.active, to_sub: SubStates.working },
+  { from: TaskStates.queued, to: TaskStates.cancelled },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.blocked },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.completed },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.failed },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.queued },
+  { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.cancelled },
   { from: TaskStates.blocked, to: TaskStates.active, to_sub: SubStates.working },
   { from: TaskStates.blocked, to: TaskStates.completed },
   { from: TaskStates.blocked, to: TaskStates.failed },
   { from: TaskStates.blocked, to: TaskStates.queued },
+  { from: TaskStates.blocked, to: TaskStates.cancelled },
   { from: TaskStates.failed, to: TaskStates.queued },
 ] as const satisfies ReadonlyArray<{
   readonly from: TaskState;
@@ -317,4 +350,5 @@ export const PermissionTable: readonly PermissionEntry[] = [
   },
   { state: TaskStates.completed, sub_state: null, allowed: [] },
   { state: TaskStates.failed, sub_state: null, allowed: [ActionClasses.communicate] },
+  { state: TaskStates.cancelled, sub_state: null, allowed: [] },
 ] as const;

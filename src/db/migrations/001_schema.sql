@@ -10,7 +10,7 @@ CREATE TABLE tasks (
   idempotency_key         TEXT NOT NULL,
 
   -- State
-  state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','completed','failed')),
+  state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','completed','failed','cancelled')),
   sub_state               TEXT CHECK(sub_state IN ('working')),
   phase                   TEXT,
   sub_phase               TEXT,
@@ -51,6 +51,9 @@ CREATE TABLE tasks (
   created_at              TEXT NOT NULL,
   started_at              TEXT,
   completed_at            TEXT,
+  -- The reaper's all-or-nothing reconciliation marker: set only after a fully-successful reap.
+  -- NULL = not yet reconciled (the reaper retries next sweep). See schemas/task.ts for the rationale.
+  reaped_at               TEXT,
   last_transition_at      TEXT NOT NULL,
 
   -- Session link
@@ -75,20 +78,21 @@ CREATE INDEX idx_tasks_session_id ON tasks(session_id);
 CREATE INDEX idx_tasks_priority ON tasks(priority DESC);
 CREATE INDEX idx_tasks_state_priority ON tasks(state, priority DESC);
 -- Active-scoped dedup: no two non-terminal tasks may share an idempotency_key.
--- A terminal task (completed/failed) frees its key, so a re-triggered source
+-- A terminal task (completed/failed/cancelled) frees its key, so a re-triggered source
 -- (e.g. a reopened GitHub issue) can spawn a fresh task. Identity/dedup rides on
--- idempotency_key; external_ref is descriptive only.
+-- idempotency_key; external_ref is descriptive only. This terminal set is the hand-kept
+-- DB sibling of TERMINAL_STATES in schemas/task.ts — keep the two in lockstep.
 CREATE UNIQUE INDEX idx_tasks_idempotency_key_active
   ON tasks(idempotency_key)
-  WHERE state NOT IN ('completed', 'failed');
+  WHERE state NOT IN ('completed', 'failed', 'cancelled');
 
 -- ── state_transitions ────────────────────────────────────────────────────────────
 
 CREATE TABLE state_transitions (
   id              TEXT PRIMARY KEY,
   task_id         TEXT NOT NULL REFERENCES tasks(id),
-  from_state      TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','completed','failed')),
-  to_state        TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','completed','failed')),
+  from_state      TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','completed','failed','cancelled')),
+  to_state        TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','completed','failed','cancelled')),
   from_sub        TEXT CHECK(from_sub IN ('working')),
   to_sub          TEXT CHECK(to_sub IN ('working')),
   reason          TEXT NOT NULL,

@@ -121,7 +121,7 @@ program
 program
   .command("status")
   .description("Show daemon status and task listing")
-  .option("--all", "Include completed and failed tasks")
+  .option("--all", "Include completed, failed, and cancelled tasks")
   .action((options: { all?: boolean }) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);

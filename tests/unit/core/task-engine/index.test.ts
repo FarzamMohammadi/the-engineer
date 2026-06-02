@@ -74,6 +74,9 @@ function getPathToState(state: TaskState, subState: SubState | null): Transition
   if (state === TaskStates.queued) {
     return [{ state: TaskStates.queued, sub: null, reason: "validated" }];
   }
+  if (state === TaskStates.cancelled) {
+    return [{ state: TaskStates.cancelled, sub: null, reason: "user cancelled" }];
+  }
 
   const base: TransitionStep[] = [{ state: TaskStates.queued, sub: null, reason: "validated" }];
 
@@ -260,6 +263,17 @@ describe("TaskEngine", () => {
       engine.createTask(makeInput({ idempotency_key: "dup:key" }));
       expect(() => engine.createTask(makeInput({ idempotency_key: "dup:key" }))).toThrow();
     });
+
+    it("frees the idempotency key once a task is cancelled, allowing re-creation (the dedup gate)", () => {
+      // The single most important Slice 9 test: it exercises BOTH the app-level NOT IN
+      // (findByIdempotencyKey) AND the DB :83 partial-unique index (the re-INSERT) in lockstep. If
+      // either omits 'cancelled', a re-triggered cancelled source issue throws a UNIQUE constraint on
+      // the second createTask here and crashes the trigger poller.
+      const first = createTaskInState(engine, TaskStates.cancelled, null, { idempotency_key: "redo:key" });
+      expect(engine.findByIdempotencyKey("redo:key")).toBe(false); // app-level NOT IN freed the key
+      const second = engine.createTask(makeInput({ idempotency_key: "redo:key" })); // DB :83 index allows it
+      expect(second.id).not.toBe(first.id);
+    });
   });
 
   // ── findByIdempotencyKey (durable, active-scoped dedup) ──────────────────────
@@ -282,6 +296,11 @@ describe("TaskEngine", () => {
     it("frees the key once the task is failed (active-scoped)", () => {
       createTaskInState(engine, TaskStates.failed, null, { idempotency_key: "rt:failed" });
       expect(engine.findByIdempotencyKey("rt:failed")).toBe(false);
+    });
+
+    it("frees the key once the task is cancelled (active-scoped)", () => {
+      createTaskInState(engine, TaskStates.cancelled, null, { idempotency_key: "rt:cancelled" });
+      expect(engine.findByIdempotencyKey("rt:cancelled")).toBe(false);
     });
   });
 

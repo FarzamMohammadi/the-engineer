@@ -14,6 +14,7 @@ const okResult = (disposition: string): RoutableResult => ({ outcome: "ok", summ
 
 const readyReview: ReviewState = {
   pr_number: 7,
+  merged_at: null,
   feedback_rounds: [],
   accommodated_comment_ids: [],
   accommodated_review_state: null,

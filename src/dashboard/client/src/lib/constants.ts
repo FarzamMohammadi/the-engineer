@@ -8,6 +8,7 @@ export const STATE_COLORS: Record<TaskState, string> = {
   blocked: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   completed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   failed: "bg-red-500/20 text-red-400 border-red-500/30",
+  cancelled: "bg-slate-500/20 text-slate-400 border-slate-500/30",
 };
 
 /** Human-readable short labels for each task state. */
@@ -18,6 +19,7 @@ export const STATE_LABELS: Record<TaskState, string> = {
   blocked: "Blocked",
   completed: "Completed",
   failed: "Failed",
+  cancelled: "Cancelled",
 };
 
 /** Tailwind background color for the small dot indicator beside each task state. */
@@ -28,6 +30,7 @@ export const STATE_DOT_COLORS: Record<TaskState, string> = {
   blocked: "bg-amber-400",
   completed: "bg-emerald-400",
   failed: "bg-red-400",
+  cancelled: "bg-slate-400",
 };
 
 /** Human-readable short labels for each RRPIR pipeline phase. */

@@ -75,15 +75,19 @@ Every item must be expressible as a command that returns zero or non-zero, or as
 
 The Engineer operates autonomously across long-running tasks. Autonomy without observability is a black box. Every action, decision, and state change must be visible to the people who need to know — without requiring them to read logs, dig through code, or ask what happened.
 
-This applies to every kind of work, not just code. Writing docs, running research, making design decisions — all of it must leave a clear trail. The principle is simple: signal, not noise. Not verbose output about every internal step, but conscious, deliberate communication at every point where someone might need to know.
+**Judge it through the observer's eyes.** The person watching a task cannot see the source, and they cannot see inside the agent runs — those happen in an opaque subprocess. The dashboard shows them *only what the pipeline chose to emit.* So the bar is not "could someone with the code open debug this" — it is "can the observer, seeing only the emitted trail, reconstruct the whole story." At every point in a task's life they must be able to answer three questions — **what happened before, what is happening right now, and what happens next** — each in enough detail to truly understand it, and **drill down** into the full underlying data the instant they are curious or confused. A decision the owner can see *was made* but cannot *inspect* — its alternatives, its reasoning, the live inputs that drove it — is only half-observable. Half-observable is not observable.
+
+**Signal, not noise — and the enemy is invisibility, not volume.** "Signal, not noise" is not a license to emit less. It forbids *meaningless* output — the entry and exit of every function, the plumbing between steps — because noise buries signal. But every genuine *decision*, *verdict*, *state change*, *action*, and *milestone* is signal, and signal is emitted richly and durably as structured data, never flattened into a one-line summary a dashboard cannot parse or query. When in doubt about a meaningful event, emit *more* detail, not less. For the deepest core of the system — the per-task pipeline — completeness wins: nothing the engine reasons about should be invisible to the owner, and anything they want to dig into should already be there.
+
+This applies to every kind of work, not just code. Writing docs, running research, making design decisions — all of it leaves a clear, inspectable trail.
 
 Before any work is considered complete, it must pass three tests:
 
-1. **Debuggability.** If something goes wrong here, can it be diagnosed from the trail already in place — without adding temporary logging, without reproducing the issue, without guessing?
-2. **Owner sync.** Is the owner fully synchronized with past actions, current execution, and planned next steps? Can they guide or change course at any moment based on what they see?
-3. **External reach.** Are milestones, blocks, and alerts reaching the right people through the right channels — not just the dashboard, but comms to stakeholders who need to know?
+1. **Debuggability.** If something goes wrong here, can it be diagnosed *from the emitted trail alone* — without adding temporary logging, without reproducing the issue, without reading the source? The reasoning behind every non-obvious choice is recorded where it can be found later.
+2. **Owner sync.** Is the owner fully synchronized with past actions, current execution, and planned next steps — and can they drill from any point into the detail beneath it? Can they guide or change course at any moment based on what they see?
+3. **External reach.** Are milestones, blocks, and alerts reaching the right people through the right channels — not just the dashboard, but comms to the stakeholders who need to know?
 
-If the answer to any of these is "no," the work is incomplete. These three tests are enforced through the [Definition of Done](#definition-of-done) — item 8.
+If the answer to any of these is "no," the work is incomplete. These three tests are enforced through the [Definition of Done](#definition-of-done) — item 8. What to log, what to trace, what to record as a decision, and how the emitted trail reaches the dashboard are specified in [Coding Standards §§ 12 and 14](coding-standards.md#12-logging) and the [Observability how-to](contribution-docs/how-tos/observability.md).
 
 ### Documentation as Product
 

@@ -49,6 +49,10 @@ interface IObserver {
   recordDecision(name, context, options, chosen, reasoning, confidence, opts?): string;
   recordError(error, context, recovery?, opts?): string;  // DUAL: logs to pino AND stores
 
+  // Store/read large content (agent prompts/responses, diffs, gate output) for drill-down
+  storeBlob(content: string): string;   // returns a content-addressable ref
+  readBlob(ref: string): string | null;
+
   // Create a child observer scoped to a component
   child(component: ComponentTag): IObserver;
 
@@ -148,23 +152,25 @@ myObserver.info("Task created", { taskId });
 
 **File:** `src/schemas/observer.ts`
 
-14 types — use the one that best describes what you're recording:
+Pick the type that names what you're recording — never overload `lifecycle` as a catch-all:
 
 | Type | When to use |
 |------|-------------|
+| `task_execution` | The root span of one dispatch — the whole task, start to outcome. Every other observation for the dispatch nests under it. |
 | `agent_iteration` | One cycle of the agent execution loop |
-| `agent_call` | Direct agent invocation |
-| `tool_execution` | Tool/action execution (bash, file write, etc.) |
-| `phase_transition` | Orchestrator phase change |
-| `decision_point` | Structured decision with alternatives and reasoning |
-| `safety_verdict` | Safety layer gate result |
-| `state_transition` | Task state machine transition |
+| `agent_call` | One agent run — emitted per agent sub-phase, carrying the prompt and the result/transcript as blob refs |
+| `tool_execution` | One external action — a verify gate, a merge call, a git push |
+| `phase_transition` | Pipeline phase/sub-phase enter, start, and result |
+| `decision_point` | A structured decision with alternatives and reasoning (via `recordDecision`) |
+| `safety_verdict` | A gate result — e.g. the verify gates' pass/fail verdict |
+| `state_transition` | Task state machine transition (e.g. a block) |
 | `workspace_op` | Git worktree create/verify/cleanup |
 | `plugin_call` | Adapter/plugin method invocation |
 | `error` | Error observation (use `recordError()`) |
 | `cost_snapshot` | Cost tracking data point |
-| `lifecycle` | Generic lifecycle event (startup, shutdown, etc.) |
+| `lifecycle` | Generic lifecycle event (startup, shutdown) |
 | `config_change` | Configuration change detected |
+| `quota_status` | Provider quota / rate-limit status |
 
 ### SpanOptions
 
@@ -183,6 +189,26 @@ interface SpanOptions {
 
 ---
 
+## The End-to-End Trace
+
+Every task dispatch is one trace. The orchestrator opens a root `task_execution` span at the start of `executeTask`; its id is threaded into the pipeline context, and every observation the pipeline emits carries the dispatch's `trace_id` and points its `parent_observation_id` at that root. The result is a single nested tree per task — from intake to outcome — that the dashboard renders and that an external tracing tool could consume whole (see [Future Considerations → External Trace Export](../../future-considerations.md)).
+
+**What the pipeline emits, by construction:**
+
+- The runner records every phase enter, sub-phase start/result, **routing and skip decision** (`recordDecision`), loop, and block — so a sub-phase cannot forget to be observed. A block's log level follows its cause: an expected wait is `info`, the loop cap is `warn`, a genuine failure is `error`.
+- Each **agent run** is an `agent_call` span carrying the full prompt and the result/transcript as blob refs.
+- The **verify gates** emit a `safety_verdict` (which gates ran, which passed) plus a `tool_execution` span per gate.
+- **auto-merge** records a `merge_readiness` decision (the live PR status, the disposition chosen, its alternatives) and a `tool_execution` span for the merge call.
+- The **PR-event poller** records `pr_event_arbitration` (which event won among competitors) and `approve_comment_promotion` (a `/approve` turned into a merge).
+
+The shared `traceScope(ctx)` helper builds the `{task_id, session_id, trace_id, phase, parent_observation_id}` scope so the runner and every sub-phase stitch into the same tree.
+
+## Drill-Down Blobs
+
+Large content — agent prompts and responses, a failing gate's output, a diff — is stored via `observer.storeBlob(content)`, which returns a content-addressable ref, and referenced from the observation's `input`/`output`. The dashboard fetches it by ref through its blob route, so the summary stays small and the full detail is one click away. `storeBlob` no-ops (returns `""`) before the observation store is attached, exactly like the tracing methods, and the pipeline sanitizes content before storing it.
+
+---
+
 ## Component Tags
 
 **File:** `src/core/observer/logging.ts`
@@ -190,10 +216,9 @@ interface SpanOptions {
 Every observer child is tagged with a `ComponentTag` — a TypeScript string union:
 
 ```
-daemon, registry, orchestrator, task-engine, safety-layer, session-memory,
-workspace-manager, skills, event-bus, people-directory, config, cli,
-action-pipeline, plugin, observer, pr-manager, plugin-loader,
-data-lifecycle, notifications, response-poller, unblock-resolver, dashboard
+daemon, registry, orchestrator, task-engine, safety-layer, workspace-manager,
+skills, event-bus, cli, action-pipeline, plugin, plugin-loader, data-lifecycle,
+notifications, dashboard
 ```
 
 Tags appear in every log line's `component` field. Use the existing tag for your component. If adding a new component, add its tag to the `ComponentTag` union in `src/core/observer/logging.ts`.
@@ -390,7 +415,7 @@ handle.cleanup(); // Closes DB + removes temp dir
 2. **Observer is always required** — never `observer?: IObserver`, always `observer: IObserver`
 3. **Message first, data second** — `observer.info("message", { data })`, not pino's `(data, message)`
 4. **Structured data** — put values in the data object, not in the message string
-5. **Use the right observation type** — pick from the 14 types, don't overload `lifecycle` for everything
+5. **Use the right observation type** — pick the one that names the thing, don't overload `lifecycle` for everything
 6. **Include SpanOptions** — always pass `task_id` and `trace_id` when available for correlation
 7. **Spans must end** — always call `span.end()` (use try/finally if needed)
 8. **No circular logging** — `ObserverStream` silently swallows subscriber errors (can't log its own errors)

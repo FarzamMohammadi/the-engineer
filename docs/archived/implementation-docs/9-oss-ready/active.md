@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md): why we're doing this, what done looks like
 - [approach.md](approach.md): strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: **Slice 9 (Completion & Cleanup) — not yet started** (RRPIR is the first step). Slice 8 (Pipeline Phases) is COMPLETE — see Completed Slices + `slices/08-pipeline-phases.md`. **Open item: merge `slice8-s10-sweep` → main** (see Current).
+- Current slice: **Slice 9 (Completion & Cleanup / the reaper) — RRP COMPLETE (Session 51); implementation not started.** Design record: `slices/09-completion-cleanup.md`; build script: `.claude/temp/create-plan/slice-09-completion-cleanup.md`. Slice 8 (Pipeline Phases) is COMPLETE and merged to `main`.
 
 ## How This File Works
 
@@ -21,19 +21,18 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 8 (Pipeline Phases) is COMPLETE.** Full recap in **Completed Slices** below; the closing sweep is recorded in `slices/08-pipeline-phases.md` § Closing Standards Sweep and `sessions/50.md`. The locked architecture lives in `project_slice8_pipeline_architecture.md`; the slice file is the durable design source.
+**Slice 8 (Pipeline Phases) is COMPLETE and merged to `main`** (at `36b68a8`; the `slice8-s10-sweep` branch is fully merged — no longer an open item). Recap in **Completed Slices**; design source `slices/08-pipeline-phases.md`. **Pre-v1 run note still stands: delete `~/.engineer/data.db` before running (the DB wipe is the migration).**
 
-**⚠️ Open item for Farzam before Slice 9 — merge to main.** The Slice 8 closing sweep landed on branch **`slice8-s10-sweep`** (four fix commits `ec9212c` / `95f3b17` / `2f54a04` / `790a81a` + the Session 50 wrap), with `main` untouched at `8e2e94b` as the recovery point. **Merge `slice8-s10-sweep` → main when ready — no squash** (Farzam's call; the four thematic commits stay distinct). Until then the sweep is not on main. **Pre-v1 run note still stands: delete `~/.engineer/data.db` before running (the DB wipe is the S5-cutover migration).**
+**Slice 9 (Completion & Cleanup / the reaper) — RRP COMPLETE (Session 51). Implementation NOT started.** Durable design record: **`slices/09-completion-cleanup.md`** (read this first for the slice). Working artifacts: `.claude/temp/{requirements-gathering,research,create-plan}/slice-09-completion-cleanup.md` — the **create-plan doc is the panel-reviewed build script** (full D1–D17 rationale + the 4-session task breakdown + verification contract + pre-mortem).
 
-**Slice 9 (Completion & Cleanup / the reaper) — NOT YET STARTED.** RRPIR is the first step; no `slices/09-*.md` drafted yet. **Scope (roadmap item 11 in `approach.md`):** terminal states, terminal notifications, and workspace cleanup on merged/completed — the reaper. (The roadmap's original "parent integration" is moot: decomposition / child-tasks were cut in Slice 6, so there are no child branches to integrate — reconcile in RRP.) What Slice 9 inherits (reserved surface — validated today but NOT honored; full inventory in `slices/08-pipeline-phases.md` § Cross-Slice Handoffs → Outbound):
-- `workspaceConfig.pr.branch_retention_days` (`schemas/config.ts`, `RESERVED for Slice 9`; documented in `docs/configuration/workspace.md`) — days to retain a merged branch before the reaper deletes it; `null` = keep forever. Parsed, read by nothing yet.
-- The **external-merge audit gap**: a PR merged outside The Engineer makes `delivery/auto-merge.run` short-circuit to `done` without `recordMerge` (no `git.pr_merged` audit, no branch delete). The reaper is the natural owner of branch cleanup + audit for any path to `completed`.
-- Terminal-state cleanup generally: workspace removal on merged/completed + terminal notifications.
+**Shape (RRP-decided):** a daemon-resident **reconciliation reaper** owns deferred terminal cleanup (branch retention + cross-process cancel + external-merge backfill); `auto-merge` records-not-deletes (reaper is the sole branch deleter); a first-class **`cancelled`** terminal state with **effective cross-process cancel** (active-abort via Slice 6's terminate machinery, `user_cancelled`); single `branch_retention_days` (`null`/`0`/`N`); `CleanupConfig` cut; dead `closePR` wired; a `reaped_at` all-or-nothing marker is the reconciliation lynchpin. Roadmap "parent integration" confirmed **MOOT** (decomposition cut in Slice 6).
+
+**Next: implementation Session 1 of 4 — *State-model spine + terminal SSOT + `reaped_at`.*** Add `cancelled` (enum + 4 transitions-in/none-out + permission row); `TERMINAL_STATES`/`isTerminal()` SSOT; `ReviewStateSchema.merged_at`; the `reaped_at` column; the 4 `001_schema.sql` sites **incl. the `:83` partial-unique dedup index**; refactor the 4 predicate sites; de-dup the query-handler arrays. **Gated by the e2e real-INSERT dedup test** (key → cancel → re-INSERT same key succeeds — proves both the app `NOT IN` and the DB `:83` index). Spine only: nothing produces `cancelled`/`reaped_at` yet. Then S2 reaper + branch lifecycle + auto-merge, S3 cancel end-to-end, S4 narrative + closing sweep. Each green-on-commit, ≤ ~400–450k tokens.
 
 **Deferred (do in the slice that consumes them):**
-- **Slice 10 (Communication):** the reserved `OrchestratorConfig.notification.*` + `question_batching.*` policy knobs — the router sends without reading them (`schemas/config.ts`, `RESERVED for Slice 10`; documented as "Validated but not yet honored" in `docs/configuration/orchestrator.md`). See the slice-08 Outbound handoff.
-- **Slice 13 (Dashboard UI):** all dashboard surfacing of the new shape — `phase` / `sub_phase` / `phase_iteration` / `total_reworks` visibility, the simplified 6-state machine (no `review_pending` row), block-reason taxonomy display, the routing-decision + skip-gate trails, and the legacy `self_review`/`demo_prep` phase-name cleanup in `src/dashboard/client/*`. Slice 8 emits the data; Slice 13 displays it.
-- **Future hardening — `verify` runs gates synchronously** (`execFileSync`), blocking the daemon's event loop while a gate runs — fine at single-task concurrency. Captured in `docs/future-considerations.md` (Asynchronous Verification Gates); revisit when the daemon runs tasks concurrently.
+- **Slice 10 (Communication):** the reserved `OrchestratorConfig.notification.*` + `question_batching.*` policy knobs (unchanged from Slice 8, "Validated but not yet honored"); **plus, new from Slice 9:** the cancel `ticket_comment` + the reaper failure `alert` routing, and the `DigestConfig.include` `cancelled` entry.
+- **Slice 13 (Dashboard UI):** all surfacing of the new shape — `phase`/`sub_phase`/`phase_iteration`/`total_reworks`, the simplified state machine, block-reason taxonomy, routing/skip trails, legacy `self_review`/`demo_prep` cleanup; **plus, new from Slice 9:** display of the `cancelled` state, the reaper run-summary (`getLastRun`), and `reaped_at` visibility. Slice 8/9 emit the data; Slice 13 displays it.
+- **Future hardening — `verify` runs gates synchronously** (`execFileSync`), fine at single-task concurrency. `docs/future-considerations.md` (Asynchronous Verification Gates).
 
 ## Completed Slices
 

@@ -25,8 +25,9 @@ describe("Observer", () => {
   // ── ObservationTypes ───────────────────────────────────────────────────────
 
   describe("ObservationTypes", () => {
-    it("has all 14 types", () => {
-      expect(Object.keys(ObservationTypes)).toHaveLength(14);
+    it("includes task_execution and every other observation type", () => {
+      expect(Object.keys(ObservationTypes)).toContain("task_execution");
+      expect(Object.keys(ObservationTypes)).toHaveLength(15);
     });
 
     it("values are lowercase_snake_case strings", () => {

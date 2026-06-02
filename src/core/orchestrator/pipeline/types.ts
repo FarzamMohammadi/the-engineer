@@ -104,6 +104,19 @@ export interface Ctx extends OrchestratorContext {
   readonly signal?: AbortSignal;
   /** Present only when this step was reached by a `repeat` or `jump`: the context to address on the re-run. */
   readonly carry?: Carry;
+  /**
+   * The phase currently executing, injected by the runner before each sub-phase `run`. A sub-phase that
+   * records its own observations reads this through {@link traceScope} so they correlate to the right phase
+   * on the dashboard. Absent only when a sub-phase runs outside the runner (it has no live phase then).
+   */
+  readonly currentPhase?: Phase;
+  /**
+   * The id of the dispatch's root `task_execution` span, set by the orchestrator. Threaded into every
+   * pipeline observation as its parent (via {@link traceScope}) so the whole task forms one end-to-end
+   * trace tree — the dashboard's "tracer bullet" view and the seam for exporting to an external tracing
+   * tool. Absent when a sub-phase runs outside a dispatch (e.g. a unit test driving it directly).
+   */
+  readonly rootObservationId?: string;
 }
 
 /**

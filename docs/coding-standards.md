@@ -547,6 +547,7 @@ Log at decision points, not I/O points. The question a log answers is **why did 
 - **Log decisions, not actions.** "Chose retry because rate limit resets in 12s" is useful. "Called GitHub API" is noise — the action is visible in the span; the log captures *reasoning*.
 - **One log per decision, not per step.** Don't log entry and exit of every function. Log the meaningful choice points.
 - **Uniform across the three-tier boundary.** Adapter-level logging has a consistent format regardless of which plugin is behind it. The operator's experience must not change when a plugin is swapped.
+- **Logs are the ops layer; the dashboard reads observations.** A log line lands in a rolling file for an engineer grepping with the source open. The owner watching the dashboard sees *observations*, not logs. So a meaningful decision, verdict, or state change is recorded with `recordDecision`/`observe` (§ 14) — a bare `observer.info` is not a substitute for the dashboard trail, though a one-line log alongside it is fine for the ops reader.
 
 ---
 
@@ -600,11 +601,11 @@ try {
 
 ## 14. Observability & Tracing
 
-Logging captures *reasoning*. Tracing captures *structure* — the shape of an operation, its duration, its nesting, and its outcome. Together they make any behavior diagnosable after the fact.
+Logging captures *reasoning*. Tracing captures *structure* — the shape of an operation, its duration, its nesting, and its outcome. Together they make any behavior diagnosable after the fact — and they are what the dashboard renders. Write them for the observer who sees *only what you emit*: not the engineer with the source open, but the owner watching a task whose code and agent runs are invisible to them (see [Radical Observability](philosophy.md#radical-observability--the-owner-is-never-in-the-dark)). If it is not emitted, as far as they can tell it did not happen.
 
 ### Span Lifecycle
 
-Every non-trivial operation gets a span: start, annotate, end with success or error. Spans nest — a task execution span contains phase spans, which contain agent run spans.
+Every non-trivial operation gets a span: start, annotate, end with success or error. Spans nest — a task execution span contains phase spans, which contain agent-run and tool-execution spans. That nesting is the structure the observer drills through.
 
 ```typescript
 const span = observer.startSpan("phase_transition", `execute-${phase}`, { taskId });
@@ -623,11 +624,29 @@ Every log entry carries `trace_id` for correlation with observation spans. This 
 
 ### Record Decisions Explicitly
 
-Non-obvious choices (retry vs. fail, plugin selection, safety verdicts) use `observer.recordDecision()` — not a log line. Decisions are first-class observations: context, options considered, chosen option, reasoning, confidence.
+Every non-obvious choice between alternatives is a first-class observation — not a log line, and not a bare branch. `observer.recordDecision(name, context, options, chosen, reasoning, confidence, opts?)` captures *what was decided and why it could have gone otherwise*: the alternatives considered, the one chosen, the reasoning, and a confidence. This is the single most important rule for an observer trying to understand *why the system did what it did* — phase routing, skip-or-run, a verify verdict, merge-failure routing by cause, event arbitration, an authorization call. When you write a branch on a meaningful condition, ask whether the observer would want to see that fork and the road not taken; usually they would.
+
+### Make Every Meaningful Event Visible
+
+The observer can only see what reaches the observation store, so every meaningful event emits — with the right type, at the right grain:
+
+- **Decisions** → `recordDecision` (`decision_point`): the alternatives and reasoning, as above.
+- **Agent runs** → an `agent_call` span. The single largest activity in a task. Capture the step, outcome, duration, and cost; put the full prompt and response in the blob store (below) so the observer can read exactly what the agent was asked and what it returned.
+- **External actions** (a shell gate, a git push, a PR create, a merge, a branch delete) → a `tool_execution` span. The concrete things the engine *did* to the outside world.
+- **Verdicts** → the type that names them (`safety_verdict` for a gate result). A pass/fail measurement is an observation, not merely a routing input that vanishes into prose.
+- **State changes** → `state_transition` plus the durable event/journal trail, carrying *why* the state changed (the reason, the trigger), not just the new value.
+
+Pick the type that names the thing (`src/schemas/observer.ts`); never overload `lifecycle` as a catch-all. The mechanics, threading, and test helpers live in the [Observability how-to](contribution-docs/how-tos/observability.md).
+
+### Stored Is Not Surfaced
+
+An observation no view ever queries is dead data — not done. Emitting a record and wiring the view that shows it are one unit of work, the same way a code change and its doc change are (see [Docs as System Blueprint](philosophy.md#docs-as-system-blueprint)). When you add an emission, confirm the dashboard reads it; when you add a view, confirm something emits what it reads.
+
+**Drill-down by default.** Large content — agent prompts and responses, a diff, a failing gate's output, a PR body — goes to the blob store and is referenced from the observation, never truncated away. The summary is for scanning; the blob is for the moment the observer needs the whole thing. Bounded summary on top, full detail one click beneath it.
 
 ### Structured Events Over Free Text
 
-"What happened" lives in typed `type` and `name` fields. "Why and how" lives in structured `input`/`output`/`metadata`. Free-text messages are for humans scanning logs — structured fields are for querying, dashboards, and automated analysis.
+"What happened" lives in typed `type` and `name` fields. "Why and how" lives in structured `input`/`output`/`metadata`. Free-text messages are for humans scanning logs — structured fields are for querying, dashboards, and automated analysis. A verdict flattened into a prose sentence cannot be filtered, charted, or drilled; the same verdict as `{ gate, passed }` can.
 
 ---
 

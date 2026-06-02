@@ -5,8 +5,12 @@ import { z } from "zod";
 import type { AgentAdapter } from "../../../adapters/agent.js";
 import { AdapterMethodError } from "../../../adapters/index.js";
 import { AdapterTypes, type AgentRunRequest, type AgentRunResult } from "../../../schemas/adapters.js";
+import { ObservationTypes } from "../../../schemas/observer.js";
 import { ActionClasses } from "../../../schemas/task.js";
+import { sanitizeSecrets } from "../../../utils/sanitize.js";
+import type { ObservationSpan } from "../../observer/index.js";
 import { emitAgentCost } from "../agent-cost.js";
+import { traceScope } from "./observability.js";
 import type { Ctx, FailureCause, SubPhaseResult } from "./types.js";
 
 // ── The Handoff File ─────────────────────────────────────────────────────────
@@ -68,27 +72,102 @@ async function runStep<TDetails>(options: AgentStepOptions<TDetails>, ctx: Ctx):
   const directory = options.directory(ctx);
   resetResultFile(directory);
 
-  const agentError = await runAgent(agent, options, ctx);
-  const parsed = readResult(directory);
+  // Build the prompt once (it reads the worktree) and reuse it for the run and the drill-down blob.
+  const systemPrompt = options.systemPrompt?.(ctx) ?? null;
+  const prompt = options.prompt(ctx);
+  const traceOutputPath = tracePath(ctx, options.stepName);
 
-  // The agent may have written a valid result before dying — prefer the work over the error.
-  if (parsed !== null && parsed !== "invalid") {
-    return mapResult(parsed, options.detailsSchema);
-  }
+  // The agent run is the single largest activity in a task. Make it a first-class span the observer can open:
+  // the step and the full prompt up front; on end, the outcome plus the result and full transcript, all drillable.
+  const span = ctx.observer.startSpan(
+    ObservationTypes.agent_call,
+    options.stepName,
+    { step: options.stepName, prompt_blob: captureBlob(ctx, "prompt", combinePrompt(systemPrompt, prompt)) },
+    traceScope(ctx),
+  );
 
-  // No usable result. An abort means preemption — re-throw so the caller checkpoints and resumes.
-  if (agentError) {
-    if (ctx.signal?.aborted) {
-      throw agentError;
+  try {
+    const agentError = await runAgent(agent, { prompt, systemPrompt, traceOutputPath }, options.stepName, ctx);
+    const parsed = readResult(directory);
+
+    // The agent may have written a valid result before dying — prefer the work over the error.
+    if (parsed !== null && parsed !== "invalid") {
+      return endAgentSpan(span, ctx, directory, traceOutputPath, mapResult(parsed, options.detailsSchema));
     }
-    return failed("agent_unavailable", describe(agentError));
-  }
 
-  const reason =
-    parsed === "invalid"
-      ? "session-result.json was not updated by the agent (still a template or malformed)"
-      : "session-result.json was not created by the agent";
-  return failed("no_result", reason);
+    // No usable result. An abort means preemption — re-throw so the caller checkpoints and resumes.
+    if (agentError) {
+      if (ctx.signal?.aborted) {
+        throw agentError;
+      }
+      return endAgentSpan(span, ctx, directory, traceOutputPath, failed("agent_unavailable", describe(agentError)));
+    }
+
+    const reason =
+      parsed === "invalid"
+        ? "session-result.json was not updated by the agent (still a template or malformed)"
+        : "session-result.json was not created by the agent";
+    return endAgentSpan(span, ctx, directory, traceOutputPath, failed("no_result", reason));
+  } catch (error) {
+    // The abort re-thrown above, or any unexpected throw — close the span errored before it propagates.
+    span.setError(error);
+    span.end({ outcome: ctx.signal?.aborted ? "aborted" : "error" });
+    throw error;
+  }
+}
+
+// ── Agent-call Observation ───────────────────────────────────────────────────
+
+/** Close the agent_call span with the outcome and the drill-down blobs (the agent's result and full transcript). */
+function endAgentSpan(
+  span: ObservationSpan,
+  ctx: Ctx,
+  directory: string,
+  traceOutputPath: string | null,
+  result: SubPhaseResult,
+): SubPhaseResult {
+  if (result.outcome === "failed") {
+    span.setError(new Error(result.summary));
+  }
+  span.end({
+    outcome: result.outcome,
+    summary: result.summary,
+    result_blob: captureFileBlob(ctx, "result", path.join(directory, RESULT_FILE)),
+    transcript_blob: captureFileBlob(ctx, "transcript", traceOutputPath),
+  });
+  return result;
+}
+
+/** Combine the system and user prompts into one payload for the drill-down blob. */
+function combinePrompt(systemPrompt: string | null, prompt: string): string {
+  return systemPrompt ? `=== SYSTEM ===\n${systemPrompt}\n\n=== USER ===\n${prompt}` : prompt;
+}
+
+/** Store content as a sanitized drill-down blob. Best-effort: a blob-store failure degrades to "" with a debug note. */
+function captureBlob(ctx: Ctx, kind: string, content: string): string {
+  try {
+    return ctx.observer.storeBlob(sanitizeSecrets(content));
+  } catch (error) {
+    ctx.observer.debug("Could not store agent observation blob", { taskId: ctx.task.id, kind, error: describe(error) });
+    return "";
+  }
+}
+
+/** Read a file and store its content as a drill-down blob, or "" when the file is absent or unreadable. */
+function captureFileBlob(ctx: Ctx, kind: string, file: string | null): string {
+  if (!(file && existsSync(file))) {
+    return "";
+  }
+  try {
+    return captureBlob(ctx, kind, readFileSync(file, "utf-8"));
+  } catch (error) {
+    ctx.observer.debug("Could not read file for agent observation blob", {
+      taskId: ctx.task.id,
+      kind,
+      error: describe(error),
+    });
+    return "";
+  }
 }
 
 // ── Result Mapping (pure) ────────────────────────────────────────────────────
@@ -122,24 +201,27 @@ function describe(error: unknown): string {
 
 // ── Agent Invocation ─────────────────────────────────────────────────────────
 
+/** The prebuilt request parts an agent run needs — built once in runStep so the prompt is not composed twice. */
+interface AgentRequestParts {
+  readonly prompt: string;
+  readonly systemPrompt: string | null;
+  readonly traceOutputPath: string | null;
+}
+
 /** Run the agent with retry/backoff. Returns the final error (caller decides recovery), or null on success. */
-async function runAgent<TDetails>(
-  agent: AgentAdapter,
-  options: AgentStepOptions<TDetails>,
-  ctx: Ctx,
-): Promise<unknown> {
+async function runAgent(agent: AgentAdapter, parts: AgentRequestParts, stepName: string, ctx: Ctx): Promise<unknown> {
   const request = {
-    prompt: options.prompt(ctx),
-    system_prompt: options.systemPrompt?.(ctx) ?? null,
+    prompt: parts.prompt,
+    system_prompt: parts.systemPrompt,
     cwd: ctx.worktreePath,
-    trace_output_path: tracePath(ctx, options.stepName),
+    trace_output_path: parts.traceOutputPath,
     ...(ctx.signal ? { signal: ctx.signal } : {}),
   };
 
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_AGENT_RETRIES; attempt += 1) {
     try {
-      await gatedRun(agent, request, options.stepName, ctx);
+      await gatedRun(agent, request, stepName, ctx);
       return null;
     } catch (error) {
       lastError = error;
@@ -150,7 +232,7 @@ async function runAgent<TDetails>(
       const delayMs = RETRY_BASE_MS * 2 ** attempt;
       ctx.observer.warn("Agent run failed — retrying", {
         taskId: ctx.task.id,
-        step: options.stepName,
+        step: stepName,
         attempt: attempt + 1,
         delayMs,
       });
@@ -268,7 +350,12 @@ function tracePath(ctx: Ctx, stepName: string): string | null {
   const directory = path.join(ctx.tracesDir, "sessions", ctx.task.id);
   try {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-  } catch {
+  } catch (error) {
+    ctx.observer.debug("Could not create the agent trace directory — transcript tracing is off for this step", {
+      taskId: ctx.task.id,
+      step: stepName,
+      error: describe(error),
+    });
     return null;
   }
   return path.join(directory, `${stepName}-${stamp()}.ndjson`);

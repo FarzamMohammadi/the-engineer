@@ -158,4 +158,22 @@ describe("agentStep", () => {
       expect(result).toMatchObject({ outcome: "failed", category: "details_invalid" });
     });
   });
+
+  describe("observability", () => {
+    it("emits an agent_call span carrying the prompt blob and ending with the outcome", async () => {
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "did it" });
+        return Promise.resolve(AGENT_RESULT);
+      });
+      const { ctx, observer } = createMockPipeline({ agent, worktreePath: dir });
+
+      await step()(ctx);
+
+      const span = observer.spans.find((s) => s.type === "agent_call");
+      expect(span?.name).toBe("implement");
+      expect(span?.input?.["prompt_blob"]).toBeTruthy();
+      expect(span?.output?.["outcome"]).toBe("ok");
+      expect(observer.blobs.some((blob) => blob.includes("do the work"))).toBe(true);
+    });
+  });
 });

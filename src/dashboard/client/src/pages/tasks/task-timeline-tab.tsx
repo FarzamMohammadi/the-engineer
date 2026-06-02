@@ -64,8 +64,14 @@ function TimelineEntry({ item }: { item: TimelineItem }): React.JSX.Element {
           <TimeAgo timestamp={item.timestamp} />
         </div>
         {"content" in item.data && <p className="mt-1 text-sm text-foreground/80">{String(item.data["content"])}</p>}
-        {"name" in item.data && item.kind === "action" && (
+        {"name" in item.data && item.kind === "observation" && (
           <p className="mt-1 text-sm text-foreground/80 font-mono">{String(item.data["name"])}</p>
+        )}
+        {item.kind === "observation" && (Boolean(item.data["input"]) || Boolean(item.data["output"])) && (
+          <div className="mt-1 space-y-1">
+            {item.data["input"] ? <JsonViewer data={item.data["input"]} label="input" /> : null}
+            {item.data["output"] ? <JsonViewer data={item.data["output"]} label="output" /> : null}
+          </div>
         )}
         {"payload" in item.data && (
           <div className="mt-1">
@@ -89,7 +95,7 @@ function kindMeta(kind: string): { icon: React.JSX.Element; color: string } {
         icon: <BookOpen size={14} />,
         color: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
       };
-    case "action":
+    case "observation":
       return {
         icon: <Activity size={14} />,
         color: "border-purple-500/40 bg-purple-500/10 text-purple-400",

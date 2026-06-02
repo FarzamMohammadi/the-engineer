@@ -92,6 +92,12 @@ export interface IObserver {
     opts?: SpanOptions,
   ): string;
 
+  // ── Drill-down blobs (→ content-addressable store) ──────────────────
+  /** Store large content (an agent prompt/response, a diff, a gate's output) and return a blob ref for drill-down. */
+  storeBlob(content: string): string;
+  /** Read blob content by ref, or null when the blob is missing or tracing is not yet available. */
+  readBlob(ref: string): string | null;
+
   // ── Child creation ──────────────────────────────────────────────────
   child(component: ComponentTag): IObserver;
 
@@ -196,6 +202,16 @@ export class Observer implements IObserver {
       `Error in ${context.operation}`,
     );
     return this.ctx.store?.recordError(error, context, recovery, opts) ?? "";
+  }
+
+  // ── Blobs ───────────────────────────────────────────────────────────
+
+  storeBlob(content: string): string {
+    return this.ctx.store?.storeBlob(content) ?? "";
+  }
+
+  readBlob(ref: string): string | null {
+    return this.ctx.store?.readBlob(ref) ?? null;
   }
 
   // ── Child ───────────────────────────────────────────────────────────
@@ -313,6 +329,14 @@ class TracedObserver implements IObserver {
       `Error in ${context.operation}`,
     );
     return this.ctx.store?.recordError(error, context, recovery, this.mergeTrace(opts)) ?? "";
+  }
+
+  storeBlob(content: string): string {
+    return this.ctx.store?.storeBlob(content) ?? "";
+  }
+
+  readBlob(ref: string): string | null {
+    return this.ctx.store?.readBlob(ref) ?? null;
   }
 
   child(component: ComponentTag): IObserver {

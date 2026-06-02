@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
 
+import { ObservationTypes } from "../../../../schemas/observer.js";
 import { WorkspaceNotReadyError } from "../../errors.js";
 import { type GateCommand, verificationCommands } from "../grounding.js";
+import { traceScope } from "../observability.js";
 import {
   BlockCategories,
   type Ctx,
@@ -59,8 +61,9 @@ async function runVerify(ctx: Ctx): Promise<SubPhaseResult> {
     throw new WorkspaceNotReadyError(ctx.task.id);
   }
 
-  const results = commands.map((gate) => runGate(gate, cwd, ctx.signal));
+  const results = commands.map((gate) => observeGate(ctx, gate, cwd));
   const failures = results.filter((result) => !result.passed);
+  emitVerifyVerdict(ctx, results, failures);
   if (failures.length === 0) {
     return {
       outcome: "ok",
@@ -69,6 +72,47 @@ async function runVerify(ctx: Ctx): Promise<SubPhaseResult> {
     };
   }
   return { outcome: "ok", summary: summarizeFailures(failures), data: { passed: false } };
+}
+
+/**
+ * Run one gate inside a tool_execution span, so the observer sees every gate the engine ran, its command,
+ * its duration, and its verdict. verify is the anti-faking gate — now it is fully visible, not a black box.
+ */
+function observeGate(ctx: Ctx, gate: GateCommand, cwd: string): GateResult {
+  const span = ctx.observer.startSpan(
+    ObservationTypes.tool_execution,
+    `gate:${gate.name}`,
+    { gate: gate.name, command: gate.command, args: gate.args },
+    traceScope(ctx),
+  );
+  try {
+    const result = runGate(gate, cwd, ctx.signal);
+    if (!result.passed) {
+      span.setError(new Error(`Gate "${gate.name}" did not pass`));
+    }
+    span.end({ passed: result.passed, output: result.output });
+    return result;
+  } catch (error) {
+    // A spawn failure (the tool will not start) or a dispatch abort — record it on the span, then propagate.
+    span.setError(error);
+    span.end({ passed: false });
+    throw error;
+  }
+}
+
+/** Record the gate verdict — which gates ran, and which passed or failed — as a queryable safety verdict. */
+function emitVerifyVerdict(ctx: Ctx, results: readonly GateResult[], failures: readonly GateResult[]): void {
+  ctx.observer.observe(
+    ObservationTypes.safety_verdict,
+    "verify_gates",
+    {
+      passed: failures.length === 0,
+      gate_count: results.length,
+      gates: results.map((result) => ({ name: result.name, passed: result.passed })),
+      failed_gates: failures.map((result) => result.name),
+    },
+    { ...traceScope(ctx), level: failures.length === 0 ? "info" : "warn" },
+  );
 }
 
 /** The outcome of one gate: whether it passed and, when it failed, the tail of its output. */

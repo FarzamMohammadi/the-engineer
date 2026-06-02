@@ -39,6 +39,8 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   // Sliding window of recent detect failures — when the host is failing, pause polling rather than
   // hammer it every tick. Self-pruning: entries older than the window are dropped on each check.
   const recentFailures: number[] = [];
+  // Whether polling is currently paused, so the pause warns once on entry and the resume logs once on recovery.
+  let pollingPaused = false;
 
   function shouldPausePolling(now: number): boolean {
     const windowStart = now - failureWindowMs;
@@ -53,22 +55,47 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     if (tasks.length === 0) {
       return;
     }
-
     const now = clock.now();
-    if (shouldPausePolling(now)) {
-      observer.warn("Pausing PR-event polling — too many recent detect failures", {
-        recentFailures: recentFailures.length,
-        windowMs: failureWindowMs,
-      });
+    if (isPausedThisTick(now)) {
       return;
     }
-
     const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
     if (!hosting) {
       return;
     }
+    const settled = await Promise.allSettled(tasks.map((task) => pollSingleTask(task, hosting, now)));
+    logPollRejections(settled, tasks);
+  }
 
-    await Promise.allSettled(tasks.map((task) => pollSingleTask(task, hosting, now)));
+  /** Whether to skip this tick because the host is failing — warns once on entry, logs once on recovery. */
+  function isPausedThisTick(now: number): boolean {
+    if (shouldPausePolling(now)) {
+      if (!pollingPaused) {
+        pollingPaused = true;
+        observer.warn("Pausing PR-event polling — too many recent detect failures", {
+          recentFailures: recentFailures.length,
+          windowMs: failureWindowMs,
+        });
+      }
+      return true;
+    }
+    if (pollingPaused) {
+      pollingPaused = false;
+      observer.info("Resumed PR-event polling — recent detect failures have cleared", { windowMs: failureWindowMs });
+    }
+    return false;
+  }
+
+  /** Surface any task whose poll rejected — isolated per task by allSettled, but never silently dropped. */
+  function logPollRejections(settled: PromiseSettledResult<void>[], tasks: readonly Task[]): void {
+    for (const [index, outcome] of settled.entries()) {
+      if (outcome.status === "rejected") {
+        observer.warn("PR-event poll for a task failed unexpectedly", {
+          taskId: tasks[index]?.id,
+          error: sanitizeErrorMessage(outcome.reason),
+        });
+      }
+    }
   }
 
   async function pollSingleTask(task: Task, hosting: GitHostingAdapter, now: number): Promise<void> {
@@ -86,8 +113,14 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
       return;
     }
 
-    const winner = arbitrate(await actionableEvents(task, hosting, events));
+    const candidates = await actionableEvents(task, hosting, events);
+    const winner = arbitrate(candidates);
     if (winner) {
+      // Only a genuine contest (more than one candidate) is a decision worth recording; a single
+      // candidate is no choice. When several competed, the loser field must not vanish silently.
+      if (candidates.length > 1) {
+        recordArbitration(task, candidates, winner);
+      }
       routeEvent(task, winner);
     }
   }
@@ -107,6 +140,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   ): Promise<PrEvent[]> {
     const deduped = dedupePrEvents(events, task.review?.accommodated_comment_ids ?? []);
     if (await shouldPromoteApproval(task, hosting, deduped)) {
+      recordApprovePromotion(task, deduped);
       return [{ type: PrEventTypes.pr_ready_to_merge }];
     }
     return deduped.filter(isActionableRework);
@@ -165,6 +199,52 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     );
   }
 
+  /** Record the arbitration decision when several actionable events competed in one poll — the winner and the field it beat. */
+  function recordArbitration(task: Task, candidates: readonly PrEvent[], winner: PrEvent): void {
+    const types = [...new Set(candidates.map((event) => event.type))];
+    observer.recordDecision(
+      "pr_event_arbitration",
+      `${String(candidates.length)} actionable PR events competed for PR #${String(task.review?.pr_number)}: ${types.join(", ")}`,
+      types.map((type) => ({ id: type, description: PR_EVENT_LABELS[type] })),
+      winner.type,
+      "Highest precedence wins — a merge is terminal, and reviewer feedback and the blockers (conflict, CI) are addressed before a ready-to-merge",
+      1,
+      { task_id: task.id },
+    );
+  }
+
+  /** Record the /approve promotion — a reviewer comment, authorized and confirmed mergeable, is being turned into a merge. */
+  function recordApprovePromotion(task: Task, events: readonly PrEvent[]): void {
+    const approver = approverOf(events);
+    observer.recordDecision(
+      "approve_comment_promotion",
+      `PR #${String(task.review?.pr_number)} carries an authorized /approve, and a live re-check confirms it is open, green, and mergeable`,
+      [
+        { id: "promote_to_merge", description: "Treat the /approve as approval and re-enter the task to merge now" },
+        { id: "keep_waiting", description: "Leave the task waiting for a formal host approval" },
+      ],
+      "promote_to_merge",
+      approver
+        ? `Authorized /approve by "${approver}" — the single-contributor approval path, gated by enable_comment_approval and confirmed mergeable`
+        : "Authorized /approve confirmed open, green, and mergeable",
+      1,
+      { task_id: task.id },
+    );
+  }
+
+  /** The first authorized /approve author among the events, for the promotion audit trail. */
+  function approverOf(events: readonly PrEvent[]): string | null {
+    for (const event of events) {
+      if (event.type === PrEventTypes.pr_comments && event.comments.length > 0) {
+        const found = findAuthorizedApproval(event.comments, peopleDirectory);
+        if (found) {
+          return found.author;
+        }
+      }
+    }
+    return null;
+  }
+
   function routeEvent(task: Task, winner: PrEvent): void {
     if (winner.type === PrEventTypes.pr_comments) {
       accommodateFeedback(task, winner.comments);
@@ -211,6 +291,15 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
 
   return { poll };
 }
+
+/** Short labels for the PR event types — the alternatives shown in the arbitration decision record. */
+const PR_EVENT_LABELS: Record<PrEvent["type"], string> = {
+  [PrEventTypes.pr_merged]: "PR merged — terminal",
+  [PrEventTypes.pr_comments]: "Reviewer feedback to address",
+  [PrEventTypes.pr_merge_conflict]: "Merge conflict to resolve",
+  [PrEventTypes.pr_ci_failure]: "CI failure to fix",
+  [PrEventTypes.pr_ready_to_merge]: "Approved, green, mergeable",
+};
 
 /** The ticket comment posted when a PR event re-queues a task, by event type. */
 function eventNotice(type: PrEvent["type"]): string {

@@ -185,9 +185,9 @@ export interface SseHeartbeat {
 
 // ── Timeline ─────────────────────────────────────────────────────────────────
 
-/** Unified timeline entry combining events, journal entries, and action traces. */
+/** Unified timeline entry combining state-change events, journal entries, and rich observations. */
 export interface TimelineItem {
-  kind: "event" | "journal" | "action";
+  kind: "event" | "journal" | "observation";
   timestamp: string;
   data: Record<string, unknown>;
 }

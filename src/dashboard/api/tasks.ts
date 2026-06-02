@@ -206,7 +206,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     return c.json({ task });
   });
 
-  /** Task timeline: state transitions + journal + action observations, chronological. */
+  /** Task timeline: state-change events + journal + rich observations (decisions, agent runs, verdicts, actions), chronological. */
   app.get("/:id/timeline", (c) => {
     const taskId = c.req.param("id");
 
@@ -227,16 +227,24 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       )
       .all(taskId) as Record<string, unknown>[];
 
-    // Action observations (tool_execution type)
-    const actionObs = deps.observationStore.query({
-      type: "tool_execution",
-      task_id: taskId,
-      limit: 1000,
-    });
+    // Rich observations — the decisions, agent runs, verdicts, actions, and state changes that tell the
+    // story, each carrying its input/output (and blob refs) for drill-down. Phase transitions are left to
+    // the Phases tab and the journal narrative, so the timeline stays the meaningful beats, not every step.
+    const narrativeTypes = new Set([
+      "task_execution",
+      "decision_point",
+      "agent_call",
+      "safety_verdict",
+      "tool_execution",
+      "state_transition",
+    ]);
+    const observations = deps.observationStore
+      .query({ task_id: taskId, limit: 2000 })
+      .filter((obs) => narrativeTypes.has(obs.type));
 
     // Merge into unified timeline
     type TimelineItem = {
-      kind: "event" | "journal" | "action";
+      kind: "event" | "journal" | "observation";
       timestamp: string;
       data: Record<string, unknown>;
     };
@@ -271,11 +279,11 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       });
     }
 
-    for (const a of actionObs) {
+    for (const obs of observations) {
       timeline.push({
-        kind: "action",
-        timestamp: a.start_time,
-        data: a as unknown as Record<string, unknown>,
+        kind: "observation",
+        timestamp: obs.start_time,
+        data: obs as unknown as Record<string, unknown>,
       });
     }
 

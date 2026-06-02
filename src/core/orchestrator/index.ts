@@ -11,6 +11,7 @@ import {
 } from "../../schemas/events.js";
 import type { PrEventType } from "../../schemas/git-hosting-event-types.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { type SessionEndReason, SessionEndReasons } from "../../schemas/session-memory.js";
 import {
   ActionClasses,
@@ -190,22 +191,36 @@ export class Orchestrator {
 
     this.notifyPickup(taskId, dispatch.task.title);
 
-    const ctx = this.buildContext(dispatch, tracedObserver, sessionId, traceId);
+    // Root span for the whole dispatch — the end-to-end "tracer bullet". Every phase, sub-phase, agent run,
+    // decision, and action nests under it (via Ctx.rootObservationId), so the observer can open one task and
+    // see its complete trace from intake to outcome, and so the trace can later be exported whole.
+    const rootSpan = tracedObserver.startSpan(
+      ObservationTypes.task_execution,
+      "execute_task",
+      { taskId, title: dispatch.task.title, isResume: !!dispatch.resume_from },
+      { task_id: taskId, trace_id: traceId, session_id: sessionId },
+    );
+
+    const ctx = this.buildContext(dispatch, tracedObserver, sessionId, traceId, rootSpan.id);
     const resume = this.resolveDispatchStart(dispatch, tracedObserver);
 
     let outcome: RunnerOutcome;
     try {
       outcome = await runPipeline(PIPELINE, ctx, resume);
     } catch (error) {
+      rootSpan.setError(error);
+      rootSpan.end({ outcome: dispatch.signal.aborted ? "aborted" : "crashed" });
       const reason = dispatch.signal.aborted ? SessionEndReasons.preempted : SessionEndReasons.crashed;
       this.endSession(sessionId, reason, taskId);
       throw error;
     }
 
     if (outcome.kind === "completed") {
+      rootSpan.end({ outcome: "completed" });
       this.endSession(sessionId, SessionEndReasons.completed, taskId);
       return { outcome: Outcomes.completed };
     }
+    rootSpan.end({ outcome: "blocked", category: outcome.detail.category, sub_phase: outcome.detail.sub_phase });
     return this.blockTask(ctx, sessionId, outcome.detail);
   }
 
@@ -217,6 +232,7 @@ export class Orchestrator {
     observer: OrchestratorContext["observer"],
     sessionId: string,
     traceId: string,
+    rootObservationId: string,
   ): Ctx {
     const taskId = dispatch.task.id;
     const worktreePath = this.ctx.workspaceManager.getWorktreePath(taskId);
@@ -229,6 +245,7 @@ export class Orchestrator {
       traceId,
       worktreePath,
       thoughtsDir: record?.thoughtsDir ?? null,
+      rootObservationId,
       ...(dispatch.signal ? { signal: dispatch.signal } : {}),
     };
   }

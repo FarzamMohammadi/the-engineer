@@ -48,7 +48,7 @@ function runPush(ctx: Ctx): SubPhaseResult {
     ctx.workspaceManager.pushBranch(ctx.task.id);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cannot push branch "${record.branch}": ${detail}`);
+    throw new Error(`Cannot push branch "${record.branch}": ${detail}`, { cause: error });
   }
   return { outcome: "ok", summary: `Pushed ${record.branch}` };
 }

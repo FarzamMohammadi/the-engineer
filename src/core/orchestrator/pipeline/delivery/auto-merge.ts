@@ -1,12 +1,14 @@
 import type { GitHostingAdapter } from "../../../../adapters/git-hosting.js";
-import { AdapterTypes, type MergeStrategy } from "../../../../schemas/adapters.js";
+import { AdapterTypes, type MergeStrategy, type PRStatus } from "../../../../schemas/adapters.js";
 import { EventTypes } from "../../../../schemas/events.js";
 import { NotificationKinds } from "../../../../schemas/notifications.js";
+import { ObservationTypes } from "../../../../schemas/observer.js";
 import type { ReviewState } from "../../../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../../../utils/sanitize.js";
 import type { PublishInput } from "../../../interfaces/event-bus.interface.js";
 import type { WorkspaceRecord } from "../../../interfaces/workspace-manager.interface.js";
 import { removeThoughtsAndPush } from "../../pr-manager.js";
+import { traceScope } from "../observability.js";
 import {
   BlockCategories,
   type Ctx,
@@ -99,74 +101,156 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
     throw new Error("Cannot merge the pull request: the task has no PR number or repo on record");
   }
 
-  // Re-derive readiness from the live PR — a pr_merged re-entry or a prior successful merge lands here already done.
+  // Re-derive readiness from the live PR — state can shift between the poller's signal and here. The
+  // disposition is the central decision of this terminal, irreversible step, so it is recorded with the
+  // live status that drove it and the alternatives it beat — the owner can always reconstruct why a PR did
+  // (or did not) merge.
   const status = await hosting.getPRStatus(repo, prNumber);
+  const readiness = decideReadiness(ctx, repo, status);
+  recordMergeReadiness(ctx, prNumber, status, readiness);
+
+  switch (readiness.disposition) {
+    case "merged": {
+      // External-merge backfill: record so the reaper can reap the branch, but no milestone — the user
+      // merged it themselves, and we do not notify someone of their own action.
+      ctx.observer.info("Pull request already merged — backfilling the merge record", {
+        taskId: ctx.task.id,
+        prNumber,
+      });
+      recordMerge(ctx, {
+        repo,
+        prNumber,
+        strategy: ctx.workspaceConfig.pr.default_merge_strategy,
+        mergeSha: "",
+        record,
+        review,
+        notifyMilestone: false,
+      });
+      return resolved("merged", `PR #${String(prNumber)} is already merged`);
+    }
+    case "auto_merge_disabled": {
+      notifyAutoMergeDisabled(ctx, prNumber);
+      return resolved(
+        "auto_merge_disabled",
+        `PR #${String(prNumber)} approved; auto-merge disabled — leaving the merge to a human`,
+      );
+    }
+    case "ci_failure": {
+      ctx.observer.info("PR CI is failing — reworking before it can merge", { taskId: ctx.task.id, prNumber });
+      return resolved("ci_failure", `PR #${String(prNumber)} CI is failing — reworking before it can merge`);
+    }
+    case "merge_conflict": {
+      ctx.observer.info("PR no longer merges cleanly — reworking before it can merge", {
+        taskId: ctx.task.id,
+        prNumber,
+      });
+      return resolved(
+        "merge_conflict",
+        `PR #${String(prNumber)} no longer merges cleanly — reworking before it can merge`,
+      );
+    }
+    case "retry_wait": {
+      ctx.observer.info("PR checks still running — returning to the review wait", {
+        taskId: ctx.task.id,
+        prNumber,
+        checks: status.checks_state,
+      });
+      return resolved(
+        "retry_wait",
+        `PR #${String(prNumber)} checks are still running (${status.checks_state}) — waiting to retry`,
+      );
+    }
+    default:
+      return performMerge(ctx, hosting, repo, prNumber, record, review);
+  }
+}
+
+/** What to do with the PR, derived purely from its live status and the repo's auto-merge policy. */
+interface MergeReadiness {
+  readonly disposition: MergeDisposition | "merge";
+  readonly reasoning: string;
+}
+
+/** Decide the disposition from the live PR status — the merge-readiness policy, in one pure place. */
+function decideReadiness(ctx: Ctx, repo: string, status: PRStatus): MergeReadiness {
   if (status.state === "merged") {
-    // External-merge backfill: record so the reaper can reap the branch, but no milestone — the user
-    // merged it themselves and we are not notifying someone of their own action (D10). The strategy is the
-    // configured default (the real one is unknown for an external merge) and there is no merge SHA to record.
-    ctx.observer.info("Pull request already merged — backfilling the merge record", {
-      taskId: ctx.task.id,
-      prNumber,
-    });
-    recordMerge(ctx, {
-      repo,
-      prNumber,
-      strategy: ctx.workspaceConfig.pr.default_merge_strategy,
-      mergeSha: "",
-      record,
-      review,
-      notifyMilestone: false,
-    });
-    return resolved("merged", `PR #${String(prNumber)} is already merged`);
+    // The merge record is backfilled by the caller (so the reaper can reap an externally-merged branch).
+    return { disposition: "merged", reasoning: "the PR is already merged" };
   }
-
   if (!ctx.safetyLayer.checkAutoMergeAllowed(repo)) {
-    ctx.observer.info("Auto-merge not enabled for repo — completing for a manual merge", {
-      taskId: ctx.task.id,
-      repo,
-      prNumber,
-    });
-    ctx.notifications.notify({
-      kind: NotificationKinds.ticket_comment,
-      taskId: ctx.task.id,
-      message: `PR #${String(prNumber)} is approved and ready. Auto-merge is disabled for this repo — merge it when you're ready.`,
-    });
-    return resolved(
-      "auto_merge_disabled",
-      `PR #${String(prNumber)} approved; auto-merge disabled — leaving the merge to a human`,
-    );
+    return { disposition: "auto_merge_disabled", reasoning: "auto-merge is disabled for this repo" };
   }
-
   if (status.checks_state === "failing") {
-    return resolved("ci_failure", `PR #${String(prNumber)} CI is failing — reworking before it can merge`);
+    return { disposition: "ci_failure", reasoning: "CI checks are failing" };
   }
   if (!status.mergeable) {
-    return resolved(
-      "merge_conflict",
-      `PR #${String(prNumber)} no longer merges cleanly — reworking before it can merge`,
-    );
+    return { disposition: "merge_conflict", reasoning: "the PR no longer merges cleanly into its base" };
   }
-  // "passing" and "none" (a repo with no CI configured — nothing to wait on) both proceed to merge.
-  // Only "pending" (checks still running) returns to the wait for the stateless poller to retry.
+  // "passing" and "none" (a repo with no CI — nothing to wait on) proceed; only "pending" returns to the wait.
   if (status.checks_state === "pending") {
-    ctx.observer.info("PR checks still running — returning to the review wait", {
-      taskId: ctx.task.id,
-      prNumber,
-      checks: status.checks_state,
-    });
-    return resolved(
-      "retry_wait",
-      `PR #${String(prNumber)} checks are still running (${status.checks_state}) — waiting to retry`,
-    );
+    return { disposition: "retry_wait", reasoning: "CI checks are still running" };
   }
+  return { disposition: "merge", reasoning: `checks ${status.checks_state} and mergeable — proceeding to merge` };
+}
 
+const MERGE_DISPOSITION_OPTIONS = [
+  { id: "merge", description: "Merge now — approved, checks green, mergeable" },
+  { id: "merged", description: "Already merged — complete the task" },
+  { id: "auto_merge_disabled", description: "Auto-merge disabled — leave the merge to a human" },
+  { id: "ci_failure", description: "CI failing — hand back to execution to fix it" },
+  { id: "merge_conflict", description: "No longer mergeable — hand back to execution to resolve it" },
+  { id: "retry_wait", description: "Checks still running — return to the review wait and retry" },
+] as const;
+
+/** Record the merge-readiness decision: the live PR status that drove it, the disposition chosen, and why. */
+function recordMergeReadiness(ctx: Ctx, prNumber: number, status: PRStatus, readiness: MergeReadiness): void {
+  ctx.observer.recordDecision(
+    "merge_readiness",
+    `PR #${String(prNumber)} is ${status.state}, checks ${status.checks_state}, mergeable=${String(status.mergeable)}`,
+    MERGE_DISPOSITION_OPTIONS,
+    readiness.disposition,
+    readiness.reasoning,
+    1,
+    traceScope(ctx),
+  );
+}
+
+/** Notify the owner that an approved PR is ready but auto-merge is off, so they can merge it themselves. */
+function notifyAutoMergeDisabled(ctx: Ctx, prNumber: number): void {
+  ctx.observer.info("Auto-merge not enabled for repo — completing for a manual merge", {
+    taskId: ctx.task.id,
+    prNumber,
+  });
+  ctx.notifications.notify({
+    kind: NotificationKinds.ticket_comment,
+    taskId: ctx.task.id,
+    message: `PR #${String(prNumber)} is approved and ready. Auto-merge is disabled for this repo — merge it when you're ready.`,
+  });
+}
+
+/** Perform the merge inside a tool_execution span, then record the audit on success or route the failure by cause. */
+async function performMerge(
+  ctx: Ctx,
+  hosting: GitHostingAdapter,
+  repo: string,
+  prNumber: number,
+  record: WorkspaceRecord | null,
+  review: ReviewState,
+): Promise<SubPhaseResult> {
   removeThoughtsBeforeMerge(ctx);
-
   const strategy = ctx.workspaceConfig.pr.default_merge_strategy;
   ctx.observer.info("Merging pull request", { taskId: ctx.task.id, repo, prNumber, strategy });
+
+  const span = ctx.observer.startSpan(
+    ObservationTypes.tool_execution,
+    "merge_pr",
+    { repo, prNumber, strategy },
+    traceScope(ctx),
+  );
   const result = await hosting.mergePR(repo, prNumber, strategy);
   if (!result.success) {
+    span.setError(new Error(result.error?.message ?? "merge did not complete"));
+    span.end({ success: false, code: result.error?.code ?? null });
     if (result.error?.code === "merge_conflict") {
       return resolved("merge_conflict", `Merge rejected as conflicting: ${result.error.message}`);
     }
@@ -178,6 +262,7 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
     });
     return resolved("retry_wait", `Merge did not complete (${result.error?.code ?? "unknown"}) — waiting to retry`);
   }
+  span.end({ success: true, merge_sha: result.merge_sha });
 
   recordMerge(ctx, { repo, prNumber, strategy, mergeSha: result.merge_sha, record, review, notifyMilestone: true });
   return resolved("merged", `Merged PR #${String(prNumber)}`);

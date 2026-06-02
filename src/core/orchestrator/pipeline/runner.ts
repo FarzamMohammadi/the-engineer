@@ -1,7 +1,9 @@
 import { ObservationTypes } from "../../../schemas/observer.js";
 import { CheckpointReasons, JournalEntryTypes } from "../../../schemas/session-memory.js";
+import { traceScope } from "./observability.js";
 import {
   BlockCategories,
+  type BlockCategory,
   type BlockDetail,
   type Carry,
   type Ctx,
@@ -117,11 +119,19 @@ export async function runPipeline(
     persistTaskPosition(ctx, phaseDef.phase, subPhase.name, phaseIteration, totalReworks);
     let result: SubPhaseResult;
     try {
-      result = await subPhase.run(carry ? { ...ctx, carry } : ctx);
+      result = await subPhase.run({ ...ctx, currentPhase: phaseDef.phase, ...(carry ? { carry } : {}) });
     } catch (error) {
       if (ctx.signal?.aborted) {
         throw error; // preemption / shutdown / cost-limit — the caller checkpoints and resumes
       }
+      // An unexpected throw (not an abort) is a real failure, not a decided block — record it with its
+      // stack so the dashboard's error view shows what crashed and where, then block loud and recoverable.
+      ctx.observer.recordError(
+        error,
+        { operation: `sub_phase:${subPhase.name}`, component: "orchestrator" },
+        undefined,
+        traceScope(ctx, phaseDef.phase),
+      );
       const detail = error instanceof Error ? error.message : String(error);
       return emitBlock(ctx, phaseDef.phase, {
         category: BlockCategories.orchestrator_error,
@@ -365,16 +375,13 @@ function persistTaskPosition(
 // ── Effects: observability ───────────────────────────────────────────────────
 // Every transition flows through here, so a sub-phase cannot forget to emit. Each event
 // lands in the journal (durable narrative) and the observation store (dashboard); routing
-// and skip choices are recorded as decisions with their alternatives.
-
-/** Span/journal scope shared by every emission for this dispatch. */
-function scope(ctx: Ctx, phase: Phase): { task_id: string; session_id: string; trace_id: string; phase: string } {
-  return { task_id: ctx.task.id, session_id: ctx.sessionId, trace_id: ctx.traceId, phase };
-}
+// and skip choices are recorded as decisions with their alternatives. The {task, session,
+// trace, phase} correlation scope is built by the shared `traceScope` (observability.ts), so
+// these runner emissions and every sub-phase's own observations stitch together on the dashboard.
 
 function emitPhaseEnter(ctx: Ctx, phase: Phase): void {
   ctx.observer.info("Phase entered", { taskId: ctx.task.id, phase });
-  ctx.observer.observe(ObservationTypes.phase_transition, "phase_entered", { phase }, scope(ctx, phase));
+  ctx.observer.observe(ObservationTypes.phase_transition, "phase_entered", { phase }, traceScope(ctx, phase));
   ctx.sessionMemory.journal.addEntry({
     sessionId: ctx.sessionId,
     taskId: ctx.task.id,
@@ -387,16 +394,24 @@ function emitPhaseEnter(ctx: Ctx, phase: Phase): void {
 
 function emitSubPhaseStart(ctx: Ctx, phase: Phase, subPhase: string): void {
   ctx.observer.debug("Sub-phase starting", { taskId: ctx.task.id, phase, subPhase });
-  ctx.observer.observe(ObservationTypes.phase_transition, "sub_phase_started", { phase, subPhase }, scope(ctx, phase));
+  ctx.observer.observe(
+    ObservationTypes.phase_transition,
+    "sub_phase_started",
+    { phase, subPhase },
+    traceScope(ctx, phase),
+  );
 }
 
 function emitSubPhaseResult(ctx: Ctx, phase: Phase, subPhase: string, result: SubPhaseResult): void {
+  // Carry the sub-phase's typed `data` (refine's verdict, verify's gate result, the merge disposition)
+  // into the observation so the dashboard sees the structured outcome, not only the prose summary.
+  const data = result.outcome === "ok" ? result.data : undefined;
   ctx.observer.info("Sub-phase result", { taskId: ctx.task.id, phase, subPhase, outcome: result.outcome });
   ctx.observer.observe(
     ObservationTypes.phase_transition,
     "sub_phase_result",
-    { phase, subPhase, outcome: result.outcome, summary: result.summary },
-    scope(ctx, phase),
+    { phase, subPhase, outcome: result.outcome, summary: result.summary, ...(data ? { data } : {}) },
+    traceScope(ctx, phase),
   );
 }
 
@@ -413,7 +428,7 @@ function emitSkip(ctx: Ctx, phase: Phase, subPhase: string, reason: string): voi
     "skip",
     reason,
     1,
-    scope(ctx, phase),
+    traceScope(ctx, phase),
   );
   ctx.sessionMemory.journal.addEntry({
     sessionId: ctx.sessionId,
@@ -441,7 +456,7 @@ function emitRouteDecision(ctx: Ctx, phase: Phase, subPhase: string, result: Rou
     route.go,
     result.summary,
     1,
-    scope(ctx, phase),
+    traceScope(ctx, phase),
   );
   ctx.sessionMemory.journal.addEntry({
     sessionId: ctx.sessionId,
@@ -456,7 +471,7 @@ function emitRouteDecision(ctx: Ctx, phase: Phase, subPhase: string, result: Rou
 
 function emitLoop(ctx: Ctx, phase: Phase, kind: "repeat" | "jump", count: number): void {
   ctx.observer.info("Pipeline loop", { taskId: ctx.task.id, phase, kind, count });
-  ctx.observer.observe(ObservationTypes.decision_point, `loop_${kind}`, { phase, count }, scope(ctx, phase));
+  ctx.observer.observe(ObservationTypes.decision_point, `loop_${kind}`, { phase, count }, traceScope(ctx, phase));
   ctx.sessionMemory.journal.addEntry({
     sessionId: ctx.sessionId,
     taskId: ctx.task.id,
@@ -467,9 +482,39 @@ function emitLoop(ctx: Ctx, phase: Phase, kind: "repeat" | "jump", count: number
   });
 }
 
+/**
+ * The severity a block deserves, from its cause. Expected waits (a person, a PR event) are lifecycle
+ * `info` — not a problem, just paused; an over-cap loop is a `warn` red flag worth a look; an actual
+ * failure (no result, invalid details, agent failed/unavailable, an orchestrator throw) is an `error`
+ * the owner must act on. Mirrors the schema's failure-vs-wait split and the §12 level rules, so a PR
+ * sitting in review never false-alarms and a real failure is never buried at warn.
+ */
+function blockLogLevel(category: BlockCategory): "info" | "warn" | "error" {
+  if (category === BlockCategories.awaiting_human || category === BlockCategories.awaiting_pr_review) {
+    return "info";
+  }
+  if (category === BlockCategories.iteration_cap_hit) {
+    return "warn";
+  }
+  return "error";
+}
+
 function emitBlock(ctx: Ctx, phase: Phase, detail: BlockDetail): RunnerOutcome {
-  ctx.observer.warn("Task blocked", { taskId: ctx.task.id, ...detail });
-  ctx.observer.observe(ObservationTypes.state_transition, "task_blocked", { ...detail }, scope(ctx, phase));
+  const level = blockLogLevel(detail.category);
+  const logData = { taskId: ctx.task.id, ...detail };
+  if (level === "info") {
+    ctx.observer.info("Task blocked", logData);
+  } else if (level === "warn") {
+    ctx.observer.warn("Task blocked", logData);
+  } else {
+    ctx.observer.error("Task blocked", logData);
+  }
+  ctx.observer.observe(
+    ObservationTypes.state_transition,
+    "task_blocked",
+    { ...detail },
+    { ...traceScope(ctx, phase), level },
+  );
   ctx.sessionMemory.journal.addEntry({
     sessionId: ctx.sessionId,
     taskId: ctx.task.id,
@@ -484,7 +529,7 @@ function emitBlock(ctx: Ctx, phase: Phase, detail: BlockDetail): RunnerOutcome {
 
 function emitCompleted(ctx: Ctx, phase: Phase): RunnerOutcome {
   ctx.observer.info("Pipeline completed", { taskId: ctx.task.id, phase });
-  ctx.observer.observe(ObservationTypes.lifecycle, "pipeline_completed", { phase }, scope(ctx, phase));
+  ctx.observer.observe(ObservationTypes.lifecycle, "pipeline_completed", { phase }, traceScope(ctx, phase));
   ctx.sessionMemory.journal.addEntry({
     sessionId: ctx.sessionId,
     taskId: ctx.task.id,

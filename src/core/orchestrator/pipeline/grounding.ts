@@ -52,8 +52,19 @@ export function readGrounding(ctx: Ctx): Grounding | null {
   try {
     const raw = JSON.parse(readFileSync(file, "utf-8")) as { details?: unknown };
     const parsed = GroundingSchema.safeParse(raw.details ?? {});
-    return parsed.success ? parsed.data : null;
-  } catch {
+    if (!parsed.success) {
+      ctx.observer.debug("Requirements grounding details did not parse — using safe defaults (no skip, no gates)", {
+        taskId: ctx.task.id,
+        error: parsed.error.message,
+      });
+      return null;
+    }
+    return parsed.data;
+  } catch (error) {
+    ctx.observer.debug("Requirements session-result is unreadable or not JSON — using safe grounding defaults", {
+      taskId: ctx.task.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

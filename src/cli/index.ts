@@ -8,6 +8,7 @@ import ms from "ms";
 import { loadEnvFile } from "../config/env.js";
 import type { ConfigBundle } from "../config/loader.js";
 import { loadConfigDir } from "../config/loader.js";
+import { runCancel } from "./commands/cancel.js";
 import { computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
 import { runRetry } from "./commands/retry.js";
@@ -216,6 +217,20 @@ program
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runRetry(home, taskId);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── cancel ──────────────────────────────────────────────────────────────────────
+
+program
+  .command("cancel <task-id>")
+  .description("Cancel an unfinished task (transitions to cancelled; stops a running agent)")
+  .action((taskId: string) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runCancel(home, taskId);
     if (code !== 0) {
       process.exitCode = code;
     }

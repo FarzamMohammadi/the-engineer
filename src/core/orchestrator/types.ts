@@ -44,6 +44,10 @@ export const TerminationReasonSchema = z.enum([
   "hard_cap_exceeded",
   "cost_limit_reached",
   "graceful_shutdown",
+  // The owner cancelled a running task (cross-process flip the daemon detects on its tick). Unlike the
+  // others this does NOT route to a recovery state — the DB is already `cancelled`; the handler observes
+  // the abort and the reaper does the cleanup.
+  "user_cancelled",
 ]);
 export type TerminationReason = z.infer<typeof TerminationReasonSchema>;
 

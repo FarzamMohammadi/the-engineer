@@ -276,6 +276,70 @@ describe("Daemon", () => {
     });
   });
 
+  // ── Cancel Detection ──────────────────────────────────────────────────
+
+  describe("cancel detection", () => {
+    it("aborts the in-flight dispatch of a task cancelled from another process", async () => {
+      handle = createTestDaemon();
+      const task = createMockTask({ id: "task-cancel", state: TaskStates.queued, sub_state: null });
+      handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
+
+      // The orchestrator runs until its dispatch signal aborts — that abort is the SIGTERM to the agent.
+      let aborted = false;
+      handle.orchestrator.executeTask.mockImplementation((dispatch: { signal: AbortSignal }) => {
+        return new Promise((resolve) => {
+          dispatch.signal.addEventListener("abort", () => {
+            aborted = true;
+            resolve({ outcome: "completed" });
+          });
+        });
+      });
+
+      await handle.daemon.tick(); // dispatch task-cancel (now in flight)
+      expect(handle.getState().activeTaskIds).toEqual(["task-cancel"]);
+
+      // Another process flips the DB to `cancelled`.
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-cancel", state: TaskStates.cancelled, sub_state: null }),
+      );
+
+      await handle.daemon.tick(); // cancel scan detects it → terminate → signal aborts
+      await new Promise((resolve) => setTimeout(resolve, 0)); // let the settle microtask run
+
+      expect(aborted).toBe(true); // the agent was SIGTERM'd
+      expect(handle.getState().activeTaskIds).toEqual([]); // the dispatch settled and was removed
+    });
+
+    it("re-detecting a still-settling cancel each tick is a safe no-op (idempotent terminate)", async () => {
+      handle = createTestDaemon();
+      const task = createMockTask({ id: "task-cancel", state: TaskStates.queued, sub_state: null });
+      handle.taskEngine.getQueuedByPriority.mockReturnValueOnce([task]);
+
+      // The agent ignores SIGTERM, so the dispatch never settles and is re-detected every tick.
+      let abortCount = 0;
+      handle.orchestrator.executeTask.mockImplementation((dispatch: { signal: AbortSignal }) => {
+        return new Promise(() => {
+          dispatch.signal.addEventListener("abort", () => {
+            abortCount++;
+          });
+        });
+      });
+
+      await handle.daemon.tick();
+      handle.taskEngine.getTask.mockReturnValue(
+        createMockTask({ id: "task-cancel", state: TaskStates.cancelled, sub_state: null }),
+      );
+
+      await handle.daemon.tick(); // detect + terminate
+      await handle.daemon.tick(); // re-detect — terminate is idempotent (keeps the first reason)
+      await handle.daemon.tick();
+
+      // The signal aborts at most once even though terminate is re-issued each tick — no runaway.
+      expect(abortCount).toBe(1);
+      expect(handle.getState().activeTaskIds).toEqual(["task-cancel"]); // still in flight (agent ignores SIGTERM)
+    });
+  });
+
   // ── Stuck Detection ───────────────────────────────────────────────────
 
   describe("stuck detection", () => {

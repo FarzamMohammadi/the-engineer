@@ -425,7 +425,7 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 ## Trigger Reversal / Stale-Work Detection
 
-**Current state (v1):** Dedup is active-scoped — a completed/failed task frees its `idempotency_key`, so a re-triggered source (a reopened issue) spawns a fresh task. This handles the *forward* case. There is no detection for the *inverse*: the signal that created a task is reversed (issue closed/resolved, or a "stop" action that does not exist yet) while the task is still in flight, so the work goes stale.
+**Current state (v1):** Dedup is active-scoped — a terminal task (completed, failed, or cancelled) frees its `idempotency_key`, so a re-triggered source (a reopened issue) spawns a fresh task. This handles the *forward* case. There is no detection for the *inverse*: the signal that created a task is reversed (issue closed/resolved, or a "stop" action that does not exist yet) while the task is still in flight, so the work goes stale.
 
 **Scenario:** A GitHub issue triggers a task; the task opens a PR and is waiting on review (blocked with reason `pr_review_pending`). Meanwhile the issue is closed, resolved by someone else, or relabeled out of scope. Nothing notices — the task keeps living, the PR sits open and stale, and effort may continue on work nobody wants anymore.
 

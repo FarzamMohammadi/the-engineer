@@ -1,6 +1,6 @@
 # CLI Reference
 
-The Engineer is operated through the `engineer` CLI — daily-use commands (`start`, `stop`, `status`, `logs`), diagnostics (`doctor`), and per-task debugging (`why`, `retry`).
+The Engineer is operated through the `engineer` CLI — daily-use commands (`start`, `stop`, `status`, `logs`), diagnostics (`doctor`), and per-task commands (`why`, `retry`, `cancel`).
 
 ## Installing the CLI
 
@@ -225,6 +225,20 @@ Use this when:
 - A task is `failed` because the [retry policy](configuration/daemon.md#retry-policy) exhausted its automatic budget, or because the [hard cap](configuration/daemon.md#stuck-detection) on total active time triggered. Address the root cause first, then retry.
 
 Source: [`src/cli/commands/retry.ts`](../src/cli/commands/retry.ts)
+
+### cancel
+
+Cancels an unfinished task — transitions it to the terminal `cancelled` state. A guarded, versioned write that joins the daemon's optimistic-concurrency check, so cancelling a running task serializes against a concurrent state change (exactly one wins). If the task is mid-flight, the daemon detects the cancellation on its next tick and stops the agent; the workspace reaper then closes any open pull request and deletes the abandoned branch. Direct database access — usable even when the daemon is stopped. Accepts a full task ID or a unique prefix.
+
+```bash
+engineer cancel <task-id>                # Cancel an unfinished task
+engineer cancel 01HXYZ12                 # Works with ID prefix
+engineer cancel <task-id> --json         # Machine-readable JSON output
+```
+
+Cancellable states are `requirements_gathering`, `queued`, `active`, and `blocked`. A task that has already finished (`completed`, `failed`, or `cancelled`) cannot be cancelled — a `failed` task is retryable instead (see [retry](#retry)). Cancel is for abandoning work; retry is for resuming it.
+
+Source: [`src/cli/commands/cancel.ts`](../src/cli/commands/cancel.ts)
 
 ## Configuration
 

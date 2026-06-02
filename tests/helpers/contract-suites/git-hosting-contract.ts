@@ -142,6 +142,12 @@ export function runGitHostingContractSuite(
         expect(parsed.success).toBe(true);
       });
 
+      it("closePR() resolves without throwing", async () => {
+        await adapter.initialize(fixtures.validConfig);
+        const pr = await adapter.createPR(fixtures.prOptions);
+        await expect(adapter.closePR(fixtures.prOptions.repo, pr.pr_number)).resolves.toBeUndefined();
+      });
+
       it("dismissApprovals() resolves without throwing", async () => {
         await adapter.initialize(fixtures.validConfig);
         const pr = await adapter.createPR(fixtures.prOptions);

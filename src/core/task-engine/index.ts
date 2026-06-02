@@ -36,6 +36,7 @@ export type {
 export { isValidTransition, subStateMatches } from "./state-machine.js";
 export { rowToTask } from "./row-mapper.js";
 export { checkPermission } from "./permissions.js";
+export { cancelTask } from "./cancel.js";
 
 // ── Event Declarations ──────────────────────────────────────────────────────
 

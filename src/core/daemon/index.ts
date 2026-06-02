@@ -492,6 +492,20 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
   // ── Tick Loop ─────────────────────────────────────────────────────────
 
+  /**
+   * Abort the in-flight dispatch of any task the owner cancelled from another process. The dashboard and
+   * `engineer cancel` flip the DB to `cancelled`; the daemon owns the running agent, so it must SIGTERM it
+   * here. terminate() is idempotent, so re-detecting each tick until the dispatch settles is a safe no-op —
+   * no runaway agent cost.
+   */
+  function abortCancelledDispatches(): void {
+    for (const taskId of dispatchTracker.getActiveTaskIds()) {
+      if (taskEngine.getTask(taskId)?.state === TaskStates.cancelled) {
+        dispatchTracker.terminate(taskId, "user_cancelled");
+      }
+    }
+  }
+
   async function tick(): Promise<void> {
     if (shuttingDown) {
       return;
@@ -515,6 +529,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     const queuedTasks = taskEngine.getQueuedByPriority();
     preemption.evaluate(now, queuedTasks);
     scheduler.scheduleNext(queuedTasks);
+
+    // Step 5: Detect cross-process cancels of in-flight tasks and abort their dispatches.
+    abortCancelledDispatches();
 
     // Step 6: Stuck detection + blocked escalation + review reminders
     healthMonitor.checkStuckTasks(now);

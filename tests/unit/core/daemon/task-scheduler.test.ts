@@ -559,6 +559,72 @@ describe("TaskScheduler", () => {
     );
   });
 
+  // 20e. handleTaskCompletion on terminated/user_cancelled observes + notifies, but does NOT re-transition
+  it("handleTaskCompletion on terminated/user_cancelled does not re-transition and comments on the ticket", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task);
+
+    // Clear the active.working transition from dispatch — the cancel path must add no further transition.
+    taskEngine.requestTransition.mockClear();
+
+    scheduler.handleTaskCompletion("t1", {
+      outcome: "terminated",
+      reason: "user_cancelled",
+      lastPhase: "execution",
+      checkpointId: null,
+    });
+
+    // The DB is already `cancelled` (the cross-process write set it); there is no cancelled→cancelled edge.
+    expect(taskEngine.requestTransition).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: NotificationKinds.ticket_comment,
+        taskId: "t1",
+        message: "Task cancelled by the owner.",
+      }),
+    );
+  });
+
+  // 20f. handleCompletedOutcome logs info (not warn) when a cancel races the completion (expected interleave)
+  it("handleTaskCompletion on completed logs info, not warn, when the task was cancelled mid-completion", () => {
+    const { ctx, taskEngine, workspaceManager } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+    const infoSpy = vi.spyOn(ctx.observer, "info");
+    const warnSpy = vi.spyOn(ctx.observer, "warn");
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks);
+    const task = makeMockTask({ id: "t1" });
+    scheduler.dispatchTask(task);
+
+    // The completed transition loses to a concurrent cancel; re-reading shows the task landed on `cancelled`.
+    taskEngine.requestTransition.mockReturnValue({
+      success: false,
+      reason: "Invalid transition from cancelled to completed",
+    });
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", state: TaskStates.cancelled }));
+    infoSpy.mockClear();
+    warnSpy.mockClear();
+
+    scheduler.handleTaskCompletion("t1", { outcome: "completed" });
+
+    // Completion side effects are skipped, and the expected interleave is info — never the scary warn.
+    expect(workspaceManager.cleanupWorkspace).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringContaining("cancelled as it completed"),
+      expect.objectContaining({ taskId: "t1" }),
+    );
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("Failed to transition task to completed"),
+      expect.anything(),
+    );
+  });
+
   // 21. Callbacks are invoked after orchestrator promise resolves
   it("callbacks.onTaskCompleted is called when orchestrator promise resolves", async () => {
     const { ctx, orchestrator } = makeContext();

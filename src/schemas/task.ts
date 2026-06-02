@@ -317,6 +317,17 @@ export const ValidTransitions = [
 
 export type ValidTransition = (typeof ValidTransitions)[number];
 
+/**
+ * States from which a task can be cancelled — every state with a `→cancelled` edge in
+ * {@link ValidTransitions}. The cross-process cancel writes (the dashboard API and `engineer cancel`) guard
+ * on this set so a raw write serializes against a concurrent daemon transition: the guard matches zero rows
+ * the moment the task has already left a cancellable state, and exactly one writer wins. Derived, never
+ * hand-listed — a new `→cancelled` edge widens the guard automatically.
+ */
+export const CANCELLABLE_STATES = [
+  ...new Set(ValidTransitions.filter((t) => t.to === TaskStates.cancelled).map((t) => t.from)),
+] as const;
+
 // ── Permission Table (const data) ──────────────────────────────────────────────
 
 export type PermissionEntry = {

@@ -21,7 +21,8 @@ import type { IObserver } from "../observer/index.js";
 export const EVENTS: EventDeclaration[] = [
   {
     type: EventTypes["git.branch_deleted"],
-    description: "Emitted when the reaper deletes a merged task's branch after its retention window elapses",
+    description:
+      "Emitted when the reaper deletes a task's branch — a merged task's once its retention window elapses, or a cancelled task's on reap",
     payloadSchema: GitBranchDeletedPayloadSchema,
     publishers: ["workspace-reaper"],
     subscribers: [],
@@ -40,7 +41,7 @@ const REAP_FAILURE_ALERT_THRESHOLD = 3;
 /** How a single task's reconciliation resolved. */
 type ReapOutcome =
   | "reaped" // fully reconciled — reaped_at stamped
-  | "deferred" // intentionally not reaped this sweep (merged but inside retention, or an arm not yet built) — no error
+  | "deferred" // intentionally not reaped this sweep (a merged branch still inside its retention window) — no error
   | "failed"; // a reap step threw — reaped_at left NULL, retried next sweep
 
 /** Summary of one reconciliation sweep — the owner-inspectable record (mirrors data-lifecycle's CleanupStats). */
@@ -52,7 +53,7 @@ export interface ReapStats {
   reaped: number;
   /** Not reaped — a dispatch is in flight (never reap a workspace out from under a running agent). */
   skippedInFlight: number;
-  /** Not reaped this sweep for a non-error reason (inside the retention window, or an arm not yet built). */
+  /** Not reaped this sweep for a non-error reason (a merged branch still inside its retention window). */
   deferred: number;
   /** Reap attempted and threw — reaped_at left NULL, retried next sweep. */
   failed: number;
@@ -91,8 +92,9 @@ export interface WorkspaceReaperDeps {
  * envelope: a re-entrancy guard, per-task isolation, all-or-nothing `reaped_at`, and a consecutive-failure
  * counter that escalates to an alert.
  *
- * Built inside `createDaemon` because it needs the dispatch-tracker. The cancelled-task arm (close the open
- * PR, then reap) lands in a later session; this builds the completed (merged + push-only) arms.
+ * Built inside `createDaemon` because it needs the dispatch-tracker. It reconciles every terminal arm:
+ * completed (merged branch deleted per retention, push-only branch kept) and cancelled (close an open PR,
+ * then reap the abandoned branch).
  */
 export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReaper {
   const { config, branchRetentionDays, taskEngine, workspaceManager, registry, dispatchTracker } = deps;
@@ -177,13 +179,9 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
 
   // ── Per-Task Reconciliation ────────────────────────────────────────────────
 
-  // biome-ignore lint/suspicious/useAwait: the async boundary is the contract — the cancelled arm added in a later session awaits hosting.closePR. Synchronous today.
   async function reapTask(task: Task): Promise<ReapOutcome> {
     if (task.state === TaskStates.cancelled) {
-      // The cancelled arm (comment + close the open PR, then reap) lands in a later session. No cancelled
-      // tasks exist until cancel is user-reachable, so this seam is dormant; leave a stray one for later.
-      observer.debug("Cancelled-task reaping is built in a later session — deferring", { taskId: task.id });
-      return "deferred";
+      return await reapCancelledTask(task);
     }
 
     // Completed task. Push-only when no merge was recorded: the pushed branch IS the deliverable, so keep it.
@@ -268,6 +266,72 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
       });
       return "failed";
     }
+  }
+
+  /**
+   * A cancelled task: abandon the work. If an open PR exists, comment on it and close it (no orphaned PR left
+   * pointing at a deleted branch); then reap the worktree + local branch and the remote — all-or-nothing, so
+   * `reaped_at` is stamped only after every applicable step succeeds (a partial failure retries next sweep).
+   * Cancel always reaps the branch (abandoned work), unlike a merged branch's retention or a push-only deliverable.
+   */
+  async function reapCancelledTask(task: Task): Promise<ReapOutcome> {
+    const record = workspaceManager.getWorkspaceRecord(task.id);
+    if (!record) {
+      // Cancelled before a workspace ever existed (e.g. while still queued) — nothing to reap.
+      markReaped(task.id);
+      observer.debug("Cancelled task has no workspace — nothing to reap, marked reaped", { taskId: task.id });
+      return "reaped";
+    }
+
+    try {
+      const hosting = registry.getPrimaryPlugin<GitHostingAdapter>(AdapterTypes.git_hosting);
+      const prNumber = task.review?.pr_number ?? null;
+      if (hosting && prNumber !== null) {
+        await closeOpenPr(hosting, record.repo, prNumber, task.id);
+      }
+
+      // Local first (cheap, reliable, idempotent), then the remote (network, fallible).
+      workspaceManager.cleanupWorkspace(task.id, false);
+      if (hosting) {
+        workspaceManager.deleteRemoteBranch(task.id);
+        emitBranchDeleted(task.id, record);
+      } else {
+        // Graceful degradation (§15): no plugin to reach the remote — reaped locally, log the reduced capability.
+        observer.warn("Git hosting plugin absent — deleted the local branch only; the remote branch remains", {
+          taskId: task.id,
+          branch: record.branch,
+        });
+      }
+
+      markReaped(task.id);
+      observer.info("Reaped cancelled task", { taskId: task.id, branch: record.branch });
+      return "reaped";
+    } catch (error) {
+      // Per-task isolation: one task's failure is non-fatal to the sweep, and reaped_at stays NULL so it retries.
+      observer.warn("Cancelled-task reap failed — leaving unreaped to retry next sweep", {
+        taskId: task.id,
+        branch: record.branch,
+        error: sanitizeErrorMessage(error),
+      });
+      return "failed";
+    }
+  }
+
+  /** Comment on and close a cancelled task's PR if it is still open — skip an already-closed/merged PR (idempotent). */
+  async function closeOpenPr(
+    hosting: GitHostingAdapter,
+    repo: string,
+    prNumber: number,
+    taskId: string,
+  ): Promise<void> {
+    const status = await hosting.getPRStatus(repo, prNumber);
+    if (status.state !== "open") {
+      observer.debug("Cancelled task's PR is not open — skipping the close", { taskId, prNumber, state: status.state });
+      return;
+    }
+    await hosting.commentOnPR(repo, prNumber, "This task was cancelled by the owner; closing the pull request.");
+    await hosting.closePR(repo, prNumber);
+    observer.info("Closed the PR of a cancelled task", { taskId, prNumber });
   }
 
   /** Stamp the all-or-nothing reconciliation marker using the injected clock (testable retention math). */

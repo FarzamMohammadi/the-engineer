@@ -187,10 +187,21 @@ export function createTaskScheduler(
   function handleCompletedOutcome(taskId: string): void {
     const transition = taskEngine.requestTransition(taskId, TaskStates.completed, null, "pipeline_completed", "daemon");
     if (!transition.success) {
-      observer.warn("Failed to transition task to completed — skipping cleanup and notifications", {
-        taskId,
-        reason: transition.reason,
-      });
+      // A cross-process cancel can land exactly as a dispatch finishes: the cancel write flips the DB to
+      // `cancelled` and bumps `version`, so this completed transition loses — by invalid edge
+      // (cancelled → completed) or version conflict, both leaving the task `cancelled`. That interleave is
+      // expected, not an anomaly, so log it at info and let the reaper reclaim the cancelled task. Any other
+      // failed transition here is genuinely unexpected → warn.
+      if (taskEngine.getTask(taskId)?.state === TaskStates.cancelled) {
+        observer.info("Task was cancelled as it completed — completion skipped, the reaper will reclaim it", {
+          taskId,
+        });
+      } else {
+        observer.warn("Failed to transition task to completed — skipping cleanup and notifications", {
+          taskId,
+          reason: transition.reason,
+        });
+      }
       return;
     }
     // Trigger evaluation before cleanup — worktree must still exist for snapshot
@@ -233,17 +244,38 @@ export function createTaskScheduler(
   }
 
   /**
-   * Single routing surface for `Outcomes.terminated`. Each reason maps to one
-   * recovery state — preemption returns to the queue, hard-cap fails the task,
-   * cost-limit blocks for owner unblock, shutdown re-queues for the next start.
+   * The owner cancelled a running task. The cross-process write already set the DB to `cancelled` and the tick
+   * scan SIGTERM'd the agent, so there is NO `cancelled → cancelled` transition to make (a transition call
+   * would fail-loud and warn spuriously). Observe the abort and let the reaper reclaim the workspace + branch.
+   * The ticket comment closes the loop on the source issue for this active cancel; the reaper comments on an
+   * open PR, and broader cancel-notification coverage is Slice 10's remit.
    */
-  function handleTerminatedOutcome(taskId: string, reason: TerminationReason, lastPhase: unknown): void {
+  function handleUserCancelledTermination(taskId: string, lastPhase: unknown): void {
+    observer.info("Task cancelled by owner — dispatch aborted, cleanup deferred to the reaper", { taskId, lastPhase });
+    notifications.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId,
+      message: "Task cancelled by the owner.",
+    });
+  }
+
+  /**
+   * Routing surface for the `Outcomes.terminated` reasons that map to a recovery state — preemption returns to
+   * the queue, hard-cap fails the task, cost-limit blocks for owner unblock, shutdown re-queues for the next
+   * start. `user_cancelled` is handled by {@link handleUserCancelledTermination} instead (already terminal —
+   * no recovery state); the parameter type excludes it so that separation is compiler-enforced.
+   */
+  function handleTerminatedOutcome(
+    taskId: string,
+    reason: Exclude<TerminationReason, "user_cancelled">,
+    lastPhase: unknown,
+  ): void {
     const routingOptions = [
       { id: "queued", description: "Return to queue for the next scheduling tick" },
       { id: "failed", description: "Mark task failed — owner must retry manually" },
       { id: "blocked", description: "Block for owner unblock action" },
     ];
-    const routeForReason: Record<TerminationReason, string> = {
+    const routeForReason: Record<Exclude<TerminationReason, "user_cancelled">, string> = {
       cooperative_preemption: "queued",
       preemption_timeout: "queued",
       graceful_shutdown: "queued",
@@ -386,7 +418,12 @@ export function createTaskScheduler(
     if (result.outcome === Outcomes.completed) {
       handleCompletedOutcome(taskId);
     } else if (result.outcome === Outcomes.terminated) {
-      handleTerminatedOutcome(taskId, result.reason, result.lastPhase);
+      // user_cancelled is already terminal (no recovery state), so it skips the routing surface.
+      if (result.reason === "user_cancelled") {
+        handleUserCancelledTermination(taskId, result.lastPhase);
+      } else {
+        handleTerminatedOutcome(taskId, result.reason, result.lastPhase);
+      }
     } else if (result.outcome === Outcomes.blocked) {
       // Task already transitioned to blocked by the orchestrator; route on the block reason.
       const blockedTask = taskEngine.getTask(taskId);

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { WorkspaceRecord } from "../../../../src/core/interfaces/workspace-manager.interface.js";
 import { type WorkspaceReaperDeps, createWorkspaceReaper } from "../../../../src/core/workspace-reaper/index.js";
 import { type ReviewState, type Task, TaskStates } from "../../../../src/schemas/task.js";
 import { FakeClock } from "../../../helpers/fake-clock.js";
@@ -41,7 +42,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
   const isInFlight = vi.fn(() => false);
   const publish = vi.fn();
   const notify = vi.fn();
-  const record = {
+  const record: WorkspaceRecord = {
     taskId: "t1",
     repo: "acme/app",
     branch: "feat/x",
@@ -49,7 +50,14 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     baseBranch: "main",
     thoughtsDir: null,
   };
-  const getPrimaryPlugin = vi.fn(() => (opts.hostingPresent === false ? null : {}));
+  const getWorkspaceRecord = vi.fn((): WorkspaceRecord | null => record);
+  // The cancelled arm reaches the hosting plugin (status → comment → close); the merged arm only checks that
+  // a plugin exists. One mock serves both — present unless the test opts out via `hostingPresent: false`.
+  const getPRStatus = vi.fn(() => Promise.resolve({ state: "open" }));
+  const commentOnPR = vi.fn(() => Promise.resolve({ comment_id: "c1", url: "https://h/pr#c1" }));
+  const closePR = vi.fn(() => Promise.resolve());
+  const hosting = { getPRStatus, commentOnPR, closePR };
+  const getPrimaryPlugin = vi.fn(() => (opts.hostingPresent === false ? null : hosting));
 
   const reaper = createWorkspaceReaper({
     config: { enabled: opts.enabled ?? true, interval_ms: 3_600_000 },
@@ -60,7 +68,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
       updateTaskField,
     } as unknown as WorkspaceReaperDeps["taskEngine"],
     workspaceManager: {
-      getWorkspaceRecord: () => record,
+      getWorkspaceRecord,
       cleanupWorkspace,
       deleteRemoteBranch,
     } as unknown as WorkspaceReaperDeps["workspaceManager"],
@@ -79,10 +87,29 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     updateTaskField,
     cleanupWorkspace,
     deleteRemoteBranch,
+    getWorkspaceRecord,
     isInFlight,
     publish,
     notify,
+    getPRStatus,
+    commentOnPR,
+    closePR,
   };
+}
+
+/** A cancelled task, optionally with an open PR (its review.pr_number drives the close-PR arm). */
+function cancelledTask(prNumber: number | null = null): Task {
+  const review: ReviewState | null =
+    prNumber === null
+      ? null
+      : {
+          pr_number: prNumber,
+          merged_at: null,
+          feedback_rounds: [],
+          accommodated_comment_ids: [],
+          accommodated_review_state: null,
+        };
+  return makeTask({ state: TaskStates.cancelled, review });
 }
 
 afterEach(() => {
@@ -241,16 +268,87 @@ describe("workspace reaper — failure envelope", () => {
   });
 });
 
-describe("workspace reaper — cancelled arm (later session)", () => {
-  it("defers a cancelled task without reaping it (its arm lands in a later session)", async () => {
-    const h = makeReaper({ branchRetentionDays: 0, tasks: [makeTask({ state: TaskStates.cancelled })] });
+describe("workspace reaper — cancelled arm", () => {
+  it("closes an open PR (comment then close), then reaps the worktree + branch", async () => {
+    const h = makeReaper({ tasks: [cancelledTask(7)] });
+
+    await h.reaper.runOnce();
+
+    expect(h.getPRStatus).toHaveBeenCalledWith("acme/app", 7);
+    expect(h.commentOnPR).toHaveBeenCalledWith("acme/app", 7, expect.stringContaining("cancelled"));
+    expect(h.closePR).toHaveBeenCalledWith("acme/app", 7);
+    expect(h.cleanupWorkspace).toHaveBeenCalledWith("t1", false);
+    expect(h.deleteRemoteBranch).toHaveBeenCalledWith("t1");
+    expect(h.publish).toHaveBeenCalledWith(expect.objectContaining({ type: "git.branch_deleted" }));
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+    expect(h.reaper.getLastRun()?.reaped).toBe(1);
+  });
+
+  it("reaps a cancelled task that never opened a PR — no PR calls", async () => {
+    const h = makeReaper({ tasks: [cancelledTask(null)] });
+
+    await h.reaper.runOnce();
+
+    expect(h.getPRStatus).not.toHaveBeenCalled();
+    expect(h.closePR).not.toHaveBeenCalled();
+    expect(h.cleanupWorkspace).toHaveBeenCalledWith("t1", false);
+    expect(h.deleteRemoteBranch).toHaveBeenCalledWith("t1");
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+  });
+
+  it("skips the comment + close when the PR is no longer open, but still reaps", async () => {
+    const h = makeReaper({ tasks: [cancelledTask(7)] });
+    h.getPRStatus.mockResolvedValue({ state: "merged" });
+
+    await h.reaper.runOnce();
+
+    expect(h.commentOnPR).not.toHaveBeenCalled();
+    expect(h.closePR).not.toHaveBeenCalled();
+    expect(h.deleteRemoteBranch).toHaveBeenCalledWith("t1");
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+  });
+
+  it("reaps locally and skips the PR + remote when the hosting plugin is absent", async () => {
+    const h = makeReaper({ hostingPresent: false, tasks: [cancelledTask(7)] });
+
+    await h.reaper.runOnce();
+
+    expect(h.getPRStatus).not.toHaveBeenCalled();
+    expect(h.cleanupWorkspace).toHaveBeenCalledWith("t1", false);
+    expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
+    expect(h.publish).not.toHaveBeenCalled(); // no git.branch_deleted — the remote was not touched
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+    expect(h.reaper.getLastRun()?.reaped).toBe(1);
+  });
+
+  it("marks a cancelled task reaped with nothing to clean when it has no workspace", async () => {
+    const h = makeReaper({ tasks: [cancelledTask(null)] });
+    h.getWorkspaceRecord.mockReturnValue(null);
 
     await h.reaper.runOnce();
 
     expect(h.cleanupWorkspace).not.toHaveBeenCalled();
     expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
-    expect(h.updateTaskField).not.toHaveBeenCalled();
-    expect(h.reaper.getLastRun()?.deferred).toBe(1);
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+    expect(h.reaper.getLastRun()?.reaped).toBe(1);
+  });
+
+  it("leaves a cancelled task unreaped when a reap step throws, then completes next sweep (all-or-nothing)", async () => {
+    const h = makeReaper({ tasks: [cancelledTask(7)] });
+    // Sweep 1: PR closes and the worktree is cleaned, but the remote delete throws (network down).
+    h.deleteRemoteBranch.mockImplementationOnce(() => {
+      throw new Error("network down");
+    });
+
+    await h.reaper.runOnce();
+    expect(h.closePR).toHaveBeenCalledWith("acme/app", 7);
+    expect(h.updateTaskField).not.toHaveBeenCalled(); // all-or-nothing: not marked reaped
+    expect(h.reaper.getLastRun()?.failed).toBe(1);
+
+    // Sweep 2: the remote delete now succeeds, so the reap completes.
+    await h.reaper.runOnce();
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+    expect(h.reaper.getLastRun()?.reaped).toBe(1);
   });
 });
 

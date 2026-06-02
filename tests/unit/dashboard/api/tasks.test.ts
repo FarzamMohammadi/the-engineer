@@ -56,7 +56,7 @@ describe("taskRoutes — POST /:id/cancel", () => {
     handle.close();
   });
 
-  it("cancels a cancellable task: transitions it to failed and writes a state_transitions row", async () => {
+  it("cancels a cancellable task: transitions it to cancelled, bumps version, writes a transition row", async () => {
     insertTask(handle.db, "task-1", { state: TaskStates.active, sub_state: SubStates.working });
 
     const res = await app.request("/task-1/cancel", { method: "POST" });
@@ -64,14 +64,19 @@ describe("taskRoutes — POST /:id/cancel", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
 
-    const task = handle.db.prepare("SELECT state, sub_state, completed_at FROM tasks WHERE id = ?").get("task-1") as {
+    const task = handle.db
+      .prepare("SELECT state, sub_state, completed_at, version FROM tasks WHERE id = ?")
+      .get("task-1") as {
       state: string;
       sub_state: string | null;
       completed_at: string | null;
+      version: number;
     };
-    expect(task.state).toBe(TaskStates.failed);
+    expect(task.state).toBe(TaskStates.cancelled);
     expect(task.sub_state).toBeNull();
     expect(task.completed_at).not.toBeNull();
+    // The cancel bumps `version` so it joins the daemon's optimistic-concurrency CAS — exactly one writer wins.
+    expect(task.version).toBe(2);
 
     // A state_transitions row is written with the real schema columns (from_sub/to_sub, not *_sub_state).
     const transition = handle.db
@@ -89,7 +94,7 @@ describe("taskRoutes — POST /:id/cancel", () => {
     };
     expect(transition.from_state).toBe(TaskStates.active);
     expect(transition.from_sub).toBe(SubStates.working);
-    expect(transition.to_state).toBe(TaskStates.failed);
+    expect(transition.to_state).toBe(TaskStates.cancelled);
     expect(transition.to_sub).toBeNull();
     expect(transition.triggered_by).toBe("dashboard");
     expect(transition.reason).toBe("Cancelled via dashboard");

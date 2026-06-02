@@ -189,7 +189,7 @@ interface SpanOptions {
 
 ## The End-to-End Trace
 
-Every task dispatch is one trace. The orchestrator opens a root `task_execution` span at the start of `executeTask`; its id is threaded into the pipeline context, and every observation the pipeline emits carries the dispatch's `trace_id` and points its `parent_observation_id` at that root. The result is a single nested tree per task — from intake to outcome — that the dashboard renders and that an external tracing tool could consume whole (see [Future Considerations → External Trace Export](../../future-considerations.md)).
+Every task dispatch is one trace. The orchestrator opens a root `task_execution` span at the start of `executeTask`; its id is threaded into the pipeline context, and every observation the pipeline emits carries the dispatch's `trace_id` and points its `parent_observation_id` at that root. The result is a single nested tree per task — from intake to outcome — that the dashboard renders and that an external tracing tool can consume whole (see [External Trace Export](#external-trace-export-otlp) below).
 
 **What the pipeline emits, by construction:**
 
@@ -205,6 +205,44 @@ The shared `traceScope(ctx)` helper builds the `{task_id, session_id, trace_id, 
 ## Drill-Down Blobs
 
 Large content — agent prompts and responses, a failing gate's output, a diff — is stored via `observer.storeBlob(content)`, which returns a content-addressable ref, and referenced from the observation's `input`/`output`. The dashboard fetches it by ref through its blob route, so the summary stays small and the full detail is one click away. `storeBlob` no-ops (returns `""`) before the observation store is attached, exactly like the tracing methods, and the pipeline sanitizes content before storing it.
+
+---
+
+## External Trace Export (OTLP)
+
+**File:** `src/core/observer/trace-export.ts` · **Mapper:** `src/core/observer/otlp/`
+
+The same nested trace the dashboard renders can be projected into any OTLP/HTTP backend — Jaeger v2, the OTel Collector, Tempo, Honeycomb — for a real flame-graph view. This is **opt-in, additive, and best-effort**: off by default, it changes nothing about how the pipeline emits, and a down or slow backend can never affect a task or daemon startup.
+
+**It is a projection, not new instrumentation.** SQLite stays the system of record; the backend is a disposable lens. The exporter is a side-channel **reader** of the `observations` table, never on the pipeline write path.
+
+```
+observations table (SQLite)  ──poll by rowid──▶  OTLP mapper  ──POST──▶  <endpoint>/v1/traces
+   (system of record)          (own timer)        (otlp/)                 (Jaeger / any OTLP backend)
+```
+
+**Poll-based, not subscribe.** There is no in-memory observation stream — the dashboard SSE route polls SQLite by rowid, and the exporter reuses that exact mechanism on its own timer. Because it runs off the write path, a hung or slow backend stalls only the exporter's loop, never `notify`/`startSpan`/`end`.
+
+**Exactly-once, when complete.** A span row is inserted open (`end_time` NULL) and updated on close at the *same* rowid, so a naive `rowid > cursor` poll would see the open insert but miss the close. The exporter therefore exports only **complete** observations (an instant, or a span whose `end_time` is set), tracks open spans in an in-memory `pending` set, and re-queries them for completion each cycle — every observation is exported once, with its real duration, with no reliance on backend dedup.
+
+**Rehydration.** On start the cursor reaches back a bounded recent window so a freshly-started backend replays recent history; the live tail then continues from the same cursor.
+
+**One endpoint, no fan-out.** A single configurable OTLP/HTTP target (`daemon.telemetry.endpoint`). OTLP *is* the swap boundary — point that one URL at any compatible backend. There is no adapter and no multi-endpoint list.
+
+**The mapping** (pure, in `otlp/`, shared with the dashboard's deep-link so ids match byte-for-byte):
+
+- trace id = the dispatch `trace_id` ULID decoded to its 16 bytes, hex (32 chars).
+- span id = the low 64 bits of the observation ULID, hex (16 chars).
+- start/duration → unix-nanos as strings; an instant is a zero-duration span.
+- `input`/`output` → typed OTLP attributes; the always-null `metadata` is dropped.
+- a blob ref → an attribute carrying the dashboard blob URL, never the inlined content (OTLP size limits).
+- `status` ok/error → OTLP span status; a decision or verdict carries its fields as attributes.
+
+**Sanitize at the export boundary.** A remote endpoint ships data off-machine, so every stringified attribute value is sanitized where the span is built (`otlp/`), independent of whatever the facade stored. A planted secret is scrubbed before it can ride into an attribute.
+
+**Bringing a backend.** The Engineer does not download, install, or supervise the backend — you bring it (`brew install jaeger && jaeger`, the [official download](https://www.jaegertracing.io/download/), `docker run`, or any OTLP endpoint). When telemetry is on but nothing answers, `engineer start` still starts and prints an OS-aware install pointer (`src/cli/commands/start/telemetry.ts`); `engineer doctor` reports a telemetry category that probes reachability with a short localhost timeout. When the backend answers, both the start output and the dashboard task page link out to the flame graph.
+
+See [Telemetry configuration](../../configuration/daemon.md#telemetry) for the two config keys.
 
 ---
 
@@ -434,6 +472,9 @@ handle.cleanup(); // Closes DB + removes temp dir
 | `src/db/migrations/003_observer.sql` | Database schema (table + 8 indexes) |
 | `src/core/observer/logging.ts` | `ComponentTag` type, `createLogger`, `createSilentLogger` |
 | `src/core/observer/blob-store.ts` | Content-addressable blob storage (SHA-256) |
+| `src/core/observer/trace-export.ts` | Poll-based OTLP exporter (`startTraceExport` factory + `stop()` handle) |
+| `src/core/observer/otlp/` | Pure OTLP/JSON mapper (`deriveTraceId`/`deriveSpanId`, span + resource builders, attribute sanitization) |
+| `src/cli/commands/start/telemetry.ts` | Start-output telemetry helpers (reachability probe, OS-aware install pointer) |
 | `src/cli/bootstrap.ts` | Observer creation, upgrade, and threading to all components |
 | `tests/helpers/test-observer-facade.ts` | Test helper: silent observer (no tracing) |
 | `tests/helpers/test-observer.ts` | Test helper: full observer with in-memory DB |

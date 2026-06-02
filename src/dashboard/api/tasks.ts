@@ -334,7 +334,7 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
   app.post("/:id/cancel", (c) => {
     const taskId = c.req.param("id");
     try {
-      const result = cancelTask(deps.writeDb, taskId, { reason: "Cancelled via dashboard", triggeredBy: "dashboard" });
+      const result = cancelTask(deps.writeDb, taskId, { reason: "dashboard_cancel", triggeredBy: "dashboard" });
       if (result.outcome === "not_found") {
         return c.json({ error: "Task not found" }, 404);
       }

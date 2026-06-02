@@ -346,7 +346,8 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
       task_id: taskId,
       payload: { task_id: taskId, repo: record.repo, branch: record.branch },
     } satisfies PublishInput<"git.branch_deleted">);
-    observer.info("Reaped merged branch", { taskId, branch: record.branch });
+    // Neutral wording — both the merged arm and the cancelled arm publish through here.
+    observer.info("Deleted branch", { taskId, branch: record.branch });
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────

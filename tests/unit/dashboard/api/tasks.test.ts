@@ -97,7 +97,7 @@ describe("taskRoutes — POST /:id/cancel", () => {
     expect(transition.to_state).toBe(TaskStates.cancelled);
     expect(transition.to_sub).toBeNull();
     expect(transition.triggered_by).toBe("dashboard");
-    expect(transition.reason).toBe("Cancelled via dashboard");
+    expect(transition.reason).toBe("dashboard_cancel");
   });
 
   it("returns 400 for a task in a non-cancellable state", async () => {

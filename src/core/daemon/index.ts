@@ -519,21 +519,21 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Step 2: Poll triggers
     await triggerPoller.poll(now);
 
-    // Step 2b: Poll for communication responses (GitHub comments, dashboard, etc.)
+    // Step 3: Poll for communication responses (GitHub comments, dashboard, etc.)
     await responsePoller.poll(now);
 
-    // Step 2c: Process pending notification retries
+    // Step 4: Process pending notification retries
     notifications.processRetries?.(now);
 
-    // Step 3+4: Preemption + schedule (single DB query for both)
+    // Step 5: Preemption + schedule (single DB query for both)
     const queuedTasks = taskEngine.getQueuedByPriority();
     preemption.evaluate(now, queuedTasks);
     scheduler.scheduleNext(queuedTasks);
 
-    // Step 5: Detect cross-process cancels of in-flight tasks and abort their dispatches.
+    // Step 6: Detect cross-process cancels of in-flight tasks and abort their dispatches.
     abortCancelledDispatches();
 
-    // Step 6: Stuck detection + blocked escalation + review reminders
+    // Step 7: Stuck detection + blocked escalation + review reminders
     healthMonitor.checkStuckTasks(now);
     healthMonitor.checkBlockedEscalation(now);
 
@@ -541,7 +541,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     const reviewPendingTasks = taskEngine.getBlockedTasksByReason(BlockReasons.pr_review_pending);
     healthMonitor.checkReviewPendingReminders(now, reviewPendingTasks);
 
-    // Step 7: Detect external PR events on review-pending tasks and re-enter them through the pipeline
+    // Step 8: Detect external PR events on review-pending tasks and re-enter them through the pipeline
     await prEventPoller.poll(reviewPendingTasks);
 
     // Step 9: Cleanup expired seen keys and stale health cooldowns

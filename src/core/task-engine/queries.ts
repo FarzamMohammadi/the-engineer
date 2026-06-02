@@ -45,7 +45,7 @@ export class TaskQueries {
     this.getStateHistoryStmt = db.prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp ASC");
 
     // Active-scoped dedup: a terminal task frees its key. Built from TERMINAL_STATES so it stays in
-    // lockstep with the DB-level sibling (the :83 partial unique index in 001_schema.sql).
+    // lockstep with the DB-level sibling (the idx_tasks_idempotency_key_active partial unique index in 001_schema.sql).
     const terminalList = TERMINAL_STATES.map((state) => `'${state}'`).join(", ");
     this.findByIdempotencyKeyStmt = db.prepare(`
       SELECT 1 FROM tasks

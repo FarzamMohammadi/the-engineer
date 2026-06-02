@@ -250,7 +250,7 @@ export function createTaskScheduler(
    * The ticket comment closes the loop on the source issue for this active cancel; the reaper comments on an
    * open PR, and broader cancel-notification coverage is Slice 10's remit.
    */
-  function handleUserCancelledTermination(taskId: string, lastPhase: unknown): void {
+  function handleUserCancelledTermination(taskId: string, lastPhase: string | null): void {
     observer.info("Task cancelled by owner — dispatch aborted, cleanup deferred to the reaper", { taskId, lastPhase });
     notifications.notify({
       kind: NotificationKinds.ticket_comment,
@@ -268,7 +268,7 @@ export function createTaskScheduler(
   function handleTerminatedOutcome(
     taskId: string,
     reason: Exclude<TerminationReason, "user_cancelled">,
-    lastPhase: unknown,
+    lastPhase: string | null,
   ): void {
     const routingOptions = [
       { id: "queued", description: "Return to queue for the next scheduling tick" },
@@ -284,7 +284,7 @@ export function createTaskScheduler(
     };
     observer.recordDecision(
       "termination_routing",
-      `Dispatch terminated for task ${taskId} (reason: ${reason}, lastPhase: ${String(lastPhase)})`,
+      `Dispatch terminated for task ${taskId} (reason: ${reason}, lastPhase: ${lastPhase})`,
       routingOptions,
       routeForReason[reason],
       `Reason "${reason}" maps to ${routeForReason[reason]} per the terminate routing table`,

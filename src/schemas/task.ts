@@ -22,8 +22,8 @@ export const TaskStates = TaskStateSchema.enum;
  * Terminal states — a task that has finished its lifecycle. `failed` is terminal yet independently
  * retryable (`failed → queued`); `completed` and `cancelled` have no exit. The single source of truth
  * for terminal-ness: the app-level `state NOT IN (…)` clauses (task-engine queries, `engineer status`)
- * derive from this. Its one hand-kept sibling is `001_schema.sql` (the `:83` dedup index plus the
- * `state` CHECKs) — SQL a TypeScript constant cannot reach — kept in lockstep and guarded by tests.
+ * derive from this. Its one hand-kept sibling is `001_schema.sql` (the `idx_tasks_idempotency_key_active`
+ * dedup index plus the `state` CHECKs) — SQL a TypeScript constant cannot reach — kept in lockstep and guarded by tests.
  */
 export const TERMINAL_STATES = [TaskStates.completed, TaskStates.failed, TaskStates.cancelled] as const;
 

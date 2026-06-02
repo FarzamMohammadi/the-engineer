@@ -4,11 +4,12 @@
 > not just *what* was decided but *why*, because this reasoning seeds the eventual user-facing docs
 > (how a task finishes, what gets cleaned up, how cancel works). Read it as a design narrative.
 >
-> **Status: RRP complete (Session 51). No code yet.** Working artifacts:
-> `.claude/temp/requirements-gathering/slice-09-completion-cleanup.md` (requirements),
-> `.claude/temp/research/slice-09-completion-cleanup.md` (research, observations-vs-inferences),
-> `.claude/temp/create-plan/slice-09-completion-cleanup.md` (the panel-reviewed plan — full decision
-> rationale + task breakdown live there). This file is the synthesis; the plan is the build script.
+> **Status: COMPLETE — implemented and merged to `main` across Sessions 52–55** (`71ee80b` the state-model
+> spine, `f4263e5` the reaper + branch lifecycle + auto-merge, `96ea542` cancel end-to-end, and the
+> Session 55 closing standards sweep). Per-session detail in `sessions/52.md`–`55.md`. The RRP working
+> artifacts — `.claude/temp/{requirements-gathering,research,create-plan}/slice-09-completion-cleanup.md`
+> — remain the panel-reviewed build script with the full D1–D17 rationale; this file is the durable
+> synthesis and the seed for the user-facing docs.
 
 ## Requirements
 
@@ -241,26 +242,94 @@ The reaper runs unattended destructive ops on a timer, so its failure envelope i
 
 ---
 
-## Session Breakdown (4 sessions, each green-on-commit, ≤ ~400–450k tokens)
+## Session Breakdown (4 sessions — overall Sessions 52–55, each green-on-commit)
 
 Docs ride with the code that needs them (DoD item 7); the durable narrative + final cross-doc
-verification fold into the closing sweep.
+verification fold into the closing sweep. As-built:
 
-1. **State-model spine + terminal SSOT + `reaped_at`.** `cancelled` (enum, 4 transitions in, none
-   out, permission row); `TERMINAL_STATES`/`isTerminal()`; `ReviewStateSchema.merged_at`; `reaped_at`
-   column; the 4 `001_schema.sql` sites incl. the `:83` dedup index; refactor the 4 predicate sites;
-   de-dup the query-handler arrays; client `TaskState` union. Gated by the e2e real-INSERT dedup test.
+1. **State-model spine + terminal SSOT + `reaped_at`** *(Session 52, `71ee80b`)*. `cancelled` (enum, 4
+   transitions in, none out, permission row); `TERMINAL_STATES`/`isTerminal()`; `ReviewStateSchema.merged_at`;
+   `reaped_at` column; the 4 `001_schema.sql` sites incl. the `idx_tasks_idempotency_key_active` dedup index;
+   refactor the predicate sites (5, not 4 — the research under-counted `engineer status`); de-dup the
+   query-handler arrays; client `TaskState` union. Gated by the real-INSERT dedup test.
    (Spine only — nothing produces `cancelled`/`reaped_at` yet.)
-2. **Reaper service + branch lifecycle + auto-merge** (+ its docs). Config reshape (single
-   `branch_retention_days`; cut `delete_branch_after_merge` + `CleanupConfig`; add
+2. **Reaper service + branch lifecycle + auto-merge** *(Session 53, `f4263e5`)* (+ its docs). Config reshape
+   (single `branch_retention_days`; cut `delete_branch_after_merge` + `CleanupConfig`; add
    `daemon.workspace_reaper`); auto-merge records-not-deletes + external backfill + stale-comment
    rewrite; the `workspace-reaper` service (D17 envelope, all-or-nothing `reaped_at`, `getLastRun`),
    built inside `createDaemon`; move the `git.branch_deleted` publisher to the reaper.
-3. **Cancel end-to-end** (+ its docs). `user_cancelled` + early-return handler + tick detection;
-   guarded versioned cancel writes (dashboard + `engineer cancel`); reaper cancel branch (`closePR` +
-   reap); `closePR` contract test.
-4. **Slice narrative + closing standards sweep.** Finalize this file; cross-doc verification; the
-   principle-driven sweep; `/wrap-session`.
+3. **Cancel end-to-end** *(Session 54, `96ea542`)* (+ its docs). `user_cancelled` + early-return handler +
+   tick detection; guarded versioned cancel writes (dashboard + `engineer cancel`) behind a shared
+   `cancelTask` helper; reaper cancel branch (`closePR` + reap); `closePR` contract test.
+4. **Slice narrative + closing standards sweep** *(Session 55)*. This file finalized; cross-doc
+   verification; the principle-driven sweep (see below); `/wrap-session`.
+
+---
+
+## Closing Standards Sweep
+
+**Session 55, green in one commit on top of the three implementation commits.** A co-owner line-by-line
+audit of the full slice diff — every `src/` file, test, and doc Sessions 1–3 created or changed — against
+`coding-standards.md` / `anti-patterns.md` / `philosophy.md` and the approach.md hunt list, not a checklist
+pass. The architecture and the test suites held up under the audit (the reaper failure envelope, the
+version-CAS race both directions, the all-or-nothing partial-reap retry, and the real-INSERT dedup gate are
+all genuinely covered); the findings were refinements, not bugs.
+
+**Refinements applied:**
+- **Reaper log accuracy.** `emitBranchDeleted` logged "Reaped merged branch", but the cancelled arm
+  reuses it — a cancelled task logged "merged". Now a neutral "Deleted branch" (both arms publish through it).
+- **Honest types.** Both `Outcomes.terminated` handlers took `lastPhase: unknown` though the result type is
+  `string | null`; tightened, dropping the defensive `String()` coercion.
+- **Reason-string convention.** The dashboard cancel wrote the sentence `reason: "Cancelled via dashboard"`;
+  every other transition reason is a snake_case token (`cli_cancel`, `pipeline_completed`, `scheduled`).
+  Aligned to `dashboard_cancel`.
+- **Stale step-numbering.** The daemon `tick()` step comments had drifted (a missing "Step 8", a combined
+  "Step 3+4"); renumbered contiguously.
+- **Rot-proof index reference.** Four live comments named the dedup index by line number (`:83`), already
+  stale (Session 1's added comments pushed it to line 85); switched to the index *name*
+  `idx_tasks_idempotency_key_active`, which does not rot.
+
+**Cross-doc verification (the highest-value catch — doc drift a feature-pass cannot see):**
+- A newly-added enum value must propagate to *every* doc that enumerates the enum. Session 1 added
+  `cancelled` and updated the obvious docs (`cli.md`, `zod-schemas.md`, the dashboard maps) but missed two
+  live docs neither feature session's `git diff` touched: `architecture/overview.md`'s **States table +
+  state-machine diagram**, and `usage-guide/writing-tickets.md`'s **label list**. Found by grepping a
+  *sibling* state value (`requirements_gathering`) across live docs — you cannot grep for the value that is
+  missing. Fixed `architecture/overview.md` (added `cancelled` to the table + the `→ cancelled` edges) and
+  added the carried **`workspace-reaper` component-table entry** (sibling of `DataLifecycleManager`). The
+  defect class is recorded in `feedback_slice_closing_standards_sweep.md`.
+- Confirmed clean: zero `delete_branch_after_merge` / `CleanupConfig` references in any live doc or `src/`
+  (only archived design records, which are forward-only); every `configuration/*.md` key grep-matches a Zod
+  schema; the bundled `plugin-docs.ts` `closePR`/`commentOnPR` rows match the `docs/plugins/git-hosting/`
+  source; the auto-merge records-not-deletes rewrite left no stale "deletes the branch" comment;
+  `cli.md`'s workspace bullet "cleanup" → "branch retention".
+
+**Deferred to Slice 10 (recorded in `active.md`):** the `engineer:cancelled` comm-plugin label + label
+sync for cross-process writes. Cancel — like `engineer retry` — is a raw DB write that emits no
+`task.state_changed` event, so `notification-router.syncStateToCommPlugin` never fires for it; and because
+`cancelled` is *terminal*, the issue keeps its stale label forever (retry self-corrects when the daemon next
+dispatches the task). `writing-tickets.md`'s label list was deliberately left untouched — documenting a
+label that is never applied would be a lie. Slice 10 owns the sync and the doc entry together.
+
+**Gates:** biome + tsc + tsc-test + knip + madge clean; 2253 unit + 47 integration + 16 e2e green; build OK.
+
+## Lens Check
+
+- **Resilience.** Strongly positive. The reaper is idempotent and crash-safe by construction: the
+  all-or-nothing `reaped_at` marker makes a partial reap (local branch gone, remote delete throws) retry
+  next sweep instead of orphaning a branch, and a persistently-failing plugin escalates to an `alert`
+  rather than rotting silently. Cancel is effective across processes — a running agent is SIGTERM'd, so a
+  cancel actually stops the spend.
+- **Plugin Integrity.** Positive. The reaper acts only through adapter contracts (`getPRStatus`,
+  `commentOnPR`, `closePR`, `deleteRemoteBranch`); with the hosting plugin absent it still reaps the local
+  worktree + branch and logs the reduced capability. Core compiles and reconciles with every plugin deleted.
+- **Plugin Authoring Simplicity.** Neutral/positive. No new adapter surface — `closePR`/`commentOnPR`
+  already existed in the contract (Slice 8); Slice 9 only wired them, adding a `closePR` contract-suite case
+  so every hosting plugin is checked.
+- **UX Quality.** Positive. `engineer cancel <task-id>` mirrors `engineer retry` (ID-prefix resolution,
+  JSON mode, works with the daemon stopped); `cancelled` is truthful and distinct from `failed` (cancel
+  abandons, retry resumes). Deletion lag (≤ one sweep) is invisible — the deliverable and its milestone
+  already landed. Dashboard display of `cancelled` + the reaper run summary is Slice 13.
 
 ---
 

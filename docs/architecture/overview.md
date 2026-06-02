@@ -95,6 +95,7 @@ graph LR
 | **PeopleDirectory** | Config-driven contact resolution for notifications and escalations |
 | **Observer** | Structured tracing facade — spans, observations, blob storage for the dashboard |
 | **DataLifecycleManager** | Retention cleanup, blob orphan pruning, incremental vacuum |
+| **WorkspaceReaper** | Reconciliation sweep over terminal tasks — deletes merged branches once retention elapses, reaps cancelled tasks (closes any open PR, removes the branch). The sole branch deleter; all-or-nothing per task. Sibling of DataLifecycleManager but does git + plugin (network) work |
 
 ## Task Lifecycle
 
@@ -143,6 +144,10 @@ stateDiagram-v2
     blocked --> completed : Completed from the wait
     blocked --> failed : Escalation timeout
     failed --> queued : engineer retry
+    requirements_gathering --> cancelled : engineer cancel
+    queued --> cancelled : engineer cancel
+    active --> cancelled : engineer cancel
+    blocked --> cancelled : engineer cancel
 ```
 
 **States:**
@@ -154,7 +159,8 @@ stateDiagram-v2
 | `active` | `working` | Currently being worked on by the Orchestrator |
 | `blocked` | — | Waiting — either on a human (a question or decision) or on an external PR event (review, CI, approval, merge). The block reason distinguishes them. |
 | `completed` | — | Successfully completed (PR merged, or branch pushed in push-only mode) |
-| `failed` | — | Failed after exhausting recovery options |
+| `failed` | — | Failed after exhausting recovery options. Terminal but retryable (`engineer retry`) |
+| `cancelled` | — | Cancelled by the owner via `engineer cancel` or the dashboard. Terminal and non-retryable — distinct from `failed` so the reaper reaps it while `failed` is preserved |
 
 ## Plugin System
 

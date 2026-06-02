@@ -65,6 +65,7 @@ export type UpdatableField =
   | "phase_iteration"
   | "total_reworks"
   | "not_before"
+  | "reaped_at"
   | "consecutive_crash_count"
   | "consecutive_agent_unavailable_count";
 
@@ -82,6 +83,8 @@ export interface ITaskEngine {
   getTasksByState(state: TaskState): Task[];
   getBlockedTasksByReason(reason: BlockReason): Task[];
   getQueuedByPriority(): Task[];
+  /** Terminal tasks the reaper has not yet reconciled: completed/cancelled (not failed) with reaped_at NULL. */
+  getUnreapedTerminalTasks(): Task[];
   getStateHistory(taskId: string): StateTransition[];
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void;
   updateTracking(taskId: string, tokens: number, costUsd: number, computeMs: number): void;

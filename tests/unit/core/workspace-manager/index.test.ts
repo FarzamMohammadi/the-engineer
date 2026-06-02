@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -270,6 +271,31 @@ describe("cleanupWorkspace", () => {
 });
 
 // ── Queries ──────────────────────────────────────────────────────────────────
+
+describe("deleteRemoteBranch", () => {
+  it("deletes a pushed branch and tolerates a repeat delete (idempotent — already-gone is success)", () => {
+    const h = setup();
+    h.setupTask("task-1");
+    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Feature" });
+    h.workspaceManager.pushBranch("task-1");
+
+    const onRemote = () =>
+      execSync(`git ls-remote --heads ${h.bareRepoDir} ${record.branch}`, { encoding: "utf-8" }).trim();
+    expect(onRemote()).not.toBe(""); // the branch is on the remote
+
+    h.workspaceManager.deleteRemoteBranch("task-1");
+    expect(onRemote()).toBe(""); // the first delete actually removed it
+
+    // The remote ref is now gone — a repeat delete is the desired end-state, so it must not throw.
+    expect(() => h.workspaceManager.deleteRemoteBranch("task-1")).not.toThrow();
+  });
+
+  it("throws when the task has no workspace on record", () => {
+    const h = setup();
+    h.setupTask("task-1");
+    expect(() => h.workspaceManager.deleteRemoteBranch("task-1")).toThrow();
+  });
+});
 
 describe("getWorktreePath", () => {
   it("returns correct path for known task (DB-backed)", () => {

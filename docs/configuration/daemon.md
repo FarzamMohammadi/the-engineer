@@ -110,6 +110,15 @@ When a notification cannot be delivered to a contact's channel, it is queued and
 | `data_lifecycle.retention.journal_entries.max_age_days` | integer | `90` | Days to retain journal entries. |
 | `data_lifecycle.retention.checkpoints.max_age_days` | integer | `90` | Days to retain checkpoint records. |
 
+## Workspace Reaper
+
+The reaper performs the terminal-task cleanup that cannot happen inline: it deletes merged branches once their retention window (`pr.branch_retention_days` in [workspace.yaml](workspace.md)) elapses, and reconciles cross-process cancels. It is a daemon-resident sweep, separate from data lifecycle because it does git + plugin (network) work rather than pure local DB cleanup.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `workspace_reaper.enabled` | boolean | `true` | Enable the reconciliation reaper. Disable only to suspend automatic branch cleanup. |
+| `workspace_reaper.interval_ms` | integer (ms) | `3600000` (1h) | How often the reaper sweeps terminal tasks to reconcile their branches. |
+
 ## Database
 
 | Field | Type | Default | Description |

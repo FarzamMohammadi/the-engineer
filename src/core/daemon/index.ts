@@ -23,6 +23,7 @@ import { createEvaluationManager } from "../evaluation/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { createRetryPolicy } from "../retry-policy/index.js";
+import { createWorkspaceReaper } from "../workspace-reaper/index.js";
 import { createCostLimitQueue } from "./cost-limit-queue.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
@@ -184,6 +185,21 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   });
 
   const dispatchTracker = createDispatchTracker({ observer: ctx.observer });
+
+  // The reaper is built here (not in bootstrap, like data-lifecycle) because it needs the dispatch-tracker:
+  // it must never reap a workspace while its dispatch is in flight.
+  const workspaceReaper = createWorkspaceReaper({
+    config: config.workspace_reaper,
+    branchRetentionDays: ctx.workspaceConfig.pr.branch_retention_days,
+    taskEngine,
+    workspaceManager: ctx.workspaceManager,
+    registry,
+    dispatchTracker,
+    eventBus,
+    notifications,
+    clock,
+    observer: observer.child("workspace-reaper"),
+  });
 
   const scheduler = createTaskScheduler(
     ctx,
@@ -565,6 +581,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       // Start data lifecycle manager
       dataLifecycleManager?.start();
 
+      // Start the workspace reaper (deferred terminal-task cleanup)
+      workspaceReaper.start();
+
       // Rebuild state from Task Engine (crash recovery)
       rebuildStateFromTaskEngine();
 
@@ -573,6 +592,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     } catch (error) {
       // Reverse-order cleanup — each is idempotent/safe if the step never ran
       unregisterSubscriptions();
+      workspaceReaper.stop();
       dataLifecycleManager?.stop();
       registry.stopHealthCheckLoop();
       removePidFile();
@@ -612,8 +632,9 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Flush pending cost tracker snapshot before shutdown
     ctx.safetyLayer.flushCostSnapshot();
 
-    // Stop data lifecycle manager
+    // Stop background services
     dataLifecycleManager?.stop();
+    workspaceReaper.stop();
 
     // Drain active dispatches — the dispatch-tracker aborts each in-flight signal, which SIGTERMs
     // the agent subprocess so the pipeline yields mid-run instead of waiting for the phase to finish.

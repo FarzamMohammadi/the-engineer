@@ -69,6 +69,23 @@ const NON_ALNUM = /[^a-z0-9]+/g;
 const LEADING_TRAILING_HYPHENS = /^-+|-+$/g;
 const TRAILING_HYPHENS = /-+$/;
 
+/** git's stderr when deleting a remote branch that is already gone — the reaper treats this as success. */
+const REMOTE_REF_ABSENT = /remote ref does not exist/i;
+
+/** Wall-clock ceiling for the remote branch delete so a hung `git push --delete` cannot wedge the reaper's sweep. */
+const REMOTE_DELETE_TIMEOUT_MS = 120_000;
+
+/** Combine an exec error's stderr and message for classification. Never logged raw — it may carry an auth URL. */
+function gitErrorText(error: unknown): string {
+  if (error && typeof error === "object") {
+    const e = error as { stderr?: unknown; message?: unknown };
+    const stderr = typeof e.stderr === "string" ? e.stderr : "";
+    const message = typeof e.message === "string" ? e.message : "";
+    return `${stderr}\n${message}`;
+  }
+  return String(error);
+}
+
 /**
  * Sanitize a title into a branch-safe slug.
  *
@@ -557,6 +574,12 @@ export class WorkspaceManager implements IWorkspaceManager {
     });
   }
 
+  /**
+   * Delete the task's branch from the remote. Idempotent and bounded for the reaper: a branch that is
+   * already gone (a human or the host removed it) is the desired end-state, so "remote ref does not exist"
+   * is treated as success; the push is wall-clock-capped so a hung delete cannot wedge the sweep. Any other
+   * failure (auth, network, branch protection, timeout) throws so the caller retries on the next sweep.
+   */
   deleteRemoteBranch(taskId: string): void {
     const record = this.readRecord(taskId);
     if (!record) {
@@ -571,9 +594,23 @@ export class WorkspaceManager implements IWorkspaceManager {
     // Get the unauthenticated remote URL
     const remoteUrl = this.gitExec(["remote", "get-url", "origin"], repoCloneDir);
 
-    // Delete with transient auth — explicit URL, not remote name
+    // Delete with transient auth — explicit URL, not remote name. Bounded by a timeout; an already-gone
+    // remote ref is the desired state, so it is tolerated rather than thrown.
     const authUrl = this.authUrlProvider(remoteUrl);
-    this.gitExec(["push", "--no-verify", authUrl.unwrap(), "--delete", record.branch], repoCloneDir);
+    try {
+      this.gitExec(["push", "--no-verify", authUrl.unwrap(), "--delete", record.branch], repoCloneDir, {
+        timeoutMs: REMOTE_DELETE_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (REMOTE_REF_ABSENT.test(gitErrorText(error))) {
+        this.observer.debug("Remote branch already deleted — treating as success", {
+          taskId,
+          branch: record.branch,
+        });
+        return;
+      }
+      throw error;
+    }
 
     this.observer.info("Branch deleted from remote", {
       taskId,
@@ -616,12 +653,13 @@ export class WorkspaceManager implements IWorkspaceManager {
     return this.gitExec(authArgs, cwd);
   }
 
-  private gitExec(args: string[], cwd: string): string {
+  private gitExec(args: string[], cwd: string, options?: { timeoutMs?: number }): string {
     // Disable credential helpers so auth tokens are never cached to disk.
     return execFileSync("git", ["-c", "credential.helper=", ...args], {
       cwd,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
     }).trim();
   }
 

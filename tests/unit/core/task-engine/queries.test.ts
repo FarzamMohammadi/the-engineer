@@ -2,7 +2,7 @@ import { ulid } from "ulid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { TaskQueries } from "../../../../src/core/task-engine/queries.js";
-import { TaskStates } from "../../../../src/schemas/task.js";
+import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
 import { createTestDatabase } from "../../../helpers/test-database.js";
 import type { TestDatabaseHandle } from "../../../helpers/test-database.js";
 
@@ -96,6 +96,54 @@ describe("TaskQueries", () => {
       expect(task?.id).toBe(id);
       expect(task?.title).toBe("Test Task");
       expect(task?.acceptance_criteria).toEqual([]);
+    });
+  });
+
+  describe("getUnreapedTerminalTasks", () => {
+    function setColumn(taskId: string, column: "reaped_at" | "completed_at", value: string): void {
+      dbHandle.db.prepare(`UPDATE tasks SET ${column} = ? WHERE id = ?`).run(value, taskId);
+    }
+
+    it("returns completed and cancelled tasks that are not yet reaped", () => {
+      const completed = insertTask({ state: TaskStates.completed });
+      const cancelled = insertTask({ state: TaskStates.cancelled });
+
+      const ids = queries.getUnreapedTerminalTasks().map((t) => t.id);
+      expect(ids).toContain(completed);
+      expect(ids).toContain(cancelled);
+      expect(ids).toHaveLength(2);
+    });
+
+    it("never returns failed tasks — they are preserved for debugging and retry", () => {
+      insertTask({ state: TaskStates.failed });
+      expect(queries.getUnreapedTerminalTasks()).toEqual([]);
+    });
+
+    it("excludes non-terminal tasks", () => {
+      insertTask({ state: TaskStates.queued });
+      insertTask({ state: TaskStates.active, sub_state: SubStates.working });
+      insertTask({ state: TaskStates.blocked });
+      insertTask({ state: TaskStates.requirements_gathering });
+      expect(queries.getUnreapedTerminalTasks()).toEqual([]);
+    });
+
+    it("excludes tasks that have already been reaped", () => {
+      const reaped = insertTask({ state: TaskStates.completed });
+      const unreaped = insertTask({ state: TaskStates.completed });
+      setColumn(reaped, "reaped_at", new Date().toISOString());
+
+      const ids = queries.getUnreapedTerminalTasks().map((t) => t.id);
+      expect(ids).toEqual([unreaped]);
+    });
+
+    it("orders by completed_at ascending (oldest finished first)", () => {
+      const newer = insertTask({ state: TaskStates.completed });
+      const older = insertTask({ state: TaskStates.completed });
+      setColumn(newer, "completed_at", "2026-02-01T00:00:00.000Z");
+      setColumn(older, "completed_at", "2026-01-01T00:00:00.000Z");
+
+      const ids = queries.getUnreapedTerminalTasks().map((t) => t.id);
+      expect(ids).toEqual([older, newer]);
     });
   });
 

@@ -138,6 +138,7 @@ function defaultTestConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
         checkpoints: { max_age_days: 90 },
       },
     },
+    workspace_reaper: { enabled: false, interval_ms: 3_600_000 },
     database: { cache_size_mb: 64 },
     notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },

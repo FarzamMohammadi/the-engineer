@@ -561,6 +561,7 @@ function makeSafeBundle() {
           checkpoints: { max_age_days: 90 },
         },
       },
+      workspace_reaper: { enabled: true, interval_ms: 3_600_000 },
       database: { cache_size_mb: 64 },
       subscriber_warn_threshold_ms: 50,
       notification_retry: { interval_ms: 30_000, max_attempts: 120, max_age_ms: 3_600_000 },

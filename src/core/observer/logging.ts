@@ -20,6 +20,7 @@ export type ComponentTag =
   | "plugin"
   | "plugin-loader"
   | "data-lifecycle"
+  | "workspace-reaper"
   | "notifications"
   | "dashboard";
 

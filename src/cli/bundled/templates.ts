@@ -67,6 +67,11 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 #     checkpoints:
 #       max_age_days: 90
 
+# --- Workspace reaper (deferred terminal-task cleanup) ---
+# workspace_reaper:
+#   enabled: true                      # Enable the reaper — branch retention + cross-process cancel (default: true)
+#   interval_ms: "1h"                  # Reconciliation sweep interval (default: 1h)
+
 # --- Database tuning ---
 # database:
 #   cache_size_mb: 64                  # SQLite cache size in MB (default: 64)
@@ -192,13 +197,7 @@ export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
 # --- PR settings ---
 # pr:
 #   default_merge_strategy: squash           # squash | merge | rebase
-#   delete_branch_after_merge: true
-#   branch_retention_days: null              # Days to retain branches after merge. null = preserve indefinitely.
-
-# --- Cleanup ---
-# cleanup:
-#   preserve_branch_on_failure: true
-#   preserve_branch_on_cancel: false
+#   branch_retention_days: 0                 # Days to keep a merged branch before the reaper deletes it. null = keep forever; 0 = next sweep; N = after N days.
 
 # --- Multi-repo ---
 # multi_repo:
@@ -364,6 +363,11 @@ data_lifecycle:
     checkpoints:
       max_age_days: 90                    # Checkpoint retention in days (default: 90)
 
+# ── Workspace Reaper (deferred terminal-task cleanup) ───────────────────────
+workspace_reaper:
+  enabled: true                           # Enable the reaper — branch retention + cross-process cancel (default: true)
+  interval_ms: "1h"                       # Reconciliation sweep interval (default: 1h)
+
 # ── Database Tuning ─────────────────────────────────────────────────────────
 database:
   cache_size_mb: 64                       # SQLite cache size in MB (default: 64)
@@ -508,13 +512,7 @@ default_base_branch: main                 # Default base branch for PRs (default
 # ── PR Settings ──────────────────────────────────────────────────────────────
 pr:
   default_merge_strategy: squash          # squash | merge | rebase (default: squash)
-  delete_branch_after_merge: true         # Delete branch after PR merge (default: true)
-  branch_retention_days: null             # Days to retain branches after merge. null = preserve indefinitely (default: null).
-
-# ── Cleanup ──────────────────────────────────────────────────────────────────
-cleanup:
-  preserve_branch_on_failure: true        # Keep branch when task fails (default: true)
-  preserve_branch_on_cancel: false        # Keep branch when task cancelled (default: false)
+  branch_retention_days: 0                # Days to keep a merged branch before the reaper deletes it: null = keep forever, 0 = next sweep, N = after N days (default: 0)
 
 # ── Multi-Repo ───────────────────────────────────────────────────────────────
 multi_repo:

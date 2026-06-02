@@ -23,6 +23,17 @@ export const DataLifecycleConfigSchema = z.object({
 });
 export type DataLifecycleConfig = z.infer<typeof DataLifecycleConfigSchema>;
 
+// ── Workspace Reaper Config ──────────────────────────────────────────────────────
+// The daemon-resident reconciliation reaper: deferred terminal-task cleanup (branch
+// retention, cross-process cancel). A sibling of data-lifecycle, but it does git +
+// plugin (network, fallible) work rather than pure local DB cleanup.
+
+export const WorkspaceReaperConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  interval_ms: z.number().int().positive().default(3_600_000), // 1 hour
+});
+export type WorkspaceReaperConfig = z.infer<typeof WorkspaceReaperConfigSchema>;
+
 // ── Database Config ─────────────────────────────────────────────────────────────
 
 export const DatabaseTuningConfigSchema = z.object({
@@ -142,6 +153,9 @@ export const DaemonConfigSchema = z.object({
 
   // Data lifecycle (R10)
   data_lifecycle: DataLifecycleConfigSchema.default({}),
+
+  // Workspace reaper — deferred terminal-task cleanup (branch retention, cross-process cancel)
+  workspace_reaper: WorkspaceReaperConfigSchema.default({}),
 
   // Database tuning (R10)
   database: DatabaseTuningConfigSchema.default({}),
@@ -307,19 +321,16 @@ export const PrConfigSchema = z.object({
     .enum(["squash", "merge", "rebase"])
     .default("squash")
     .describe("How PRs are merged: squash (single commit), merge (merge commit), or rebase. Default: squash."),
-  delete_branch_after_merge: z
-    .boolean()
-    .default(true)
-    .describe("Delete the task branch after its PR is merged. Default: true."),
-  // RESERVED for Slice 9 (Completion & Cleanup): validated today, honored by the cleanup reaper there.
+  // The single knob governing merged-branch deletion, honored by the workspace reaper. The reaper is
+  // the sole branch deleter (auto-merge only records the merge), so deletion lags up to one sweep.
   branch_retention_days: z
     .number()
     .int()
-    .positive()
+    .nonnegative()
     .nullable()
-    .default(null)
+    .default(0)
     .describe(
-      "Reserved for Slice 9. Days to retain merged branches before the cleanup reaper deletes them. Null means no automatic deletion. Default: null.",
+      "Days to retain a merged branch before the reaper deletes it. null = keep forever; 0 = delete on the next sweep; N = delete N days after merge. Default: 0.",
     ),
   skip_pr_creation: z
     .object({
@@ -332,18 +343,6 @@ export const PrConfigSchema = z.object({
     ),
 });
 export type PrConfig = z.infer<typeof PrConfigSchema>;
-
-export const CleanupConfigSchema = z.object({
-  preserve_branch_on_failure: z
-    .boolean()
-    .default(true)
-    .describe("Keep the task branch when a task fails, for debugging. Default: true."),
-  preserve_branch_on_cancel: z
-    .boolean()
-    .default(false)
-    .describe("Keep the task branch when a task is cancelled. Default: false."),
-});
-export type CleanupConfig = z.infer<typeof CleanupConfigSchema>;
 
 export const MultiRepoConfigSchema = z.object({
   enabled: z
@@ -379,7 +378,6 @@ export const WorkspaceConfigSchema = z.object({
     .default("main")
     .describe("Default base branch for PRs when not specified by the task. Default: main."),
   pr: PrConfigSchema.default({}),
-  cleanup: CleanupConfigSchema.default({}),
   multi_repo: MultiRepoConfigSchema.default({}),
 });
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

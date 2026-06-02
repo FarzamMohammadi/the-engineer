@@ -5,7 +5,6 @@ import {
   AutonomyDecisionSchema,
   AutonomyLevelSchema,
   AutonomyLevels,
-  CleanupConfigSchema,
   CostLimitValueSchema,
   CostLimitsSchema,
   DaemonConfigSchema,
@@ -24,6 +23,7 @@ import {
   TimeoutStageActions,
   TimeoutStageSchema,
   WorkspaceConfigSchema,
+  WorkspaceReaperConfigSchema,
 } from "../../../src/schemas/config.js";
 
 // ── Daemon Config ───────────────────────────────────────────────────────────────
@@ -56,6 +56,12 @@ describe("DaemonConfigSchema", () => {
     expect(config.plugins.health_check_interval_ms).toBe(60_000);
     expect(config.plugins.health_check_timeout_ms).toBe(5_000);
     expect(config.plugins.consecutive_failures_threshold).toBe(3);
+  });
+
+  it("produces valid workspace_reaper defaults from empty input", () => {
+    const config = DaemonConfigSchema.parse({});
+    expect(config.workspace_reaper.enabled).toBe(true);
+    expect(config.workspace_reaper.interval_ms).toBe(3_600_000);
   });
 
   it("allows partial override while keeping other defaults", () => {
@@ -146,9 +152,15 @@ describe("PrConfigSchema", () => {
   it("produces valid defaults from empty input", () => {
     const config = PrConfigSchema.parse({});
     expect(config.default_merge_strategy).toBe("squash");
-    expect(config.delete_branch_after_merge).toBe(true);
-    expect(config.branch_retention_days).toBeNull();
+    expect(config.branch_retention_days).toBe(0);
     expect(config.skip_pr_creation).toEqual({ default: false, repos: {} });
+  });
+
+  it("accepts branch_retention_days of 0, a positive integer, or null — but not negative", () => {
+    expect(PrConfigSchema.parse({ branch_retention_days: 0 }).branch_retention_days).toBe(0);
+    expect(PrConfigSchema.parse({ branch_retention_days: 7 }).branch_retention_days).toBe(7);
+    expect(PrConfigSchema.parse({ branch_retention_days: null }).branch_retention_days).toBeNull();
+    expect(() => PrConfigSchema.parse({ branch_retention_days: -1 })).toThrow();
   });
 
   it("accepts skip_pr_creation with default override", () => {
@@ -166,11 +178,15 @@ describe("PrConfigSchema", () => {
   });
 });
 
-describe("CleanupConfigSchema", () => {
+describe("WorkspaceReaperConfigSchema", () => {
   it("produces valid defaults from empty input", () => {
-    const config = CleanupConfigSchema.parse({});
-    expect(config.preserve_branch_on_failure).toBe(true);
-    expect(config.preserve_branch_on_cancel).toBe(false);
+    const config = WorkspaceReaperConfigSchema.parse({});
+    expect(config.enabled).toBe(true);
+    expect(config.interval_ms).toBe(3_600_000);
+  });
+
+  it("rejects a non-positive interval", () => {
+    expect(() => WorkspaceReaperConfigSchema.parse({ interval_ms: 0 })).toThrow();
   });
 });
 
@@ -190,7 +206,7 @@ describe("WorkspaceConfigSchema", () => {
     expect(config.slug_max_length).toBe(30);
     expect(config.default_base_branch).toBe("main");
     expect(config.pr.default_merge_strategy).toBe("squash");
-    expect(config.cleanup.preserve_branch_on_failure).toBe(true);
+    expect(config.pr.branch_retention_days).toBe(0);
     expect(config.multi_repo.enabled).toBe(true);
   });
 });

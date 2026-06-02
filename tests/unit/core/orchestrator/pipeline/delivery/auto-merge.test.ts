@@ -26,7 +26,6 @@ interface MockOptions {
   readonly hosting?: boolean;
   readonly autoMergeAllowed?: boolean;
   readonly excludeThoughts?: boolean;
-  readonly deleteBranch?: boolean;
   readonly review?: ReviewState | null;
 }
 
@@ -61,7 +60,7 @@ function mockCtx(options: MockOptions = {}) {
       shouldExcludeThoughtsOnMerge: () => options.excludeThoughts ?? false,
     },
     workspaceConfig: {
-      pr: { default_merge_strategy: "squash", delete_branch_after_merge: options.deleteBranch ?? true },
+      pr: { default_merge_strategy: "squash" },
     },
     eventBus: { publish: vi.fn((event: { type: string }) => published.push(event.type)) },
     taskEngine: { updateTaskField },
@@ -110,52 +109,65 @@ describe("auto-merge next", () => {
 });
 
 describe("auto-merge run", () => {
-  it("merges a green, mergeable PR and publishes the merge and branch-delete audit events", async () => {
-    const { ctx, mergePR, deleteRemoteBranch, published } = mockCtx();
+  it("merges a green PR, records the merge, notifies the milestone, and never deletes the branch", async () => {
+    const { ctx, mergePR, deleteRemoteBranch, updateTaskField, notify, published } = mockCtx();
 
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "merged" } });
     expect(mergePR).toHaveBeenCalledWith("acme/app", 7, "squash");
-    expect(deleteRemoteBranch).toHaveBeenCalledWith("t1");
-    expect(published).toEqual(["git.pr_merged", "git.branch_deleted"]);
-  });
-
-  it("does not delete the remote branch when delete_branch_after_merge is off", async () => {
-    const { ctx, deleteRemoteBranch, published } = mockCtx({ deleteBranch: false });
-
-    await autoMerge.run(ctx);
-
+    // Records the merge time so the reaper can reap the branch — but the reaper, not auto-merge, deletes it.
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "review",
+      expect.objectContaining({ pr_number: 7, merged_at: expect.any(String) }),
+    );
     expect(deleteRemoteBranch).not.toHaveBeenCalled();
     expect(published).toEqual(["git.pr_merged"]);
+    // A self-merge notifies the milestone.
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "milestone" }));
   });
 
-  it("short-circuits to done without merging when the PR is already merged", async () => {
-    const { ctx, mergePR } = mockCtx({ status: { state: "merged" } });
+  it("backfills an already-merged PR — records the merge with no milestone, no re-merge, no branch delete", async () => {
+    const { ctx, mergePR, deleteRemoteBranch, updateTaskField, notify, published } = mockCtx({
+      status: { state: "merged" },
+    });
 
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "merged" } });
     expect(mergePR).not.toHaveBeenCalled();
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "review",
+      expect.objectContaining({ pr_number: 7, merged_at: expect.any(String) }),
+    );
+    expect(published).toEqual(["git.pr_merged"]);
+    expect(deleteRemoteBranch).not.toHaveBeenCalled();
+    // The user merged it themselves — no milestone notification for their own action.
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it("completes without merging when auto-merge is disabled for the repo", async () => {
-    const { ctx, mergePR, notify } = mockCtx({ autoMergeAllowed: false });
+  it("completes without merging or recording when auto-merge is disabled for the repo", async () => {
+    const { ctx, mergePR, updateTaskField, notify, published } = mockCtx({ autoMergeAllowed: false });
 
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "auto_merge_disabled" } });
     expect(mergePR).not.toHaveBeenCalled();
+    expect(updateTaskField).not.toHaveBeenCalled();
+    expect(published).toEqual([]);
     expect(notify).toHaveBeenCalled();
   });
 
   it("reworks instead of merging when CI is failing", async () => {
-    const { ctx, mergePR } = mockCtx({ status: { checks_state: "failing" } });
+    const { ctx, mergePR, published } = mockCtx({ status: { checks_state: "failing" } });
 
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "ci_failure" } });
     expect(mergePR).not.toHaveBeenCalled();
+    expect(published).toEqual([]);
   });
 
   it("reworks instead of merging when the PR is not mergeable", async () => {
@@ -177,7 +189,7 @@ describe("auto-merge run", () => {
   });
 
   it("reworks when the merge call is rejected as a conflict", async () => {
-    const { ctx } = mockCtx({
+    const { ctx, published } = mockCtx({
       mergeResult: {
         merge_sha: "",
         success: false,
@@ -194,6 +206,7 @@ describe("auto-merge run", () => {
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "merge_conflict" } });
+    expect(published).toEqual([]);
   });
 
   it("waits to retry when the merge call fails transiently", async () => {

@@ -97,13 +97,8 @@ export function createTestWorkspaceManager(): TestWorkspaceManagerHandle {
     default_base_branch: "main",
     pr: {
       default_merge_strategy: "squash",
-      delete_branch_after_merge: true,
       branch_retention_days: null,
       skip_pr_creation: { default: false, repos: {} },
-    },
-    cleanup: {
-      preserve_branch_on_failure: true,
-      preserve_branch_on_cancel: false,
     },
     multi_repo: {
       enabled: true,

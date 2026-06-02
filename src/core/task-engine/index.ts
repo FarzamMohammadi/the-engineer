@@ -80,6 +80,7 @@ const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
   repo: "text",
   clone_url: "text",
   not_before: "text",
+  reaped_at: "text",
 
   // INTEGER columns (includes boolean-as-integer)
   priority: "integer",
@@ -341,6 +342,11 @@ export class TaskEngine implements ITaskEngine {
   /** Get all queued tasks, ordered by priority DESC, created_at ASC. */
   getQueuedByPriority(): Task[] {
     return this.queries.getQueuedByPriority();
+  }
+
+  /** Get terminal tasks the reaper has not yet reconciled (completed/cancelled, reaped_at NULL). */
+  getUnreapedTerminalTasks(): Task[] {
+    return this.queries.getUnreapedTerminalTasks();
   }
 
   /** Get the full state transition history for a task, ordered by timestamp ASC. */

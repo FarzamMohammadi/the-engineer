@@ -15,6 +15,7 @@ import { PeopleDirectory, inspectPeopleDirectory } from "../../../core/people-di
 import { EVENTS as REGISTRY_EVENTS, Registry } from "../../../core/registry/index.js";
 import { createStateStore as createPluginStateStore } from "../../../core/state-store/index.js";
 import { createCoreComponents } from "../../../core/system.js";
+import { EVENTS as WORKSPACE_REAPER_EVENTS } from "../../../core/workspace-reaper/index.js";
 import type { DatabaseHandle } from "../../../db/index.js";
 import { createDatabase } from "../../../db/index.js";
 import { loadBuiltinPlugins } from "../../../plugins/loader.js";
@@ -185,8 +186,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       observer: observer.child("data-lifecycle"),
     });
 
-    // 9. Daemon
+    // 9. Daemon (builds the workspace reaper internally; its events are registered here)
     eventTopology.registerPublisher("daemon", DAEMON_EVENTS);
+    eventTopology.registerPublisher("workspace-reaper", WORKSPACE_REAPER_EVENTS);
     const daemon = createDaemon({
       config: config.daemon,
       workspaceConfig: config.workspace,

@@ -73,14 +73,14 @@ Re-entry flows entirely through the database (write the event, re-queue, re-disp
 
 | What `auto-merge` finds | What it does |
 |---|---|
-| Already merged | Completes the task |
+| Already merged | Records the merge (no milestone — the external-merge backfill) and completes the task |
 | Auto-merge disabled for the repo | Notifies the owner and completes — the human merges manually |
 | CI failing | Reworks: jumps back to execution to fix it |
 | Not mergeable (conflict) | Reworks: jumps back to execution to resolve it |
 | Checks not yet green | Returns to the review wait; the poller retries when the PR is ready |
 | Green and mergeable | Removes branch thoughts (if configured), merges with the configured strategy, records the merge |
 
-A successful merge marks the PR merged on the task, publishes **`git.pr_merged`**, and — when `workspace.pr.delete_branch_after_merge` is set — deletes the remote branch and publishes **`git.branch_deleted`**. Both events are published by the **orchestrator**. The local worktree is reaped separately by the scheduler's normal completion path; only the merge-specific cleanup lives in `auto-merge`.
+A successful merge *records* the merge: it stamps `review.merged_at` on the task, publishes **`git.pr_merged`** (from the **orchestrator**), and notifies the *Merged PR* milestone. `auto-merge` does **not** delete the branch — the daemon's **workspace reaper** is the sole branch deleter and removes the merged branch once `workspace.pr.branch_retention_days` has elapsed, publishing **`git.branch_deleted`** (from the **workspace-reaper**). An externally-merged PR takes the same record path with no milestone — the external-merge backfill — so the reaper can reap its branch too. The local worktree is reaped separately by the scheduler's normal completion path.
 
 **Auto-merge is off by default.** `safety.merge.auto_merge_after_approval` defaults to `false`, so by default an approval *completes* the task and the owner merges the PR themselves. The merge strategy (`squash` / `merge` / `rebase`) comes from `workspace.pr.default_merge_strategy`; `safety.merge.exclude_thoughts_on_merge` removes branch-introduced `thoughts/` files before the merge.
 
@@ -125,6 +125,6 @@ Readiness is computed statelessly from the live PR on every poll, so there is no
 PR management reads its configuration from two files (documented there, not duplicated here):
 
 - **[`safety.yaml`](../../configuration/safety.md) → `merge.*`** — `auto_merge_after_approval`, `enable_comment_approval`, `exclude_thoughts_on_merge`.
-- **[`workspace.yaml`](../../configuration/workspace.md) → `pr.*`** — `default_merge_strategy`, `delete_branch_after_merge`, `skip_pr_creation`.
+- **[`workspace.yaml`](../../configuration/workspace.md) → `pr.*`** — `default_merge_strategy`, `branch_retention_days`, `skip_pr_creation`.
 
 The review-polling circuit breaker (`review_polling.*`) lives in [`daemon.yaml`](../../configuration/daemon.md).

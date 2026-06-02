@@ -7,7 +7,6 @@ import {
   CommMessageSentPayloadSchema,
   CostIncurredPayloadSchema,
   EventTypes,
-  GitBranchDeletedPayloadSchema,
   GitPrMergedPayloadSchema,
 } from "../../schemas/events.js";
 import type { PrEventType } from "../../schemas/git-hosting-event-types.js";
@@ -59,15 +58,8 @@ export const EVENTS: EventDeclaration[] = [
   },
   {
     type: EventTypes["git.pr_merged"],
-    description: "Emitted when auto-merge merges a task's pull request",
+    description: "Emitted when auto-merge records a task's pull request as merged (self- or external-merge)",
     payloadSchema: GitPrMergedPayloadSchema,
-    publishers: ["orchestrator"],
-    subscribers: [],
-  },
-  {
-    type: EventTypes["git.branch_deleted"],
-    description: "Emitted when auto-merge deletes a task branch from the remote after merge",
-    payloadSchema: GitBranchDeletedPayloadSchema,
     publishers: ["orchestrator"],
     subscribers: [],
   },

@@ -2,6 +2,7 @@ import type { GitHostingAdapter } from "../../../../adapters/git-hosting.js";
 import { AdapterTypes, type MergeStrategy } from "../../../../schemas/adapters.js";
 import { EventTypes } from "../../../../schemas/events.js";
 import { NotificationKinds } from "../../../../schemas/notifications.js";
+import type { ReviewState } from "../../../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../../../utils/sanitize.js";
 import type { PublishInput } from "../../../interfaces/event-bus.interface.js";
 import type { WorkspaceRecord } from "../../../interfaces/workspace-manager.interface.js";
@@ -24,12 +25,16 @@ import { skipWhenPushOnly } from "./deliverable.js";
 // task here on a `pr_ready_to_merge` (approved + CI green + mergeable) or `pr_merged`
 // event, so by the time `run` executes the PR was just observed ready. `run` still
 // re-checks the live PR — state can shift in the tick between the signal and here —
-// then merges, removes engineering thoughts from the branch first, deletes the
-// remote branch, and emits the merge audit events. Skipped in push-only mode, which
-// has no PR to merge.
+// then removes engineering thoughts from the branch and merges. It only *records* the
+// merge — stamps `review.merged_at`, emits the audit event, and notifies the milestone;
+// it does not delete the branch. The workspace reaper is the sole branch deleter and
+// reaps merged branches per `branch_retention_days`. An already-merged PR (the user
+// merged it, or a re-entry after a prior merge) takes the same record path with no
+// milestone — the external-merge backfill that lets the reaper reap an externally-merged
+// branch. Skipped in push-only mode, which has no PR to merge.
 //
-// Routing splits by cause (the local merge cleanup, the merge call, and the merge
-// audit are effects; `next` is pure):
+// Routing splits by cause (the thoughts removal, the merge call, and the merge record
+// are effects; `next` is pure):
 //   - merged / already-merged / auto-merge-disabled → done (the deliverable exists)
 //   - CI failing / not mergeable → jump back to execution to fix it (a rework, so the
 //     stale approval is dismissed and a human must re-approve before the next merge —
@@ -87,16 +92,32 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
     throw new Error("Cannot merge the pull request: no git hosting plugin is registered");
   }
   const record = ctx.workspaceManager.getWorkspaceRecord(ctx.task.id);
-  const prNumber = ctx.task.review?.pr_number;
+  const review = ctx.task.review;
+  const prNumber = review?.pr_number;
   const repo = record?.repo ?? ctx.task.repo;
-  if (!(prNumber && repo)) {
+  if (!(prNumber && repo && review)) {
     throw new Error("Cannot merge the pull request: the task has no PR number or repo on record");
   }
 
   // Re-derive readiness from the live PR — a pr_merged re-entry or a prior successful merge lands here already done.
   const status = await hosting.getPRStatus(repo, prNumber);
   if (status.state === "merged") {
-    ctx.observer.info("Pull request already merged — completing", { taskId: ctx.task.id, prNumber });
+    // External-merge backfill: record so the reaper can reap the branch, but no milestone — the user
+    // merged it themselves and we are not notifying someone of their own action (D10). The strategy is the
+    // configured default (the real one is unknown for an external merge) and there is no merge SHA to record.
+    ctx.observer.info("Pull request already merged — backfilling the merge record", {
+      taskId: ctx.task.id,
+      prNumber,
+    });
+    recordMerge(ctx, {
+      repo,
+      prNumber,
+      strategy: ctx.workspaceConfig.pr.default_merge_strategy,
+      mergeSha: "",
+      record,
+      review,
+      notifyMilestone: false,
+    });
     return resolved("merged", `PR #${String(prNumber)} is already merged`);
   }
 
@@ -158,7 +179,7 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
     return resolved("retry_wait", `Merge did not complete (${result.error?.code ?? "unknown"}) — waiting to retry`);
   }
 
-  recordMerge(ctx, repo, prNumber, strategy, result.merge_sha, record);
+  recordMerge(ctx, { repo, prNumber, strategy, mergeSha: result.merge_sha, record, review, notifyMilestone: true });
   return resolved("merged", `Merged PR #${String(prNumber)}`);
 }
 
@@ -177,19 +198,31 @@ function removeThoughtsBeforeMerge(ctx: Ctx): void {
   }
 }
 
+/** Inputs for recording a completed merge. `notifyMilestone` is true for a self-merge, false for the external-merge backfill. */
+interface RecordMergeInput {
+  readonly repo: string;
+  readonly prNumber: number;
+  readonly strategy: MergeStrategy;
+  readonly mergeSha: string;
+  readonly record: WorkspaceRecord | null;
+  readonly review: ReviewState;
+  readonly notifyMilestone: boolean;
+}
+
 /**
- * Record a completed merge: mark the PR merged on the task, publish the merge audit event, and delete the
- * remote branch (when configured) with its own audit event. The local worktree is reaped by the scheduler's
- * generic completion; only the merge-specific cleanup lives here. Branch deletion is best-effort.
+ * Record a completed merge: stamp `review.merged_at` (the reaper's retention clock), publish the merge audit
+ * event, and — only for a self-merge — notify the milestone. It does NOT delete the branch: the workspace
+ * reaper is the sole branch deleter and reaps per `branch_retention_days`. The local worktree is already
+ * reaped inline by the scheduler's completion path.
  */
-function recordMerge(
-  ctx: Ctx,
-  repo: string,
-  prNumber: number,
-  strategy: MergeStrategy,
-  mergeSha: string,
-  record: WorkspaceRecord | null,
-): void {
+function recordMerge(ctx: Ctx, input: RecordMergeInput): void {
+  const { repo, prNumber, strategy, mergeSha, record, review, notifyMilestone } = input;
+  // Stamp the merge time with the orchestrator's wall-clock idiom — there is no clock on the orchestrator
+  // context, and at day-granularity retention the detection-time vs actual-merge-time gap is immaterial (D15).
+  ctx.taskEngine.updateTaskField(ctx.task.id, "review", {
+    ...review,
+    merged_at: new Date().toISOString(),
+  });
   ctx.eventBus.publish({
     type: EventTypes["git.pr_merged"],
     source: "orchestrator",
@@ -203,36 +236,18 @@ function recordMerge(
       into_branch: record?.baseBranch ?? "",
     },
   } satisfies PublishInput<"git.pr_merged">);
-  ctx.notifications.notify({
-    kind: NotificationKinds.milestone,
-    taskId: ctx.task.id,
-    message: `Merged PR #${String(prNumber)}`,
-  });
-  ctx.observer.info("Pull request merged", { taskId: ctx.task.id, prNumber, mergeSha });
-  deleteRemoteBranchAfterMerge(ctx, repo, record);
-}
-
-/** Delete the merged branch from the remote when configured, emitting the audit event. Never blocks completion. */
-function deleteRemoteBranchAfterMerge(ctx: Ctx, repo: string, record: WorkspaceRecord | null): void {
-  if (!(ctx.workspaceConfig.pr.delete_branch_after_merge && record)) {
-    return;
-  }
-  try {
-    ctx.workspaceManager.deleteRemoteBranch(ctx.task.id);
-    ctx.eventBus.publish({
-      type: EventTypes["git.branch_deleted"],
-      source: "orchestrator",
-      task_id: ctx.task.id,
-      payload: { task_id: ctx.task.id, repo, branch: record.branch },
-    } satisfies PublishInput<"git.branch_deleted">);
-    ctx.observer.info("Deleted remote branch after merge", { taskId: ctx.task.id, branch: record.branch });
-  } catch (error) {
-    ctx.observer.warn("Remote branch deletion failed after merge — proceeding", {
+  if (notifyMilestone) {
+    ctx.notifications.notify({
+      kind: NotificationKinds.milestone,
       taskId: ctx.task.id,
-      branch: record.branch,
-      error: sanitizeErrorMessage(error),
+      message: `Merged PR #${String(prNumber)}`,
     });
   }
+  ctx.observer.info("Pull request merge recorded — the reaper deletes the branch per branch_retention_days", {
+    taskId: ctx.task.id,
+    prNumber,
+    selfMerged: notifyMilestone,
+  });
 }
 
 /** A merge attempt that ran cleanly: an `ok` result carrying the disposition `next` routes on. */

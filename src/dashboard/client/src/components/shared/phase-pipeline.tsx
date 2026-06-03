@@ -15,6 +15,12 @@ interface PhasePipelineProps {
   totalReworks?: number;
   /** Compact mode for dense list rows: smaller chips, with a tight sub-phase/iteration line when present. */
   compact?: boolean;
+  /**
+   * Letters-only mode for the overview glance: each phase is a single-letter chip and the secondary
+   * sub-phase/counter line is dropped, so six phases fit one tight row without wrapping. The full phase
+   * name stays on the chip's `title` tooltip, and position + highlight still disambiguate the repeated R's.
+   */
+  lettersOnly?: boolean;
   className?: string;
 }
 
@@ -31,6 +37,7 @@ export function PhasePipeline({
   phaseIteration,
   totalReworks,
   compact = false,
+  lettersOnly = false,
   className,
 }: PhasePipelineProps): React.JSX.Element {
   const ran = new Set<Phase>(phasesRan);
@@ -57,20 +64,21 @@ export function PhasePipeline({
               <span
                 className={cn(
                   "rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight transition-colors",
+                  lettersOnly && "w-5 text-center",
                   isCurrent && "bg-primary/20 text-primary ring-1 ring-primary/30",
                   isCompleted && "bg-emerald-500/15 text-emerald-400",
                   !(isCurrent || isCompleted) && "bg-muted text-muted-foreground/50",
                 )}
                 title={PHASE_LABELS[phase]}
               >
-                {PHASE_LABELS[phase]}
+                {lettersOnly ? PHASE_LABELS[phase].charAt(0) : PHASE_LABELS[phase]}
               </span>
             </div>
           );
         })}
       </div>
 
-      {(subPhaseLabel || showCounters) && (
+      {!lettersOnly && (subPhaseLabel || showCounters) && (
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
           {subPhaseLabel && (
             <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground/90">{subPhaseLabel}</span>

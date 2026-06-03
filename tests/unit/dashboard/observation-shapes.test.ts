@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type AgentCallLike,
   type ObservationLike,
+  type PhaseTransitionLike,
+  readAgentCall,
   readDecision,
+  readPhaseTransition,
   readVerdict,
 } from "../../../src/dashboard/client/src/lib/observation-shapes.js";
 
@@ -145,5 +149,116 @@ describe("readVerdict", () => {
     const verdict = readVerdict(obs);
     expect(verdict?.gates).toEqual([{ name: "lint", passed: true }]);
     expect(verdict?.failedGates).toEqual(["x"]);
+  });
+});
+
+function makeAgentCall(
+  type: string,
+  input: Record<string, unknown> | null,
+  output: Record<string, unknown> | null,
+): AgentCallLike {
+  return { type, input, output };
+}
+
+describe("readAgentCall", () => {
+  it("reads step from input and spend/blobs from output", () => {
+    const obs = makeAgentCall(
+      "agent_call",
+      { step: "implement", prompt_blob: "prompts/abc" },
+      {
+        outcome: "ok",
+        summary: "Implemented the feature.",
+        cost_usd: 0.42,
+        tokens_in: 1200,
+        tokens_out: 340,
+        cache_read_tokens: 800,
+        result_blob: "results/def",
+        transcript_blob: "transcripts/ghi",
+      },
+    );
+
+    expect(readAgentCall(obs)).toEqual({
+      step: "implement",
+      outcome: "ok",
+      summary: "Implemented the feature.",
+      costUsd: 0.42,
+      tokensIn: 1200,
+      tokensOut: 340,
+      cacheReadTokens: 800,
+      promptBlob: "prompts/abc",
+      resultBlob: "results/def",
+      transcriptBlob: "transcripts/ghi",
+    });
+  });
+
+  it("returns null for a non-agent observation", () => {
+    expect(readAgentCall(makeAgentCall("tool_execution", { step: "x" }, null))).toBeNull();
+  });
+
+  it("never reads cost from metadata — a missing cost is null, never inferred 0", () => {
+    const obs = makeAgentCall("agent_call", { step: "verify" }, { outcome: "ok" });
+    const call = readAgentCall(obs);
+    expect(call?.costUsd).toBeNull();
+    expect(call?.tokensIn).toBe(0);
+    expect(call?.tokensOut).toBe(0);
+  });
+
+  it("falls back to the observe()-path input when output is absent", () => {
+    const obs = makeAgentCall("agent_call", { step: "design", cost_usd: 0.1, tokens_in: 50 }, null);
+    const call = readAgentCall(obs);
+    expect(call?.step).toBe("design");
+    expect(call?.costUsd).toBe(0.1);
+    expect(call?.tokensIn).toBe(50);
+  });
+
+  it("accepts the input_tokens/output_tokens token aliases", () => {
+    const obs = makeAgentCall("agent_call", { step: "implement" }, { input_tokens: 10, output_tokens: 20 });
+    const call = readAgentCall(obs);
+    expect(call?.tokensIn).toBe(10);
+    expect(call?.tokensOut).toBe(20);
+  });
+});
+
+function makePhaseTransition(name: string, input: Record<string, unknown> | null): PhaseTransitionLike {
+  return { name, input };
+}
+
+describe("readPhaseTransition", () => {
+  it("reads the phase from input.phase, never the name", () => {
+    const obs = makePhaseTransition("phase_entered", { phase: "execution" });
+    expect(readPhaseTransition(obs)).toEqual({
+      event: "phase_entered",
+      phase: "execution",
+      subPhase: "",
+      outcome: "",
+      summary: "",
+    });
+  });
+
+  it("narrows a sub_phase_result with its outcome and summary", () => {
+    const obs = makePhaseTransition("sub_phase_result", {
+      phase: "review",
+      subPhase: "security",
+      outcome: "ok",
+      summary: "No issues found.",
+    });
+    expect(readPhaseTransition(obs)).toEqual({
+      event: "sub_phase_result",
+      phase: "review",
+      subPhase: "security",
+      outcome: "ok",
+      summary: "No issues found.",
+    });
+  });
+
+  it("marks an unrecognized event name as unknown and defaults absent fields", () => {
+    const obs = makePhaseTransition("something_else", null);
+    expect(readPhaseTransition(obs)).toEqual({
+      event: "unknown",
+      phase: "",
+      subPhase: "",
+      outcome: "",
+      summary: "",
+    });
   });
 });

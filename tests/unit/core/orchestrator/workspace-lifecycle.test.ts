@@ -124,11 +124,14 @@ describe("WorkspaceLifecycle", () => {
       const wl = createWorkspaceLifecycle(ctx);
       const dispatch = createDispatch();
 
-      wl.setupWorkspace(dispatch);
+      wl.setupWorkspace(dispatch, { traceId: "trace-xyz", parentObservationId: "root-obs-1" });
 
       expect(ctx.workspaceManager.createWorkspace).toHaveBeenCalledWith("task-001", "owner/repo", {
         title: "Test task",
         cloneUrl: "https://github.com/owner/repo.git",
+        // Trace context is threaded so worktree_created nests under the task's execution trace.
+        traceId: "trace-xyz",
+        parentObservationId: "root-obs-1",
       });
     });
 
@@ -145,7 +148,7 @@ describe("WorkspaceLifecycle", () => {
         },
       } as Partial<Task>);
 
-      wl.setupWorkspace(dispatch);
+      wl.setupWorkspace(dispatch, { traceId: "trace-xyz", parentObservationId: "root-obs-1" });
 
       // Stateless workspace-manager — no per-dispatch setup. DB-backed reads work as-is.
       expect(ctx.workspaceManager.createWorkspace).not.toHaveBeenCalled();
@@ -169,7 +172,7 @@ describe("WorkspaceLifecycle", () => {
         phase: Phases.research,
       };
 
-      wl.setupWorkspace(dispatch);
+      wl.setupWorkspace(dispatch, { traceId: "trace-xyz", parentObservationId: "root-obs-1" });
 
       expect(ctx.workspaceManager.createWorkspace).not.toHaveBeenCalled();
     });

@@ -104,25 +104,46 @@ class StubClock implements ExportClock {
   }
 }
 
+// ── A fixed task trace id ───────────────────────────────────────────────────────
+
+/**
+ * A valid (decodable) ULID used as the task `trace_id`. The exporter ships
+ * task-traces ONLY — an observation with a NULL trace_id is dashboard-only and is
+ * deliberately not exported — so every observation a test expects to see exported
+ * must carry a trace_id. It must be a real ULID because the mapper decodes it to
+ * the 16-byte OTLP trace id; a non-ULID would (correctly) be skipped as malformed.
+ */
+const TRACE = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
 // ── Raw-row seeding (bypasses the store to control rowid order / timestamps) ────
 
 /**
  * Insert a raw observation row directly, with explicit start/end times. The id is
  * a real ULID — the OTLP mapper decodes it to derive the span id, so a non-ULID
- * id would (correctly) throw inside the export cycle.
+ * id would (correctly) throw inside the export cycle. Rows are seeded WITH a
+ * trace_id by default (the common case — a task-trace observation that exports);
+ * pass `traceId: null` to seed an untraced, dashboard-only row.
  */
 function seedRow(
   db: Database.Database,
-  opts: { name?: string; startTime: string; endTime: string | null; type?: string; startMs?: number },
+  opts: {
+    name?: string;
+    startTime: string;
+    endTime: string | null;
+    type?: string;
+    startMs?: number;
+    traceId?: string | null;
+  },
 ): string {
   // Seed with a ULID minted at the row's start time so rowid order tracks time.
   const id = ulid(opts.startMs);
+  const traceId = opts.traceId === undefined ? TRACE : opts.traceId;
   db.prepare(
     `INSERT INTO observations
        (id, trace_id, parent_observation_id, type, name, task_id, phase, session_id,
         start_time, end_time, duration_ms, input, output, metadata, level, status, error_message)
-     VALUES (?, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, 'info', 'ok', NULL)`,
-  ).run(id, opts.type ?? "lifecycle", opts.name ?? "seeded", opts.startTime, opts.endTime);
+     VALUES (?, ?, NULL, ?, ?, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, 'info', 'ok', NULL)`,
+  ).run(id, traceId, opts.type ?? "lifecycle", opts.name ?? "seeded", opts.startTime, opts.endTime);
   return id;
 }
 
@@ -169,7 +190,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     const receiver = createFakeReceiver("ok");
     const ex = start(receiver);
 
-    const id = store.observe("lifecycle", "instant_event", { foo: "bar" });
+    const id = store.observe("lifecycle", "instant_event", { foo: "bar" }, { trace_id: TRACE });
 
     await ex.pollOnce();
     expect(receiver.received).toHaveLength(1);
@@ -186,13 +207,54 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     expect(span?.startTimeUnixNano).toBe(span?.endTimeUnixNano);
   });
 
+  // ── task-traces only: an untraced observation is dashboard-only, never exported ──
+
+  it("does not export an untraced observation, and still advances the cursor past it", async () => {
+    const receiver = createFakeReceiver("ok");
+    const ex = start(receiver);
+
+    // Untraced (trace_id NULL) — a standalone daemon/metric/startup observation
+    // (a quota poll, a scheduler decision, a bootstrap beat). Dashboard-only.
+    store.observe("quota_status", "quota_polled", { remaining: 10 });
+    // A traced observation that DOES belong to a task's execution trace.
+    store.observe("lifecycle", "traced_event", {}, { trace_id: TRACE });
+
+    await ex.pollOnce();
+    // Only the traced one ships; the untraced one is skipped (not noise in Jaeger).
+    expect(receiver.received.map((s) => s.name)).toEqual(["traced_event"]);
+
+    // The cursor advanced past BOTH rows, so a second poll re-exports nothing — the
+    // untraced row is consumed exactly once, never re-scanned each cycle.
+    await ex.pollOnce();
+    expect(receiver.received).toHaveLength(1);
+  });
+
+  it("does not export an untraced OPEN span even after it completes", async () => {
+    const receiver = createFakeReceiver("ok");
+    const ex = start(receiver);
+
+    // An untraced open span: it is skipped on sight (never joins `pending`), so its
+    // later completion is not exported either — untraced is dashboard-only, period.
+    seedRow(db, { name: "untraced_open", startTime: "2026-06-02T12:00:00.000Z", endTime: null, traceId: null });
+
+    await ex.pollOnce();
+    expect(receiver.received).toHaveLength(0);
+
+    db.prepare("UPDATE observations SET end_time = ?, duration_ms = 50 WHERE name = 'untraced_open'").run(
+      "2026-06-02T12:00:01.000Z",
+    );
+    await ex.pollOnce();
+    await ex.pollOnce();
+    expect(receiver.received).toHaveLength(0);
+  });
+
   // ── (b) open span THEN completion → exported once, complete, WITH duration ───
 
   it("exports an open span only after it completes, once, with a real duration", async () => {
     const receiver = createFakeReceiver("ok");
     const ex = start(receiver);
 
-    const span = store.startSpan("agent_call", "completion");
+    const span = store.startSpan("agent_call", "completion", undefined, { trace_id: TRACE });
 
     // First poll: the span is OPEN (end_time NULL). It must NOT be exported.
     await ex.pollOnce();
@@ -222,7 +284,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
 
     // Open and close BEFORE any poll — the first time we see the row it is
     // already complete, so it exports immediately from the new-rows path.
-    const span = store.startSpan("tool_execution", "bash");
+    const span = store.startSpan("tool_execution", "bash", undefined, { trace_id: TRACE });
     span.end();
 
     await ex.pollOnce();
@@ -239,14 +301,14 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     const receiver = createFakeReceiver("down");
     const ex = start(receiver);
 
-    store.observe("lifecycle", "e1", {});
+    store.observe("lifecycle", "e1", {}, { trace_id: TRACE });
     await expect(ex.pollOnce()).resolves.toBeUndefined();
     expect(receiver.calls).toBe(1);
     expect(receiver.received).toHaveLength(0);
 
     // The loop survives and retries on the next cycle (the row is past the cursor,
     // so it is NOT re-attempted — but a NEW row still flows; the loop is alive).
-    store.observe("lifecycle", "e2", {});
+    store.observe("lifecycle", "e2", {}, { trace_id: TRACE });
     await expect(ex.pollOnce()).resolves.toBeUndefined();
     expect(receiver.calls).toBe(2);
   });
@@ -257,7 +319,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     // pollOnce's POST does not settle, yet the write path stays fully responsive.
     const ex = start(receiver);
 
-    store.observe("lifecycle", "before_hang", {});
+    store.observe("lifecycle", "before_hang", {}, { trace_id: TRACE });
 
     // Kick off a poll whose POST will hang forever (the fake never resolves).
     let pollSettled = false;
@@ -290,7 +352,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     const receiver = createFakeReceiver("hung");
     const ex = start(receiver);
 
-    store.observe("lifecycle", "first", {});
+    store.observe("lifecycle", "first", {}, { trace_id: TRACE });
 
     // Cycle 1: its POST hangs forever, so the cycle stays mid-flight.
     let firstSettled = false;
@@ -302,7 +364,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     expect(firstSettled).toBe(false);
 
     // A NEW row arrives while cycle 1 is still in flight.
-    store.observe("lifecycle", "second", {});
+    store.observe("lifecycle", "second", {}, { trace_id: TRACE });
 
     // Cycle 2 must early-return on the overlap guard: NO second concurrent POST.
     await expect(ex.pollOnce()).resolves.toBeUndefined();
@@ -378,7 +440,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
 
     // A NEW live observation arrives after the cursor — exported once, no dup of
     // the rehydrated one.
-    store.observe("lifecycle", "live", {});
+    store.observe("lifecycle", "live", {}, { trace_id: TRACE });
     await ex.pollOnce();
     expect(receiver.received.map((s) => s.name)).toEqual(["rehydrated", "live"]);
 
@@ -400,13 +462,13 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
 
     const ex = start(downReceiver, { fetchFn: proxyFetch });
 
-    store.observe("lifecycle", "during_outage", {});
+    store.observe("lifecycle", "during_outage", {}, { trace_id: TRACE });
     await ex.pollOnce(); // POST fails (down) — dropped, no throw.
     expect(okReceiver.received).toHaveLength(0);
 
     // Backend recovers; a NEW observation exports cleanly (loop still alive).
     currentFetch = okReceiver.fetchFn;
-    store.observe("lifecycle", "after_recovery", {});
+    store.observe("lifecycle", "after_recovery", {}, { trace_id: TRACE });
     await ex.pollOnce();
     expect(okReceiver.received.map((s) => s.name)).toEqual(["after_recovery"]);
   });
@@ -415,12 +477,12 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     const rejectReceiver = createFakeReceiver("reject");
     const ex = start(rejectReceiver);
 
-    store.observe("lifecycle", "rejected", {});
+    store.observe("lifecycle", "rejected", {}, { trace_id: TRACE });
     await expect(ex.pollOnce()).resolves.toBeUndefined();
     expect(rejectReceiver.calls).toBe(1);
 
     // Still alive: a later poll keeps calling the receiver.
-    store.observe("lifecycle", "next", {});
+    store.observe("lifecycle", "next", {}, { trace_id: TRACE });
     await ex.pollOnce();
     expect(rejectReceiver.calls).toBe(2);
   });
@@ -436,7 +498,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     await expect(ex.pollOnce()).resolves.toBeUndefined();
 
     // A subsequent VALID observation still exports — the loop survived.
-    store.observe("lifecycle", "healthy", {});
+    store.observe("lifecycle", "healthy", {}, { trace_id: TRACE });
     await ex.pollOnce();
     expect(receiver.received.map((s) => s.name)).toContain("healthy");
   });
@@ -447,7 +509,7 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     const receiver = createFakeReceiver("ok");
     const ex = start(receiver);
 
-    store.observe("lifecycle", "before_stop", {});
+    store.observe("lifecycle", "before_stop", {}, { trace_id: TRACE });
     ex.stop();
 
     // After stop(), a poll is a no-op (the loop guard short-circuits).

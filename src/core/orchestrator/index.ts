@@ -180,24 +180,30 @@ export class Orchestrator {
     const sessionId = session.id;
     this.ctx.taskEngine.updateTaskField(taskId, "session_id", sessionId);
 
-    // Workspace setup. A failure here (git, disk, auth) closes the session before re-throwing so it
-    // does not linger open; the dispatch-tracker routes the throw to crash recovery.
-    try {
-      this.workspaceLifecycle.setupWorkspace(dispatch);
-    } catch (workspaceError) {
-      this.endSession(sessionId, SessionEndReasons.crashed, taskId);
-      throw workspaceError;
-    }
-
-    // Root span for the whole dispatch — the end-to-end "tracer bullet". Every phase, sub-phase, agent run,
-    // decision, and action nests under it (via Ctx.rootObservationId), so the observer can open one task and
-    // see its complete trace from intake to outcome, and so the trace can later be exported whole.
+    // Root span for the whole dispatch — the end-to-end "tracer bullet". Opened BEFORE workspace setup
+    // so the setup belongs to the trace: worktree_created nests under it (rather than surfacing as a lone
+    // 1-span trace), and a setup failure is recorded as a failed task_execution span rather than an
+    // untraced throw. Every phase, sub-phase, agent run, decision, and action nests under it (via
+    // Ctx.rootObservationId), so the observer can open one task and see its complete trace from intake to
+    // outcome, and so the trace can later be exported whole.
     const rootSpan = tracedObserver.startSpan(
       ObservationTypes.task_execution,
       "execute_task",
       { taskId, title: dispatch.task.title, isResume: !!dispatch.resume_from },
       { task_id: taskId, trace_id: traceId, session_id: sessionId },
     );
+
+    // Workspace setup. A failure here (git, disk, auth) ends the root span as crashed and closes the
+    // session before re-throwing so neither lingers open; the dispatch-tracker routes the throw to crash
+    // recovery. The trace context nests the worktree_created observation under the root span.
+    try {
+      this.workspaceLifecycle.setupWorkspace(dispatch, { traceId, parentObservationId: rootSpan.id });
+    } catch (workspaceError) {
+      rootSpan.setError(workspaceError);
+      rootSpan.end({ outcome: "crashed" });
+      this.endSession(sessionId, SessionEndReasons.crashed, taskId);
+      throw workspaceError;
+    }
 
     // The pickup moment — the engine took this task and told the owner — is the first beat of the run, so it
     // anchors the trace under the root span rather than sitting outside it. The notification behavior is

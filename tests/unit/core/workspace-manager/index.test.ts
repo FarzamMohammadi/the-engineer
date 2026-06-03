@@ -497,6 +497,36 @@ describe("workspace_op observations", () => {
     expect(typeof created?.input?.["durationMs"]).toBe("number");
   });
 
+  it("nests worktree_created under the task's execution trace when trace context is threaded", () => {
+    const h = setupWithStore();
+    h.setupTask("task-1");
+
+    // The orchestrator passes the dispatch's trace_id + root span id so this setup
+    // observation joins the task trace instead of surfacing as a lone 1-span trace.
+    h.workspaceManager.createWorkspace("task-1", h.repoName, {
+      title: "Dark Mode",
+      traceId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      parentObservationId: "01ARZ3NDEKTSV4RRFFQ69G5FB0",
+    });
+
+    const ops = store?.observer.query({ type: ObservationTypes.workspace_op, task_id: "task-1" }) ?? [];
+    const created = ops.find((op) => op.name === "worktree_created");
+    expect(created?.trace_id).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    expect(created?.parent_observation_id).toBe("01ARZ3NDEKTSV4RRFFQ69G5FB0");
+  });
+
+  it("leaves worktree_created untraced (dashboard-only) when no trace context is given", () => {
+    const h = setupWithStore();
+    h.setupTask("task-1");
+
+    h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Dark Mode" });
+
+    const ops = store?.observer.query({ type: ObservationTypes.workspace_op, task_id: "task-1" }) ?? [];
+    const created = ops.find((op) => op.name === "worktree_created");
+    expect(created?.trace_id).toBeNull();
+    expect(created?.parent_observation_id).toBeNull();
+  });
+
   it("emits a worktree_cleaned workspace_op when a workspace is cleaned up", () => {
     const h = setupWithStore();
     h.setupTask("task-1");

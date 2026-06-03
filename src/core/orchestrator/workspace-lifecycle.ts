@@ -4,10 +4,16 @@ import type { OrchestratorContext } from "./types.js";
 
 // ── WorkspaceLifecycle Interface ────────────────────────────────────────────
 
+/** Trace context so a fresh worktree_created observation nests under the task's execution trace. */
+export interface WorkspaceTraceContext {
+  readonly traceId: string;
+  readonly parentObservationId: string;
+}
+
 /** Workspace setup and session management for task dispatches. */
 export interface WorkspaceLifecycle {
   /** Set up the workspace for a task dispatch — creates for fresh dispatches, no-op for resume/rework (task.workspace is the source of truth). */
-  setupWorkspace(dispatch: Dispatch): void;
+  setupWorkspace(dispatch: Dispatch, trace: WorkspaceTraceContext): void;
   /** Create a session row for a dispatch. */
   createSession(dispatch: Dispatch): Session;
 }
@@ -16,7 +22,7 @@ export interface WorkspaceLifecycle {
 
 /** Create WorkspaceLifecycle bound to the given context. */
 export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLifecycle {
-  function setupWorkspace(dispatch: Dispatch): void {
+  function setupWorkspace(dispatch: Dispatch, trace: WorkspaceTraceContext): void {
     const taskId = dispatch.task.id;
     const isResume = !!dispatch.resume_from;
 
@@ -48,6 +54,8 @@ export function createWorkspaceLifecycle(ctx: OrchestratorContext): WorkspaceLif
       title: dispatch.task.title,
       cloneUrl,
       thoughtsId,
+      traceId: trace.traceId,
+      parentObservationId: trace.parentObservationId,
     });
   }
 

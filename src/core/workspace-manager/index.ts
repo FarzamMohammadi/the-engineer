@@ -222,7 +222,7 @@ export class WorkspaceManager implements IWorkspaceManager {
    * from the base, and sets up a git worktree. Emits `workspace.created`.
    */
   createWorkspace(taskId: string, repo: string, options?: CreateWorkspaceOptions): WorkspaceRecord {
-    const { title, baseBranch, cloneUrl, thoughtsId } = options ?? {};
+    const { title, baseBranch, cloneUrl, thoughtsId, traceId, parentObservationId } = options ?? {};
     const resolvedBase = baseBranch ?? this.config.default_base_branch;
     const slug = slugify(title ?? taskId, this.config.slug_max_length);
     const branch = branchName(this.config.branch_prefix, taskId, slug);
@@ -317,7 +317,9 @@ export class WorkspaceManager implements IWorkspaceManager {
       ObservationTypes.workspace_op,
       "worktree_created",
       { taskId, repo, branch, worktreePath, durationMs: Date.now() - createStart },
-      { task_id: taskId },
+      // Nest under the task's execution trace when the orchestrator threaded the
+      // context; undefined (any other caller) falls back to a standalone observation.
+      { task_id: taskId, trace_id: traceId, parent_observation_id: parentObservationId },
     );
 
     this.eventBus.publish({

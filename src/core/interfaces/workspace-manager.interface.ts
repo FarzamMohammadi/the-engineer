@@ -43,6 +43,13 @@ export interface CreateWorkspaceOptions {
   cloneUrl?: string | undefined;
   /** Identifier for the thoughts/ directory (e.g., "issue-42"). Derived from trigger events. */
   thoughtsId?: string | undefined;
+  /**
+   * Trace context so the `worktree_created` observation nests under the task's
+   * execution trace instead of surfacing as a standalone 1-span trace. Set by the
+   * orchestrator (the only caller inside a traced dispatch); omitted elsewhere.
+   */
+  traceId?: string | undefined;
+  parentObservationId?: string | undefined;
 }
 
 export interface IWorkspaceManager {

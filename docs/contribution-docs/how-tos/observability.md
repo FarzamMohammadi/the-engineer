@@ -170,6 +170,21 @@ Pick the type that names what you're recording — never overload `lifecycle` as
 | `lifecycle` | Generic lifecycle event (startup, shutdown, task pickup) |
 | `quota_status` | Provider quota / rate-limit status (emitted by the daemon's periodic agent-quota poll) |
 
+### What to trace, what not to, what's a decision
+
+Not everything that happens is a trace. The dashboard and the OTLP export both read the `observations` table, but they are different lenses — and the cost of over-emitting is real (a flood of low-value rows, and lone 1-span "traces" that bury the task tree). Use this taxonomy:
+
+**Emit a span (`startSpan`) or instant (`observe`) when** something *happened inside a task's work* — a phase ran, an agent was called, a gate executed, a worktree was created for the dispatch. These belong to the task's trace; always pass `trace_id` (and `task_id`) so they nest under the `execute_task` root. A span has duration (it wraps an operation); an instant is a point-in-time fact (it has no width).
+
+**Record a decision (`recordDecision`) only when** a *genuine branch point* was resolved — there were real alternatives, and the *why* matters for later understanding. A routing choice between `advance`/`repeat`, a preemption `preempt`/`wait`, a merge `merge`/`wait`. Not every `if`: if only one outcome was ever possible, or the reasoning is "because the config said so" with no judgment, it's not a decision — it's control flow. A decision carries its alternatives, the chosen id, the reasoning, and a confidence.
+
+**Do NOT emit a trace for:**
+- **High-frequency gauges / polls.** A periodic quota reading, a heartbeat, a "still alive" tick. These are *metrics*, not events — a value sampled on a timer, not a unit of work. The daemon's `quota_polled` feeds the dashboard's quota widget and stays in SQLite, but it carries no `trace_id`, so it is **never exported** (see below). If you need a sampled value for a widget, emit it untraced; if you only need it for diagnostics, use a log line instead.
+- **Pure ops diagnostics.** "Fetching from remote", "cache miss" — use `observer.debug/info`, not an observation.
+- **Anything with no consumer.** An observation no dashboard view queries (and no trace groups) is dead data — see Rule 8.
+
+**`trace_id` is the export boundary.** The OTLP exporter ships **task-traces only**: an observation with a `trace_id` is part of a task's end-to-end tree and is exported; an observation *without* one (a quota poll, a daemon arbitration decision made in the scheduler loop, a workspace *teardown* run by the reaper long after the task's trace closed, a startup beat) is **dashboard-only by design** — it stays fully visible in SQLite/the dashboard but never becomes a lone 1-span trace in Jaeger. So a daemon-scoped decision is a real, queryable observation; it is simply not a *trace*. The rule is mechanical and self-defending: if it carries a `trace_id`, it exports; if it doesn't, it won't. Workspace **setup** (`worktree_created`) runs inside `executeTask`, so the orchestrator threads the dispatch's `trace_id` into it and it nests under the task trace; cleanup runs in a daemon loop with no live trace and stays dashboard-only.
+
 ### SpanOptions
 
 Every tracing method accepts optional `SpanOptions` for correlation:
@@ -215,6 +230,8 @@ Large content — agent prompts and responses, a failing gate's output, a diff �
 The same nested trace the dashboard renders can be projected into any OTLP/HTTP backend — Jaeger v2, the OTel Collector, Tempo, Honeycomb — for a real flame-graph view. This is **opt-in, additive, and best-effort**: off by default, it changes nothing about how the pipeline emits, and a down or slow backend can never affect a task or daemon startup.
 
 **It is a projection, not new instrumentation.** SQLite stays the system of record; the backend is a disposable lens. The exporter is a side-channel **reader** of the `observations` table, never on the pipeline write path.
+
+**Task-traces only.** The exporter ships **only observations that carry a `trace_id`** — the task pipeline's end-to-end tree. Untraced rows (quota polls, daemon arbitration decisions, workspace teardown, startup beats) are *not* exported: each would otherwise derive its own trace id and land as a lone 1-span "trace", which is noise in a trace tool. They remain fully visible in the dashboard (SQLite is the system of record); the OTLP lens is deliberately narrower. See [What to trace, what not to](#what-to-trace-what-not-to-whats-a-decision) for the emission rules this enforces.
 
 ```
 observations table (SQLite)  ──poll by rowid──▶  OTLP mapper  ──POST──▶  <endpoint>/v1/traces

@@ -7,6 +7,12 @@
  * polls those rows on its OWN timer and POSTs them. A down or slow backend
  * therefore CANNOT affect task latency or startup — the linchpin invariant.
  *
+ * Scope — task-traces only: the exporter ships ONLY observations that carry a
+ * `trace_id` (the task pipeline's end-to-end tree). Untraced rows — quota polls,
+ * daemon arbitration decisions, workspace teardown, startup beats — are NOT
+ * exported; each would otherwise become a lone 1-span "trace" (noise in a trace
+ * tool). They remain fully visible in the dashboard. See `collectNewRows`.
+ *
  * Why poll, not subscribe: post-s56 there is no in-memory observation stream;
  * the dashboard's SSE route (src/dashboard/api/stream.ts) is the template — a
  * rowid high-water cursor over `observations`. We reuse that mechanism here.
@@ -327,6 +333,17 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
     const complete: Observation[] = [];
     for (const row of rows) {
       cursor = row.rowid;
+      // Task-traces only. An untraced row (trace_id NULL) is a standalone
+      // daemon/metric/startup observation — a quota poll, a scheduler/preemption
+      // decision, a workspace teardown, a bootstrap beat. Each would derive a
+      // traceId from its own id and land in the backend as a lone 1-span "trace",
+      // which is noise in a trace tool: a trace is one task's end-to-end work tree,
+      // not a point reading. These stay fully visible in the dashboard (SQLite is
+      // the system of record); the OTLP lens is deliberately narrower. The cursor
+      // still advances over them, so each is consumed exactly once, never re-scanned.
+      if (row.trace_id === null) {
+        continue;
+      }
       if (row.end_time === null) {
         rememberPending(row.id);
       } else {

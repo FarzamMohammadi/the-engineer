@@ -95,10 +95,16 @@ function SweepSummary({
   highlightFailures: boolean;
 }): React.JSX.Element {
   return (
-    <div className="grid grid-cols-3 gap-2 text-center">
-      <Stat label="Reaped" value={summary.reaped} />
-      <Stat label="Deferred" value={summary.deferred} />
-      <Stat label="Failed" value={summary.failed} danger={highlightFailures} />
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground">
+        {summary.scanned} examined · {summary.duration_ms}ms
+      </p>
+      <div className="grid grid-cols-4 gap-2 text-center">
+        <Stat label="Reaped" value={summary.reaped} />
+        <Stat label="Deferred" value={summary.deferred} />
+        <Stat label="Skipped" value={summary.skipped_in_flight} />
+        <Stat label="Failed" value={summary.failed} danger={highlightFailures} />
+      </div>
     </div>
   );
 }

@@ -6,9 +6,11 @@
  * - times: ISO 8601 → unix-nanos **as strings**. An instant (observe /
  *   recordDecision / recordError, start == end) — and any span that opens and
  *   closes within the same millisecond — has a zero-width duration. We floor the
- *   end to start + 1ns so the flame graph still shows it AND the backend never
+ *   end to start + 1µs so the flame graph still shows it AND the backend never
  *   flags a "negative duration" (Jaeger sanitizes ≤0-width spans, one warning per
- *   span otherwise); 1ns is imperceptible, so an instant still reads as instant.
+ *   span otherwise). The floor is 1µs, not 1ns: Jaeger measures duration in
+ *   microseconds, so a 1ns width truncates back to 0µs. 1µs is imperceptible, so
+ *   an instant still reads as instant.
  * - attributes: `input`/`output` projected and sanitized (see ./attributes.ts).
  * - status: `ok` → OK, `error` → ERROR. An error span also carries the sanitized
  *   `error_message` (stored only in that column, not in input/output) as
@@ -55,12 +57,15 @@ function isoToNanos(iso: string): bigint {
  */
 export function mapObservationToSpan(obs: Observation, ctx: AttributeContext): OtlpSpan {
   const startNanos = isoToNanos(obs.start_time);
-  // Floor the end to at least 1ns after the start. With millisecond-precision timestamps an instant
-  // (start == end) and any span that opens and closes within the same millisecond are both zero-width,
-  // which OTLP backends flag as a "negative duration" and silently bump by 1ns — one warning per span.
-  // Doing the floor here means the backend never has to, so that warning class disappears entirely.
+  // Floor the end to at least 1µs after the start. An instant (start == end), and any span that opens
+  // and closes within the same millisecond, is zero-width — which OTLP backends flag as a "negative
+  // duration" and silently sanitize, one warning per span. The floor must be 1µs, NOT 1ns: Jaeger's
+  // duration unit is microseconds (it divides the OTLP nanos by 1000), so a 1ns width truncates back to
+  // 0µs and the warning returns. 1µs is the smallest width that survives that conversion as non-zero,
+  // and is imperceptible — an instant still reads as instant.
+  const MIN_SPAN_NANOS = 1_000n; // 1µs — see above; smaller floors truncate to 0µs in the backend.
   const rawEndNanos = isoToNanos(obs.end_time ?? obs.start_time);
-  const endNanos = rawEndNanos > startNanos ? rawEndNanos : startNanos + 1n;
+  const endNanos = rawEndNanos - startNanos >= MIN_SPAN_NANOS ? rawEndNanos : startNanos + MIN_SPAN_NANOS;
   const startTimeUnixNano = startNanos.toString();
   const endTimeUnixNano = endNanos.toString();
 

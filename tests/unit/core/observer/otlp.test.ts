@@ -216,25 +216,27 @@ describe("mapObservationToSpan", () => {
     expect(BigInt(span.startTimeUnixNano) > BigInt(Number.MAX_SAFE_INTEGER)).toBe(true);
   });
 
-  it("floors an instant (start == end) to a 1ns-wide span so backends never flag a negative duration", () => {
+  it("floors an instant (start == end) to a 1µs-wide span so backends never flag a negative duration", () => {
     const instant = "2026-06-02T12:00:00.000Z";
     const obs = makeObservation({ start_time: instant, end_time: instant, duration_ms: 0 });
     const span = mapObservationToSpan(obs, CTX);
-    // Not zero-width: end is start + exactly 1ns (imperceptible, but positive).
-    expect(BigInt(span.endTimeUnixNano)).toBe(BigInt(span.startTimeUnixNano) + 1n);
+    // Not zero-width: end is start + exactly 1µs (1000ns) — survives Jaeger's ns→µs truncation as >0.
+    expect(BigInt(span.endTimeUnixNano)).toBe(BigInt(span.startTimeUnixNano) + 1_000n);
   });
 
-  it("floors a same-millisecond span (end == start at ms precision) to 1ns wide", () => {
-    const t = "2026-06-02T12:00:00.000Z";
-    const obs = makeObservation({ start_time: t, end_time: t, duration_ms: 0 });
+  it("keeps a real (≥1µs) span's end unchanged — the floor only lifts zero/sub-µs widths", () => {
+    const obs = makeObservation({
+      start_time: "2026-06-02T12:00:00.000Z",
+      end_time: "2026-06-02T12:00:01.500Z",
+    });
     const span = mapObservationToSpan(obs, CTX);
-    expect(BigInt(span.endTimeUnixNano) > BigInt(span.startTimeUnixNano)).toBe(true);
+    expect(span.endTimeUnixNano).toBe(String(Date.parse("2026-06-02T12:00:01.500Z") * 1_000_000));
   });
 
-  it("falls back end → start (then 1ns floor) for a still-open span (null end_time)", () => {
+  it("falls back end → start (then 1µs floor) for a still-open span (null end_time)", () => {
     const obs = makeObservation({ end_time: null, duration_ms: null });
     const span = mapObservationToSpan(obs, CTX);
-    expect(BigInt(span.endTimeUnixNano)).toBe(BigInt(span.startTimeUnixNano) + 1n);
+    expect(BigInt(span.endTimeUnixNano)).toBe(BigInt(span.startTimeUnixNano) + 1_000n);
   });
 
   it("omits parentSpanId for a root span (null parent)", () => {

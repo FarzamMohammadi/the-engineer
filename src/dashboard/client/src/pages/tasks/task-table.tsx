@@ -39,7 +39,9 @@ const columns: ColumnDef<TaskListItem>[] = [
   {
     id: "phase",
     header: "Phase",
-    cell: ({ row }) => <PhasePipeline currentPhase={row.original.phase} phasesRan={row.original.phases_ran} />,
+    cell: ({ row }) => (
+      <PhasePipeline currentPhase={row.original.phase} phasesRan={row.original.phases_ran} compact={true} />
+    ),
     size: 220,
   },
   {

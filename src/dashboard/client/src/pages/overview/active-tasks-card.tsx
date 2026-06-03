@@ -46,7 +46,7 @@ export function ActiveTasksCard(): React.JSX.Element {
                   <p className="truncate text-sm font-medium">{task.title}</p>
                   <div className="mt-1 flex items-center gap-2">
                     <StateBadge state={task.state} />
-                    <PhasePipeline currentPhase={task.phase} phasesRan={task.phases_ran} />
+                    <PhasePipeline currentPhase={task.phase} phasesRan={task.phases_ran} compact={true} />
                   </div>
                 </div>
                 <TimeAgo timestamp={task.last_transition_at} />

@@ -378,6 +378,7 @@ describe("TaskSchema", () => {
     consecutive_crash_count: 0,
     consecutive_agent_unavailable_count: 0,
     session_id: null,
+    last_trace_link: null,
   };
 
   it("parses a minimal valid task", () => {

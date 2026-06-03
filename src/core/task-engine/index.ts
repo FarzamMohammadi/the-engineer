@@ -95,6 +95,7 @@ const FIELD_TYPES: Record<UpdatableField, SqliteColumnType> = {
 
   // JSON columns (TEXT holding JSON.stringify'd objects/arrays)
   external_ref: "json",
+  last_trace_link: "json",
   workspace: "json",
   review: "json",
   blocked: "json",
@@ -282,6 +283,7 @@ export class TaskEngine implements ITaskEngine {
       consecutive_crash_count: 0,
       consecutive_agent_unavailable_count: 0,
       session_id: null,
+      last_trace_link: null,
     };
 
     return task;

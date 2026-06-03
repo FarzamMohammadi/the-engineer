@@ -61,6 +61,7 @@ function buildObservation(
     level: options?.level ?? level,
     status,
     error_message: null,
+    links: options?.links ?? null,
   };
 }
 

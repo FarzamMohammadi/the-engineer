@@ -16,7 +16,7 @@ import { sanitizeSecrets } from "../../../utils/sanitize.js";
 
 import type { Observation } from "../../../schemas/observer.js";
 import { type AttributeContext, buildAttributes } from "./attributes.js";
-import { type OtlpSpan, type OtlpStatus, OtlpStatusCodes } from "./types.js";
+import { type OtlpLink, type OtlpSpan, type OtlpStatus, OtlpStatusCodes } from "./types.js";
 import { deriveSpanId, deriveTraceId } from "./ulid.js";
 
 /** Nanoseconds per millisecond — ISO times carry millisecond precision. */
@@ -80,6 +80,15 @@ export function mapObservationToSpan(obs: Observation, ctx: AttributeContext): O
   // different trace — must NOT become a dangling parentSpanId.
   if (obs.parent_observation_id !== null && obs.trace_id !== null) {
     span.parentSpanId = deriveSpanId(obs.parent_observation_id);
+  }
+
+  // Cross-trace "follows-from" edges (trace continuity across dispatches). Each link
+  // targets a span in ANOTHER trace, so the ids derive from the link's own
+  // trace_id/observation_id — independent of this span's trace.
+  if (obs.links !== null && obs.links.length > 0) {
+    span.links = obs.links.map(
+      (link): OtlpLink => ({ traceId: deriveTraceId(link.trace_id), spanId: deriveSpanId(link.observation_id) }),
+    );
   }
 
   return span;

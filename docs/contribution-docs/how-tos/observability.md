@@ -197,6 +197,7 @@ interface SpanOptions {
   phase?: string;                // Current orchestrator phase
   session_id?: string;           // Session correlation
   level?: "debug" | "info" | "warn" | "error";
+  links?: Array<{ trace_id: string; observation_id: string }>; // Cross-trace "follows-from" edges (continuity)
 }
 ```
 
@@ -216,6 +217,16 @@ Every task dispatch is one trace. The orchestrator opens a root `task_execution`
 - The **PR-event poller** records `pr_event_arbitration` (which event won among competitors) and `approve_comment_promotion` (a `/approve` turned into a merge).
 
 The shared `traceScope(ctx)` helper builds the `{task_id, session_id, trace_id, phase, parent_observation_id}` scope so the runner and every sub-phase stitch into the same tree.
+
+### Trace continuity across dispatches
+
+One task is rarely one dispatch. It blocks (awaiting PR review, more info), gets resumed, bounces back from a self-review or a PR comment, retries — each is a separate `executeTask` call with its **own** `trace_id`. We deliberately do **not** merge them into a single task-long trace: a task can sit blocked for hours or days, so a merged trace's duration would be dominated by idle gaps, collapsing the actual work spans into invisible slivers and making the flame graph useless exactly as the task gets more interesting. A merged trace would also have no single root (nothing is "open" across a daemon restart while blocked) — it would be multi-root anyway.
+
+Instead, **each dispatch is its own bounded trace, and the dispatches are chained with OTLP span links.** The task row persists its trace lineage (`last_trace_id` + `last_root_observation_id` — an all-or-nothing pair, enforced by a DB CHECK); when the orchestrator opens the next dispatch's root `execute_task` span, it emits a link back to the previous dispatch's root. In Jaeger you can walk the whole lifecycle by following the links, while every individual trace stays a crisp, readable flame graph.
+
+The **true holistic, one-screen end-to-end view lives in the dashboard**, which groups every observation by `task_id` across all dispatches. In Jaeger, a `task_id` tag search lists every dispatch's trace for a task. So nothing is lost by keeping the traces bounded — the links give you navigability and the dashboard gives you the union.
+
+A link is carried as the observation's `links` (JSON array of `{trace_id, observation_id}`), mapped to OTLP `links` at export (`otlp/span.ts`). It targets a span in *another* trace, so its ids derive from the link's own coordinates, not the linking span's.
 
 ## Drill-Down Blobs
 
@@ -393,7 +404,8 @@ CREATE TABLE observations (
   metadata TEXT,                          -- JSON
   level TEXT NOT NULL DEFAULT 'info',
   status TEXT NOT NULL DEFAULT 'ok',
-  error_message TEXT
+  error_message TEXT,
+  links TEXT                              -- JSON [{trace_id, observation_id}]; cross-trace continuity edges
 );
 ```
 

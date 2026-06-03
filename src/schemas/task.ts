@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { PrEventTypeSchema } from "./git-hosting-event-types.js";
+import { ObservationLinkSchema } from "./observer.js";
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -271,6 +272,12 @@ export const TaskSchema = z.object({
 
   // Session link
   session_id: z.string().nullable(),
+
+  // Trace lineage — a single link to the previous dispatch's root span, so the next dispatch's root can
+  // emit an OTLP "follows-from" edge and the task's lifecycle reads as one navigable chain of bounded
+  // traces. Null on a fresh task. Stored as one value so the {trace_id, observation_id} pair is atomically
+  // all-or-nothing — never half-set. It is exactly the link the next dispatch emits (see orchestrator).
+  last_trace_link: ObservationLinkSchema.nullable(),
 });
 export type Task = z.infer<typeof TaskSchema>;
 

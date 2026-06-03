@@ -4,7 +4,11 @@
  *
  * Shapes match the OTLP/JSON encoding accepted by any OTLP/HTTP backend on
  * `<endpoint>/v1/traces` (Jaeger v2, the OTel Collector, etc.). We emit trace
- * spans only — `links` and `events` are part of the spec but unused here.
+ * spans only — `events` is part of the spec but unused here. `links` carries the
+ * cross-trace "follows-from" edge: each task dispatch is its own bounded trace, and
+ * a resumed/reworked dispatch's root links back to the previous dispatch's root so
+ * the whole task lifecycle is navigable as a chain (without merging into one
+ * idle-gap-dominated mega-trace).
  *
  * Wire contract (the parts that bite if wrong):
  * - `traceId` / `spanId` / `parentSpanId` are case-insensitive hex (16 / 8 / 8
@@ -49,6 +53,16 @@ export interface OtlpStatus {
   message?: string;
 }
 
+/**
+ * An OTLP span link — a reference to a span in ANOTHER trace this span follows
+ * from. We use it for trace continuity: a resumed dispatch's root links to the
+ * prior dispatch's root. `attributes` is part of the spec but we emit none.
+ */
+export interface OtlpLink {
+  traceId: string;
+  spanId: string;
+}
+
 /** A single OTLP span — one observation projected onto the wire. */
 export interface OtlpSpan {
   traceId: string;
@@ -60,6 +74,8 @@ export interface OtlpSpan {
   endTimeUnixNano: string;
   attributes: OtlpKeyValue[];
   status: OtlpStatus;
+  /** Cross-trace "follows-from" edges; omitted when the span has none. */
+  links?: OtlpLink[];
 }
 
 // ── Resource / Scope envelope ─────────────────────────────────────────────────

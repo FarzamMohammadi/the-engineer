@@ -28,9 +28,9 @@ export class ObserverStore {
     this.stmtInsert = db.prepare(`
       INSERT INTO observations
         (id, trace_id, parent_observation_id, type, name, task_id, phase, session_id,
-         start_time, end_time, duration_ms, input, output, metadata, level, status, error_message)
+         start_time, end_time, duration_ms, input, output, metadata, level, status, error_message, links)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.stmtUpdateEnd = db.prepare(`
@@ -60,6 +60,7 @@ export class ObserverStore {
       obs.level,
       obs.status,
       obs.error_message,
+      toSqliteJson(obs.links),
     );
   }
 

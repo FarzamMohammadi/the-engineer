@@ -59,6 +59,12 @@ CREATE TABLE tasks (
   -- Session link
   session_id              TEXT REFERENCES sessions(id),
 
+  -- Trace lineage — the previous dispatch's root span as a single link {trace_id, observation_id}
+  -- (JSON), so the next dispatch's root can emit an OTLP "follows-from" link and the task's lifecycle
+  -- reads as one navigable chain of bounded traces. NULL on a fresh task (no prior dispatch). Stored as
+  -- one value so the trace+span pair is atomically all-or-nothing by construction — never half-set.
+  last_trace_link         TEXT,
+
   -- Optimistic locking
   version                 INTEGER NOT NULL DEFAULT 1,
 

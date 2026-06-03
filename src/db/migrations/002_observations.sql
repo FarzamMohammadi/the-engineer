@@ -18,7 +18,11 @@ CREATE TABLE observations (
   metadata                TEXT,
   level                   TEXT NOT NULL DEFAULT 'info',
   status                  TEXT NOT NULL DEFAULT 'ok',
-  error_message           TEXT
+  error_message           TEXT,
+  -- Cross-trace "follows-from" edges, JSON array of {trace_id, observation_id}; NULL when none
+  -- (the common case). Carries a resumed dispatch's link back to the prior dispatch's root so the
+  -- exporter can emit an OTLP span link and the task's lifecycle reads as one navigable chain.
+  links                   TEXT
 );
 
 CREATE INDEX idx_obs_task ON observations(task_id);

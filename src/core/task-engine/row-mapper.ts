@@ -1,5 +1,6 @@
 import { fromSqliteJson } from "../../db/serialize.js";
 import type { PrEventType } from "../../schemas/git-hosting-event-types.js";
+import type { ObservationLink } from "../../schemas/observer.js";
 import type {
   BlockedDetails,
   ExternalRef,
@@ -52,6 +53,7 @@ export interface TaskRow {
   consecutive_crash_count: number;
   consecutive_agent_unavailable_count: number;
   session_id: string | null;
+  last_trace_link: string | null;
   /** Optimistic locking — incremented on every state transition. */
   version: number;
 }
@@ -108,6 +110,7 @@ export function rowToTask(row: TaskRow): Task {
     consecutive_crash_count: row.consecutive_crash_count,
     consecutive_agent_unavailable_count: row.consecutive_agent_unavailable_count,
     session_id: row.session_id,
+    last_trace_link: fromSqliteJson<ObservationLink>(row.last_trace_link),
   };
 }
 

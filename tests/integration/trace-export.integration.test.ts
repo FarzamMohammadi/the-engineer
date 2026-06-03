@@ -248,6 +248,31 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     expect(receiver.received).toHaveLength(0);
   });
 
+  it("carries cross-trace continuity links through to the exported span", async () => {
+    const receiver = createFakeReceiver("ok");
+    const ex = start(receiver);
+
+    // A resumed dispatch's root links back to the prior dispatch's root — a DIFFERENT trace, so
+    // priorTrace must differ from this span's own TRACE for the cross-trace assertion to be meaningful.
+    const priorTrace = "01BX5ZZKBKACTAV9WEVGEMMVRZ";
+    const priorRoot = "01ARZ3NDEKTSV4RRFFQ69G5FB0";
+    store.observe(
+      "task_execution",
+      "execute_task",
+      {},
+      {
+        trace_id: TRACE,
+        links: [{ trace_id: priorTrace, observation_id: priorRoot }],
+      },
+    );
+
+    await ex.pollOnce();
+    expect(receiver.received).toHaveLength(1);
+    expect(receiver.received[0]?.links).toHaveLength(1);
+    // The link targets the PRIOR trace, not this span's own trace.
+    expect(receiver.received[0]?.links?.[0]?.traceId).not.toBe(receiver.received[0]?.traceId);
+  });
+
   // ── (b) open span THEN completion → exported once, complete, WITH duration ───
 
   it("exports an open span only after it completes, once, with a real duration", async () => {

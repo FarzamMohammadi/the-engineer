@@ -25,6 +25,7 @@ import {
 } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import type { ObservationSpan } from "../observer/index.js";
 import { emitAgentCost } from "./agent-cost.js";
 import { sendOutreach } from "./outreach-sender.js";
 import { PIPELINE } from "./pipeline/pipeline.js";
@@ -180,18 +181,12 @@ export class Orchestrator {
     const sessionId = session.id;
     this.ctx.taskEngine.updateTaskField(taskId, "session_id", sessionId);
 
-    // Root span for the whole dispatch — the end-to-end "tracer bullet". Opened BEFORE workspace setup
-    // so the setup belongs to the trace: worktree_created nests under it (rather than surfacing as a lone
-    // 1-span trace), and a setup failure is recorded as a failed task_execution span rather than an
-    // untraced throw. Every phase, sub-phase, agent run, decision, and action nests under it (via
+    // Root span for the whole dispatch — the end-to-end "tracer bullet", chained to the prior dispatch's
+    // trace for continuity. Opened BEFORE workspace setup so the setup belongs to the trace (see
+    // openRootSpan). Every phase, sub-phase, agent run, decision, and action nests under it (via
     // Ctx.rootObservationId), so the observer can open one task and see its complete trace from intake to
     // outcome, and so the trace can later be exported whole.
-    const rootSpan = tracedObserver.startSpan(
-      ObservationTypes.task_execution,
-      "execute_task",
-      { taskId, title: dispatch.task.title, isResume: !!dispatch.resume_from },
-      { task_id: taskId, trace_id: traceId, session_id: sessionId },
-    );
+    const rootSpan = this.openRootSpan(dispatch, tracedObserver, traceId, sessionId);
 
     // Workspace setup. A failure here (git, disk, auth) ends the root span as crashed and closes the
     // session before re-throwing so neither lingers open; the dispatch-tracker routes the throw to crash
@@ -246,6 +241,48 @@ export class Orchestrator {
   }
 
   // ── Dispatch Helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Open the dispatch's root `task_execution` span and advance the task's trace lineage.
+   *
+   * Trace continuity: each dispatch is its OWN bounded trace — a single task-long trace would be
+   * dominated by idle blocked-waits (a task can sit awaiting PR review for days) and useless as a flame
+   * graph, with no single open root surviving a daemon restart. So when a prior dispatch ran (a resume,
+   * rework, or PR-event re-entry) we link this root back to that dispatch's root via an OTLP span link,
+   * chaining the lifecycle without merging it. We then record THIS root as the task's lineage head — one
+   * atomic {trace_id, observation_id} value — so the NEXT dispatch links back to it. It is set even for a
+   * crashed/blocked dispatch, because that dispatch is a valid predecessor for the resume that follows.
+   */
+  private openRootSpan(
+    dispatch: Dispatch,
+    observer: OrchestratorContext["observer"],
+    traceId: string,
+    sessionId: string,
+  ): ObservationSpan {
+    const taskId = dispatch.task.id;
+    const priorLink = dispatch.task.last_trace_link;
+    const rootSpan = observer.startSpan(
+      ObservationTypes.task_execution,
+      "execute_task",
+      { taskId, title: dispatch.task.title, isResume: !!dispatch.resume_from },
+      {
+        task_id: taskId,
+        trace_id: traceId,
+        session_id: sessionId,
+        ...(priorLink ? { links: [priorLink] } : {}),
+      },
+    );
+    // Advance the lineage head only when tracing produced a real anchor. With no observation store
+    // attached (a no-op span), `id` is empty — recording it would persist a degenerate link the exporter
+    // could never resolve. A null lineage simply means the next dispatch starts a fresh (unlinked) chain.
+    if (rootSpan.id) {
+      this.ctx.taskEngine.updateTaskField(taskId, "last_trace_link", {
+        trace_id: traceId,
+        observation_id: rootSpan.id,
+      });
+    }
+    return rootSpan;
+  }
 
   /** Assemble the per-dispatch context the pipeline runs on from the shared context plus this run's state. */
   private buildContext(

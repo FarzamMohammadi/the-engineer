@@ -232,6 +232,7 @@ describe("table structure", () => {
       "reaped_at",
       "last_transition_at",
       "session_id",
+      "last_trace_link",
       "version",
       "phase_iteration",
       "total_reworks",

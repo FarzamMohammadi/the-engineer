@@ -40,6 +40,7 @@ interface ObservationRow {
   level: string;
   status: string;
   error_message: string | null;
+  links: string | null;
 }
 
 interface EventRow {

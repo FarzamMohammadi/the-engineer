@@ -48,6 +48,7 @@ export type UpdatableField =
   | "phase"
   | "sub_phase"
   | "session_id"
+  | "last_trace_link"
   | "description"
   | "source_text"
   | "external_ref"

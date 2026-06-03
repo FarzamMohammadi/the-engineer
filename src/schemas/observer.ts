@@ -42,6 +42,21 @@ export type ObservationStatus = z.infer<typeof ObservationStatusSchema>;
 /** Constant enum values for ObservationStatus. Use instead of raw strings. */
 export const ObservationStatuses = ObservationStatusSchema.enum;
 
+// ── Observation Link ──────────────────────────────────────────────────────────
+
+/**
+ * A cross-trace "follows-from" edge: a reference to another observation (by its
+ * id, in its own `trace_id`) that this one continues from. Used for trace
+ * continuity — a resumed/reworked dispatch's root span links back to the prior
+ * dispatch's root, so the whole task lifecycle is one navigable chain of bounded
+ * traces rather than a single idle-gap-dominated mega-trace.
+ */
+export const ObservationLinkSchema = z.object({
+  trace_id: z.string(),
+  observation_id: z.string(),
+});
+export type ObservationLink = z.infer<typeof ObservationLinkSchema>;
+
 // ── Span Options ──────────────────────────────────────────────────────────────
 
 export const SpanOptionsSchema = z.object({
@@ -51,6 +66,8 @@ export const SpanOptionsSchema = z.object({
   phase: z.string().optional(),
   session_id: z.string().optional(),
   level: ObservationLevelSchema.optional(),
+  /** Cross-trace continuity edges (see {@link ObservationLinkSchema}). */
+  links: z.array(ObservationLinkSchema).optional(),
 });
 export type SpanOptions = z.infer<typeof SpanOptionsSchema>;
 
@@ -74,6 +91,8 @@ export const ObservationSchema = z.object({
   level: ObservationLevelSchema,
   status: ObservationStatusSchema,
   error_message: z.string().nullable(),
+  /** Cross-trace continuity edges; null when the observation has none (the common case). */
+  links: z.array(ObservationLinkSchema).nullable(),
 });
 export type Observation = z.infer<typeof ObservationSchema>;
 
@@ -110,6 +129,7 @@ interface ObservationRow {
   level: string;
   status: string;
   error_message: string | null;
+  links: string | null;
 }
 
 /** Map a raw SQLite row to an Observation. */
@@ -132,5 +152,6 @@ export function rowToObservation(row: ObservationRow): Observation {
     level: row.level as ObservationLevel,
     status: row.status as ObservationStatus,
     error_message: row.error_message,
+    links: fromSqliteJson<ObservationLink[]>(row.links),
   };
 }

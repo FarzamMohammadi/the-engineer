@@ -102,6 +102,15 @@ describe("Observer", () => {
       expect(results[0]?.parent_observation_id).toBeNull();
       expect(results[0]?.phase).toBeNull();
       expect(results[0]?.session_id).toBeNull();
+      expect(results[0]?.links).toBeNull();
+    });
+
+    it("round-trips cross-trace continuity links through SQLite", () => {
+      const links = [{ trace_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", observation_id: "01ARZ3NDEKTSV4RRFFQ69G5FB0" }];
+      handle.observer.observe("task_execution", "execute_task", {}, { task_id: "task-1", trace_id: "trace-2", links });
+
+      const results = handle.observer.query({ task_id: "task-1" });
+      expect(results[0]?.links).toEqual(links);
     });
   });
 

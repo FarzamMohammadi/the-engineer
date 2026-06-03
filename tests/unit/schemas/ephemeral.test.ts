@@ -38,6 +38,7 @@ describe("DispatchSchema", () => {
     clone_url: null,
     thoughts_id: null,
     session_id: "01SESSION",
+    last_trace_link: null,
   };
 
   it("parses valid dispatch with null resume_from", () => {

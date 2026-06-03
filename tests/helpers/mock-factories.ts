@@ -115,6 +115,7 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     completed_at: null,
     last_transition_at: now,
     session_id: null,
+    last_trace_link: null,
     ...overrides,
   });
 }

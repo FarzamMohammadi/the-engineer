@@ -38,6 +38,7 @@ function makeObservation(overrides: Partial<Observation> = {}): Observation {
     level: "info",
     status: "ok",
     error_message: null,
+    links: null,
     ...overrides,
   };
 }
@@ -307,6 +308,26 @@ describe("mapObservationToSpan", () => {
     expect(span.traceId).toBe(deriveTraceId(obs.id));
     expect(span.parentSpanId).toBeUndefined();
     expect("parentSpanId" in span).toBe(false);
+  });
+
+  it("omits links when the observation has none", () => {
+    const span = mapObservationToSpan(makeObservation({ links: null }), CTX);
+    expect(span.links).toBeUndefined();
+    expect("links" in span).toBe(false);
+  });
+
+  it("maps cross-trace continuity links to OTLP links, deriving ids from the link target", () => {
+    // The link points at a span in ANOTHER trace (the prior dispatch's root), so its
+    // OTLP traceId/spanId derive from the LINK's own trace_id/observation_id — not this span's.
+    const priorTraceId = ulid();
+    const priorRootId = ulid();
+    const obs = makeObservation({ links: [{ trace_id: priorTraceId, observation_id: priorRootId }] });
+
+    const span = mapObservationToSpan(obs, CTX);
+
+    expect(span.links).toEqual([{ traceId: deriveTraceId(priorTraceId), spanId: deriveSpanId(priorRootId) }]);
+    // The link's trace differs from this span's own trace — it is a cross-trace edge.
+    expect(span.links?.[0]?.traceId).not.toBe(span.traceId);
   });
 
   it("throws on an invalid ISO timestamp", () => {

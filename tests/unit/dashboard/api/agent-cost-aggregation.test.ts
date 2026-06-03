@@ -23,6 +23,7 @@ function agentCall(overrides: Partial<Observation>): Observation {
     level: "info",
     status: "ok",
     error_message: null,
+    links: null,
     ...overrides,
   };
 }

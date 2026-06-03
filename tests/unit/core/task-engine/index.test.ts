@@ -750,6 +750,18 @@ describe("TaskEngine", () => {
       expect(updated.workspace).toEqual(workspace);
     });
 
+    it("round-trips the trace lineage link as one atomic JSON value", () => {
+      const task = engine.createTask(makeInput());
+      // A fresh task has no predecessor dispatch.
+      expect(task.last_trace_link).toBeNull();
+
+      const link = { trace_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", observation_id: "01ARZ3NDEKTSV4RRFFQ69G5FB0" };
+      engine.updateTaskField(task.id, "last_trace_link", link);
+
+      const updated = assertDefined(engine.getTask(task.id), "task");
+      expect(updated.last_trace_link).toEqual(link);
+    });
+
     it("updates review with JSON serialization", () => {
       const task = engine.createTask(makeInput());
       const review = {

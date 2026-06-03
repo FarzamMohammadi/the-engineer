@@ -1,6 +1,7 @@
 import { ArrowLeft, Ban, GanttChartSquare } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
+import { CurrentPhaseBadge } from "../../components/shared/current-phase-badge";
 import { PhasePipeline } from "../../components/shared/phase-pipeline";
 import { StateBadge } from "../../components/shared/state-badge";
 import { Button } from "../../components/ui/button";
@@ -9,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/ta
 import { useSystemStatus } from "../../hooks/use-system-status";
 import { useCancelTask, useTaskDetail, useTaskPhases } from "../../hooks/use-tasks";
 import { PHASE_ORDER } from "../../lib/constants";
-import { buildSubPhaseRuns, readPhaseTransition } from "../../lib/observation-shapes";
+import { readPhaseTransition } from "../../lib/observation-shapes";
 import { ROUTES } from "../../lib/routes";
 import type { Observation, Phase, TaskDetail, TaskState } from "../../types/api";
 import { BlockedResponse } from "./blocked-response";
@@ -41,12 +42,6 @@ export function TaskDetailPage(): React.JSX.Element {
   const cancelMutation = useCancelTask(taskId ?? "");
 
   const phasesRan = useMemo(() => distinctPhasesRan(phaseObservations ?? []), [phaseObservations]);
-  // The current phase's sub-phase progression (done/running), reconstructed from the same phase_transition
-  // observations — drives the colored sub-phase row under the pipeline.
-  const currentSubPhaseRuns = useMemo(() => {
-    const phase = (task as TaskDetail | undefined)?.phase;
-    return phase ? buildSubPhaseRuns(phaseObservations ?? [], phase) : [];
-  }, [phaseObservations, task]);
 
   const activeTab: TabValue = TAB_ROUTES.includes(tab as TabValue) ? (tab as TabValue) : "overview";
 
@@ -74,6 +69,10 @@ export function TaskDetailPage(): React.JSX.Element {
   const typedTask = task as TaskDetail;
   const isBlocked = typedTask.state === "blocked";
   const isCancellable = CANCELLABLE_STATES.has(typedTask.state);
+  // The current-phase pill is meaningful only while the task is mid-flight — on a terminal task the phase
+  // would be stale. The dot pulses only when actively executing (a blocked task is paused, not live).
+  const isLive = typedTask.state === "active" || typedTask.state === "requirements_gathering";
+  const showCurrentPhase = typedTask.phase !== null && (isLive || typedTask.state === "blocked");
 
   // The Jaeger deep-link. Shown only when export is on AND this task has a trace yet. The OTLP id is derived
   // server-side from the dispatch's trace ULID (via the exporter's own deriveTraceId), so the link matches the
@@ -90,17 +89,21 @@ export function TaskDetailPage(): React.JSX.Element {
           <ArrowLeft size={16} />
         </Button>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="truncate text-lg font-semibold">{typedTask.title}</h1>
             <StateBadge state={typedTask.state} />
+            {showCurrentPhase && (
+              <>
+                <div className="h-4 w-px bg-border" />
+                <CurrentPhaseBadge phase={typedTask.phase} subPhase={typedTask.sub_phase} live={isLive} />
+              </>
+            )}
           </div>
           <div className="mt-1 flex items-center gap-3">
             <span className="font-mono text-xs text-muted-foreground">{typedTask.id}</span>
             <PhasePipeline
               currentPhase={typedTask.phase}
               phasesRan={phasesRan}
-              subPhase={typedTask.sub_phase}
-              subPhaseRuns={currentSubPhaseRuns}
               phaseIteration={typedTask.phase_iteration}
               totalReworks={typedTask.total_reworks}
             />

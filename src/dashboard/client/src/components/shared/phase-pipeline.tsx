@@ -1,6 +1,5 @@
 import { cn } from "../../lib/cn";
 import { PHASE_LABELS, PHASE_ORDER, SUB_PHASE_LABELS } from "../../lib/constants";
-import type { SubPhaseRun } from "../../lib/observation-shapes";
 import type { Phase } from "../../types/api";
 
 interface PhasePipelineProps {
@@ -10,12 +9,6 @@ interface PhasePipelineProps {
   phasesRan?: readonly Phase[];
   /** The current sub-phase (e.g. "verify", "create-pr"); shown as a tag under the active phase. */
   subPhase?: string | null;
-  /**
-   * The current phase's sub-phase runs, in order — when given (full mode), they render as a colored
-   * progression under the pipeline: finished sub-phases in emerald, errored in red, and the one running now
-   * highlighted in primary with a pulse. Supersedes the single `subPhase` tag, which only named the live one.
-   */
-  subPhaseRuns?: readonly SubPhaseRun[];
   /** Intra-phase repeat count for the current phase; surfaced as an "iter N" affordance when > 1. */
   phaseIteration?: number;
   /** Inter-phase rework (backward-jump) count for the dispatch; surfaced as "reworks N" when > 0. */
@@ -41,7 +34,6 @@ export function PhasePipeline({
   currentPhase,
   phasesRan = [],
   subPhase,
-  subPhaseRuns,
   phaseIteration,
   totalReworks,
   compact = false,
@@ -54,8 +46,6 @@ export function PhasePipeline({
   // Verify · iter 2" without opening the task. It only renders when there is something to show.
   const showCounters = (phaseIteration ?? 0) > 1 || (totalReworks ?? 0) > 0;
   const subPhaseLabel = subPhase ? (SUB_PHASE_LABELS[subPhase] ?? subPhase) : null;
-  const runs = subPhaseRuns ?? [];
-  const hasRuns = runs.length > 0;
 
   return (
     <div className={cn(compact ? "space-y-0.5" : "space-y-1", className)}>
@@ -88,85 +78,15 @@ export function PhasePipeline({
         })}
       </div>
 
-      {!lettersOnly && (hasRuns || subPhaseLabel || showCounters) && (
-        <SubPhaseFooter
-          runs={runs}
-          subPhaseLabel={subPhaseLabel}
-          phaseIteration={phaseIteration}
-          totalReworks={totalReworks}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * The line under the pipeline: the current phase's sub-phase progression (or the single live sub-phase tag when
- * runs were not supplied), plus the iteration/rework loop counters when they fire.
- */
-function SubPhaseFooter({
-  runs,
-  subPhaseLabel,
-  phaseIteration,
-  totalReworks,
-}: {
-  runs: readonly SubPhaseRun[];
-  subPhaseLabel: string | null;
-  phaseIteration?: number;
-  totalReworks?: number;
-}): React.JSX.Element {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
-      {runs.length > 0 ? (
-        <SubPhaseProgression runs={runs} />
-      ) : (
-        subPhaseLabel && (
-          <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground/90">{subPhaseLabel}</span>
-        )
-      )}
-      {(phaseIteration ?? 0) > 1 && <span>iter {phaseIteration}</span>}
-      {(totalReworks ?? 0) > 0 && <span>reworks {totalReworks}</span>}
-    </div>
-  );
-}
-
-/** The current phase's sub-phases as a connected row of colored chips, in run order. */
-function SubPhaseProgression({ runs }: { runs: readonly SubPhaseRun[] }): React.JSX.Element {
-  return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
-      {runs.map((run, index) => (
-        <div key={`${run.subPhase}-${String(index)}`} className="flex items-center gap-1">
-          {index > 0 && (
-            <div className={cn("h-px w-2", runs[index - 1]?.status === "pending" ? "bg-border" : "bg-primary/40")} />
+      {!lettersOnly && (subPhaseLabel || showCounters) && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+          {subPhaseLabel && (
+            <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground/90">{subPhaseLabel}</span>
           )}
-          <SubPhaseChip run={run} />
+          {(phaseIteration ?? 0) > 1 && <span>iter {phaseIteration}</span>}
+          {(totalReworks ?? 0) > 0 && <span>reworks {totalReworks}</span>}
         </div>
-      ))}
+      )}
     </div>
-  );
-}
-
-/**
- * One sub-phase in the current phase's progression. Colors mirror the main pipeline chips: a finished sub-phase
- * is emerald like a completed phase, an errored one is red, and the one running now is primary-highlighted with
- * a pulsing dot. The tooltip carries the sub-phase's result summary/outcome for an at-a-glance "what happened".
- */
-function SubPhaseChip({ run }: { run: SubPhaseRun }): React.JSX.Element {
-  const label = SUB_PHASE_LABELS[run.subPhase] ?? run.subPhase;
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium leading-tight",
-        run.status === "ok" && "bg-emerald-500/15 text-emerald-400",
-        run.status === "error" && "bg-red-500/15 text-red-400",
-        run.status === "pending" && "bg-primary/20 text-primary ring-1 ring-primary/30",
-      )}
-      title={run.summary || (run.outcome ? `${label}: ${run.outcome}` : label)}
-    >
-      {run.status === "pending" && (
-        <span className="size-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-pulse" />
-      )}
-      {label}
-    </span>
   );
 }

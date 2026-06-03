@@ -1,4 +1,5 @@
 import { ArrowLeft, Ban, GanttChartSquare } from "lucide-react";
+import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
 import { PhasePipeline } from "../../components/shared/phase-pipeline";
 import { StateBadge } from "../../components/shared/state-badge";
@@ -6,26 +7,40 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { useSystemStatus } from "../../hooks/use-system-status";
-import { useCancelTask, useTaskDetail } from "../../hooks/use-tasks";
+import { useCancelTask, useTaskDetail, useTaskPhases } from "../../hooks/use-tasks";
+import { PHASE_ORDER } from "../../lib/constants";
+import { readPhaseTransition } from "../../lib/observation-shapes";
 import { ROUTES } from "../../lib/routes";
-import type { Phase, TaskDetail } from "../../types/api";
+import type { Observation, Phase, TaskDetail, TaskState } from "../../types/api";
 import { BlockedResponse } from "./blocked-response";
 import { TaskAgentTab } from "./task-agent-tab";
+import { TaskDecisionsTab } from "./task-decisions-tab";
 import { TaskOverviewTab } from "./task-overview-tab";
 import { TaskPhasesTab } from "./task-phases-tab";
 import { TaskTimelineTab } from "./task-timeline-tab";
 import { TaskToolsTab } from "./task-tools-tab";
 
-const TAB_ROUTES = ["overview", "timeline", "phases", "agent", "tools"] as const;
+const TAB_ROUTES = ["overview", "timeline", "phases", "decisions", "agent", "tools"] as const;
 type TabValue = (typeof TAB_ROUTES)[number];
 
-/** Single task detail page with tabbed views for overview, timeline, phases, agent calls, and tools. */
+/** Task states a task can be cancelled from — mirrors CANCELLABLE_STATES (src/schemas/task.ts). */
+const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>([
+  "requirements_gathering",
+  "queued",
+  "active",
+  "blocked",
+]);
+
+/** Single task detail page with tabbed views for overview, timeline, phases, decisions, agent calls, and tools. */
 export function TaskDetailPage(): React.JSX.Element {
   const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
   const navigate = useNavigate();
   const { data: task, isLoading } = useTaskDetail(taskId);
+  const { data: phaseObservations } = useTaskPhases(taskId);
   const { data: systemStatus } = useSystemStatus();
   const cancelMutation = useCancelTask(taskId ?? "");
+
+  const phasesRan = useMemo(() => distinctPhasesRan(phaseObservations ?? []), [phaseObservations]);
 
   const activeTab: TabValue = TAB_ROUTES.includes(tab as TabValue) ? (tab as TabValue) : "overview";
 
@@ -52,7 +67,7 @@ export function TaskDetailPage(): React.JSX.Element {
 
   const typedTask = task as TaskDetail;
   const isBlocked = typedTask.state === "blocked";
-  const isCancellable = typedTask.state === "active" || typedTask.state === "queued" || typedTask.state === "blocked";
+  const isCancellable = CANCELLABLE_STATES.has(typedTask.state);
 
   // The Jaeger deep-link. Shown only when export is on AND this task has a trace yet. The OTLP id is derived
   // server-side from the dispatch's trace ULID (via the exporter's own deriveTraceId), so the link matches the
@@ -68,14 +83,20 @@ export function TaskDetailPage(): React.JSX.Element {
         <Button variant="ghost" size="icon" onClick={() => navigate(ROUTES.tasks)}>
           <ArrowLeft size={16} />
         </Button>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <h1 className="truncate text-lg font-semibold">{typedTask.title}</h1>
             <StateBadge state={typedTask.state} />
           </div>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs text-muted-foreground font-mono">{typedTask.id}</span>
-            <PhasePipeline currentPhase={typedTask.phase} phasesRan={phasesFromDetail(typedTask)} />
+          <div className="mt-1 flex items-center gap-3">
+            <span className="font-mono text-xs text-muted-foreground">{typedTask.id}</span>
+            <PhasePipeline
+              currentPhase={typedTask.phase}
+              phasesRan={phasesRan}
+              subPhase={typedTask.sub_phase}
+              phaseIteration={typedTask.phase_iteration}
+              totalReworks={typedTask.total_reworks}
+            />
           </div>
         </div>
         {traceUrl && (
@@ -106,6 +127,7 @@ export function TaskDetailPage(): React.JSX.Element {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="phases">Phases</TabsTrigger>
+          <TabsTrigger value="decisions">Decisions</TabsTrigger>
           <TabsTrigger value="agent">Agent Calls</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
         </TabsList>
@@ -117,6 +139,9 @@ export function TaskDetailPage(): React.JSX.Element {
         </TabsContent>
         <TabsContent value="phases">
           <TaskPhasesTab taskId={typedTask.id} />
+        </TabsContent>
+        <TabsContent value="decisions">
+          <TaskDecisionsTab taskId={typedTask.id} />
         </TabsContent>
         <TabsContent value="agent">
           <TaskAgentTab taskId={typedTask.id} />
@@ -130,17 +155,18 @@ export function TaskDetailPage(): React.JSX.Element {
 }
 
 /**
- * Coarse heuristic for which phases a task has touched, from the detail record's presence flags. This is a
- * placeholder using the REAL phase vocabulary; S3 replaces it with the true distinct phases derived from the
- * task's phase_transition observations (the same `input.phase` source the list endpoint now reads).
+ * The distinct real phases a task has run, derived from its phase_transition observations — the same honest
+ * `input.phase` source the list endpoint reads (the observation `name` holds the event, not the phase). Kept
+ * in canonical pipeline order so the PhasePipeline marks completed steps correctly. Replaces the old
+ * `phasesFromDetail` hack that inferred phases from presence flags (workspace → execution, review → review).
  */
-function phasesFromDetail(task: TaskDetail): Phase[] {
-  const phases: Phase[] = [];
-  if (task.workspace) {
-    phases.push("execution");
+function distinctPhasesRan(observations: readonly Observation[]): Phase[] {
+  const seen = new Set<Phase>();
+  for (const obs of observations) {
+    const { phase } = readPhaseTransition(obs);
+    if ((PHASE_ORDER as readonly string[]).includes(phase)) {
+      seen.add(phase as Phase);
+    }
   }
-  if (task.review) {
-    phases.push("review");
-  }
-  return phases;
+  return PHASE_ORDER.filter((phase) => seen.has(phase));
 }

@@ -2,6 +2,7 @@ import { ChevronDown, Terminal } from "lucide-react";
 import { useState } from "react";
 import { EmptyState } from "../../components/shared/empty-state";
 import { JsonViewer } from "../../components/shared/json-viewer";
+import { VerdictBadge } from "../../components/shared/verdict-badge";
 import { Badge } from "../../components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../components/ui/collapsible";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -49,8 +50,18 @@ export function TaskToolsTab({ taskId }: TaskToolsTabProps): React.JSX.Element {
   );
 }
 
+/** Read a gate tool_execution's pass flag and captured output text — `output = { passed, output }`. */
+function readGate(trace: Observation): { isGate: boolean; passed: boolean; output: string } {
+  const isGate = trace.name.startsWith("gate:");
+  const out = trace.output ?? {};
+  const passed = out["passed"] === true;
+  const output = typeof out["output"] === "string" ? out["output"] : "";
+  return { isGate, passed, output };
+}
+
 function ToolTraceRow({ trace }: { trace: Observation }): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const gate = readGate(trace);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -64,15 +75,19 @@ function ToolTraceRow({ trace }: { trace: Observation }): React.JSX.Element {
           )}
         >
           <Terminal size={14} className="shrink-0 text-muted-foreground" />
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-medium font-mono">{trace.name}</span>
-              <Badge variant={trace.status === "error" ? "destructive" : "secondary"} className="text-[10px]">
-                {trace.status}
-              </Badge>
+              <span className="truncate font-mono text-sm font-medium">{trace.name}</span>
+              {gate.isGate ? (
+                <VerdictBadge passed={gate.passed} className="text-[10px]" />
+              ) : (
+                <Badge variant={trace.status === "error" ? "destructive" : "secondary"} className="text-[10px]">
+                  {trace.status}
+                </Badge>
+              )}
               {trace.phase && <span className="text-[10px] text-muted-foreground">{trace.phase}</span>}
             </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+            <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
               <span className="tabular-nums">{formatTimestamp(trace.start_time)}</span>
               <span>{formatDuration(trace.duration_ms)}</span>
             </div>
@@ -84,8 +99,13 @@ function ToolTraceRow({ trace }: { trace: Observation }): React.JSX.Element {
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mx-3 border-x border-b border-border rounded-b-md p-3 space-y-3 bg-muted/20">
+        <div className="mx-3 space-y-3 rounded-b-md border-x border-b border-border bg-muted/20 p-3">
           {trace.error_message && <div className="text-sm text-destructive">{trace.error_message}</div>}
+          {gate.isGate && gate.output && (
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/60 bg-background/60 p-2.5 font-mono text-[11px] leading-relaxed text-foreground/90">
+              {gate.output}
+            </pre>
+          )}
           {trace.input && <JsonViewer data={trace.input} label="Input" />}
           {trace.output && <JsonViewer data={trace.output} label="Output" />}
         </div>

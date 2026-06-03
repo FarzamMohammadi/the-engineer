@@ -1,5 +1,6 @@
 import { AlertTriangle, Send } from "lucide-react";
 import { useState } from "react";
+import { BlockBadges } from "../../components/shared/block-badges";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Textarea } from "../../components/ui/textarea";
@@ -11,7 +12,11 @@ interface BlockedResponseProps {
   blocked: BlockedDetails | null;
 }
 
-/** Conversation thread and response textarea for answering blocked task questions. */
+/**
+ * The blocked-task banner: the full block taxonomy (the coarse reason, the precise category, the sub-phase it
+ * blocked in, and — most actionable — the `needed` next step) followed by the response box that unblocks it.
+ * Reads only the real `BlockedDetails` fields; the phantom `question`/`context` fields never existed.
+ */
 export function BlockedResponse({ taskId, blocked }: BlockedResponseProps): React.JSX.Element {
   const [content, setContent] = useState("");
   const respondMutation = useRespondToTask(taskId);
@@ -32,11 +37,6 @@ export function BlockedResponse({ taskId, blocked }: BlockedResponseProps): Reac
     }
   }
 
-  // The actionable next step the operator must take to unblock. The legible block taxonomy
-  // (category, sub_phase, and richer reason rendering) is rebuilt in S3; S1 only surfaces `needed`
-  // so the phantom `question`/`context` reads — fields that never exist on a block — are gone.
-  const needed = blocked?.needed;
-
   return (
     <Card className="border-amber-500/30 bg-amber-500/5">
       <CardHeader className="pb-2">
@@ -46,11 +46,13 @@ export function BlockedResponse({ taskId, blocked }: BlockedResponseProps): Reac
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {needed && (
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">Needed</span>
-            <p className="text-sm text-foreground/90 mt-0.5">{needed}</p>
-          </div>
+        {blocked && (
+          <BlockBadges
+            reason={blocked.reason}
+            category={blocked.category}
+            subPhase={blocked.sub_phase}
+            needed={blocked.needed}
+          />
         )}
         <div className="flex gap-2">
           <Textarea

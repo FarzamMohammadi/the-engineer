@@ -4,10 +4,11 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Textarea } from "../../components/ui/textarea";
 import { useRespondToTask } from "../../hooks/use-tasks";
+import type { BlockedDetails } from "../../types/api";
 
 interface BlockedResponseProps {
   taskId: string;
-  blocked: Record<string, unknown> | null;
+  blocked: BlockedDetails | null;
 }
 
 /** Conversation thread and response textarea for answering blocked task questions. */
@@ -31,9 +32,10 @@ export function BlockedResponse({ taskId, blocked }: BlockedResponseProps): Reac
     }
   }
 
-  const reason = blocked?.["reason"] as string | undefined;
-  const question = blocked?.["question"] as string | undefined;
-  const context = blocked?.["context"] as string | undefined;
+  // The actionable next step the operator must take to unblock. The legible block taxonomy
+  // (category, sub_phase, and richer reason rendering) is rebuilt in S3; S1 only surfaces `needed`
+  // so the phantom `question`/`context` reads — fields that never exist on a block — are gone.
+  const needed = blocked?.needed;
 
   return (
     <Card className="border-amber-500/30 bg-amber-500/5">
@@ -44,22 +46,10 @@ export function BlockedResponse({ taskId, blocked }: BlockedResponseProps): Reac
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {reason && (
+        {needed && (
           <div>
-            <span className="text-xs font-medium text-muted-foreground">Reason</span>
-            <p className="text-sm text-foreground/90 mt-0.5">{reason}</p>
-          </div>
-        )}
-        {question && (
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">Question</span>
-            <p className="text-sm text-foreground/90 mt-0.5">{question}</p>
-          </div>
-        )}
-        {context && (
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">Context</span>
-            <p className="text-sm text-foreground/80 mt-0.5">{context}</p>
+            <span className="text-xs font-medium text-muted-foreground">Needed</span>
+            <p className="text-sm text-foreground/90 mt-0.5">{needed}</p>
           </div>
         )}
         <div className="flex gap-2">

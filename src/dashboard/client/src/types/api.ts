@@ -1,20 +1,26 @@
-// ── Task ─────────────────────────────────────────────────────────────────────
+import type { BlockCategory, BlockReason, ObservationType, Phase, TaskState } from "../lib/vocabulary";
 
-/** Valid task lifecycle states. */
-export type TaskState =
-  | "requirements_gathering"
-  | "queued"
-  | "active"
-  | "blocked"
-  | "completed"
-  | "failed"
-  | "cancelled";
+// Re-export the vocabulary unions so consumers keep importing task contract types from one module. The
+// member values live in `lib/vocabulary.ts` (the single client-side source, parity-tested against the
+// Zod schemas); this module owns the record/object contracts the API returns.
+export type { BlockCategory, BlockReason, ObservationType, Phase, TaskState };
+
+// ── Task ─────────────────────────────────────────────────────────────────────
 
 /** Task sub-state when active. */
 export type SubState = "working";
 
-/** RRPIR pipeline phase. */
-export type Phase = "requirements_gathering" | "research" | "planning" | "execution" | "self_review" | "demo_prep";
+/** The typed payload persisted on a blocked task — mirrors `BlockedDetailsSchema`. */
+export interface BlockedDetails {
+  /** Coarse routing value the daemon switches on. */
+  reason: BlockReason;
+  /** The complete cause behind the block. */
+  category: BlockCategory;
+  /** Which sub-phase the task blocked in. */
+  sub_phase: string;
+  /** The operator-facing next step that unblocks the task. */
+  needed: string;
+}
 
 /** Lightweight task row for list views. */
 export interface TaskListItem {
@@ -23,6 +29,12 @@ export interface TaskListItem {
   state: TaskState;
   sub_state: SubState | null;
   phase: Phase | null;
+  /** Sub-phase within the current phase (e.g. "verify", "create-pr"); null when not in a sub-phase. */
+  sub_phase: string | null;
+  /** Intra-phase repeat count for the current phase (resets on phase entry). */
+  phase_iteration: number;
+  /** Inter-phase backward-jump (rework) count for the current dispatch. */
+  total_reworks: number;
   priority: number;
   repo: string | null;
   agent_cost_usd: number;
@@ -32,8 +44,15 @@ export interface TaskListItem {
   completed_at: string | null;
   last_transition_at: string;
   worktree_path: string | null;
-  phases_ran: string[];
+  /** The distinct real pipeline phases this task actually ran, derived from phase_transition observations. */
+  phases_ran: Phase[];
   blocked_reason: string | null;
+}
+
+/** A cross-trace "follows-from" edge to a prior dispatch's root span — mirrors `ObservationLinkSchema`. */
+export interface ObservationLink {
+  trace_id: string;
+  observation_id: string;
 }
 
 /** Full task record for detail views. */
@@ -43,6 +62,12 @@ export interface TaskDetail {
   state: TaskState;
   sub_state: SubState | null;
   phase: Phase | null;
+  /** Sub-phase within the current phase (e.g. "verify", "create-pr"); null when not in a sub-phase. */
+  sub_phase: string | null;
+  /** Intra-phase repeat count for the current phase (resets on phase entry). */
+  phase_iteration: number;
+  /** Inter-phase backward-jump (rework) count for the current dispatch. */
+  total_reworks: number;
   priority: number;
   repo: string | null;
   branch: string | null;
@@ -52,15 +77,25 @@ export interface TaskDetail {
   started_at: string | null;
   completed_at: string | null;
   last_transition_at: string;
+  /**
+   * When the reaper fully reconciled this task (worktree + branch + any PR close). Null until reaped — the
+   * durable signal a finished task has been cleaned up. Surfaced in the overview's cleanup story (S3/S4).
+   */
+  reaped_at: string | null;
   acceptance_criteria: string[] | null;
   decisions: Record<string, unknown>[] | null;
   workspace: Record<string, unknown> | null;
   review: Record<string, unknown> | null;
-  blocked: Record<string, unknown> | null;
+  /** Full typed block payload (reason/category/sub_phase/needed); null when the task is not blocked. */
+  blocked: BlockedDetails | null;
   external_ref: Record<string, unknown> | null;
+  /** The pending external PR event type that re-enters the pipeline on the next dispatch; null when none. */
+  pending_pr_event: string | null;
   last_transition_reason: string | null;
   last_transition_by: string | null;
   last_transition_from: TaskState | null;
+  /** Trace-lineage link back to the previous dispatch's root span; null on a fresh task. */
+  last_trace_link: ObservationLink | null;
   /**
    * OTLP trace id (32-char hex) of the task's most recent dispatch, ready to drop into the Jaeger deep-link.
    * Derived server-side from the dispatch's trace ULID via the same code the exporter uses, so the link can
@@ -117,21 +152,7 @@ export interface QuotaStatus {
 }
 
 // ── Observations ─────────────────────────────────────────────────────────────
-
-/** Observation types recorded by the observer. */
-export type ObservationType =
-  | "task_execution"
-  | "agent_call"
-  | "tool_execution"
-  | "phase_transition"
-  | "decision_point"
-  | "safety_verdict"
-  | "state_transition"
-  | "workspace_op"
-  | "plugin_call"
-  | "error"
-  | "lifecycle"
-  | "quota_status";
+// `ObservationType` is sourced from `lib/vocabulary.ts` and re-exported at the top of this module.
 
 /** Log severity level for observations. */
 export type ObservationLevel = "debug" | "info" | "warn" | "error";
@@ -151,10 +172,13 @@ export interface Observation {
   duration_ms: number | null;
   input: Record<string, unknown> | null;
   output: Record<string, unknown> | null;
+  /** Always null in practice — the observer never writes span metadata. Cost/tokens live in `output`. */
   metadata: Record<string, unknown> | null;
   level: ObservationLevel;
   status: "ok" | "error";
   error_message: string | null;
+  /** Cross-trace continuity edges (lineage); null when the observation has none (the common case). */
+  links: ObservationLink[] | null;
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────

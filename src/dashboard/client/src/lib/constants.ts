@@ -1,4 +1,5 @@
 import type { ObservationType, Phase, TaskState } from "../types/api";
+import { PHASES } from "./vocabulary";
 
 /** Tailwind badge classes (background, text, border) for each task state. */
 export const STATE_COLORS: Record<TaskState, string> = {
@@ -33,25 +34,47 @@ export const STATE_DOT_COLORS: Record<TaskState, string> = {
   cancelled: "bg-slate-400",
 };
 
-/** Human-readable short labels for each RRPIR pipeline phase. */
+/** Human-readable short labels for each pipeline phase. */
 export const PHASE_LABELS: Record<Phase, string> = {
-  requirements_gathering: "Requirements",
+  requirements: "Requirements",
   research: "Research",
   planning: "Planning",
   execution: "Execution",
-  self_review: "Review",
-  demo_prep: "Demo",
+  review: "Review",
+  delivery: "Delivery",
 };
 
-/** Canonical ordering of pipeline phases from first to last. */
-export const PHASE_ORDER: Phase[] = [
-  "requirements_gathering",
-  "research",
-  "planning",
-  "execution",
-  "self_review",
-  "demo_prep",
-];
+/** Canonical ordering of pipeline phases from first to last — sourced from the parity-tested vocabulary. */
+export const PHASE_ORDER: readonly Phase[] = PHASES;
+
+/**
+ * Human-readable labels for each sub-phase, keyed by the runner's sub-phase name (`input.subPhase`).
+ * Mirrors the sub-phase files under `src/core/orchestrator/pipeline/<phase>/`. Unknown sub-phases fall
+ * back to their raw name at the call site, so a new sub-phase renders legibly until a label lands here.
+ */
+export const SUB_PHASE_LABELS: Record<string, string> = {
+  // requirements
+  gather: "Gather",
+  // research
+  investigate: "Investigate",
+  // planning
+  design: "Design",
+  // execution
+  implement: "Implement",
+  verify: "Verify",
+  // review
+  "self-review": "Self Review",
+  security: "Security",
+  "code-quality": "Code Quality",
+  architecture: "Architecture",
+  refine: "Refine",
+  // delivery
+  "pr-description": "PR Description",
+  push: "Push",
+  "create-pr": "Create PR",
+  "await-review": "Await Review",
+  "auto-merge": "Auto Merge",
+};
 
 /** Human-readable short labels for each observation type in the timeline. */
 export const OBSERVATION_TYPE_LABELS: Record<ObservationType, string> = {

@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/ta
 import { useSystemStatus } from "../../hooks/use-system-status";
 import { useCancelTask, useTaskDetail } from "../../hooks/use-tasks";
 import { ROUTES } from "../../lib/routes";
-import type { TaskDetail } from "../../types/api";
+import type { Phase, TaskDetail } from "../../types/api";
 import { BlockedResponse } from "./blocked-response";
 import { TaskAgentTab } from "./task-agent-tab";
 import { TaskOverviewTab } from "./task-overview-tab";
@@ -129,13 +129,18 @@ export function TaskDetailPage(): React.JSX.Element {
   );
 }
 
-function phasesFromDetail(task: TaskDetail): string[] {
-  const phases: string[] = [];
-  if (task.review) {
-    phases.push("self_review");
-  }
+/**
+ * Coarse heuristic for which phases a task has touched, from the detail record's presence flags. This is a
+ * placeholder using the REAL phase vocabulary; S3 replaces it with the true distinct phases derived from the
+ * task's phase_transition observations (the same `input.phase` source the list endpoint now reads).
+ */
+function phasesFromDetail(task: TaskDetail): Phase[] {
+  const phases: Phase[] = [];
   if (task.workspace) {
     phases.push("execution");
+  }
+  if (task.review) {
+    phases.push("review");
   }
   return phases;
 }

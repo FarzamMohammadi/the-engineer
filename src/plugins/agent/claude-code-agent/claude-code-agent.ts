@@ -478,6 +478,32 @@ function extractContent(resultEvent: Record<string, unknown>): string {
   return "";
 }
 
+/**
+ * The model that actually did the work, taken from the result event's `modelUsage` map by spend.
+ *
+ * Claude Code routinely runs a small auxiliary model (e.g. a `claude-haiku-*` helper for housekeeping)
+ * alongside the configured model, so `modelUsage` can carry several keys for one run. Reporting the wrong
+ * one is not cosmetic: this id rides the `cost.incurred` event and is what the dashboard shows as "the
+ * model this task ran on". Picking `Object.keys()[0]` reported whichever key happened to come first —
+ * often the few-cent helper. We pick the highest-spend key instead (output tokens as the tiebreaker),
+ * which is the configured model in every real run. Null when no usage was reported.
+ */
+export function dominantModelId(modelUsage: Record<string, unknown> | undefined): string | null {
+  if (!modelUsage) {
+    return null;
+  }
+  let best: { id: string; cost: number; output: number } | null = null;
+  for (const [id, raw] of Object.entries(modelUsage)) {
+    const usage = (raw ?? {}) as Record<string, unknown>;
+    const cost = typeof usage["costUSD"] === "number" ? usage["costUSD"] : 0;
+    const output = typeof usage["outputTokens"] === "number" ? usage["outputTokens"] : 0;
+    if (!best || cost > best.cost || (cost === best.cost && output > best.output)) {
+      best = { id, cost, output };
+    }
+  }
+  return best?.id ?? null;
+}
+
 /** Extract token usage from a result event's `usage` and `modelUsage` fields. */
 function extractUsage(resultEvent: Record<string, unknown>): AgentRunUsage | null {
   const usage = resultEvent["usage"] as Record<string, unknown> | undefined;
@@ -492,9 +518,9 @@ function extractUsage(resultEvent: Record<string, unknown>): AgentRunUsage | nul
     typeof usage["cache_creation_input_tokens"] === "number" ? usage["cache_creation_input_tokens"] : 0;
   const serviceTier = typeof usage["service_tier"] === "string" ? usage["service_tier"] : null;
 
-  // Derive model_id from modelUsage keys if available
+  // Derive model_id from modelUsage — the model that did the real work, not whichever key sorts first.
   const modelUsage = resultEvent["modelUsage"] as Record<string, unknown> | undefined;
-  const modelId = modelUsage ? (Object.keys(modelUsage)[0] ?? null) : null;
+  const modelId = dominantModelId(modelUsage);
 
   return {
     tokens: {

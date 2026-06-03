@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AdapterMethodError } from "../../../../../src/adapters/index.js";
-import { ClaudeCodeAgentPlugin } from "../../../../../src/plugins/agent/claude-code-agent/claude-code-agent.js";
+import {
+  ClaudeCodeAgentPlugin,
+  dominantModelId,
+} from "../../../../../src/plugins/agent/claude-code-agent/claude-code-agent.js";
 import { buildAgentEnv } from "../../../../../src/plugins/agent/subprocess.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
@@ -320,5 +323,37 @@ describe("buildAgentEnv", () => {
     const env = buildAgentEnv({ HOME: undefined, PATH: "/usr/bin" });
     expect(env["HOME"]).toBeUndefined();
     expect(env["PATH"]).toBe("/usr/bin");
+  });
+});
+
+describe("dominantModelId", () => {
+  it("returns null when no modelUsage is present", () => {
+    expect(dominantModelId(undefined)).toBeNull();
+  });
+
+  it("returns the only model when modelUsage has one key", () => {
+    expect(dominantModelId({ "claude-sonnet-4-6": { costUSD: 0.5, outputTokens: 1000 } })).toBe("claude-sonnet-4-6");
+  });
+
+  it("picks the highest-spend model, not whichever key sorts first (the auxiliary-haiku case)", () => {
+    // Real Claude Code shape: a few-cent haiku helper listed first, the configured sonnet doing the work.
+    const modelUsage = {
+      "claude-haiku-4-5-20251001": { inputTokens: 2135, outputTokens: 16, costUSD: 0.002215 },
+      "claude-sonnet-4-6": { inputTokens: 23, outputTokens: 12636, costUSD: 0.68811045 },
+    };
+    expect(dominantModelId(modelUsage)).toBe("claude-sonnet-4-6");
+  });
+
+  it("falls back to output tokens when costs tie", () => {
+    const modelUsage = {
+      "model-a": { costUSD: 0, outputTokens: 10 },
+      "model-b": { costUSD: 0, outputTokens: 999 },
+    };
+    expect(dominantModelId(modelUsage)).toBe("model-b");
+  });
+
+  it("tolerates malformed per-model entries", () => {
+    const modelUsage = { "model-a": null, "model-b": { costUSD: 0.1 } };
+    expect(dominantModelId(modelUsage as Record<string, unknown>)).toBe("model-b");
   });
 });

@@ -4,8 +4,11 @@
  * One observation maps to exactly one span:
  * - ids: ULID-decoded (see ./ulid.ts), the root span omitting `parentSpanId`.
  * - times: ISO 8601 → unix-nanos **as strings**. An instant (observe /
- *   recordDecision / recordError, start == end) is a zero-duration span — the
- *   flame graph still shows it, it just has no width.
+ *   recordDecision / recordError, start == end) — and any span that opens and
+ *   closes within the same millisecond — has a zero-width duration. We floor the
+ *   end to start + 1ns so the flame graph still shows it AND the backend never
+ *   flags a "negative duration" (Jaeger sanitizes ≤0-width spans, one warning per
+ *   span otherwise); 1ns is imperceptible, so an instant still reads as instant.
  * - attributes: `input`/`output` projected and sanitized (see ./attributes.ts).
  * - status: `ok` → OK, `error` → ERROR. An error span also carries the sanitized
  *   `error_message` (stored only in that column, not in input/output) as
@@ -23,17 +26,17 @@ import { deriveSpanId, deriveTraceId } from "./ulid.js";
 const NANOS_PER_MS = 1_000_000n;
 
 /**
- * Convert an ISO 8601 timestamp to unix-nanos as a decimal string.
+ * Convert an ISO 8601 timestamp to unix-nanos.
  *
  * `Date.parse` yields integer milliseconds; we widen to nanos with BigInt so
  * the value never loses precision the way a JSON number would past 2^53.
  */
-function isoToUnixNano(iso: string): string {
+function isoToNanos(iso: string): bigint {
   const millis = Date.parse(iso);
   if (Number.isNaN(millis)) {
     throw new Error(`Invalid ISO timestamp: "${iso}"`);
   }
-  return (BigInt(millis) * NANOS_PER_MS).toString();
+  return BigInt(millis) * NANOS_PER_MS;
 }
 
 /**
@@ -51,8 +54,15 @@ function isoToUnixNano(iso: string): string {
  * span id absent from this trace.
  */
 export function mapObservationToSpan(obs: Observation, ctx: AttributeContext): OtlpSpan {
-  const startTimeUnixNano = isoToUnixNano(obs.start_time);
-  const endTimeUnixNano = isoToUnixNano(obs.end_time ?? obs.start_time);
+  const startNanos = isoToNanos(obs.start_time);
+  // Floor the end to at least 1ns after the start. With millisecond-precision timestamps an instant
+  // (start == end) and any span that opens and closes within the same millisecond are both zero-width,
+  // which OTLP backends flag as a "negative duration" and silently bump by 1ns — one warning per span.
+  // Doing the floor here means the backend never has to, so that warning class disappears entirely.
+  const rawEndNanos = isoToNanos(obs.end_time ?? obs.start_time);
+  const endNanos = rawEndNanos > startNanos ? rawEndNanos : startNanos + 1n;
+  const startTimeUnixNano = startNanos.toString();
+  const endTimeUnixNano = endNanos.toString();
 
   // `error_message` lives only in its own column (never input/output), so without
   // this it would never reach the wire — an error span with no reason. Sanitize via

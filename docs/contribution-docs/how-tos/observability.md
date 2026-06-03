@@ -261,7 +261,7 @@ observations table (SQLite)  ──poll by rowid──▶  OTLP mapper  ──PO
 
 - trace id = the dispatch `trace_id` ULID decoded to its 16 bytes, hex (32 chars).
 - span id = the low 64 bits of the observation ULID, hex (16 chars).
-- start/duration → unix-nanos as strings; an instant is a zero-duration span.
+- start/duration → unix-nanos as strings; an instant (and any same-millisecond span) is floored to 1ns wide so backends never flag a "negative duration".
 - `input`/`output` → typed OTLP attributes; the always-null `metadata` is dropped.
 - a blob ref → an attribute carrying the dashboard blob URL, never the inlined content (OTLP size limits).
 - `status` ok/error → OTLP span status; a decision or verdict carries its fields as attributes.

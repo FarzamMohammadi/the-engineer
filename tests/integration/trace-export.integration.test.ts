@@ -200,11 +200,11 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
     await ex.pollOnce();
     expect(receiver.received).toHaveLength(1);
 
-    // The exported span IS that observation: span id derives from the obs id, and
-    // an instant is a zero-duration span (start == end).
+    // The exported span IS that observation: span id derives from the obs id, and an instant is
+    // floored to a 1ns-wide span (end = start + 1ns) so the backend never flags a negative duration.
     const span = receiver.received[0];
     expect(span?.spanId).toBe(deriveSpanId(id));
-    expect(span?.startTimeUnixNano).toBe(span?.endTimeUnixNano);
+    expect(BigInt(span?.endTimeUnixNano ?? "0")).toBe(BigInt(span?.startTimeUnixNano ?? "0") + 1n);
   });
 
   // ── task-traces only: an untraced observation is dashboard-only, never exported ──

@@ -216,17 +216,25 @@ describe("mapObservationToSpan", () => {
     expect(BigInt(span.startTimeUnixNano) > BigInt(Number.MAX_SAFE_INTEGER)).toBe(true);
   });
 
-  it("maps an instant (start == end) to a zero-duration span", () => {
+  it("floors an instant (start == end) to a 1ns-wide span so backends never flag a negative duration", () => {
     const instant = "2026-06-02T12:00:00.000Z";
     const obs = makeObservation({ start_time: instant, end_time: instant, duration_ms: 0 });
     const span = mapObservationToSpan(obs, CTX);
-    expect(span.startTimeUnixNano).toBe(span.endTimeUnixNano);
+    // Not zero-width: end is start + exactly 1ns (imperceptible, but positive).
+    expect(BigInt(span.endTimeUnixNano)).toBe(BigInt(span.startTimeUnixNano) + 1n);
   });
 
-  it("falls back end → start for a still-open span (null end_time)", () => {
+  it("floors a same-millisecond span (end == start at ms precision) to 1ns wide", () => {
+    const t = "2026-06-02T12:00:00.000Z";
+    const obs = makeObservation({ start_time: t, end_time: t, duration_ms: 0 });
+    const span = mapObservationToSpan(obs, CTX);
+    expect(BigInt(span.endTimeUnixNano) > BigInt(span.startTimeUnixNano)).toBe(true);
+  });
+
+  it("falls back end → start (then 1ns floor) for a still-open span (null end_time)", () => {
     const obs = makeObservation({ end_time: null, duration_ms: null });
     const span = mapObservationToSpan(obs, CTX);
-    expect(span.endTimeUnixNano).toBe(span.startTimeUnixNano);
+    expect(BigInt(span.endTimeUnixNano)).toBe(BigInt(span.startTimeUnixNano) + 1n);
   });
 
   it("omits parentSpanId for a root span (null parent)", () => {

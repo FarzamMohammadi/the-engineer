@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/ta
 import { useSystemStatus } from "../../hooks/use-system-status";
 import { useCancelTask, useTaskDetail, useTaskPhases } from "../../hooks/use-tasks";
 import { PHASE_ORDER } from "../../lib/constants";
-import { readPhaseTransition } from "../../lib/observation-shapes";
+import { buildSubPhaseRuns, readPhaseTransition } from "../../lib/observation-shapes";
 import { ROUTES } from "../../lib/routes";
 import type { Observation, Phase, TaskDetail, TaskState } from "../../types/api";
 import { BlockedResponse } from "./blocked-response";
@@ -41,6 +41,12 @@ export function TaskDetailPage(): React.JSX.Element {
   const cancelMutation = useCancelTask(taskId ?? "");
 
   const phasesRan = useMemo(() => distinctPhasesRan(phaseObservations ?? []), [phaseObservations]);
+  // The current phase's sub-phase progression (done/running), reconstructed from the same phase_transition
+  // observations — drives the colored sub-phase row under the pipeline.
+  const currentSubPhaseRuns = useMemo(() => {
+    const phase = (task as TaskDetail | undefined)?.phase;
+    return phase ? buildSubPhaseRuns(phaseObservations ?? [], phase) : [];
+  }, [phaseObservations, task]);
 
   const activeTab: TabValue = TAB_ROUTES.includes(tab as TabValue) ? (tab as TabValue) : "overview";
 
@@ -94,6 +100,7 @@ export function TaskDetailPage(): React.JSX.Element {
               currentPhase={typedTask.phase}
               phasesRan={phasesRan}
               subPhase={typedTask.sub_phase}
+              subPhaseRuns={currentSubPhaseRuns}
               phaseIteration={typedTask.phase_iteration}
               totalReworks={typedTask.total_reworks}
             />

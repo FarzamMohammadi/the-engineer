@@ -9,19 +9,11 @@ import { useObservations } from "../../hooks/use-observations";
 import { useTaskAgentTraces, useTaskPhases } from "../../hooks/use-tasks";
 import { PHASE_LABELS, PHASE_ORDER, SUB_PHASE_LABELS } from "../../lib/constants";
 import { formatDuration } from "../../lib/formatters";
-import { type PhaseTransitionShape, readAgentCall, readPhaseTransition } from "../../lib/observation-shapes";
+import { type SubPhaseRun, buildSubPhaseRuns, readAgentCall, readPhaseTransition } from "../../lib/observation-shapes";
 import type { Observation, Phase } from "../../types/api";
 
 interface TaskPhasesTabProps {
   taskId: string;
-}
-
-/** A sub-phase's run within a phase: when it started, its result outcome, and the one-line summary. */
-interface SubPhaseRun {
-  readonly subPhase: string;
-  readonly outcome: string;
-  readonly summary: string;
-  readonly status: "ok" | "error" | "pending";
 }
 
 /** Everything that happened inside one real pipeline phase, assembled from the task's observations. */
@@ -184,20 +176,16 @@ function buildPhaseGroups(
   decisions: readonly Observation[],
   agentTraces: readonly Observation[],
 ): PhaseGroup[] {
-  const subPhasesByPhase = new Map<string, SubPhaseRun[]>();
   const seen = new Set<string>();
   const order: string[] = [];
 
   for (const obs of transitions) {
     const shape = readPhaseTransition(obs);
-    if (!isRealPhase(shape.phase)) {
+    if (!isRealPhase(shape.phase) || seen.has(shape.phase)) {
       continue;
     }
-    if (!seen.has(shape.phase)) {
-      seen.add(shape.phase);
-      order.push(shape.phase);
-    }
-    recordSubPhase(subPhasesByPhase, shape);
+    seen.add(shape.phase);
+    order.push(shape.phase);
   }
 
   const decisionsByPhase = groupByPhaseColumn(decisions);
@@ -208,7 +196,7 @@ function buildPhaseGroups(
     const spend = costByPhase.get(phase) ?? { costUsd: 0, hasCost: false, durationMs: 0, entries: 0 };
     return {
       phase: phase as Phase,
-      subPhases: subPhasesByPhase.get(phase) ?? [],
+      subPhases: buildSubPhaseRuns(transitions, phase),
       decisions: decisionsByPhase.get(phase) ?? [],
       entries: spend.entries,
       costUsd: spend.costUsd,
@@ -220,35 +208,6 @@ function buildPhaseGroups(
 
 function isRealPhase(phase: string): phase is Phase {
   return (PHASE_ORDER as readonly string[]).includes(phase);
-}
-
-/**
- * Fold one phase_transition into its phase's sub-phase list. A started event opens a pending row; the matching
- * result event resolves the latest pending row of that sub-phase to its outcome (started without a result
- * stays pending — the phase is mid-flight).
- */
-function recordSubPhase(map: Map<string, SubPhaseRun[]>, shape: PhaseTransitionShape): void {
-  if (!shape.subPhase) {
-    return;
-  }
-  const list = map.get(shape.phase) ?? [];
-  if (shape.event === "sub_phase_started") {
-    list.push({ subPhase: shape.subPhase, outcome: "", summary: "", status: "pending" });
-  } else if (shape.event === "sub_phase_result") {
-    const pending = [...list].reverse().find((sp) => sp.subPhase === shape.subPhase && sp.status === "pending");
-    const resolved: SubPhaseRun = {
-      subPhase: shape.subPhase,
-      outcome: shape.outcome,
-      summary: shape.summary,
-      status: shape.outcome === "error" ? "error" : "ok",
-    };
-    if (pending) {
-      list[list.indexOf(pending)] = resolved;
-    } else {
-      list.push(resolved);
-    }
-  }
-  map.set(shape.phase, list);
 }
 
 function groupByPhaseColumn(observations: readonly Observation[]): Map<string, Observation[]> {

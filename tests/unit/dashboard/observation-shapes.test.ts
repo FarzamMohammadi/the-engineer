@@ -4,6 +4,7 @@ import {
   type AgentCallLike,
   type ObservationLike,
   type PhaseTransitionLike,
+  buildSubPhaseRuns,
   readAgentCall,
   readDecision,
   readPhaseTransition,
@@ -260,5 +261,54 @@ describe("readPhaseTransition", () => {
       outcome: "",
       summary: "",
     });
+  });
+});
+
+describe("buildSubPhaseRuns", () => {
+  it("reconstructs a phase's ordered runs, leaving the started-without-result one pending", () => {
+    const transitions = [
+      makePhaseTransition("phase_entered", { phase: "review" }),
+      makePhaseTransition("sub_phase_started", { phase: "review", subPhase: "self-review" }),
+      makePhaseTransition("sub_phase_result", {
+        phase: "review",
+        subPhase: "self-review",
+        outcome: "ok",
+        summary: "Looks good.",
+      }),
+      makePhaseTransition("sub_phase_started", { phase: "review", subPhase: "security" }),
+    ];
+
+    expect(buildSubPhaseRuns(transitions, "review")).toEqual([
+      { subPhase: "self-review", outcome: "ok", summary: "Looks good.", status: "ok" },
+      { subPhase: "security", outcome: "", summary: "", status: "pending" },
+    ]);
+  });
+
+  it("marks an error outcome as error", () => {
+    const transitions = [
+      makePhaseTransition("sub_phase_started", { phase: "execution", subPhase: "verify" }),
+      makePhaseTransition("sub_phase_result", {
+        phase: "execution",
+        subPhase: "verify",
+        outcome: "error",
+        summary: "A gate failed.",
+      }),
+    ];
+
+    expect(buildSubPhaseRuns(transitions, "execution")).toEqual([
+      { subPhase: "verify", outcome: "error", summary: "A gate failed.", status: "error" },
+    ]);
+  });
+
+  it("ignores other phases' transitions and bare phase entries", () => {
+    const transitions = [
+      makePhaseTransition("phase_entered", { phase: "execution" }),
+      makePhaseTransition("sub_phase_started", { phase: "execution", subPhase: "implement" }),
+      makePhaseTransition("sub_phase_started", { phase: "review", subPhase: "security" }),
+    ];
+
+    expect(buildSubPhaseRuns(transitions, "execution")).toEqual([
+      { subPhase: "implement", outcome: "", summary: "", status: "pending" },
+    ]);
   });
 });

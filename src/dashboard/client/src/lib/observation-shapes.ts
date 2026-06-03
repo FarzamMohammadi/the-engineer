@@ -141,6 +141,48 @@ export function readPhaseTransition(observation: PhaseTransitionLike): PhaseTran
   };
 }
 
+/** A sub-phase's run within a phase: its name, terminal outcome/summary, and whether it finished or is mid-flight. */
+export interface SubPhaseRun {
+  readonly subPhase: string;
+  readonly outcome: string;
+  readonly summary: string;
+  /** ok = finished cleanly, error = finished with an error outcome, pending = started but no result yet (running now). */
+  readonly status: "ok" | "error" | "pending";
+}
+
+/**
+ * Reconstruct one phase's ordered sub-phase runs from its phase_transition observations. A `sub_phase_started`
+ * opens a pending run; the matching `sub_phase_result` resolves the latest pending run of that sub-phase to its
+ * outcome. A started-without-result stays pending — that is the sub-phase running right now. Assumes the input
+ * is chronological (the order the read model returns), matching how the engine emitted the transitions.
+ */
+export function buildSubPhaseRuns(transitions: readonly PhaseTransitionLike[], phase: string): SubPhaseRun[] {
+  const list: SubPhaseRun[] = [];
+  for (const obs of transitions) {
+    const shape = readPhaseTransition(obs);
+    if (shape.phase !== phase || !shape.subPhase) {
+      continue;
+    }
+    if (shape.event === "sub_phase_started") {
+      list.push({ subPhase: shape.subPhase, outcome: "", summary: "", status: "pending" });
+    } else if (shape.event === "sub_phase_result") {
+      const pending = [...list].reverse().find((sp) => sp.subPhase === shape.subPhase && sp.status === "pending");
+      const resolved: SubPhaseRun = {
+        subPhase: shape.subPhase,
+        outcome: shape.outcome,
+        summary: shape.summary,
+        status: shape.outcome === "error" ? "error" : "ok",
+      };
+      if (pending) {
+        list[list.indexOf(pending)] = resolved;
+      } else {
+        list.push(resolved);
+      }
+    }
+  }
+  return list;
+}
+
 // ── agent_call ───────────────────────────────────────────────────────────────
 // Stored in `input`: { step, prompt_blob }. Stored in `output`: { outcome, summary, cost_usd, tokens_in,
 // tokens_out, cache_read_tokens, result_blob, transcript_blob }. `metadata` is ALWAYS null — cost/tokens and

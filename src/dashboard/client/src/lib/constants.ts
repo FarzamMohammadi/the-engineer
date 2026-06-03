@@ -1,4 +1,4 @@
-import type { ObservationType, Phase, TaskState } from "../types/api";
+import type { BlockCategory, BlockReason, ObservationType, Phase, TaskState } from "../types/api";
 import { PHASES } from "./vocabulary";
 
 /** Tailwind badge classes (background, text, border) for each task state. */
@@ -90,6 +90,34 @@ export const OBSERVATION_TYPE_LABELS: Record<ObservationType, string> = {
   error: "Error",
   lifecycle: "Lifecycle",
   quota_status: "Quota",
+};
+
+/** Human-readable labels for the coarse routing reason a task is blocked. */
+export const BLOCK_REASON_LABELS: Record<BlockReason, string> = {
+  need_more_info: "Needs Info",
+  agent_unavailable: "Agent Unavailable",
+  pipeline_failed: "Pipeline Failed",
+  pr_review_pending: "PR Review Pending",
+};
+
+/** Tailwind badge classes for the coarse block reason. */
+export const BLOCK_REASON_COLORS: Record<BlockReason, string> = {
+  need_more_info: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  agent_unavailable: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  pipeline_failed: "bg-red-500/20 text-red-400 border-red-500/30",
+  pr_review_pending: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+};
+
+/** Human-readable labels for the complete cause vocabulary behind a block. */
+export const BLOCK_CATEGORY_LABELS: Record<BlockCategory, string> = {
+  no_result: "No Result",
+  details_invalid: "Details Invalid",
+  agent_failed: "Agent Failed",
+  agent_unavailable: "Agent Unavailable",
+  orchestrator_error: "Orchestrator Error",
+  iteration_cap_hit: "Iteration Cap Hit",
+  awaiting_human: "Awaiting Human",
+  awaiting_pr_review: "Awaiting PR Review",
 };
 
 /** React Query staleTime values (ms) controlling refetch frequency per data type. */

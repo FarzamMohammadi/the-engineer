@@ -15,6 +15,7 @@ import {
   HealthTriggerFailurePayloadSchema,
   PreemptionRequestedPayloadSchema,
   SubscriptionSchema,
+  SystemReapCompletedPayloadSchema,
   TaskCreatedPayloadSchema,
   TaskStateChangedPayloadSchema,
   TimeoutAlertPayloadSchema,
@@ -411,6 +412,33 @@ describe("CommMessageSentPayloadSchema", () => {
       channel: "telegram",
     };
     expect(CommMessageSentPayloadSchema.parse(valid)).toEqual(valid);
+  });
+});
+
+describe("SystemReapCompletedPayloadSchema", () => {
+  it("parses a valid sweep summary", () => {
+    const valid = {
+      scanned: 3,
+      reaped: 2,
+      skipped_in_flight: 0,
+      deferred: 1,
+      failed: 0,
+      duration_ms: 42,
+    };
+    expect(SystemReapCompletedPayloadSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects a non-integer count", () => {
+    expect(() =>
+      SystemReapCompletedPayloadSchema.parse({
+        scanned: 1.5,
+        reaped: 0,
+        skipped_in_flight: 0,
+        deferred: 0,
+        failed: 0,
+        duration_ms: 0,
+      }),
+    ).toThrow();
   });
 });
 

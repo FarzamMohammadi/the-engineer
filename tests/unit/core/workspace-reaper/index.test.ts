@@ -80,6 +80,12 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     observer: createTestObserverFacade("workspace-reaper"),
   });
 
+  // Every sweep now publishes a `system.reap_completed` summary, so "the remote was not touched" is asserted
+  // against the specific git.branch_deleted event rather than "publish was never called".
+  function branchDeletedPublished(): boolean {
+    return publish.mock.calls.some((call) => (call[0] as { type: string }).type === "git.branch_deleted");
+  }
+
   return {
     reaper,
     clock,
@@ -90,6 +96,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     getWorkspaceRecord,
     isInFlight,
     publish,
+    branchDeletedPublished,
     notify,
     getPRStatus,
     commentOnPR,
@@ -215,7 +222,7 @@ describe("workspace reaper — failure envelope", () => {
 
     expect(h.cleanupWorkspace).toHaveBeenCalledWith("t1", false);
     expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
-    expect(h.publish).not.toHaveBeenCalled(); // no git.branch_deleted — the remote was not touched
+    expect(h.branchDeletedPublished()).toBe(false); // no git.branch_deleted — the remote was not touched
     expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
     expect(h.reaper.getLastRun()?.reaped).toBe(1);
   });
@@ -316,7 +323,7 @@ describe("workspace reaper — cancelled arm", () => {
     expect(h.getPRStatus).not.toHaveBeenCalled();
     expect(h.cleanupWorkspace).toHaveBeenCalledWith("t1", false);
     expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
-    expect(h.publish).not.toHaveBeenCalled(); // no git.branch_deleted — the remote was not touched
+    expect(h.branchDeletedPublished()).toBe(false); // no git.branch_deleted — the remote was not touched
     expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
     expect(h.reaper.getLastRun()?.reaped).toBe(1);
   });
@@ -367,6 +374,46 @@ describe("workspace reaper — lifecycle", () => {
       failed: 0,
       timestamp: expect.any(String),
     });
+  });
+
+  it("publishes a durable system.reap_completed summary at the end of every sweep", async () => {
+    const h = makeReaper({
+      branchRetentionDays: 0,
+      tasks: [mergedTask(MERGED_AT), makeTask({ id: "t2", review: null })],
+    });
+
+    await h.reaper.runOnce();
+
+    // The cross-process record the dashboard reads — getLastRun() lives in the daemon process only.
+    expect(h.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "system.reap_completed",
+        source: "workspace-reaper",
+        task_id: null,
+        payload: {
+          scanned: 2,
+          reaped: 2,
+          skipped_in_flight: 0,
+          deferred: 0,
+          failed: 0,
+          duration_ms: expect.any(Number),
+        },
+      }),
+    );
+  });
+
+  it("still publishes the sweep summary when a per-task reap failed", async () => {
+    const h = makeReaper({ branchRetentionDays: 0, tasks: [mergedTask(MERGED_AT)] });
+    h.deleteRemoteBranch.mockImplementation(() => {
+      throw new Error("network down");
+    });
+
+    await h.reaper.runOnce();
+
+    const reapEvent = h.publish.mock.calls
+      .map((call) => call[0] as { type: string; payload: Record<string, number> })
+      .find((evt) => evt.type === "system.reap_completed");
+    expect(reapEvent?.payload).toMatchObject({ scanned: 1, reaped: 0, failed: 1 });
   });
 
   it("sweeps on its interval when enabled, and stop() halts further sweeps", async () => {

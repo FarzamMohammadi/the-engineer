@@ -1,7 +1,7 @@
 import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import type { WorkspaceReaperConfig } from "../../schemas/config.js";
-import { EventTypes, GitBranchDeletedPayloadSchema } from "../../schemas/events.js";
+import { EventTypes, GitBranchDeletedPayloadSchema, SystemReapCompletedPayloadSchema } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { type Task, TaskStates } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
@@ -24,6 +24,14 @@ export const EVENTS: EventDeclaration[] = [
     description:
       "Emitted when the reaper deletes a task's branch — a merged task's once its retention window elapses, or a cancelled task's on reap",
     payloadSchema: GitBranchDeletedPayloadSchema,
+    publishers: ["workspace-reaper"],
+    subscribers: [],
+  },
+  {
+    type: EventTypes["system.reap_completed"],
+    description:
+      "Emitted at the end of each reconciliation sweep — the durable, cross-process record the dashboard reads to surface recent cleanup (the in-memory getLastRun() is unreachable from the dashboard's separate process)",
+    payloadSchema: SystemReapCompletedPayloadSchema,
     publishers: ["workspace-reaper"],
     subscribers: [],
   },
@@ -149,6 +157,33 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
         failed: stats.failed,
         durationMs: stats.durationMs,
       });
+      publishSweepCompleted(stats);
+    }
+  }
+
+  /**
+   * Publish the durable per-sweep record (mirrors data-lifecycle's `system.cleanup_completed`). The reaper's
+   * in-memory `getLastRun()` is unreachable from the dashboard's separate process, so this event is the only
+   * cross-process path to the sweep summary. Fire-and-forget: the sweep already completed, so a publish
+   * failure is logged and swallowed rather than allowed to surface as a sweep failure.
+   */
+  function publishSweepCompleted(stats: ReapStats): void {
+    try {
+      eventBus.publish({
+        type: EventTypes["system.reap_completed"],
+        source: "workspace-reaper",
+        task_id: null,
+        payload: {
+          scanned: stats.scanned,
+          reaped: stats.reaped,
+          skipped_in_flight: stats.skippedInFlight,
+          deferred: stats.deferred,
+          failed: stats.failed,
+          duration_ms: stats.durationMs,
+        },
+      } satisfies PublishInput<"system.reap_completed">);
+    } catch (err) {
+      observer.warn("Failed to publish reap-completed event", { error: sanitizeErrorMessage(err) });
     }
   }
 

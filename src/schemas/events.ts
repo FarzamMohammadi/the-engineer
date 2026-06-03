@@ -58,6 +58,7 @@ export const EventTypeSchema = z.enum([
   "comm.retry_exhausted",
   "evaluation.completed",
   "system.cleanup_completed",
+  "system.reap_completed",
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
@@ -361,6 +362,27 @@ export const SystemCleanupCompletedPayloadSchema = z.object({
 });
 export type SystemCleanupCompletedPayload = z.infer<typeof SystemCleanupCompletedPayloadSchema>;
 
+/**
+ * One workspace-reaper reconciliation sweep — the durable, cross-process record of cleanup. The reaper's
+ * in-memory `getLastRun()` lives in the daemon process and is unreachable from the dashboard's separate
+ * process, so each sweep publishes this event (mirroring data-lifecycle's `system.cleanup_completed`) and
+ * the dashboard surfaces recent sweeps from the events table. Fields mirror `ReapStats`.
+ */
+export const SystemReapCompletedPayloadSchema = z.object({
+  /** Unreaped terminal tasks examined this sweep. */
+  scanned: z.number().int(),
+  /** Fully reconciled (reaped_at stamped). */
+  reaped: z.number().int(),
+  /** Not reaped — a dispatch was in flight (never reap a workspace out from under a running agent). */
+  skipped_in_flight: z.number().int(),
+  /** Not reaped this sweep for a non-error reason (a merged branch still inside its retention window). */
+  deferred: z.number().int(),
+  /** Reap attempted and threw — reaped_at left NULL, retried next sweep. */
+  failed: z.number().int(),
+  duration_ms: z.number().int(),
+});
+export type SystemReapCompletedPayload = z.infer<typeof SystemReapCompletedPayloadSchema>;
+
 // ── EventPayloads mapped type ──────────────────────────────────────────────────
 
 export type EventPayloads = {
@@ -393,6 +415,7 @@ export type EventPayloads = {
   "comm.retry_exhausted": CommRetryExhaustedPayload;
   "evaluation.completed": EvaluationCompletedPayload;
   "system.cleanup_completed": SystemCleanupCompletedPayload;
+  "system.reap_completed": SystemReapCompletedPayload;
 };
 
 // ── TypedEvent generic ─────────────────────────────────────────────────────────
@@ -434,4 +457,5 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "comm.retry_exhausted": CommRetryExhaustedPayloadSchema,
   "evaluation.completed": EvaluationCompletedPayloadSchema,
   "system.cleanup_completed": SystemCleanupCompletedPayloadSchema,
+  "system.reap_completed": SystemReapCompletedPayloadSchema,
 };

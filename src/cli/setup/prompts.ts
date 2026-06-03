@@ -115,7 +115,7 @@ async function promptForTelemetry(): Promise<boolean> {
   const out = getOutput();
   out.blank();
   out.log("  Observability — task flame graphs (optional)");
-  out.log("  See each task's trace in a local Jaeger UI. Off by default.");
+  out.log("  See each task's full trace as a flame graph. Off by default.");
   out.blank();
   const enable = await confirm({
     message: "Enable live trace visualization?",
@@ -123,9 +123,9 @@ async function promptForTelemetry(): Promise<boolean> {
   });
   if (enable) {
     out.blank();
-    out.log("  You'll need Jaeger running to view the traces.");
-    out.log("  Install and start it:");
-    out.log(`    ${traceInstallCommand()}`);
+    out.log("  Run any OTLP backend listening on http://localhost:4318.");
+    out.log("  Docker, a binary, your call — we export to it whenever it's up.");
+    out.log(`  Quick start: ${traceInstallCommand()}`);
   }
   return enable;
 }

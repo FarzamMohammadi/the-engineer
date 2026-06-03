@@ -41,6 +41,11 @@ CREATE TABLE tasks (
   -- the orchestrator reads it via entryFor, seeds the re-entry, and clears it.
   pending_pr_event        TEXT,
 
+  -- Pending human response — the owner's answer to a question the task raised, captured when an
+  -- awaiting-human block is unblocked. The next dispatch reads it into the requirements re-run as
+  -- authoritative scope, then clears it (mirrors pending_pr_event for the PR-event re-entry path).
+  pending_response        TEXT,
+
   -- Tracking
   priority                INTEGER NOT NULL DEFAULT 50 CHECK(priority BETWEEN 1 AND 100),
   agent_tokens            INTEGER NOT NULL DEFAULT 0,

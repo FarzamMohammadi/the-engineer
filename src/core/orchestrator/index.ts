@@ -31,7 +31,7 @@ import { sendOutreach } from "./outreach-sender.js";
 import { PIPELINE } from "./pipeline/pipeline.js";
 import { entryFor, reentryCarry } from "./pipeline/pr-events.js";
 import { type Cursor, type ResumeState, type RunnerOutcome, runPipeline } from "./pipeline/runner.js";
-import type { BlockDetail, Ctx } from "./pipeline/types.js";
+import type { BlockDetail, Carry, Ctx } from "./pipeline/types.js";
 import { type ExecuteTaskResult, type OrchestratorContext, Outcomes } from "./types.js";
 import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
@@ -138,6 +138,36 @@ function resolveReentry(type: PrEventType, task: Task): ResumeState | undefined 
     return undefined;
   }
   return { cursor, phaseIteration: 0, totalReworks: 0, carry: reentryCarry(type, task) };
+}
+
+/**
+ * The rework context a requirements re-run opens with after the owner answered a question it raised.
+ * Exported for direct unit testing, mirroring the PR-event sibling `reentryCarry` in pr-events.ts.
+ */
+export function responseCarry(answer: string): Carry {
+  return {
+    summary: [
+      "The owner answered the question(s) you raised while gathering requirements. Their answer is authoritative: it defines the scope of this task. Do exactly what they asked and nothing more — it overrides any broader reading you might otherwise infer from the task title or from repo artifacts (asset specs, existing files). If the answer makes the task trivial, say so and scope it as trivial.",
+      "",
+      "Their answer:",
+      answer,
+    ].join("\n"),
+  };
+}
+
+/**
+ * Resolve a pending human answer into a starting ResumeState. The answer rides the runner's carry into
+ * the sub-phase that asked (the resume checkpoint — requirements/gather), so the re-run addresses the
+ * answer instead of re-deriving scope from scratch. With no checkpoint (or a pipeline reshape), fall
+ * back to a fresh run from the first sub-phase, still carrying the answer.
+ */
+function resolveResponse(answer: string, dispatch: Dispatch): ResumeState {
+  const carry = responseCarry(answer);
+  const resumed = resolveResume(dispatch);
+  if (resumed) {
+    return { ...resumed, carry };
+  }
+  return { cursor: { phaseIndex: 0, subIndex: 0 }, phaseIteration: 0, totalReworks: 0, carry };
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -309,12 +339,22 @@ export class Orchestrator {
   }
 
   /**
-   * Decide where this dispatch starts. A pending external PR event takes precedence over a resume
-   * checkpoint — it is a fresh re-entry, not a mid-loop continuation — and is consumed (cleared) on
-   * read so it fires exactly once; if this dispatch is lost, the stateless poller re-derives it next
-   * tick. With no pending event, fall back to the resume checkpoint (then a fresh run).
+   * Decide where this dispatch starts. A pending human answer or external PR event takes precedence over
+   * a resume checkpoint — each is a fresh re-entry, not a mid-loop continuation — and is consumed (cleared)
+   * on read so it fires exactly once. A human answer (the owner replied to a question the task raised)
+   * re-enters where it asked, carrying the answer; a PR event re-enters via entryFor. The two are mutually
+   * exclusive in practice (a task awaiting a human is never simultaneously awaiting PR review), but the
+   * answer is checked first since it is the one a person is actively waiting on. With neither pending, fall
+   * back to the resume checkpoint (then a fresh run).
    */
   private resolveDispatchStart(dispatch: Dispatch, observer: OrchestratorContext["observer"]): ResumeState | undefined {
+    const answer = dispatch.task.pending_response;
+    if (answer) {
+      this.ctx.taskEngine.updateTaskField(dispatch.task.id, "pending_response", null);
+      observer.info("Re-entering pipeline with the owner's answer", { taskId: dispatch.task.id });
+      return resolveResponse(answer, dispatch);
+    }
+
     const pending = dispatch.task.pending_pr_event;
     if (!pending) {
       return resolveResume(dispatch);

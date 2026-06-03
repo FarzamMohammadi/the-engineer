@@ -1,9 +1,6 @@
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import type { ExternalRef } from "../../schemas/task.js";
 import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
-import type { IWorkspaceManager } from "../interfaces/workspace-manager.interface.js";
 import type { IObserver } from "../observer/index.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -24,7 +21,6 @@ export interface UnblockResolver {
 
 export interface UnblockResolverContext {
   taskEngine: ITaskEngine;
-  workspaceManager: IWorkspaceManager;
   observer: IObserver;
 }
 
@@ -57,7 +53,7 @@ function isAwaitingPrReview(task: { blocked: { reason: string } | null }): boole
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResolver {
-  const { taskEngine, workspaceManager, observer } = ctx;
+  const { taskEngine, observer } = ctx;
 
   function tryUnblock(input: UnblockInput): UnblockResult {
     if (input.by === "external_ref") {
@@ -101,13 +97,14 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
     return { unblocked: false, taskId, reason: "pr_review_pending" };
   }
 
-  /** Shared transition logic: write response first, then transition, then clear blocked. */
+  /** Shared transition logic: capture the answer first, then transition, then clear blocked. */
   function transitionAndClear(taskId: string, source: string, content?: string): UnblockResult {
-    // Write response file FIRST — before state change. If the write fails,
-    // writeResponseToWorktree logs the error internally (try/catch), so we
-    // still proceed with the transition to avoid leaving the task stuck.
+    // Capture the owner's answer on the task BEFORE the state change, so it is already in place when
+    // the daemon dispatches the now-queued task. The next dispatch reads it as authoritative scope for
+    // the requirements re-run, then clears it (see Orchestrator.resolveDispatchStart). Without this the
+    // answer is lost and the re-run re-derives scope from scratch — the runaway-PR bug.
     if (content) {
-      writeResponseToWorktree(taskId, source, content);
+      taskEngine.updateTaskField(taskId, "pending_response", content);
     }
 
     const result = taskEngine.requestTransition(
@@ -132,40 +129,6 @@ export function createUnblockResolver(ctx: UnblockResolverContext): UnblockResol
 
     observer.info("Task unblocked", { taskId, source });
     return { unblocked: true, taskId, reason: null };
-  }
-
-  /** Write response content to {thoughtsDir}/requirements/responses/{source}.txt */
-  function writeResponseToWorktree(taskId: string, source: string, content: string): void {
-    const worktreePath = workspaceManager.getWorktreePath(taskId);
-    if (!worktreePath) {
-      observer.debug("No worktree for task — skipping response file write", { taskId });
-      return;
-    }
-
-    // Use thoughtsDir from workspace record (includes date prefix, e.g., "thoughts/2026-03-23-issue-42")
-    const record = workspaceManager.getWorkspaceRecord(taskId);
-    const thoughtsDir = record?.thoughtsDir;
-    if (!thoughtsDir) {
-      observer.debug("No thoughtsDir for task — skipping response file write", { taskId });
-      return;
-    }
-
-    const responsesDir = path.join(worktreePath, thoughtsDir, "requirements", "responses");
-    try {
-      mkdirSync(responsesDir, { recursive: true });
-      const filename = `response-${String(Date.now())}-${source}.txt`;
-      const finalPath = path.join(responsesDir, filename);
-      const tempPath = `${finalPath}.tmp`;
-      writeFileSync(tempPath, content, "utf-8");
-      renameSync(tempPath, finalPath);
-      observer.debug("Response file written", { taskId, source, filename, dir: responsesDir });
-    } catch (err) {
-      observer.warn("Failed to write response file", {
-        taskId,
-        source,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   return { tryUnblock };

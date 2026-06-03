@@ -1,8 +1,4 @@
-import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type UnblockResolverContext,
   createUnblockResolver,
@@ -20,10 +16,6 @@ function createMockContext(): UnblockResolverContext {
       getTasksByState: vi.fn().mockReturnValue([]),
       requestTransition: vi.fn().mockReturnValue({ success: true }),
       updateTaskField: vi.fn(),
-    },
-    workspaceManager: {
-      getWorktreePath: vi.fn().mockReturnValue(null),
-      getWorkspaceRecord: vi.fn().mockReturnValue(null),
     },
     observer: createTestObserverFacade("daemon"),
   } as unknown as UnblockResolverContext;
@@ -180,7 +172,7 @@ describe("UnblockResolver", () => {
         reason: "invalid_transition",
       });
       // blocked field NOT cleared on failure
-      expect(mockCtx.taskEngine.updateTaskField).not.toHaveBeenCalled();
+      expect(mockCtx.taskEngine.updateTaskField).not.toHaveBeenCalledWith("task-1", "blocked", null);
     });
   });
 
@@ -247,24 +239,9 @@ describe("UnblockResolver", () => {
   });
 
   describe("response content", () => {
-    let tempDir: string;
-
-    beforeEach(() => {
-      tempDir = mkdtempSync(path.join(tmpdir(), "unblock-test-"));
-    });
-
-    afterEach(() => {
-      rmSync(tempDir, { recursive: true, force: true });
-    });
-
-    it("writes response content to worktree when provided", () => {
+    it("captures the owner's answer on the task before the transition, so the re-run can read it", () => {
       const task = makeBlockedTask("task-1", "test/repo", "42", "issue-42");
-      (mockCtx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
       (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
-      (mockCtx.workspaceManager.getWorktreePath as ReturnType<typeof vi.fn>).mockReturnValue(tempDir);
-      (mockCtx.workspaceManager.getWorkspaceRecord as ReturnType<typeof vi.fn>).mockReturnValue({
-        thoughtsDir: "thoughts/2026-03-23-issue-42",
-      });
 
       const resolver = createUnblockResolver(mockCtx);
       resolver.tryUnblock({
@@ -274,31 +251,35 @@ describe("UnblockResolver", () => {
         content: "The answer is 42",
       });
 
-      const responsesDir = path.join(tempDir, "thoughts", "2026-03-23-issue-42", "requirements", "responses");
-      expect(existsSync(responsesDir)).toBe(true);
-      const files = readdirSync(responsesDir);
-      const responseFile = files.find((f) => f.includes("-github.txt"));
-      expect(responseFile).toBeDefined();
-      expect(responseFile).toMatch(/^response-\d+-github\.txt$/);
-      expect(readFileSync(path.join(responsesDir, responseFile!), "utf-8")).toBe("The answer is 42");
+      expect(mockCtx.taskEngine.updateTaskField).toHaveBeenCalledWith("task-1", "pending_response", "The answer is 42");
+      // Answer captured BEFORE the queued transition, so it is in place when the daemon dispatches.
+      const responseOrder = (mockCtx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock.calls.findIndex(
+        (call) => call[1] === "pending_response",
+      );
+      const responseInvocation = (mockCtx.taskEngine.updateTaskField as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[responseOrder];
+      const transitionInvocation = (mockCtx.taskEngine.requestTransition as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0];
+      expect(responseInvocation).toBeLessThan(transitionInvocation!);
     });
 
-    it("skips file write when no worktree exists", () => {
+    it("does not set pending_response when no answer content is provided", () => {
       const task = makeBlockedTask("task-1", "test/repo", "42", "issue-42");
-      (mockCtx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue(task);
       (mockCtx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task]);
-      // getWorktreePath returns null
 
       const resolver = createUnblockResolver(mockCtx);
       const result = resolver.tryUnblock({
         by: "external_ref",
         ref: { type: "test_issue", repo: "test/repo", id: "42" },
         source: "github",
-        content: "Some content",
       });
 
-      // Still unblocks — file write is best-effort
       expect(result.unblocked).toBe(true);
+      expect(mockCtx.taskEngine.updateTaskField).not.toHaveBeenCalledWith(
+        "task-1",
+        "pending_response",
+        expect.anything(),
+      );
     });
   });
 });

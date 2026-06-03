@@ -242,6 +242,13 @@ export const TaskSchema = z.object({
   // `review.feedback_rounds`, and richer CI/conflict detail is re-derived live, per the thin-payload rule.
   pending_pr_event: PrEventTypeSchema.nullable().default(null),
 
+  // Pending human response — the owner's answer to a question this task raised. Captured when an
+  // awaiting-human block is unblocked (see unblock-resolver); the next dispatch reads it into the
+  // requirements re-run as authoritative scope (via the runner's carry) and clears it. The PR-event
+  // sibling above carries only a routing type because the content lives elsewhere; a human answer has
+  // no such home, so the answer text itself is stored here.
+  pending_response: z.string().nullable().default(null),
+
   // Pipeline loop counters — persisted on the task row (and each checkpoint) so a preempt-and-resume
   // does not reset the caps. phase_iteration is the intra-phase repeat count (resets on phase entry);
   // total_reworks is the inter-phase backward-jump count for one dispatch. Both reset on a fresh dispatch.

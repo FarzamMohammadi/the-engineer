@@ -222,6 +222,7 @@ describe("table structure", () => {
       "review",
       "blocked",
       "pending_pr_event",
+      "pending_response",
       "priority",
       "agent_tokens",
       "agent_cost_usd",

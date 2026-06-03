@@ -221,7 +221,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
   const unblockResolver = createUnblockResolver({
     taskEngine: ctx.taskEngine,
-    workspaceManager: ctx.workspaceManager,
     observer: ctx.observer,
   });
 

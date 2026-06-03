@@ -361,6 +361,7 @@ describe("TaskSchema", () => {
     review: null,
     blocked: null,
     pending_pr_event: null,
+    pending_response: null,
     phase_iteration: 0,
     total_reworks: 0,
     priority: 50,

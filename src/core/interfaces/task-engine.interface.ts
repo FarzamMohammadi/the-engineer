@@ -56,6 +56,7 @@ export type UpdatableField =
   | "review"
   | "blocked"
   | "pending_pr_event"
+  | "pending_response"
   | "team"
   | "related"
   | "decisions"

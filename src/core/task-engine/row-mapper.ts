@@ -38,6 +38,7 @@ export interface TaskRow {
   review: string | null;
   blocked: string | null;
   pending_pr_event: string | null;
+  pending_response: string | null;
   phase_iteration: number;
   total_reworks: number;
   priority: number;
@@ -95,6 +96,7 @@ export function rowToTask(row: TaskRow): Task {
     review: fromSqliteJson<ReviewState>(row.review),
     blocked: fromSqliteJson<BlockedDetails>(row.blocked),
     pending_pr_event: row.pending_pr_event as PrEventType | null,
+    pending_response: row.pending_response,
     phase_iteration: row.phase_iteration,
     total_reworks: row.total_reworks,
     priority: row.priority,

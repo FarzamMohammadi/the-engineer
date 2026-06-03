@@ -14,6 +14,10 @@ function insertTask(db: Database.Database, id: string, overrides: Record<string,
   const defaults = {
     state: TaskStates.active,
     sub_state: SubStates.working as string | null,
+    phase: null as string | null,
+    sub_phase: null as string | null,
+    phase_iteration: 0,
+    total_reworks: 0,
     priority: 50,
     title: "Test task",
     description: "",
@@ -22,13 +26,18 @@ function insertTask(db: Database.Database, id: string, overrides: Record<string,
     ...overrides,
   };
   db.prepare(
-    `INSERT INTO tasks (id, idempotency_key, state, sub_state, priority, title, description, created_at, last_transition_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (id, idempotency_key, state, sub_state, phase, sub_phase, phase_iteration, total_reworks,
+       priority, title, description, created_at, last_transition_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     `test:${id}`,
     defaults.state,
     defaults.sub_state,
+    defaults.phase,
+    defaults.sub_phase,
+    defaults.phase_iteration,
+    defaults.total_reworks,
     defaults.priority,
     defaults.title,
     defaults.description,
@@ -49,6 +58,20 @@ function insertObservation(
     `INSERT INTO observations (id, trace_id, type, name, task_id, start_time)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, traceId, "task_execution", "dispatch", taskId, startTime);
+}
+
+/** Insert a phase_transition observation carrying its phase in `input.phase` (the runner's real shape). */
+function insertPhaseTransition(
+  db: Database.Database,
+  id: string,
+  taskId: string,
+  name: string,
+  input: Record<string, unknown>,
+): void {
+  db.prepare(
+    `INSERT INTO observations (id, type, name, task_id, start_time, input)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, "phase_transition", name, taskId, "2026-01-15T10:30:00Z", JSON.stringify(input));
 }
 
 // The detail and cancel endpoints query deps.db directly and never touch the observation store; a bare stub
@@ -192,5 +215,70 @@ describe("taskRoutes — GET /:id trace_otlp_id", () => {
     insertObservation(handle.db, "obs-bad", "task-bad", "not-a-ulid", "2026-01-15T10:30:00Z");
 
     expect(await detailTraceId("task-bad")).toBeNull();
+  });
+});
+
+describe("taskRoutes — GET / phases_ran and loop columns", () => {
+  let handle: DatabaseHandle;
+  let app: ReturnType<typeof taskRoutes>;
+
+  beforeEach(() => {
+    handle = createInMemoryDatabase();
+    app = taskRoutes({ db: handle.db, writeDb: handle.db, observationStore: observationStoreStub });
+  });
+
+  afterEach(() => {
+    handle.close();
+  });
+
+  async function listTasks(): Promise<Record<string, unknown>[]> {
+    const res = await app.request("/");
+    const body = (await res.json()) as { tasks: Record<string, unknown>[] };
+    return body.tasks;
+  }
+
+  it("derives distinct REAL phases from observation input.phase, not the observation name", async () => {
+    insertTask(handle.db, "task-1");
+    // The runner stores the phase in input.phase; the `name` column holds the EVENT name, which the old
+    // (broken) implementation collected — meaningless strings like "phase_entered".
+    insertPhaseTransition(handle.db, "o1", "task-1", "phase_entered", { phase: "research" });
+    insertPhaseTransition(handle.db, "o2", "task-1", "sub_phase_started", {
+      phase: "research",
+      subPhase: "investigate",
+    });
+    insertPhaseTransition(handle.db, "o3", "task-1", "phase_entered", { phase: "planning" });
+
+    const [task] = await listTasks();
+
+    // Distinct real phases, first-seen order — never the event names.
+    expect(task?.["phases_ran"]).toEqual(["research", "planning"]);
+  });
+
+  it("ignores values in input.phase that are not real pipeline phases", async () => {
+    insertTask(handle.db, "task-junk");
+    insertPhaseTransition(handle.db, "j1", "task-junk", "phase_entered", { phase: "execution" });
+    // Stale/garbage phase names (the very thing the old vocabulary drifted to) are dropped.
+    insertPhaseTransition(handle.db, "j2", "task-junk", "phase_entered", { phase: "self_review" });
+    insertPhaseTransition(handle.db, "j3", "task-junk", "sub_phase_started", { subPhase: "verify" });
+
+    const [task] = await listTasks();
+
+    expect(task?.["phases_ran"]).toEqual(["execution"]);
+  });
+
+  it("exposes sub_phase, phase_iteration, and total_reworks on the list row", async () => {
+    insertTask(handle.db, "task-loop", {
+      phase: "execution",
+      sub_phase: "verify",
+      phase_iteration: 2,
+      total_reworks: 1,
+    });
+
+    const [task] = await listTasks();
+
+    expect(task?.["phase"]).toBe("execution");
+    expect(task?.["sub_phase"]).toBe("verify");
+    expect(task?.["phase_iteration"]).toBe(2);
+    expect(task?.["total_reworks"]).toBe(1);
   });
 });

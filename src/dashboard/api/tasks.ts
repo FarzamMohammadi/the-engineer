@@ -6,9 +6,13 @@ import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
 import { deriveTraceId } from "../../core/observer/otlp/index.js";
+import { PipelinePhaseSchema } from "../../core/orchestrator/pipeline/types.js";
 import { cancelTask } from "../../core/task-engine/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { TaskStates } from "../../schemas/task.js";
+
+/** The real pipeline phase names, as a set, for validating values parsed out of observation inputs. */
+const REAL_PHASES = new Set<string>(PipelinePhaseSchema.options);
 
 /** Dependencies injected into task API route handlers. */
 export interface TaskRoutesDeps {
@@ -18,8 +22,8 @@ export interface TaskRoutesDeps {
 }
 
 /** Columns for the lightweight task list. Avoids needing rowToTask. */
-const LIST_COLUMNS = `id, title, state, sub_state, phase, priority, repo,
-  agent_cost_usd, agent_tokens, created_at, started_at, completed_at,
+const LIST_COLUMNS = `id, title, state, sub_state, phase, sub_phase, phase_iteration, total_reworks,
+  priority, repo, agent_cost_usd, agent_tokens, created_at, started_at, completed_at,
   last_transition_at, workspace`;
 
 interface TaskListRow {
@@ -28,6 +32,9 @@ interface TaskListRow {
   state: string;
   sub_state: string | null;
   phase: string | null;
+  sub_phase: string | null;
+  phase_iteration: number;
+  total_reworks: number;
   priority: number;
   repo: string | null;
   agent_cost_usd: number;
@@ -45,6 +52,9 @@ interface TaskListItem {
   state: string;
   sub_state: string | null;
   phase: string | null;
+  sub_phase: string | null;
+  phase_iteration: number;
+  total_reworks: number;
   priority: number;
   repo: string | null;
   agent_cost_usd: number;
@@ -68,6 +78,9 @@ function mapListRow(row: TaskListRow): TaskListItem {
     state: row.state,
     sub_state: row.sub_state,
     phase: row.phase,
+    sub_phase: row.sub_phase,
+    phase_iteration: row.phase_iteration,
+    total_reworks: row.total_reworks,
     priority: row.priority,
     repo: row.repo,
     agent_cost_usd: row.agent_cost_usd,
@@ -78,6 +91,23 @@ function mapListRow(row: TaskListRow): TaskListItem {
     last_transition_at: row.last_transition_at,
     worktree_path: worktreePath,
   };
+}
+
+/**
+ * Read the real pipeline phase out of a phase_transition observation's `input` JSON. The runner stores the
+ * phase in `input.phase` (the `name` column holds the event name, not the phase), so this is the only honest
+ * source. Returns null when the input is absent, unparseable, or carries a value that is not a real phase.
+ */
+function parsePhaseFromInput(input: string | null): string | null {
+  if (!input) {
+    return null;
+  }
+  const parsed = fromSqliteJson<Record<string, unknown>>(input);
+  const phase = parsed?.["phase"];
+  if (typeof phase === "string" && REAL_PHASES.has(phase)) {
+    return phase;
+  }
+  return null;
 }
 
 /** Parse JSON columns for full task detail. */
@@ -91,6 +121,7 @@ function mapFullTask(row: Record<string, unknown>): Record<string, unknown> {
     "workspace",
     "review",
     "blocked",
+    "last_trace_link",
   ];
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
@@ -153,20 +184,30 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
 
     const tasks = rows.map(mapListRow);
 
-    // Bulk-fetch which phases actually ran for each task (from observations)
+    // Bulk-fetch the DISTINCT real phases each task actually ran. The phase name lives in the observation's
+    // `input.phase` (the `name` column holds the event name — phase_entered/sub_phase_started/sub_phase_result),
+    // so we parse the input JSON, read `phase`, keep only genuine pipeline phases, and de-dup preserving the
+    // first-seen order. Rows are read ascending by rowid so the order reflects the real pipeline progression.
     const taskIds = tasks.map((t) => t.id);
     const phasesRanMap: Record<string, string[]> = {};
     if (taskIds.length > 0) {
       try {
         const phaseRows = deps.db
           .prepare(
-            `SELECT task_id, name as phase FROM observations
-             WHERE type = 'phase_transition' AND task_id IN (${taskIds.map(() => "?").join(",")})`,
+            `SELECT task_id, input FROM observations
+             WHERE type = 'phase_transition' AND task_id IN (${taskIds.map(() => "?").join(",")})
+             ORDER BY rowid ASC`,
           )
-          .all(...taskIds) as Array<{ task_id: string; phase: string }>;
+          .all(...taskIds) as Array<{ task_id: string; input: string | null }>;
         for (const row of phaseRows) {
+          const phase = parsePhaseFromInput(row.input);
+          if (phase === null) {
+            continue;
+          }
           const arr = phasesRanMap[row.task_id] ?? [];
-          arr.push(row.phase);
+          if (!arr.includes(phase)) {
+            arr.push(phase);
+          }
           phasesRanMap[row.task_id] = arr;
         }
       } catch {

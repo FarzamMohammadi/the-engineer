@@ -15,9 +15,7 @@
  *      write path (the write path is never blocked);
  *  (d) rehydration replays the bounded recent window and nothing older;
  *  (e) nothing is exported twice (rehydrate + live share one cursor);
- *  (f) the loop survives a POST error and a malformed row and keeps going;
- *  (g) a trace is gated until its root settles — children are held, then the whole
- *      tree ships root-first so the parent is always present in the backend.
+ *  (f) the loop survives a POST error and a malformed row and keeps going.
  */
 
 import type Database from "better-sqlite3";
@@ -320,62 +318,6 @@ describe("startTraceExport (poll-based OTLP exporter)", () => {
 
     await ex.pollOnce();
     expect(receiver.received).toHaveLength(1);
-  });
-
-  // ── trace gating: a trace ships only once its root (parent) is present ───────
-
-  it("holds a child span until its root settles, then ships the whole trace root-first", async () => {
-    const receiver = createFakeReceiver("ok");
-    const ex = start(receiver);
-
-    // Root opens and stays open; a child instant completes under it.
-    const root = store.startSpan("task_execution", "execute_task", undefined, { trace_id: TRACE });
-    store.observe("workspace_op", "worktree_created", {}, { trace_id: TRACE, parent_observation_id: root.id });
-
-    // Poll while the root is OPEN: the child is complete but must NOT ship — a
-    // child reaching the backend before its parent makes every in-progress view
-    // accumulate a permanent "parent not in trace" warning.
-    await ex.pollOnce();
-    expect(receiver.received).toHaveLength(0);
-
-    // Root settles: the trace flushes as one batch, the root span FIRST.
-    root.end();
-    await ex.pollOnce();
-    expect(receiver.received.map((s) => s.name)).toEqual(["execute_task", "worktree_created"]);
-
-    // No re-export on later polls.
-    await ex.pollOnce();
-    expect(receiver.received).toHaveLength(2);
-  });
-
-  it("ships a child read right after its root in one batch (rehydration order)", async () => {
-    const receiver = createFakeReceiver("ok");
-    const ex = start(receiver);
-
-    // Root completes BEFORE the child exists, so its rowid is lower — the exact
-    // order rehydration replays a trace (root first, then its children).
-    const root = store.startSpan("task_execution", "execute_task", undefined, { trace_id: TRACE });
-    root.end();
-    store.observe("workspace_op", "worktree_created", {}, { trace_id: TRACE, parent_observation_id: root.id });
-
-    // One cycle ships both: the root flushes (nothing buffered yet) and marks the
-    // trace settled, so the child that follows in the same batch ships straight through.
-    await ex.pollOnce();
-    expect(receiver.received.map((s) => s.name)).toEqual(["execute_task", "worktree_created"]);
-  });
-
-  it("does not ship a child whose root never settles (held, not leaked into the backend)", async () => {
-    const receiver = createFakeReceiver("ok");
-    const ex = start(receiver);
-
-    const root = store.startSpan("task_execution", "execute_task", undefined, { trace_id: TRACE });
-    store.observe("workspace_op", "worktree_created", {}, { trace_id: TRACE, parent_observation_id: root.id });
-
-    // The root stays open forever (a crash mid-task): the child is held, never
-    // shipped — the dashboard remains the system of record for the partial trace.
-    await ex.pollOnce();
-    await ex.pollOnce();
-    expect(receiver.received).toHaveLength(0);
   });
 
   // ── (c) receiver down / hung → loop never throws, runs OFF the write path ────

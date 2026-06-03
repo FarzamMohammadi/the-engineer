@@ -24,28 +24,15 @@
  * observations and track the open ones:
  *
  *   - A newly-seen row with `end_time` set (an instant, or a span that closed
- *     before we polled) is collected for export this cycle.
+ *     before we polled) is exported immediately.
  *   - A newly-seen row with `end_time` NULL (an open span) is NOT exported; its
  *     id joins an in-memory `pending` set.
  *   - Each poll ALSO re-queries the pending ids for completion
  *     (`WHERE id IN (...) AND end_time IS NOT NULL`); the now-complete ones are
- *     collected with their real duration and dropped from `pending`.
+ *     exported with their real duration and dropped from `pending`.
  *
  * Net: every observation is exported AT MOST ONCE, when complete, with a real
  * duration — no reliance on backend (traceId,spanId) dedup.
- *
- * Send each trace whole, on settle (what keeps the backend clean): a child span
- * that reaches the backend BEFORE its root makes the backend's trace adjuster flag
- * the child "parent not in trace" — and backends like Jaeger MUTATE the stored span
- * on every query, so each in-progress view (the UI auto-refreshes) appends another
- * PERMANENT copy of that warning. The root span (execute_task) spans the whole task
- * and settles LAST, so a child-first stream piles up dozens. So the collected
- * observations are gated per trace (see `routeForExport`): complete children are
- * HELD in `traceBuffer` until their trace's root settles, then the root ships FIRST
- * and its children with it — one whole tree, parent always present, zero accumulated
- * warnings. The trade: a task's trace appears in the backend when it settles
- * (blocks/completes, ~one poll later), not streaming mid-run; the live, incremental
- * view is the dashboard.
  *
  * Best-effort, at-most-once (NOT at-least-once): the poll loop is total-catch
  * (never throws out of the timer); a failed/slow POST (per-POST AbortSignal
@@ -99,23 +86,6 @@ const WARN_RATE_LIMIT_MS = 60_000;
  * (their completion, if it ever lands, is simply not exported — best-effort).
  */
 const PENDING_MAX = 10_000;
-
-/**
- * Cap on the number of in-flight traces buffered while their root span is still
- * open (see "Send each trace whole, on settle" in the header). A task whose root
- * never settles (a crash mid-run) would otherwise hold its children forever; past
- * this many distinct traces, the oldest trace's buffer is dropped — its spans
- * simply never reach the backend (best-effort; the dashboard still has them).
- */
-const BUFFERED_TRACES_MAX = 1_000;
-
-/**
- * Cap on remembered settled-root trace ids. A child read AFTER its root settled —
- * e.g. on rehydration, where the root's lower rowid precedes its children — ships
- * straight through instead of re-buffering. FIFO-bounded; eviction is safe because
- * no child ever arrives long after its trace's root has settled.
- */
-const SETTLED_TRACES_MAX = 10_000;
 
 /** Strips trailing slashes so `<base>/v1/traces` and blob URLs never double up. */
 const TRAILING_SLASHES = /\/+$/;
@@ -288,15 +258,6 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
   let cursor = computeRehydrateCursor(rehydrateWindowMs);
   // Ids of open spans seen but not yet exported (insertion-order for FIFO drop).
   const pending = new Set<string>();
-  // Complete children (with a parent) whose ROOT span has not settled yet — held
-  // per trace so a trace reaches the backend only once its root is present. A child
-  // shipped before its root makes every in-progress view accumulate a permanent
-  // "parent not in trace" warning in the backend (see header). Insertion-ordered
-  // for FIFO drop of the oldest never-settling trace.
-  const traceBuffer = new Map<string, Observation[]>();
-  // Trace ids whose root span has already shipped — a child seen afterwards (or, on
-  // rehydration, read in the same batch right after the root) ships straight through.
-  const rootShipped = new Set<string>();
   // Aborts the current in-flight POST on stop(). One POST at a time per cycle.
   let inFlight: AbortController | null = null;
   let stopped = false;
@@ -431,92 +392,6 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
     }
   }
 
-  // ── Per-trace gating: ship a trace only once its root (parent) is present ────
-
-  /**
-   * Route freshly-COMPLETE observations into "ship now" vs "hold". A trace must
-   * reach the backend with its root present, else every in-progress view makes the
-   * backend's trace adjuster append a "parent not in trace" warning to each child —
-   * permanently, since it mutates the stored span per query (see header). So:
-   *
-   *   - A ROOT (parent_observation_id null — the task's execute_task span) is the
-   *     flush trigger: ship it FIRST, then everything buffered for its trace, in one
-   *     batch, and remember the trace as settled.
-   *   - A child whose trace is already settled ships immediately (parent present).
-   *   - A child whose root has NOT settled is held in `traceBuffer`.
-   *
-   * The root settles LAST (the orchestrator ends it after every child), so the
-   * common path flushes a trace's whole tree together when the root completes; the
-   * "already settled" branch is what keeps rehydration correct, where the root's
-   * lower rowid is read just before its children in the same batch.
-   */
-  function routeForExport(complete: Observation[]): Observation[] {
-    const toShip: Observation[] = [];
-    for (const obs of complete) {
-      pushShippable(obs, toShip);
-    }
-    return toShip;
-  }
-
-  /** Route one complete observation: ship it now (appending to `toShip`) or hold it. */
-  function pushShippable(obs: Observation, toShip: Observation[]): void {
-    const traceId = obs.trace_id;
-    // Untraced rows are filtered in collectNewRows and never reach here; ship
-    // defensively rather than buffer a row that has no trace to settle under.
-    if (traceId === null) {
-      toShip.push(obs);
-      return;
-    }
-    if (obs.parent_observation_id === null) {
-      flushTrace(traceId, obs, toShip);
-      return;
-    }
-    if (rootShipped.has(traceId)) {
-      toShip.push(obs);
-      return;
-    }
-    bufferChild(traceId, obs);
-  }
-
-  /** A root has settled: ship it FIRST, then everything buffered for its trace. */
-  function flushTrace(traceId: string, root: Observation, toShip: Observation[]): void {
-    toShip.push(root);
-    const buffered = traceBuffer.get(traceId);
-    if (buffered !== undefined) {
-      toShip.push(...buffered);
-      traceBuffer.delete(traceId);
-    }
-    rememberSettled(traceId);
-  }
-
-  function bufferChild(traceId: string, obs: Observation): void {
-    let list = traceBuffer.get(traceId);
-    if (list === undefined) {
-      list = [];
-      traceBuffer.set(traceId, list);
-    }
-    list.push(obs);
-    // FIFO bound: a never-settling root must not pin its children's memory forever.
-    while (traceBuffer.size > BUFFERED_TRACES_MAX) {
-      const oldest = traceBuffer.keys().next().value;
-      if (oldest === undefined) {
-        break;
-      }
-      traceBuffer.delete(oldest);
-    }
-  }
-
-  function rememberSettled(traceId: string): void {
-    rootShipped.add(traceId);
-    while (rootShipped.size > SETTLED_TRACES_MAX) {
-      const oldest = rootShipped.values().next().value;
-      if (oldest === undefined) {
-        break;
-      }
-      rootShipped.delete(oldest);
-    }
-  }
-
   // ── One poll cycle (TOTAL-CATCH: never throws out of the timer) ─────────────
 
   async function pollOnce(): Promise<void> {
@@ -533,14 +408,10 @@ export function startTraceExport(deps: TraceExportDeps): TraceExportHandle {
     isPolling = true;
     try {
       // Collect SYNCHRONOUSLY (no await) before any POST: collectNewRows advances
-      // `cursor`, collectCompletedPending mutates `pending`, and routeForExport
-      // mutates `traceBuffer`/`rootShipped` — so this whole batch must be read and
-      // routed in one synchronous pass that the single in-flight cycle owns for its
-      // duration — the overlap guard above is what keeps that invariant true.
-      const collected = [...collectNewRows(), ...collectCompletedPending()];
-      // Gate per trace: hold children until their root settles, so a trace reaches
-      // the backend whole (parent present) rather than child-first.
-      const observations = routeForExport(collected);
+      // `cursor` and collectCompletedPending mutates `pending`, so this whole batch
+      // must be read in one synchronous pass that the single in-flight cycle owns
+      // for its duration — the overlap guard above is what keeps that invariant true.
+      const observations = [...collectNewRows(), ...collectCompletedPending()];
       if (observations.length === 0) {
         return;
       }

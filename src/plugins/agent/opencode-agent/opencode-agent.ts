@@ -33,6 +33,8 @@ export type OpenCodeNdjsonLineResult =
  * Process a single NDJSON line from OpenCode CLI output.
  * Pure function — independently testable.
  */
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <explanation>
 export function processOpenCodeNdjsonLine(line: string): OpenCodeNdjsonLineResult {
   const trimmed = line.trim();
   if (trimmed.length === 0) {

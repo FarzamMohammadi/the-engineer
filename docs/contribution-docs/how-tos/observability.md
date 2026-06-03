@@ -431,12 +431,14 @@ Stored content is deduped by hash. Used by the orchestrator's agent runner to av
 
 ## Dashboard Integration
 
-The dashboard is a React SPA (`src/dashboard/client/`) with 5 views: Overview, Tasks, Activity, Metrics, and Errors. It consumes observations through two channels:
+The dashboard is a React SPA (`src/dashboard/client/`). Its top-level views are **Overview** (status cards plus a cleanup card surfacing recent reaper sweeps), **Tasks** (the list, filterable by state — including `cancelled` — and by block reason), **Activity** (the live observation/event feed, filterable across every real observation type), **Metrics**, and **Errors**. Opening a task drills into its detail tabs: **Overview** (phase/sub-phase, loop counters, block taxonomy, `reaped_at`), **Phases**, **Agent Calls** (cost/tokens/blob drill-down), **Decisions** (alternatives, reasoning, confidence), **Tools**, and **Timeline**.
+
+It consumes observations through two channels:
 
 1. **Real-time:** SSE stream (`/api/stream`) polls SQLite for new observations/events every second, pushes to the browser via Server-Sent Events
-2. **Historical:** Dashboard API routes (`src/dashboard/api/`) query `ObservationStore` with filters (type, task_id, trace_id, phase, since, level) and serve blob content
+2. **Historical:** Dashboard API routes (`src/dashboard/api/`) query `ObservationStore` with filters (type, task_id, trace_id, phase, since, level) and serve blob content; the events route (`/api/events?type=`) is the cross-process path to durable system events like the reaper's `system.reap_completed` sweep summary
 
-The frontend uses TanStack Query for data fetching with SSE-driven cache invalidation — expensive endpoints (metrics, traces) refresh only when new data arrives.
+The frontend uses TanStack Query for data fetching with SSE-driven cache invalidation — expensive endpoints (metrics, traces) refresh only when new data arrives. The dashboard version shown in the sidebar is single-sourced from the root `package.json` (injected at build time via Vite `define`), never hardcoded.
 
 ---
 

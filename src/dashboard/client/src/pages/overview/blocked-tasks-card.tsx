@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 import { Link } from "react-router";
+import { BlockReasonBadge } from "../../components/shared/block-badges";
 import { EmptyState } from "../../components/shared/empty-state";
 import { TimeAgo } from "../../components/shared/time-ago";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -57,9 +58,12 @@ export function BlockedTasksCard(): React.JSX.Element {
                 <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{task.title}</p>
-                  {task.blocked_reason && (
-                    <p className="mt-0.5 truncate text-xs text-amber-400/80">{task.blocked_reason}</p>
-                  )}
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {task.block_reason && <BlockReasonBadge reason={task.block_reason} className="text-[10px]" />}
+                    {task.blocked_reason && (
+                      <span className="truncate text-xs text-amber-400/80">{task.blocked_reason}</span>
+                    )}
+                  </div>
                 </div>
                 <TimeAgo timestamp={task.last_transition_at} />
               </Link>

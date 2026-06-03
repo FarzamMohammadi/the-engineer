@@ -24,7 +24,7 @@ export interface TaskRoutesDeps {
 /** Columns for the lightweight task list. Avoids needing rowToTask. */
 const LIST_COLUMNS = `id, title, state, sub_state, phase, sub_phase, phase_iteration, total_reworks,
   priority, repo, agent_cost_usd, agent_tokens, created_at, started_at, completed_at,
-  last_transition_at, workspace`;
+  last_transition_at, workspace, blocked, reaped_at`;
 
 interface TaskListRow {
   id: string;
@@ -44,6 +44,8 @@ interface TaskListRow {
   completed_at: string | null;
   last_transition_at: string;
   workspace: string | null;
+  blocked: string | null;
+  reaped_at: string | null;
 }
 
 interface TaskListItem {
@@ -64,6 +66,10 @@ interface TaskListItem {
   completed_at: string | null;
   last_transition_at: string;
   worktree_path: string | null;
+  /** The coarse BlockReason enum from the task's `blocked` payload; null unless the task is blocked. */
+  block_reason: string | null;
+  /** When the reaper fully reconciled this task (worktree + branch + any PR close); null until reaped. */
+  reaped_at: string | null;
 }
 
 function mapListRow(row: TaskListRow): TaskListItem {
@@ -71,6 +77,14 @@ function mapListRow(row: TaskListRow): TaskListItem {
   if (row.workspace) {
     const ws = fromSqliteJson<Record<string, unknown>>(row.workspace);
     worktreePath = (ws?.["worktree_path"] as string) ?? null;
+  }
+  // The coarse routing reason lives in the `blocked` payload (the enum), not in the free-text
+  // state-transition reason — the only honest source for a block-reason filter on the list.
+  let blockReason: string | null = null;
+  if (row.blocked) {
+    const blocked = fromSqliteJson<Record<string, unknown>>(row.blocked);
+    const reason = blocked?.["reason"];
+    blockReason = typeof reason === "string" ? reason : null;
   }
   return {
     id: row.id,
@@ -90,6 +104,8 @@ function mapListRow(row: TaskListRow): TaskListItem {
     completed_at: row.completed_at,
     last_transition_at: row.last_transition_at,
     worktree_path: worktreePath,
+    block_reason: blockReason,
+    reaped_at: row.reaped_at,
   };
 }
 

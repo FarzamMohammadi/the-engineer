@@ -49,7 +49,7 @@ export function SidebarNav(): React.JSX.Element {
       </nav>
 
       <div className="border-t border-border p-3">
-        <p className="text-[10px] text-muted-foreground/50">v0.0.1</p>
+        <p className="text-[10px] text-muted-foreground/50">v{__APP_VERSION__}</p>
       </div>
     </aside>
   );

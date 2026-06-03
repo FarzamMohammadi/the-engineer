@@ -39,10 +39,8 @@ const columns: ColumnDef<TaskListItem>[] = [
   {
     id: "phase",
     header: "Phase",
-    cell: ({ row }) => (
-      <PhasePipeline currentPhase={row.original.phase} phasesRan={row.original.phases_ran} compact={true} />
-    ),
-    size: 220,
+    cell: ({ row }) => <PhaseCell task={row.original} />,
+    size: 240,
   },
   {
     accessorKey: "agent_cost_usd",
@@ -113,6 +111,25 @@ export function TaskTable({ tasks }: TaskTableProps): React.JSX.Element {
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+/**
+ * The list's phase column: the compact six-phase pipeline plus, for a task still mid-flight, its active
+ * sub-phase and any loop counters. The sub-phase/iteration/rework fields only describe the *current* phase,
+ * so they are surfaced only while the task is active or blocked — on a terminal task they would be stale.
+ */
+function PhaseCell({ task }: { task: TaskListItem }): React.JSX.Element {
+  const inFlight = task.state === "active" || task.state === "blocked";
+  return (
+    <PhasePipeline
+      currentPhase={task.phase}
+      phasesRan={task.phases_ran}
+      subPhase={inFlight ? task.sub_phase : null}
+      phaseIteration={inFlight ? task.phase_iteration : undefined}
+      totalReworks={inFlight ? task.total_reworks : undefined}
+      compact={true}
+    />
   );
 }
 

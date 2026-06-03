@@ -23,12 +23,14 @@ function insertTask(db: Database.Database, id: string, overrides: Record<string,
     description: "",
     created_at: "2026-01-15T10:30:00Z",
     last_transition_at: "2026-01-15T10:30:00Z",
+    blocked: null as string | null,
+    reaped_at: null as string | null,
     ...overrides,
   };
   db.prepare(
     `INSERT INTO tasks (id, idempotency_key, state, sub_state, phase, sub_phase, phase_iteration, total_reworks,
-       priority, title, description, created_at, last_transition_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       priority, title, description, created_at, last_transition_at, blocked, reaped_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     `test:${id}`,
@@ -43,6 +45,8 @@ function insertTask(db: Database.Database, id: string, overrides: Record<string,
     defaults.description,
     defaults.created_at,
     defaults.last_transition_at,
+    defaults.blocked,
+    defaults.reaped_at,
   );
 }
 
@@ -280,5 +284,33 @@ describe("taskRoutes — GET / phases_ran and loop columns", () => {
     expect(task?.["sub_phase"]).toBe("verify");
     expect(task?.["phase_iteration"]).toBe(2);
     expect(task?.["total_reworks"]).toBe(1);
+  });
+
+  it("surfaces the coarse block_reason enum from the blocked payload, for the block-reason filter", async () => {
+    insertTask(handle.db, "task-blocked", {
+      state: TaskStates.blocked,
+      blocked: JSON.stringify({
+        reason: "need_more_info",
+        category: "awaiting_human",
+        sub_phase: "gather",
+        needed: "Confirm the target repo",
+      }),
+    });
+
+    const [task] = await listTasks();
+
+    expect(task?.["block_reason"]).toBe("need_more_info");
+  });
+
+  it("leaves block_reason null when the task is not blocked, and surfaces reaped_at when set", async () => {
+    insertTask(handle.db, "task-done", {
+      state: TaskStates.completed,
+      reaped_at: "2026-01-16T09:00:00Z",
+    });
+
+    const [task] = await listTasks();
+
+    expect(task?.["block_reason"]).toBeNull();
+    expect(task?.["reaped_at"]).toBe("2026-01-16T09:00:00Z");
   });
 });

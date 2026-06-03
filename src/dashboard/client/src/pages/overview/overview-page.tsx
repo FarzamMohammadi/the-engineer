@@ -1,6 +1,7 @@
 import { ActiveTasksCard } from "./active-tasks-card";
 import { ActivitySnapshot } from "./activity-snapshot";
 import { BlockedTasksCard } from "./blocked-tasks-card";
+import { CleanupCard } from "./cleanup-card";
 import { CostTicker } from "./cost-ticker";
 import { DaemonStatus } from "./daemon-status";
 import { RecentErrors } from "./recent-errors";
@@ -18,9 +19,10 @@ export function OverviewPage(): React.JSX.Element {
         <BlockedTasksCard />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <ActiveTasksCard />
         <ActivitySnapshot />
+        <CleanupCard />
       </div>
     </div>
   );

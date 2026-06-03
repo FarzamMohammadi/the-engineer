@@ -13,7 +13,7 @@ interface PhasePipelineProps {
   phaseIteration?: number;
   /** Inter-phase rework (backward-jump) count for the dispatch; surfaced as "reworks N" when > 0. */
   totalReworks?: number;
-  /** Compact mode for list rows: phase chips only, no sub-phase/iteration line. */
+  /** Compact mode for dense list rows: smaller chips, with a tight sub-phase/iteration line when present. */
   compact?: boolean;
   className?: string;
 }
@@ -35,11 +35,13 @@ export function PhasePipeline({
 }: PhasePipelineProps): React.JSX.Element {
   const ran = new Set<Phase>(phasesRan);
   const currentIndex = currentPhase ? PHASE_ORDER.indexOf(currentPhase) : -1;
-  const showCounters = !compact && ((phaseIteration ?? 0) > 1 || (totalReworks ?? 0) > 0);
+  // The sub-phase / loop affordance is meaningful in both modes — a list reader wants to see "Execution ·
+  // Verify · iter 2" without opening the task. It only renders when there is something to show.
+  const showCounters = (phaseIteration ?? 0) > 1 || (totalReworks ?? 0) > 0;
   const subPhaseLabel = subPhase ? (SUB_PHASE_LABELS[subPhase] ?? subPhase) : null;
 
   return (
-    <div className={cn("space-y-1", className)}>
+    <div className={cn(compact ? "space-y-0.5" : "space-y-1", className)}>
       <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
         {PHASE_ORDER.map((phase, index) => {
           const isCurrent = phase === currentPhase;

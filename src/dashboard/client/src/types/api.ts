@@ -46,7 +46,12 @@ export interface TaskListItem {
   worktree_path: string | null;
   /** The distinct real pipeline phases this task actually ran, derived from phase_transition observations. */
   phases_ran: Phase[];
+  /** Free-text reason from the latest state transition (the human-readable "why"); null when none. */
   blocked_reason: string | null;
+  /** The coarse BlockReason enum from the task's `blocked` payload; null unless the task is blocked. */
+  block_reason: BlockReason | null;
+  /** When the reaper fully reconciled this task (worktree + branch + any PR close); null until reaped. */
+  reaped_at: string | null;
 }
 
 /** A cross-trace "follows-from" edge to a prior dispatch's root span — mirrors `ObservationLinkSchema`. */

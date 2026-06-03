@@ -1,0 +1,14 @@
+# The Engineer's observability backend (optional; enable via telemetry in daemon.yaml).
+# Spans export over OTLP to localhost:4318 — Jaeger here, but any OTLP backend works.
+
+services:
+  jaeger:
+    # Jaeger v2 all-in-one, in-memory storage; stock image exposes OTLP + UI, no config.
+    # Pinned to a soaked release; bump deliberately, never to floating latest.
+    image: jaegertracing/jaeger:2.18.0
+    container_name: engineer-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686" # UI
+      - "4318:4318"   # OTLP/HTTP (telemetry.endpoint)
+      - "4317:4317"   # OTLP/gRPC

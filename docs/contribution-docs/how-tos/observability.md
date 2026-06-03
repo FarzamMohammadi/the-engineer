@@ -222,7 +222,7 @@ The shared `traceScope(ctx)` helper builds the `{task_id, session_id, trace_id, 
 
 One task is rarely one dispatch. It blocks (awaiting PR review, more info), gets resumed, bounces back from a self-review or a PR comment, retries — each is a separate `executeTask` call with its **own** `trace_id`. We deliberately do **not** merge them into a single task-long trace: a task can sit blocked for hours or days, so a merged trace's duration would be dominated by idle gaps, collapsing the actual work spans into invisible slivers and making the flame graph useless exactly as the task gets more interesting. A merged trace would also have no single root (nothing is "open" across a daemon restart while blocked) — it would be multi-root anyway.
 
-Instead, **each dispatch is its own bounded trace, and the dispatches are chained with OTLP span links.** The task row persists its trace lineage (`last_trace_id` + `last_root_observation_id` — an all-or-nothing pair, enforced by a DB CHECK); when the orchestrator opens the next dispatch's root `execute_task` span, it emits a link back to the previous dispatch's root. In Jaeger you can walk the whole lifecycle by following the links, while every individual trace stays a crisp, readable flame graph.
+Instead, **each dispatch is its own bounded trace, and the dispatches are chained with OTLP span links.** The task row persists its trace lineage in one nullable `last_trace_link` column — the previous dispatch root's `{trace_id, observation_id}` as a single JSON value, so the pair is atomic by construction with no half-set state to guard; when the orchestrator opens the next dispatch's root `execute_task` span, it emits a link back to the previous dispatch's root. In Jaeger you can walk the whole lifecycle by following the links, while every individual trace stays a crisp, readable flame graph.
 
 The **true holistic, one-screen end-to-end view lives in the dashboard**, which groups every observation by `task_id` across all dispatches. In Jaeger, a `task_id` tag search lists every dispatch's trace for a task. So nothing is lost by keeping the traces bounded — the links give you navigability and the dashboard gives you the union.
 
@@ -253,7 +253,9 @@ observations table (SQLite)  ──poll by rowid──▶  OTLP mapper  ──PO
 
 **Exactly-once, when complete.** A span row is inserted open (`end_time` NULL) and updated on close at the *same* rowid, so a naive `rowid > cursor` poll would see the open insert but miss the close. The exporter therefore exports only **complete** observations (an instant, or a span whose `end_time` is set), tracks open spans in an in-memory `pending` set, and re-queries them for completion each cycle — every observation is exported once, with its real duration, with no reliance on backend dedup.
 
-**Rehydration.** On start the cursor reaches back a bounded recent window so a freshly-started backend replays recent history; the live tail then continues from the same cursor.
+**Send each trace whole, on settle.** The exporter holds a trace's complete children (`traceBuffer`) until that trace's root `execute_task` span settles, then ships the whole tree **root-first**. This keeps the backend from ever seeing a child before its parent — which it would otherwise flag, permanently, on every view (see the adjuster quirks below). The trade-off: a task's trace appears in the backend when it **settles** (blocks/completes, ~one poll later), not streaming mid-run. The live, incremental view is the dashboard, which renders straight from SQLite; the OTLP backend is the clean, complete-tree analysis view. A task whose root never settles (a crash mid-run) never ships to the backend — its partial trace lives in the dashboard, and `traceBuffer` is FIFO-bounded so it cannot leak.
+
+**Rehydration.** On start the cursor reaches back a bounded recent window so a freshly-started backend replays recent history; the live tail then continues from the same cursor. (On replay the root's lower rowid is read just before its children, so a trace still ships root-first.)
 
 **One endpoint, no fan-out.** A single configurable OTLP/HTTP target (`daemon.telemetry.endpoint`). OTLP *is* the swap boundary — point that one URL at any compatible backend. There is no adapter and no multi-endpoint list.
 
@@ -267,6 +269,18 @@ observations table (SQLite)  ──poll by rowid──▶  OTLP mapper  ──PO
 - `status` ok/error → OTLP span status; a decision or verdict carries its fields as attributes.
 
 **Sanitize at the export boundary.** A remote endpoint ships data off-machine, so every stringified attribute value is sanitized where the span is built (`otlp/`), independent of whatever the facade stored. A planted secret is scrubbed before it can ride into an attribute.
+
+### Backend adjuster quirks (why spans are shaped the way they are)
+
+Jaeger runs *adjusters* over a trace at query time, and several append a **warning** to a span when its shape looks off. The catch: Jaeger **mutates the stored span on every query**, so a warning re-fires and **accumulates once per view** — a trace watched live while a task runs can rack up dozens of identical warnings, baked in permanently. Three quirks bite a naive exporter; each is designed out, and a regression here shows up as warning spam, not broken data:
+
+| Backend warning | Root cause | How the exporter avoids it |
+|---|---|---|
+| `Negative duration detected` | An instant (or same-millisecond span) is zero-width; duration is measured in **microseconds**, so a sub-µs width rounds to ≤0. | `otlp/span.ts` floors every span to **1µs** wide — 1µs, *not* 1ns (a 1ns width truncates back to 0µs and the warning returns). |
+| `parent span ID … is not in the trace` | A child reaches the backend before its parent. The root span covers the whole task and settles **last**, so a child-first stream leaves the parent missing for the entire run — and each auto-refresh view appends another copy. | The exporter **gates each trace until its root settles** (`routeForExport` / `traceBuffer`), then ships the tree root-first. |
+| `clock skew adjustment disabled; … delta …` | The clock-skew adjuster treats a span with **no host identity** as a foreign host and computes a bogus cross-host correction. | `otlp/resource.ts` stamps one `host.name` on every span, so the adjuster sees a single host and skips skew entirely. |
+
+The throughline: **hand the backend complete, well-formed, same-host trees.** Partial or shape-ambiguous spans don't just look odd — they bake permanent warnings into stored data. When adding an observation kind or changing span timing, re-check it against this table (the harness is a few synthetic spans POSTed to a local `:4318` and read back from `:16686/api/traces` — no task run needed).
 
 **Bringing a backend.** The Engineer does not download, install, or supervise the backend — you bring it. The repo ships a root [`docker-compose.yml`](../../../docker-compose.yml) for a one-command local Jaeger v2 (`docker compose up -d`, UI at http://localhost:16686); a Homebrew/binary Jaeger (`brew install jaeger && jaeger`, the [official download](https://www.jaegertracing.io/download/)) or any other OTLP endpoint works identically. When telemetry is on but nothing answers, `engineer start` still starts and prints an OS-aware install pointer (`src/cli/commands/start/telemetry.ts`); `engineer doctor` reports a telemetry category that probes reachability with a short localhost timeout. When the backend answers, both the start output and the dashboard task page link out to the flame graph.
 

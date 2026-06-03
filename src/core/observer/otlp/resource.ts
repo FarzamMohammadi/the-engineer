@@ -4,7 +4,16 @@
  * `service.name` is the resource attribute every OTLP backend groups by — we
  * stamp `the-engineer` so all our spans land under one service in the UI. The
  * instrumentation scope identifies our hand-rolled exporter.
+ *
+ * `host.name` is NOT cosmetic. Jaeger's clock-skew adjuster treats a span that
+ * carries NO host identity as belonging to an unknown/foreign host and computes a
+ * (bogus) cross-host skew correction for it — surfacing a "clock skew adjustment
+ * disabled; not applying calculated delta" warning on every view. Stamping ONE
+ * consistent host on every span makes the adjuster treat the whole trace as
+ * same-host and skip skew entirely. The Engineer is single-host by construction.
  */
+
+import os from "node:os";
 
 import type { OtlpSpan, OtlpTracesPayload } from "./types.js";
 
@@ -13,6 +22,13 @@ export const SERVICE_NAME = "the-engineer";
 
 /** The instrumentation scope name for our hand-rolled exporter. */
 export const SCOPE_NAME = "the-engineer/observer";
+
+/**
+ * The single host all our spans share (the OTLP `host.name` resource attribute).
+ * Any stable, non-empty value silences Jaeger's clock-skew adjuster (see header);
+ * the real hostname is the honest choice. Resolved once — constant per process.
+ */
+export const HOST_NAME = os.hostname() || "the-engineer";
 
 /**
  * Wrap a batch of spans in the OTLP `resourceSpans` envelope.
@@ -26,7 +42,10 @@ export function buildResourceSpans(spans: readonly OtlpSpan[]): OtlpTracesPayloa
     resourceSpans: [
       {
         resource: {
-          attributes: [{ key: "service.name", value: { stringValue: SERVICE_NAME } }],
+          attributes: [
+            { key: "service.name", value: { stringValue: SERVICE_NAME } },
+            { key: "host.name", value: { stringValue: HOST_NAME } },
+          ],
         },
         scopeSpans: [
           {

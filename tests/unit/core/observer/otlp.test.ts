@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   type AttributeContext,
+  HOST_NAME,
   type OtlpKeyValue,
   SCOPE_NAME,
   SERVICE_NAME,
@@ -364,6 +365,16 @@ describe("buildResourceSpans", () => {
     const serviceAttr = payload.resourceSpans[0]!.resource.attributes.find((a) => a.key === "service.name");
     expect(serviceAttr?.value).toEqual({ stringValue: SERVICE_NAME });
     expect(SERVICE_NAME).toBe("the-engineer");
+  });
+
+  it("stamps a single host.name so the clock-skew adjuster treats the trace as same-host", () => {
+    // A span with no host identity is read by Jaeger's clock-skew adjuster as a
+    // foreign host, which then emits a spurious skew warning on every view. One
+    // consistent, non-empty host on every span makes the adjuster skip skew.
+    const payload = buildResourceSpans([]);
+    const hostAttr = payload.resourceSpans[0]!.resource.attributes.find((a) => a.key === "host.name");
+    expect(hostAttr?.value).toEqual({ stringValue: HOST_NAME });
+    expect(HOST_NAME.length).toBeGreaterThan(0);
   });
 
   it("stamps the instrumentation scope name", () => {

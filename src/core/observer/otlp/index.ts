@@ -21,7 +21,7 @@ export { deriveSpanId, deriveTraceId } from "./ulid.js";
 export { buildAttributes } from "./attributes.js";
 export type { AttributeContext } from "./attributes.js";
 export { mapObservationToSpan } from "./span.js";
-export { buildResourceSpans, SCOPE_NAME, SERVICE_NAME } from "./resource.js";
+export { buildResourceSpans, HOST_NAME, SCOPE_NAME, SERVICE_NAME } from "./resource.js";
 
 // ── Wire types ────────────────────────────────────────────────────────────────
 

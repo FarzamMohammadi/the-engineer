@@ -125,6 +125,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
       model_id: this.config?.model ?? DEFAULT_OPENCODE_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: false,
+      supports_activity_streaming: false,
       context_window: null,
     };
   }

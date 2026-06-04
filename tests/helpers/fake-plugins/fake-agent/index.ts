@@ -91,6 +91,7 @@ export class FakeAgentPlugin extends AgentAdapter {
       model_id: "fake-model-v1",
       supports_usage_reporting: false,
       supports_quota_reporting: false,
+      supports_activity_streaming: false,
       context_window: null,
     };
   }

@@ -54,6 +54,7 @@ Each layer is optional. Core degrades gracefully when data is missing.
 | `cwd` | `string \| null` | Working directory for the CLI process. Set as `spawn()` cwd so the CLI loads the target repo's project context. |
 | `trace_output_path` | `string \| null` | Optional file path to stream raw CLI output to for tracing. Plugins that support it stream stdout here; plugins that don't ignore it. Core generates the path. |
 | `signal` | `AbortSignal \| undefined` | Optional abort signal. Pass it to `spawn(cmd, args, { signal })` so a preemption, shutdown, or cost-limit aborts the child (`SIGTERM`) instead of waiting it out. A plugin that ignores it cannot be terminated mid-run. |
+| `on_activity` | `((event: AgentActivityEvent) => void) \| undefined` | Optional best-effort activity sink. A plugin that streams calls it for each `AgentActivityEvent` it parses from its CLI; a plugin that cannot stream never calls it. Observation-only — see [Activity Streaming](#activity-streaming-optional) below. |
 
 ### AgentRunResult
 
@@ -83,7 +84,32 @@ Each layer is optional. Core degrades gracefully when data is missing.
 | `model_id` | `string` | Default model identifier. |
 | `supports_usage_reporting` | `boolean` | Whether `usage` is populated in results. |
 | `supports_quota_reporting` | `boolean` | Whether `getQuotaStatus()` returns data. |
+| `supports_activity_streaming` | `boolean` | Whether the plugin emits live `AgentActivityEvent`s via `on_activity`. See [Activity Streaming](#activity-streaming-optional). |
 | `context_window` | `number \| null` | Context window size in tokens, or `null` if unknown. |
+
+## Activity Streaming (optional)
+
+A run is otherwise a black box: Core sees the final `AgentRunResult`, but not the thinking, tool calls, and intermediate text that produced it. Activity streaming surfaces that inner activity **live** so the owner can watch a run as it happens and re-watch it afterward — without Core ever knowing which CLI is behind the stream.
+
+This is **optional**, **capability-gated**, and **best-effort**:
+
+- **Optional** — a plugin that cannot (or chooses not to) stream simply never calls `on_activity`. The run behaves identically; Core just has no live feed for it (graceful degradation).
+- **Capability-gated** — a streaming plugin sets `supports_activity_streaming: true` in `getCapabilities()`. Core reads the flag to decide whether to expect a feed; it never assumes one.
+- **Best-effort** — `on_activity` is observation-only. It must **never** change the run's outcome, cost, or timing, and a slow or failing consumer must never break the run. Emit and move on.
+
+### The canonical event vocabulary
+
+`on_activity` carries an `AgentActivityEvent` — a discriminated union on a snake_case `kind`. This is the **only** thing Core and agent plugins share about a run's inner activity. Each plugin maps its native CLI stream into these variants in the same `spawnAndParse` loop it already runs; Core consumes only the union. It is deliberately minimal and free of any plugin-specific shape, so a new CLI is mirrored by mapping into it — nothing new is added to the contract per agent.
+
+| `kind` | Fields | Meaning |
+|--------|--------|---------|
+| `session` | `model: string \| null`, `tools: number \| null`, `cwd: string \| null` | Optional session-start marker: what the agent booted with. Each field is nullable because a CLI may report some, all, or none. |
+| `assistant_text` | `text: string` | A chunk of the agent's user-facing answer. |
+| `thinking` | `text: string` | A chunk of the agent's reasoning, when the CLI exposes it. |
+| `tool_use` | `tool_call_id: string`, `name: string`, `input: unknown` | The agent invoked a tool. `input` is the raw arguments (may carry file contents, shell commands, env) — opaque in the contract, sanitized by Core before it is ever persisted. |
+| `tool_result` | `tool_call_id: string`, `status: "ok" \| "error"`, `output: unknown` | A tool returned. `tool_call_id` pairs it with its `tool_use`; `output` is opaque and sanitized by Core. |
+
+`input` and `output` are `unknown` on purpose: their shape is the CLI's, and the contract does not constrain it. A plugin passes them through verbatim — Core sanitizes secrets and bounds size before storing.
 
 ### QuotaStatus / QuotaWindow
 
@@ -201,6 +227,7 @@ export class MyAgentPlugin extends AgentAdapter {
       model_id: this.config?.model ?? "my-default-model",
       supports_usage_reporting: false,
       supports_quota_reporting: false,
+      supports_activity_streaming: false,
       context_window: null,
     };
   }

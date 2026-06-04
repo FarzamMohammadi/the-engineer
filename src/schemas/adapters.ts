@@ -201,6 +201,48 @@ export type ReconciliationResult = z.infer<typeof ReconciliationResultSchema>;
 // and writes files, runs tools, and returns a structured result. Plugin-specific
 // details (flags, output parsing) belong in each plugin, not here.
 
+// The canonical, plugin-agnostic vocabulary for an agent's live activity. Each plugin
+// maps its native stream into these variants; Core consumes only this union. It is the
+// ONLY thing Core and agent plugins share about a run's inner activity — keep it minimal
+// and free of any plugin-specific shape, so a new CLI can be mirrored by mapping into it.
+export const AgentActivityEventSchema = z.discriminatedUnion("kind", [
+  // Optional session-start marker: what the agent booted with. Every field is nullable
+  // because a CLI may report some, all, or none of them.
+  z.object({
+    kind: z.literal("session"),
+    model: z.string().nullable(),
+    tools: z.number().int().nonnegative().nullable(),
+    cwd: z.string().nullable(),
+  }),
+  // A chunk of the agent's user-facing answer.
+  z.object({
+    kind: z.literal("assistant_text"),
+    text: z.string(),
+  }),
+  // A chunk of the agent's reasoning, when the CLI exposes it.
+  z.object({
+    kind: z.literal("thinking"),
+    text: z.string(),
+  }),
+  // The agent invoked a tool. `input` is the tool's raw arguments (file contents, shell
+  // commands, env) — opaque here, sanitized downstream before it is ever persisted.
+  z.object({
+    kind: z.literal("tool_use"),
+    tool_call_id: z.string(),
+    name: z.string(),
+    input: z.unknown(),
+  }),
+  // A tool returned. `tool_call_id` pairs it with its `tool_use`; `output` is opaque and
+  // sanitized downstream.
+  z.object({
+    kind: z.literal("tool_result"),
+    tool_call_id: z.string(),
+    status: z.enum(["ok", "error"]),
+    output: z.unknown(),
+  }),
+]);
+export type AgentActivityEvent = z.infer<typeof AgentActivityEventSchema>;
+
 export const AgentRunRequestSchema = z.object({
   prompt: z.string(),
   system_prompt: z.string().nullable().default(null),
@@ -216,6 +258,12 @@ export const AgentRunRequestSchema = z.object({
    *  Runtime-only and optional — this schema is never parsed, so carrying the handle on
    *  the inferred type keeps the type as the single source of truth with no parse hazard. */
   signal: z.instanceof(AbortSignal).optional(),
+  /** Best-effort activity sink. A plugin that streams calls this for each `AgentActivityEvent`
+   *  it parses out of its CLI; a plugin that cannot stream simply never calls it. Observation-only:
+   *  it must never affect the run's outcome, cost, or timing. Runtime-only and optional — like
+   *  `signal`, this schema is never parsed, so the handle rides the inferred type (the single
+   *  source of truth) with no parse hazard. `z.custom` carries the type without runtime parsing. */
+  on_activity: z.custom<(event: AgentActivityEvent) => void>().optional(),
 });
 export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
 
@@ -267,6 +315,9 @@ export const AgentCapabilitiesSchema = z.object({
   model_id: z.string(),
   supports_usage_reporting: z.boolean().default(false),
   supports_quota_reporting: z.boolean().default(false),
+  // Whether the plugin emits live AgentActivityEvents via AgentRunRequest.on_activity.
+  // When false, the run behaves identically — Core just has no live feed for it.
+  supports_activity_streaming: z.boolean().default(false),
   context_window: z.number().int().positive().nullable().default(null),
 });
 export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;

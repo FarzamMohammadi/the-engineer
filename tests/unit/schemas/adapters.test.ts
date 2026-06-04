@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import type { AgentActivityEvent, AgentRunRequest } from "../../../src/schemas/adapters.js";
 import {
   AdapterErrorSchema,
   AdapterErrorSeverities,
   AdapterErrorSeveritySchema,
   AdapterTypeSchema,
   AdapterTypes,
+  AgentActivityEventSchema,
   AgentCapabilitiesSchema,
   AgentRunRequestSchema,
   AgentRunResultSchema,
@@ -426,6 +428,85 @@ describe("ReconciliationResultSchema", () => {
 
 // ── LLM Adapter ─────────────────────────────────────────────────────────────────
 
+describe("AgentActivityEventSchema", () => {
+  it("parses a session marker with all fields", () => {
+    const event = AgentActivityEventSchema.parse({
+      kind: "session",
+      model: "claude-sonnet-4-6",
+      tools: 12,
+      cwd: "/tmp/worktree/47",
+    });
+    expect(event.kind).toBe("session");
+  });
+
+  it("accepts a session marker with every field null", () => {
+    const event = AgentActivityEventSchema.parse({ kind: "session", model: null, tools: null, cwd: null });
+    expect(event).toEqual({ kind: "session", model: null, tools: null, cwd: null });
+  });
+
+  it("parses assistant_text", () => {
+    const event = AgentActivityEventSchema.parse({ kind: "assistant_text", text: "Here is the fix" });
+    expect(event).toEqual({ kind: "assistant_text", text: "Here is the fix" });
+  });
+
+  it("parses thinking", () => {
+    const event = AgentActivityEventSchema.parse({ kind: "thinking", text: "I should read the file first" });
+    expect(event).toEqual({ kind: "thinking", text: "I should read the file first" });
+  });
+
+  it("parses tool_use with opaque input", () => {
+    const event = AgentActivityEventSchema.parse({
+      kind: "tool_use",
+      tool_call_id: "call_1",
+      name: "Read",
+      input: { file_path: "/src/index.ts" },
+    });
+    expect(event).toEqual({
+      kind: "tool_use",
+      tool_call_id: "call_1",
+      name: "Read",
+      input: { file_path: "/src/index.ts" },
+    });
+  });
+
+  it("parses tool_result with status and opaque output", () => {
+    const event = AgentActivityEventSchema.parse({
+      kind: "tool_result",
+      tool_call_id: "call_1",
+      status: "ok",
+      output: "file contents",
+    });
+    expect(event).toEqual({
+      kind: "tool_result",
+      tool_call_id: "call_1",
+      status: "ok",
+      output: "file contents",
+    });
+  });
+
+  it("rejects an unknown kind", () => {
+    expect(() => AgentActivityEventSchema.parse({ kind: "heartbeat", text: "x" })).toThrow();
+  });
+
+  it("rejects a missing kind discriminator", () => {
+    expect(() => AgentActivityEventSchema.parse({ text: "no kind" })).toThrow();
+  });
+
+  it("rejects assistant_text without text", () => {
+    expect(() => AgentActivityEventSchema.parse({ kind: "assistant_text" })).toThrow();
+  });
+
+  it("rejects tool_use without tool_call_id", () => {
+    expect(() => AgentActivityEventSchema.parse({ kind: "tool_use", name: "Read", input: {} })).toThrow();
+  });
+
+  it("rejects tool_result with an invalid status", () => {
+    expect(() =>
+      AgentActivityEventSchema.parse({ kind: "tool_result", tool_call_id: "call_1", status: "pending", output: null }),
+    ).toThrow();
+  });
+});
+
 describe("AgentRunRequestSchema", () => {
   it("parses valid request", () => {
     const req = AgentRunRequestSchema.parse({
@@ -463,6 +544,20 @@ describe("AgentRunRequestSchema", () => {
     });
     expect(req.cwd).toBe("/tmp/worktree/42");
   });
+
+  // on_activity is a runtime-only handle never touched by parse (like `signal`); the type carries it.
+  it("carries on_activity on the inferred type without parsing it", () => {
+    const calls: AgentActivityEvent[] = [];
+    const request: AgentRunRequest = {
+      prompt: "test",
+      system_prompt: null,
+      cwd: null,
+      trace_output_path: null,
+      on_activity: (event) => calls.push(event),
+    };
+    request.on_activity?.({ kind: "assistant_text", text: "hello" });
+    expect(calls).toEqual([{ kind: "assistant_text", text: "hello" }]);
+  });
 });
 
 describe("AgentRunResultSchema", () => {
@@ -496,6 +591,16 @@ describe("AgentCapabilitiesSchema", () => {
 
   it("rejects missing model_id", () => {
     expect(() => AgentCapabilitiesSchema.parse({})).toThrow();
+  });
+
+  it("defaults supports_activity_streaming to false", () => {
+    const caps = AgentCapabilitiesSchema.parse({ model_id: "claude-sonnet-4-6" });
+    expect(caps.supports_activity_streaming).toBe(false);
+  });
+
+  it("accepts supports_activity_streaming override", () => {
+    const caps = AgentCapabilitiesSchema.parse({ model_id: "claude-sonnet-4-6", supports_activity_streaming: true });
+    expect(caps.supports_activity_streaming).toBe(true);
   });
 });
 

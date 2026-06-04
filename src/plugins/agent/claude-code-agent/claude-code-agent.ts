@@ -133,6 +133,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
       model_id: this.config?.model ?? DEFAULT_CLAUDE_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: true,
+      supports_activity_streaming: false,
       context_window: 200_000,
     };
   }

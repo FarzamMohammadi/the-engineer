@@ -25,6 +25,7 @@ class TestAgentAdapter extends AgentAdapter {
     model_id: "test-model",
     supports_usage_reporting: false,
     supports_quota_reporting: false,
+    supports_activity_streaming: false,
     context_window: null,
   };
 

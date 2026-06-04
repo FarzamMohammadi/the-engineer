@@ -1,5 +1,5 @@
 import { ArrowDown, Brain, BrainCircuit, ChevronDown, ChevronRight, MessageSquare, Radio, Wrench } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BlobViewer } from "../../components/shared/blob-viewer";
 import { CostDisplay } from "../../components/shared/cost-display";
 import { EmptyState } from "../../components/shared/empty-state";
@@ -9,6 +9,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { useEvents } from "../../hooks/use-events";
 import { useSseSubscription } from "../../hooks/use-sse";
 import { useTaskAgentActivity, useTaskAgentTraces } from "../../hooks/use-tasks";
+import { fetchBlob, isBlobRef } from "../../lib/blob";
 import { cn } from "../../lib/cn";
 import { modelsFromCostEvents } from "../../lib/cost-events";
 import { formatDuration, formatTimestamp, formatTokens } from "../../lib/formatters";
@@ -406,17 +407,46 @@ function ConversationLineRow({ line }: { line: ConversationLine }): React.JSX.El
 function AssistantLine({ activity }: { activity: AgentActivityShape }): React.JSX.Element {
   // The model's actual answer — what a reader scans for first. Wrapped in a blue card so it stands clearly
   // apart from thinking (muted) and tool cards (neutral): tools are the "dig deeper", this is the response.
+  // It always shows in FULL — a truncated preview resolves its blob automatically, never hidden behind a click.
+  const text = useResolvedText(activity);
   return (
     <div className="flex gap-2.5 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5">
       <MessageSquare size={15} className="mt-0.5 shrink-0 text-primary" />
-      <div className="min-w-0 flex-1">
-        <p className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-foreground">
-          {activity.text}
-        </p>
-        {activity.truncated && <BlobViewer blobRef={activity.textBlob} label="Full message" className="mt-1.5" />}
-      </div>
+      <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-foreground">
+        {text}
+      </p>
     </div>
   );
+}
+
+/**
+ * The full text of an activity: the inline preview when it fit, otherwise the blob-stored remainder fetched
+ * on mount. Used for the model's answer so the whole response is always visible — the headline is never
+ * truncated behind a click (bulky tool I/O still is). Falls back to the preview while the blob loads, or if it
+ * cannot be fetched.
+ */
+function useResolvedText(activity: AgentActivityShape): string {
+  const blobRef = activity.truncated ? activity.textBlob : "";
+  const [full, setFull] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isBlobRef(blobRef)) {
+      return;
+    }
+    let live = true;
+    fetchBlob(blobRef)
+      .then((result) => {
+        if (live && result.status === "loaded") {
+          setFull(result.text);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [blobRef]);
+
+  return full ?? activity.text;
 }
 
 function ThinkingLine({ activity }: { activity: AgentActivityShape }): React.JSX.Element {

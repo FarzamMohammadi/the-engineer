@@ -1,5 +1,5 @@
-import { Brain, BrainCircuit, ChevronDown, ChevronRight, MessageSquare, Radio, Wrench } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowDown, Brain, BrainCircuit, ChevronDown, ChevronRight, MessageSquare, Radio, Wrench } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BlobViewer } from "../../components/shared/blob-viewer";
 import { CostDisplay } from "../../components/shared/cost-display";
 import { EmptyState } from "../../components/shared/empty-state";
@@ -178,11 +178,13 @@ function AgentTraceHeader({
 }
 
 /**
- * One agent_call's conversation, reconstructed from its `agent_activity` children. The recorded rows are
- * fetched once on expand (the full backlog whether the call is open or closed); when the call is live, new
- * rows also arrive over SSE and are appended, deduped by id — so a call that began before the tab opened
- * still shows its history, then continues streaming. A tool result is paired beneath its tool call by
- * `tool_call_id`; an unpaired result (its call not yet seen) renders on its own line.
+ * One agent_call's conversation, reconstructed from its `agent_activity` children and rendered as a
+ * chat-style feed inside its own scroll pane. The recorded backlog is fetched once on expand; when the call
+ * is live, new rows also arrive over SSE and are appended, deduped by id — so a call that began before the
+ * tab opened still shows its history, then keeps streaming. A tool result is paired beneath its tool call by
+ * `tool_call_id`; an unpaired result renders on its own line. The pane lands at the latest line and
+ * *follows* the bottom as content streams in (see {@link useStickToBottom}) — unless the reader scrolls up
+ * to read back, which pins the view and surfaces a jump-to-latest control, exactly like a chat.
  */
 function AgentConversation({
   taskId,
@@ -209,6 +211,7 @@ function AgentConversation({
   });
 
   const lines = useMemo(() => buildConversation(recorded ?? [], streamed), [recorded, streamed]);
+  const tail = useStickToBottom(lines.length);
 
   if (isLoading) {
     return <Skeleton className="h-16 w-full" />;
@@ -222,10 +225,89 @@ function AgentConversation({
   }
 
   return (
-    <div className="space-y-2">
-      {lines.map((line) => (
-        <ConversationLineRow key={line.key} line={line} />
-      ))}
+    <div className="relative">
+      <div
+        ref={tail.ref}
+        onScroll={tail.onScroll}
+        className="max-h-[26rem] space-y-2 overflow-y-auto overscroll-contain rounded-md border border-border/40 bg-background/30 px-3 py-2.5"
+      >
+        {lines.map((line) => (
+          <ConversationLineRow key={line.key} line={line} />
+        ))}
+        {live && <StreamingPulse />}
+      </div>
+      {tail.adrift && (
+        <button
+          type="button"
+          onClick={tail.toLatest}
+          className="absolute inset-x-0 bottom-2 mx-auto flex w-fit items-center gap-1 rounded-full border border-border bg-background/95 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+        >
+          <ArrowDown size={11} />
+          Jump to latest
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Chat-style "stick to the bottom" for a scroll pane. It lands at the end and *follows* new content as it
+ * streams in; the moment the reader scrolls up it stops following (reading back is never yanked) and reports
+ * `adrift` so a jump-to-latest control can surface. The follow runs in a layout effect — synchronously,
+ * before paint — so the tail never flickers. `signal` is the value that changes when new content arrives
+ * (the line count); the refs it touches are stable, so they are intentionally not effect dependencies.
+ */
+function useStickToBottom(signal: number): {
+  ref: React.RefObject<HTMLDivElement | null>;
+  onScroll: () => void;
+  adrift: boolean;
+  toLatest: () => void;
+} {
+  const ref = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const [adrift, setAdrift] = useState(false);
+
+  function onScroll(): void {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    // A little slack so a near-bottom position still counts as "following".
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    setAdrift(!following.current);
+  }
+
+  function toLatest(): void {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+    following.current = true;
+    setAdrift(false);
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-pin to the bottom whenever new content arrives (the line-count signal); the refs are stable and need no dependency.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && following.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [signal]);
+
+  return { ref, onScroll, adrift, toLatest };
+}
+
+/** A calm three-dot pulse at the tail of a live conversation — a quiet sign the agent is still working. */
+function StreamingPulse(): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-1.5 pt-0.5 text-[11px] text-muted-foreground/60">
+      <span className="flex gap-0.5">
+        <span className="h-1 w-1 animate-pulse rounded-full bg-primary/70" />
+        <span className="h-1 w-1 animate-pulse rounded-full bg-primary/70 [animation-delay:200ms]" />
+        <span className="h-1 w-1 animate-pulse rounded-full bg-primary/70 [animation-delay:400ms]" />
+      </span>
+      streaming
     </div>
   );
 }

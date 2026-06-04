@@ -104,7 +104,7 @@ function buildInstructions(directory: string): string {
       "",
       `   \`${directory}/outreach/{person-id}.txt\``,
       "",
-      "   The filename is the person's id from the contacts below. Number your questions. Include enough context that they can answer without reading the codebase. Then report `needs_human`.",
+      "   The filename is the `person-id` shown with each contact below (the value after `person-id:`). Number your questions. Include enough context that they can answer without reading the codebase. Then report `needs_human`.",
       "",
       "6. Assess complexity honestly and record it in `details.complexity`:",
       "   - **trivial** — obvious scope, minimal change (typo, config value, rename, docs-only). Research and planning are skipped for trivial tasks.",
@@ -122,12 +122,14 @@ function buildContactsSection(people: readonly Person[]): string {
   if (people.length === 0) {
     return section("Contacts", "No contacts are configured. Resolve what you can yourself; you cannot reach a person.");
   }
-  const lines = people.map((person) => {
+  const blocks = people.map((person) => {
     const roles = person.roles.join(", ");
-    const contacts = person.contacts.map((c) => `${c.channel}: ${c.handle}`).join(", ");
-    return contacts
-      ? `- **${person.id}** — ${person.name} (${roles}) — ${contacts}`
-      : `- **${person.id}** — ${person.name} (${roles})`;
+    const header = roles ? `- ${person.name} · ${roles}` : `- ${person.name}`;
+    const lines = [header, `  - person-id: \`${person.id}\``];
+    for (const contact of person.contacts) {
+      lines.push(`  - ${contact.channel}: \`${contact.handle}\``);
+    }
+    return lines.join("\n");
   });
-  return section("Contacts", lines.join("\n"));
+  return section("Contacts", blocks.join("\n\n"));
 }

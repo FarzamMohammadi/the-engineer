@@ -29,10 +29,10 @@ export function wrapUntrustedContent(content: string): string {
 
 /** Build the standard task brief section used by all phase prompts. */
 export function buildTaskBrief(task: TaskBriefInput): string {
-  const lines = [`Task: ${wrapUntrustedContent(task.title)}`];
+  const lines = [wrapUntrustedContent(task.title)];
 
   if (task.description) {
-    lines.push("", wrapUntrustedContent(task.description));
+    lines.push("", "Description:", wrapUntrustedContent(task.description));
   }
 
   if (task.external_ref) {

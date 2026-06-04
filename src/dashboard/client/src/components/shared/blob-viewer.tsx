@@ -2,7 +2,6 @@ import { Check, ChevronRight, Copy } from "lucide-react";
 import { useState } from "react";
 import { type BlobResult, fetchBlob, isBlobRef } from "../../lib/blob";
 import { cn } from "../../lib/cn";
-import { ScrollArea } from "../ui/scroll-area";
 
 interface BlobViewerProps {
   /** A `prefix/hash` blob ref; `""`/null means the engine recorded no blob for this slot. */
@@ -104,11 +103,13 @@ function renderBody(loading: boolean, result: BlobResult | null): React.JSX.Elem
   if (result.status === "empty" || result.text.length === 0) {
     return <p className="p-3 text-muted-foreground/60">Empty.</p>;
   }
+  // Native scroll, not the shared Radix ScrollArea: its viewport only scrolls at a fixed height, not a
+  // max-height. overscroll-contain stops the scroll chaining out to the page at the edges.
   return (
-    <ScrollArea className="max-h-80">
+    <div className="max-h-80 overflow-y-auto overscroll-contain">
       <pre className="whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
         {result.text}
       </pre>
-    </ScrollArea>
+    </div>
   );
 }

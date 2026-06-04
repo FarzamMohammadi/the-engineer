@@ -6,6 +6,8 @@ How to write GitHub issues that The Engineer can pick up and execute well.
 
 **Describe the problem and what you want — not how to build it.** The Engineer does its own research, reads the codebase, and figures out the implementation. Over-prescribing the solution limits its ability to find the right approach and makes tickets brittle when the codebase changes.
 
+**But do say what "done" looks like.** "Don't prescribe the *how*" is not "be vague about the *what*." Length is not the measure — a one-line ticket can be complete, and a long, detailed one can still never say what done means. If a ticket names a target without saying what done looks like — "update the scenes", "improve the dashboard" — The Engineer stops and asks you before building, rather than guess an intent the rest of the pipeline cannot recover. A clear problem and a clear desired outcome are what let it run without interrupting you.
+
 ## What a Good Ticket Contains
 
 ### 1. Problem

@@ -9,6 +9,7 @@ export const queryKeys = {
     phases: (taskId: string) => ["tasks", taskId, "phases"] as const,
     traces: (taskId: string) => ["tasks", taskId, "traces"] as const,
     agentTraces: (taskId: string) => ["tasks", taskId, "agent-traces"] as const,
+    agentActivity: (taskId: string, callId: string) => ["tasks", taskId, "agent-activity", callId] as const,
   },
   metrics: {
     cost: ["metrics-cost"] as const,

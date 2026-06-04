@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { ObservationStore } from "../../../../src/core/observer/index.js";
+import { type ObservationStore, createObservationStore } from "../../../../src/core/observer/index.js";
 import { taskRoutes } from "../../../../src/dashboard/api/tasks.js";
 import { createInMemoryDatabase } from "../../../../src/db/database.js";
 import type { DatabaseHandle } from "../../../../src/db/database.js";
@@ -312,5 +312,86 @@ describe("taskRoutes — GET / phases_ran and loop columns", () => {
 
     expect(task?.["block_reason"]).toBeNull();
     expect(task?.["reaped_at"]).toBe("2026-01-16T09:00:00Z");
+  });
+});
+
+describe("taskRoutes — GET /:id/agent-activity", () => {
+  let handle: DatabaseHandle;
+  let store: ObservationStore;
+  let app: ReturnType<typeof taskRoutes>;
+
+  beforeEach(() => {
+    handle = createInMemoryDatabase();
+    // The agent-activity route reads through the real ObservationStore (not the stub the other suites use).
+    store = createObservationStore(handle.db);
+    app = taskRoutes({ db: handle.db, writeDb: handle.db, observationStore: store });
+    insertTask(handle.db, "task-1");
+  });
+
+  afterEach(() => {
+    handle.close();
+  });
+
+  /** Write an agent_call span and return its id, so child activities can parent on it. */
+  function openAgentCall(taskId: string, name: string): string {
+    return store.startSpan("agent_call", name, undefined, { task_id: taskId }).id;
+  }
+
+  /** Write one agent_activity child under a call. */
+  function writeActivity(taskId: string, callId: string, name: string, data: Record<string, unknown>): void {
+    store.observe("agent_activity", name, data, { task_id: taskId, parent_observation_id: callId });
+  }
+
+  async function fetchActivities(taskId: string, call: string | null): Promise<Record<string, unknown>[]> {
+    const query = call === null ? "" : `?call=${encodeURIComponent(call)}`;
+    const res = await app.request(`/${taskId}/agent-activity${query}`);
+    const body = (await res.json()) as { activities: Record<string, unknown>[] };
+    return body.activities;
+  }
+
+  it("returns one call's agent_activity children in insertion order", async () => {
+    const call = openAgentCall("task-1", "implement");
+    writeActivity("task-1", call, "assistant_text", { kind: "assistant_text", text: "Reading the file." });
+    writeActivity("task-1", call, "Bash", { kind: "tool_use", tool_call_id: "t1", name: "Bash", input: "ls" });
+    writeActivity("task-1", call, "tool_result", {
+      kind: "tool_result",
+      tool_call_id: "t1",
+      status: "ok",
+      output: "a\nb",
+    });
+
+    const activities = await fetchActivities("task-1", call);
+
+    expect(activities.map((a) => a["name"])).toEqual(["assistant_text", "Bash", "tool_result"]);
+    expect(activities.every((a) => a["parent_observation_id"] === call)).toBe(true);
+    expect(activities.every((a) => a["type"] === "agent_activity")).toBe(true);
+  });
+
+  it("does not leak another call's activities", async () => {
+    const callA = openAgentCall("task-1", "implement");
+    const callB = openAgentCall("task-1", "verify");
+    writeActivity("task-1", callA, "assistant_text", { kind: "assistant_text", text: "A" });
+    writeActivity("task-1", callB, "assistant_text", { kind: "assistant_text", text: "B" });
+
+    const activities = await fetchActivities("task-1", callA);
+
+    expect(activities).toHaveLength(1);
+    expect((activities[0]?.["input"] as Record<string, unknown>)["text"]).toBe("A");
+  });
+
+  it("scopes by task_id so a foreign call id surfaces nothing", async () => {
+    insertTask(handle.db, "task-2");
+    const foreignCall = openAgentCall("task-2", "implement");
+    writeActivity("task-2", foreignCall, "assistant_text", { kind: "assistant_text", text: "foreign" });
+
+    // The call belongs to task-2; asking for it under task-1 must return nothing.
+    expect(await fetchActivities("task-1", foreignCall)).toEqual([]);
+  });
+
+  it("returns an empty list when the call query param is absent", async () => {
+    const call = openAgentCall("task-1", "implement");
+    writeActivity("task-1", call, "assistant_text", { kind: "assistant_text", text: "hi" });
+
+    expect(await fetchActivities("task-1", null)).toEqual([]);
   });
 });

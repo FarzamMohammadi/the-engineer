@@ -510,6 +510,61 @@ describe("Observer", () => {
       expect(results[0]?.name).toBe("boot");
     });
 
+    it("filters by parent_observation_id to one parent's direct children", () => {
+      const parent = handle.observer.startSpan("agent_call", "implement", undefined, { task_id: "task-3" });
+      const other = handle.observer.startSpan("agent_call", "verify", undefined, { task_id: "task-3" });
+      handle.observer.observe(
+        "agent_activity",
+        "assistant_text",
+        { kind: "assistant_text", text: "a" },
+        {
+          task_id: "task-3",
+          parent_observation_id: parent.id,
+        },
+      );
+      handle.observer.observe(
+        "agent_activity",
+        "Bash",
+        { kind: "tool_use", name: "Bash" },
+        {
+          task_id: "task-3",
+          parent_observation_id: parent.id,
+        },
+      );
+      handle.observer.observe(
+        "agent_activity",
+        "thinking",
+        { kind: "thinking", text: "x" },
+        {
+          task_id: "task-3",
+          parent_observation_id: other.id,
+        },
+      );
+
+      const children = handle.observer.query({ parent_observation_id: parent.id });
+      expect(children).toHaveLength(2);
+      expect(children.every((c) => c.parent_observation_id === parent.id)).toBe(true);
+    });
+
+    it("returns same-millisecond children in insertion order (rowid tiebreaks equal start_time)", () => {
+      const parent = handle.observer.startSpan("agent_call", "implement", undefined, { task_id: "task-4" });
+      const names = ["first", "second", "third", "fourth"];
+      for (const name of names) {
+        handle.observer.observe(
+          "agent_activity",
+          name,
+          { kind: "assistant_text", text: name },
+          {
+            task_id: "task-4",
+            parent_observation_id: parent.id,
+          },
+        );
+      }
+
+      const children = handle.observer.query({ parent_observation_id: parent.id });
+      expect(children.map((c) => c.name)).toEqual(names);
+    });
+
     it("returns empty array when no matches", () => {
       const results = handle.observer.query({ type: "safety_verdict" });
       expect(results).toEqual([]);

@@ -93,6 +93,10 @@ export class ObserverStore {
       conditions.push("trace_id = ?");
       params.push(filters.trace_id);
     }
+    if (filters.parent_observation_id !== undefined) {
+      conditions.push("parent_observation_id = ?");
+      params.push(filters.parent_observation_id);
+    }
     if (filters.phase !== undefined) {
       conditions.push("phase = ?");
       params.push(filters.phase);
@@ -109,7 +113,9 @@ export class ObserverStore {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const limit = filters.limit ?? DEFAULT_QUERY_LIMIT;
 
-    const sql = `SELECT * FROM observations ${where} ORDER BY start_time ASC LIMIT ?`;
+    // rowid breaks start_time ties by true insertion order — instant rows (e.g. an agent's `agent_activity`
+    // conversation) can share a millisecond, and the conversation must read in the exact order it was written.
+    const sql = `SELECT * FROM observations ${where} ORDER BY start_time ASC, rowid ASC LIMIT ?`;
     params.push(limit);
 
     const rows = this.db.prepare(sql).all(...params) as Parameters<typeof rowToObservation>[0][];

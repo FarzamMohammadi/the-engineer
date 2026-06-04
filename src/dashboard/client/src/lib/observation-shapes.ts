@@ -252,6 +252,101 @@ export function readAgentCall(observation: AgentCallLike): AgentCallShape | null
   };
 }
 
+// ── agent_activity ─────────────────────────────────────────────────────────────
+// One element of an agent's live conversation inside a single `agent_call`. The sink writes the canonical
+// kind plus a bounded, secret-scrubbed preview into `input` (the `observe()` path), spilling long text or
+// large tool I/O to a `*_blob` ref. Shapes by kind:
+//   session        → { kind, model, tools, cwd }
+//   assistant_text → { kind, text, truncated?, text_blob? }
+//   thinking       → { kind, text, truncated?, text_blob? }
+//   tool_use       → { kind, tool_call_id, name, input, truncated?, input_blob? }
+//   tool_result    → { kind, tool_call_id, status, output, truncated?, output_blob? }
+
+/** The canonical kinds an `agent_activity` row carries — the discriminant for rendering a conversation line. */
+export type ActivityKind = "session" | "assistant_text" | "thinking" | "tool_use" | "tool_result";
+
+/** The narrowed `agent_activity` payload the conversation feed renders. Absent fields are empty/null by kind. */
+export interface AgentActivityShape {
+  /** The conversation element this row is; null when the row is not an `agent_activity` or its kind is unknown. */
+  readonly kind: ActivityKind;
+  /** The observation `name` — the kind for text/thinking/result, the tool's own name for a `tool_use`. */
+  readonly name: string;
+  /** Pairs a `tool_use` with its later `tool_result`; empty for text/thinking/session. */
+  readonly toolCallId: string;
+  /** assistant_text / thinking: the inline text preview (truncated when `truncated`). */
+  readonly text: string;
+  /** tool_use: the invoked tool's name. */
+  readonly toolName: string;
+  /** tool_use: the inline tool-input preview. */
+  readonly input: string;
+  /** tool_result: the inline tool-output preview. */
+  readonly output: string;
+  /** tool_result: whether the tool succeeded or errored, as the agent reported it. */
+  readonly status: "ok" | "error" | null;
+  /** session: the model the run reported; empty when none. */
+  readonly model: string;
+  /** True when the inline preview was truncated and the full value lives in the matching `*Blob`. */
+  readonly truncated: boolean;
+  /** Blob ref (`prefix/hash`) for the full text, when truncated; empty otherwise. */
+  readonly textBlob: string;
+  /** Blob ref for the full tool input, when truncated; empty otherwise. */
+  readonly inputBlob: string;
+  /** Blob ref for the full tool output, when truncated; empty otherwise. */
+  readonly outputBlob: string;
+}
+
+function asActivityKind(value: unknown): ActivityKind | null {
+  if (
+    value === "session" ||
+    value === "assistant_text" ||
+    value === "thinking" ||
+    value === "tool_use" ||
+    value === "tool_result"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function asActivityStatus(value: unknown): "ok" | "error" | null {
+  return value === "ok" || value === "error" ? value : null;
+}
+
+/**
+ * Narrow an `agent_activity` observation's `input` into an `AgentActivityShape`, or null when it is not an
+ * activity row or its kind is unrecognized. Drops malformed payloads to a safe partial rather than throwing —
+ * a single bad row degrades to an empty line, never a white screen (mirrors the other readers).
+ */
+export function readAgentActivity(observation: ObservationLike): AgentActivityShape | null {
+  if (observation.type !== "agent_activity") {
+    return null;
+  }
+  const input = asRecord(observation.input);
+  if (input === null) {
+    return null;
+  }
+  const kind = asActivityKind(input["kind"]);
+  if (kind === null) {
+    return null;
+  }
+  const toolName = asString(input["name"]);
+  return {
+    kind,
+    name: toolName,
+    toolCallId: asString(input["tool_call_id"]),
+    text: asString(input["text"]),
+    toolName,
+    input: asString(input["input"]),
+    output: asString(input["output"]),
+    status: asActivityStatus(input["status"]),
+    model: asString(input["model"]),
+    truncated: input["truncated"] === true,
+    textBlob: asString(input["text_blob"]),
+    inputBlob: asString(input["input_blob"]),
+    outputBlob: asString(input["output_blob"]),
+  };
+}
+
 function parseGates(value: unknown): readonly GateResult[] {
   if (!Array.isArray(value)) {
     return [];

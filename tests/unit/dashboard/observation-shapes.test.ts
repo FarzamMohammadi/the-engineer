@@ -5,6 +5,7 @@ import {
   type ObservationLike,
   type PhaseTransitionLike,
   buildSubPhaseRuns,
+  readAgentActivity,
   readAgentCall,
   readDecision,
   readPhaseTransition,
@@ -217,6 +218,95 @@ describe("readAgentCall", () => {
     const call = readAgentCall(obs);
     expect(call?.tokensIn).toBe(10);
     expect(call?.tokensOut).toBe(20);
+  });
+});
+
+describe("readAgentActivity", () => {
+  it("narrows an assistant_text row", () => {
+    const obs = makeObservation("agent_activity", { kind: "assistant_text", text: "Reading the file." });
+    const activity = readAgentActivity(obs);
+    expect(activity?.kind).toBe("assistant_text");
+    expect(activity?.text).toBe("Reading the file.");
+    expect(activity?.truncated).toBe(false);
+    expect(activity?.textBlob).toBe("");
+  });
+
+  it("narrows a thinking row and its full-text blob when truncated", () => {
+    const obs = makeObservation("agent_activity", {
+      kind: "thinking",
+      text: "Let me consider…",
+      truncated: true,
+      text_blob: "blobs/think",
+    });
+    const activity = readAgentActivity(obs);
+    expect(activity?.kind).toBe("thinking");
+    expect(activity?.truncated).toBe(true);
+    expect(activity?.textBlob).toBe("blobs/think");
+  });
+
+  it("narrows a tool_use row with its tool name, input, and pairing id", () => {
+    const obs = makeObservation("agent_activity", {
+      kind: "tool_use",
+      tool_call_id: "call-1",
+      name: "Bash",
+      input: "ls -la",
+    });
+    const activity = readAgentActivity(obs);
+    expect(activity?.kind).toBe("tool_use");
+    expect(activity?.toolName).toBe("Bash");
+    expect(activity?.name).toBe("Bash");
+    expect(activity?.toolCallId).toBe("call-1");
+    expect(activity?.input).toBe("ls -la");
+  });
+
+  it("narrows a tool_result row with status and output, paired by tool_call_id", () => {
+    const obs = makeObservation("agent_activity", {
+      kind: "tool_result",
+      tool_call_id: "call-1",
+      status: "error",
+      output: "command not found",
+      truncated: true,
+      output_blob: "blobs/out",
+    });
+    const activity = readAgentActivity(obs);
+    expect(activity?.kind).toBe("tool_result");
+    expect(activity?.toolCallId).toBe("call-1");
+    expect(activity?.status).toBe("error");
+    expect(activity?.output).toBe("command not found");
+    expect(activity?.outputBlob).toBe("blobs/out");
+  });
+
+  it("narrows a session row carrying the model", () => {
+    const obs = makeObservation("agent_activity", { kind: "session", model: "claude-opus", tools: 12, cwd: "/repo" });
+    const activity = readAgentActivity(obs);
+    expect(activity?.kind).toBe("session");
+    expect(activity?.model).toBe("claude-opus");
+  });
+
+  it("treats an unknown status as null rather than passing it through", () => {
+    const obs = makeObservation("agent_activity", { kind: "tool_result", tool_call_id: "x", status: "weird" });
+    expect(readAgentActivity(obs)?.status).toBeNull();
+  });
+
+  it("returns null for a non-activity observation", () => {
+    expect(readAgentActivity(makeObservation("agent_call", { step: "implement" }))).toBeNull();
+  });
+
+  it("returns null when input is null", () => {
+    expect(readAgentActivity(makeObservation("agent_activity", null))).toBeNull();
+  });
+
+  it("returns null when the kind is missing or unrecognized", () => {
+    expect(readAgentActivity(makeObservation("agent_activity", { text: "no kind" }))).toBeNull();
+    expect(readAgentActivity(makeObservation("agent_activity", { kind: "bogus" }))).toBeNull();
+  });
+
+  it("defaults absent string fields to empty rather than throwing", () => {
+    const obs = makeObservation("agent_activity", { kind: "tool_use" });
+    const activity = readAgentActivity(obs);
+    expect(activity?.toolName).toBe("");
+    expect(activity?.input).toBe("");
+    expect(activity?.toolCallId).toBe("");
   });
 });
 

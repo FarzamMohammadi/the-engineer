@@ -421,6 +421,27 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     return c.json({ traces });
   });
 
+  /**
+   * One agent_call's live conversation: its `agent_activity` children (assistant text, thinking, tool calls,
+   * tool results) in the order they were emitted. Powers the retroactive re-watch of a past call; the live
+   * stream for an open call rides the SSE channel. Scoped by `task_id` AND the parent call id so a foreign or
+   * missing `call` can never surface another task's rows — an absent/unmatched `call` simply yields none.
+   */
+  app.get("/:id/agent-activity", (c) => {
+    const taskId = c.req.param("id");
+    const call = c.req.query("call");
+    if (!call) {
+      return c.json({ activities: [] });
+    }
+    const activities = deps.observationStore.query({
+      type: "agent_activity",
+      task_id: taskId,
+      parent_observation_id: call,
+      limit: 2000,
+    });
+    return c.json({ activities });
+  });
+
   /** Cancel a task — a guarded, versioned write to the `cancelled` terminal state (shared with `engineer cancel`). */
   app.post("/:id/cancel", (c) => {
     const taskId = c.req.param("id");

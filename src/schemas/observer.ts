@@ -107,6 +107,8 @@ export const ObservationQuerySchema = z.object({
   type: ObservationTypeSchema.optional(),
   task_id: z.string().optional(),
   trace_id: z.string().optional(),
+  /** Narrow to the direct children of one observation — e.g. the `agent_activity` rows under an `agent_call`. */
+  parent_observation_id: z.string().optional(),
   phase: z.string().optional(),
   since: z.string().optional(),
   level: ObservationLevelSchema.optional(),

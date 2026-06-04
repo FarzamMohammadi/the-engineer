@@ -249,6 +249,13 @@ An `agent_call` span on its own is a black box with two endpoints: the prompt th
 
 The pure mapping (`mapping.ts`: event → observation parts) is separated from the effectful sink (`sink.ts`: store blobs, write the row) per [FCIS](../../coding-standards.md#functional-core-imperative-shell-fcis), so the size-bounding, naming, and secret-scrubbing logic is unit-tested as pure data. The toggle and its degradation are documented in [Orchestrator configuration → Observability](../../configuration/orchestrator.md#observability).
 
+**Where the owner watches it — the Agent Calls tab.** Expanding any `agent_call` row in a task's **Agent Calls** tab plays that call's conversation as a chat-like feed: assistant messages, collapsible thinking blocks, and tool cards (the tool name plus its input, with the result folded beneath it — paired by `tool_call_id` and styled ok/error). Long text and large tool I/O drill into the blob store on demand, exactly as the call's prompt/result/transcript do. The feed has **one source of truth** — the `agent_activity` rows — read two ways:
+
+- **Live.** While the task is `active` and this call's span is still open (no `end_time`), the row is the call running right now. The view fetches the recorded backlog once, then subscribes to the SSE `observation` channel and appends each incoming `agent_activity` whose `parent_observation_id` is this call — deduped by id, so a call that began before the tab opened still shows its history and then continues streaming.
+- **Retroactive.** Once the call's span closes, the same conversation is re-watchable: the view fetches its children via `GET /api/tasks/:id/agent-activity?call=<agentCallId>` (the `parent_observation_id` query filter on `ObservationStore`, ordered by `start_time, rowid` so same-millisecond rows keep their true insertion order) and renders the identical feed.
+
+The reconstruction mirrors the open-vs-resolved precedent of `buildSubPhaseRuns`: rows are narrowed by a pure `readAgentActivity` reader (drops malformed rows to an empty line, never a crash), `session` markers are dropped (the model already shows in the call header), and an unpaired `tool_result` renders standalone so nothing is hidden.
+
 ## Drill-Down Blobs
 
 Large content — agent prompts and responses, a failing gate's output, a diff — is stored via `observer.storeBlob(content)`, which returns a content-addressable ref, and referenced from the observation's `input`/`output`. The dashboard fetches it by ref through its blob route, so the summary stays small and the full detail is one click away. `storeBlob` no-ops (returns `""`) before the observation store is attached, exactly like the tracing methods, and the pipeline sanitizes content before storing it.
@@ -464,12 +471,12 @@ Stored content is deduped by hash. Used by the orchestrator's agent runner to av
 
 ## Dashboard Integration
 
-The dashboard is a React SPA (`src/dashboard/client/`). Its top-level views are **Overview** (status cards plus a cleanup card surfacing recent reaper sweeps), **Tasks** (the list, filterable by state — including `cancelled` — and by block reason), **Activity** (the live observation/event feed, filterable across every real observation type), **Metrics**, and **Errors**. Opening a task drills into its detail tabs: **Overview** (phase/sub-phase, loop counters, block taxonomy, `reaped_at`), **Phases**, **Agent Calls** (cost/tokens/blob drill-down), **Decisions** (alternatives, reasoning, confidence), **Tools**, and **Timeline**.
+The dashboard is a React SPA (`src/dashboard/client/`). Its top-level views are **Overview** (status cards plus a cleanup card surfacing recent reaper sweeps), **Tasks** (the list, filterable by state — including `cancelled` — and by block reason), **Activity** (the live observation/event feed, filterable across every real observation type), **Metrics**, and **Errors**. Opening a task drills into its detail tabs: **Overview** (phase/sub-phase, loop counters, block taxonomy, `reaped_at`), **Phases**, **Agent Calls** (cost/tokens/blob drill-down, plus each call's live or re-watchable conversation — see [Live Agent Activity](#live-agent-activity)), **Decisions** (alternatives, reasoning, confidence), **Tools**, and **Timeline**.
 
 It consumes observations through two channels:
 
 1. **Real-time:** SSE stream (`/api/stream`) polls SQLite for new observations/events every second, pushes to the browser via Server-Sent Events
-2. **Historical:** Dashboard API routes (`src/dashboard/api/`) query `ObservationStore` with filters (type, task_id, trace_id, phase, since, level) and serve blob content; the events route (`/api/events?type=`) is the cross-process path to durable system events like the reaper's `system.reap_completed` sweep summary
+2. **Historical:** Dashboard API routes (`src/dashboard/api/`) query `ObservationStore` with filters (type, task_id, trace_id, parent_observation_id, phase, since, level) and serve blob content — including `GET /api/tasks/:id/agent-activity?call=<agentCallId>`, which returns one `agent_call`'s `agent_activity` children in order for the retroactive conversation re-watch; the events route (`/api/events?type=`) is the cross-process path to durable system events like the reaper's `system.reap_completed` sweep summary
 
 The frontend uses TanStack Query for data fetching with SSE-driven cache invalidation — expensive endpoints (metrics, traces) refresh only when new data arrives. The dashboard version shown in the sidebar is single-sourced from the root `package.json` (injected at build time via Vite `define`), never hardcoded.
 

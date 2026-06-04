@@ -77,6 +77,29 @@ export function useTaskAgentTraces(taskId: string | undefined): ReturnType<typeo
   });
 }
 
+/**
+ * Fetch one agent_call's recorded conversation (its `agent_activity` children) from
+ * /api/tasks/:id/agent-activity?call=:callId. Used for the retroactive re-watch of a closed call; an open
+ * call streams live over SSE instead, so callers gate this with `enabled` to avoid a redundant fetch.
+ */
+export function useTaskAgentActivity(
+  taskId: string,
+  callId: string,
+  enabled: boolean,
+): ReturnType<typeof useQuery<Observation[]>> {
+  return useQuery({
+    queryKey: queryKeys.tasks.agentActivity(taskId, callId),
+    queryFn: async () => {
+      const response = await apiFetch<{ activities: Observation[] }>(
+        `/tasks/${taskId}/agent-activity?call=${encodeURIComponent(callId)}`,
+      );
+      return response.activities;
+    },
+    enabled: enabled && !!taskId && !!callId,
+    staleTime: STALE_TIMES.taskDetail,
+  });
+}
+
 /** Fetch and cache tool execution traces for a task from /api/tasks/:id/traces. */
 export function useTaskToolTraces(taskId: string | undefined): ReturnType<typeof useQuery<Observation[]>> {
   return useQuery({

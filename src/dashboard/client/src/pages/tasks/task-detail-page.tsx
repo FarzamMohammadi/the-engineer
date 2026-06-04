@@ -154,7 +154,7 @@ export function TaskDetailPage(): React.JSX.Element {
           <TaskDecisionsTab taskId={typedTask.id} />
         </TabsContent>
         <TabsContent value="agent">
-          <TaskAgentTab taskId={typedTask.id} />
+          <TaskAgentTab taskId={typedTask.id} taskActive={typedTask.state === "active"} />
         </TabsContent>
         <TabsContent value="tools">
           <TaskToolsTab taskId={typedTask.id} />

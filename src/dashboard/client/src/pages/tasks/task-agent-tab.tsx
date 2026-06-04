@@ -404,12 +404,16 @@ function ConversationLineRow({ line }: { line: ConversationLine }): React.JSX.El
 }
 
 function AssistantLine({ activity }: { activity: AgentActivityShape }): React.JSX.Element {
+  // The model's actual answer — what a reader scans for first. Wrapped in a blue card so it stands clearly
+  // apart from thinking (muted) and tool cards (neutral): tools are the "dig deeper", this is the response.
   return (
-    <div className="flex gap-2">
-      <MessageSquare size={13} className="mt-0.5 shrink-0 text-primary/80" />
+    <div className="flex gap-2.5 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5">
+      <MessageSquare size={15} className="mt-0.5 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">{activity.text}</p>
-        {activity.truncated && <BlobViewer blobRef={activity.textBlob} label="Full message" className="mt-1" />}
+        <p className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-foreground">
+          {activity.text}
+        </p>
+        {activity.truncated && <BlobViewer blobRef={activity.textBlob} label="Full message" className="mt-1.5" />}
       </div>
     </div>
   );

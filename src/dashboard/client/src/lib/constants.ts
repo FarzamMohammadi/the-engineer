@@ -80,6 +80,7 @@ export const SUB_PHASE_LABELS: Record<string, string> = {
 export const OBSERVATION_TYPE_LABELS: Record<ObservationType, string> = {
   task_execution: "Task",
   agent_call: "Agent Call",
+  agent_activity: "Activity",
   tool_execution: "Tool",
   phase_transition: "Phase",
   decision_point: "Decision",

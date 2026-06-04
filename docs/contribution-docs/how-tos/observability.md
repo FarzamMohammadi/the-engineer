@@ -159,6 +159,7 @@ Pick the type that names what you're recording — never overload `lifecycle` as
 |------|-------------|
 | `task_execution` | The root span of one dispatch — the whole task, start to outcome. Every other observation for the dispatch nests under it. |
 | `agent_call` | One agent run — emitted per agent sub-phase, carrying the prompt, the result/transcript as blob refs, and the run's cost/token spend |
+| `agent_activity` | One element of an agent's live conversation *inside* a single `agent_call` — an assistant message, a thinking block, a tool the agent invoked, or that tool's result. Children of the open `agent_call` span (see [Live Agent Activity](#live-agent-activity)). **Distinct from `tool_execution`:** `agent_activity` is what the *agent* did (parsed from its stream); `tool_execution` is what the *engine* did to the outside world. |
 | `tool_execution` | One external action — a verify gate, a git push, a PR create, a merge call, a branch delete |
 | `phase_transition` | Pipeline phase/sub-phase enter, start, and result |
 | `decision_point` | A structured decision with alternatives and reasoning (via `recordDecision`) |
@@ -210,7 +211,7 @@ Every task dispatch is one trace. The orchestrator opens a root `task_execution`
 **What the pipeline emits, by construction:**
 
 - The runner records every phase enter, sub-phase start/result, **routing and skip decision** (`recordDecision`), loop, and block — so a sub-phase cannot forget to be observed. A block's log level follows its cause: an expected wait is `info`, the loop cap is `warn`, a genuine failure is `error`.
-- Each **agent run** is an `agent_call` span carrying the full prompt and the result/transcript as blob refs, plus the run's cost and token spend (what the per-phase cost breakdown aggregates).
+- Each **agent run** is an `agent_call` span carrying the full prompt and the result/transcript as blob refs, plus the run's cost and token spend (what the per-phase cost breakdown aggregates). When the agent streams, its live conversation lands as `agent_activity` children of that span (see [Live Agent Activity](#live-agent-activity)).
 - The **verify gates** emit a `safety_verdict` (which gates ran, which passed) plus a `tool_execution` span per gate.
 - **Delivery** spans its external git and host actions as `tool_execution`: the `git_push`, the `create_pr` (carrying the PR number and url), and a rework's `dismiss_approvals`.
 - **auto-merge** records a `merge_readiness` decision (the live PR status, the disposition chosen, its alternatives) and a `tool_execution` span for the merge call.
@@ -227,6 +228,26 @@ Instead, **each dispatch is its own bounded trace, and the dispatches are chaine
 The **true holistic, one-screen end-to-end view lives in the dashboard**, which groups every observation by `task_id` across all dispatches. In Jaeger, a `task_id` tag search lists every dispatch's trace for a task. So nothing is lost by keeping the traces bounded — the links give you navigability and the dashboard gives you the union.
 
 A link is carried as the observation's `links` (JSON array of `{trace_id, observation_id}`), mapped to OTLP `links` at export (`otlp/span.ts`). It targets a span in *another* trace, so its ids derive from the link's own coordinates, not the linking span's.
+
+## Live Agent Activity
+
+An `agent_call` span on its own is a black box with two endpoints: the prompt that went in and the result that came out. **Live agent activity** fills the middle — it streams the agent's *conversation as it happens* (each assistant message, thinking block, tool call, and tool result) into `agent_activity` child observations of the open `agent_call` span. Because each is an instant `observe()` row under the live span, the dashboard plays the conversation **live** while the run is in flight and lets the owner **re-watch** it once the run is past — one source of truth for both.
+
+**The module:** `src/core/agent-activity/`. It is the *only* both-sides mediator in the system: it consumes the canonical `AgentActivityEvent` (the agent adapter contract's plugin-agnostic vocabulary — see [the agent adapter doc](../../plugins/agent/README.md#activity-streaming-optional)) and writes the observations. It depends **only** on that event type and the observer interface — never on any plugin — so [Plugin Opacity](../../philosophy.md#plugin-opacity--core-sees-only-adapters) holds: delete every plugin and this module still compiles and runs (inert, because nothing emits).
+
+**How it flows:**
+
+1. A streaming agent plugin parses its CLI's native stream and calls `request.on_activity?.(event)` for each canonical `AgentActivityEvent` — in the same `spawnAndParse` loop it already runs. A plugin that does not stream simply never calls it.
+2. `agent-step.ts` builds the sink via `createActivitySink(ctx.observer, traceScope(ctx), agentCallSpan.id)` and passes it as `request.on_activity` — but **only** when the agent reports `supports_activity_streaming` **and** the `orchestrator.observability.live_activity` toggle is on. Otherwise the request omits the sink and the plugin has nothing to call.
+3. Per event, the sink maps it to an `agent_activity` observation parented on the `agent_call` span, sanitizes secrets, offloads large tool input/output (and long text) to the blob store with a bounded inline preview, and writes one instant row.
+
+**Three invariants this path holds:**
+
+- **Best-effort — it can never fail the run.** The whole per-event handler is wrapped in try/catch; any error (a malformed event, a blob write, a store hiccup) becomes a `debug` log and a return, never a throw back into the agent's loop. The feed is observation-only and must never change a run's outcome, cost, or timing.
+- **Secrets sanitized.** Tool input/output can carry file contents, shell commands, and env. Every text, input, and output is run through `sanitizeSecrets` before it touches the store — both the inline preview and the offloaded blob.
+- **Graceful degradation.** A non-streaming agent (or the toggle off) produces no feed; the run is byte-for-byte identical, and the owner falls back to the post-run `transcript_blob`. The two cases are indistinguishable to the plugin — there is simply no sink to call.
+
+The pure mapping (`mapping.ts`: event → observation parts) is separated from the effectful sink (`sink.ts`: store blobs, write the row) per [FCIS](../../coding-standards.md#functional-core-imperative-shell-fcis), so the size-bounding, naming, and secret-scrubbing logic is unit-tested as pure data. The toggle and its degradation are documented in [Orchestrator configuration → Observability](../../configuration/orchestrator.md#observability).
 
 ## Drill-Down Blobs
 
@@ -510,6 +531,7 @@ handle.cleanup(); // Closes DB + removes temp dir
 | `src/core/observer/facade.ts` | `IObserver` interface + `Observer` class (the unified facade) |
 | `src/core/observer/types.ts` | `IObservationStore` + `ObservationSpan` interfaces |
 | `src/core/observer/observation-store.ts` | `ObservationStore` class (SQLite persistence; re-exported from `index.ts`) |
+| `src/core/agent-activity/` | The live-agent-activity mediator: `createActivitySink` (effectful sink) + `mapActivity` (pure event→observation mapping). Consumes `AgentActivityEvent`, writes `agent_activity` children of the `agent_call` span |
 | `src/core/observer/store.ts` | `ObserverStore` (prepared statements, SQL layer) |
 | `src/schemas/observer.ts` | Zod schemas, observation types enum, row mapper |
 | `src/db/migrations/003_observer.sql` | Database schema (table + 8 indexes) |

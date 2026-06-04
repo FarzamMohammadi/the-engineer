@@ -4,10 +4,16 @@ import { z } from "zod";
 
 import type { AgentAdapter } from "../../../adapters/agent.js";
 import { AdapterMethodError } from "../../../adapters/index.js";
-import { AdapterTypes, type AgentRunRequest, type AgentRunResult } from "../../../schemas/adapters.js";
+import {
+  AdapterTypes,
+  type AgentActivityEvent,
+  type AgentRunRequest,
+  type AgentRunResult,
+} from "../../../schemas/adapters.js";
 import { ObservationTypes } from "../../../schemas/observer.js";
 import { ActionClasses } from "../../../schemas/task.js";
 import { sanitizeSecrets } from "../../../utils/sanitize.js";
+import { createActivitySink } from "../../agent-activity/index.js";
 import type { ObservationSpan } from "../../observer/index.js";
 import { emitAgentCost } from "../agent-cost.js";
 import { traceScope } from "./observability.js";
@@ -86,8 +92,12 @@ async function runStep<TDetails>(options: AgentStepOptions<TDetails>, ctx: Ctx):
     traceScope(ctx),
   );
 
+  // Live activity feed: stream the agent's conversation into child observations of this span, but only when
+  // the plugin reports it streams AND the operator left the toggle on. Off either way, the run is unchanged.
+  const onActivity = buildActivitySink(agent, span.id, ctx);
+
   try {
-    const run = await runAgent(agent, { prompt, systemPrompt, traceOutputPath }, options.stepName, ctx);
+    const run = await runAgent(agent, { prompt, systemPrompt, traceOutputPath, onActivity }, options.stepName, ctx);
     const parsed = readResult(directory);
     const spanScope: AgentSpanScope = {
       ctx,
@@ -234,6 +244,28 @@ function describe(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
+// ── Live Activity ──────────────────────────────────────────────────────────────
+
+/**
+ * Build the best-effort activity sink for this run, or null when no feed should flow: the agent does not
+ * stream (`supports_activity_streaming` false) or the operator disabled it. Null means the request omits
+ * `on_activity`, so a non-streaming agent and a disabled toggle are indistinguishable to the plugin — it
+ * simply never has a sink to call. The agent run is byte-for-byte identical either way.
+ */
+function buildActivitySink(
+  agent: AgentAdapter,
+  spanId: string,
+  ctx: Ctx,
+): ((event: AgentActivityEvent) => void) | null {
+  if (!ctx.config.observability.live_activity) {
+    return null;
+  }
+  if (!agent.getCapabilities().supports_activity_streaming) {
+    return null;
+  }
+  return createActivitySink(ctx.observer, traceScope(ctx), spanId);
+}
+
 // ── Agent Invocation ─────────────────────────────────────────────────────────
 
 /** The prebuilt request parts an agent run needs — built once in runStep so the prompt is not composed twice. */
@@ -241,6 +273,8 @@ interface AgentRequestParts {
   readonly prompt: string;
   readonly systemPrompt: string | null;
   readonly traceOutputPath: string | null;
+  /** The live-activity sink, or null when the agent does not stream or the feed is disabled (see buildActivitySink). */
+  readonly onActivity: ((event: AgentActivityEvent) => void) | null;
 }
 
 /** The outcome of the retry loop: the agent run's result on success, or the final error the caller recovers from. */
@@ -262,6 +296,7 @@ async function runAgent(
     cwd: ctx.worktreePath,
     trace_output_path: parts.traceOutputPath,
     ...(ctx.signal ? { signal: ctx.signal } : {}),
+    ...(parts.onActivity ? { on_activity: parts.onActivity } : {}),
   };
 
   let lastError: unknown;

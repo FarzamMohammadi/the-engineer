@@ -23,6 +23,7 @@ export type Phase = (typeof PHASES)[number];
 export const OBSERVATION_TYPES = [
   "task_execution",
   "agent_call",
+  "agent_activity",
   "tool_execution",
   "phase_transition",
   "decision_point",

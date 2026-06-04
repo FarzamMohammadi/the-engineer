@@ -341,6 +341,20 @@ export const ReviewConfigSchema = z.object({
 });
 export type ReviewConfig = z.infer<typeof ReviewConfigSchema>;
 
+// ── Observability Config ──────────────────────────────────────────────────────────
+// Per-task pipeline observability toggles. Additive and best-effort: a knob here only
+// changes how much the pipeline emits to the dashboard, never what the pipeline does.
+
+export const ObservabilityConfigSchema = z.object({
+  live_activity: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Stream each agent run's live conversation (assistant text, thinking, tool calls and results) to the dashboard's Agent Calls tab as it happens. Best-effort and observation-only — it can never affect a run's outcome, cost, or timing. Only agents that report `supports_activity_streaming` emit; the rest fall back to the post-run transcript. Default: on.",
+    ),
+});
+export type ObservabilityConfig = z.infer<typeof ObservabilityConfigSchema>;
+
 export const OrchestratorConfigSchema = z.object({
   // RESERVED for Slice 10 (Communication). `notification` and `question_batching` are validated today
   // but NOT yet honored — the notification-router sends messages without reading these policy knobs
@@ -349,6 +363,7 @@ export const OrchestratorConfigSchema = z.object({
   notification: NotificationConfigSchema.default({}),
   question_batching: QuestionBatchingConfigSchema.default({}),
   review: ReviewConfigSchema.default({}),
+  observability: ObservabilityConfigSchema.default({}),
 });
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
 

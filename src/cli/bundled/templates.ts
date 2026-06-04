@@ -102,6 +102,10 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # All fields are optional — defaults shown as comments
 # Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
+# --- Observability ---
+# observability:
+#   live_activity: true               # Stream each agent run's live conversation to the dashboard (default: true)
+
 # --- Notifications ---  (RESERVED for Slice 10 — validated but not yet honored)
 # notification:
 #   milestone_based: true             # Notify only on milestones (not every step)
@@ -415,6 +419,10 @@ export const EXAMPLE_ORCHESTRATOR = `# ┌────────────�
 # │  All fields are optional — defaults are applied automatically.            │
 # │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
+
+# ── Observability ──
+observability:
+  live_activity: true                     # Stream each agent run's live conversation to the dashboard (default: true)
 
 # ── Notifications ──  (RESERVED for Slice 10 — validated but not yet honored)
 notification:

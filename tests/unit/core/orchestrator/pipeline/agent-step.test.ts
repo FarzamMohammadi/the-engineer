@@ -218,4 +218,58 @@ describe("agentStep", () => {
       expect(span?.output).toMatchObject({ cost_usd: null, tokens_in: null, tokens_out: null });
     });
   });
+
+  describe("live activity feed", () => {
+    it("passes on_activity and turns emitted events into agent_activity child observations", async () => {
+      const agent = fakeAgent(
+        (request) => {
+          request.on_activity?.({ kind: "thinking", text: "reading the file" });
+          request.on_activity?.({ kind: "tool_use", tool_call_id: "c1", name: "bash", input: { command: "ls" } });
+          writeResult({ status: "ok", summary: "did it" });
+          return Promise.resolve(AGENT_RESULT);
+        },
+        { supports_activity_streaming: true },
+      );
+      const { ctx, observer } = createMockPipeline({ agent, worktreePath: dir });
+
+      await step()(ctx);
+
+      const activities = observer.observations.filter((o) => o.type === "agent_activity");
+      expect(activities.map((a) => a.name)).toEqual(["thinking", "bash"]);
+      expect(activities[0]?.data).toMatchObject({ kind: "thinking", text: "reading the file" });
+    });
+
+    it("does not pass on_activity when the agent does not stream (graceful degradation)", async () => {
+      let received: unknown = "unset";
+      const agent = fakeAgent((request) => {
+        received = request.on_activity;
+        writeResult({ status: "ok", summary: "did it" });
+        return Promise.resolve(AGENT_RESULT);
+      }); // default capabilities: supports_activity_streaming is false
+      const { ctx, observer } = createMockPipeline({ agent, worktreePath: dir });
+
+      await step()(ctx);
+
+      expect(received).toBeUndefined();
+      expect(observer.observations.some((o) => o.type === "agent_activity")).toBe(false);
+    });
+
+    it("does not pass on_activity when the live_activity toggle is off", async () => {
+      let received: unknown = "unset";
+      const agent = fakeAgent(
+        (request) => {
+          received = request.on_activity;
+          writeResult({ status: "ok", summary: "did it" });
+          return Promise.resolve(AGENT_RESULT);
+        },
+        { supports_activity_streaming: true },
+      );
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+      ctx.config.observability.live_activity = false;
+
+      await step()(ctx);
+
+      expect(received).toBeUndefined();
+    });
+  });
 });

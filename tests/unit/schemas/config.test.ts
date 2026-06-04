@@ -170,6 +170,16 @@ describe("OrchestratorConfigSchema", () => {
     expect(config.question_batching.enabled).toBe(true);
   });
 
+  it("defaults the live-activity feed on", () => {
+    const config = OrchestratorConfigSchema.parse({});
+    expect(config.observability.live_activity).toBe(true);
+  });
+
+  it("allows disabling the live-activity feed", () => {
+    const config = OrchestratorConfigSchema.parse({ observability: { live_activity: false } });
+    expect(config.observability.live_activity).toBe(false);
+  });
+
   it("allows partial nested override", () => {
     const config = OrchestratorConfigSchema.parse({
       review: { lenses: ["self-review", "security"] },

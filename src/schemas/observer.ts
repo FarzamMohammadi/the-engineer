@@ -12,6 +12,11 @@ import { fromSqliteJson } from "../db/serialize.js";
 export const ObservationTypeSchema = z.enum([
   "task_execution",
   "agent_call",
+  // One element of an agent's live conversation inside a single `agent_call`: an assistant message,
+  // a thinking block, a tool the agent invoked, or that tool's result. Children of the open `agent_call`
+  // span, written instant. DISTINCT from `tool_execution`, which is an external action the engine itself
+  // takes (a git push, a verify gate) — `agent_activity` is what the agent did, observed from its stream.
+  "agent_activity",
   "tool_execution",
   "phase_transition",
   "decision_point",

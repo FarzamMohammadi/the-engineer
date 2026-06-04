@@ -18,7 +18,7 @@ import type {
   SubPhase,
   SubPhaseResult,
 } from "../../src/core/orchestrator/pipeline/types.js";
-import type { AgentRunRequest, AgentRunResult, Person } from "../../src/schemas/adapters.js";
+import type { AgentCapabilities, AgentRunRequest, AgentRunResult, Person } from "../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import type { Task } from "../../src/schemas/task.js";
 import { createMockTask } from "./mock-factories.js";
@@ -175,9 +175,29 @@ function createSpyingSessionMemory(): SpyingSessionMemory {
 
 // ── Fake Agent ───────────────────────────────────────────────────────────────
 
-/** Build an AgentAdapter whose `run` is the given behavior (write a result, throw, honor the signal). */
-export function fakeAgent(run: (request: AgentRunRequest) => Promise<AgentRunResult>): AgentAdapter {
-  return { run: vi.fn(run), manifest: { id: "fake-agent" } } as unknown as AgentAdapter;
+/** Default capabilities for a fake agent: reports nothing, including no activity streaming (the honest current state). */
+const FAKE_CAPABILITIES: AgentCapabilities = {
+  model_id: "fake-model",
+  supports_usage_reporting: false,
+  supports_quota_reporting: false,
+  supports_activity_streaming: false,
+  context_window: null,
+};
+
+/**
+ * Build an AgentAdapter whose `run` is the given behavior (write a result, throw, honor the signal).
+ * `capabilities` overrides default capability flags — pass `{ supports_activity_streaming: true }` to
+ * exercise the live-activity path (agentStep gates the `on_activity` sink on this flag).
+ */
+export function fakeAgent(
+  run: (request: AgentRunRequest) => Promise<AgentRunResult>,
+  capabilities: Partial<AgentCapabilities> = {},
+): AgentAdapter {
+  return {
+    run: vi.fn(run),
+    getCapabilities: () => ({ ...FAKE_CAPABILITIES, ...capabilities }),
+    manifest: { id: "fake-agent" },
+  } as unknown as AgentAdapter;
 }
 
 /** A pass-through action pipeline: runs the gated function and reports it executed. */

@@ -469,6 +469,17 @@ This is **optional**, **capability-gated**, and **best-effort**:
 
 \`input\` and \`output\` are \`unknown\` on purpose: their shape is the CLI's, and the contract does not constrain it. A plugin passes them through verbatim -- Core sanitizes secrets and bounds size before storing.
 
+### What Core does with the stream
+
+The plugin's only job is to *map and emit*. What happens next lives entirely in Core's \`src/core/agent-activity/\` module -- the plugin never sees it, and never imports it:
+
+- **Each event becomes a durable observation.** Core writes one \`agent_activity\` row per event, nested under the run's open \`agent_call\` span. The dashboard's Agent Calls tab plays the conversation **live** while the run is in flight and lets the owner **re-watch** it afterward -- same rows, one source of truth.
+- **Core sanitizes and bounds.** Every text, tool input, and tool output is run through secret sanitization before it is stored; large payloads are offloaded to the blob store with a bounded inline preview. This is why the contract leaves \`input\`/\`output\` as raw \`unknown\` -- the plugin must **not** pre-scrub or truncate; it passes the CLI's values through and Core does the rest at one chokepoint.
+- **The path can never fail your run.** Core wraps every write best-effort: a malformed event or a storage hiccup degrades to a debug log, never a throw back into your \`on_activity\` call. You can emit freely without defensive code.
+- **Opacity is preserved.** Core's module depends only on \`AgentActivityEvent\` and its observer -- never on any plugin. Delete every agent plugin and the module still compiles; it just has nothing to observe.
+
+Core gates the whole feed on your \`supports_activity_streaming\` flag **and** an operator toggle (\`orchestrator.observability.live_activity\`, on by default). When either is off, Core never passes \`on_activity\`, so your plugin has no sink to call and the run is unchanged.
+
 ### QuotaStatus / QuotaWindow
 
 | Field | Type | Description |

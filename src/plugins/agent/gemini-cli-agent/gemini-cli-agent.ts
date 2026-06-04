@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   AdapterMethodError,
+  type AgentActivityEvent,
   AgentAdapter,
   type AgentCapabilities,
   type AgentRunRequest,
@@ -36,6 +37,15 @@ export type GeminiNdjsonLineResult =
       rateLimitMessage: string | null;
     }
   | { type: "skip" };
+
+/** Mutable accumulator threaded through the stream loop: salvageable content, usage, model, rate-limit. */
+interface StreamParseState {
+  contentParts: string[];
+  usage: AgentRunUsage | null;
+  modelId: string | null;
+  rateLimited: boolean;
+  rateLimitMessage: string | null;
+}
 
 /**
  * Process a single NDJSON line from Gemini CLI stream-json output.
@@ -107,6 +117,80 @@ export function processGeminiNdjsonLine(line: string, currentModelId: string | n
   }
 }
 
+// ── Live activity mapping ─────────────────────────────────────────────────────
+
+/**
+ * Map a single NDJSON line from Gemini CLI stream-json output into canonical activity events.
+ *
+ * Pure function — independently testable, mirrors `processGeminiNdjsonLine`. The mapped shapes were
+ * verified against a real captured `gemini -o stream-json --yolo` run (`fixtures/gemini-stream.ndjson`):
+ * - `init` → one `session` event (model only; the stream carries no tool count or cwd)
+ * - `message` with `role: "assistant"` → one `assistant_text` event (`content`)
+ * - `tool_use` → one `tool_use` event (`tool_id`, `tool_name`, `parameters`)
+ * - `tool_result` → one `tool_result` event (`tool_id`, `status`, `output`)
+ * Returns `[]` for the echoed `message`/`role: "user"`, for `result`, and for malformed lines. Never
+ * throws: a bad line yields no events, it does not break the run.
+ */
+export function activityEventsFromLine(line: string): AgentActivityEvent[] {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+
+  switch (parsed["type"]) {
+    case "init": {
+      const model = typeof parsed["model"] === "string" ? parsed["model"] : null;
+      return [{ kind: "session", model, tools: null, cwd: null }];
+    }
+    case "message":
+      return assistantTextEvent(parsed);
+    case "tool_use":
+      return toolUseEvent(parsed);
+    case "tool_result":
+      return toolResultEvent(parsed);
+    default:
+      return [];
+  }
+}
+
+/** Map a Gemini `message` line to an `assistant_text` event (skips the echoed user prompt). */
+function assistantTextEvent(line: Record<string, unknown>): AgentActivityEvent[] {
+  if (line["role"] !== "assistant" || typeof line["content"] !== "string") {
+    return [];
+  }
+  return [{ kind: "assistant_text", text: line["content"] }];
+}
+
+/** Map a Gemini `tool_use` line to a `tool_use` event. */
+function toolUseEvent(line: Record<string, unknown>): AgentActivityEvent[] {
+  if (typeof line["tool_id"] !== "string" || typeof line["tool_name"] !== "string") {
+    return [];
+  }
+  return [{ kind: "tool_use", tool_call_id: line["tool_id"], name: line["tool_name"], input: line["parameters"] }];
+}
+
+/** Map a Gemini `tool_result` line to a `tool_result` event. */
+function toolResultEvent(line: Record<string, unknown>): AgentActivityEvent[] {
+  if (typeof line["tool_id"] !== "string") {
+    return [];
+  }
+  return [
+    {
+      kind: "tool_result",
+      tool_call_id: line["tool_id"],
+      status: line["status"] === "success" ? "ok" : "error",
+      output: line["output"],
+    },
+  ];
+}
+
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 /**
@@ -144,6 +228,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
       prompt,
       request.trace_output_path ?? undefined,
       request.signal,
+      request.on_activity,
     );
   }
 
@@ -152,7 +237,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
       model_id: this.config?.model ?? DEFAULT_GEMINI_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: true,
-      supports_activity_streaming: false,
+      supports_activity_streaming: true,
       context_window: null,
     };
   }
@@ -222,6 +307,43 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
   // ── Private Helpers ──────────────────────────────────────────────────
 
   /**
+   * Consume one NDJSON line: accumulate the salvageable content/usage/model/rate-limit, then emit
+   * live activity.
+   *
+   * Keeps the two concerns in one place so the stdout closure stays flat. Activity is
+   * observation-only and best-effort — a throwing sink is swallowed so it can never break or slow
+   * the run, and the result accumulation it follows is never affected.
+   */
+  private consumeStreamLine(
+    line: string,
+    parsed: StreamParseState,
+    onActivity?: (event: AgentActivityEvent) => void,
+  ): void {
+    const result = processGeminiNdjsonLine(line, parsed.modelId);
+    if (result.type === "init") {
+      parsed.modelId = result.modelId;
+    } else if (result.type === "content") {
+      parsed.contentParts.push(result.text);
+    } else if (result.type === "result") {
+      parsed.usage = result.usage;
+      parsed.rateLimited = result.rateLimited;
+      parsed.rateLimitMessage = result.rateLimitMessage;
+    }
+
+    if (!onActivity) {
+      return;
+    }
+    // Emit live activity (block level) — best-effort, never affects the run.
+    try {
+      for (const event of activityEventsFromLine(line)) {
+        onActivity(event);
+      }
+    } catch {
+      // Activity is observation-only — never let it surface into the run.
+    }
+  }
+
+  /**
    * Spawn Gemini CLI and stream-parse its NDJSON output.
    * Memory-safe: processes each line as it arrives. Optionally traces to disk.
    */
@@ -231,16 +353,19 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
     stdinContent?: string,
     traceOutputPath?: string,
     signal?: AbortSignal,
+    onActivity?: (event: AgentActivityEvent) => void,
   ): Promise<AgentRunResult> {
     const startMs = Date.now();
     return new Promise<AgentRunResult>((resolve, reject) => {
       // ── Streaming state ──
       let remainder = "";
-      const contentParts: string[] = [];
-      let usage: AgentRunUsage | null = null;
-      let modelId: string | null = null;
-      let streamRateLimited = false;
-      let streamRateLimitMessage: string | null = null;
+      const parsed: StreamParseState = {
+        contentParts: [],
+        usage: null,
+        modelId: null,
+        rateLimited: false,
+        rateLimitMessage: null,
+      };
       let stderrBuf = "";
 
       // ── Trace file stream ──
@@ -293,16 +418,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
         remainder = lines.pop() ?? "";
 
         for (const line of lines) {
-          const result = processGeminiNdjsonLine(line, modelId);
-          if (result.type === "init") {
-            modelId = result.modelId;
-          } else if (result.type === "content") {
-            contentParts.push(result.text);
-          } else if (result.type === "result") {
-            usage = result.usage;
-            streamRateLimited = result.rateLimited;
-            streamRateLimitMessage = result.rateLimitMessage;
-          }
+          this.consumeStreamLine(line, parsed, onActivity);
         }
       });
 
@@ -325,16 +441,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
 
         // Process final incomplete line
         if (remainder.trim().length > 0) {
-          const result = processGeminiNdjsonLine(remainder, modelId);
-          if (result.type === "init") {
-            modelId = result.modelId;
-          } else if (result.type === "content") {
-            contentParts.push(result.text);
-          } else if (result.type === "result") {
-            usage = result.usage;
-            streamRateLimited = result.rateLimited;
-            streamRateLimitMessage = result.rateLimitMessage;
-          }
+          this.consumeStreamLine(remainder, parsed, onActivity);
         }
 
         const durationMs = Date.now() - startMs;
@@ -356,7 +463,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
             new AdapterMethodError(
               createAdapterError(
                 "cli_error",
-                `gemini CLI exited with code ${String(code)}: ${stderrBuf || contentParts.join("")}`,
+                `gemini CLI exited with code ${String(code)}: ${stderrBuf || parsed.contentParts.join("")}`,
                 { retryable: true, severity: AdapterErrorSeverities.error },
               ),
             ),
@@ -365,14 +472,14 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
         }
 
         // Update rate limit state for getQuotaStatus()
-        this.rateLimited = streamRateLimited;
+        this.rateLimited = parsed.rateLimited;
 
-        if (streamRateLimited) {
+        if (parsed.rateLimited) {
           reject(
             new AdapterMethodError(
               createAdapterError(
                 "cli_error",
-                `gemini CLI rate limited: ${streamRateLimitMessage ?? "quota exhausted"}`,
+                `gemini CLI rate limited: ${parsed.rateLimitMessage ?? "quota exhausted"}`,
                 { retryable: true, severity: AdapterErrorSeverities.error },
               ),
             ),
@@ -380,8 +487,8 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
           return;
         }
 
-        const content = contentParts.join("");
-        if (content.length === 0 && usage === null) {
+        const content = parsed.contentParts.join("");
+        if (content.length === 0 && parsed.usage === null) {
           reject(
             new AdapterMethodError(
               createAdapterError("internal_error", "No assistant message or result event found in Gemini CLI output"),
@@ -394,7 +501,7 @@ export class GeminiCliAgentPlugin extends AgentAdapter {
           content,
           cost_usd: null, // Gemini CLI does not report cost
           duration_ms: durationMs,
-          usage,
+          usage: parsed.usage,
         });
       });
 

@@ -21,6 +21,7 @@ No API keys or environment variables needed. The plugin is marked `critical: tru
 - System prompt prepended to user prompt (no native `--system-prompt` flag)
 - Working directory support (passed as `cwd` to the spawned process)
 - Rate limit detection from both stdout (error result events) and stderr (retry messages) -- process killed immediately on stderr detection
+- Live activity streaming (`supports_activity_streaming: true`) -- maps each stream-json event to a canonical activity event for the dashboard's live Agent Calls feed
 - `--yolo` flag for auto-approved tool calls (required for non-interactive use)
 - Environment sanitization -- only allowlisted env vars forwarded to the subprocess
 - Active process tracking with SIGTERM on shutdown
@@ -65,10 +66,17 @@ max_cli_output_bytes: 500000000
 
 **System prompt handling**: Gemini CLI has no `--system-prompt` flag. When a system prompt is provided, the plugin prepends it to the user prompt wrapped in `[SYSTEM INSTRUCTIONS]...[END SYSTEM INSTRUCTIONS]` markers.
 
-**Output parsing**: The parser (`parseGeminiCliOutput`) scans for three NDJSON event types:
+**Output parsing**: The parser (`processGeminiNdjsonLine`) scans for three NDJSON event types:
 - `type: "init"` -- session metadata including the model ID.
 - `type: "message", role: "assistant"` -- response content, concatenated into the final output.
 - `type: "result"` -- token stats (`stats.input_tokens`, `stats.output_tokens`, `stats.total_tokens`, `stats.cached`). Also checked for `status: "error"` with rate limit messages.
+
+**Live activity streaming**: When the orchestrator passes an `on_activity` sink (the live-activity feature is on by default), a separate pure mapper (`activityEventsFromLine`) maps each stream-json line to a block-level canonical `AgentActivityEvent` and emits it as the line arrives -- best-effort, so a failing sink can never break or slow the run. The stream-json shapes are otherwise undocumented; the mapping was verified against a real captured `gemini -o stream-json --yolo` run (the test fixture):
+- `type: "init"` -- becomes one `session` event (model only; the stream carries no tool count or cwd).
+- `type: "message", role: "assistant"` -- `content` becomes one `assistant_text` event. The echoed `role: "user"` prompt line is ignored.
+- `type: "tool_use"` -- `tool_id`, `tool_name`, `parameters` become one `tool_use` event.
+- `type: "tool_result"` -- `tool_id`, `status` (`ok` when `"success"` else `error`), `output` become one `tool_result` event.
+- `type: "result"` -- produces no activity event.
 
 **Rate limit detection (dual-path)**:
 1. **stdout**: If a `type: "result"` event has `status: "error"` and the error message matches rate limit patterns (`exhausted.*capacity`, `quota`, `rate limit`), the plugin flags it as rate limited and rejects with a retryable error.

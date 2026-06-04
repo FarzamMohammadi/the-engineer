@@ -1,9 +1,13 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AdapterMethodError } from "../../../../../src/adapters/index.js";
-import { GeminiCliAgentPlugin } from "../../../../../src/plugins/agent/gemini-cli-agent/gemini-cli-agent.js";
+import { AdapterMethodError, type AgentActivityEvent } from "../../../../../src/adapters/index.js";
+import {
+  GeminiCliAgentPlugin,
+  activityEventsFromLine,
+} from "../../../../../src/plugins/agent/gemini-cli-agent/gemini-cli-agent.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { createMockAgentRunRequest } from "../../../../helpers/mock-factories.js";
@@ -138,6 +142,7 @@ describe("GeminiCliAgentPlugin", () => {
     expect(caps.model_id).toBe("gemini-2.5-flash");
     expect(caps.supports_usage_reporting).toBe(true);
     expect(caps.supports_quota_reporting).toBe(true);
+    expect(caps.supports_activity_streaming).toBe(true);
   });
 
   it("getQuotaStatus returns null (no quota API)", async () => {
@@ -155,5 +160,70 @@ describe("GeminiCliAgentPlugin", () => {
     plugin.context = createTestPluginContext();
     const result = await plugin.initialize({ command_timeout_ms: -1 });
     expect(result.success).toBe(false);
+  });
+});
+
+// ── activityEventsFromLine (live activity mapping) ──────────────────────────────
+
+describe("activityEventsFromLine", () => {
+  // A real captured gemini -o stream-json --yolo run (init, echoed user message, write/read tool
+  // calls + results, assistant message, result), plus one representative errored tool_result. The
+  // tool_use/tool_result field shapes are otherwise undocumented — this fixture is the verification.
+  const fixtureLines = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "fixtures", "gemini-stream.ndjson"),
+    "utf-8",
+  )
+    .split("\n")
+    .filter((line) => line.trim().length > 0);
+
+  function eventsAt(index: number): AgentActivityEvent[] {
+    return activityEventsFromLine(fixtureLines[index] ?? "");
+  }
+
+  it("maps an init line to one session event with model only", () => {
+    expect(eventsAt(0)).toEqual([{ kind: "session", model: "gemini-2.5-flash", tools: null, cwd: null }]);
+  });
+
+  it("maps a tool_use to tool_use with tool_id, tool_name, and parameters", () => {
+    expect(eventsAt(2)).toEqual([
+      {
+        kind: "tool_use",
+        tool_call_id: "write_file_1780549705185_0",
+        name: "write_file",
+        input: { file_path: "hello.txt", content: "hi" },
+      },
+    ]);
+  });
+
+  it("maps a successful tool_result to status ok", () => {
+    expect(eventsAt(3)).toEqual([
+      { kind: "tool_result", tool_call_id: "write_file_1780549705185_0", status: "ok", output: undefined },
+    ]);
+  });
+
+  it("maps a non-success tool_result to status error", () => {
+    expect(eventsAt(6)).toEqual([
+      {
+        kind: "tool_result",
+        tool_call_id: "run_shell_command_1780549720099_0",
+        status: "error",
+        output: "Command failed: bash: definitely-not-a-command: command not found",
+      },
+    ]);
+  });
+
+  it("maps an assistant message to assistant_text", () => {
+    expect(eventsAt(7)).toEqual([{ kind: "assistant_text", text: "The task is complete." }]);
+  });
+
+  it("emits nothing for the echoed user message and the result line", () => {
+    expect(eventsAt(1)).toEqual([]); // message role=user (echoed prompt)
+    expect(eventsAt(8)).toEqual([]); // result
+  });
+
+  it("returns no events for an empty, malformed, or id-less line", () => {
+    expect(activityEventsFromLine("")).toEqual([]);
+    expect(activityEventsFromLine("not json at all")).toEqual([]);
+    expect(activityEventsFromLine('{"type":"tool_use","tool_name":"write_file"}')).toEqual([]);
   });
 });

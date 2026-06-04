@@ -22,6 +22,7 @@ The plugin is marked `critical: true`.
 - System prompt prepended to user prompt (no native `--system-prompt` flag)
 - Working directory support via `--dir` flag
 - Rate limit detection from stderr -- process killed immediately on detection
+- Live activity streaming (`supports_activity_streaming: true`) -- maps each NDJSON event to a canonical activity event for the dashboard's live Agent Calls feed
 - Environment sanitization -- only allowlisted env vars forwarded to the subprocess
 - Active process tracking with SIGTERM on shutdown
 
@@ -64,9 +65,15 @@ max_cli_output_bytes: 500000000
 
 **System prompt handling**: OpenCode has no `--system-prompt` flag. When a system prompt is provided, the plugin prepends it to the user prompt wrapped in `[SYSTEM INSTRUCTIONS]...[END SYSTEM INSTRUCTIONS]` markers.
 
-**Output parsing**: The parser (`parseOpenCodeOutput`) scans for two NDJSON event types:
+**Output parsing**: The parser (`processOpenCodeNdjsonLine`) scans for two NDJSON event types:
 - `type: "text"` -- content fragments in `part.text`, concatenated into the final response.
 - `type: "step_finish"` -- cost (`part.cost`) and token breakdown (`part.tokens` with input, output, total, and cache read/write).
+
+**Live activity streaming**: When the orchestrator passes an `on_activity` sink (the live-activity feature is on by default), a separate pure mapper (`activityEventsFromLine`) maps each NDJSON line to a block-level canonical `AgentActivityEvent` and emits it as the line arrives -- best-effort, so a failing sink can never break or slow the run:
+- `type: "text"` -- `part.text` becomes one `assistant_text` event.
+- `type: "reasoning"` -- `part.text` becomes one `thinking` event.
+- `type: "tool_use"` -- OpenCode folds a tool's call and result into one completed event; it is mapped to **two** ordered events: a `tool_use` (`part.callID`, `part.tool`, `part.state.input`) then a `tool_result` (`part.state.output`, `ok` when `part.state.status === "completed"` else `error`).
+- `step_start` / `step_finish` -- produce no activity events.
 
 **Rate limit detection**: The plugin monitors stderr for patterns matching `exhausted your capacity`, `rate limit`, or `quota` (case-insensitive). On detection, it immediately sends SIGTERM to the child process and rejects with a retryable `cli_error`. This prevents the OpenCode CLI from entering infinite retry loops that waste time and potentially cost money.
 

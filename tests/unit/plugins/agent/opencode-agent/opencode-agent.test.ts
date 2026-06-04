@@ -1,9 +1,13 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AdapterMethodError } from "../../../../../src/adapters/index.js";
-import { OpenCodeAgentPlugin } from "../../../../../src/plugins/agent/opencode-agent/opencode-agent.js";
+import { AdapterMethodError, type AgentActivityEvent } from "../../../../../src/adapters/index.js";
+import {
+  OpenCodeAgentPlugin,
+  activityEventsFromLine,
+} from "../../../../../src/plugins/agent/opencode-agent/opencode-agent.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
 import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { createMockAgentRunRequest } from "../../../../helpers/mock-factories.js";
@@ -135,6 +139,7 @@ describe("OpenCodeAgentPlugin", () => {
     expect(caps.model_id).toBe("openai/gpt-4o");
     expect(caps.supports_usage_reporting).toBe(true);
     expect(caps.supports_quota_reporting).toBe(false);
+    expect(caps.supports_activity_streaming).toBe(true);
   });
 
   it("getQuotaStatus returns null (no quota API)", async () => {
@@ -152,5 +157,84 @@ describe("OpenCodeAgentPlugin", () => {
     plugin.context = createTestPluginContext();
     const result = await plugin.initialize({ command_timeout_ms: -1 });
     expect(result.success).toBe(false);
+  });
+});
+
+// ── activityEventsFromLine (live activity mapping) ──────────────────────────────
+
+describe("activityEventsFromLine", () => {
+  // A real captured opencode run (write tool then text), plus a representative reasoning line and a
+  // representative errored tool — the free model used in capture emitted neither. One fixture, every
+  // mapped and unmapped case.
+  const fixtureLines = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "fixtures", "opencode-stream.ndjson"),
+    "utf-8",
+  )
+    .split("\n")
+    .filter((line) => line.trim().length > 0);
+
+  function eventsAt(index: number): AgentActivityEvent[] {
+    return activityEventsFromLine(fixtureLines[index] ?? "");
+  }
+
+  it("maps a completed tool_use to ordered tool_use then ok tool_result", () => {
+    expect(eventsAt(1)).toEqual([
+      {
+        kind: "tool_use",
+        tool_call_id: "call_6bbcb458b69248519ad1245a",
+        name: "write",
+        input: {
+          content: "hi",
+          filePath: "/private/var/folders/5t/1mknv_bn4dd4lq9yn12qfrf00000gn/T/tmp.EuxB3UaEDr/hello.txt",
+        },
+      },
+      {
+        kind: "tool_result",
+        tool_call_id: "call_6bbcb458b69248519ad1245a",
+        status: "ok",
+        output: "Wrote file successfully.",
+      },
+    ]);
+  });
+
+  it("maps a reasoning part to thinking", () => {
+    expect(eventsAt(3)).toEqual([
+      { kind: "thinking", text: "I created the file, now I should confirm it back to the user." },
+    ]);
+  });
+
+  it("maps a non-completed tool state to an error tool_result", () => {
+    expect(eventsAt(4)).toEqual([
+      {
+        kind: "tool_use",
+        tool_call_id: "call_a1b2c3d4e5f60718293a4b5c",
+        name: "bash",
+        input: { command: "definitely-not-a-command" },
+      },
+      {
+        kind: "tool_result",
+        tool_call_id: "call_a1b2c3d4e5f60718293a4b5c",
+        status: "error",
+        output: "bash: command not found",
+      },
+    ]);
+  });
+
+  it("maps a text part to assistant_text", () => {
+    expect(eventsAt(6)).toEqual([{ kind: "assistant_text", text: 'Done. `hello.txt` created with content "hi".' }]);
+  });
+
+  it("emits nothing for step_start and step_finish lines", () => {
+    expect(eventsAt(0)).toEqual([]); // step_start
+    expect(eventsAt(2)).toEqual([]); // step_finish
+    expect(eventsAt(5)).toEqual([]); // step_start
+    expect(eventsAt(7)).toEqual([]); // step_finish
+  });
+
+  it("returns no events for an empty, malformed, partless, or contentless line", () => {
+    expect(activityEventsFromLine("")).toEqual([]);
+    expect(activityEventsFromLine("not json at all")).toEqual([]);
+    expect(activityEventsFromLine('{"type":"text"}')).toEqual([]);
+    expect(activityEventsFromLine('{"type":"tool_use","part":{"type":"tool"}}')).toEqual([]);
   });
 });

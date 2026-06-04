@@ -443,11 +443,11 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 
 ## Built-in Plugins
 
-| Plugin | CLI Tool | Default Model | Cost | Usage | Quota | System Prompt | Key Flags |
-|--------|----------|---------------|------|-------|-------|---------------|-----------|
-| **Claude Code** (default) | `claude` | `claude-sonnet-4-6` | Yes (USD) | Yes (full tokens + cache + model + service tier) | Yes (API + rate_limit_event fallback) | `--system-prompt` flag | `--print --output-format stream-json --verbose --setting-sources user --dangerously-skip-permissions` |
-| **OpenCode** (opt-in) | `opencode` | `opencode/gemini-3.1-pro` | Yes (USD) | Yes (tokens + cache) | No | Prepend to prompt | `run --format json` |
-| **Gemini CLI** (opt-in) | `gemini` | `gemini-2.5-pro` | No (free tier) | Yes (tokens + cache) | Yes (rate limit detection only) | Prepend to prompt | `-p "" -o stream-json --yolo` |
+| Plugin | CLI Tool | Default Model | Cost | Usage | Quota | Activity | System Prompt | Key Flags |
+|--------|----------|---------------|------|-------|-------|----------|---------------|-----------|
+| **Claude Code** (default) | `claude` | `claude-sonnet-4-6` | Yes (USD) | Yes (full tokens + cache + model + service tier) | Yes (API + rate_limit_event fallback) | Yes (text + thinking + tools) | `--system-prompt` flag | `--print --output-format stream-json --verbose --setting-sources user --dangerously-skip-permissions` |
+| **OpenCode** (opt-in) | `opencode` | `opencode/gemini-3.1-pro` | Yes (USD) | Yes (tokens + cache) | No | Yes (text + reasoning + tools) | Prepend to prompt | `run --format json` |
+| **Gemini CLI** (opt-in) | `gemini` | `gemini-2.5-pro` | No (free tier) | Yes (tokens + cache) | Yes (rate limit detection only) | Yes (text + tools) | Prepend to prompt | `-p "" -o stream-json --yolo` |
 
 ### Output format differences
 

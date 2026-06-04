@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   AdapterMethodError,
+  type AgentActivityEvent,
   AgentAdapter,
   type AgentCapabilities,
   type AgentRunRequest,
@@ -28,6 +29,13 @@ export type OpenCodeNdjsonLineResult =
   | { type: "text"; text: string }
   | { type: "step_finish"; costUsd: number | null; usage: AgentRunUsage | null }
   | { type: "skip" };
+
+/** Mutable accumulator threaded through the stream loop: the salvageable result content + cost + usage. */
+interface StreamParseState {
+  textParts: string[];
+  costUsd: number | null;
+  usage: AgentRunUsage | null;
+}
 
 /**
  * Process a single NDJSON line from OpenCode CLI output.
@@ -91,6 +99,74 @@ export function processOpenCodeNdjsonLine(line: string): OpenCodeNdjsonLineResul
   }
 }
 
+// ── Live activity mapping ─────────────────────────────────────────────────────
+
+/**
+ * Map a single NDJSON line from OpenCode CLI output into canonical activity events.
+ *
+ * Pure function — independently testable, mirrors `processOpenCodeNdjsonLine`. Each line wraps one
+ * complete `part`, so this maps at block granularity (one event per finished text / reasoning / tool),
+ * never per token:
+ * - `text` → one `assistant_text` event (`part.text`)
+ * - `reasoning` → one `thinking` event (`part.text`)
+ * - a completed `tool_use` → TWO events in order: `tool_use` (call+input) then `tool_result`
+ *   (output+status). OpenCode folds a tool's call and result into one event when the tool finishes.
+ * Returns `[]` for `step_start` / `step_finish` / `error` and for malformed lines. Never throws:
+ * a bad line yields no events, it does not break the run.
+ */
+export function activityEventsFromLine(line: string): AgentActivityEvent[] {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+
+  const part = parsed["part"];
+  if (typeof part !== "object" || part === null) {
+    return [];
+  }
+  const block = part as Record<string, unknown>;
+
+  switch (parsed["type"]) {
+    case "text":
+      return typeof block["text"] === "string" ? [{ kind: "assistant_text", text: block["text"] }] : [];
+    case "reasoning":
+      return typeof block["text"] === "string" ? [{ kind: "thinking", text: block["text"] }] : [];
+    case "tool_use":
+      return toolActivityEvents(block);
+    default:
+      return [];
+  }
+}
+
+/** Map one completed OpenCode tool part into its ordered call + result activity events. */
+function toolActivityEvents(part: Record<string, unknown>): AgentActivityEvent[] {
+  const callId = part["callID"];
+  const name = part["tool"];
+  if (typeof callId !== "string" || typeof name !== "string") {
+    return [];
+  }
+
+  const state = part["state"];
+  const toolState = typeof state === "object" && state !== null ? (state as Record<string, unknown>) : {};
+
+  return [
+    { kind: "tool_use", tool_call_id: callId, name, input: toolState["input"] },
+    {
+      kind: "tool_result",
+      tool_call_id: callId,
+      status: toolState["status"] === "completed" ? "ok" : "error",
+      output: toolState["output"],
+    },
+  ];
+}
+
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 /**
@@ -117,7 +193,13 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
 
     // Pipe prompt via stdin — avoids OS argument length limits on large orchestrator prompts.
     // OpenCode reads from stdin when no positional message args are given.
-    return this.spawnAndParse(args, prompt, request.trace_output_path ?? undefined, request.signal);
+    return this.spawnAndParse(
+      args,
+      prompt,
+      request.trace_output_path ?? undefined,
+      request.signal,
+      request.on_activity,
+    );
   }
 
   getCapabilities(): AgentCapabilities {
@@ -125,7 +207,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
       model_id: this.config?.model ?? DEFAULT_OPENCODE_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: false,
-      supports_activity_streaming: false,
+      supports_activity_streaming: true,
       context_window: null,
     };
   }
@@ -177,6 +259,39 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
   // ── Private Helpers ──────────────────────────────────────────────────
 
   /**
+   * Consume one NDJSON line: accumulate the salvageable content/cost/usage, then emit live activity.
+   *
+   * Keeps the two concerns in one place so the stdout closure stays flat. Activity is
+   * observation-only and best-effort — a throwing sink is swallowed so it can never break or slow
+   * the run, and the result accumulation it follows is never affected.
+   */
+  private consumeStreamLine(
+    line: string,
+    parsed: StreamParseState,
+    onActivity?: (event: AgentActivityEvent) => void,
+  ): void {
+    const result = processOpenCodeNdjsonLine(line);
+    if (result.type === "text") {
+      parsed.textParts.push(result.text);
+    } else if (result.type === "step_finish") {
+      parsed.costUsd = result.costUsd;
+      parsed.usage = result.usage;
+    }
+
+    if (!onActivity) {
+      return;
+    }
+    // Emit live activity (block level) — best-effort, never affects the run.
+    try {
+      for (const event of activityEventsFromLine(line)) {
+        onActivity(event);
+      }
+    } catch {
+      // Activity is observation-only — never let it surface into the run.
+    }
+  }
+
+  /**
    * Spawn OpenCode CLI and stream-parse its NDJSON output.
    * Memory-safe: processes each line as it arrives. Optionally traces to disk.
    */
@@ -185,14 +300,13 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
     stdinContent?: string,
     traceOutputPath?: string,
     signal?: AbortSignal,
+    onActivity?: (event: AgentActivityEvent) => void,
   ): Promise<AgentRunResult> {
     const startMs = Date.now();
     return new Promise<AgentRunResult>((resolve, reject) => {
       // ── Streaming state ──
       let remainder = "";
-      const textParts: string[] = [];
-      let costUsd: number | null = null;
-      let usage: AgentRunUsage | null = null;
+      const parsed: StreamParseState = { textParts: [], costUsd: null, usage: null };
       let stderrBuf = "";
 
       // ── Trace file stream ──
@@ -244,13 +358,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
         remainder = lines.pop() ?? "";
 
         for (const line of lines) {
-          const result = processOpenCodeNdjsonLine(line);
-          if (result.type === "text") {
-            textParts.push(result.text);
-          } else if (result.type === "step_finish") {
-            costUsd = result.costUsd;
-            usage = result.usage;
-          }
+          this.consumeStreamLine(line, parsed, onActivity);
         }
       });
 
@@ -264,6 +372,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
         }
       });
 
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI process lifecycle with rate limit + exit code + empty-output paths
       child.on("close", (code) => {
         this.activeProcesses.delete(child);
         if (traceStream) {
@@ -272,13 +381,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
 
         // Process final incomplete line
         if (remainder.trim().length > 0) {
-          const result = processOpenCodeNdjsonLine(remainder);
-          if (result.type === "text") {
-            textParts.push(result.text);
-          } else if (result.type === "step_finish") {
-            costUsd = result.costUsd;
-            usage = result.usage;
-          }
+          this.consumeStreamLine(remainder, parsed, onActivity);
         }
 
         const durationMs = Date.now() - startMs;
@@ -300,7 +403,7 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
             new AdapterMethodError(
               createAdapterError(
                 "cli_error",
-                `opencode CLI exited with code ${String(code)}: ${stderrBuf || textParts.join("")}`,
+                `opencode CLI exited with code ${String(code)}: ${stderrBuf || parsed.textParts.join("")}`,
                 { retryable: true, severity: AdapterErrorSeverities.error },
               ),
             ),
@@ -308,8 +411,8 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
           return;
         }
 
-        const content = textParts.join("");
-        if (content.length === 0 && costUsd === null) {
+        const content = parsed.textParts.join("");
+        if (content.length === 0 && parsed.costUsd === null) {
           reject(
             new AdapterMethodError(
               createAdapterError("internal_error", "No text or step_finish event found in OpenCode output"),
@@ -320,9 +423,9 @@ export class OpenCodeAgentPlugin extends AgentAdapter {
 
         resolve({
           content,
-          cost_usd: costUsd,
+          cost_usd: parsed.costUsd,
           duration_ms: durationMs,
-          usage,
+          usage: parsed.usage,
         });
       });
 

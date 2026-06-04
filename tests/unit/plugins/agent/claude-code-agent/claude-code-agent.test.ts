@@ -1,10 +1,12 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AdapterMethodError } from "../../../../../src/adapters/index.js";
+import { AdapterMethodError, type AgentActivityEvent } from "../../../../../src/adapters/index.js";
 import {
   ClaudeCodeAgentPlugin,
+  activityEventsFromLine,
   dominantModelId,
 } from "../../../../../src/plugins/agent/claude-code-agent/claude-code-agent.js";
 import { buildAgentEnv } from "../../../../../src/plugins/agent/subprocess.js";
@@ -262,6 +264,95 @@ describe("ClaudeCodeAgentPlugin", () => {
       // Error message should be bounded — code prefix + truncated stderr ≤ ~2050 chars
       expect(adapterErr.adapterError.message.length).toBeLessThan(2100);
     }
+  });
+});
+
+// ── activityEventsFromLine (live activity mapping) ──────────────────────────────
+
+describe("activityEventsFromLine", () => {
+  // A real captured claude stream-json run: init, assistant text/thinking/tool_use, ok + errored
+  // tool_results, then the lines we deliberately ignore (status, thinking_tokens, stream_event,
+  // rate_limit_event, result). One fixture, every mapped and unmapped case.
+  const fixtureLines = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "fixtures", "claude-stream.ndjson"),
+    "utf-8",
+  )
+    .split("\n")
+    .filter((line) => line.trim().length > 0);
+
+  function eventsAt(index: number): AgentActivityEvent[] {
+    return activityEventsFromLine(fixtureLines[index] ?? "");
+  }
+
+  it("maps a system init line to one session event with model, tool count, and cwd", () => {
+    const [event, ...rest] = eventsAt(0);
+    expect(rest).toHaveLength(0);
+    expect(event).toEqual({
+      kind: "session",
+      model: "claude-haiku-4-5-20251001",
+      tools: 41,
+      cwd: "/private/tmp/claude-501/live-agent-mirror-VqRpGS",
+    });
+  });
+
+  it("maps an assistant text block to assistant_text", () => {
+    expect(eventsAt(1)).toEqual([
+      { kind: "assistant_text", text: "I'll create the file, verify its contents, and list the directory." },
+    ]);
+  });
+
+  it("maps an assistant thinking block to thinking", () => {
+    const [event] = eventsAt(2);
+    expect(event?.kind).toBe("thinking");
+    expect(event && "text" in event ? event.text : "").toContain("The user wants me to");
+  });
+
+  it("maps an assistant tool_use block to tool_use with id, name, and input", () => {
+    expect(eventsAt(3)).toEqual([
+      {
+        kind: "tool_use",
+        tool_call_id: "toolu_012fpoUjANVACngah9HNj7oD",
+        name: "Write",
+        input: {
+          file_path: "/private/tmp/claude-501/live-agent-mirror-VqRpGS/hello.txt",
+          content: "hello from the engineer",
+        },
+      },
+    ]);
+  });
+
+  it("maps a tool_result with is_error null to status ok", () => {
+    const [event] = eventsAt(4);
+    expect(event).toMatchObject({
+      kind: "tool_result",
+      tool_call_id: "toolu_012fpoUjANVACngah9HNj7oD",
+      status: "ok",
+    });
+  });
+
+  it("maps a tool_result with is_error true to status error", () => {
+    expect(eventsAt(5)).toEqual([
+      {
+        kind: "tool_result",
+        tool_call_id: "toolu_01KivN29uc2gr46MKA2ud9AA",
+        status: "error",
+        output: "bash: command not found",
+      },
+    ]);
+  });
+
+  it("emits nothing for status, thinking_tokens, stream_event, rate_limit, and result lines", () => {
+    expect(eventsAt(6)).toEqual([]); // system:status
+    expect(eventsAt(7)).toEqual([]); // system:thinking_tokens
+    expect(eventsAt(8)).toEqual([]); // stream_event
+    expect(eventsAt(9)).toEqual([]); // rate_limit_event
+    expect(eventsAt(10)).toEqual([]); // result
+  });
+
+  it("returns no events for an empty, malformed, or contentless line", () => {
+    expect(activityEventsFromLine("")).toEqual([]);
+    expect(activityEventsFromLine("not json at all")).toEqual([]);
+    expect(activityEventsFromLine('{"type":"assistant"}')).toEqual([]);
   });
 });
 

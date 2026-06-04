@@ -4,6 +4,7 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import {
   AdapterMethodError,
+  type AgentActivityEvent,
   AgentAdapter,
   type AgentCapabilities,
   type AgentRunRequest,
@@ -26,6 +27,12 @@ interface RateLimitInfo {
   rateLimitType: string;
   status: string;
   resetsAt: number | null;
+}
+
+/** Mutable accumulator threaded through the stream loop: the salvageable result + rate-limit windows. */
+interface StreamParseState {
+  resultEvent: Record<string, unknown> | null;
+  rateLimits: RateLimitInfo[];
 }
 
 // ── Streaming NDJSON line processor ──────────────────────────────────────────
@@ -77,6 +84,112 @@ export function processNdjsonLine(line: string): NdjsonLineResult {
   }
 }
 
+// ── Live activity mapping ─────────────────────────────────────────────────────
+
+/**
+ * Map a single NDJSON line from Claude CLI stream-json output into canonical activity events.
+ *
+ * Pure function — independently testable, mirrors `processNdjsonLine`. Runs WITHOUT
+ * `--include-partial-messages`, so every event carries a COMPLETE block; this maps at block
+ * granularity (one event per finished message / tool call / tool result), never per token:
+ * - `system`/`init` → one `session` event (model, tool count, cwd)
+ * - `assistant` → one event per content block (`text` → assistant_text, `thinking`, `tool_use`)
+ * - `user` → one event per `tool_result` block
+ * Returns `[]` for malformed lines and for every type that carries no user-visible activity
+ * (stream_event, rate_limit_event, system status/thinking_tokens, result — result is handled
+ * by `processNdjsonLine`). Never throws: a bad line yields no events, it does not break the run.
+ */
+export function activityEventsFromLine(line: string): AgentActivityEvent[] {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+
+  switch (parsed["type"]) {
+    case "system":
+      return parsed["subtype"] === "init" ? [sessionEventFromInit(parsed)] : [];
+    case "assistant":
+      return activityEventsFromMessage(parsed, contentBlockToActivity);
+    case "user":
+      return activityEventsFromMessage(parsed, toolResultBlockToActivity);
+    default:
+      return [];
+  }
+}
+
+/** Build the `session` event from a `system`/`init` line. Every field is best-effort. */
+function sessionEventFromInit(event: Record<string, unknown>): AgentActivityEvent {
+  const tools = event["tools"];
+  return {
+    kind: "session",
+    model: typeof event["model"] === "string" ? event["model"] : null,
+    tools: Array.isArray(tools) ? tools.length : null,
+    cwd: typeof event["cwd"] === "string" ? event["cwd"] : null,
+  };
+}
+
+/** Map each content block of an `assistant`/`user` message via the given per-block mapper. */
+function activityEventsFromMessage(
+  event: Record<string, unknown>,
+  mapBlock: (block: Record<string, unknown>) => AgentActivityEvent | null,
+): AgentActivityEvent[] {
+  const message = event["message"];
+  if (typeof message !== "object" || message === null) {
+    return [];
+  }
+  const content = (message as Record<string, unknown>)["content"];
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  const events: AgentActivityEvent[] = [];
+  for (const raw of content) {
+    if (typeof raw === "object" && raw !== null) {
+      const mapped = mapBlock(raw as Record<string, unknown>);
+      if (mapped) {
+        events.push(mapped);
+      }
+    }
+  }
+  return events;
+}
+
+/** Map one assistant content block (`text` | `thinking` | `tool_use`) to an activity event. */
+function contentBlockToActivity(block: Record<string, unknown>): AgentActivityEvent | null {
+  switch (block["type"]) {
+    case "text":
+      return typeof block["text"] === "string" ? { kind: "assistant_text", text: block["text"] } : null;
+    case "thinking":
+      return typeof block["thinking"] === "string" ? { kind: "thinking", text: block["thinking"] } : null;
+    case "tool_use":
+      return typeof block["id"] === "string" && typeof block["name"] === "string"
+        ? { kind: "tool_use", tool_call_id: block["id"], name: block["name"], input: block["input"] }
+        : null;
+    default:
+      return null;
+  }
+}
+
+/** Map one user `tool_result` block to a `tool_result` activity event. */
+function toolResultBlockToActivity(block: Record<string, unknown>): AgentActivityEvent | null {
+  if (block["type"] !== "tool_result" || typeof block["tool_use_id"] !== "string") {
+    return null;
+  }
+  return {
+    kind: "tool_result",
+    tool_call_id: block["tool_use_id"],
+    status: block["is_error"] === true ? "error" : "ok",
+    output: block["content"],
+  };
+}
+
 /**
  * ClaudeCodeAgentPlugin — the Engineer's autonomous coding agent via Claude Code.
  *
@@ -125,6 +238,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
       request.cwd ?? undefined,
       request.trace_output_path ?? undefined,
       request.signal,
+      request.on_activity,
     );
   }
 
@@ -133,7 +247,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
       model_id: this.config?.model ?? DEFAULT_CLAUDE_MODEL,
       supports_usage_reporting: true,
       supports_quota_reporting: true,
-      supports_activity_streaming: false,
+      supports_activity_streaming: true,
       context_window: 200_000,
     };
   }
@@ -219,6 +333,39 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
   }
 
   /**
+   * Consume one NDJSON line: accumulate the salvageable result/rate-limit, then emit live activity.
+   *
+   * Keeps the two concerns in one place so the stdout closure stays flat. Activity is
+   * observation-only and best-effort — a throwing sink is swallowed so it can never break or slow
+   * the run, and the result/rate-limit accumulation it follows is never affected.
+   */
+  private consumeStreamLine(
+    line: string,
+    parsed: StreamParseState,
+    onActivity?: (event: AgentActivityEvent) => void,
+  ): void {
+    const lineResult = processNdjsonLine(line);
+    if (lineResult.type === "result") {
+      parsed.resultEvent = lineResult.event;
+    } else if (lineResult.type === "rate_limit") {
+      parsed.rateLimits.push(lineResult.info);
+    }
+    // "skip" — discarded immediately, never stored in memory
+
+    if (!onActivity) {
+      return;
+    }
+    // Emit live activity (block level) — best-effort, never affects the run.
+    try {
+      for (const event of activityEventsFromLine(line)) {
+        onActivity(event);
+      }
+    } catch {
+      // Activity is observation-only — never let it surface into the run.
+    }
+  }
+
+  /**
    * Spawn Claude CLI and stream-parse its NDJSON output.
    *
    * Memory-safe: processes each line as it arrives, keeping only the final
@@ -231,13 +378,13 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
     cwd?: string,
     traceOutputPath?: string,
     signal?: AbortSignal,
+    onActivity?: (event: AgentActivityEvent) => void,
   ): Promise<AgentRunResult> {
     const startMs = Date.now();
     return new Promise<AgentRunResult>((resolve, reject) => {
       // ── Streaming state ──────────────────────────────────────────────
       let remainder = "";
-      let resultEvent: Record<string, unknown> | null = null;
-      const rateLimits: RateLimitInfo[] = [];
+      const parsed: StreamParseState = { resultEvent: null, rateLimits: [] };
       let stderrBuf = "";
       let totalStdoutBytes = 0;
 
@@ -293,13 +440,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
         remainder = lines.pop() ?? "";
 
         for (const line of lines) {
-          const lineResult = processNdjsonLine(line);
-          if (lineResult.type === "result") {
-            resultEvent = lineResult.event;
-          } else if (lineResult.type === "rate_limit") {
-            rateLimits.push(lineResult.info);
-          }
-          // "skip" — discarded immediately, never stored in memory
+          this.consumeStreamLine(line, parsed, onActivity);
         }
       });
 
@@ -320,12 +461,7 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
 
         // Process any final incomplete line
         if (remainder.trim().length > 0) {
-          const lineResult = processNdjsonLine(remainder);
-          if (lineResult.type === "result") {
-            resultEvent = lineResult.event;
-          } else if (lineResult.type === "rate_limit") {
-            rateLimits.push(lineResult.info);
-          }
+          this.consumeStreamLine(remainder, parsed, onActivity);
         }
 
         // ── Instrumentation: log CLI completion telemetry ──
@@ -341,10 +477,10 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
         if (code !== 0) {
           // ── Attempt to salvage from streaming state ──
           // If we captured a result event during streaming, use it despite non-zero exit
-          if (resultEvent && resultEvent["subtype"] !== "error") {
-            this.lastRateLimits = rateLimits;
+          if (parsed.resultEvent && parsed.resultEvent["subtype"] !== "error") {
+            this.lastRateLimits = parsed.rateLimits;
             this.context.logger.info("CLI exited non-zero but result event captured — salvaging", { code });
-            resolve(buildAgentRunResult(resultEvent, durationMs));
+            resolve(buildAgentRunResult(parsed.resultEvent, durationMs));
             return;
           }
 
@@ -364,22 +500,25 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
         }
 
         // ── Happy path: use streamed result ──
-        if (!resultEvent) {
+        if (!parsed.resultEvent) {
           reject(new AdapterMethodError(createAdapterError("internal_error", "No result event found in CLI output")));
           return;
         }
 
-        if (resultEvent["subtype"] === "error") {
+        if (parsed.resultEvent["subtype"] === "error") {
           reject(
             new AdapterMethodError(
-              createAdapterError("internal_error", `CLI returned error: ${String(resultEvent["error"] ?? "unknown")}`),
+              createAdapterError(
+                "internal_error",
+                `CLI returned error: ${String(parsed.resultEvent["error"] ?? "unknown")}`,
+              ),
             ),
           );
           return;
         }
 
-        this.lastRateLimits = rateLimits;
-        resolve(buildAgentRunResult(resultEvent, durationMs));
+        this.lastRateLimits = parsed.rateLimits;
+        resolve(buildAgentRunResult(parsed.resultEvent, durationMs));
       });
 
       child.on("error", (err) => {

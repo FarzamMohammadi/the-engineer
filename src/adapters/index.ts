@@ -61,6 +61,7 @@ export {
   type Target,
   type TaskReconciliationInput,
   // Agent
+  AgentActivityEventSchema,
   AgentCapabilitiesSchema,
   AgentRunRequestSchema,
   AgentRunResultSchema,
@@ -68,6 +69,7 @@ export {
   QuotaStatusSchema,
   QuotaWindowSchema,
   TokenUsageSchema,
+  type AgentActivityEvent,
   type AgentCapabilities,
   type AgentRunRequest,
   type AgentRunResult,

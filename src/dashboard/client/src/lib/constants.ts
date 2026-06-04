@@ -116,6 +116,7 @@ export const BLOCK_CATEGORY_LABELS: Record<BlockCategory, string> = {
   agent_unavailable: "Agent Unavailable",
   orchestrator_error: "Orchestrator Error",
   iteration_cap_hit: "Iteration Cap Hit",
+  pr_rework_cap_hit: "PR Rework Cap Hit",
   awaiting_human: "Awaiting Human",
   awaiting_pr_review: "Awaiting PR Review",
 };

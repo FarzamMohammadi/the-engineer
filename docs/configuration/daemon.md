@@ -79,6 +79,7 @@ When a notification cannot be delivered to a contact's channel, it is queued and
 |-------|------|---------|-------------|
 | `review_polling.failure_window_ms` | integer (ms) | `300000` (5m) | Time window for counting review API failures before pausing. |
 | `review_polling.max_failures_before_pause` | integer | `3` | Failures within the window before pausing review polling (circuit breaker). |
+| `review_polling.max_blocker_reentries` | integer | `3` | Consecutive automated-blocker (merge-conflict / CI-failure) re-entries on one open PR before the task is escalated to the owner instead of reworked again. A reviewer comment or the blocker clearing resets the count. |
 
 ## Logging
 
@@ -166,4 +167,5 @@ logging:
 review_polling:
   failure_window_ms: 300000
   max_failures_before_pause: 3
+  max_blocker_reentries: 3
 ```

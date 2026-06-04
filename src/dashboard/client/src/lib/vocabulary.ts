@@ -60,6 +60,7 @@ export const BLOCK_CATEGORIES = [
   "agent_unavailable",
   "orchestrator_error",
   "iteration_cap_hit",
+  "pr_rework_cap_hit",
   "awaiting_human",
   "awaiting_pr_review",
 ] as const;

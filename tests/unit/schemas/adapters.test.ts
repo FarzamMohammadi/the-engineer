@@ -603,7 +603,7 @@ describe("PRStatusSchema", () => {
       number: 42,
       state: "open",
       draft: true,
-      mergeable: false,
+      merge_state: "conflicting",
       checks_state: "passing",
       url: "https://github.com/...",
     });
@@ -617,12 +617,31 @@ describe("PRStatusSchema", () => {
           number: 1,
           state,
           draft: false,
-          mergeable: true,
+          merge_state: "mergeable",
           checks_state: "passing",
           url: "x",
         }).state,
       ).toBe(state);
     }
+  });
+
+  it("rejects an invalid merge_state and accepts the three valid ones", () => {
+    for (const merge_state of ["mergeable", "conflicting", "unknown"]) {
+      expect(
+        PRStatusSchema.parse({ number: 1, state: "open", draft: false, merge_state, checks_state: "none", url: "x" })
+          .merge_state,
+      ).toBe(merge_state);
+    }
+    expect(
+      PRStatusSchema.safeParse({
+        number: 1,
+        state: "open",
+        draft: false,
+        merge_state: true,
+        checks_state: "none",
+        url: "x",
+      }).success,
+    ).toBe(false);
   });
 });
 

@@ -19,6 +19,7 @@ const readyReview: ReviewState = {
   feedback_rounds: [],
   accommodated_comment_ids: [],
   accommodated_review_state: null,
+  consecutive_blocker_reentries: 0,
 };
 
 interface MockOptions {
@@ -35,7 +36,7 @@ function mockCtx(options: MockOptions = {}) {
     number: 7,
     state: "open",
     draft: false,
-    mergeable: true,
+    merge_state: "mergeable",
     checks_state: "passing",
     url: "https://x/7",
     ...options.status,
@@ -172,12 +173,21 @@ describe("auto-merge run", () => {
     expect(published).toEqual([]);
   });
 
-  it("reworks instead of merging when the PR is not mergeable", async () => {
-    const { ctx, mergePR } = mockCtx({ status: { mergeable: false } });
+  it("reworks instead of merging when the PR is definitively conflicting", async () => {
+    const { ctx, mergePR } = mockCtx({ status: { merge_state: "conflicting" } });
 
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "merge_conflict" } });
+    expect(mergePR).not.toHaveBeenCalled();
+  });
+
+  it("waits rather than reworking when mergeability is not yet computed (unknown)", async () => {
+    const { ctx, mergePR } = mockCtx({ status: { merge_state: "unknown" } });
+
+    const result = await autoMerge.run(ctx);
+
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "retry_wait" } });
     expect(mergePR).not.toHaveBeenCalled();
   });
 

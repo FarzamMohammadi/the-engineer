@@ -183,8 +183,13 @@ function decideReadiness(ctx: Ctx, repo: string, status: PRStatus): MergeReadine
   if (status.checks_state === "failing") {
     return { disposition: "ci_failure", reasoning: "CI checks are failing" };
   }
-  if (!status.mergeable) {
+  if (status.merge_state === "conflicting") {
     return { disposition: "merge_conflict", reasoning: "the PR no longer merges cleanly into its base" };
+  }
+  // `unknown` mergeability is the host still computing it (common right after a push) — wait and re-check,
+  // never rework, so a not-yet-resolved merge state cannot send a clean PR back to execution.
+  if (status.merge_state === "unknown") {
+    return { disposition: "retry_wait", reasoning: "mergeability is not yet computed" };
   }
   // "passing" and "none" (a repo with no CI — nothing to wait on) proceed; only "pending" returns to the wait.
   if (status.checks_state === "pending") {
@@ -206,7 +211,7 @@ const MERGE_DISPOSITION_OPTIONS = [
 function recordMergeReadiness(ctx: Ctx, prNumber: number, status: PRStatus, readiness: MergeReadiness): void {
   ctx.observer.recordDecision(
     "merge_readiness",
-    `PR #${String(prNumber)} is ${status.state}, checks ${status.checks_state}, mergeable=${String(status.mergeable)}`,
+    `PR #${String(prNumber)} is ${status.state}, checks ${status.checks_state}, merge_state=${status.merge_state}`,
     MERGE_DISPOSITION_OPTIONS,
     readiness.disposition,
     readiness.reasoning,

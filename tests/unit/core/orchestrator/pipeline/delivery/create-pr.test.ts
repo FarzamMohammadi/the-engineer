@@ -121,6 +121,7 @@ describe("create-pr run", () => {
         feedback_rounds: [{ applied: false, comments: ["fix it"] }],
         accommodated_comment_ids: [],
         accommodated_review_state: null,
+        consecutive_blocker_reentries: 0,
       },
     });
 
@@ -171,6 +172,7 @@ describe("create-pr run", () => {
         feedback_rounds: [{ applied: false, comments: ["fix it"] }],
         accommodated_comment_ids: [],
         accommodated_review_state: null,
+        consecutive_blocker_reentries: 0,
       },
     });
 

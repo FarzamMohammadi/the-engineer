@@ -317,7 +317,10 @@ export const PRStatusSchema = z.object({
   number: z.number().int().positive(),
   state: z.enum(["open", "closed", "merged"]),
   draft: z.boolean(),
-  mergeable: z.boolean(),
+  // Tri-state mergeability, mirroring `checks_state` — a host computes mergeability asynchronously, so
+  // "not yet computed" is a real, distinct answer, NOT a conflict. `unknown` must never be read as
+  // `conflicting`: a freshly-pushed branch reads `unknown` for a few seconds before the host resolves it.
+  merge_state: z.enum(["mergeable", "conflicting", "unknown"]),
   checks_state: z.enum(["passing", "failing", "pending", "none"]),
   url: z.string(),
 });

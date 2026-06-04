@@ -52,7 +52,7 @@ class TestGitHostingAdapter extends GitHostingAdapter {
       number: 42,
       state: "open",
       draft: false,
-      mergeable: true,
+      merge_state: "mergeable",
       checks_state: "passing",
       url: "https://github.com/test/repo/pull/42",
     });
@@ -212,7 +212,7 @@ describe("GitHostingAdapter", () => {
       adapter.manifest = createManifest();
       const status = await adapter.getPRStatus("test/repo", 42);
       expect(status.state).toBe("open");
-      expect(status.mergeable).toBe(true);
+      expect(status.merge_state).toBe("mergeable");
     });
 
     it("getReviewStatus", async () => {

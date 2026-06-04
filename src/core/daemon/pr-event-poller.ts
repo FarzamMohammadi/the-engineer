@@ -2,7 +2,7 @@ import type { GitHostingAdapter } from "../../adapters/git-hosting.js";
 import { AdapterTypes, type PRComment } from "../../schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../schemas/git-hosting-events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { BlockReasons, type Task, TaskStates } from "../../schemas/task.js";
+import { BlockCategories, BlockReasons, type BlockedDetails, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import { arbitrate, dedupePrEvents, findAuthorizedApproval } from "../orchestrator/pipeline/pr-events.js";
 import type { NotificationRouter } from "./notification-router.js";
@@ -35,6 +35,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
 
   const failureWindowMs = ctx.config.review_polling.failure_window_ms;
   const maxFailuresBeforePause = ctx.config.review_polling.max_failures_before_pause;
+  const maxBlockerReentries = ctx.config.review_polling.max_blocker_reentries;
 
   // Sliding window of recent detect failures — when the host is failing, pause polling rather than
   // hammer it every tick. Self-pruning: entries older than the window are dropped on each check.
@@ -115,14 +116,19 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
 
     const candidates = await actionableEvents(task, hosting, events);
     const winner = arbitrate(candidates);
-    if (winner) {
-      // Only a genuine contest (more than one candidate) is a decision worth recording; a single
-      // candidate is no choice. When several competed, the loser field must not vanish silently.
-      if (candidates.length > 1) {
-        recordArbitration(task, candidates, winner);
-      }
-      routeEvent(task, winner);
+    if (!winner) {
+      // Nothing actionable this poll — any automated blocker has cleared (or the PR is merely waiting),
+      // so the consecutive-blocker streak ends. Resetting here is what lets a transient conflict that the
+      // rework genuinely fixed not count against a later, unrelated one.
+      resetBlockerStreak(task);
+      return;
     }
+    // Only a genuine contest (more than one candidate) is a decision worth recording; a single
+    // candidate is no choice. When several competed, the loser field must not vanish silently.
+    if (candidates.length > 1) {
+      recordArbitration(task, candidates, winner);
+    }
+    routeEvent(task, winner);
   }
 
   /**
@@ -178,7 +184,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     }
     try {
       const status = await hosting.getPRStatus(task.repo, prNumber);
-      return status.state === "open" && status.checks_state === "passing" && status.mergeable;
+      return status.state === "open" && status.checks_state === "passing" && status.merge_state === "mergeable";
     } catch (error) {
       observer.warn("Failed to re-check PR status for an /approve promotion — leaving the task waiting", {
         taskId: task.id,
@@ -246,21 +252,120 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   }
 
   function routeEvent(task: Task, winner: PrEvent): void {
+    // An automated blocker (conflict / CI) is system-detected and must converge or escalate — bound it.
+    // Reviewer feedback and the merge events are human- or terminal-driven and re-enter as before.
+    if (isAutomatedBlocker(winner.type)) {
+      routeBlockerEvent(task, winner.type);
+      return;
+    }
     if (winner.type === PrEventTypes.pr_comments) {
       accommodateFeedback(task, winner.comments);
     }
     reenter(task, winner.type, eventNotice(winner.type));
+    logReentry(task, winner.type);
+  }
+
+  /**
+   * Re-enter on an automated blocker, bounded across dispatches. Each consecutive conflict/CI re-entry
+   * increments the review counter; once it would exceed the cap, the task is escalated to the owner
+   * instead of reworked again — the runner's per-dispatch caps cannot see this loop because every
+   * PR-event re-entry resets them.
+   */
+  function routeBlockerEvent(task: Task, type: BlockerEventType): void {
+    const count = (task.review?.consecutive_blocker_reentries ?? 0) + 1;
+    if (count > maxBlockerReentries) {
+      escalateBlockerCap(task, type, count);
+      return;
+    }
+    persistBlockerStreak(task, count);
+    reenter(task, type, eventNotice(type));
+    logReentry(task, type);
+  }
+
+  /**
+   * The automated rework loop did not converge: re-block the task under `pr_rework_cap_hit` (a
+   * `pipeline_failed` reason, so it leaves the PR-review poll set and the blocked-escalation ladder
+   * owns it), record the escalation, and alert the owner. No state transition — the task is already
+   * `blocked`; only its block payload changes from the expected wait to a failure needing attention.
+   */
+  function escalateBlockerCap(task: Task, type: BlockerEventType, count: number): void {
+    if (task.review) {
+      taskEngine.updateTaskField(task.id, "review", { ...task.review, consecutive_blocker_reentries: count });
+    }
+    // Defensive: a pending event would re-dispatch this task straight back into the loop we are escaping.
+    taskEngine.updateTaskField(task.id, "pending_pr_event", null);
+    const label = blockerLabel(type);
+    taskEngine.updateTaskField(task.id, "blocked", {
+      reason: BlockReasons.pipeline_failed,
+      category: BlockCategories.pr_rework_cap_hit,
+      sub_phase: "await-review",
+      needed: `The pull request's ${label} did not resolve after ${String(maxBlockerReentries)} automated rework passes — resolve it on the PR, then run "engineer retry" to resume.`,
+    } satisfies BlockedDetails);
+    recordBlockerCapEscalation(task, type, count);
+    observer.warn("PR blocker re-entry cap hit — escalating to the owner", {
+      taskId: task.id,
+      prNumber: task.review?.pr_number,
+      type,
+      count,
+      cap: maxBlockerReentries,
+    });
+    notifications.notify({
+      kind: NotificationKinds.alert,
+      taskId: task.id,
+      message: `PR #${String(task.review?.pr_number)}: ${label} persisted after ${String(maxBlockerReentries)} automated rework passes. The task is blocked for you — resolve the PR and run "engineer retry" to resume.`,
+    });
+    notifications.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId: task.id,
+      message: `Automated rework could not clear the ${label} after ${String(maxBlockerReentries)} attempts. Pausing for your input.`,
+    });
+  }
+
+  /** Persist the running blocker streak so the next dispatch (and the next poll) sees the accumulated count. */
+  function persistBlockerStreak(task: Task, count: number): void {
+    if (!task.review) {
+      return;
+    }
+    taskEngine.updateTaskField(task.id, "review", { ...task.review, consecutive_blocker_reentries: count });
+  }
+
+  /** Clear the blocker streak when a poll finds no actionable blocker — the loop, if any, has ended. */
+  function resetBlockerStreak(task: Task): void {
+    if (task.review && task.review.consecutive_blocker_reentries > 0) {
+      taskEngine.updateTaskField(task.id, "review", { ...task.review, consecutive_blocker_reentries: 0 });
+    }
+  }
+
+  /** Record the cap escalation as a decision — the rework-again path was available and deliberately not taken. */
+  function recordBlockerCapEscalation(task: Task, type: BlockerEventType, count: number): void {
+    observer.recordDecision(
+      "pr_blocker_cap_escalation",
+      `PR #${String(task.review?.pr_number)} ${blockerLabel(type)} re-entered ${String(count)} times (cap ${String(maxBlockerReentries)}) without resolving`,
+      [
+        { id: "rework_again", description: "Re-enter the pipeline to attempt the blocker again" },
+        { id: "escalate", description: "Stop the automated loop and block for the owner" },
+      ],
+      "escalate",
+      `Automated rework did not clear the ${blockerLabel(type)} within ${String(maxBlockerReentries)} passes — looping further only burns dispatches`,
+      1,
+      { task_id: task.id },
+    );
+  }
+
+  /** One info log per re-entry, shared by the bounded and unbounded paths. */
+  function logReentry(task: Task, type: PrEvent["type"]): void {
     observer.info("Re-queued task for PR event", {
       taskId: task.id,
       prNumber: task.review?.pr_number,
-      type: winner.type,
+      type,
     });
   }
 
   /**
    * Record the feedback the task is about to rework on: append it as an unapplied round (the re-entered
    * requirements phase reads it through the carry) and mark its comment ids accommodated so the same
-   * feedback does not re-rework on the next poll.
+   * feedback does not re-rework on the next poll. Reviewer engagement is progress, so it also resets the
+   * automated-blocker streak.
    */
   function accommodateFeedback(task: Task, comments: readonly PRComment[]): void {
     if (!task.review) {
@@ -271,6 +376,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
       ...task.review,
       feedback_rounds: [...task.review.feedback_rounds, { applied: false, comments: lines }],
       accommodated_comment_ids: comments.map((comment) => comment.id),
+      consecutive_blocker_reentries: 0,
     });
   }
 
@@ -290,6 +396,19 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   }
 
   return { poll };
+}
+
+/** The system-detected PR events that must converge or be escalated — distinct from human feedback and the terminal merge events. */
+type BlockerEventType = typeof PrEventTypes.pr_merge_conflict | typeof PrEventTypes.pr_ci_failure;
+
+/** Whether a PR event is an automated blocker (merge conflict / CI failure) the daemon re-enters on its own. */
+function isAutomatedBlocker(type: PrEvent["type"]): type is BlockerEventType {
+  return type === PrEventTypes.pr_merge_conflict || type === PrEventTypes.pr_ci_failure;
+}
+
+/** The owner-facing name of an automated blocker, for the escalation message and audit trail. */
+function blockerLabel(type: BlockerEventType): string {
+  return type === PrEventTypes.pr_merge_conflict ? "merge conflict" : "CI failure";
 }
 
 /** Short labels for the PR event types — the alternatives shown in the arbitration decision record. */

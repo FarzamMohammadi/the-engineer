@@ -89,6 +89,7 @@ export const BlockCategorySchema = z.enum([
   "agent_unavailable", // the agent adapter stayed unavailable after retries
   "orchestrator_error", // an orchestrator sub-phase's run threw
   "iteration_cap_hit", // a phase repeated past its cap without converging
+  "pr_rework_cap_hit", // an open PR's automated blocker (conflict/CI) survived the re-entry cap without resolving
   // Waits — expected, not a failure. Someone or something must act.
   "awaiting_human", // a sub-phase needs a person to answer before it can proceed
   "awaiting_pr_review", // delivery opened a PR and is waiting on an external review event
@@ -181,6 +182,14 @@ export const ReviewStateSchema = z.object({
   accommodated_comment_ids: z.array(z.string()).default([]),
   /** Last aggregate review state that was accommodated. Detects formal review state changes. */
   accommodated_review_state: z.string().nullable().default(null),
+  /**
+   * Consecutive automated-blocker (merge-conflict / CI-failure) re-entries that have not resolved.
+   * The runner's per-dispatch rework caps reset on every PR-event re-entry, so they cannot see a
+   * blocker that re-fires across dispatches; this cross-dispatch counter does. The poller increments
+   * it each time it re-enters on a blocker, resets it when a human comment arrives or the blocker
+   * clears, and escalates to the owner once it exceeds the configured cap.
+   */
+  consecutive_blocker_reentries: z.number().int().default(0),
 });
 export type ReviewState = z.infer<typeof ReviewStateSchema>;
 

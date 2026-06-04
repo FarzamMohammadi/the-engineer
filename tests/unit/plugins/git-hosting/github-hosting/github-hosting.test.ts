@@ -253,8 +253,40 @@ describe("GitHubHostingPlugin", () => {
       expect(status.number).toBe(51);
       expect(status.state).toBe("open");
       expect(status.draft).toBe(true);
-      expect(status.mergeable).toBe(true);
+      expect(status.merge_state).toBe("mergeable");
       expect(status.checks_state).toBe("passing");
+    });
+
+    it("maps GitHub's not-yet-computed mergeable (null) to merge_state unknown, not conflicting", async () => {
+      mockOctokit.pulls.get.mockResolvedValueOnce({
+        data: {
+          number: 51,
+          state: "open",
+          draft: false,
+          mergeable: null,
+          merged: false,
+          html_url: "https://github.com/acme/webapp/pull/51",
+          head: { sha: "abc123" },
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.merge_state).toBe("unknown");
+    });
+
+    it("maps GitHub's mergeable=false to merge_state conflicting", async () => {
+      mockOctokit.pulls.get.mockResolvedValueOnce({
+        data: {
+          number: 51,
+          state: "open",
+          draft: false,
+          mergeable: false,
+          merged: false,
+          html_url: "https://github.com/acme/webapp/pull/51",
+          head: { sha: "abc123" },
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.merge_state).toBe("conflicting");
     });
 
     it("reports merged state", async () => {
@@ -563,7 +595,7 @@ describe("derivePrEvents", () => {
     number: 51,
     state: "open",
     draft: false,
-    mergeable: true,
+    merge_state: "mergeable",
     checks_state: "passing",
     url: "https://fake.git/acme/webapp/pull/51",
     ...over,
@@ -606,8 +638,15 @@ describe("derivePrEvents", () => {
   });
 
   it("reports a merge conflict and withholds readiness", () => {
-    const events = derivePrEvents(status({ mergeable: false }), approved, []);
+    const events = derivePrEvents(status({ merge_state: "conflicting" }), approved, []);
     expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_merge_conflict]);
+  });
+
+  it("treats unknown mergeability as no conflict — withholds the event while the host computes it", () => {
+    // Regression: a host returns `unknown` (mergeability not yet computed) for a few seconds after every
+    // push. Reading that as a conflict re-enters the pipeline to resolve a conflict that does not exist,
+    // looping on every poll. `unknown` must emit no merge-conflict event and no readiness.
+    expect(derivePrEvents(status({ merge_state: "unknown" }), approved, [])).toEqual([]);
   });
 
   it("surfaces changes-requested as feedback", () => {

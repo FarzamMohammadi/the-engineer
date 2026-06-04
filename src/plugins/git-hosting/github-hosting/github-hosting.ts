@@ -210,13 +210,14 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 
     const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha, this.context.logger);
     const state = mapPRState(pr.state, pr.merged);
+    const mergeState = mapMergeState(pr.mergeable);
 
     this.context.logger.debug("PR status fetched", {
       repo,
       prNumber,
       state,
       checksState,
-      mergeable: pr.mergeable ?? false,
+      mergeState,
       draft: pr.draft ?? false,
     });
 
@@ -224,7 +225,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       number: pr.number,
       state,
       draft: pr.draft ?? false,
-      mergeable: pr.mergeable ?? false,
+      merge_state: mergeState,
       checks_state: checksState,
       url: pr.html_url,
     };
@@ -342,7 +343,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
       types: events.map((event) => event.type),
       state: status.state,
       checksState: status.checks_state,
-      mergeable: status.mergeable,
+      mergeState: status.merge_state,
       approved: review.approved,
       changesRequested: review.changes_requested,
       commentCount: comments.length,
@@ -500,7 +501,11 @@ export function derivePrEvents(status: PRStatus, review: ReviewStatus, comments:
   if (status.checks_state === "failing") {
     events.push({ type: PrEventTypes.pr_ci_failure });
   }
-  if (!status.mergeable) {
+  // Only a *definitive* conflict is an event. `unknown` (the host has not finished computing
+  // mergeability — common in the seconds after a push) is not a conflict: emitting nothing leaves the
+  // task waiting, and the next poll reads the resolved value. Reading `unknown` as a conflict re-enters
+  // the pipeline to "resolve" a conflict that does not exist, which loops on every poll.
+  if (status.merge_state === "conflicting") {
     events.push({ type: PrEventTypes.pr_merge_conflict });
   }
 
@@ -509,7 +514,7 @@ export function derivePrEvents(status: PRStatus, review: ReviewStatus, comments:
     events.push({ type: PrEventTypes.pr_comments, comments });
   }
 
-  if (review.approved && status.checks_state === "passing" && status.mergeable) {
+  if (review.approved && status.checks_state === "passing" && status.merge_state === "mergeable") {
     events.push({ type: PrEventTypes.pr_ready_to_merge });
   }
 
@@ -534,6 +539,22 @@ function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged
     return "closed";
   }
   return "open";
+}
+
+/**
+ * Map GitHub's tri-state `mergeable` (`true` / `false` / `null`) onto the contract's `merge_state`.
+ * `null` (and a missing field) means GitHub has not finished computing mergeability — a distinct
+ * `unknown`, never folded into `conflicting`. Folding it would treat every freshly-pushed PR as
+ * conflicting until the host catches up.
+ */
+function mapMergeState(mergeable: boolean | null | undefined): "mergeable" | "conflicting" | "unknown" {
+  if (mergeable === true) {
+    return "mergeable";
+  }
+  if (mergeable === false) {
+    return "conflicting";
+  }
+  return "unknown";
 }
 
 type ChecksState = "passing" | "failing" | "pending" | "none";

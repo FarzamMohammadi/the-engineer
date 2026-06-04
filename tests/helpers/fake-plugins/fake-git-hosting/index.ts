@@ -89,7 +89,7 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
         number: prNumber,
         state: "open",
         draft: options.draft,
-        mergeable: true,
+        merge_state: "mergeable",
         checks_state: "passing",
         url: `https://fake.git/${options.repo}/pull/${String(prNumber)}`,
       },
@@ -181,13 +181,13 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
     if (status.checks_state === "failing") {
       events.push({ type: PrEventTypes.pr_ci_failure });
     }
-    if (!status.mergeable) {
+    if (status.merge_state === "conflicting") {
       events.push({ type: PrEventTypes.pr_merge_conflict });
     }
     if (reviews.changes_requested) {
       events.push({ type: PrEventTypes.pr_comments, comments: [] });
     }
-    if (reviews.approved && status.checks_state === "passing" && status.mergeable) {
+    if (reviews.approved && status.checks_state === "passing" && status.merge_state === "mergeable") {
       events.push({ type: PrEventTypes.pr_ready_to_merge });
     }
     return Promise.resolve(events);

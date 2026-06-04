@@ -268,6 +268,14 @@ export const DaemonConfigSchema = z.object({
         .positive()
         .default(3)
         .describe("Number of review API failures within the failure window before pausing polling. Default: 3."),
+      max_blocker_reentries: z
+        .number()
+        .int()
+        .positive()
+        .default(3)
+        .describe(
+          "Consecutive automated-blocker (merge-conflict / CI-failure) re-entries on one open PR before the task is escalated to the owner instead of reworked again. A human comment or the blocker clearing resets the count. Default: 3.",
+        ),
     })
     .default({}),
 });

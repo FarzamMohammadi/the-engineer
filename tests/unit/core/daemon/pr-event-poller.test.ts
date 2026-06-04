@@ -5,6 +5,7 @@ import { createPrEventPoller } from "../../../../src/core/daemon/pr-event-poller
 import type { PrEventPollerContext } from "../../../../src/core/daemon/types.js";
 import type { PRComment, PRStatus } from "../../../../src/schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../../../src/schemas/git-hosting-events.js";
+import { NotificationKinds } from "../../../../src/schemas/notifications.js";
 import { type ReviewState, TaskStates } from "../../../../src/schemas/task.js";
 import { createMockTask } from "../../../helpers/mock-factories.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
@@ -23,6 +24,7 @@ const review = (over: Partial<ReviewState> = {}): ReviewState => ({
   feedback_rounds: [],
   accommodated_comment_ids: [],
   accommodated_review_state: null,
+  consecutive_blocker_reentries: 0,
   ...over,
 });
 
@@ -49,7 +51,7 @@ function setup(options: SetupOptions = {}) {
     number: 7,
     state: "open",
     draft: false,
-    mergeable: true,
+    merge_state: "mergeable",
     checks_state: "passing",
     url: "https://x/7",
     ...options.prStatus,
@@ -69,7 +71,7 @@ function setup(options: SetupOptions = {}) {
     safetyLayer: { isCommentApprovalEnabled: () => options.commentApproval ?? true },
     observer: createTestObserverFacade("daemon"),
     clock: { now: () => 1000 },
-    config: { review_polling: { failure_window_ms: 60_000, max_failures_before_pause: 3 } },
+    config: { review_polling: { failure_window_ms: 60_000, max_failures_before_pause: 3, max_blocker_reentries: 3 } },
   } as unknown as PrEventPollerContext;
   const notifications = { notify } as unknown as NotificationRouter;
 
@@ -107,14 +109,19 @@ describe("PrEventPoller", () => {
       expect(notify).toHaveBeenCalled();
     });
 
-    it("re-queues a CI failure to execution with no feedback round", async () => {
+    it("re-queues a CI failure to execution, advancing the streak and adding no feedback round", async () => {
       const { poller, requestTransition, updateTaskField } = setup({ events: [{ type: PrEventTypes.pr_ci_failure }] });
 
       await poller.poll();
 
       expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ci_failure");
       expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_ci_failure"));
-      expect(updateTaskField).not.toHaveBeenCalledWith("t1", "review", expect.anything());
+      // The blocker streak advances, but no reviewer feedback is recorded — that is the comments path.
+      expect(updateTaskField).toHaveBeenCalledWith(
+        "t1",
+        "review",
+        expect.objectContaining({ consecutive_blocker_reentries: 1, feedback_rounds: [] }),
+      );
     });
 
     it("re-queues a merge conflict to execution", async () => {
@@ -132,6 +139,81 @@ describe("PrEventPoller", () => {
       });
       await poller.poll();
       expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_comments"));
+    });
+  });
+
+  describe("the automated-blocker re-entry bound", () => {
+    it("increments the blocker streak and re-enters while under the cap", async () => {
+      const { poller, requestTransition, updateTaskField } = setup({
+        review: review({ consecutive_blocker_reentries: 1 }),
+        events: [{ type: PrEventTypes.pr_merge_conflict }],
+      });
+
+      await poller.poll();
+
+      expect(updateTaskField).toHaveBeenCalledWith(
+        "t1",
+        "review",
+        expect.objectContaining({ consecutive_blocker_reentries: 2 }),
+      );
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_merge_conflict"));
+    });
+
+    it("escalates to the owner instead of re-entering once the cap is exceeded", async () => {
+      // The cap is 3 (config). A streak already at 3 means the next blocker is the 4th — over the cap.
+      const { poller, requestTransition, updateTaskField, notify } = setup({
+        review: review({ consecutive_blocker_reentries: 3 }),
+        events: [{ type: PrEventTypes.pr_merge_conflict }],
+      });
+
+      await poller.poll();
+
+      // Re-blocked under pr_rework_cap_hit (a pipeline_failed reason) so it leaves the PR-review poll set.
+      expect(updateTaskField).toHaveBeenCalledWith(
+        "t1",
+        "blocked",
+        expect.objectContaining({
+          reason: "pipeline_failed",
+          category: "pr_rework_cap_hit",
+          sub_phase: "await-review",
+        }),
+      );
+      // The pending event is cleared so the next dispatch cannot walk straight back into the loop.
+      expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", null);
+      // The owner is alerted, and the task is NOT re-queued.
+      expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.alert }));
+      expect(requestTransition).not.toHaveBeenCalled();
+    });
+
+    it("resets the blocker streak when reviewer feedback arrives — human engagement is progress", async () => {
+      const { poller, updateTaskField } = setup({
+        review: review({ consecutive_blocker_reentries: 2 }),
+        events: [{ type: PrEventTypes.pr_comments, comments: [comment("c1", "alice", "one more change")] }],
+      });
+
+      await poller.poll();
+
+      expect(updateTaskField).toHaveBeenCalledWith(
+        "t1",
+        "review",
+        expect.objectContaining({ consecutive_blocker_reentries: 0 }),
+      );
+    });
+
+    it("resets the blocker streak when a poll finds no actionable blocker — the loop has cleared", async () => {
+      const { poller, updateTaskField, requestTransition } = setup({
+        review: review({ consecutive_blocker_reentries: 2 }),
+        events: [],
+      });
+
+      await poller.poll();
+
+      expect(updateTaskField).toHaveBeenCalledWith(
+        "t1",
+        "review",
+        expect.objectContaining({ consecutive_blocker_reentries: 0 }),
+      );
+      expect(requestTransition).not.toHaveBeenCalled();
     });
   });
 

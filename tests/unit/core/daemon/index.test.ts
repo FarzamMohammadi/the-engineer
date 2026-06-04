@@ -1319,6 +1319,7 @@ describe("Daemon", () => {
           feedback_rounds: [],
           accommodated_comment_ids: [],
           accommodated_review_state: null,
+          consecutive_blocker_reentries: 0,
         },
       });
       handle.taskEngine.getBlockedTasksByReason.mockImplementation((reason: string) =>

@@ -493,7 +493,7 @@ function blockLogLevel(category: BlockCategory): "info" | "warn" | "error" {
   if (category === BlockCategories.awaiting_human || category === BlockCategories.awaiting_pr_review) {
     return "info";
   }
-  if (category === BlockCategories.iteration_cap_hit) {
+  if (category === BlockCategories.iteration_cap_hit || category === BlockCategories.pr_rework_cap_hit) {
     return "warn";
   }
   return "error";

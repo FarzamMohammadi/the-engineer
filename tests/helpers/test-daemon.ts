@@ -141,7 +141,7 @@ function defaultTestConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     workspace_reaper: { enabled: false, interval_ms: 3_600_000 },
     database: { cache_size_mb: 64 },
     notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 },
-    review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3 },
+    review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3, max_blocker_reentries: 3 },
     retry_policy: {
       crash: { backoff_minutes: [1, 5, 15, 30, 30], max_attempts: 5 },
       agent_unavailable: { backoff_minutes: [2, 5, 10, 15, 15], max_attempts: 5 },

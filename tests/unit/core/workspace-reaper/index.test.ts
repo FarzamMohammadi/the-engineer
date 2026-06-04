@@ -21,6 +21,7 @@ function mergedTask(mergedAt: string): Task {
     feedback_rounds: [],
     accommodated_comment_ids: [],
     accommodated_review_state: null,
+    consecutive_blocker_reentries: 0,
   };
   return makeTask({ review });
 }
@@ -115,6 +116,7 @@ function cancelledTask(prNumber: number | null = null): Task {
           feedback_rounds: [],
           accommodated_comment_ids: [],
           accommodated_review_state: null,
+          consecutive_blocker_reentries: 0,
         };
   return makeTask({ state: TaskStates.cancelled, review });
 }

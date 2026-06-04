@@ -288,6 +288,7 @@ describe("ReviewStateSchema", () => {
       merged_at: null,
       accommodated_comment_ids: [],
       accommodated_review_state: null,
+      consecutive_blocker_reentries: 0,
     });
   });
 
@@ -301,6 +302,7 @@ describe("ReviewStateSchema", () => {
       merged_at: null,
       accommodated_comment_ids: [],
       accommodated_review_state: null,
+      consecutive_blocker_reentries: 0,
     });
   });
 
@@ -312,7 +314,15 @@ describe("ReviewStateSchema", () => {
       accommodated_comment_ids: ["comment-1", "comment-2"],
       accommodated_review_state: "changes_requested",
     };
-    expect(ReviewStateSchema.parse(input)).toEqual(input);
+    expect(ReviewStateSchema.parse(input)).toEqual({ ...input, consecutive_blocker_reentries: 0 });
+  });
+
+  it("defaults consecutive_blocker_reentries to 0 and preserves a recorded streak", () => {
+    expect(ReviewStateSchema.parse({ pr_number: 7, feedback_rounds: [] }).consecutive_blocker_reentries).toBe(0);
+    expect(
+      ReviewStateSchema.parse({ pr_number: 7, feedback_rounds: [], consecutive_blocker_reentries: 2 })
+        .consecutive_blocker_reentries,
+    ).toBe(2);
   });
 
   it("defaults merged_at to null and accepts a recorded merge timestamp", () => {

@@ -18,7 +18,7 @@ The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors imp
 | `updatePR` | `(repo: string, prNumber: number, updates: PRUpdates) => Promise<void>` | -- |
 | `mergePR` | `(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>` | `{ merge_sha, success, error }` |
 | `closePR` | `(repo: string, prNumber: number) => Promise<void>` | -- |
-| `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ state, checks_state, mergeable, sha }` |
+| `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ state, checks_state, merge_state, url }` |
 | `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ state, approvals, changes_requested_count, comments }` |
 | `getPRComments` | `(repo: string, prNumber: number) => Promise<PRComment[]>` | Array of `{ id, author, body, created_at }` |
 | `detectPrEvents` | `(repo: string, prNumber: number) => Promise<PrEvent[]>` | Typed PR events that currently hold (see below) |
@@ -80,7 +80,9 @@ type PRStatus = {
   number: number;
   state: "open" | "closed" | "merged";
   draft: boolean;
-  mergeable: boolean;
+  // Tri-state, like checks_state. "unknown" means the host has not finished computing mergeability
+  // (common right after a push) — it is NOT a conflict, and Core treats it as a wait, never rework.
+  merge_state: "mergeable" | "conflicting" | "unknown";
   checks_state: "passing" | "failing" | "pending" | "none";
   url: string;
 };

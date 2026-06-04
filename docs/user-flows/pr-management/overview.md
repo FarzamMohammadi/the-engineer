@@ -76,8 +76,8 @@ Re-entry flows entirely through the database (write the event, re-queue, re-disp
 | Already merged | Records the merge (no milestone — the external-merge backfill) and completes the task |
 | Auto-merge disabled for the repo | Notifies the owner and completes — the human merges manually |
 | CI failing | Reworks: jumps back to execution to fix it |
-| Not mergeable (conflict) | Reworks: jumps back to execution to resolve it |
-| Checks not yet green | Returns to the review wait; the poller retries when the PR is ready |
+| Definitively conflicting | Reworks: jumps back to execution to resolve it |
+| Mergeability not yet computed, or checks not yet green | Returns to the review wait; the poller retries when the PR is ready |
 | Green and mergeable | Removes branch thoughts (if configured), merges with the configured strategy, records the merge |
 
 A successful merge *records* the merge: it stamps `review.merged_at` on the task, publishes **`git.pr_merged`** (from the **orchestrator**), and notifies the *Merged PR* milestone. `auto-merge` does **not** delete the branch — the daemon's **workspace reaper** is the sole branch deleter and removes the merged branch once `workspace.pr.branch_retention_days` has elapsed, publishing **`git.branch_deleted`** (from the **workspace-reaper**). An externally-merged PR takes the same record path with no milestone — the external-merge backfill — so the reaper can reap its branch too. The local worktree is reaped separately by the scheduler's normal completion path.
@@ -91,7 +91,9 @@ When a review event needs work rather than a merge, the task re-enters the pipel
 - **New feedback** (`pr_comments`) re-enters at **requirements** — feedback can change scope, so it runs the full pipeline forward (trivial-complexity skip-gates carry it past research/planning as needed). The feedback rides into the re-entered phase as context.
 - **CI failure / merge conflict** re-enters at **execution** (`implement`) to fix the root cause and re-push.
 
-When the rework reaches delivery again, `create-pr` sees the PR already exists: it **dismisses the stale approval** (the code changed, so the prior sign-off no longer applies) and marks the addressed feedback applied, then `await-review` parks the task again. A human re-approves to re-trigger the merge — that human gate is what bounds the loop, alongside a global `total_reworks` ceiling on a single dispatch.
+When the rework reaches delivery again, `create-pr` sees the PR already exists: it **dismisses the stale approval** (the code changed, so the prior sign-off no longer applies) and marks the addressed feedback applied, then `await-review` parks the task again. A human re-approves to re-trigger the merge — that human gate is what bounds the feedback loop, alongside a global `total_reworks` ceiling on a single dispatch.
+
+**Automated blockers are bounded too.** A merge conflict or CI failure re-enters on its own, with no human in the loop — and because the per-dispatch `total_reworks` ceiling resets on every PR-event re-entry, it cannot see a blocker that keeps re-firing across dispatches. So Core counts *consecutive* automated-blocker re-entries on the open PR (`review.consecutive_blocker_reentries`); once they exceed `daemon.review_polling.max_blocker_reentries` (default 3), the task stops reworking and is **escalated to the owner** — re-blocked under the `pr_rework_cap_hit` reason, with an alert — instead of looping forever on a blocker the automated rework cannot clear. A reviewer comment (human engagement) or the blocker clearing resets the count. The owner resolves the PR and runs `engineer retry` to resume.
 
 ## The `/approve` path
 

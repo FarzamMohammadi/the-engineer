@@ -52,6 +52,7 @@ describe("PR-event policy", () => {
           merged_at: null,
           accommodated_comment_ids: [],
           accommodated_review_state: null,
+          consecutive_blocker_reentries: 0,
           feedback_rounds: [{ applied: false, comments: ["Tighten the error message", "Add a test"] }],
         },
       });

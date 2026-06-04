@@ -89,6 +89,7 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # review_polling:
 #   failure_window_ms: "5m"              # Time window for failure counting (default: 5m)
 #   max_failures_before_pause: 3         # Failures in window before pausing polling (default: 3)
+#   max_blocker_reentries: 3             # Consecutive conflict/CI re-entries on one PR before escalating to the owner (default: 3)
 
 # --- AI-as-Judge evaluation ---
 # evaluation:
@@ -397,6 +398,7 @@ subscriber_warn_threshold_ms: 50          # Warn if a subscriber callback exceed
 review_polling:
   failure_window_ms: "5m"                 # Time window for failure counting (default: 5m)
   max_failures_before_pause: 3            # Failures in window before pausing polling (default: 3)
+  max_blocker_reentries: 3                # Consecutive conflict/CI re-entries on one PR before escalating to the owner (default: 3)
 
 # ── AI-as-Judge Evaluation ──────────────────────────────────────────────────
 # Run an independent evaluation after each task completes. Two CLI sessions:

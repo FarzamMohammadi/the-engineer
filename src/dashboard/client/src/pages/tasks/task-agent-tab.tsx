@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BlobViewer } from "../../components/shared/blob-viewer";
 import { CostDisplay } from "../../components/shared/cost-display";
 import { EmptyState } from "../../components/shared/empty-state";
+import { Markdown } from "../../components/shared/markdown";
 import { Badge } from "../../components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../components/ui/collapsible";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -407,14 +408,12 @@ function ConversationLineRow({ line }: { line: ConversationLine }): React.JSX.El
 function AssistantLine({ activity }: { activity: AgentActivityShape }): React.JSX.Element {
   // The model's actual answer — what a reader scans for first. Wrapped in a blue card so it stands clearly
   // apart from thinking (muted) and tool cards (neutral): tools are the "dig deeper", this is the response.
-  // It always shows in FULL — a truncated preview resolves its blob automatically, never hidden behind a click.
+  // It always shows in FULL — a truncated preview resolves its blob automatically — and renders as markdown.
   const text = useResolvedText(activity);
   return (
     <div className="flex gap-2.5 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5">
       <MessageSquare size={15} className="mt-0.5 shrink-0 text-primary" />
-      <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-foreground">
-        {text}
-      </p>
+      <Markdown className="min-w-0 flex-1 font-medium text-foreground">{text}</Markdown>
     </div>
   );
 }

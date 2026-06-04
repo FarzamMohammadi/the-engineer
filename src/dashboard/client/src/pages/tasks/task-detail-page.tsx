@@ -84,7 +84,7 @@ export function TaskDetailPage(): React.JSX.Element {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="mb-8 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate(ROUTES.tasks)}>
           <ArrowLeft size={16} />
         </Button>

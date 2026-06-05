@@ -25,7 +25,9 @@
     "@radix-ui/react-collapsible",
     "@radix-ui/react-progress",
     "@radix-ui/react-switch",
-    "@tanstack/react-table"
+    "@tanstack/react-table",
+    "react-markdown",
+    "remark-gfm"
   ],
   "ignoreExportsUsedInFile": true,
   "exclude": ["unresolved"],

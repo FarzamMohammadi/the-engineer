@@ -37,7 +37,7 @@ interface TaskAgentTabProps {
  * `agent_activity` children: live while the call's span is open and the task runs, re-watchable once it closes.
  */
 export function TaskAgentTab({ taskId, taskActive }: TaskAgentTabProps): React.JSX.Element {
-  const { data: traces, isLoading } = useTaskAgentTraces(taskId);
+  const { data: traces, isLoading } = useTaskAgentTraces(taskId, taskActive);
   const { data: costEvents } = useEvents({ type: "cost.incurred", task_id: taskId, limit: 500 });
 
   if (isLoading) {

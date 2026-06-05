@@ -12,6 +12,16 @@ import type {
   TimelineResponse,
 } from "../types/api";
 
+/** Poll cadence for an actively-running task — keeps `end_time`/state fresh so live UI (the agent
+ *  conversation's streaming indicator) stops on its own when a span closes, without waiting for a refresh. */
+const LIVE_REFETCH_MS = 2500;
+const LIVE_TASK_STATES: ReadonlySet<string> = new Set(["active", "requirements_gathering"]);
+
+/** Whether a task state means work is in flight (so its detail/traces should keep polling for changes). */
+function isLiveTaskState(state: string | undefined): boolean {
+  return state !== undefined && LIVE_TASK_STATES.has(state);
+}
+
 /** Fetch and cache the task list from /api/tasks with an optional state filter. */
 export function useTaskList(state?: string): ReturnType<typeof useQuery<TaskListItem[]>> {
   const params = state ? `?state=${state}` : "";
@@ -35,6 +45,8 @@ export function useTaskDetail(taskId: string | undefined): ReturnType<typeof use
     },
     enabled: !!taskId,
     staleTime: STALE_TIMES.taskDetail,
+    // While the task is running, keep its state fresh so `taskActive` flips the moment it finishes.
+    refetchInterval: (query) => (isLiveTaskState(query.state.data?.state) ? LIVE_REFETCH_MS : false),
   });
 }
 
@@ -64,8 +76,12 @@ export function useTaskPhases(taskId: string | undefined): ReturnType<typeof use
   });
 }
 
-/** Fetch and cache agent call traces for a task from /api/tasks/:id/agent-traces. */
-export function useTaskAgentTraces(taskId: string | undefined): ReturnType<typeof useQuery<Observation[]>> {
+/** Fetch and cache agent call traces for a task. While `active`, polls so a span's close (and the task's
+ *  completion) are picked up promptly — the streaming indicator must stop on its own, not wait for a refresh. */
+export function useTaskAgentTraces(
+  taskId: string | undefined,
+  active = false,
+): ReturnType<typeof useQuery<Observation[]>> {
   return useQuery({
     queryKey: queryKeys.tasks.agentTraces(taskId ?? ""),
     queryFn: async () => {
@@ -74,6 +90,7 @@ export function useTaskAgentTraces(taskId: string | undefined): ReturnType<typeo
     },
     enabled: !!taskId,
     staleTime: STALE_TIMES.taskDetail,
+    refetchInterval: active ? LIVE_REFETCH_MS : false,
   });
 }
 

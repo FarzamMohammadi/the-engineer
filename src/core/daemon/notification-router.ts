@@ -4,11 +4,13 @@ import type { MessageType } from "../../schemas/adapters.js";
 import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
 import { type Notification, NotificationKinds, recipientsForKind } from "../../schemas/notifications.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { isTerminal } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
+import type { INotificationRouter } from "../interfaces/notification-router.interface.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { IPluginLookup } from "../interfaces/plugin-lookup.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -20,7 +22,7 @@ export interface NotificationRouterContext {
   peopleDirectory: IPeopleDirectory;
   eventBus: IEventBus;
   observer: IObserver;
-  config: Pick<DaemonConfig, "notification_retry">;
+  config: Pick<DaemonConfig, "notification_retry" | "notification_suppress_window_ms">;
   clock: Clock;
 }
 
@@ -63,8 +65,6 @@ const NOTIFICATION_TEMPLATES: Partial<Record<Notification["kind"], TemplateEntry
   },
 };
 
-import type { INotificationRouter } from "../interfaces/notification-router.interface.js";
-
 // Re-export the interface for consumers that import from here
 export type { INotificationRouter as NotificationRouter } from "../interfaces/notification-router.interface.js";
 
@@ -73,6 +73,7 @@ export type { INotificationRouter as NotificationRouter } from "../interfaces/no
 export function createNotificationRouter(ctx: NotificationRouterContext): INotificationRouter {
   const { registry, taskEngine, peopleDirectory, eventBus, observer, config, clock } = ctx;
   const retryConfig = config.notification_retry;
+  const suppressWindowMs = config.notification_suppress_window_ms;
 
   // ── Retry Queue ─────────────────────────────────────────────────────
   interface RetryEntry {
@@ -85,6 +86,16 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   }
 
   const retryQueue: RetryEntry[] = [];
+
+  // ── Suppression (duplicate dedup) ────────────────────────────────────
+  // The single source of outbound dedup: drop an identical notification — same kind and scope
+  // (taskId, or `source` for null-task alerts) — seen within `suppressWindowMs`. This replaced the
+  // daemon's former hardcoded health-alert cooldown, so it deliberately covers ALERTS too: a trigger
+  // failing every tick must not DM the owner every tick. The window only suppresses a true duplicate;
+  // the first occurrence and any distinct kind/scope always pass through immediately. Keyed on `kind`
+  // (not the resolved messageType) so distinct events that share a type — a task_error and a cost_limit
+  // on the same task both map to `alert` — never falsely dedup each other.
+  const lastDeliveredAt = new Map<string, number>();
 
   // ── Plugin Lookup ──────────────────────────────────────────────────────
 
@@ -209,13 +220,73 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     }
   }
 
+  // ── Suppression ────────────────────────────────────────────────────────
+
+  /**
+   * The dedup identity of a notification: its kind plus its scope. Scope is the taskId, or the alert's
+   * `source` for null-task alerts (e.g. "trigger:github-trigger"), or "" when neither exists. Two
+   * notifications with the same dedup key inside the window are duplicates.
+   */
+  function dedupKeyFor(notification: Notification): string {
+    const alertSource = notification.kind === NotificationKinds.alert ? (notification.source ?? "") : "";
+    const scope = notification.taskId ?? alertSource;
+    return `${notification.kind}:${scope}`;
+  }
+
+  /**
+   * Pure decision: is this notification a duplicate seen within the suppress window? Returns the verdict
+   * plus the time since the last identical delivery (null on the first occurrence) for observability.
+   */
+  function decideSuppress(key: string, now: number): { suppressed: boolean; sinceLastMs: number | null } {
+    const last = lastDeliveredAt.get(key);
+    if (last === undefined) {
+      return { suppressed: false, sinceLastMs: null };
+    }
+    const sinceLastMs = now - last;
+    return { suppressed: sinceLastMs < suppressWindowMs, sinceLastMs };
+  }
+
+  /**
+   * Decide whether to drop this notification as a duplicate, recording the decision when it does and
+   * stamping the dedup timestamp when it does not. Returns true when the caller should stop (suppressed).
+   */
+  function isSuppressedDuplicate(notification: Notification): boolean {
+    const key = dedupKeyFor(notification);
+    const now = clock.now();
+    const { suppressed, sinceLastMs } = decideSuppress(key, now);
+    if (suppressed && sinceLastMs !== null) {
+      observer.recordDecision(
+        "notification_suppressed",
+        `Duplicate ${notification.kind} for "${key}" — last delivered ${String(sinceLastMs)}ms ago, within the ${String(suppressWindowMs)}ms suppress window`,
+        [
+          { id: "deliver", description: "Deliver the notification now" },
+          { id: "suppress", description: "Drop it as a duplicate of a recent identical notification" },
+        ],
+        "suppress",
+        "An identical notification (same kind and scope) was delivered inside the suppress window — dropping it avoids flooding the owner",
+        1,
+        { task_id: notification.taskId ?? undefined },
+      );
+      observer.debug("Notification suppressed as duplicate", { kind: notification.kind, key, sinceLastMs });
+      return true;
+    }
+    lastDeliveredAt.set(key, now);
+    return false;
+  }
+
   // ── Core Dispatch ──────────────────────────────────────────────────────
 
   function notify(notification: Notification): void {
     try {
-      // Ticket comments route through ticket_management capability, not person channels
+      // Ticket comments route through ticket_management capability, not person channels — they target
+      // the source ticket (a different surface from the owner's DM) and their cadence is already
+      // controlled by the emitter, so they are not subject to the owner-flooding dedup.
       if (notification.kind === NotificationKinds.ticket_comment) {
         handleTicketComment(notification.taskId, notification.message);
+        return;
+      }
+
+      if (isSuppressedDuplicate(notification)) {
         return;
       }
 
@@ -228,27 +299,32 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         return;
       }
 
-      const { content, messageType } = resolveMessage(notification);
-      const safeContent = sanitizeSecrets(content);
-      const commPlugins = getCommPlugins();
-
-      // Group contacts by person — try each person's contacts in order (first = preferred)
-      const contactsByPerson = new Map<string, ResolvedContact[]>();
-      for (const contact of contacts) {
-        const existing = contactsByPerson.get(contact.personId) ?? [];
-        existing.push(contact);
-        contactsByPerson.set(contact.personId, existing);
-      }
-
-      // For each person, try contacts in order until one succeeds (fire-and-forget)
-      for (const [personId, personContacts] of contactsByPerson) {
-        sendToFirstReachable({ personId, personContacts, safeContent, messageType, notification, commPlugins });
-      }
+      fanOutToContacts(notification, contacts);
     } catch (err) {
       observer.warn("Unexpected error in notify()", {
         kind: notification.kind,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  /** Send one notification to every resolved person, trying each person's contacts in preferred order. */
+  function fanOutToContacts(notification: Notification, contacts: ResolvedContact[]): void {
+    const { content, messageType } = resolveMessage(notification);
+    const safeContent = sanitizeSecrets(content);
+    const commPlugins = getCommPlugins();
+
+    // Group contacts by person — try each person's contacts in order (first = preferred).
+    const contactsByPerson = new Map<string, ResolvedContact[]>();
+    for (const contact of contacts) {
+      const existing = contactsByPerson.get(contact.personId) ?? [];
+      existing.push(contact);
+      contactsByPerson.set(contact.personId, existing);
+    }
+
+    // For each person, try contacts in order until one succeeds (fire-and-forget).
+    for (const [personId, personContacts] of contactsByPerson) {
+      sendToFirstReachable({ personId, personContacts, safeContent, messageType, notification, commPlugins });
     }
   }
 
@@ -276,6 +352,19 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
           channel: contact.channel,
           pluginId: plugin.manifest.id,
         });
+        observer.observe(
+          ObservationTypes.tool_execution,
+          "notification_delivered",
+          {
+            kind: notification.kind,
+            message_type: messageType,
+            person_id: contact.personId,
+            channel: contact.channel,
+            plugin_id: plugin.manifest.id,
+            content_summary: safeContent,
+          },
+          { task_id: notification.taskId ?? undefined, level: "info" },
+        );
         eventBus.publish({
           type: "comm.message_sent",
           source: "notification-router",
@@ -328,13 +417,9 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
       for (const contact of personContacts) {
         const plugin = findPluginForChannel(contact.channel, commPlugins);
         if (!plugin) {
-          observer.debug("No plugin for channel — trying next contact", {
-            channel: contact.channel,
-            personId,
-          });
+          observer.debug("No plugin for channel — trying next contact", { channel: contact.channel, personId });
           continue;
         }
-
         const { delivered, retryable } = await tryDeliverToContact(
           contact,
           plugin,
@@ -345,50 +430,9 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         if (delivered) {
           return;
         }
-        if (retryable) {
-          anyRetryable = true;
-        }
+        anyRetryable = anyRetryable || retryable;
       }
-
-      // None succeeded
-      const channelsTried = personContacts.map((c) => c.channel);
-      observer.warn("Notification not delivered — no reachable channel for person", {
-        kind: notification.kind,
-        personId,
-        triedChannels: channelsTried,
-        retryable: anyRetryable,
-      });
-
-      const taskId = notification.taskId ?? "";
-      eventBus.publish({
-        type: "comm.send_failed",
-        source: "notification-router",
-        task_id: taskId,
-        payload: {
-          task_id: taskId,
-          person_id: personId,
-          kind: notification.kind,
-          channels_tried: channelsTried,
-          retryable: anyRetryable,
-        },
-      } satisfies PublishInput<"comm.send_failed">);
-
-      if (anyRetryable && notification.taskId) {
-        const enqueueTime = clock.now();
-        retryQueue.push({
-          notification,
-          personId,
-          enqueuedAt: enqueueTime,
-          attempts: 0,
-          lastAttemptAt: enqueueTime,
-          inFlight: false,
-        });
-        observer.debug("Notification enqueued for retry", {
-          kind: notification.kind,
-          personId,
-          taskId: notification.taskId,
-        });
-      }
+      handleAllContactsFailed(personId, personContacts, notification, anyRetryable);
     })().catch((err) => {
       observer.warn("Unexpected error in delivery chain", {
         personId,
@@ -397,7 +441,137 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     });
   }
 
+  /** No contact reached this person: emit the send-failed event + observation, and enqueue a retry when retryable. */
+  function handleAllContactsFailed(
+    personId: string,
+    personContacts: ResolvedContact[],
+    notification: Notification,
+    anyRetryable: boolean,
+  ): void {
+    const channelsTried = personContacts.map((c) => c.channel);
+    observer.warn("Notification not delivered — no reachable channel for person", {
+      kind: notification.kind,
+      personId,
+      triedChannels: channelsTried,
+      retryable: anyRetryable,
+    });
+    observer.observe(
+      ObservationTypes.tool_execution,
+      "notification_send_failed",
+      { kind: notification.kind, person_id: personId, channels_tried: channelsTried, retryable: anyRetryable },
+      { task_id: notification.taskId ?? undefined, level: "warn" },
+    );
+
+    const taskId = notification.taskId ?? "";
+    eventBus.publish({
+      type: "comm.send_failed",
+      source: "notification-router",
+      task_id: taskId,
+      payload: {
+        task_id: taskId,
+        person_id: personId,
+        kind: notification.kind,
+        channels_tried: channelsTried,
+        retryable: anyRetryable,
+      },
+    } satisfies PublishInput<"comm.send_failed">);
+
+    if (anyRetryable && notification.taskId) {
+      const enqueueTime = clock.now();
+      retryQueue.push({
+        notification,
+        personId,
+        enqueuedAt: enqueueTime,
+        attempts: 0,
+        lastAttemptAt: enqueueTime,
+        inFlight: false,
+      });
+      observer.debug("Notification enqueued for retry", {
+        kind: notification.kind,
+        personId,
+        taskId: notification.taskId,
+      });
+    }
+  }
+
   // ── Retry Processing ──────────────────────────────────────────────────
+
+  type RetryExhaustedReason = "task_terminal" | "max_age" | "max_attempts";
+
+  /** Record an abandoned-retry outcome on both the audit ledger (event) and the dashboard trail (observation). */
+  function emitRetryExhausted(entry: RetryEntry, taskId: string, reason: RetryExhaustedReason): void {
+    eventBus.publish({
+      type: "comm.retry_exhausted",
+      source: "notification-router",
+      task_id: taskId,
+      payload: {
+        task_id: taskId,
+        person_id: entry.personId,
+        kind: entry.notification.kind,
+        attempts: entry.attempts,
+        reason,
+      },
+    } satisfies PublishInput<"comm.retry_exhausted">);
+    observer.observe(
+      ObservationTypes.tool_execution,
+      "notification_retry_exhausted",
+      {
+        kind: entry.notification.kind,
+        person_id: entry.personId,
+        attempts: entry.attempts,
+        reason,
+      },
+      { task_id: taskId, level: "warn" },
+    );
+    observer.debug("Retry entry removed", { taskId, personId: entry.personId, attempts: entry.attempts, reason });
+  }
+
+  /** Record a retry that finally landed on both the audit ledger (event) and the dashboard trail (observation). */
+  function emitRetrySucceeded(entry: RetryEntry, taskId: string, channel: string, attempt: number): void {
+    eventBus.publish({
+      type: "comm.retry_succeeded",
+      source: "notification-router",
+      task_id: taskId,
+      payload: { task_id: taskId, person_id: entry.personId, kind: entry.notification.kind, channel, attempt },
+    } satisfies PublishInput<"comm.retry_succeeded">);
+    observer.info("Notification retry succeeded", {
+      kind: entry.notification.kind,
+      personId: entry.personId,
+      channel,
+      attempt,
+    });
+    observer.observe(
+      ObservationTypes.tool_execution,
+      "notification_retry_succeeded",
+      { kind: entry.notification.kind, person_id: entry.personId, channel, attempt },
+      { task_id: taskId, level: "info" },
+    );
+  }
+
+  /**
+   * The fate of one retry entry this tick: abandon it (with the exhausted reason), attempt a redelivery now
+   * (`due`), or leave it to wait for its interval/in-flight (`wait`). Pure — reads the entry and the clock,
+   * touches nothing — so the eviction policy reads as one table apart from the splice/async effects.
+   */
+  function decideRetryFate(entry: RetryEntry, now: number): RetryExhaustedReason | "due" | "wait" {
+    if (entry.inFlight) {
+      return "wait";
+    }
+    const task = taskEngine.getTask(entry.notification.taskId as string);
+    if (!task || isTerminal(task.state)) {
+      return "task_terminal";
+    }
+    if (now - entry.enqueuedAt > retryConfig.max_age_ms) {
+      return "max_age";
+    }
+    if (entry.attempts >= retryConfig.max_attempts) {
+      return "max_attempts";
+    }
+    if (now - entry.lastAttemptAt < retryConfig.interval_ms) {
+      return "wait";
+    }
+    return "due";
+  }
 
   function processRetries(now: number): void {
     // Iterate backwards for safe splice
@@ -406,157 +580,71 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
       if (!entry) {
         continue;
       }
-
-      // Skip in-flight entries
-      if (entry.inFlight) {
+      const fate = decideRetryFate(entry, now);
+      if (fate === "wait") {
         continue;
       }
-
-      // taskId is guaranteed non-null — we only enqueue when notification.taskId is truthy
-      const entryTaskId = entry.notification.taskId as string;
-
-      // Check task terminal state
-      const task = taskEngine.getTask(entryTaskId);
-      if (!task || isTerminal(task.state)) {
+      if (fate !== "due") {
         retryQueue.splice(i, 1);
-        eventBus.publish({
-          type: "comm.retry_exhausted",
-          source: "notification-router",
-          task_id: entryTaskId,
-          payload: {
-            task_id: entryTaskId,
-            person_id: entry.personId,
-            kind: entry.notification.kind,
-            attempts: entry.attempts,
-            reason: "task_terminal",
-          },
-        } satisfies PublishInput<"comm.retry_exhausted">);
-        observer.debug("Retry entry removed — task terminal", {
-          taskId: entryTaskId,
-          personId: entry.personId,
-          state: task?.state ?? "not_found",
-        });
+        emitRetryExhausted(entry, entry.notification.taskId as string, fate);
         continue;
       }
-
-      // Check max age
-      if (now - entry.enqueuedAt > retryConfig.max_age_ms) {
-        retryQueue.splice(i, 1);
-        eventBus.publish({
-          type: "comm.retry_exhausted",
-          source: "notification-router",
-          task_id: entryTaskId,
-          payload: {
-            task_id: entryTaskId,
-            person_id: entry.personId,
-            kind: entry.notification.kind,
-            attempts: entry.attempts,
-            reason: "max_age",
-          },
-        } satisfies PublishInput<"comm.retry_exhausted">);
-        observer.debug("Retry entry removed — max age exceeded", {
-          taskId: entryTaskId,
-          personId: entry.personId,
-        });
-        continue;
-      }
-
-      // Check max attempts
-      if (entry.attempts >= retryConfig.max_attempts) {
-        retryQueue.splice(i, 1);
-        eventBus.publish({
-          type: "comm.retry_exhausted",
-          source: "notification-router",
-          task_id: entryTaskId,
-          payload: {
-            task_id: entryTaskId,
-            person_id: entry.personId,
-            kind: entry.notification.kind,
-            attempts: entry.attempts,
-            reason: "max_attempts",
-          },
-        } satisfies PublishInput<"comm.retry_exhausted">);
-        observer.debug("Retry entry removed — max attempts exhausted", {
-          taskId: entryTaskId,
-          personId: entry.personId,
-          attempts: entry.attempts,
-        });
-        continue;
-      }
-
-      // Check interval
-      if (now - entry.lastAttemptAt < retryConfig.interval_ms) {
-        continue;
-      }
-
-      // Attempt retry — re-resolve contacts, re-attempt delivery
+      // Due — claim the attempt and fire the redelivery (the splice on success happens inside).
       entry.inFlight = true;
       entry.attempts++;
       entry.lastAttemptAt = now;
+      attemptRetryDelivery(entry);
+    }
+  }
 
-      const attemptNumber = entry.attempts;
-      const notification = entry.notification;
-      const personId = entry.personId;
-
-      (async () => {
-        const contacts = resolveContacts(notification);
-        const personContacts = contacts.filter((c) => c.personId === personId);
-
-        if (personContacts.length === 0) {
+  /**
+   * Fire-and-forget shell around one due retry entry's redelivery: it owns the `inFlight` flag and the
+   * error boundary, so {@link redeliverEntry} stays a plain "did it land?" async with no bookkeeping.
+   */
+  function attemptRetryDelivery(entry: RetryEntry): void {
+    redeliverEntry(entry)
+      .then((delivered) => {
+        // On success the entry was already dequeued; on failure it stays for the next tick — either way it
+        // is no longer in flight.
+        if (!delivered) {
           entry.inFlight = false;
-          return;
         }
-
-        const { content, messageType } = resolveMessage(notification);
-        const safeContent = sanitizeSecrets(content);
-        const commPlugins = getCommPlugins();
-
-        for (const contact of personContacts) {
-          const plugin = findPluginForChannel(contact.channel, commPlugins);
-          if (!plugin) {
-            continue;
-          }
-
-          const { delivered } = await tryDeliverToContact(contact, plugin, safeContent, messageType, notification);
-
-          if (delivered) {
-            // Remove from queue
-            const idx = retryQueue.indexOf(entry);
-            if (idx >= 0) {
-              retryQueue.splice(idx, 1);
-            }
-            eventBus.publish({
-              type: "comm.retry_succeeded",
-              source: "notification-router",
-              task_id: entryTaskId,
-              payload: {
-                task_id: entryTaskId,
-                person_id: personId,
-                kind: notification.kind,
-                channel: contact.channel,
-                attempt: attemptNumber,
-              },
-            } satisfies PublishInput<"comm.retry_succeeded">);
-            observer.info("Notification retry succeeded", {
-              kind: notification.kind,
-              personId,
-              channel: contact.channel,
-              attempt: attemptNumber,
-            });
-            return;
-          }
-        }
-
-        // Still failed — stays in queue for next tick
-        entry.inFlight = false;
-      })().catch((err) => {
+      })
+      .catch((err) => {
         entry.inFlight = false;
         observer.warn("Unexpected error in retry delivery", {
-          personId,
+          personId: entry.personId,
           error: err instanceof Error ? err.message : String(err),
         });
       });
+  }
+
+  /** Re-resolve the person's contacts and re-attempt delivery once; on the first success, dequeue + emit, return true. */
+  async function redeliverEntry(entry: RetryEntry): Promise<boolean> {
+    const personContacts = resolveContacts(entry.notification).filter((c) => c.personId === entry.personId);
+    if (personContacts.length === 0) {
+      return false;
     }
+    const { content, messageType } = resolveMessage(entry.notification);
+    const safeContent = sanitizeSecrets(content);
+    const commPlugins = getCommPlugins();
+
+    for (const contact of personContacts) {
+      const plugin = findPluginForChannel(contact.channel, commPlugins);
+      if (!plugin) {
+        continue;
+      }
+      const { delivered } = await tryDeliverToContact(contact, plugin, safeContent, messageType, entry.notification);
+      if (delivered) {
+        const idx = retryQueue.indexOf(entry);
+        if (idx >= 0) {
+          retryQueue.splice(idx, 1);
+        }
+        emitRetrySucceeded(entry, entry.notification.taskId as string, contact.channel, entry.attempts);
+        return true;
+      }
+    }
+    return false;
   }
 
   // ── Ticket Comments ────────────────────────────────────────────────────

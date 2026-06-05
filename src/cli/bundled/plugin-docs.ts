@@ -65,7 +65,7 @@ Defined in \`src/schemas/adapters.ts\` (\`TriggerEventSchema\`).
 
 ### Directory structure
 
-Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\`:
+Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
 
 \`\`\`
 src/plugins/trigger/my-trigger/
@@ -496,7 +496,7 @@ Core gates the whole feed on your \`supports_activity_streaming\` flag **and** a
 
 ### Directory structure
 
-Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\`:
+Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
 
 \`\`\`
 src/plugins/agent/my-agent/
@@ -1179,6 +1179,30 @@ override hasCapability(capability: string): boolean {
 }
 \`\`\`
 
+### Inbound queries
+
+When a plugin has the \`receive\` capability, Core polls it for inbound messages and decides what each one is: an **unblock reply** (the owner answering a question that blocked a task) or a **query** (the owner asking the system for status). The plugin is dumb transport here too -- it just returns the messages; Core classifies and routes them.
+
+**Query vocabulary.** A query is one of these plain words (slash-free, because some platforms drop \`/\`-prefixed messages):
+
+| Query | Response |
+|-------|----------|
+| \`status\` | Active and blocked tasks by id and title (blocked tasks show their block reason), plus a one-line count of every other state. |
+| \`progress #N\` | Detail for the task tracking issue \`N\`: title, state, priority, phase, block reason. |
+| \`cost\` | Whether spending is within limits, plus any per-window percent-of-limit warnings. |
+| \`help\` | The list of supported queries. |
+
+Responses are short and plain by design -- the dashboard is the full detail surface. Anything Core does not recognize gets the \`help\` text back.
+
+**Query vs. unblock reply.** Core classifies each inbound message before treating it as a reply, in this order:
+
+1. The message carries task metadata (\`task_id\` / \`external_ref\`) -- it explicitly names a task, so it is an unblock reply.
+2. The message matches the query vocabulary -- it is a query. **This wins even when exactly one task is blocked**, so the owner can ask \`status\` mid-block without their query being mistaken for the answer.
+3. Exactly one task is blocked and the message is free text -- it is the reply to that one task's question.
+4. Zero or two-plus tasks are blocked and the message is free text -- it goes to the query handler. With none blocked there is nothing to reply to; with several, a metadata-less message cannot be matched to one task, so Core replies "couldn't match -- N are blocked" and points at the unambiguous reply form (reply on the task's ticket).
+
+**Single-user.** Every query response goes to the configured owner ([\`constraints.md\`](../../constraints.md)) -- the sender is the owner. If no owner is configured, Core logs a warning and does not reply.
+
 ### Error handling pattern
 
 All public methods on \`CommunicationAdapter\` use \`wrapAsync()\` which rethrows \`AdapterMethodError\` as-is and wraps unknown errors as \`internal_error\` with \`severity: "fatal"\`. For \`sendMessage()\`, return errors in the \`SendResult.error\` field rather than throwing -- this lets Core distinguish delivery failures (retryable) from plugin bugs (fatal).
@@ -1247,7 +1271,7 @@ All public methods on \`CommunicationAdapter\` use \`wrapAsync()\` which rethrow
 
 ### Directory structure
 
-Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\`:
+Source and tests live in mirrored trees — source under \`src/\`, tests under \`tests/unit/\` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
 
 \`\`\`
 src/plugins/communication/my-comm/
@@ -1542,7 +1566,7 @@ label_prefix: "engineer:"          # Prefix for state labels (default: "engineer
 ## Limitations
 
 - No \`receive\` capability. The plugin cannot listen for incoming messages or webhook events. Polling for inbound communication is deferred.
-- Label management is best-effort. If a label removal fails (e.g., concurrent modification), the error is swallowed. Reconciliation can fix drift.
+- Label management is best-effort. If a label removal fails (e.g., concurrent modification), the error is logged at \`warn\` and treated as non-fatal. Reconciliation can fix any resulting drift.
 - Rate limit awareness is passive. The plugin checks remaining quota during health checks but does not throttle requests proactively. If you hit the rate limit, individual API calls will fail with \`rate_limited\` errors.
 - The \`label_prefix\` applies globally. All repos managed by this plugin share the same prefix.
 
@@ -1621,6 +1645,8 @@ disable_link_preview: true            # Disable link previews in messages (defau
 **Sending.** The plugin resolves a target's \`user_id\` to a \`chat_id\` via the in-memory chat map (populated by \`/start\` handshakes). Calls \`bot.api.sendMessage\` with the configured \`parse_mode\` and link preview setting. Returns the Telegram \`message_id\` on success.
 
 **Receiving.** \`pollMessages\` calls \`getUpdates\` with \`timeout: 0\` (non-blocking). Filters out bot commands (messages starting with \`/\`). Returns structured \`InboundMessage\` objects with sender username, content, timestamp, reply context, and platform metadata (\`chat_id\`, \`message_id\`, \`from_id\`).
+
+**Querying from Telegram.** Because the owner has no task metadata to attach, a Telegram message is either a reply to a blocked task's question or a query. Send \`status\`, \`progress #N\`, \`cost\`, or \`help\` (no leading \`/\` -- the plugin drops \`/\`-commands) to ask the system on demand; Core replies in the same chat. See [Inbound queries](README.md#inbound-queries) for the full vocabulary and how Core tells a query from a reply.
 
 **Startup drain.** On initialization, the plugin calls \`getUpdates\` once to drain all pending updates. Any \`/start\` messages received while the Engineer was offline are captured. If the drain fails, it is non-fatal -- the first poll cycle provides a safety net.
 

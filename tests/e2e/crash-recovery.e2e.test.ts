@@ -168,7 +168,10 @@ function createSecondDaemon(ctx: IntegrationContext): Daemon {
       peopleDirectory: ctx.peopleDirectory,
       eventBus: ctx.eventBus,
       observer: createTestObserverFacade("notifications"),
-      config: { notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 } },
+      config: {
+        notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 },
+        notification_suppress_window_ms: 300_000,
+      },
       clock: { now: () => Date.now() },
     }),
   });

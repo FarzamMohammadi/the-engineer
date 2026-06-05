@@ -1084,13 +1084,14 @@ describe("Daemon", () => {
       });
       handle.taskEngine.getTask.mockReturnValue(reviewTask);
 
-      const reviewer = {
-        id: "rev-1",
-        name: "Bob",
-        role: "reviewer",
-        contacts: [{ channel: "telegram", handle: "rev-1" }],
+      // Single-user: the review reminder resolves to the owner (the owner is the reviewer).
+      const owner = {
+        id: "owner-1",
+        name: "Alice",
+        role: "owner",
+        contacts: [{ channel: "telegram", handle: "owner-1" }],
       };
-      handle.peopleDirectory.getReviewers.mockReturnValue([reviewer]);
+      handle.peopleDirectory.getOwner.mockReturnValue(owner);
 
       const mockComm = {
         manifest: { id: "test-comm", adapter_meta: { channel: "telegram" } },
@@ -1108,7 +1109,7 @@ describe("Daemon", () => {
       await handle.daemon.tick();
 
       expect(mockComm.sendMessage).toHaveBeenCalledWith(
-        { user_id: "rev-1", channel: "telegram" },
+        { user_id: "owner-1", channel: "telegram" },
         expect.objectContaining({
           content: expect.stringContaining("Needs review"),
         }),
@@ -1178,13 +1179,14 @@ describe("Daemon", () => {
         return [];
       });
 
-      const reviewer = {
-        id: "rev-1",
-        name: "Bob",
-        role: "reviewer",
-        contacts: [{ channel: "telegram", handle: "rev-1" }],
+      // Single-user: the review reminder resolves to the owner (the owner is the reviewer).
+      const owner = {
+        id: "owner-1",
+        name: "Alice",
+        role: "owner",
+        contacts: [{ channel: "telegram", handle: "owner-1" }],
       };
-      handle.peopleDirectory.getReviewers.mockReturnValue([reviewer]);
+      handle.peopleDirectory.getOwner.mockReturnValue(owner);
 
       const mockComm = {
         manifest: { id: "test-comm", adapter_meta: { channel: "telegram" } },

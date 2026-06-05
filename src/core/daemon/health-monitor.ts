@@ -1,7 +1,7 @@
 import { TimeoutStageActions } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
-import { BlockReasons, SubStates, type Task, TaskStates } from "../../schemas/task.js";
+import { BlockCategories, BlockReasons, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { HealthMonitorContext } from "./types.js";
@@ -138,12 +138,13 @@ export function createDaemonHealthMonitor(
         continue;
       }
       const elapsedMs = now - Date.parse(task.last_transition_at);
-      processBlockedStages(task.id, elapsedMs, stages, now);
+      processBlockedStages(task.id, task.blocked?.category ?? null, elapsedMs, stages, now);
     }
   }
 
   function processBlockedStages(
     taskId: string,
+    blockCategory: string | null,
     elapsedMs: number,
     stages: Array<{
       name: string;
@@ -166,7 +167,7 @@ export function createDaemonHealthMonitor(
         continue;
       }
 
-      executeBlockedStageAction(taskId, stage);
+      executeBlockedStageAction(taskId, blockCategory, stage);
       blockedEscalationState.set(taskId, { lastStageIndex: i, lastActionAt: now });
     }
   }
@@ -187,11 +188,26 @@ export function createDaemonHealthMonitor(
     return false;
   }
 
-  function executeBlockedStageAction(taskId: string, stage: { name: string; action: string }): void {
+  function executeBlockedStageAction(
+    taskId: string,
+    blockCategory: string | null,
+    stage: { name: string; action: string },
+  ): void {
     if (stage.action === TimeoutStageActions.send_reminder) {
       notifications.notify({ kind: NotificationKinds.blocked_reminder, taskId });
       observer.info("Blocked task reminder sent", { taskId, stage: stage.name });
     } else if (stage.action === TimeoutStageActions.evaluate_self_unblock) {
+      // A discretionary autonomy block (the owner's policy asked them to confirm a decision the agent
+      // made) must NOT be auto-resolved: only the owner can decide. Reminders and the final escalation
+      // still fire — just not the self-unblock auto-resume. A genuine "stuck, needs info" block is still
+      // eligible (the agent may be able to diagnose it).
+      if (blockCategory === BlockCategories.awaiting_human_decision) {
+        observer.info("Skipping self-unblock for a discretionary decision block — only the owner can decide", {
+          taskId,
+          stage: stage.name,
+        });
+        return;
+      }
       orchestrator.attemptSelfUnblock(taskId).then(
         (resolved) => {
           if (resolved) {

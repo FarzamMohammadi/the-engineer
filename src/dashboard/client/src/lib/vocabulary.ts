@@ -63,6 +63,7 @@ export const BLOCK_CATEGORIES = [
   "iteration_cap_hit",
   "pr_rework_cap_hit",
   "awaiting_human",
+  "awaiting_human_decision",
   "awaiting_pr_review",
 ] as const;
 export type BlockCategory = (typeof BLOCK_CATEGORIES)[number];

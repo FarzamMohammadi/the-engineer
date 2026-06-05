@@ -247,16 +247,11 @@ export function createTaskScheduler(
    * The owner cancelled a running task. The cross-process write already set the DB to `cancelled` and the tick
    * scan SIGTERM'd the agent, so there is NO `cancelled → cancelled` transition to make (a transition call
    * would fail-loud and warn spuriously). Observe the abort and let the reaper reclaim the workspace + branch.
-   * The ticket comment closes the loop on the source issue for this active cancel; the reaper comments on an
-   * open PR, and broader cancel-notification coverage is Slice 10's remit.
+   * The source-ticket comment and the `engineer:cancelled` label sync are NOT emitted here: the reaper is the
+   * single emitter for every cancel path (active and non-active alike), so this records only the abort.
    */
   function handleUserCancelledTermination(taskId: string, lastPhase: string | null): void {
     observer.info("Task cancelled by owner — dispatch aborted, cleanup deferred to the reaper", { taskId, lastPhase });
-    notifications.notify({
-      kind: NotificationKinds.ticket_comment,
-      taskId,
-      message: "Task cancelled by the owner.",
-    });
   }
 
   /**

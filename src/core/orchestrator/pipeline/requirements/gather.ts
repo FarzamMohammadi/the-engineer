@@ -23,17 +23,21 @@ const ROLE =
 const DETAILS_HINT =
   '"complexity": "trivial" | "moderate" | "complex", "verification": { "commands": [ { "name": "typecheck", "command": "pnpm", "args": ["run", "typecheck"] } ] }';
 
+/** Absolute directory holding requirements' deliverable, result file, and any `outreach/` questions. */
+const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
+
 /** Requirements: ground in the project, understand the task, batch any human questions, assess complexity. */
 export const gather: SubPhase = {
   name: "gather",
   run: agentStep({
     stepName: "gather",
-    directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
+    directory: dir,
     prompt: buildPrompt,
     systemPrompt: () => buildSystemPrompt(ROLE),
     detailsSchema: GroundingSchema,
   }),
   next: gatherNext,
+  resultDir: dir,
 };
 
 /** `needs_human` blocks the task for an answer; otherwise advance to the next phase. */

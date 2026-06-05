@@ -17,6 +17,7 @@ import { createActivitySink } from "../../agent-activity/index.js";
 import type { ObservationSpan } from "../../observer/index.js";
 import { emitAgentCost } from "../agent-cost.js";
 import { traceScope } from "./observability.js";
+import { DecisionsSchema } from "./types.js";
 import type { Ctx, FailureCause, SubPhaseResult } from "./types.js";
 
 // ── The Handoff File ─────────────────────────────────────────────────────────
@@ -217,7 +218,13 @@ function captureFileBlob(ctx: Ctx, kind: string, file: string | null): string {
 
 // ── Result Mapping (pure) ────────────────────────────────────────────────────
 
-/** Map a validated session-result to a SubPhaseResult, gating `details` on the sub-phase's schema. */
+/**
+ * Map a validated session-result to a SubPhaseResult, gating `details` on the sub-phase's schema
+ * AND the cross-phase `details.decisions` contract. The sub-phase schema covers the step's own
+ * payload (refine's verdict, grounding's complexity); `decisions` is the one field ANY phase may
+ * surface for the autonomy policy, so it is validated centrally here — a malformed entry fails
+ * loud rather than letting the runner skip an escalation it could not parse.
+ */
 function mapResult<TDetails>(result: SessionResult, detailsSchema?: z.ZodType<TDetails>): SubPhaseResult {
   if (result.status === "needs_human") {
     return { outcome: "needs_human", summary: result.summary };
@@ -229,6 +236,12 @@ function mapResult<TDetails>(result: SessionResult, detailsSchema?: z.ZodType<TD
     const validated = detailsSchema.safeParse(result.details ?? {});
     if (!validated.success) {
       return failed("details_invalid", validated.error.message);
+    }
+  }
+  if (result.details?.["decisions"] !== undefined) {
+    const validated = DecisionsSchema.safeParse(result.details["decisions"]);
+    if (!validated.success) {
+      return failed("details_invalid", `details.decisions is invalid: ${validated.error.message}`);
     }
   }
   return result.details

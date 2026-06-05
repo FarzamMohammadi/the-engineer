@@ -52,6 +52,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     },
     workspace_reaper: { enabled: false, interval_ms: 3_600_000 },
     database: { cache_size_mb: 64 },
+    notification_suppress_window_ms: 300_000,
     notification_retry: { interval_ms: 30_000, max_attempts: 120, max_age_ms: 3_600_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3, max_blocker_reentries: 3 },
     retry_policy: {
@@ -583,11 +584,13 @@ describe("TaskScheduler", () => {
     );
   });
 
-  // 20e. handleTaskCompletion on terminated/user_cancelled observes + notifies, but does NOT re-transition
-  it("handleTaskCompletion on terminated/user_cancelled does not re-transition and comments on the ticket", () => {
+  // 20e. handleTaskCompletion on terminated/user_cancelled records the abort but does NOT re-transition or
+  // comment — the reaper is the single emitter for the cancel comment + label across all cancel paths.
+  it("handleTaskCompletion on terminated/user_cancelled records the abort and does not re-transition or comment", () => {
     const { ctx, taskEngine } = makeContext();
     const notifications = makeNotifications();
     const callbacks = makeCallbacks();
+    const abortLog = vi.spyOn(ctx.observer, "info");
 
     const scheduler = makeScheduler(ctx, notifications, callbacks);
     const task = makeMockTask({ id: "t1" });
@@ -605,12 +608,15 @@ describe("TaskScheduler", () => {
 
     // The DB is already `cancelled` (the cross-process write set it); there is no cancelled→cancelled edge.
     expect(taskEngine.requestTransition).not.toHaveBeenCalled();
-    expect(notifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: NotificationKinds.ticket_comment,
-        taskId: "t1",
-        message: "Task cancelled by the owner.",
-      }),
+    // The cancel comment moved to the reaper (single emitter) — the scheduler no longer comments.
+    const commented = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.some(
+      (call: unknown[]) => (call[0] as { kind: string }).kind === NotificationKinds.ticket_comment,
+    );
+    expect(commented).toBe(false);
+    // But it still records the abort so the observer sees the dispatch was aborted on cancel.
+    expect(abortLog).toHaveBeenCalledWith(
+      expect.stringContaining("cancelled by owner"),
+      expect.objectContaining({ taskId: "t1" }),
     );
   });
 

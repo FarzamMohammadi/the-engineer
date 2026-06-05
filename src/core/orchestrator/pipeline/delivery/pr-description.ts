@@ -12,17 +12,21 @@ const DELIVERABLE = "pr-description.md";
 const ROLE =
   "Your role is to write the pull request description: the narrative a human reviewer reads to understand what changed and why, and to trust it. Write the description only — do not change code.";
 
+/** Absolute directory holding delivery's deliverable, result file, and any `outreach/` questions. */
+const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
+
 /** Delivery: write the PR narrative from the task's deliverables. Skipped in push-only mode. */
 export const prDescription: SubPhase = {
   name: "pr-description",
   skip: skipWhenPushOnly,
   run: agentStep({
     stepName: "pr-description",
-    directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
+    directory: dir,
     prompt: buildPrompt,
     systemPrompt: () => buildSystemPrompt(ROLE),
   }),
   next: prDescriptionNext,
+  resultDir: dir,
 };
 
 /** `needs_human` blocks for the missing context; otherwise advance to push. */

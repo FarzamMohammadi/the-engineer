@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { PeopleDirectory } from "../../../../src/core/people-directory/index.js";
 import type { Person } from "../../../../src/schemas/adapters.js";
-import { NotificationLevels } from "../../../../src/schemas/adapters.js";
 import type { PeopleConfig } from "../../../../src/schemas/config.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -12,10 +11,6 @@ function makePerson(overrides: Partial<Person> & { id: string }): Person {
     name: overrides.id,
     roles: [],
     contacts: [],
-    preferences: {
-      notification_level: NotificationLevels.all,
-      quiet_hours: null,
-    },
     ...overrides,
   };
 }

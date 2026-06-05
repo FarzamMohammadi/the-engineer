@@ -119,6 +119,7 @@ export const BLOCK_CATEGORY_LABELS: Record<BlockCategory, string> = {
   iteration_cap_hit: "Iteration Cap Hit",
   pr_rework_cap_hit: "PR Rework Cap Hit",
   awaiting_human: "Awaiting Human",
+  awaiting_human_decision: "Awaiting Decision",
   awaiting_pr_review: "Awaiting PR Review",
 };
 

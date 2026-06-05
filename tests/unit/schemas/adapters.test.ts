@@ -26,8 +26,6 @@ import {
   MergeStrategySchema,
   MessageTypeSchema,
   MessageTypes,
-  NotificationLevelSchema,
-  NotificationLevels,
   PROptionsSchema,
   PRResultSchema,
   PRStatusSchema,
@@ -795,18 +793,6 @@ describe("BranchProtectionSchema", () => {
 
 // ── People Directory ────────────────────────────────────────────────────────────
 
-describe("NotificationLevelSchema", () => {
-  it("has exactly 3 values", () => {
-    expect(NotificationLevelSchema.options).toHaveLength(3);
-  });
-
-  it("accepts all valid values", () => {
-    for (const level of ["all", "milestones", "critical"]) {
-      expect(NotificationLevelSchema.parse(level)).toBe(level);
-    }
-  });
-});
-
 describe("ContactSchema", () => {
   it("parses valid data", () => {
     expect(ContactSchema.parse({ channel: "telegram", handle: "@farzam" })).toBeDefined();
@@ -822,35 +808,11 @@ describe("PersonSchema", () => {
       { channel: "telegram", handle: "@farzam" },
       { channel: "github", handle: "farzam" },
     ],
-    preferences: {
-      notification_level: NotificationLevels.milestones,
-      quiet_hours: null,
-    },
   };
 
   it("parses valid person", () => {
     const person = PersonSchema.parse(validPerson);
     expect(person.contacts).toHaveLength(2);
-  });
-
-  it("accepts quiet_hours", () => {
-    const person = PersonSchema.parse({
-      ...validPerson,
-      preferences: {
-        notification_level: NotificationLevels.all,
-        quiet_hours: { start: "22:00", end: "08:00" },
-      },
-    });
-    expect(person.preferences.quiet_hours?.start).toBe("22:00");
-  });
-
-  it("rejects invalid notification_level", () => {
-    expect(() =>
-      PersonSchema.parse({
-        ...validPerson,
-        preferences: { notification_level: "none", quiet_hours: null },
-      }),
-    ).toThrow();
   });
 });
 

@@ -514,7 +514,6 @@ function generatePeopleYaml(people: PersonSetupEntry[]): string {
       name: p.name,
       roles: p.roles,
       contacts: p.contacts,
-      preferences: { notification_level: "milestones", quiet_hours: null },
     })),
   };
   return `# People configuration\n# Hot-reloadable — changes take effect without restart.\n\n${yamlStringify(peopleConfig)}`;

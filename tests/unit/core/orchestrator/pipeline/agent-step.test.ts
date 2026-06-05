@@ -159,6 +159,63 @@ describe("agentStep", () => {
     });
   });
 
+  describe("surfaced decisions", () => {
+    it("passes a valid decisions array through into the result data", async () => {
+      const decisions = [
+        { category: "code_style", summary: "renamed a helper", chosen: "fetchUser", reasoning: "verb convention" },
+      ];
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "done", details: { decisions } });
+        return Promise.resolve(AGENT_RESULT);
+      });
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step()(ctx);
+
+      expect(result).toEqual({ outcome: "ok", summary: "done", data: { decisions } });
+    });
+
+    it("fails with details_invalid when a surfaced decision is missing required fields", async () => {
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "done", details: { decisions: [{ category: "code_style" }] } });
+        return Promise.resolve(AGENT_RESULT);
+      });
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step()(ctx);
+
+      expect(result).toMatchObject({ outcome: "failed", category: "details_invalid" });
+    });
+
+    it("fails with details_invalid when decisions is not an array", async () => {
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "done", details: { decisions: "nope" } });
+        return Promise.resolve(AGENT_RESULT);
+      });
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step()(ctx);
+
+      expect(result).toMatchObject({ outcome: "failed", category: "details_invalid" });
+    });
+
+    it("validates decisions alongside the sub-phase's own details schema", async () => {
+      const schema = z.object({ verdict: z.enum(["ship"]) });
+      const decisions = [
+        { category: "doc_wording", summary: "tweaked a comment", chosen: "clearer", reasoning: "why" },
+      ];
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "done", details: { verdict: "ship", decisions } });
+        return Promise.resolve(AGENT_RESULT);
+      });
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step(schema)(ctx);
+
+      expect(result).toEqual({ outcome: "ok", summary: "done", data: { verdict: "ship", decisions } });
+    });
+  });
+
   describe("observability", () => {
     it("emits an agent_call span carrying the prompt blob and ending with the outcome", async () => {
       const agent = fakeAgent(() => {

@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNotificationRouter } from "../../../../src/core/daemon/notification-router.js";
 import type { NotificationRouterContext } from "../../../../src/core/daemon/notification-router.js";
+import { Observer, createSilentLogger } from "../../../../src/core/observer/index.js";
 import { EventTypes, type TaskStateChangedPayload } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
+import { FakeClock } from "../../../helpers/fake-clock.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
+import { type TestObserverHandle, createTestObserver } from "../../../helpers/test-observer.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,7 +49,10 @@ function createMockContext(pluginOverrides?: ReturnType<typeof createMockCommPlu
       publish: vi.fn(),
     } as unknown as NotificationRouterContext["eventBus"],
     observer: createTestObserverFacade("daemon"),
-    config: { notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 } },
+    config: {
+      notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 },
+      notification_suppress_window_ms: 300_000,
+    },
     clock: { now: vi.fn().mockReturnValue(1_000_000) },
   } as unknown as NotificationRouterContext;
 }
@@ -144,17 +150,14 @@ describe("NotificationRouter", () => {
     expect(recipientHandles).toContain("@rev2");
   });
 
-  // 4. notify({ kind: NotificationKinds.review_reminder }) sends to reviewers only
-  it("notify review_reminder sends to reviewers only, not owner", async () => {
+  // 4. notify({ kind: NotificationKinds.review_reminder }) resolves to the owner (single-user)
+  it("notify review_reminder resolves to the owner", async () => {
     const commPlugin = createMockCommPlugin({ channel: "telegram" });
     const ctx = createMockContext([commPlugin]);
     (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
       id: "owner-1",
       contacts: [{ channel: "telegram", handle: "@owner" }],
     });
-    (ctx.peopleDirectory.getReviewers as ReturnType<typeof vi.fn>).mockReturnValue([
-      { id: "reviewer-1", contacts: [{ channel: "telegram", handle: "@rev1" }] },
-    ]);
 
     const router = createNotificationRouter(ctx);
     (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Add tests" });
@@ -168,16 +171,13 @@ describe("NotificationRouter", () => {
 
     expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
     expect(commPlugin.sendMessage).toHaveBeenCalledWith(
-      { user_id: "@rev1", channel: "telegram" },
+      { user_id: "@owner", channel: "telegram" },
       expect.objectContaining({
         content: expect.stringContaining("2h"),
       }),
     );
-    // Verify owner was not called
-    const recipientHandles = commPlugin.sendMessage.mock.calls.map(
-      (call: unknown[]) => (call[0] as { user_id: string }).user_id,
-    );
-    expect(recipientHandles).not.toContain("@owner");
+    // The reviewers list is never consulted for a review reminder in single-user.
+    expect(ctx.peopleDirectory.getReviewers).not.toHaveBeenCalled();
   });
 
   // 5. Skips when no owner/reviewers configured
@@ -193,10 +193,10 @@ describe("NotificationRouter", () => {
     expect(commPlugin.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("skips review reminder when no reviewers configured", async () => {
+  it("skips review reminder when no owner configured", async () => {
     const commPlugin = createMockCommPlugin({ channel: "telegram" });
     const ctx = createMockContext([commPlugin]);
-    // getReviewers returns [] by default
+    // getOwner returns null by default — no one to remind
 
     const router = createNotificationRouter(ctx);
     router.notify({
@@ -1054,6 +1054,230 @@ describe("NotificationRouter", () => {
       );
       expect(retrySucceeded).toBeDefined();
       expect((retrySucceeded![0] as { payload: { channel: string } }).payload.channel).toBe("telegram");
+    });
+  });
+
+  // ── Suppression (duplicate dedup) ────────────────────────────────────────
+
+  describe("suppression", () => {
+    /** Build a context whose clock is the given FakeClock so the suppress window is testable. */
+    function createSuppressContext(clock: FakeClock): NotificationRouterContext {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      const ctx = createMockContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Task" });
+      ctx.clock = clock;
+      return ctx;
+    }
+
+    it("suppresses an identical notification within the window — one delivered", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.completion, taskId: "dup-task" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "dup-task" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("delivers both once the suppress window elapses", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.completion, taskId: "dup-task" });
+      await flush();
+      // Advance just past the 5-minute default window.
+      clock.advance(300_001);
+      router.notify({ kind: NotificationKinds.completion, taskId: "dup-task" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not dedup distinct scopes (different task ids)", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-a" });
+      router.notify({ kind: NotificationKinds.completion, taskId: "task-b" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("dedups null-task alerts per source, not across sources", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      // Same source twice → second suppressed.
+      router.notify({ kind: NotificationKinds.alert, taskId: null, source: "trigger:gh", message: "boom" });
+      router.notify({ kind: NotificationKinds.alert, taskId: null, source: "trigger:gh", message: "boom" });
+      // A different source → delivered.
+      router.notify({ kind: NotificationKinds.alert, taskId: null, source: "plugin:tg", message: "boom" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("dedups alerts too — alerts do not bypass the suppress window", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.alert, taskId: "alert-task", message: "boom" });
+      router.notify({ kind: NotificationKinds.alert, taskId: "alert-task", message: "boom" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("records a decision_point when it suppresses a duplicate", () => {
+      const obs: TestObserverHandle = createTestObserver();
+      try {
+        const facade = new Observer({ rootPino: createSilentLogger().logger, store: null }, "notifications");
+        facade.upgrade(obs.observer);
+        const clock = new FakeClock();
+        const ctx = createSuppressContext(clock);
+        ctx.observer = facade;
+
+        const router = createNotificationRouter(ctx);
+        router.notify({ kind: NotificationKinds.completion, taskId: "dup-task" });
+        router.notify({ kind: NotificationKinds.completion, taskId: "dup-task" });
+
+        const decisions = obs.observer.query({ type: "decision_point" });
+        const suppress = decisions.find((d) => d.name === "notification_suppressed");
+        expect(suppress).toBeDefined();
+      } finally {
+        obs.cleanup();
+      }
+    });
+  });
+
+  // ── Outbound observability ───────────────────────────────────────────────
+
+  describe("outbound observability", () => {
+    let obs: TestObserverHandle;
+
+    afterEach(() => {
+      obs?.cleanup();
+    });
+
+    /** A context whose observer writes to a queryable observation store. */
+    function createObservableContext(plugins: ReturnType<typeof createMockCommPlugin>[]): NotificationRouterContext {
+      obs = createTestObserver();
+      const facade = new Observer({ rootPino: createSilentLogger().logger, store: null }, "notifications");
+      facade.upgrade(obs.observer);
+      const ctx = createMockContext(plugins);
+      ctx.observer = facade;
+      return ctx;
+    }
+
+    it("emits a tool_execution observation on delivery", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      const ctx = createObservableContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Task" });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.completion, taskId: "obs-deliver" });
+      await flush();
+
+      const tools = obs.observer.query({ type: "tool_execution" });
+      expect(tools.find((o) => o.name === "notification_delivered")).toBeDefined();
+    });
+
+    it("emits a tool_execution observation when no channel is reachable", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: { code: "auth_failed", message: "no", retryable: false, retry_after_ms: null, severity: "error" },
+      });
+      const ctx = createObservableContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Task" });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.completion, taskId: "obs-fail" });
+      await flush();
+
+      const tools = obs.observer.query({ type: "tool_execution" });
+      expect(tools.find((o) => o.name === "notification_send_failed")).toBeDefined();
+    });
+
+    it("emits a tool_execution observation when a retry succeeds", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      let callCount = 0;
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            success: false,
+            message_id: null,
+            error: { code: "not_found", message: "no", retryable: true, retry_after_ms: null, severity: "error" },
+          });
+        }
+        return Promise.resolve({ success: true, message_id: "m", error: null });
+      });
+      const ctx = createObservableContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Task", state: TaskStates.active });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.completion, taskId: "obs-retry" });
+      await flush();
+      router.processRetries!(1_000_000 + 200);
+      await flush();
+
+      const tools = obs.observer.query({ type: "tool_execution" });
+      expect(tools.find((o) => o.name === "notification_retry_succeeded")).toBeDefined();
+    });
+
+    it("emits a tool_execution observation when retries are exhausted", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        message_id: null,
+        error: { code: "not_found", message: "no", retryable: true, retry_after_ms: null, severity: "error" },
+      });
+      const ctx = createObservableContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Task", state: TaskStates.active });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.completion, taskId: "obs-exhaust" });
+      await flush();
+      // Past max_age_ms (10_000 in the test config) → exhausted.
+      router.processRetries!(1_000_000 + 20_000);
+      await flush();
+
+      const tools = obs.observer.query({ type: "tool_execution" });
+      expect(tools.find((o) => o.name === "notification_retry_exhausted")).toBeDefined();
     });
   });
 });

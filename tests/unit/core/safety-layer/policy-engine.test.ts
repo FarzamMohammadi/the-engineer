@@ -29,12 +29,16 @@ describe("parseThreshold", () => {
 });
 
 describe("evaluateThreshold", () => {
-  it("returns true when threshold exceeded", () => {
-    expect(evaluateThreshold(parseThreshold("scope > 5")!, { scope: 10 })).toBe(true);
+  it("returns exceeded when the threshold is crossed", () => {
+    expect(evaluateThreshold(parseThreshold("scope > 5")!, { scope: 10 })).toBe("exceeded");
   });
 
-  it("returns false when within threshold", () => {
-    expect(evaluateThreshold(parseThreshold("scope > 5")!, { scope: 3 })).toBe(false);
+  it("returns within when below the threshold", () => {
+    expect(evaluateThreshold(parseThreshold("scope > 5")!, { scope: 3 })).toBe("within");
+  });
+
+  it("returns metric_absent when the metric is missing — fails safe to asking", () => {
+    expect(evaluateThreshold(parseThreshold("scope > 5")!, { files: 10 })).toBe("metric_absent");
   });
 });
 
@@ -253,6 +257,24 @@ describe("PolicyEngine — evaluateAutonomy", () => {
     const verdict = engine.evaluateAutonomy(makeQuery({ decision_category: "refactoring", details: { scope: 12 } }));
     expect(verdict.allowed).toBe(false);
     expect(verdict.action).toBe("ask_human");
+  });
+
+  it("threshold with the metric absent returns ask_human (fail-safe)", () => {
+    const engine = createEngine({
+      autonomy: {
+        decisions: {
+          refactoring: {
+            level: AutonomyLevels.threshold,
+            threshold: "scope > 5 files",
+            description: "",
+          },
+        },
+      },
+    });
+    const verdict = engine.evaluateAutonomy(makeQuery({ decision_category: "refactoring", details: {} }));
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.action).toBe("ask_human");
+    expect(verdict.reason).toContain("scope");
   });
 
   it("unknown category returns ask_human", () => {

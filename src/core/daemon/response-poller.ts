@@ -1,9 +1,11 @@
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import type { InboundMessage } from "../../schemas/adapters.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
+import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import type { ExternalRef } from "../../schemas/task.js";
 import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
+import { type QueryHandlerDeps, type QueryRoutingReason, handleQuery, isQueryVocabulary } from "./query-handler.js";
 import type { ResponsePollerContext } from "./types.js";
 import type { UnblockInput, UnblockResolver } from "./unblock-resolver.js";
 
@@ -53,10 +55,84 @@ export function linkMessageToTask(msg: InboundMessage): UnblockInput | null {
   return null;
 }
 
+/**
+ * How the poller routes one inbound message. `linked_reply` already names a task via metadata;
+ * `sole_blocked_reply` is the free-text answer to the one blocked task; `query` is a general query carrying
+ * the routing reason (for observability and the multi-blocked diagnostic). Classification runs BEFORE the
+ * sole-blocked fallback so an explicit query is never mis-attributed as an unblock reply.
+ */
+export type InboundRoute =
+  | { route: "linked_reply" }
+  | { route: "sole_blocked_reply" }
+  | { route: "query"; reason: QueryRoutingReason; blockedCount: number };
+
+/**
+ * Decide whether an inbound message is an unblock reply or a general query.
+ *
+ * Order of decision (the precedence is deliberate — see `docs/plugins/communication/README.md`):
+ * 1. Linked via metadata (task_id / external_ref) → it explicitly names a task → reply.
+ * 2. Query vocabulary (status / cost / progress #N / help) → query. This WINS over the sole-blocked reply,
+ *    so the owner can ask "status" even while exactly one task is blocked.
+ * 3. Exactly one task blocked → reply (the sole-blocked fallback: a free-text answer to the one question).
+ * 4. Zero or 2+ tasks blocked → query. With none blocked there is nothing to reply to; with several, a
+ *    token-less message cannot be matched to one, so it is routed to the handler with a diagnostic reason.
+ */
+export function classifyInbound(hasLinkedTask: boolean, content: string, blockedCount: number): InboundRoute {
+  if (hasLinkedTask) {
+    return { route: "linked_reply" };
+  }
+  if (isQueryVocabulary(content)) {
+    return { route: "query", reason: "query_vocabulary", blockedCount };
+  }
+  if (blockedCount === 1) {
+    return { route: "sole_blocked_reply" };
+  }
+  const reason: QueryRoutingReason = blockedCount === 0 ? "no_blocked_task" : "unmatched_multi_blocked";
+  return { route: "query", reason, blockedCount };
+}
+
+/** Human-readable reasoning for the routing decision, for the recorded `inbound_route` observation. */
+function reasonForRoute(decision: InboundRoute, blockedCount: number): string {
+  switch (decision.route) {
+    case "linked_reply":
+      return "Message carries task metadata (task_id / external_ref) — routed as an unblock reply";
+    case "sole_blocked_reply":
+      return "No metadata and exactly one task blocked — routed the free-text message as that task's reply";
+    default:
+      return reasonForQueryRoute(decision.reason, blockedCount);
+  }
+}
+
+/** Why a message was routed to the query handler rather than treated as an unblock reply. */
+function reasonForQueryRoute(reason: QueryRoutingReason, blockedCount: number): string {
+  switch (reason) {
+    case "query_vocabulary":
+      return "Matches the query vocabulary (status/cost/progress/help) — routed to the query handler, which wins over the sole-blocked reply";
+    case "no_blocked_task":
+      return "No metadata and no task blocked — nothing to reply to, routed to the query handler";
+    default:
+      return `No metadata and ${String(blockedCount)} tasks blocked — cannot match to one, routed to the query handler with a couldn't-match notice`;
+  }
+}
+
+/** Build the query-handler payload from an inbound message. task_id mirrors the resolved reply input (null for a query). */
+function toQueryPayload(msg: InboundMessage, input: UnblockInput | null): CommMessageReceivedPayload {
+  return {
+    source: msg.source,
+    sender: msg.sender,
+    content: msg.content,
+    reply_to: msg.reply_to,
+    task_id: input?.by === "task_id" ? input.taskId : null,
+    platform_metadata: msg.platform_metadata,
+  };
+}
+
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createResponsePoller(ctx: ResponsePollerContext, unblockResolver: UnblockResolver): ResponsePoller {
-  const { config, eventBus, registry, taskEngine, observer } = ctx;
+  const { config, eventBus, registry, taskEngine, safetyLayer, notifications, peopleDirectory, observer } = ctx;
+
+  const queryDeps: QueryHandlerDeps = { taskEngine, safetyLayer, notifications, peopleDirectory, observer };
 
   // Per-plugin cursor for pollMessages
   const pluginCursors = new Map<string, string>();
@@ -158,52 +234,90 @@ export function createResponsePoller(ctx: ResponsePollerContext, unblockResolver
   }
 
   function processInboundMessage(msg: InboundMessage, blockedTasks: Array<{ id: string }>): void {
-    let input = linkMessageToTask(msg);
+    const linked = linkMessageToTask(msg);
+    const decision = classifyInbound(linked !== null, msg.content, blockedTasks.length);
+    recordInboundRoute(msg, decision, blockedTasks.length);
 
-    // Fallback: if message can't be linked via metadata (e.g., Telegram has no task context),
-    // and exactly one task is blocked, assume the message is for that task.
-    const soleBlockedTask = blockedTasks.length === 1 ? blockedTasks[0] : undefined;
-    if (!input && soleBlockedTask) {
-      input = {
-        by: "task_id",
-        taskId: soleBlockedTask.id,
-        source: msg.source,
-        content: msg.content,
-      };
-    }
+    // Resolve the unblock input the route implies (null for a query): the metadata link, or the sole blocked
+    // task for the free-text fallback. The audit event's task_id mirrors this — null when routed as a query.
+    const input = resolveReplyInput(decision, linked, msg, blockedTasks);
+    publishReceivedAudit(msg, input);
 
-    if (!input) {
-      observer.warn("Inbound message could not be linked to a task — discarding", {
-        source: msg.source,
-        sender: msg.sender,
-        blockedCount: blockedTasks.length,
+    if (decision.route === "query") {
+      handleQuery(toQueryPayload(msg, input), queryDeps, {
+        reason: decision.reason,
+        blockedCount: decision.blockedCount,
       });
       return;
     }
 
-    // Emit audit event
+    if (!input) {
+      return;
+    }
+    const result = unblockResolver.tryUnblock(input);
+    if (result.unblocked) {
+      observer.info("Response unblocked task", { taskId: result.taskId, source: msg.source });
+    }
+  }
+
+  /** The unblock input a reply route implies, or null for a query route (which never unblocks a task). */
+  function resolveReplyInput(
+    decision: InboundRoute,
+    linked: UnblockInput | null,
+    msg: InboundMessage,
+    blockedTasks: Array<{ id: string }>,
+  ): UnblockInput | null {
+    if (decision.route === "linked_reply") {
+      return linked;
+    }
+    if (decision.route === "sole_blocked_reply") {
+      const soleBlockedTask = blockedTasks[0];
+      return soleBlockedTask
+        ? { by: "task_id", taskId: soleBlockedTask.id, source: msg.source, content: msg.content }
+        : null;
+    }
+    return null;
+  }
+
+  /** Record the query-vs-reply classification so the routing (invisible today) is inspectable on the dashboard. */
+  function recordInboundRoute(msg: InboundMessage, decision: InboundRoute, blockedCount: number): void {
+    const chosen = decision.route;
+    observer.recordDecision(
+      "inbound_route",
+      `Inbound "${msg.source}" message classified with ${String(blockedCount)} task(s) blocked`,
+      [
+        { id: "linked_reply", description: "Metadata links it to a task — route as an unblock reply" },
+        {
+          id: "sole_blocked_reply",
+          description: "Free-text answer to the one blocked task — route as an unblock reply",
+        },
+        {
+          id: "query",
+          description: "General query (status/cost/progress/help, or unmatchable) — route to the query handler",
+        },
+      ],
+      chosen,
+      reasonForRoute(decision, blockedCount),
+      decision.route === "query" && decision.reason === "unmatched_multi_blocked" ? 0.5 : 1,
+    );
+  }
+
+  /** The audit-trail event. task_id is non-null only for a reply that resolved a concrete task. */
+  function publishReceivedAudit(msg: InboundMessage, input: UnblockInput | null): void {
+    const taskId = input?.by === "task_id" ? input.taskId : null;
     eventBus.publish({
       type: "comm.message_received",
       source: "daemon",
-      task_id: input.by === "task_id" ? input.taskId : null,
+      task_id: taskId,
       payload: {
         source: msg.source,
         sender: msg.sender,
         content: msg.content,
         reply_to: msg.reply_to,
-        task_id: input.by === "task_id" ? input.taskId : null,
+        task_id: taskId,
         platform_metadata: msg.platform_metadata,
       },
     } satisfies PublishInput<"comm.message_received">);
-
-    // Try to unblock
-    const result = unblockResolver.tryUnblock(input);
-    if (result.unblocked) {
-      observer.info("Response unblocked task", {
-        taskId: result.taskId,
-        source: msg.source,
-      });
-    }
   }
 
   /** Scan event bus for comm.message_received events from non-plugin sources (dashboard). */

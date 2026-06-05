@@ -140,6 +140,7 @@ function defaultTestConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     },
     workspace_reaper: { enabled: false, interval_ms: 3_600_000 },
     database: { cache_size_mb: 64 },
+    notification_suppress_window_ms: 300_000,
     notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3, max_blocker_reentries: 3 },
     retry_policy: {
@@ -321,8 +322,12 @@ export function createTestDaemon(
     peopleDirectory: peopleDirectory as unknown as PeopleDirectory,
     eventBus: eventBus as unknown as EventBus,
     observer,
-    config: { notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 } },
-    clock: { now: vi.fn().mockReturnValue(Date.now()) },
+    config: {
+      notification_retry: { interval_ms: 100, max_attempts: 3, max_age_ms: 10_000 },
+      notification_suppress_window_ms: 300_000,
+    },
+    // Share the daemon's FakeClock so suppress-window dedup advances with handle.clock.advance(...).
+    clock,
   });
 
   const daemon = createDaemon({

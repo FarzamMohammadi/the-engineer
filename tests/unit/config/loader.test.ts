@@ -15,7 +15,6 @@ import {
   parseDurations,
   resolveEnvVars,
 } from "../../../src/config/loader.js";
-import { NotificationLevels } from "../../../src/schemas/adapters.js";
 import { DaemonConfigSchema, PeopleConfigSchema, SafetyConfigSchema } from "../../../src/schemas/config.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────────
@@ -345,14 +344,8 @@ describe("PeopleConfig loading", () => {
     expect(result.config.people[0]?.name).toBe("Farzam Mohammadi");
     expect(result.config.people[0]?.roles).toEqual(["owner", "reviewer"]);
     expect(result.config.people[0]?.contacts).toHaveLength(2);
-    expect(result.config.people[0]?.preferences.notification_level).toBe(NotificationLevels.milestones);
-    expect(result.config.people[0]?.preferences.quiet_hours).toBeNull();
 
     expect(result.config.people[1]?.id).toBe("alice");
-    expect(result.config.people[1]?.preferences.quiet_hours).toEqual({
-      start: "22:00",
-      end: "08:00",
-    });
   });
 
   it("returns empty array for missing people.yaml", () => {

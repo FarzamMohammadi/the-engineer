@@ -15,14 +15,17 @@ import {
   HealthTriggerFailurePayloadSchema,
   PreemptionCompletedPayloadSchema,
   PreemptionRequestedPayloadSchema,
+  SystemHealthChangedPayloadSchema,
   TriggerNewEventPayloadSchema,
 } from "../../schemas/events.js";
+import { NotificationKinds } from "../../schemas/notifications.js";
 import { ObservationTypes } from "../../schemas/observer.js";
 import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import { createDispatchTracker } from "../dispatch-tracker/index.js";
 import { createEvaluationManager } from "../evaluation/index.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
+import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { createRetryPolicy } from "../retry-policy/index.js";
 import { createWorkspaceReaper } from "../workspace-reaper/index.js";
@@ -31,7 +34,6 @@ import { DaemonAlreadyRunningError } from "./errors.js";
 import { createDaemonHealthMonitor } from "./health-monitor.js";
 import { createPrEventPoller } from "./pr-event-poller.js";
 import { type PendingPreemption, createPreemptionManager } from "./preemption-manager.js";
-import { type QueryHandlerDeps, handleQuery } from "./query-handler.js";
 import { createResponsePoller } from "./response-poller.js";
 import { createTaskScheduler, isSlotConsuming } from "./task-scheduler.js";
 import { createTriggerPoller } from "./trigger-poller.js";
@@ -104,6 +106,14 @@ export const EVENTS: EventDeclaration[] = [
     publishers: ["evaluation"],
     subscribers: [],
   },
+  {
+    type: EventTypes["system.health_changed"],
+    description:
+      "Emitted when a daemon-internal component's health changes (e.g. memory crosses the critical RSS threshold)",
+    payloadSchema: SystemHealthChangedPayloadSchema,
+    publishers: ["daemon"],
+    subscribers: [],
+  },
 ];
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -150,10 +160,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   let startedAt: string | null = null;
   let tickInterval: ReturnType<typeof setInterval> | null = null;
   let tickCount = 0;
-
-  /** Cooldown map for health event notifications — prevents flooding owner. */
-  const healthNotifyCooldowns = new Map<string, number>();
-  const HEALTH_NOTIFY_COOLDOWN_MS = 300_000; // 5 minutes
 
   /** Memory warning threshold in bytes (2 GB). */
   const MEMORY_WARNING_BYTES = 2 * 1024 * 1024 * 1024;
@@ -293,61 +299,36 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       }
     });
 
-    eventBus.subscribe("daemon:comm", EventTypes["comm.message_received"], (event: Event) => {
-      const payload = event.payload as EventPayloads["comm.message_received"];
-      // Skip task-directed responses — those are handled by the ResponsePoller for unblocking.
-      // Only general queries (no task_id) go to the QueryHandler.
-      if (payload.task_id) {
-        return;
-      }
-      const queryDeps: QueryHandlerDeps = {
-        taskEngine,
-        safetyLayer: ctx.safetyLayer,
-        notifications,
-      };
-      try {
-        handleQuery(payload, queryDeps);
-      } catch (err) {
-        observer.error("Query handler error", { err });
-      }
-    });
+    // Inbound queries are NOT routed through the event bus: the ResponsePoller classifies each inbound
+    // message (query vs unblock reply) and calls handleQuery directly. Routing it through a
+    // comm.message_received subscription would double-dispatch — the poller already published a
+    // task_id=null audit event for the query, which would re-trigger the handler here.
 
     eventBus.subscribe("daemon:state-sync", EventTypes["task.state_changed"], (event: Event) => {
       const payload = event.payload as EventPayloads["task.state_changed"];
       notifications.syncStateToCommPlugin(payload);
     });
 
-    // ── Health event → owner notification (with cooldown dedup) ──────────
-
-    function shouldNotifyHealth(key: string, now: number): boolean {
-      const last = healthNotifyCooldowns.get(key) ?? 0;
-      if (now - last < HEALTH_NOTIFY_COOLDOWN_MS) {
-        return false;
-      }
-      healthNotifyCooldowns.set(key, now);
-      return true;
-    }
+    // ── Health event → owner notification ────────────────────────────────
+    // Dedup is the notification-router's job now: each alert carries a stable `source` (null-task alerts)
+    // or a taskId (task-scoped) so the router's suppress window drops repeats from the same origin. This
+    // replaced the daemon's former hardcoded health-alert cooldown — one source of dedup, not two.
 
     eventBus.subscribe("daemon:health-trigger", EventTypes["health.trigger_failure"], (event: Event) => {
       const p = event.payload as EventPayloads["health.trigger_failure"];
-      if (!shouldNotifyHealth(`trigger:${p.trigger_id}`, clock.now())) {
-        return;
-      }
       notifications.notify({
-        kind: "alert",
+        kind: NotificationKinds.alert,
         taskId: null,
+        source: `trigger:${p.trigger_id}`,
         message: `Trigger adapter "${p.trigger_id}" has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Last error: ${p.last_error}. Check your configuration.`,
       });
     });
 
     eventBus.subscribe("daemon:health-stuck", EventTypes["health.stuck_detected"], (event: Event) => {
       const p = event.payload as EventPayloads["health.stuck_detected"];
-      if (!shouldNotifyHealth(`stuck:${p.task_id}`, clock.now())) {
-        return;
-      }
       const title = taskEngine.getTask(p.task_id)?.title ?? p.task_id;
       notifications.notify({
-        kind: "alert",
+        kind: NotificationKinds.alert,
         taskId: p.task_id,
         message: `Task "${title}" appears stuck (${p.condition}). Elapsed: ${String(Math.floor(p.elapsed_ms / 60_000))}m. Threshold: ${String(Math.floor(p.threshold_ms / 60_000))}m.`,
       });
@@ -371,24 +352,20 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
     eventBus.subscribe("daemon:health-plugin-failed", EventTypes["health.plugin_failed"], (event: Event) => {
       const p = event.payload as EventPayloads["health.plugin_failed"];
-      if (!shouldNotifyHealth(`plugin:${p.plugin_id}`, clock.now())) {
-        return;
-      }
       notifications.notify({
-        kind: "alert",
+        kind: NotificationKinds.alert,
         taskId: null,
+        source: `plugin:${p.plugin_id}`,
         message: `Plugin "${p.plugin_id}" (${p.plugin_type}) has failed ${String(p.consecutive_failures)} consecutive times (threshold: ${String(p.threshold)}). Error: ${p.error}`,
       });
     });
 
     eventBus.subscribe("daemon:health-plugin-unhealthy", EventTypes["health.plugin_unhealthy"], (event: Event) => {
       const p = event.payload as EventPayloads["health.plugin_unhealthy"];
-      if (!shouldNotifyHealth(`plugin-unhealthy:${p.plugin_id}`, clock.now())) {
-        return;
-      }
       notifications.notify({
-        kind: "alert",
+        kind: NotificationKinds.alert,
         taskId: null,
+        source: `plugin-unhealthy:${p.plugin_id}`,
         message: `Plugin "${p.plugin_id}" (${p.plugin_type}) is unhealthy after ${String(p.consecutive_failures)} consecutive failures. Error: ${p.error}`,
       });
     });
@@ -398,7 +375,6 @@ export function createDaemon(ctx: DaemonContext): Daemon {
 
   function unregisterSubscriptions(): void {
     eventBus.unsubscribe("daemon:cost");
-    eventBus.unsubscribe("daemon:comm");
     eventBus.unsubscribe("daemon:state-sync");
     eventBus.unsubscribe("daemon:health-trigger");
     eventBus.unsubscribe("daemon:health-stuck");
@@ -575,13 +551,8 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     // Step 8: Detect external PR events on review-pending tasks and re-enter them through the pipeline
     await prEventPoller.poll(reviewPendingTasks);
 
-    // Step 9: Cleanup expired seen keys and stale health cooldowns
+    // Step 9: Cleanup expired seen keys
     triggerPoller.cleanupExpiredKeys(now);
-    for (const [key, ts] of healthNotifyCooldowns) {
-      if (now - ts > HEALTH_NOTIFY_COOLDOWN_MS * 2) {
-        healthNotifyCooldowns.delete(key);
-      }
-    }
 
     // Step 10: Poll agent quota on a slow cadence so the dashboard quota widget stays fresh
     await pollQuotaOnCadence(tickCount);
@@ -596,7 +567,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       if (rss > MEMORY_CRITICAL_BYTES) {
         observer.error("Memory critical — RSS exceeds 4 GB", { rss_bytes: rss, rss_mb: rssMb });
         eventBus.publish({
-          type: "system.health_changed",
+          type: EventTypes["system.health_changed"],
           source: "daemon",
           task_id: null,
           payload: {
@@ -604,7 +575,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
             status: PluginHealthStates.unhealthy,
             message: `RSS ${rssMb} MB exceeds critical threshold`,
           },
-        });
+        } satisfies PublishInput<"system.health_changed">);
       } else if (rss > MEMORY_WARNING_BYTES) {
         observer.warn("Memory warning — RSS exceeds 2 GB", { rss_bytes: rss, rss_mb: rssMb });
       }

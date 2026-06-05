@@ -92,6 +92,7 @@ export const BlockCategorySchema = z.enum([
   "pr_rework_cap_hit", // an open PR's automated blocker (conflict/CI) survived the re-entry cap without resolving
   // Waits — expected, not a failure. Someone or something must act.
   "awaiting_human", // a sub-phase needs a person to answer before it can proceed
+  "awaiting_human_decision", // a discretionary decision the agent made that the owner's autonomy policy asks them to confirm
   "awaiting_pr_review", // delivery opened a PR and is waiting on an external review event
 ]);
 export type BlockCategory = z.infer<typeof BlockCategorySchema>;

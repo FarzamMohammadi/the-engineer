@@ -9,9 +9,6 @@ people:
         handle: "@farzam"
       - channel: github
         handle: "farzam"
-    preferences:
-      notification_level: milestones
-      quiet_hours: null
   - id: alice
     name: Alice Engineer
     roles:
@@ -19,8 +16,3 @@ people:
     contacts:
       - channel: github
         handle: "alice-eng"
-    preferences:
-      notification_level: all
-      quiet_hours:
-        start: "22:00"
-        end: "08:00"

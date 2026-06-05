@@ -3,6 +3,7 @@ import { AdapterTypes } from "../../schemas/adapters.js";
 import type { WorkspaceReaperConfig } from "../../schemas/config.js";
 import { EventTypes, GitBranchDeletedPayloadSchema, SystemReapCompletedPayloadSchema } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { type Task, TaskStates } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
@@ -113,6 +114,15 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
   let lastRun: ReapStats | null = null;
   /** Per-task consecutive reap-failure counts (in-memory; resets on restart, where the task is simply re-attempted). */
   const consecutiveFailures = new Map<string, number>();
+  /**
+   * Task IDs whose cancel has already been announced (source-ticket comment + label sync). The cancel reap
+   * is all-or-nothing: a failed PR-close leaves `reaped_at` NULL and the task is revisited next sweep, but the
+   * comment is NOT idempotent (it would post again every sweep). This first-visit guard fires the announcement
+   * exactly once per task while it remains unreaped; the entry is cleared on a successful reap. In-memory like
+   * `consecutiveFailures` — a restart can re-announce once, which is acceptable for a best-effort, single-user
+   * courtesy comment.
+   */
+  const cancelAnnounced = new Set<string>();
 
   // ── Reconciliation Sweep ──────────────────────────────────────────────────
 
@@ -310,9 +320,17 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
    * Cancel always reaps the branch (abandoned work), unlike a merged branch's retention or a push-only deliverable.
    */
   async function reapCancelledTask(task: Task): Promise<ReapOutcome> {
+    // The reaper is the single emitter for the cancel courtesy comment + label, covering EVERY cancel path —
+    // including the queued/blocked cancels that are raw DB writes emitting no `task.state_changed`, so the
+    // daemon's state-sync subscription never fires for them and `engineer:cancelled` would otherwise never be
+    // applied (cancelled is terminal, so it never self-corrects). Announce before any reap step or early
+    // return, gated to fire once per task.
+    announceCancel(task);
+
     const record = workspaceManager.getWorkspaceRecord(task.id);
     if (!record) {
       // Cancelled before a workspace ever existed (e.g. while still queued) — nothing to reap.
+      cancelAnnounced.delete(task.id);
       markReaped(task.id);
       observer.debug("Cancelled task has no workspace — nothing to reap, marked reaped", { taskId: task.id });
       return "reaped";
@@ -338,6 +356,7 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
         });
       }
 
+      cancelAnnounced.delete(task.id);
       markReaped(task.id);
       observer.info("Reaped cancelled task", { taskId: task.id, branch: record.branch });
       return "reaped";
@@ -349,6 +368,84 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
         error: sanitizeErrorMessage(error),
       });
       return "failed";
+    }
+  }
+
+  /**
+   * Announce a cancel on the source ticket exactly once: a courtesy comment plus the `engineer:cancelled`
+   * label sync. Both are best-effort and isolated — each runs in its own try/catch so one failing does not
+   * skip the other, and neither blocks the reap (a thrown failure here must never leave `reaped_at` NULL).
+   * Called for every cancel path, the reaper being the single emitter (the active-cancel comment was removed
+   * from the task-scheduler). The label sync is a direct call, not a synthetic `task.state_changed`, so it
+   * does not wake the daemon's other state-change subscribers (e.g. the cost-tracker); `diffStateLabels` is
+   * dynamic, so `engineer:cancelled` applies with no label-set change. Idempotent via `cancelAnnounced`.
+   */
+  function announceCancel(task: Task): void {
+    if (cancelAnnounced.has(task.id)) {
+      return;
+    }
+    cancelAnnounced.add(task.id);
+
+    let commented = false;
+    try {
+      notifications.notify({
+        kind: NotificationKinds.ticket_comment,
+        taskId: task.id,
+        message: "Task cancelled by the owner.",
+      });
+      commented = true;
+    } catch (error) {
+      observer.warn("Failed to comment the cancel on the source ticket — continuing the reap", {
+        taskId: task.id,
+        error: sanitizeErrorMessage(error),
+      });
+    }
+
+    let syncedLabel = false;
+    try {
+      // The task is already `cancelled` in the DB; the prior state is not on the task row, and the label diff
+      // ignores `from_state` anyway (it derives the target label from `to_state`), so reconcile from cancelled.
+      notifications.syncStateToCommPlugin({
+        task_id: task.id,
+        from_state: TaskStates.cancelled,
+        from_sub: null,
+        to_state: TaskStates.cancelled,
+        to_sub: null,
+        reason: "reaper_cancel_reconciliation",
+        triggered_by: "workspace-reaper",
+      });
+      syncedLabel = true;
+    } catch (error) {
+      observer.warn("Failed to sync the cancelled label to the comm plugin — continuing the reap", {
+        taskId: task.id,
+        error: sanitizeErrorMessage(error),
+      });
+    }
+
+    // Make the cross-process cancel visible to the dashboard: this label + comment appeared because the reaper
+    // reconciled a cancel that bypassed the state machine (a raw DB write, so no `task.state_changed` fired).
+    // `commented`/`synced_label` record whether each dispatch was issued — actual delivery is observable on the
+    // notification-router's own `notification_delivered`/`notification_send_failed` observations.
+    try {
+      observer.observe(
+        ObservationTypes.state_transition,
+        "cancel_reconciled",
+        {
+          to_state: TaskStates.cancelled,
+          reason: "reaper_cancel_reconciliation",
+          // Why this fired: a cross-process cancel (raw DB write) emitted no task.state_changed, so the comm
+          // plugin's state label is stale; the reaper reconciles it and posts the courtesy comment.
+          trigger: "cross_process_cancel",
+          synced_label: syncedLabel,
+          commented,
+        },
+        { task_id: task.id, level: "info" },
+      );
+    } catch (error) {
+      observer.warn("Failed to record the cancel-reconciliation observation", {
+        taskId: task.id,
+        error: sanitizeErrorMessage(error),
+      });
     }
   }
 

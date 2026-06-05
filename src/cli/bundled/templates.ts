@@ -85,6 +85,9 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 # --- Event bus ---
 # subscriber_warn_threshold_ms: 50    # Warn if a subscriber callback takes longer than this (default: 50)
 
+# --- Notifications ---
+# notification_suppress_window_ms: "5m"  # Drop a duplicate notification (same kind + scope) seen within this window (default: 5m)
+
 # --- Review polling (circuit breaker for git hosting API failures) ---
 # review_polling:
 #   failure_window_ms: "5m"              # Time window for failure counting (default: 5m)
@@ -102,32 +105,15 @@ export const ORCHESTRATOR_TEMPLATE = `# Orchestrator configuration for The Engin
 # All fields are optional — defaults shown as comments
 # Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"
 
+# --- Review ---
+# Which review lenses run before delivery. Each is a focused agent pass; "refine" then consolidates
+# their findings and fixes in place. Default: self-review only.
+# review:
+#   lenses: [self-review]             # add "security", "code-quality", and/or "architecture"
+
 # --- Observability ---
 # observability:
 #   live_activity: true               # Stream each agent run's live conversation to the dashboard (default: true)
-
-# --- Notifications ---  (RESERVED for Slice 10 — validated but not yet honored)
-# notification:
-#   milestone_based: true             # Notify only on milestones (not every step)
-#   suppress_window_ms: "5m"          # Suppress duplicate notifications (default: 5m)
-#   batch_window_ms: "2m"             # Batch rapid notifications (default: 2m)
-#   quiet_hours:
-#     enabled: false
-#     start: "22:00"
-#     end: "08:00"
-#     timezone: UTC
-#     allow_alerts: true
-#   digest:
-#     enabled: false
-#     schedule: "0 9 * * *"
-#     channel: telegram
-#     include: [completed, blocked, failed]
-
-# --- Question batching ---  (RESERVED for Slice 10 — validated but not yet honored)
-# question_batching:
-#   enabled: true
-#   batch_window_ms: "30s"            # Batch questions before asking (default: 30s)
-#   max_batch_size: 5
 `;
 
 export const SAFETY_TEMPLATE = `# Safety configuration for The Engineer
@@ -165,8 +151,14 @@ cost_limits:
 #     allowed_domains: null           # null = all domains allowed
 
 # --- Autonomy ---
+# When the agent makes a discretionary call it tags a category; The Engineer either proceeds, or
+# stops and asks you, per the policy. Curated defaults apply when omitted: code_style, test_coverage,
+# refactoring_local, doc_wording proceed; scope_expansion, refactoring_broad ask once "files > 5";
+# architecture, dependencies, public_api, destructive, security always ask. Unknown category = ask.
+# Uncomment a category to override its level (always_decide | threshold | always_ask).
 # autonomy:
-#   decisions: {}                     # Per-category overrides (keys are free-form, e.g. "code_style")
+#   decisions:
+#     dependencies: { level: always_decide }   # e.g. trust the agent to manage dependencies
 #   repo_overrides: {}                # Per-repo overrides
 
 # --- Response timeouts ---
@@ -229,9 +221,6 @@ people:
         handle: "your_telegram_username"   # <-- replace
       - channel: github
         handle: "your-github-username"     # <-- replace
-    preferences:
-      notification_level: milestones       # all | milestones | critical
-      quiet_hours: null                    # or: { start: "22:00", end: "08:00" }
 `;
 
 // ── Plugin Config Templates ─────────────────────────────────────────────────
@@ -398,6 +387,9 @@ telemetry:
 # ── Event Bus ───────────────────────────────────────────────────────────────
 subscriber_warn_threshold_ms: 50          # Warn if a subscriber callback exceeds this (ms). 0 = disabled. (default: 50)
 
+# ── Notifications ────────────────────────────────────────────────────────────
+notification_suppress_window_ms: "5m"     # Drop a duplicate notification (same kind + scope) seen within this window (default: 5m)
+
 # ── Review Polling (circuit breaker for git hosting API failures) ───────────
 review_polling:
   failure_window_ms: "5m"                 # Time window for failure counting (default: 5m)
@@ -420,35 +412,15 @@ export const EXAMPLE_ORCHESTRATOR = `# ┌────────────�
 # │  Duration fields accept human-readable strings: "5s", "30m", "8h", "1d"  │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
+# ── Review ──
+# Which review lenses run before delivery. Each is a focused agent pass that writes findings;
+# "refine" then consolidates them and fixes in place. Default: self-review only.
+review:
+  lenses: [self-review]                    # add "security", "code-quality", and/or "architecture" for deeper passes
+
 # ── Observability ──
 observability:
   live_activity: true                     # Stream each agent run's live conversation to the dashboard (default: true)
-
-# ── Notifications ──  (RESERVED for Slice 10 — validated but not yet honored)
-notification:
-  milestone_based: true                   # Notify only on milestones (default: true)
-  suppress_window_ms: "5m"                # Suppress duplicate notifications (default: 5m)
-  batch_window_ms: "2m"                   # Batch rapid notifications (default: 2m)
-  quiet_hours:
-    enabled: false                        # Enable quiet hours (default: false)
-    start: "22:00"                        # Quiet period start time (default: "22:00")
-    end: "08:00"                          # Quiet period end time (default: "08:00")
-    timezone: UTC                         # Timezone for quiet hours (default: UTC)
-    allow_alerts: true                    # Allow critical alerts during quiet hours (default: true)
-  digest:
-    enabled: false                        # Enable digest summaries (default: false)
-    schedule: "0 9 * * *"                 # Cron schedule for digest (default: "0 9 * * *")
-    channel: telegram                     # Channel for digest delivery (default: telegram)
-    include:                              # Task states to include in digest
-      - completed                         # (default: [completed, blocked, failed])
-      - blocked
-      - failed
-
-# ── Question Batching ──  (RESERVED for Slice 10 — validated but not yet honored)
-question_batching:
-  enabled: true                           # Batch questions before asking (default: true)
-  batch_window_ms: "30s"                  # Batch window (default: 30s)
-  max_batch_size: 5                       # Max questions per batch (default: 5)
 `;
 
 export const EXAMPLE_SAFETY = `# ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -490,10 +462,28 @@ scope:
     allowed_domains: null                 # Allowed external domains, null = all (default: null)
 
 # ── Autonomy ─────────────────────────────────────────────────────────────────
-# Per-category autonomy levels. Keys are free-form names (e.g. "code_style", "architecture").
-# Each decision can be: always_ask | threshold | always_decide
+# When the agent makes a discretionary call, it tags it with a category and The Engineer consults
+# the policy below: always_decide proceeds silently, always_ask stops and asks you, threshold asks
+# only when the call's size crosses a limit. Keys are free-form — an unknown category defaults to
+# always_ask (when in doubt, you are asked). A threshold whose metric the agent did not provide
+# also asks. The defaults below are conservative: safe, local calls proceed; risky or
+# hard-to-reverse calls ask.
 autonomy:
-  decisions: {}                           # Per-category overrides; unknown keys default to always_ask
+  decisions:
+    # Small, local, reversible — trust the agent.
+    code_style: { level: always_decide, description: "Formatting and naming within touched code" }
+    test_coverage: { level: always_decide, description: "How much to test the change" }
+    refactoring_local: { level: always_decide, description: "Refactors confined to the code being changed" }
+    doc_wording: { level: always_decide, description: "Wording of docs and comments" }
+    # Size-dependent — ask once the blast radius grows (agent reports "files" in the decision's details).
+    scope_expansion: { level: threshold, threshold: "files > 5", description: "Touching files beyond the task's core" }
+    refactoring_broad: { level: threshold, threshold: "files > 5", description: "Refactors spanning many files" }
+    # High-stakes or hard to reverse — always confirm.
+    architecture: { level: always_ask, description: "Structural or design changes" }
+    dependencies: { level: always_ask, description: "Adding, removing, or upgrading dependencies" }
+    public_api: { level: always_ask, description: "Changing a public interface or contract" }
+    destructive: { level: always_ask, description: "Deleting data, files, or history" }
+    security: { level: always_ask, description: "Anything touching auth, secrets, or permissions" }
   repo_overrides: {}                      # Per-repo autonomy overrides (default: {})
 
 # ── Response Timeouts ────────────────────────────────────────────────────────
@@ -565,9 +555,6 @@ people:
         handle: "farzam_tg"               #   REQUIRED — handle on that channel
       - channel: github
         handle: "FarzamMohammadi"
-    preferences:                          # optional — defaults shown below
-      notification_level: milestones      #   all | milestones | critical (default: milestones)
-      quiet_hours: null                   #   null or: { start: "22:00", end: "08:00" }
 
 # v1 is single-user: The Engineer reaches only the owner. The schema accepts more
 # entries, but extra people are never contacted — a startup/doctor warning fires when

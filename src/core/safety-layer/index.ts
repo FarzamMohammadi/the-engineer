@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { ResponseTimeout, SafetyConfig } from "../../schemas/config.js";
 import { CostLimitReachedPayloadSchema } from "../../schemas/events.js";
+import { SpanOptionsSchema } from "../../schemas/observer.js";
 import { ActionClassSchema, ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
@@ -29,6 +30,7 @@ const SafetyQueryInputSchema = z.object({
     decision_category: z.string().optional(),
     details: z.record(z.unknown()),
   }),
+  trace: SpanOptionsSchema.optional(),
 });
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -37,7 +39,7 @@ const SafetyQueryInputSchema = z.object({
 
 export type { SafetyQuery, SafetyVerdict, CostStatus } from "../interfaces/safety-layer.interface.js";
 
-export type { ParsedThreshold } from "./policy-engine.js";
+export type { ParsedThreshold, ThresholdOutcome } from "./policy-engine.js";
 export { matchesPathPattern, parseThreshold, evaluateThreshold } from "./policy-engine.js";
 export { getDailyWindowStart, getMonthlyWindowStart } from "./cost-tracker.js";
 
@@ -163,10 +165,10 @@ export class SafetyLayer implements ISafetyLayer {
         });
 
       case "should_i_ask": {
-        // RESERVED SCAFFOLDING: built but unwired. No production caller issues a
-        // should_i_ask query today — only cost_check is live. The autonomy path
-        // (evaluateAutonomy, findRepoOverride, autonomy_policy emission) is kept
-        // intact pending Slice 10 (Communication), which wires owner consultation.
+        // The owner-consultation path: the pipeline runner issues this per discretionary decision
+        // the agent surfaces, so the owner's autonomy policy decides proceed-vs-ask. The recorded
+        // verdict nests under the dispatch trace via the threaded scope (the runner's traceScope);
+        // a caller without a dispatch context (e.g. a CLI query) records under the bare task_id.
         const verdict = this.policyEngine.evaluateAutonomy(query);
         const category = query.context.decision_category ?? "unknown";
         this.observer.recordDecision(
@@ -179,7 +181,7 @@ export class SafetyLayer implements ISafetyLayer {
           verdict.action === "proceed" ? "proceed" : "ask_human",
           verdict.reason,
           1,
-          { task_id: query.context.task_id },
+          query.trace ?? { task_id: query.context.task_id },
         );
         return verdict;
       }

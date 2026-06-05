@@ -217,6 +217,17 @@ export const DaemonConfigSchema = z.object({
     })
     .default({}),
 
+  // Notification suppression: drop an identical notification — same kind and scope
+  // (taskId, or `source` for null-task alerts) — seen within this window. This is the single source of
+  // dedup for the outbound path, including repeated health alerts (it replaced the daemon's former
+  // hardcoded health-alert cooldown). Lives on the daemon because the router is daemon-resident.
+  notification_suppress_window_ms: z
+    .number()
+    .int()
+    .positive()
+    .default(300_000)
+    .describe("Drop a duplicate notification (same kind + scope) seen within this window. Default: 5 minutes."),
+
   // Notification retry (Issue #5)
   notification_retry: z
     .object({
@@ -284,42 +295,6 @@ export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 // ── Orchestrator Config ─────────────────────────────────────────────────────────
 // Loaded from orchestrator.yaml. Startup-only — not hot-reloadable.
 
-export const QuietHoursConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  start: z.string().default("22:00"),
-  end: z.string().default("08:00"),
-  timezone: z
-    .string()
-    .default("UTC")
-    .describe("IANA timezone identifier (e.g. 'America/New_York', 'Europe/London', 'UTC')."),
-  allow_alerts: z.boolean().default(true),
-});
-export type QuietHoursConfig = z.infer<typeof QuietHoursConfigSchema>;
-
-export const DigestConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  schedule: z.string().default("0 9 * * *"),
-  channel: z.string().default("telegram"),
-  include: z.array(z.string()).default(["completed", "blocked", "failed"]),
-});
-export type DigestConfig = z.infer<typeof DigestConfigSchema>;
-
-export const NotificationConfigSchema = z.object({
-  milestone_based: z.boolean().default(true),
-  suppress_window_ms: z.number().int().positive().default(300_000),
-  batch_window_ms: z.number().int().positive().default(120_000),
-  quiet_hours: QuietHoursConfigSchema.default({}),
-  digest: DigestConfigSchema.default({}),
-});
-export type NotificationConfig = z.infer<typeof NotificationConfigSchema>;
-
-export const QuestionBatchingConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  batch_window_ms: z.number().int().positive().default(30_000),
-  max_batch_size: z.number().int().positive().default(5),
-});
-export type QuestionBatchingConfig = z.infer<typeof QuestionBatchingConfigSchema>;
-
 /**
  * The review lenses available to the pipeline's Review phase. Each value names a sub-phase
  * file under `pipeline/review/`. `self-review` is the default lens; the rest are opt-in.
@@ -356,12 +331,6 @@ export const ObservabilityConfigSchema = z.object({
 export type ObservabilityConfig = z.infer<typeof ObservabilityConfigSchema>;
 
 export const OrchestratorConfigSchema = z.object({
-  // RESERVED for Slice 10 (Communication). `notification` and `question_batching` are validated today
-  // but NOT yet honored — the notification-router sends messages without reading these policy knobs
-  // (quiet hours, suppression/batch windows, digest). Slice 10 wires them. Documented as reserved in
-  // docs/configuration/orchestrator.md; do not delete as "dead" — they are forward-scaffolding.
-  notification: NotificationConfigSchema.default({}),
-  question_batching: QuestionBatchingConfigSchema.default({}),
   review: ReviewConfigSchema.default({}),
   observability: ObservabilityConfigSchema.default({}),
 });
@@ -514,10 +483,40 @@ export const AutonomyDecisionSchema = z.object({
 });
 export type AutonomyDecision = z.infer<typeof AutonomyDecisionSchema>;
 
+/**
+ * The curated default autonomy policy for the known decision categories the pipeline agent surfaces.
+ * Conservative but not paralyzing: small local reversible calls proceed; size-dependent calls ask once
+ * the blast radius grows; high-stakes or hard-to-reverse calls always ask. This is the source of truth
+ * — zero-config gets it, the safety template mirrors it for editing, and the agent prompt teaches the
+ * same vocabulary (cli/bundled/templates.ts, src/core/orchestrator/pipeline/agent-prompt.ts). Any
+ * category outside this set still resolves to always_ask (fail-safe), so the set stays freely extensible.
+ */
+export const DEFAULT_AUTONOMY_DECISIONS = {
+  code_style: { level: "always_decide", threshold: null, description: "Formatting and naming within touched code" },
+  test_coverage: { level: "always_decide", threshold: null, description: "How much to test the change" },
+  refactoring_local: {
+    level: "always_decide",
+    threshold: null,
+    description: "Refactors confined to the code being changed",
+  },
+  doc_wording: { level: "always_decide", threshold: null, description: "Wording of docs and comments" },
+  scope_expansion: {
+    level: "threshold",
+    threshold: "files > 5",
+    description: "Touching files beyond the task's core",
+  },
+  refactoring_broad: { level: "threshold", threshold: "files > 5", description: "Refactors spanning many files" },
+  architecture: { level: "always_ask", threshold: null, description: "Structural or design changes" },
+  dependencies: { level: "always_ask", threshold: null, description: "Adding, removing, or upgrading dependencies" },
+  public_api: { level: "always_ask", threshold: null, description: "Changing a public interface or contract" },
+  destructive: { level: "always_ask", threshold: null, description: "Deleting data, files, or history" },
+  security: { level: "always_ask", threshold: null, description: "Anything touching auth, secrets, or permissions" },
+} as const;
+
 export const AutonomyBoundariesSchema = z.object({
   decisions: z
     .record(AutonomyDecisionSchema)
-    .default({})
+    .default(DEFAULT_AUTONOMY_DECISIONS)
     .describe(
       "Per-category autonomy overrides. Keys are free-form category names (e.g. 'code_style', 'architecture'). Unknown categories default to always_ask.",
     ),

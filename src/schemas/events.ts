@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ZodType } from "zod";
 
-import { MessageTypeSchema } from "./adapters.js";
+import { MessageTypeSchema, PluginHealthStateSchema } from "./adapters.js";
 import { ActionClassSchema, ExternalRefSchema, SubStateSchema, TaskStateSchema } from "./task.js";
 
 // ── Event Envelope ─────────────────────────────────────────────────────────────
@@ -59,6 +59,7 @@ export const EventTypeSchema = z.enum([
   "evaluation.completed",
   "system.cleanup_completed",
   "system.reap_completed",
+  "system.health_changed",
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
@@ -383,6 +384,18 @@ export const SystemReapCompletedPayloadSchema = z.object({
 });
 export type SystemReapCompletedPayload = z.infer<typeof SystemReapCompletedPayloadSchema>;
 
+/**
+ * A daemon-internal component's health changed (e.g. the daemon's own memory crossing the critical RSS
+ * threshold). Mirrors a plugin health record's shape — component name, the new health state, and a
+ * human-readable reason — so the dashboard and audit trail render system health uniformly with plugin health.
+ */
+export const SystemHealthChangedPayloadSchema = z.object({
+  component: z.string(),
+  status: PluginHealthStateSchema,
+  message: z.string(),
+});
+export type SystemHealthChangedPayload = z.infer<typeof SystemHealthChangedPayloadSchema>;
+
 // ── EventPayloads mapped type ──────────────────────────────────────────────────
 
 export type EventPayloads = {
@@ -416,6 +429,7 @@ export type EventPayloads = {
   "evaluation.completed": EvaluationCompletedPayload;
   "system.cleanup_completed": SystemCleanupCompletedPayload;
   "system.reap_completed": SystemReapCompletedPayload;
+  "system.health_changed": SystemHealthChangedPayload;
 };
 
 // ── TypedEvent generic ─────────────────────────────────────────────────────────
@@ -458,4 +472,5 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "evaluation.completed": EvaluationCompletedPayloadSchema,
   "system.cleanup_completed": SystemCleanupCompletedPayloadSchema,
   "system.reap_completed": SystemReapCompletedPayloadSchema,
+  "system.health_changed": SystemHealthChangedPayloadSchema,
 };

@@ -12,17 +12,21 @@ const DELIVERABLE = "research.md";
 const ROLE =
   "Your role is research: study the code until you understand what this task touches and how it works. Investigate only — do not design a solution or change code. Later phases do that.";
 
+/** Absolute directory holding research's deliverable, result file, and any `outreach/` questions. */
+const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
+
 /** Research: study the codebase with observations-vs-inferences discipline. Skipped for trivial tasks. */
 export const investigate: SubPhase = {
   name: "investigate",
   skip: skipIfTrivial("requirements assessed this task as trivial — research adds nothing"),
   run: agentStep({
     stepName: "investigate",
-    directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
+    directory: dir,
     prompt: buildPrompt,
     systemPrompt: () => buildSystemPrompt(ROLE),
   }),
   next: investigateNext,
+  resultDir: dir,
 };
 
 /** `needs_human` blocks for the missing information; otherwise advance to planning. */

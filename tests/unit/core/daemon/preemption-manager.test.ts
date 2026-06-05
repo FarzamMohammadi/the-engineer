@@ -46,6 +46,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     },
     workspace_reaper: { enabled: false, interval_ms: 3_600_000 },
     database: { cache_size_mb: 64 },
+    notification_suppress_window_ms: 300_000,
     notification_retry: { interval_ms: 30_000, max_attempts: 120, max_age_ms: 3_600_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3, max_blocker_reentries: 3 },
     retry_policy: {

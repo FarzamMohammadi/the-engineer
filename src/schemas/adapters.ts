@@ -417,12 +417,6 @@ export type BranchProtection = z.infer<typeof BranchProtectionSchema>;
 
 // ── People Directory ────────────────────────────────────────────────────────────
 
-export const NotificationLevelSchema = z.enum(["all", "milestones", "critical"]);
-export type NotificationLevel = z.infer<typeof NotificationLevelSchema>;
-
-/** Constant enum values for NotificationLevel. Use instead of raw strings. */
-export const NotificationLevels = NotificationLevelSchema.enum;
-
 export const ContactSchema = z.object({
   channel: z.string(),
   handle: z.string(),
@@ -434,18 +428,6 @@ export const PersonSchema = z.object({
   name: z.string(),
   roles: z.array(z.string()),
   contacts: z.array(ContactSchema),
-  preferences: z
-    .object({
-      notification_level: NotificationLevelSchema.default("milestones"),
-      quiet_hours: z
-        .object({
-          start: z.string(),
-          end: z.string(),
-        })
-        .nullable()
-        .default(null),
-    })
-    .default({}),
 });
 export type Person = z.infer<typeof PersonSchema>;
 

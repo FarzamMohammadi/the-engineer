@@ -57,4 +57,7 @@ export type PrEventPollerContext = Pick<
   "config" | "registry" | "taskEngine" | "safetyLayer" | "peopleDirectory" | "clock" | "observer"
 >;
 
-export type ResponsePollerContext = Pick<DaemonContext, "config" | "eventBus" | "registry" | "taskEngine" | "observer">;
+export type ResponsePollerContext = Pick<
+  DaemonContext,
+  "config" | "eventBus" | "registry" | "taskEngine" | "safetyLayer" | "notifications" | "peopleDirectory" | "observer"
+>;

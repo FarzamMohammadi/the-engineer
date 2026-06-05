@@ -8,15 +8,11 @@ import {
   CostLimitValueSchema,
   CostLimitsSchema,
   DaemonConfigSchema,
-  DigestConfigSchema,
   MergePolicySchema,
   MultiRepoConfigSchema,
-  NotificationConfigSchema,
   OrchestratorConfigSchema,
   PrConfigSchema,
   ProviderLimitSchema,
-  QuestionBatchingConfigSchema,
-  QuietHoursConfigSchema,
   ResponseTimeoutSchema,
   SafetyConfigSchema,
   ScopeBoundariesSchema,
@@ -40,6 +36,7 @@ describe("DaemonConfigSchema", () => {
     expect(config.shutdown_timeout_ms).toBe(30_000);
     expect(config.trigger_poll_interval_ms).toBe(30_000);
     expect(config.seen_keys_ttl_ms).toBe(86_400_000);
+    expect(config.notification_suppress_window_ms).toBe(300_000);
   });
 
   it("produces valid logging defaults from empty input", () => {
@@ -121,57 +118,10 @@ describe("TelemetryConfigSchema", () => {
 
 // ── Orchestrator Config ─────────────────────────────────────────────────────────
 
-describe("QuietHoursConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = QuietHoursConfigSchema.parse({});
-    expect(config.enabled).toBe(false);
-    expect(config.start).toBe("22:00");
-    expect(config.end).toBe("08:00");
-    expect(config.timezone).toBe("UTC");
-    expect(config.allow_alerts).toBe(true);
-  });
-});
-
-describe("DigestConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = DigestConfigSchema.parse({});
-    expect(config.enabled).toBe(false);
-    expect(config.schedule).toBe("0 9 * * *");
-    expect(config.channel).toBe("telegram");
-    expect(config.include).toEqual(["completed", "blocked", "failed"]);
-  });
-});
-
-describe("NotificationConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = NotificationConfigSchema.parse({});
-    expect(config.milestone_based).toBe(true);
-    expect(config.suppress_window_ms).toBe(300_000);
-    expect(config.batch_window_ms).toBe(120_000);
-    expect(config.quiet_hours.enabled).toBe(false);
-    expect(config.digest.enabled).toBe(false);
-  });
-});
-
-describe("QuestionBatchingConfigSchema", () => {
-  it("produces valid defaults from empty input", () => {
-    const config = QuestionBatchingConfigSchema.parse({});
-    expect(config.enabled).toBe(true);
-    expect(config.batch_window_ms).toBe(30_000);
-    expect(config.max_batch_size).toBe(5);
-  });
-});
-
 describe("OrchestratorConfigSchema", () => {
   it("produces valid config from empty input with all nested defaults", () => {
     const config = OrchestratorConfigSchema.parse({});
     expect(config.review.lenses).toEqual(["self-review"]);
-    expect(config.notification.milestone_based).toBe(true);
-    expect(config.question_batching.enabled).toBe(true);
-  });
-
-  it("defaults the live-activity feed on", () => {
-    const config = OrchestratorConfigSchema.parse({});
     expect(config.observability.live_activity).toBe(true);
   });
 
@@ -185,7 +135,7 @@ describe("OrchestratorConfigSchema", () => {
       review: { lenses: ["self-review", "security"] },
     });
     expect(config.review.lenses).toEqual(["self-review", "security"]);
-    expect(config.notification.milestone_based).toBe(true);
+    expect(config.observability.live_activity).toBe(true);
   });
 });
 
@@ -328,9 +278,16 @@ describe("AutonomyDecisionSchema", () => {
 });
 
 describe("AutonomyBoundariesSchema", () => {
-  it("produces valid defaults from empty input", () => {
+  it("defaults to the curated autonomy policy from empty input", () => {
     const config = AutonomyBoundariesSchema.parse({});
-    expect(config.decisions).toEqual({});
+    // Curated defaults ship so zero-config gets sensible behavior, not "ask on everything".
+    expect(config.decisions["code_style"]?.level).toBe(AutonomyLevels.always_decide);
+    expect(config.decisions["scope_expansion"]).toEqual({
+      level: AutonomyLevels.threshold,
+      threshold: "files > 5",
+      description: "Touching files beyond the task's core",
+    });
+    expect(config.decisions["security"]?.level).toBe(AutonomyLevels.always_ask);
     expect(config.repo_overrides).toEqual({});
   });
 
@@ -419,8 +376,9 @@ describe("SafetyConfigSchema", () => {
     expect(config.scope.branches.create_pattern).toBe("engineer/.*");
     expect(config.scope.files.exclude_patterns).toContain(".env*");
     expect(config.scope.files.exclude_patterns).toContain("*.key");
-    // Autonomy defaults to always_ask (safest)
-    expect(config.autonomy.decisions).toEqual({});
+    // Autonomy ships a curated default policy; unlisted categories still resolve to always_ask.
+    expect(config.autonomy.decisions["code_style"]?.level).toBe("always_decide");
+    expect(config.autonomy.decisions["architecture"]?.level).toBe("always_ask");
     // Merge defaults to no auto-merge
     expect(config.merge.auto_merge_after_approval.default).toBe(false);
     // Response timeout has 3 default stages

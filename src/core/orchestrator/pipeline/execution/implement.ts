@@ -19,16 +19,20 @@ const DELIVERABLE = "implementation.md";
 const ROLE =
   "Your role is execution: build the change cleanly, test it as you go, and commit logical units of work. The plan is your starting point, not a contract — if a simpler path emerges, take it and note why.";
 
+/** Absolute directory holding execution's deliverable, result file, and any `outreach/` questions. */
+const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
+
 /** Execution: write the code and commit as you go. Its verify gate re-runs it until the project's checks pass. */
 export const implement: SubPhase = {
   name: "implement",
   run: agentStep({
     stepName: "implement",
-    directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
+    directory: dir,
     prompt: buildPrompt,
     systemPrompt: () => buildSystemPrompt(ROLE),
   }),
   next: implementNext,
+  resultDir: dir,
 };
 
 /** `needs_human` blocks for input; otherwise advance to verify, which runs the project's gates. */

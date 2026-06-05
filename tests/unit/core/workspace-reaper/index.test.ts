@@ -43,6 +43,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
   const isInFlight = vi.fn(() => false);
   const publish = vi.fn();
   const notify = vi.fn();
+  const syncStateToCommPlugin = vi.fn();
   const record: WorkspaceRecord = {
     taskId: "t1",
     repo: "acme/app",
@@ -76,7 +77,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     registry: { getPrimaryPlugin } as unknown as WorkspaceReaperDeps["registry"],
     dispatchTracker: { isInFlight },
     eventBus: { publish } as unknown as WorkspaceReaperDeps["eventBus"],
-    notifications: { notify } as unknown as WorkspaceReaperDeps["notifications"],
+    notifications: { notify, syncStateToCommPlugin } as unknown as WorkspaceReaperDeps["notifications"],
     clock,
     observer: createTestObserverFacade("workspace-reaper"),
   });
@@ -99,10 +100,18 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     publish,
     branchDeletedPublished,
     notify,
+    syncStateToCommPlugin,
     getPRStatus,
     commentOnPR,
     closePR,
   };
+}
+
+/** Whether the reaper posted the cancel courtesy comment on the source ticket (any number of times). */
+function cancelComments(notify: ReturnType<typeof vi.fn>): unknown[] {
+  return notify.mock.calls
+    .map((call) => call[0] as { kind: string; message?: string })
+    .filter((n) => n.kind === "ticket_comment" && n.message === "Task cancelled by the owner.");
 }
 
 /** A cancelled task, optionally with an open PR (its review.pr_number drives the close-PR arm). */
@@ -357,6 +366,66 @@ describe("workspace reaper — cancelled arm", () => {
     // Sweep 2: the remote delete now succeeds, so the reap completes.
     await h.reaper.runOnce();
     expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+    expect(h.reaper.getLastRun()?.reaped).toBe(1);
+  });
+});
+
+describe("workspace reaper — cancel announcement (source-ticket comment + label sync)", () => {
+  it("comments on the source ticket and syncs the cancelled label for a queued-cancel (no workspace)", async () => {
+    // A task cancelled while still queued never had a workspace — the reaper still announces the cancel.
+    const h = makeReaper({ tasks: [cancelledTask(null)] });
+    h.getWorkspaceRecord.mockReturnValue(null);
+
+    await h.reaper.runOnce();
+
+    expect(cancelComments(h.notify)).toHaveLength(1);
+    expect(h.syncStateToCommPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({ task_id: "t1", to_state: "cancelled" }),
+    );
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+  });
+
+  it("comments on the source ticket and syncs the cancelled label for a blocked-cancel (with workspace)", async () => {
+    // A task cancelled while blocked has a workspace; the reap reclaims it and the cancel is announced once.
+    const h = makeReaper({ tasks: [cancelledTask(7)] });
+
+    await h.reaper.runOnce();
+
+    expect(cancelComments(h.notify)).toHaveLength(1);
+    expect(h.syncStateToCommPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({ task_id: "t1", to_state: "cancelled" }),
+    );
+    expect(h.deleteRemoteBranch).toHaveBeenCalledWith("t1");
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+  });
+
+  it("does not re-comment across sweeps when the reap retries (idempotent first-visit announcement)", async () => {
+    // Sweep 1: the remote delete throws, so the task is left unreaped and revisited next sweep — but the
+    // courtesy comment must not post again (the comment is not idempotent; the guard fires it exactly once).
+    const h = makeReaper({ tasks: [cancelledTask(7)] });
+    h.deleteRemoteBranch.mockImplementationOnce(() => {
+      throw new Error("network down");
+    });
+
+    await h.reaper.runOnce(); // failed reap — announced once
+    await h.reaper.runOnce(); // retry succeeds — must not re-announce
+
+    expect(cancelComments(h.notify)).toHaveLength(1);
+    expect(h.syncStateToCommPlugin).toHaveBeenCalledTimes(1);
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+  });
+
+  it("isolates the comment from the label sync — a sync that throws still posts the comment and reaps", async () => {
+    const h = makeReaper({ tasks: [cancelledTask(null)] });
+    h.getWorkspaceRecord.mockReturnValue(null);
+    h.syncStateToCommPlugin.mockImplementation(() => {
+      throw new Error("comm plugin down");
+    });
+
+    await h.reaper.runOnce();
+
+    expect(cancelComments(h.notify)).toHaveLength(1); // the comment still went out
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String)); // the reap still completed
     expect(h.reaper.getLastRun()?.reaped).toBe(1);
   });
 });

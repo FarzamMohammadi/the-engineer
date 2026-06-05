@@ -18,17 +18,21 @@ const DELIVERABLE = "plan.md";
 const ROLE =
   "Your role is planning: choose the simplest approach that fully meets the requirements, then stress-test it yourself before committing. Do not write code — produce the plan execution will follow.";
 
+/** Absolute directory holding planning's deliverable, result file, and any `outreach/` questions. */
+const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
+
 /** Planning: design the approach and stress-test it in one session. Skipped for trivial tasks. */
 export const design: SubPhase = {
   name: "design",
   skip: skipIfTrivial("requirements assessed this task as trivial — execution can proceed without a plan"),
   run: agentStep({
     stepName: "design",
-    directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
+    directory: dir,
     prompt: buildPrompt,
     systemPrompt: () => buildSystemPrompt(ROLE),
   }),
   next: designNext,
+  resultDir: dir,
 };
 
 /** `needs_human` blocks for a decision; otherwise advance to execution. */

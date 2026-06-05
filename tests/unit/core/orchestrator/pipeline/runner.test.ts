@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { InvalidRouteError, runPipeline } from "../../../../../src/core/orchestrator/pipeline/runner.js";
 import type { Route, SubPhase, SubPhaseResult } from "../../../../../src/core/orchestrator/pipeline/types.js";
-import { createMockPipeline, mockPhase, mockSubPhase } from "../../../../helpers/test-mock-pipeline.js";
+import { createMockPipeline, mockOwner, mockPhase, mockSubPhase } from "../../../../helpers/test-mock-pipeline.js";
 
 /** A sub-phase whose run records its name into `order` and then succeeds. */
 function recording(name: string, order: string[], next?: SubPhase["next"]): SubPhase {
@@ -157,6 +157,176 @@ describe("runPipeline", () => {
       const outcome = await runPipeline([mockPhase("delivery", [finishing])], ctx);
 
       expect(outcome).toEqual({ kind: "completed" });
+    });
+  });
+
+  describe("resume with the owner's answer (round-trip return)", () => {
+    it("seeds the resumed non-requirements sub-phase's run with the carried answer", async () => {
+      // The orchestrator's resolveResponse builds a ResumeState whose cursor points at the asking
+      // sub-phase and whose carry holds the owner's reply. The runner must hand that carry to the
+      // resumed sub-phase's run — this is how the answer reaches a NON-requirements phase on resume.
+      let seenCarry: string | undefined;
+      const implement = mockSubPhase("implement", {
+        run: (ctx) => {
+          seenCarry = ctx.carry?.summary;
+          return Promise.resolve<SubPhaseResult>({ outcome: "ok", summary: "applied the owner's answer" });
+        },
+        next: () => ({ go: "done" }) satisfies Route,
+      });
+      const { ctx } = createMockPipeline();
+
+      await runPipeline([mockPhase("execution", [implement])], ctx, {
+        cursor: { phaseIndex: 0, subIndex: 0 },
+        phaseIteration: 0,
+        totalReworks: 0,
+        carry: { summary: "The owner answered: use the existing AuthService" },
+      });
+
+      expect(seenCarry).toContain("use the existing AuthService");
+    });
+  });
+
+  describe("autonomy escalation", () => {
+    /** A sub-phase that surfaces one discretionary decision of the given category, then advances. */
+    function surfacing(category: string, details?: Record<string, unknown>): SubPhase {
+      return mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "ok",
+            summary: "built it",
+            data: {
+              decisions: [
+                {
+                  category,
+                  summary: "Renamed the public getUser to fetchUser",
+                  chosen: "fetchUser",
+                  reasoning: "matches the verb convention",
+                  ...(details ? { details } : {}),
+                },
+              ],
+            },
+          }),
+      });
+    }
+
+    it("proceeds silently when the policy lets the agent decide every surfaced decision", async () => {
+      const next = vi.fn(() => ({ go: "done" }) satisfies Route);
+      const sub = { ...surfacing("code_style"), next };
+      const { ctx, consultJudgment } = createMockPipeline({
+        consultJudgment: () => ({ action: "proceed", reason: "code_style is always_decide" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      expect(consultJudgment).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalled();
+      expect(outcome).toEqual({ kind: "completed" });
+    });
+
+    it("blocks and asks the owner when the policy escalates a surfaced decision", async () => {
+      const next = vi.fn(() => ({ go: "done" }) satisfies Route);
+      const sub = { ...surfacing("architecture"), next };
+      const { ctx } = createMockPipeline({
+        people: [mockOwner()],
+        consultJudgment: () => ({ action: "ask_human", reason: "architecture requires approval" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      expect(next).not.toHaveBeenCalled();
+      // A discretionary decision the owner must confirm is its own category — distinct from a sub-phase's
+      // `awaiting_human` (stuck, needs info) — so the daemon never self-unblocks it.
+      expect(outcome).toMatchObject({
+        kind: "blocked",
+        detail: { category: "awaiting_human_decision", sub_phase: "implement" },
+      });
+      if (outcome.kind === "blocked") {
+        expect(outcome.detail.needed).toContain("architecture");
+        expect(outcome.detail.needed).toContain("fetchUser");
+      }
+    });
+
+    it("proceeds and records an autonomy_no_owner decision when the policy escalates but no owner is configured", async () => {
+      const next = vi.fn(() => ({ go: "done" }) satisfies Route);
+      const sub = { ...surfacing("architecture"), next };
+      // No `people` — getOwner() is null. Blocking would strand the task forever, so the runner proceeds.
+      const { ctx, observer } = createMockPipeline({
+        consultJudgment: () => ({ action: "ask_human", reason: "architecture requires approval" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      expect(outcome).toEqual({ kind: "completed" });
+      expect(next).toHaveBeenCalled();
+      const decision = observer.decisions.find((d) => d.name === "autonomy_no_owner");
+      expect(decision?.chosen).toBe("proceed_without_owner");
+      expect(decision?.reasoning).toContain("fetchUser");
+      const ownerlessWarn = observer.logs.find(
+        (l) => l.level === "warn" && l.msg === "Proceeding on a discretionary decision with no owner to ask",
+      );
+      expect(ownerlessWarn).toBeDefined();
+    });
+
+    it("passes the decision category, details, and the full dispatch trace into the consult", async () => {
+      const sub = surfacing("scope_expansion", { files: 12 });
+      const { ctx, consultJudgment } = createMockPipeline({
+        task: { id: "task-trace", repo: "owner/repo" },
+        consultJudgment: () => ({ action: "proceed", reason: "within threshold" }),
+      });
+
+      await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      expect(consultJudgment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "should_i_ask",
+          context: expect.objectContaining({
+            task_id: "task-trace",
+            repo: "owner/repo",
+            decision_category: "scope_expansion",
+            details: { files: 12 },
+          }),
+          trace: expect.objectContaining({ task_id: "task-trace", phase: "execution" }),
+        }),
+      );
+    });
+
+    it("does not consult the policy when no decisions are surfaced", async () => {
+      const order: string[] = [];
+      const { ctx, consultJudgment } = createMockPipeline();
+
+      await runPipeline([mockPhase("execution", [recording("implement", order)])], ctx);
+
+      expect(consultJudgment).not.toHaveBeenCalled();
+    });
+
+    it("asks on the first escalated decision and stops consulting the rest", async () => {
+      const sub = mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "ok",
+            summary: "two calls",
+            data: {
+              decisions: [
+                { category: "code_style", summary: "a", chosen: "x", reasoning: "y" },
+                { category: "security", summary: "touched auth", chosen: "jwt", reasoning: "simplest" },
+              ],
+            },
+          }),
+      });
+      const { ctx, consultJudgment } = createMockPipeline({
+        people: [mockOwner()],
+        consultJudgment: (query) => {
+          const category = (query as { context: { decision_category: string } }).context.decision_category;
+          return category === "security"
+            ? { action: "ask_human", reason: "security always asks" }
+            : { action: "proceed", reason: "ok" };
+        },
+      });
+
+      const outcome = await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      expect(consultJudgment).toHaveBeenCalledTimes(2);
+      expect(outcome).toMatchObject({ kind: "blocked", detail: { category: "awaiting_human_decision" } });
     });
   });
 

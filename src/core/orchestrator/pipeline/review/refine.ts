@@ -38,17 +38,21 @@ export const RefineDetailsSchema = z.object({ verdict: z.enum(VERDICTS) });
 
 const DETAILS_HINT = '"verdict": "ship" | "revise" | "rework_execution" | "rework_planning" | "rework_requirements"';
 
+/** Absolute directory holding refine's deliverable, result file, and any `outreach/` questions. */
+const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
+
 /** Review: consolidate the lenses' findings, fix in place, and decide ship / re-check / escalate. */
 export const refine: SubPhase = {
   name: "refine",
   run: agentStep({
     stepName: "refine",
-    directory: (ctx) => resultDirectory(ctx, PHASE_DIR),
+    directory: dir,
     prompt: buildPrompt,
     systemPrompt: () => buildSystemPrompt(ROLE),
     detailsSchema: RefineDetailsSchema,
   }),
   next: refineNext,
+  resultDir: dir,
 };
 
 /**

@@ -174,7 +174,10 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       peopleDirectory,
       eventBus,
       observer: observer.child("notifications"),
-      config: { notification_retry: config.daemon.notification_retry },
+      config: {
+        notification_retry: config.daemon.notification_retry,
+        notification_suppress_window_ms: config.daemon.notification_suppress_window_ms,
+      },
       clock: new RealClock(),
     });
 
@@ -237,8 +240,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     eventTopology.registerSubscriber("safety_layer", EventTypes["cost.incurred"]);
     eventTopology.registerSubscriber("safety_layer:cleanup", EventTypes["task.state_changed"]);
     eventTopology.registerSubscriber("daemon:cost", EventTypes["cost.limit_reached"]);
-    // daemon:comm subscribes to comm.message_received — topology registration deferred until
-    // CommunicationAdapter.receive capability is implemented (see future-considerations.md)
+    // No subscriber for comm.message_received: inbound queries are handled directly by the ResponsePoller
+    // (which calls handleQuery), not through an event-bus subscription. The poller publishes the event
+    // purely for the audit trail. See core/daemon/response-poller.ts.
     eventTopology.registerSubscriber("daemon:state-sync", EventTypes["task.state_changed"]);
 
     const eventDeclarations = eventTopology.getAllDeclarations();

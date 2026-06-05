@@ -43,16 +43,18 @@ export interface LensSpec {
 
 /** Build a review-lens sub-phase from its spec. Skips when the lens is not enabled in config. */
 export function lens(spec: LensSpec): SubPhase {
+  const dir = (ctx: Ctx): string => lensDirectory(ctx, spec.name);
   return {
     name: spec.name,
     skip: (ctx) => skipWhenDisabled(spec.name, ctx),
     run: agentStep({
       stepName: spec.name,
-      directory: (ctx) => lensDirectory(ctx, spec.name),
+      directory: dir,
       prompt: (ctx) => buildLensPrompt(ctx, spec),
       systemPrompt: () => buildSystemPrompt(spec.role),
     }),
     next: lensNext,
+    resultDir: dir,
   };
 }
 

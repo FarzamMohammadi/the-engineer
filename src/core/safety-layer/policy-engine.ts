@@ -12,6 +12,14 @@ export interface ParsedThreshold {
   value: number;
 }
 
+/**
+ * The outcome of measuring a threshold against a decision's details. Three states, not a bool,
+ * because "the metric is missing" must route differently from "the metric is within limit":
+ * an absent metric means the agent surfaced a threshold-governed decision without the number the
+ * threshold needs, so the safe move is to ask the owner rather than silently proceed.
+ */
+export type ThresholdOutcome = "exceeded" | "within" | "metric_absent";
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const THRESHOLD_REGEX = /^(\w+)\s*(>=|<=|>|<|=)\s*(\d+(?:\.\d+)?)/;
@@ -41,27 +49,31 @@ export function parseThreshold(threshold: string): ParsedThreshold | null {
 }
 
 /**
- * Evaluate a parsed threshold against a details object.
- *
- * Returns true if the threshold is EXCEEDED (i.e., the condition that triggers
- * "ask_human" is met). Returns false if the metric is not found in details.
+ * Measure a parsed threshold against a details object. `exceeded` means the ask-the-owner
+ * condition is met; `within` means the agent may proceed; `metric_absent` means details carry
+ * no number for the metric, which fails safe to asking (see {@link ThresholdOutcome}).
  */
-export function evaluateThreshold(parsed: ParsedThreshold, details: Record<string, unknown>): boolean {
+export function evaluateThreshold(parsed: ParsedThreshold, details: Record<string, unknown>): ThresholdOutcome {
   const actual = details[parsed.metric];
   if (typeof actual !== "number") {
-    return false;
+    return "metric_absent";
   }
-  switch (parsed.op) {
+  return compareThreshold(parsed.op, actual, parsed.value) ? "exceeded" : "within";
+}
+
+/** Apply a threshold operator to two numbers — true when the ask-the-owner condition holds. */
+function compareThreshold(op: ParsedThreshold["op"], actual: number, value: number): boolean {
+  switch (op) {
     case ">":
-      return actual > parsed.value;
+      return actual > value;
     case "<":
-      return actual < parsed.value;
+      return actual < value;
     case ">=":
-      return actual >= parsed.value;
+      return actual >= value;
     case "<=":
-      return actual <= parsed.value;
+      return actual <= value;
     case "=":
-      return actual === parsed.value;
+      return actual === value;
     default:
       return false;
   }
@@ -201,11 +213,10 @@ export class PolicyEngine {
   }
 
   /**
-   * Autonomy evaluation for should_i_ask queries.
-   *
-   * RESERVED SCAFFOLDING: built but unwired pending Slice 10 (Communication).
-   * Reached only via consultJudgment("should_i_ask"), which has no production
-   * caller yet — only the cost_check path is live today.
+   * Autonomy evaluation for should_i_ask queries — does the owner's policy let the agent decide
+   * this category, or must it ask? Reached via consultJudgment("should_i_ask"), which the pipeline
+   * runner issues per discretionary decision the agent surfaces. A category with no rule (or a
+   * threshold whose metric is absent) fails safe to ask_human — when in doubt, involve the owner.
    */
   evaluateAutonomy(query: SafetyQuery): SafetyVerdict {
     const category = query.context.decision_category;
@@ -252,19 +263,22 @@ export class PolicyEngine {
             reason: `unparseable threshold "${decision.threshold}" for "${category}"`,
           };
         }
-        const exceeded = evaluateThreshold(parsed, query.context.details);
-        if (exceeded) {
-          return {
-            allowed: false,
-            action: "ask_human",
-            reason: `${category} ${parsed.metric} (${query.context.details[parsed.metric]}) exceeds threshold (${parsed.value})`,
-          };
+        switch (evaluateThreshold(parsed, query.context.details)) {
+          case "exceeded":
+            return {
+              allowed: false,
+              action: "ask_human",
+              reason: `${category} ${parsed.metric} (${query.context.details[parsed.metric]}) exceeds threshold (${parsed.value})`,
+            };
+          case "metric_absent":
+            return {
+              allowed: false,
+              action: "ask_human",
+              reason: `${category} has threshold "${decision.threshold}" but no "${parsed.metric}" was provided — asking the owner`,
+            };
+          default:
+            return { allowed: true, action: "proceed", reason: `${category} within threshold` };
         }
-        return {
-          allowed: true,
-          action: "proceed",
-          reason: `${category} within threshold`,
-        };
       }
 
       default:

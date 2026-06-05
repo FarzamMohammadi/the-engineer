@@ -31,7 +31,7 @@ import { sendOutreach } from "./outreach-sender.js";
 import { PIPELINE } from "./pipeline/pipeline.js";
 import { entryFor, reentryCarry } from "./pipeline/pr-events.js";
 import { type Cursor, type ResumeState, type RunnerOutcome, runPipeline } from "./pipeline/runner.js";
-import type { BlockDetail, Carry, Ctx } from "./pipeline/types.js";
+import type { BlockDetail, Carry, Ctx, SubPhase } from "./pipeline/types.js";
 import { type ExecuteTaskResult, type OrchestratorContext, Outcomes } from "./types.js";
 import { type WorkspaceLifecycle, createWorkspaceLifecycle } from "./workspace-lifecycle.js";
 
@@ -84,10 +84,37 @@ function toBlockReason(category: BlockCategory): BlockReason {
     case BlockCategories.agent_unavailable:
       return BlockReasons.agent_unavailable;
     case BlockCategories.awaiting_human:
+    case BlockCategories.awaiting_human_decision:
       return BlockReasons.need_more_info;
     default:
       return BlockReasons.pipeline_failed;
   }
+}
+
+/** Find a sub-phase across the whole pipeline by its name. Undefined when no phase declares it (a reshape). */
+function findSubPhase(name: string): SubPhase | undefined {
+  for (const phaseDef of PIPELINE) {
+    const match = phaseDef.subPhases.find((sub) => sub.name === name);
+    if (match) {
+      return match;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The `outreach/` directory of the sub-phase that blocked, or null when it is not a known agent
+ * sub-phase (an orchestrator sub-phase — verify, the delivery git/PR steps — writes no deliverable,
+ * so it has no outreach directory). Resolved through the sub-phase's own `resultDir`, so the layout
+ * (including review's nested `review/<lens>` directories) stays single-sourced with where the
+ * sub-phase actually writes. Exported for direct unit testing, like `responseCarry`.
+ */
+export function outreachDirForSubPhase(ctx: Ctx, subPhaseName: string): string | null {
+  const subPhase = findSubPhase(subPhaseName);
+  if (!subPhase?.resultDir) {
+    return null;
+  }
+  return path.join(subPhase.resultDir(ctx), "outreach");
 }
 
 /** Locate the pipeline cursor for a phase plus optional sub-phase name. Undefined when the pipeline no longer declares them (a reshape). */
@@ -393,8 +420,15 @@ export class Orchestrator {
   /** Transition a blocked task, persist the typed block payload, and deliver any pending outreach. */
   private async blockTask(ctx: Ctx, sessionId: string, detail: BlockDetail): Promise<ExecuteTaskResult> {
     const reason = toBlockReason(detail.category);
-    if (detail.category === BlockCategories.awaiting_human) {
-      await this.deliverOutreach(ctx);
+    // A human wait — whether a sub-phase reported `needs_human` or the autonomy policy escalated a
+    // discretionary decision — delivers the questions the asking sub-phase wrote, from THAT sub-phase's
+    // own outreach directory (not just requirements'). The synthesized autonomy question rides in
+    // `detail.needed`, so it is delivered even when the sub-phase wrote no outreach file.
+    if (
+      detail.category === BlockCategories.awaiting_human ||
+      detail.category === BlockCategories.awaiting_human_decision
+    ) {
+      await this.deliverOutreach(ctx, detail);
     }
     this.ctx.taskEngine.requestTransition(ctx.task.id, TaskStates.blocked, null, detail.category, "orchestrator");
     this.ctx.taskEngine.updateTaskField(ctx.task.id, "blocked", {
@@ -407,23 +441,52 @@ export class Orchestrator {
     return { outcome: Outcomes.blocked, phase: detail.sub_phase, reason };
   }
 
-  /** Deliver the questions the requirements phase wrote to its outreach directory, if any. */
-  private async deliverOutreach(ctx: Ctx): Promise<void> {
+  /**
+   * Deliver the question the blocking sub-phase raised — from ANY phase, not just requirements.
+   * The outreach directory is resolved from the blocking sub-phase's own `resultDir` (the single
+   * source of truth for where it wrote its work), so a `needs_human` from research, planning,
+   * execution, review, or delivery delivers its `outreach/` files. When the sub-phase wrote no
+   * outreach file (the autonomy escalation, or a phase that reported `needs_human` without a file),
+   * the synthesized question in `detail.needed` is delivered to the owner so the question is never lost.
+   */
+  private async deliverOutreach(ctx: Ctx, detail: BlockDetail): Promise<void> {
     if (!(ctx.worktreePath && ctx.thoughtsDir)) {
       return;
     }
-    const outreachDir = path.join(ctx.worktreePath, ctx.thoughtsDir, "requirements", "outreach");
-    const result = await sendOutreach(ctx.task.id, outreachDir, ctx.task.external_ref, {
-      peopleDirectory: this.ctx.peopleDirectory,
-      notifications: this.ctx.notifications,
-      observer: ctx.observer,
-    });
-    if (!result.delivered) {
-      ctx.observer.warn("Task blocked on a human, but no outreach was delivered", {
-        taskId: ctx.task.id,
-        reason: result.reason,
-      });
+    const outreachDir = outreachDirForSubPhase(ctx, detail.sub_phase);
+    const result = outreachDir
+      ? await sendOutreach(ctx.task.id, outreachDir, ctx.task.external_ref, {
+          peopleDirectory: this.ctx.peopleDirectory,
+          notifications: this.ctx.notifications,
+          observer: ctx.observer,
+        })
+      : ({ delivered: false, reason: "no_files" } as const);
+    if (result.delivered) {
+      return;
     }
+    // No outreach file from the asking sub-phase — deliver the operator-facing question directly so the
+    // owner still sees what to answer. This is the path the autonomy escalation always takes (its question
+    // is synthesized, not written to a file), and the safety net for any phase that asked without a file.
+    this.deliverNeededToOwner(ctx, detail);
+  }
+
+  /** Deliver the block's operator-facing question to the owner as a `question`, or warn if no owner is configured. */
+  private deliverNeededToOwner(ctx: Ctx, detail: BlockDetail): void {
+    const owner = this.ctx.peopleDirectory.getOwner();
+    if (!owner) {
+      ctx.observer.warn("Task blocked on a human, but no owner is configured to receive the question", {
+        taskId: ctx.task.id,
+        subPhase: detail.sub_phase,
+      });
+      return;
+    }
+    const message = `${detail.needed}\n\n[Task: ${ctx.task.id.slice(0, 8)}]`;
+    this.ctx.notifications.notify({
+      kind: NotificationKinds.question,
+      taskId: ctx.task.id,
+      personId: owner.id,
+      message,
+    });
   }
 
   /** Close a session, never letting a close failure swallow the outcome that earned it. */

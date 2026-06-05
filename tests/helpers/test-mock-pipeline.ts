@@ -32,6 +32,8 @@ export interface RecordedDecision {
   readonly reasoning: string;
   /** The alternatives offered — so a test can assert the road not taken is recorded. */
   readonly options: ReadonlyArray<{ id: string; description: string }>;
+  /** The trace-correlation scope the decision was recorded under (nesting + phase). */
+  readonly opts?: Record<string, unknown> | undefined;
 }
 
 /** A captured `observe` call. */
@@ -135,8 +137,8 @@ export function createRecordingObserver(): RecordingObserver {
       observations.push({ type, name, data });
       return "";
     },
-    recordDecision: (name, _context, options, chosen, reasoning) => {
-      decisions.push({ name, chosen, reasoning, options: [...options] });
+    recordDecision: (name, _context, options, chosen, reasoning, _confidence, opts) => {
+      decisions.push({ name, chosen, reasoning, options: [...options], opts });
       return "";
     },
     recordError: (_error, context) => {
@@ -207,6 +209,9 @@ function passThroughActionPipeline(): { execute: (input: { executeFn: () => unkn
 
 // ── Ctx Factory ──────────────────────────────────────────────────────────────
 
+/** The minimal safety-layer surface the runner's autonomy consult touches. */
+export type MockConsultJudgment = (query: unknown) => { action: "proceed" | "ask_human" | "deny"; reason: string };
+
 /** Overrides for the mock context. */
 export interface MockCtxOptions {
   readonly task?: Partial<Task>;
@@ -216,6 +221,8 @@ export interface MockCtxOptions {
   readonly signal?: AbortSignal;
   readonly agent?: AgentAdapter | null;
   readonly people?: readonly Person[];
+  /** Override the safety layer's autonomy verdict. Defaults to "proceed" (no escalation). */
+  readonly consultJudgment?: MockConsultJudgment;
 }
 
 /** Everything a test needs to drive the runner or agentStep and assert what it emitted. */
@@ -224,6 +231,8 @@ export interface MockPipeline {
   readonly observer: RecordingObserver;
   readonly sessionMemory: SpyingSessionMemory;
   readonly registry: { readonly getPrimaryPlugin: Mock };
+  /** Spy on the safety layer's autonomy consult, so a test can assert what the runner asked. */
+  readonly consultJudgment: Mock;
 }
 
 /** Assemble a Ctx with a recording observer, spying session memory, and a configurable agent. */
@@ -236,6 +245,12 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     getPluginsByType: vi.fn(() => []),
     getPlugin: vi.fn(() => null),
   };
+  const consult = options.consultJudgment ?? (() => ({ action: "proceed" as const, reason: "test default" }));
+  const consultJudgment = vi.fn(consult);
+  // Resolve people from `options.people` so getOwner() reflects what a test configures (the runner's
+  // no-owner autonomy edge reads it). Default is no people — getOwner() is null, the honest empty state.
+  const people = options.people ?? [];
+  const owner = people.find((p) => p.roles.includes("owner")) ?? null;
 
   const ctx = {
     // Real collaborators the runner and agentStep use.
@@ -247,17 +262,17 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     tracesDir: options.tracesDir ?? null,
     // Stubs the runner and agentStep touch: gate the agent run, record its cost, mirror task position.
     eventBus: { publish: () => undefined },
-    safetyLayer: {},
+    safetyLayer: { consultJudgment },
     actionPipeline: passThroughActionPipeline(),
     taskEngine: { updateTaskField: () => undefined, updateTracking: () => undefined },
     workspaceManager: {},
     skillsManager: { getDir: () => "/tmp/skills" },
     peopleDirectory: {
-      getAll: () => options.people ?? [],
-      getPerson: () => null,
-      getByRole: () => [],
-      getOwner: () => null,
-      getReviewers: () => [],
+      getAll: () => people,
+      getPerson: (id: string) => people.find((p) => p.id === id) ?? null,
+      getByRole: (role: string) => people.filter((p) => p.roles.includes(role)),
+      getOwner: () => owner,
+      getReviewers: () => people.filter((p) => p.roles.includes("reviewer")),
       resolveContact: () => null,
     },
     notifications: {},
@@ -270,7 +285,18 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     ...(options.signal ? { signal: options.signal } : {}),
   } as unknown as Ctx;
 
-  return { ctx, observer, sessionMemory, registry };
+  return { ctx, observer, sessionMemory, registry, consultJudgment };
+}
+
+/** A minimal owner Person for tests that need getOwner() to resolve (the runner's autonomy ask path). */
+export function mockOwner(overrides: Partial<Person> = {}): Person {
+  return {
+    id: "owner",
+    name: "Owner",
+    roles: ["owner"],
+    contacts: [{ channel: "telegram", handle: "@owner" }],
+    ...overrides,
+  };
 }
 
 // ── Sub-Phase & Phase Builders ───────────────────────────────────────────────

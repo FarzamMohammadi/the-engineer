@@ -7,11 +7,13 @@ import {
   type BlockDetail,
   type Carry,
   type Ctx,
+  DecisionsSchema,
   type Phase,
   type PhaseDefinition,
   type RoutableResult,
   type Route,
   type SubPhaseResult,
+  type SurfacedDecision,
 } from "./types.js";
 
 // ── Outcome & Position ───────────────────────────────────────────────────────
@@ -149,6 +151,15 @@ export async function runPipeline(
         sub_phase: subPhase.name,
         needed: result.detail,
       });
+    }
+
+    // ── autonomy escalation: consult the owner's policy per surfaced decision ──
+    // An effect (it records the verdict observation), so it lives here in the loop rather than in the
+    // pure next(): a sub-phase cannot forget to be consulted. An ask_human verdict turns the agent's
+    // quiet "I decided X" into a stop-and-ask before the work proceeds; otherwise routing continues.
+    const ask = consultDecisions(ctx, phaseDef.phase, subPhase.name, result);
+    if (ask) {
+      return emitBlock(ctx, phaseDef.phase, ask);
     }
 
     // ── route (ok | needs_human): plan purely, then apply and emit ──
@@ -372,6 +383,109 @@ function persistTaskPosition(
   ctx.taskEngine.updateTaskField(ctx.task.id, "total_reworks", totalReworks);
 }
 
+// ── Effects: autonomy escalation ─────────────────────────────────────────────
+
+/**
+ * Consult the owner's autonomy policy for every discretionary decision the sub-phase surfaced in
+ * `result.data.decisions`. The safety layer records each verdict as an `autonomy_policy` decision
+ * nested in the dispatch trace (via the threaded scope). On the FIRST escalated verdict, returns the
+ * block detail that turns the agent's quiet decision into a stop-and-ask (the orchestrator delivers
+ * the synthesized question and the owner's reply re-enters the asking sub-phase on resume); returns
+ * null when there are no decisions or the policy lets the agent decide every one.
+ *
+ * No-owner edge: if the policy escalates but no owner is configured, blocking would strand the task
+ * forever with no one to answer. So the runner proceeds autonomously instead and records a loud,
+ * sub-full-confidence decision naming exactly what was decided without the owner. The `getOwner()`
+ * check lives HERE in the runner — the safety layer stays owner-agnostic (it only judges the policy).
+ */
+function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubPhaseResult): BlockDetail | null {
+  const decisions = readSurfacedDecisions(result);
+  if (decisions.length === 0) {
+    return null;
+  }
+  const repo = ctx.task.repo ?? "";
+  const hasOwner = ctx.peopleDirectory.getOwner() !== null;
+  for (const decision of decisions) {
+    const verdict = ctx.safetyLayer.consultJudgment({
+      type: "should_i_ask",
+      context: {
+        task_id: ctx.task.id,
+        repo,
+        decision_category: decision.category,
+        details: decision.details ?? {},
+      },
+      trace: traceScope(ctx, phase),
+    });
+    // `proceed` is the only verdict that lets the agent decide alone. Anything else — ask_human from the
+    // policy, or a deny from a malformed consult — would normally fail safe to asking the owner rather
+    // than slipping a discretionary decision through unseen.
+    if (verdict.action === "proceed") {
+      continue;
+    }
+    // No owner to ask: do not strand the task. Proceed with the agent's call and record it loudly so the
+    // owner (whenever one is configured) can see exactly what was decided in their absence.
+    if (!hasOwner) {
+      recordOwnerlessProceed(ctx, phase, decision, verdict.reason);
+      continue;
+    }
+    // The category is `awaiting_human_decision`, distinct from a sub-phase's `awaiting_human` (stuck,
+    // needs info): only the OWNER can resolve a discretionary call they asked to confirm, so the daemon
+    // must NOT later self-unblock it (see health-monitor's exemption).
+    return {
+      category: BlockCategories.awaiting_human_decision,
+      sub_phase: subPhase,
+      needed: synthesizeQuestion(decision),
+    };
+  }
+  return null;
+}
+
+/**
+ * Record that the engine made a discretionary call WITHOUT the owner, because the policy escalated it
+ * but no owner is configured to ask. A warn-level, sub-full-confidence decision — the road not taken is
+ * "block and ask the owner", which was impossible here — so the trail shows the autonomy that was
+ * exercised in the owner's absence rather than hiding it as a silent proceed.
+ */
+function recordOwnerlessProceed(ctx: Ctx, phase: Phase, decision: SurfacedDecision, policyReason: string): void {
+  ctx.observer.warn("Proceeding on a discretionary decision with no owner to ask", {
+    taskId: ctx.task.id,
+    phase,
+    category: decision.category,
+    chosen: decision.chosen,
+  });
+  ctx.observer.recordDecision(
+    "autonomy_no_owner",
+    `The autonomy policy asks to confirm a "${decision.category}" decision, but no owner is configured: ${policyReason}`,
+    [
+      {
+        id: "proceed_without_owner",
+        description: "Proceed with the agent's call — no owner to ask, do not strand the task",
+      },
+      { id: "block_and_ask", description: "Block and ask the owner (not possible — no owner configured)" },
+    ],
+    "proceed_without_owner",
+    `${decision.summary} Proceeding with "${decision.chosen}" (${decision.reasoning}) without owner confirmation — configure an owner to be consulted on these.`,
+    0.5,
+    { ...traceScope(ctx, phase), level: "warn" },
+  );
+}
+
+/** Pull the validated surfaced-decision array off an `ok` result's data; empty for any other outcome. */
+function readSurfacedDecisions(result: SubPhaseResult): readonly SurfacedDecision[] {
+  if (result.outcome !== "ok" || result.data?.["decisions"] === undefined) {
+    return [];
+  }
+  // agent-step.mapResult already validated this against DecisionsSchema; re-parse to recover the type
+  // (a failure here would mean the contract drifted between validation and read — treat as none).
+  const parsed = DecisionsSchema.safeParse(result.data["decisions"]);
+  return parsed.success ? parsed.data : [];
+}
+
+/** Turn a surfaced decision into the question the owner is asked when the policy escalates it. */
+function synthesizeQuestion(decision: SurfacedDecision): string {
+  return `${decision.summary} I chose "${decision.chosen}" because ${decision.reasoning}. This is a "${decision.category}" decision your autonomy policy asks me to confirm — proceed with this choice, or tell me what to do instead?`;
+}
+
 // ── Effects: observability ───────────────────────────────────────────────────
 // Every transition flows through here, so a sub-phase cannot forget to emit. Each event
 // lands in the journal (durable narrative) and the observation store (dashboard); routing
@@ -490,7 +604,11 @@ function emitLoop(ctx: Ctx, phase: Phase, kind: "repeat" | "jump", count: number
  * sitting in review never false-alarms and a real failure is never buried at warn.
  */
 function blockLogLevel(category: BlockCategory): "info" | "warn" | "error" {
-  if (category === BlockCategories.awaiting_human || category === BlockCategories.awaiting_pr_review) {
+  if (
+    category === BlockCategories.awaiting_human ||
+    category === BlockCategories.awaiting_human_decision ||
+    category === BlockCategories.awaiting_pr_review
+  ) {
     return "info";
   }
   if (category === BlockCategories.iteration_cap_hit || category === BlockCategories.pr_rework_cap_hit) {

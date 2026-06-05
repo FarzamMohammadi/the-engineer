@@ -1,4 +1,5 @@
 import type { ResponseTimeout } from "../../schemas/config.js";
+import type { SpanOptions } from "../../schemas/observer.js";
 import type { ActionClass } from "../../schemas/task.js";
 
 /** Query for passive consultation (called by Orchestrator). */
@@ -11,6 +12,14 @@ export interface SafetyQuery {
     decision_category?: string;
     details: Record<string, unknown>;
   };
+  /**
+   * The trace-correlation scope the recorded verdict observation nests under. When the runner
+   * consults per surfaced decision it passes the dispatch's full scope (task/session/trace/phase
+   * + parent span) so the `autonomy_policy` decision lands inside the dispatch trace tree rather
+   * than orphaned. Absent for callers outside a dispatch (a CLI cost_check), where the verdict
+   * still records under the bare `task_id`.
+   */
+  trace?: SpanOptions;
 }
 
 /** Verdict returned by evaluateAction and consultJudgment. */

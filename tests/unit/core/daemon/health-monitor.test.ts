@@ -49,6 +49,7 @@ function makeDaemonConfig(overrides?: Partial<DaemonConfig>): DaemonConfig {
     },
     workspace_reaper: { enabled: false, interval_ms: 3_600_000 },
     database: { cache_size_mb: 64 },
+    notification_suppress_window_ms: 300_000,
     notification_retry: { interval_ms: 30_000, max_attempts: 120, max_age_ms: 3_600_000 },
     review_polling: { failure_window_ms: 300_000, max_failures_before_pause: 3, max_blocker_reentries: 3 },
     retry_policy: {
@@ -315,6 +316,99 @@ describe("DaemonHealthMonitor", () => {
       );
       expect(taskEngine.requestTransition).toHaveBeenCalledWith(
         "blocked-3",
+        TaskStates.failed,
+        null,
+        "blocked_timeout_escalation",
+        "daemon",
+      );
+    });
+
+    it("never self-unblocks a discretionary-decision block — only the owner can decide", () => {
+      const { ctx, taskEngine, orchestrator } = makeContext();
+      const notifications = makeNotifications();
+
+      const transitionTime = 1_000_000;
+      const now = transitionTime + 29_000_000; // past the self_unblock stage (28_800_000)
+      const task = makeTask({
+        id: "decision-1",
+        state: TaskStates.blocked,
+        blocked: {
+          reason: BlockReasons.need_more_info,
+          category: "awaiting_human_decision",
+          sub_phase: "implement",
+          needed: "confirm the rename",
+        },
+        last_transition_at: new Date(transitionTime).toISOString(),
+      });
+      taskEngine.getTasksByState.mockReturnValue([task]);
+
+      const getActiveTaskIds = vi.fn(() => []);
+      const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
+      hm.checkBlockedEscalation(now);
+
+      // The 8h self-unblock is skipped...
+      expect(orchestrator.attemptSelfUnblock).not.toHaveBeenCalled();
+      // ...but the reminder still fires (elapsed is past the reminder stage too).
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: NotificationKinds.blocked_reminder, taskId: "decision-1" }),
+      );
+    });
+
+    it("still self-unblocks a stuck need-info block — that block is not a discretionary decision", () => {
+      const { ctx, taskEngine, orchestrator } = makeContext();
+      const notifications = makeNotifications();
+
+      const transitionTime = 1_000_000;
+      const now = transitionTime + 29_000_000; // past the self_unblock stage
+      const task = makeTask({
+        id: "stuck-1",
+        state: TaskStates.blocked,
+        blocked: {
+          reason: BlockReasons.need_more_info,
+          category: "awaiting_human",
+          sub_phase: "gather",
+          needed: "answer the requirements question",
+        },
+        last_transition_at: new Date(transitionTime).toISOString(),
+      });
+      taskEngine.getTasksByState.mockReturnValue([task]);
+      orchestrator.attemptSelfUnblock.mockResolvedValue(false);
+
+      const getActiveTaskIds = vi.fn(() => []);
+      const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
+      hm.checkBlockedEscalation(now);
+
+      expect(orchestrator.attemptSelfUnblock).toHaveBeenCalledWith("stuck-1");
+    });
+
+    it("escalates a discretionary-decision block to failed after the final stage — reminders and escalation still fire", () => {
+      const { ctx, taskEngine } = makeContext();
+      const notifications = makeNotifications();
+
+      const transitionTime = 1_000_000;
+      const now = transitionTime + 173_000_000; // past the escalation stage (172_800_000)
+      const task = makeTask({
+        id: "decision-2",
+        state: TaskStates.blocked,
+        blocked: {
+          reason: BlockReasons.need_more_info,
+          category: "awaiting_human_decision",
+          sub_phase: "implement",
+          needed: "confirm the rename",
+        },
+        last_transition_at: new Date(transitionTime).toISOString(),
+      });
+      taskEngine.getTasksByState.mockReturnValue([task]);
+
+      const getActiveTaskIds = vi.fn(() => []);
+      const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
+      hm.checkBlockedEscalation(now);
+
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: NotificationKinds.escalation_alert, taskId: "decision-2" }),
+      );
+      expect(taskEngine.requestTransition).toHaveBeenCalledWith(
+        "decision-2",
         TaskStates.failed,
         null,
         "blocked_timeout_escalation",

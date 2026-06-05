@@ -44,6 +44,28 @@ export type BlockDetail = {
   readonly needed: string;
 };
 
+// ── Surfaced Decisions (autonomy escalation) ──────────────────────────────────
+
+/**
+ * One discretionary decision the agent made and surfaced for the autonomy policy to judge.
+ * Generic across every phase — `category` keys the owner's `safety.yaml` autonomy policy
+ * (free-form, e.g. `code_style`, `architecture`), and `details` carries any metric a
+ * threshold rule reads (e.g. `{ files: 7 }`). The runner consults the policy per decision
+ * after the sub-phase reports, so an `always_ask` category (or an exceeded threshold) turns
+ * the agent's quiet "I decided X" into a stop-and-ask before the work proceeds.
+ */
+export const SurfacedDecisionSchema = z.object({
+  category: z.string().min(1),
+  summary: z.string().min(1),
+  chosen: z.string().min(1),
+  reasoning: z.string().min(1),
+  details: z.record(z.unknown()).optional(),
+});
+export type SurfacedDecision = z.infer<typeof SurfacedDecisionSchema>;
+
+/** The contract for the `details.decisions` array any agent sub-phase may surface. */
+export const DecisionsSchema = z.array(SurfacedDecisionSchema);
+
 // ── Results & Routing ────────────────────────────────────────────────────────
 
 /**
@@ -132,6 +154,14 @@ export interface SubPhase {
   readonly run: (ctx: Ctx) => Promise<SubPhaseResult>;
   /** Read the result and return where to go. Pure, no effects. Only consulted for `ok`/`needs_human`. */
   readonly next: (result: RoutableResult, ctx: Ctx) => Route;
+  /**
+   * Where this sub-phase writes its deliverable and `session-result.json` — the same directory its
+   * `agentStep` runs in. Set on every agent sub-phase; absent on orchestrator sub-phases (verify,
+   * the delivery git/PR steps) that write no agent deliverable. The orchestrator resolves a blocking
+   * sub-phase's `outreach/` directory from this when it blocks on a human, so a `needs_human` from ANY
+   * phase delivers its questions — not just requirements (the one source of truth for "where its work lives").
+   */
+  readonly resultDir?: (ctx: Ctx) => string;
 }
 
 /**

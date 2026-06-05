@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { EventBus } from "../../../../src/core/event-bus/index.js";
 import type { SafetyVerdict } from "../../../../src/core/interfaces/safety-layer.interface.js";
+import type { IObserver } from "../../../../src/core/observer/index.js";
 import {
   SafetyLayer,
   evaluateThreshold,
@@ -11,6 +13,7 @@ import {
 } from "../../../../src/core/safety-layer/index.js";
 import { AutonomyLevels, SafetyConfigSchema } from "../../../../src/schemas/config.js";
 import { ActionClasses } from "../../../../src/schemas/task.js";
+import { createTestDatabase } from "../../../helpers/test-database.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 import { type TestSafetyLayerHandle, createTestSafetyLayer } from "../../../helpers/test-safety-layer.js";
 
@@ -68,25 +71,25 @@ describe("parseThreshold", () => {
 });
 
 describe("evaluateThreshold", () => {
-  it("returns true when threshold exceeded", () => {
+  it("returns exceeded when the threshold is crossed", () => {
     const parsed = parseThreshold("scope > 5")!;
-    expect(evaluateThreshold(parsed, { scope: 10 })).toBe(true);
+    expect(evaluateThreshold(parsed, { scope: 10 })).toBe("exceeded");
   });
 
-  it("returns false when within threshold", () => {
+  it("returns within when below the threshold", () => {
     const parsed = parseThreshold("scope > 5")!;
-    expect(evaluateThreshold(parsed, { scope: 3 })).toBe(false);
+    expect(evaluateThreshold(parsed, { scope: 3 })).toBe("within");
   });
 
-  it("returns false when metric missing from details", () => {
+  it("returns metric_absent when the metric is missing from details", () => {
     const parsed = parseThreshold("scope > 5")!;
-    expect(evaluateThreshold(parsed, { files: 10 })).toBe(false);
+    expect(evaluateThreshold(parsed, { files: 10 })).toBe("metric_absent");
   });
 
   it("handles equality operator", () => {
     const parsed = parseThreshold("count = 3")!;
-    expect(evaluateThreshold(parsed, { count: 3 })).toBe(true);
-    expect(evaluateThreshold(parsed, { count: 4 })).toBe(false);
+    expect(evaluateThreshold(parsed, { count: 3 })).toBe("exceeded");
+    expect(evaluateThreshold(parsed, { count: 4 })).toBe("within");
   });
 });
 
@@ -844,5 +847,58 @@ describe("SafetyLayer — getTimeoutPolicy", () => {
     expect(policy.blocked.stages).toHaveLength(3);
     expect(policy.blocked.stages[0]?.name).toBe("reminder");
     expect(policy.review_pending.reminder_after_ms).toBe(86_400_000);
+  });
+});
+
+// ── Autonomy Decision Trace Threading ────────────────────────────────────────
+
+describe("SafetyLayer — should_i_ask records the autonomy_policy decision under the threaded trace", () => {
+  /** Build a SafetyLayer whose observer is a spy, so a test can assert the recorded decision's scope. */
+  function withSpyObserver() {
+    const testDb = createTestDatabase();
+    const recordDecision = vi.fn<IObserver["recordDecision"]>(() => "obs-1");
+    const observer = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      recordDecision,
+    } as unknown as IObserver;
+    const eventBus = new EventBus(testDb.db, { observer });
+    const config = SafetyConfigSchema.parse({
+      autonomy: { decisions: { architecture: { level: AutonomyLevels.always_ask, description: "" } } },
+    });
+    const safetyLayer = new SafetyLayer(testDb.db, eventBus, config, observer);
+    return { safetyLayer, recordDecision, cleanup: () => testDb.cleanup() };
+  }
+
+  it("nests the verdict under the dispatch trace passed in the query", () => {
+    const { safetyLayer, recordDecision, cleanup } = withSpyObserver();
+    try {
+      const trace = { task_id: "task-1", trace_id: "trace-7", phase: "execution", parent_observation_id: "root-9" };
+      safetyLayer.consultJudgment({
+        type: "should_i_ask",
+        context: { task_id: "task-1", repo: "owner/repo", decision_category: "architecture", details: {} },
+        trace,
+      });
+      expect(recordDecision).toHaveBeenCalledTimes(1);
+      expect(recordDecision.mock.calls[0]?.[0]).toBe("autonomy_policy");
+      expect(recordDecision.mock.calls[0]?.[6]).toEqual(trace);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("falls back to the bare task_id when no trace is supplied", () => {
+    const { safetyLayer, recordDecision, cleanup } = withSpyObserver();
+    try {
+      safetyLayer.consultJudgment({
+        type: "should_i_ask",
+        context: { task_id: "task-1", repo: "owner/repo", decision_category: "architecture", details: {} },
+      });
+      expect(recordDecision.mock.calls[0]?.[6]).toEqual({ task_id: "task-1" });
+    } finally {
+      cleanup();
+    }
   });
 });

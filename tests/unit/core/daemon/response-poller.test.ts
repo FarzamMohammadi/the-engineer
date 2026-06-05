@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildChannel, createResponsePoller, linkMessageToTask } from "../../../../src/core/daemon/response-poller.js";
+import {
+  buildChannel,
+  classifyInbound,
+  createResponsePoller,
+  linkMessageToTask,
+} from "../../../../src/core/daemon/response-poller.js";
 import type { ResponsePollerContext } from "../../../../src/core/daemon/types.js";
 import { BlockReasons } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
@@ -20,10 +25,11 @@ function createMockContext(): ResponsePollerContext {
     taskEngine: {
       getTasksByState: vi.fn().mockReturnValue([]),
     },
-    workspaceManager: {
-      getWorktreePath: vi.fn().mockReturnValue(null),
+    safetyLayer: {
+      consultJudgment: vi.fn().mockReturnValue({ allowed: true, action: "proceed", reason: "cost within limits" }),
     },
-    peopleDirectory: {},
+    notifications: { notify: vi.fn(), syncStateToCommPlugin: vi.fn() },
+    peopleDirectory: { getOwner: vi.fn().mockReturnValue({ id: "owner-1", role: "owner", contacts: [] }) },
     observer: createTestObserverFacade("daemon"),
   } as unknown as ResponsePollerContext;
 }
@@ -106,6 +112,37 @@ describe("linkMessageToTask", () => {
       platform_metadata: {},
     });
     expect(result).toBeNull();
+  });
+});
+
+describe("classifyInbound", () => {
+  it("routes a metadata-linked message as a reply", () => {
+    expect(classifyInbound(true, "status", 1)).toEqual({ route: "linked_reply" });
+  });
+
+  it("routes a query-vocabulary message as a query, winning over the sole-blocked reply", () => {
+    // Exactly one task blocked, but the content is "status" — query wins (the owner can ask mid-block).
+    expect(classifyInbound(false, "what's the status", 1)).toEqual({
+      route: "query",
+      reason: "query_vocabulary",
+      blockedCount: 1,
+    });
+  });
+
+  it("routes a free-text message as the sole-blocked reply when exactly one task is blocked", () => {
+    expect(classifyInbound(false, "use the second approach", 1)).toEqual({ route: "sole_blocked_reply" });
+  });
+
+  it("routes any message as a query when no task is blocked", () => {
+    expect(classifyInbound(false, "ping", 0)).toEqual({ route: "query", reason: "no_blocked_task", blockedCount: 0 });
+  });
+
+  it("routes a token-less non-query message as an unmatchable query when 2+ tasks are blocked", () => {
+    expect(classifyInbound(false, "go ahead", 2)).toEqual({
+      route: "query",
+      reason: "unmatched_multi_blocked",
+      blockedCount: 2,
+    });
   });
 });
 
@@ -217,27 +254,31 @@ describe("ResponsePoller", () => {
     expect(commEvents.length).toBe(1);
   });
 
-  it("discards messages that cannot be linked when multiple tasks are blocked", async () => {
-    // With 2+ blocked tasks, the single-task fallback doesn't apply
+  it("routes a token-less non-query message to the query handler with a couldn't-match notice when 2+ tasks are blocked", async () => {
+    // With 2+ blocked tasks, the single-task fallback doesn't apply — the message can't be matched to one,
+    // so it is routed to the query handler (which sends the owner a "couldn't match" notice), not unblocked.
     const task1 = makeBlockedTask("task-1", "owner/repo", "42");
     const task2 = makeBlockedTask("task-2", "owner/repo", "99");
     (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([task1, task2]);
 
     const unlinkable = {
-      source: "unknown",
-      sender: "someone",
-      content: "Random",
+      source: "telegram",
+      sender: "owner",
+      content: "yes go ahead",
       timestamp: "2026-01-01T00:00:00Z",
       reply_to: null,
       platform_metadata: {},
     };
-    const plugin = makeCommPlugin("github-comm", [unlinkable]);
+    const plugin = makeCommPlugin("telegram", [unlinkable]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([plugin]);
 
     const poller = createResponsePoller(ctx, resolver);
     await poller.poll(100_000);
 
     expect(resolver.tryUnblock).not.toHaveBeenCalled();
+    const message = (ctx.notifications.notify as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.message as string;
+    expect(message).toContain("couldn't match");
+    expect(message).toContain("2");
   });
 
   it("excludes a PR-review-pending task — its channel is not polled and the sole-blocked fallback skips it", async () => {
@@ -323,5 +364,73 @@ describe("ResponsePoller", () => {
     await poller.poll(200_000);
 
     expect(getEventsSince).toHaveBeenCalledWith(7);
+  });
+
+  // ── Query routing (Slice 10 S5) ──────────────────────────────────────────
+
+  function telegramMessage(content: string) {
+    return {
+      source: "telegram",
+      sender: "owner",
+      content,
+      timestamp: "2026-01-01T00:00:00Z",
+      reply_to: null,
+      platform_metadata: {},
+    };
+  }
+
+  async function runWithMessage(content: string, blockedTasks: unknown[]): Promise<void> {
+    (ctx.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockImplementation((state: string) =>
+      state === "blocked" ? blockedTasks : [],
+    );
+    const plugin = makeCommPlugin("telegram", [telegramMessage(content)]);
+    (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([plugin]);
+    const poller = createResponsePoller(ctx, resolver);
+    await poller.poll(100_000);
+  }
+
+  it("routes 'status' to the query handler even when exactly one task is blocked (query wins)", async () => {
+    await runWithMessage("status", [makeBlockedTask("task-1", "owner/repo", "42")]);
+
+    expect(resolver.tryUnblock).not.toHaveBeenCalled();
+    expect(ctx.notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "status_response", personId: "owner-1" }),
+    );
+  });
+
+  it("routes free text to the unblock resolver when exactly one task is blocked", async () => {
+    await runWithMessage("use the second approach", [makeBlockedTask("task-1", "owner/repo", "42")]);
+
+    expect(resolver.tryUnblock).toHaveBeenCalledWith(
+      expect.objectContaining({ by: "task_id", taskId: "task-1", content: "use the second approach" }),
+    );
+    expect(ctx.notifications.notify).not.toHaveBeenCalled();
+  });
+
+  it("routes 'status' to the query handler when no task is blocked", async () => {
+    await runWithMessage("status", []);
+
+    expect(resolver.tryUnblock).not.toHaveBeenCalled();
+    expect(ctx.notifications.notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "status_response" }));
+  });
+
+  it("routes 'status' to the query handler when 2+ tasks are blocked", async () => {
+    await runWithMessage("status", [
+      makeBlockedTask("task-1", "owner/repo", "42"),
+      makeBlockedTask("task-2", "owner/repo", "99"),
+    ]);
+
+    expect(resolver.tryUnblock).not.toHaveBeenCalled();
+    expect(ctx.notifications.notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "status_response" }));
+  });
+
+  it("publishes a task_id=null audit event for a query (not attributed to any task)", async () => {
+    await runWithMessage("status", [makeBlockedTask("task-1", "owner/repo", "42")]);
+
+    const commEvents = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (call: unknown[]) => (call[0] as { type: string }).type === "comm.message_received",
+    );
+    expect(commEvents.length).toBe(1);
+    expect((commEvents[0]?.[0] as { task_id: string | null }).task_id).toBeNull();
   });
 });

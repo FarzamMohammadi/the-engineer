@@ -104,5 +104,6 @@ The Engineer uses labels to track issue state. The label name is the task state 
 - `engineer:blocked` — paused, waiting on you (a question, a decision, or PR review)
 - `engineer:completed` — done, PR merged or closed
 - `engineer:failed` — could not be completed
+- `engineer:cancelled` — you cancelled the task before it finished
 
-You don't need to add these manually — The Engineer manages them, adding the new state label and removing the old one on each transition.
+You don't need to add these manually — The Engineer manages them, adding the new state label and removing the old one on each transition. A cancel can come from `engineer cancel` or the dashboard while the task sits queued or blocked; The Engineer reconciles the `engineer:cancelled` label and leaves a short comment on the issue when it cleans the task up.

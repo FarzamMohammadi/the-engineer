@@ -2,6 +2,8 @@
 
 Communication adapters are the Engineer's voice -- how it talks to humans through external platforms. They are dumb transport: the Orchestrator owns all intelligence (what to say, when to say it, how to react). Plugins just format and deliver messages. The adapter has the largest contract surface of any adapter type because it supports three optional capability groups beyond the required send methods.
 
+> This page is the plugin **contract**. For the Core machine that drives it end to end -- outbound routing, suppression, retry, reaching out for a decision, and inbound classification -- see [Communication flow](../../user-flows/communication/overview.md).
+
 ## Contract
 
 `CommunicationAdapter` extends `BaseAdapter`. Methods are split into required and capability-gated optional groups. Like every adapter, it receives a [PluginContext](../plugin-context.md) (`this.context.logger`, `this.context.stateStore`) injected before `initialize()`.
@@ -64,6 +66,30 @@ override hasCapability(capability: string): boolean {
   return ["send", "receive"].includes(capability);
 }
 ```
+
+### Inbound queries
+
+When a plugin has the `receive` capability, Core polls it for inbound messages and decides what each one is: an **unblock reply** (the owner answering a question that blocked a task) or a **query** (the owner asking the system for status). The plugin is dumb transport here too -- it just returns the messages; Core classifies and routes them.
+
+**Query vocabulary.** A query is one of these plain words (slash-free, because some platforms drop `/`-prefixed messages):
+
+| Query | Response |
+|-------|----------|
+| `status` | Active and blocked tasks by id and title (blocked tasks show their block reason), plus a one-line count of every other state. |
+| `progress #N` | Detail for the task tracking issue `N`: title, state, priority, phase, block reason. |
+| `cost` | Whether spending is within limits, plus any per-window percent-of-limit warnings. |
+| `help` | The list of supported queries. |
+
+Responses are short and plain by design -- the dashboard is the full detail surface. Anything Core does not recognize gets the `help` text back.
+
+**Query vs. unblock reply.** Core classifies each inbound message before treating it as a reply, in this order:
+
+1. The message carries task metadata (`task_id` / `external_ref`) -- it explicitly names a task, so it is an unblock reply.
+2. The message matches the query vocabulary -- it is a query. **This wins even when exactly one task is blocked**, so the owner can ask `status` mid-block without their query being mistaken for the answer.
+3. Exactly one task is blocked and the message is free text -- it is the reply to that one task's question.
+4. Zero or two-plus tasks are blocked and the message is free text -- it goes to the query handler. With none blocked there is nothing to reply to; with several, a metadata-less message cannot be matched to one task, so Core replies "couldn't match -- N are blocked" and points at the unambiguous reply form (reply on the task's ticket).
+
+**Single-user.** Every query response goes to the configured owner ([`constraints.md`](../../constraints.md)) -- the sender is the owner. If no owner is configured, Core logs a warning and does not reply.
 
 ### Error handling pattern
 

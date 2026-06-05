@@ -442,13 +442,13 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 ## Smart Reply Correlation
 
-**Current state (v1):** When The Engineer blocks on a question, it appends the full task id to the outbound message with a plain instruction to keep the reference in the reply, and parses that token back to route the answer to the right task. Metadata-rich channels (GitHub issue/PR comments) correlate for free via `task_id` / `external_ref`. There is no inference: on a metadata-less channel (Telegram), a free-form reply that drops the token cannot be matched when more than one task is blocked at once.
+**Current state (v1):** When The Engineer blocks on a question, it appends a short task tag (`[Task: <8-char-id>]`) to the outbound message as a human-readable breadcrumb. Routing the reply back, however, does **not** parse that tag -- inbound correlation is purely structural. Metadata-rich channels (GitHub issue/PR comments) correlate for free via `task_id` / `external_ref`. On a metadata-less channel (Telegram), the reply is matched only when exactly one task is blocked (the sole-blocked fallback); when two or more are blocked, a metadata-less message cannot be matched to one task and The Engineer replies "couldn't match -- N are blocked" instead of guessing.
 
-**When it becomes relevant:** When the owner routinely replies without the token on a metadata-less channel while several tasks are blocked simultaneously, so the explicit-token fallback starts misrouting or discarding answers.
+**When it becomes relevant:** When the owner routinely replies on a metadata-less channel while several tasks are blocked simultaneously, so the sole-blocked fallback cannot apply and those answers go unmatched.
 
-**What it enables:** A subagent that infers which blocked task a token-less reply belongs to — from the reply's content, the recency and content of each outstanding question, and conversation context — replacing the naive token requirement with a best-effort match (and still asking the owner to disambiguate when confidence is low).
+**What it enables:** A subagent that infers which blocked task a metadata-less reply belongs to — from the reply's content, the recency and content of each outstanding question, and conversation context — turning the currently-unmatchable two-plus-blocked case into a best-effort match (and still asking the owner to disambiguate when confidence is low).
 
-**Migration path:** The naive token approach is implemented across the send side (outbound messages include the token) and the receive/parse side (inbound messages are matched by token). The inference layer slots in at the receive routing step as a fallback that runs only when no token is present — the deterministic path stays the default, so smart correlation is purely additive.
+**Migration path:** Today inbound correlation is structural: by metadata when present, else the sole-blocked fallback. The inference layer slots in at the receive routing step as the disambiguator for the two-plus-blocked, metadata-less case that currently cannot match — it runs only when structural correlation fails, so the deterministic path stays the default and smart correlation is purely additive.
 
 ---
 

@@ -94,7 +94,9 @@ Autonomous operation requires the CLI to skip its own permission prompts — Cla
 
 **Cost ceilings.** Every agent call emits a `cost.incurred` event. Spending accumulates per task, per day, per month, plus per-provider request budgets. At 80% of any limit, The Engineer warns. At 100%, it terminates the in-flight dispatch and notifies you immediately — before the agent's current call settles.
 
-Scope boundaries and autonomy categories are configurable in `safety.yaml` but not yet enforced at runtime — Core doesn't gate the CLI's internal actions today. (Merge policy and cost ceilings *are* enforced.) Runtime enforcement and sandboxed task execution are on the roadmap — see [docs/future-considerations.md](docs/future-considerations.md) for what's planned next.
+**Autonomy escalation.** The agent surfaces discretionary decisions it makes (a rename, a new dependency, a structural change), and Core consults your `safety.yaml` autonomy policy per decision: it proceeds silently where you let it, and pauses to ask you where you said to — by category, with size thresholds. (See [autonomy configuration](docs/configuration/safety.md#autonomy).)
+
+Scope boundaries (which files and branches the CLI may touch) are configurable in `safety.yaml` but not yet enforced at runtime — Core can't gate the CLI's internal file writes today. (Merge policy, cost ceilings, and autonomy escalation *are* enforced.) Runtime scope enforcement and sandboxed task execution are on the roadmap — see [docs/future-considerations.md](docs/future-considerations.md) for what's planned next.
 
 ## Observability
 

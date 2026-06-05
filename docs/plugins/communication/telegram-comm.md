@@ -65,6 +65,8 @@ disable_link_preview: true            # Disable link previews in messages (defau
 
 **Receiving.** `pollMessages` calls `getUpdates` with `timeout: 0` (non-blocking). Filters out bot commands (messages starting with `/`). Returns structured `InboundMessage` objects with sender username, content, timestamp, reply context, and platform metadata (`chat_id`, `message_id`, `from_id`).
 
+**Querying from Telegram.** Because the owner has no task metadata to attach, a Telegram message is either a reply to a blocked task's question or a query. Send `status`, `progress #N`, `cost`, or `help` (no leading `/` -- the plugin drops `/`-commands) to ask the system on demand; Core replies in the same chat. See [Inbound queries](README.md#inbound-queries) for the full vocabulary and how Core tells a query from a reply.
+
 **Startup drain.** On initialization, the plugin calls `getUpdates` once to drain all pending updates. Any `/start` messages received while the Engineer was offline are captured. If the drain fails, it is non-fatal -- the first poll cycle provides a safety net.
 
 **Health checks.** Calls `bot.api.getMe()` to verify the bot token is valid. Reports the bot's username on success.

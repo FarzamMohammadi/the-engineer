@@ -65,6 +65,14 @@ When a notification cannot be delivered to a contact's channel, it is queued and
 | `notification_retry.max_attempts` | integer | `120` | Maximum retry attempts per notification (~1 hour at 30s intervals). |
 | `notification_retry.max_age_ms` | integer (ms) | `3600000` (1h) | Maximum age of a retry entry before it is discarded. |
 
+## Notification Suppression
+
+The Engineer drops a duplicate outbound notification — one with the same kind and scope (its task, or for a task-less health alert its origin, e.g. a specific trigger) — that it already delivered within this window. This is the single source of outbound dedup: it keeps a flapping dependency (a trigger failing every tick) from flooding you with the same alert, while the first occurrence and any distinct event always go through immediately.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `notification_suppress_window_ms` | integer (ms) | `300000` (5m) | Drop a duplicate notification (same kind + scope) seen within this window. |
+
 ## Polling
 
 | Field | Type | Default | Description |

@@ -72,26 +72,85 @@ scope:
 
 ## Autonomy
 
-Control how much decision-making authority The Engineer has per category.
+Control how much decision-making authority The Engineer has per category of **discretionary** decision.
+
+### How it works
+
+While running a task, the agent makes calls it *could* make alone but that you might want to weigh in
+on — renaming a public function, adding a dependency, touching auth. The agent does not gate itself on
+these: it makes the call, then **surfaces** it (a category, what it chose, and why). The orchestrator
+consults the policy below per surfaced decision:
+
+- **`always_decide`** — the agent proceeds; nothing is asked.
+- **`always_ask`** — the task pauses and asks you before continuing.
+- **`threshold`** — the task asks only when the decision's size crosses a limit (e.g. `files > 5`); the
+  agent reports the measured number with the decision. If the number is missing, the task asks (fail-safe).
+
+This is separate from a **hard block** (the agent reporting `needs_human` because it genuinely cannot
+proceed). Autonomy governs choices the agent *can* make; a hard block is for choices it *cannot*.
+
+### What happens when it asks
+
+When the policy escalates a decision, the task **pauses and reaches out to the owner** with the
+question — what the agent decided, why, and the choice it is asking you to confirm. This works from
+**any** phase, not just requirements: a discretionary decision surfaced during research, planning,
+execution, review, or delivery delivers its question the same way. When you answer, the task resumes
+**where it asked**, with your reply carried into the agent's context as authoritative — so it acts on
+your decision rather than re-deriving it.
+
+A paused discretionary decision is a distinct kind of block (`awaiting_human_decision`) from a hard
+block (`awaiting_human`). The difference matters for one behavior: the daemon's [self-unblock
+check](#response-timeouts) never auto-resolves a discretionary decision, because only you can make that
+call. Reminders and the final escalation still fire — you are still nudged and, if you never answer,
+the task eventually escalates — but the engine will not decide it for you.
+
+### When no owner is configured
+
+If the policy says to ask but no owner is configured (see [people configuration](people.md)), the
+engine cannot pause forever waiting for an answer that can never come. So it **proceeds with the
+agent's call** and records a loud decision in the trace naming exactly what it decided without you. The
+fix is to configure an owner so these decisions reach you; until then, the autonomy policy degrades to
+"the agent decides, visibly" rather than stranding the task.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `autonomy.decisions.<category>.level` | `"always_ask"` \| `"threshold"` \| `"always_decide"` | `"always_ask"` | Autonomy level for this decision category. |
-| `autonomy.decisions.<category>.threshold` | string \| null | `null` | Threshold expression (e.g., `"scope > 5"`). Only used with `threshold` level. |
+| `autonomy.decisions.<category>.threshold` | string \| null | `null` | Threshold expression (e.g., `"files > 5"`). Only used with `threshold` level. |
 | `autonomy.decisions.<category>.description` | string | `""` | Human-readable explanation of the rule. |
 | `autonomy.repo_overrides.<pattern>.decisions` | object | `{}` | Per-repo overrides (glob patterns). |
 
-Categories are free-form strings (e.g., `code_style`, `architecture`, `dependencies`). Unknown categories default to `always_ask`.
+### Default categories
+
+Categories are free-form strings — you can add your own — but The Engineer teaches the agent a known
+vocabulary and ships a curated policy for it. **Any category not listed (yours or the agent's) resolves
+to `always_ask`**, so an unfamiliar decision always reaches you.
+
+| Category | Default level | What it covers |
+|----------|---------------|----------------|
+| `code_style` | `always_decide` | Formatting and naming within touched code |
+| `test_coverage` | `always_decide` | How much to test the change |
+| `refactoring_local` | `always_decide` | Refactors confined to the code being changed |
+| `doc_wording` | `always_decide` | Wording of docs and comments |
+| `scope_expansion` | `threshold` (`files > 5`) | Touching files beyond the task's core |
+| `refactoring_broad` | `threshold` (`files > 5`) | Refactors spanning many files |
+| `architecture` | `always_ask` | Structural or design changes |
+| `dependencies` | `always_ask` | Adding, removing, or upgrading dependencies |
+| `public_api` | `always_ask` | Changing a public interface or contract |
+| `destructive` | `always_ask` | Deleting data, files, or history |
+| `security` | `always_ask` | Anything touching auth, secrets, or permissions |
+
+These defaults apply with no `safety.yaml` at all. Override any category to widen or tighten the agent's
+latitude:
 
 ```yaml
 autonomy:
   decisions:
-    code_style:
-      level: always_decide
-      description: "Trust formatting and naming decisions"
-    architecture:
-      level: always_ask
-      description: "Always confirm structural changes"
+    dependencies:
+      level: always_decide        # trust the agent to manage dependencies
+      description: "Internal repo — dependency churn is low-risk here"
+    scope_expansion:
+      level: threshold
+      threshold: "files > 10"     # allow a wider blast radius before asking
 ```
 
 ## Response Timeouts
@@ -106,7 +165,9 @@ Configure escalation timing for blocked tasks. The `blocked` stages apply when a
 
 Default stages:
 1. **reminder** — after 4h, send reminder, repeat every 4h
-2. **self_unblock_check** — after 8h, evaluate self-unblock, no repeat
+2. **self_unblock_check** — after 8h, evaluate self-unblock, no repeat. Skipped for a discretionary
+   [autonomy decision](#what-happens-when-it-asks) block — only the owner can decide that, so the engine
+   never auto-resolves it (the reminder and escalation stages still apply).
 3. **escalation** — after 2d, escalation alert, no repeat
 
 Each stage has: `name`, `after_ms`, `action` (`send_reminder` | `evaluate_self_unblock` | `escalation_alert`), `repeat`, `repeat_interval_ms`.

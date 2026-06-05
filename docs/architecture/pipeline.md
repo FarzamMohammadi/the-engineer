@@ -96,6 +96,12 @@ Orchestrator sub-phases (`verify`, `push`, `create-pr`, `await-review`, `auto-me
 
 Both counters reset on a *fresh* dispatch, so human-driven external reworks (a reviewer asking for changes ten times) are legitimately unbounded — each external event is its own dispatch.
 
+## The autonomy consult
+
+Routing is not the only thing the runner does with a result. After **every** sub-phase result, it also reads any **discretionary decisions** the agent surfaced — calls the agent *could* make alone but that you might want to weigh in on (adding a dependency, renaming a public function, touching auth) — and consults the autonomy policy on each. The policy may let the call stand, or escalate it: a `block(awaiting_human_decision)` that pauses the task and asks the owner. This is a distinct block kind from a sub-phase's `awaiting_human` (genuinely stuck), and the daemon never auto-resolves it — only the owner can confirm a discretionary call. With no owner configured, the runner proceeds and records a loud, sub-confidence decision naming exactly what was decided without you, rather than stranding the task.
+
+Because the consult is a hook on the *result* — not inside any one sub-phase — a discretionary decision is caught no matter which phase raised it. The mechanism lives in `consultDecisions` (`runner.ts`); the policy and its categories are configured in [safety § Autonomy](../configuration/safety.md#autonomy), and the full reach-out-and-resume flow is in [Communication](../user-flows/communication/overview.md).
+
 ## Skip-gates
 
 A sub-phase's optional `skip(ctx)` is the one mechanism for "don't even run this step." It serves two needs:

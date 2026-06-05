@@ -42,9 +42,6 @@ people:
         handle: "farzammoh"
       - channel: github
         handle: "FarzamMohammadi"
-    preferences:
-      notification_level: milestones
-      quiet_hours: null
 ```
 
 ## Person Schema
@@ -55,7 +52,6 @@ people:
 | `name` | string | Yes | Display name (used in notifications and logs). |
 | `roles` | string[] | Yes | Role tags. In v1, the meaningful role is `"owner"`. |
 | `contacts` | Contact[] | Yes | At least one contact method (see below). |
-| `preferences` | object | No | Notification and availability preferences (see below). |
 
 ### Roles
 
@@ -90,15 +86,6 @@ delivered. The warning names the channel and points here.
 
 **GitHub handles are also used for `/approve` authorization** — when `enable_comment_approval` is
 enabled in safety config, the PR comment author is matched against `github` contact handles.
-
-## Preferences
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `notification_level` | `"all"` \| `"milestones"` \| `"critical"` | `"milestones"` | Notification filtering level. `all` = every update, `milestones` = key events only, `critical` = errors and alerts only. |
-| `quiet_hours` | object \| null | `null` | Personal quiet hours override. When set, notifications are suppressed during this window. |
-| `quiet_hours.start` | string | — | Quiet period start (HH:MM format). |
-| `quiet_hours.end` | string | — | Quiet period end (HH:MM format). |
 
 ## No Owner Configured
 

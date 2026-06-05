@@ -218,6 +218,7 @@ The SafetyLayer tracks cost across configurable time windows and can escalate to
 
 - [The Pipeline](pipeline.md) — How a task flows through the six phases: sub-phases, routing, loop caps, and external re-entry
 - [Observability](observability.md) — The three systems (logging, tracing, event bus), one-trace-per-dispatch, the SQLite system of record, the dashboard, and external OTLP export
+- [Communication](../user-flows/communication/overview.md) — How The Engineer notifies you, reaches out when only you can decide, and answers your queries — outbound routing, suppression, retry, and inbound classification
 - [Plugin Documentation](../plugins/) — Adapter contracts, per-plugin references, development guides
 - [Philosophy](../philosophy.md) — Core beliefs driving every decision
 - [Build Journal — Archive](../archived/) — Phase-by-phase development history (not authoritative; read code and `docs/` for ground truth)

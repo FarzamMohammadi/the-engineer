@@ -2,7 +2,7 @@
 
 ## Why We're Here
 
-The Engineer is a fully autonomous software engineering agent with a plugin architecture that makes it tool-agnostic, platform-agnostic, and contributor-friendly. It works. It has 2,377 tests. It's been live-tested. But "working" is not "good." And "good" is not "ready to share with the world."
+The Engineer is a fully autonomous software engineering agent with a plugin architecture that makes it tool-agnostic, platform-agnostic, and contributor-friendly. It works. It's deeply tested. It's been live-tested. But "working" is not "good." And "good" is not "ready to share with the world."
 
 Phase 9 takes The Engineer from functional to exceptional — code that reads beautifully, architecture that teaches, documentation that invites contribution, and a plugin system so clean that adding a new integration is obvious. Every line earns its place. Every abstraction is justified. Every doc saves time or prevents a mistake.
 

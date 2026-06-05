@@ -134,7 +134,7 @@ Each slice is "done done" when:
 
 ### The Slices
 
-> **Status + renumber (current as of Session 50).** Slices 1–8 are DONE. **Slice 8 ("Pipeline Phases") absorbed original items 9 (Demo & PR) and 10 (Review & Feedback External)** — they shipped as its delivery sub-phases + typed PR-event re-entry loop. Everything from item 11 down therefore **renumbers down by 2**; the original design numbers are kept below as the record, and the `→ Slice N` tag gives the current number. **Next up: current Slice 9 = item 11 (Completion & Cleanup).**
+> **Status + renumber (current as of Session 64).** Slices 1–10 (current numbering) are DONE and merged to `main`. **Slice 8 ("Pipeline Phases") absorbed original items 9 (Demo & PR) and 10 (Review & Feedback External)** — they shipped as its delivery sub-phases + typed PR-event re-entry loop. Everything from item 11 down therefore **renumbers down by 2**; the original design numbers are kept below as the record, and the `→ Slice N` tag gives the current number. **Next up: current Slice 11 = item 13 (Background Services).**
 
 1. **Standards Alignment** *(DONE — Slice 1)* — Probe Farzam for coding style, naming, patterns, expectations. Establish the law for all subsequent slices.
 2. **Repo Readiness** *(DONE — Slice 2)* — CI, git hooks, linters, dependency audit, migration consolidation, quality guardrails. The enforcement layer everything else benefits from.
@@ -146,11 +146,11 @@ Each slice is "done done" when:
 8. **RRPIR Phases** *(DONE — Slice 8, "Pipeline Phases")* — Requirements → Research → Planning → Implementation → Review pipeline.
 9. **Demo & PR** *(DONE — absorbed into Slice 8)* — Commit, push, draft PR, PR narrative from thoughts/ files.
 10. **Review & Feedback (External)** *(DONE — absorbed into Slice 8)* — External review polling, feedback detection, rework loop.
-11. **Completion & Cleanup** *(→ **Slice 9, NEXT**)* — Terminal states, notifications, workspace cleanup. *(NOTE: the original "parent integration" is moot — decomposition / child-tasks were cut in Slice 6, so there are no child branches to integrate. Reconcile in RRP. Inherits `branch_retention_days` + the external-merge audit gap; see `slices/08-pipeline-phases.md` § Outbound.)*
-12. **Communication** *(→ Slice 10)* — Notification wiring, message formatting, channel routing. Honors the reserved `notification.*` / `question_batching.*` config.
-13. **Background Services** *(→ Slice 11)* — Cost tracking, data lifecycle, health monitoring.
+11. **Completion & Cleanup** *(DONE — Slice 9)* — The daemon-resident reconciliation reaper: terminal-task cleanup, merged-branch deletion, cancelled-task reaping, and the first-class `cancelled` state. (The original "parent integration" was moot — child-tasks were cut in Slice 6.)
+12. **Communication** *(DONE — Slice 10)* — Notification router (made observable, one unified suppress window), owner decision escalation (the `should_i_ask` autonomy consult, the one new capability), and inbound query routing. The reserved `notification.*` / `question_batching.*` config was **cut** (refine-over-build), not honored.
+13. **Background Services** *(→ **Slice 11, NEXT**)* — Cost tracking, data lifecycle, health monitoring.
 14. **Agent Readiness** *(→ Slice 12)* — All docs work as agent prompts. Contribution guides are executable.
-15. **Dashboard Revisit + Final Polish** *(→ Slice 13)* — Docs site (VitePress on GitHub Pages), demo mode, license, design-history archive. Also the new-shape dashboard UI deferred from Slice 8 (`phase`/`sub_phase`/counters, the simplified state machine, legacy `self_review`/`demo_prep` label cleanup).
+15. **Dashboard Revisit + Final Polish** *(→ Slice 13)* — Docs site (VitePress on GitHub Pages), demo mode, license, design-history archive. (The new-shape dashboard UI deferred from Slice 8 — `phase`/`sub_phase`/counters, the simplified state machine, legacy `self_review`/`demo_prep` cleanup — was already pulled forward and shipped via the Dashboard Sync tangent; only the non-sync polish remains here.)
 16. **npm Publish Readiness** *(→ Slice 14)* — Build output, public API surface, exports, package structure, metadata, registry prep. Real engineering if restructuring is needed.
 
 ### Cross-Slice Discovery

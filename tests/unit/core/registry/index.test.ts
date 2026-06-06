@@ -595,7 +595,7 @@ describe("Registry", () => {
       vi.useRealTimers();
     });
 
-    it("startHealthCheckLoop initiates periodic checks", async () => {
+    it("startHealthCheckLoop runs once immediately, then periodically", async () => {
       const instance = new FakeTriggerPlugin();
       registry = createTestRegistry(handle, { healthCheckIntervalMs: 100 });
       registry.register(createManifest("trigger", "t1"), instance);
@@ -603,11 +603,14 @@ describe("Registry", () => {
       const spy = vi.spyOn(registry, "healthCheckAll");
       registry.startHealthCheckLoop();
 
-      await vi.advanceTimersByTimeAsync(100);
+      // Fires once immediately at boot, before any interval elapses.
       expect(spy).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(100);
       expect(spy).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(spy).toHaveBeenCalledTimes(3);
 
       registry.stopHealthCheckLoop();
     });
@@ -619,8 +622,10 @@ describe("Registry", () => {
       registry.startHealthCheckLoop();
       registry.stopHealthCheckLoop();
 
+      // The immediate boot check ran once; stopping prevents any further interval ticks.
+      expect(spy).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(200);
-      expect(spy).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledTimes(1);
     });
 
     it("startHealthCheckLoop is idempotent", () => {

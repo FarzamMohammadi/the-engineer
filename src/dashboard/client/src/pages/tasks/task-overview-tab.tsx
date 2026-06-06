@@ -1,4 +1,3 @@
-import { BlockBadges } from "../../components/shared/block-badges";
 import { CostDisplay } from "../../components/shared/cost-display";
 import { JsonViewer } from "../../components/shared/json-viewer";
 import { TimeAgo } from "../../components/shared/time-ago";
@@ -12,14 +11,14 @@ interface TaskOverviewTabProps {
 }
 
 /**
- * Overview tab: the at-a-glance answer to "where is this task, what has it cost, and — when blocked — what do
- * I need to do?". Surfaces the live pipeline position (phase / sub_phase / iteration / rework counts), the
- * cleanup signal (`reaped_at`), the legible block taxonomy via BlockBadges, and the structured artifacts.
+ * Overview tab: the at-a-glance answer to "where is this task and what has it cost?". Surfaces the live
+ * pipeline position (phase / sub_phase / iteration / rework counts), the cleanup signal (`reaped_at`), and the
+ * structured artifacts. The block taxonomy lives in the always-visible BlockedResponse banner above the tabs,
+ * so it is not duplicated here.
  */
 export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Element {
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {task.blocked && <BlockedCard blocked={task.blocked} />}
       <DetailsCard task={task} />
       <CostCard task={task} />
       <TimestampsCard task={task} />
@@ -30,24 +29,6 @@ export function TaskOverviewTab({ task }: TaskOverviewTabProps): React.JSX.Eleme
       <ArtifactCard title="Review" data={task.review} />
       <ArtifactCard title="External Reference" data={task.external_ref} />
     </div>
-  );
-}
-
-function BlockedCard({ blocked }: { blocked: NonNullable<TaskDetail["blocked"]> }): React.JSX.Element {
-  return (
-    <Card className="border-amber-500/30 bg-amber-500/5 md:col-span-2">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-amber-400">Blocked</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <BlockBadges
-          reason={blocked.reason}
-          category={blocked.category}
-          subPhase={blocked.sub_phase}
-          needed={blocked.needed}
-        />
-      </CardContent>
-    </Card>
   );
 }
 

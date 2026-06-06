@@ -1,3 +1,5 @@
+import type Database from "better-sqlite3";
+
 import { EventBus, type EventRow, rowToEvent } from "../../src/core/event-bus/index.js";
 import { EventTopology } from "../../src/core/event-bus/topology.js";
 import type { Event } from "../../src/schemas/events.js";
@@ -28,6 +30,8 @@ export function createTestTopology(): EventTopology {
 export interface TestEventBusHandle {
   eventBus: EventBus;
   topology: EventTopology;
+  /** The backing in-memory database (migrations applied) — for components that need a real db handle. */
+  db: Database.Database;
 
   /** Get all emitted events, optionally filtered by type. Reads from DB (source of truth). */
   getEmittedEvents(type?: string): Event[];
@@ -64,6 +68,7 @@ export function createTestEventBus(): TestEventBusHandle {
   return {
     eventBus,
     topology,
+    db: testDb.db,
 
     getEmittedEvents(type?: string): Event[] {
       const rows = (type ? eventsByTypeStmt.all(type) : allEventsStmt.all()) as EventRow[];

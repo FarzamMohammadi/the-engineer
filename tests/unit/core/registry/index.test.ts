@@ -21,6 +21,7 @@ function createTestRegistry(
   return new Registry({
     eventBus: handle.eventBus,
     observer: createTestObserverFacade("registry"),
+    db: handle.db,
     createStateStore: createTestStateStoreFactory(),
     healthCheckIntervalMs: 60_000,
     healthCheckTimeoutMs: 1_000,
@@ -459,8 +460,10 @@ describe("Registry", () => {
       await registry.healthCheckAll();
 
       const events = handle.getEmittedEvents();
-      const healthEvents = events.filter((e) => e.type.startsWith("health.plugin_"));
-      expect(healthEvents).toHaveLength(0);
+      // Only the change events (`plugin_unhealthy`/`failed`/`recovered`) reach the ledger — the current-state
+      // snapshot is a `_meta` cache, not an event — so a healthy → healthy cycle must produce no health event.
+      const transitionEvents = events.filter((e) => e.type.startsWith("health.plugin_"));
+      expect(transitionEvents).toHaveLength(0);
     });
 
     it("does not emit repeated events on failed → failed", async () => {
@@ -535,6 +538,49 @@ describe("Registry", () => {
 
       const health = assertDefined(registry.getHealthRecord("t1"));
       expect(health.last_error).toBe("Fake trigger unhealthy");
+    });
+  });
+
+  // ── Health Is Advisory: Selection Ignores It (INVARIANT) ────────────────
+  //
+  // Plugin health is deliberately ADVISORY (owner-decided, docs/architecture/overview.md): it is a signal to
+  // the owner, NEVER a gate on plugin selection. These tests LOCK that invariant — if a future change quietly
+  // makes the new health surface a selection input, they break the build. Drive a plugin all the way to
+  // `failed`, then assert every selection path still returns it unchanged.
+
+  describe("health is advisory — selection ignores it", () => {
+    /** Register a plugin and drive it to the `failed` health state (threshold 2 → two failed checks). */
+    async function registerAndFailPlugin(id: string): Promise<FakeTriggerPlugin> {
+      const instance = new FakeTriggerPlugin();
+      registry = createTestRegistry(handle, { consecutiveFailuresThreshold: 2 });
+      registry.register(createManifest("trigger", id), instance);
+      instance.setUnhealthy(true);
+      await registry.healthCheckAll(); // healthy → unhealthy
+      await registry.healthCheckAll(); // unhealthy → failed
+      return instance;
+    }
+
+    it("getPrimaryPlugin still returns a plugin whose health is failed", async () => {
+      const instance = await registerAndFailPlugin("t1");
+
+      // Precondition: the plugin really is failed (not merely unhealthy).
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(PluginHealthStates.failed);
+      // Selection must ignore the failed state — the plugin is still returned, called exactly like a healthy one.
+      expect(registry.getPrimaryPlugin("trigger")).toBe(instance);
+    });
+
+    it("getPluginsByType still includes a plugin whose health is failed", async () => {
+      const instance = await registerAndFailPlugin("t1");
+
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(PluginHealthStates.failed);
+      expect(registry.getPluginsByType("trigger")).toContain(instance);
+    });
+
+    it("getPlugin still returns a plugin whose health is failed", async () => {
+      const instance = await registerAndFailPlugin("t1");
+
+      expect(assertDefined(registry.getHealthRecord("t1")).state).toBe(PluginHealthStates.failed);
+      expect(registry.getPlugin("trigger", "t1")).toBe(instance);
     });
   });
 

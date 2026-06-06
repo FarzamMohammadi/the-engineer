@@ -7,14 +7,14 @@ Controls cost limits, scope boundaries, autonomy levels, response timeouts, and 
 
 ## Cost Limits
 
-Set spending caps to prevent runaway costs. Warnings fire at 80% of each limit. Actions are denied when a limit is breached.
+Set spending caps to prevent runaway costs. Warnings fire at 80% of each limit. On a breach The Engineer terminates the offending in-flight task and tells the owner: a per-task or per-provider breach blocks that one task and DMs you about it, while a global daily or monthly breach terminates every in-flight task with a single alert. See [Safety in the README](../../README.md#safety) for the full behavior.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `cost_limits.per_task.cost_usd` | number \| null | `null` | USD limit per task. `null` = unlimited. |
 | `cost_limits.daily.cost_usd` | number \| null | `null` | USD limit per day (resets at UTC midnight). |
 | `cost_limits.monthly.cost_usd` | number \| null | `null` | USD limit per month (resets on the 1st). |
-| `cost_limits.providers.<id>.daily_requests` | integer \| null | `null` | Per-provider daily request cap. Key is the plugin ID (e.g., `claude-code-agent`). |
+| `cost_limits.providers.<id>.daily_requests` | integer \| null | `null` | Per-provider request cap per day (resets at UTC midnight, same as `daily.cost_usd`). Key is the plugin ID (e.g., `claude-code-agent`). |
 
 ```yaml
 cost_limits:
@@ -25,6 +25,12 @@ cost_limits:
   monthly:
     cost_usd: 500.00
 ```
+
+Daily windows (`daily.cost_usd` and every provider's `daily_requests`) reset at the UTC day boundary.
+The reset is applied lazily: it takes effect when the first cost event of the new day arrives, not at
+exactly 00:00:00. A provider that hit its `daily_requests` cap yesterday is usable again on the new day's
+first request. This is restart-safe — a daemon that boots after midnight does not carry yesterday's counts
+into today's window.
 
 ## Scope Boundaries
 

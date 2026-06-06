@@ -78,7 +78,7 @@ export function createDashboardApp(config: DashboardConfig): {
   );
   app.route("/api/tasks", taskRoutes({ db, writeDb, observationStore }));
   app.route("/api/events", eventRoutes({ db }));
-  app.route("/api/metrics", metricsRoutes({ db, observationStore }));
+  app.route("/api/metrics", metricsRoutes({ db, observationStore, observer: config.observer }));
   app.route("/api/traces", traceRoutes({ observationStore }));
   app.route("/api/blob", blobRoutes({ observationStore }));
   app.route("/api/observations", observationRoutes({ observationStore }));

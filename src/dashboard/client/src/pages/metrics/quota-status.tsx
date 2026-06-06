@@ -11,7 +11,7 @@ interface QuotaStatusProps {
   isLoading: boolean;
 }
 
-/** Agent quota progress bar with usage percentage and exhaustion event history. */
+/** Agent quota progress bars showing each window's live usage percentage. */
 export function QuotaStatus({ data, isLoading }: QuotaStatusProps): React.JSX.Element {
   if (isLoading) {
     return (
@@ -39,33 +39,14 @@ export function QuotaStatus({ data, isLoading }: QuotaStatusProps): React.JSX.El
     );
   }
 
-  const live = data.live as Record<string, unknown> | null;
-  const exhaustionEvents = data.exhaustion_events;
+  const live = data.live;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Quota Status</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {live && <QuotaLiveStatus quota={live} />}
-
-        {exhaustionEvents.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-red-400">Recent Exhaustion Events</p>
-            {exhaustionEvents.slice(0, 3).map((event, i) => (
-              <div key={`exh-${String(i)}`} className="rounded-md border border-red-500/20 bg-red-500/5 p-2">
-                <p className="text-xs text-red-400">
-                  {typeof event["reason"] === "string" ? event["reason"] : "Quota exhausted"}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {formatTimeAgo(typeof event["observed_at"] === "string" ? event["observed_at"] : null)}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+      <CardContent className="space-y-4">{live && <QuotaLiveStatus quota={live} />}</CardContent>
     </Card>
   );
 }

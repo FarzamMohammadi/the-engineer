@@ -184,6 +184,39 @@ describe("DaemonHealthMonitor", () => {
           payload: expect.objectContaining({
             task_id: "task-1",
             condition: "no_journal_entries",
+            // No journal entry to point at — last_activity stays null rather than report a fake time.
+            last_activity: null,
+          }),
+        }),
+      );
+    });
+
+    it("emits stuck_detected with the stale journal entry as last_activity", () => {
+      const { ctx, eventBus, taskEngine, sessionMemory } = makeContext({
+        stuck_threshold_ms: 1_800_000,
+        max_active_duration_ms: 28_800_000,
+      });
+
+      const startedAt = 1_000_000;
+      const now = startedAt + 2_000_000; // past the stuck threshold, under max active duration
+      const staleEntryAt = new Date(startedAt + 50_000).toISOString(); // a journal entry that then went stale
+      taskEngine.getTask.mockReturnValue(makeTask({ started_at: new Date(startedAt).toISOString() }));
+      sessionMemory.journal.getLatestTimestamp.mockReturnValue(staleEntryAt);
+
+      const hm = createDaemonHealthMonitor(
+        ctx,
+        makeNotifications(),
+        vi.fn(() => ["task-1"]),
+      );
+      hm.checkStuckTasks(now);
+
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: EventTypes["health.stuck_detected"],
+          payload: expect.objectContaining({
+            condition: "stale_journal",
+            // The last journal entry that went stale is the task's last known activity.
+            last_activity: staleEntryAt,
           }),
         }),
       );
@@ -215,6 +248,8 @@ describe("DaemonHealthMonitor", () => {
           payload: expect.objectContaining({
             condition: "no_state_transition",
             threshold_ms: 28_800_000,
+            // Stuck on total runtime, not journal staleness, so last_activity is not reported.
+            last_activity: null,
           }),
         }),
       );

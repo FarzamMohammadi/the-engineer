@@ -223,14 +223,28 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   // ── Suppression ────────────────────────────────────────────────────────
 
   /**
-   * The dedup identity of a notification: its kind plus its scope. Scope is the taskId, or the alert's
-   * `source` for null-task alerts (e.g. "trigger:github-trigger"), or "" when neither exists. Two
-   * notifications with the same dedup key inside the window are duplicates.
+   * The dedup identity of a notification: its kind plus its scope. Scope is the taskId, or a `source` for
+   * null-task kinds that carry one (an alert's "trigger:github-trigger", a plugin recovery's
+   * "plugin:github-trigger"), or "" when neither exists. Two notifications with the same dedup key inside
+   * the window are duplicates.
+   *
+   * Plugin recovery MUST key on its source: it has no taskId, so without the source every plugin's recovery
+   * would collapse to the single key "plugin_recovered:" — two distinct plugins recovering in the window
+   * would dedup to one DM, and one plugin flapping failed↔healthy would never re-key to suppress its own
+   * repeats. Keying on "plugin:<plugin_id>" keeps distinct plugins distinct and a single flapping plugin
+   * suppressed within the window.
    */
   function dedupKeyFor(notification: Notification): string {
-    const alertSource = notification.kind === NotificationKinds.alert ? (notification.source ?? "") : "";
-    const scope = notification.taskId ?? alertSource;
+    const scope = notification.taskId ?? sourceScope(notification);
     return `${notification.kind}:${scope}`;
+  }
+
+  /** The `source` scope for the null-task kinds that carry one (alerts, plugin recoveries); "" otherwise. */
+  function sourceScope(notification: Notification): string {
+    if (notification.kind === NotificationKinds.alert || notification.kind === NotificationKinds.plugin_recovered) {
+      return notification.source ?? "";
+    }
+    return "";
   }
 
   /**
@@ -303,7 +317,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     } catch (err) {
       observer.warn("Unexpected error in notify()", {
         kind: notification.kind,
-        error: err instanceof Error ? err.message : String(err),
+        error: sanitizeErrorMessage(err),
       });
     }
   }
@@ -390,7 +404,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
       observer.debug("Send error, trying next contact", {
         personId: contact.personId,
         channel: contact.channel,
-        error: err instanceof Error ? err.message : String(err),
+        error: sanitizeErrorMessage(err),
       });
     }
     return { delivered: false, retryable: false };
@@ -436,7 +450,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
     })().catch((err) => {
       observer.warn("Unexpected error in delivery chain", {
         personId,
-        error: err instanceof Error ? err.message : String(err),
+        error: sanitizeErrorMessage(err),
       });
     });
   }
@@ -614,7 +628,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         entry.inFlight = false;
         observer.warn("Unexpected error in retry delivery", {
           personId: entry.personId,
-          error: err instanceof Error ? err.message : String(err),
+          error: sanitizeErrorMessage(err),
         });
       });
   }

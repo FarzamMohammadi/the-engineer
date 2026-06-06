@@ -39,14 +39,36 @@ function defaultConfig(overrides?: Partial<DataLifecycleConfig>): DataLifecycleC
 }
 
 function insertEvent(db: TestDatabaseHandle["db"], timestamp: string, id?: string): void {
+  insertEventForTask(db, timestamp, null, id);
+}
+
+/** Insert an event row owned by a specific task (or task_id NULL for a system-level event). */
+function insertEventForTask(db: TestDatabaseHandle["db"], timestamp: string, taskId: string | null, id?: string): void {
   db.prepare("INSERT INTO events (id, type, source, task_id, timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)").run(
     id ?? `evt-${Date.now()}-${Math.random()}`,
     "test.event",
     "test",
-    null,
+    taskId,
     timestamp,
     "{}",
   );
+}
+
+/** Insert a minimal task row in the given state so active-task protection has something to protect. */
+function insertTask(db: TestDatabaseHandle["db"], id: string, state: string): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO tasks (id, idempotency_key, state, title, created_at, last_transition_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, `idem-${id}`, state, `task ${id}`, now, now);
+}
+
+/** Insert an observation row owned by a specific task (or task_id NULL for a system-level observation). */
+function insertObservationForTask(db: TestDatabaseHandle["db"], timestamp: string, taskId: string | null): void {
+  db.prepare(
+    `INSERT INTO observations (id, type, name, task_id, start_time, end_time, level, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(`obs-${Date.now()}-${Math.random()}`, "lifecycle", "test_obs", taskId, timestamp, timestamp, "info", "ok");
 }
 
 function insertObservation(
@@ -196,6 +218,97 @@ describe("cleanupTable", () => {
 
     expect(result.deleted).toBe(1);
     expect(result.remaining).toBe(1);
+  });
+
+  // D5: with active-task protection, the NULL-safe clause must prune system rows (task_id IS NULL) and
+  // terminal-task rows by age, while protecting live-task rows — and it must do so DETERMINISTICALLY,
+  // whether or not any task is currently active. A bare `task_id NOT IN (active set)` would retain every
+  // system row whenever a task is active (NULL NOT IN non-empty = NULL) and prune them when none is, an
+  // intermittent unbounded leak on the two highest-volume tables. These four cases lock that out.
+  describe("NULL-safe active-task protection", () => {
+    function seedThreeOldEvents(db: TestDatabaseHandle["db"]): void {
+      insertTask(db, "live", "active");
+      insertTask(db, "done", "completed");
+      insertEventForTask(db, daysAgo(100), "live"); // active-task event — must survive
+      insertEventForTask(db, daysAgo(100), "done"); // terminal-task event — must prune
+      insertEventForTask(db, daysAgo(100), null); // system event — must prune
+    }
+
+    function pruneOldEvents(db: TestDatabaseHandle["db"]): ReturnType<typeof cleanupTable> {
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
+      return cleanupTable({
+        db,
+        tableName: "events",
+        timestampColumn: "timestamp",
+        cutoffISO: cutoff,
+        excludeActiveTasks: true,
+      });
+    }
+
+    it("prunes a terminal-task event and a system event but protects an active-task event", () => {
+      seedThreeOldEvents(dbHandle.db);
+
+      const result = pruneOldEvents(dbHandle.db);
+
+      // terminal + system pruned; the one active-task event remains
+      expect(result.deleted).toBe(2);
+      expect(result.remaining).toBe(1);
+      const survivor = dbHandle.db.prepare("SELECT task_id FROM events").get() as { task_id: string | null };
+      expect(survivor.task_id).toBe("live");
+    });
+
+    it("prunes the same system event identically when no task is active (determinism)", () => {
+      // No active task at all — only a terminal task and a system event, both old.
+      insertTask(dbHandle.db, "done", "completed");
+      insertEventForTask(dbHandle.db, daysAgo(100), "done");
+      insertEventForTask(dbHandle.db, daysAgo(100), null);
+
+      const result = pruneOldEvents(dbHandle.db);
+
+      // Both prune — the system event is NOT retained just because the active set happens to be empty.
+      expect(result.deleted).toBe(2);
+      expect(result.remaining).toBe(0);
+    });
+
+    it("protects an active-task observation but prunes terminal-task and system observations", () => {
+      insertTask(dbHandle.db, "live", "active");
+      insertTask(dbHandle.db, "done", "completed");
+      insertObservationForTask(dbHandle.db, daysAgo(100), "live");
+      insertObservationForTask(dbHandle.db, daysAgo(100), "done");
+      insertObservationForTask(dbHandle.db, daysAgo(100), null);
+
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
+      const result = cleanupTable({
+        db: dbHandle.db,
+        tableName: "observations",
+        timestampColumn: "start_time",
+        cutoffISO: cutoff,
+        excludeActiveTasks: true,
+      });
+
+      expect(result.deleted).toBe(2);
+      expect(result.remaining).toBe(1);
+      const survivor = dbHandle.db.prepare("SELECT task_id FROM observations").get() as { task_id: string | null };
+      expect(survivor.task_id).toBe("live");
+    });
+
+    it("prunes the same system observation identically when no task is active (determinism)", () => {
+      insertTask(dbHandle.db, "done", "completed");
+      insertObservationForTask(dbHandle.db, daysAgo(100), "done");
+      insertObservationForTask(dbHandle.db, daysAgo(100), null);
+
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1_000).toISOString();
+      const result = cleanupTable({
+        db: dbHandle.db,
+        tableName: "observations",
+        timestampColumn: "start_time",
+        cutoffISO: cutoff,
+        excludeActiveTasks: true,
+      });
+
+      expect(result.deleted).toBe(2);
+      expect(result.remaining).toBe(0);
+    });
   });
 });
 
@@ -502,6 +615,91 @@ describe("createDataLifecycleManager", () => {
 
     // Should not throw
     manager.stop();
+  });
+
+  // D11: a sweep emits a rich liveness observation so the dashboard's task-less trace timeline shows the
+  // service is alive — even a 0-row sweep emits (correct for liveness, not noise).
+  it("emits a data_lifecycle_sweep_completed observation with the sweep tallies", () => {
+    insertEvent(dbHandle.db, daysAgo(100)); // one old event to prune
+    const observer = createTestObserverFacade("data-lifecycle");
+    const observeSpy = vi.spyOn(observer, "observe");
+
+    const manager = createDataLifecycleManager({
+      db: dbHandle.db,
+      eventBus: ebHandle.eventBus,
+      config: defaultConfig(),
+      blobsDir: null,
+      clock: createFakeClock(),
+      observer,
+    });
+
+    manager.runCleanup();
+
+    const sweepObs = observeSpy.mock.calls.find(([, name]) => name === "data_lifecycle_sweep_completed");
+    expect(sweepObs).toBeDefined();
+    const [type, , data] = sweepObs ?? [];
+    expect(type).toBe("state_transition");
+    expect(data).toMatchObject({ vacuum_ran: true, blobs_deleted: 0 });
+    expect((data as { tables: Record<string, unknown> }).tables).toHaveProperty("events");
+  });
+
+  // D6: per-stage failure isolation. One table's throw, or the blob stage's throw, must NOT abort the
+  // sweep — the other stages still prune AND system.cleanup_completed still fires (published from finally,
+  // so the liveness card never lies even on a mid-sweep failure).
+  describe("per-stage failure isolation (D6)", () => {
+    it("continues the sweep and still fires the completion event when one table throws", () => {
+      insertEvent(dbHandle.db, daysAgo(100)); // old event — should still be pruned
+      insertEvent(dbHandle.db, new Date().toISOString());
+      // Drop a managed table so its DELETE throws "no such table" mid-sweep.
+      dbHandle.db.exec("DROP TABLE checkpoints");
+
+      const manager = createDataLifecycleManager({
+        db: dbHandle.db,
+        eventBus: ebHandle.eventBus,
+        config: defaultConfig(),
+        blobsDir: null,
+        clock: createFakeClock(),
+        observer: createTestObserverFacade("data-lifecycle"),
+      });
+
+      const stats = manager.runCleanup();
+
+      // The earlier table still pruned despite the later table throwing.
+      expect(stats.tables["events"]?.deleted).toBe(1);
+      expect(stats.tables["events"]?.remaining).toBe(1);
+      // The broken table simply has no entry — it threw and was skipped, not allowed to abort the sweep.
+      expect(stats.tables).not.toHaveProperty("checkpoints");
+      // Liveness stays truthful: lastRun is set and the completion event fired from the finally block.
+      expect(manager.getLastRun()).toBe(stats);
+      ebHandle.assertEventEmitted("system.cleanup_completed");
+      expect(ebHandle.getEmittedEvents("system.cleanup_completed")).toHaveLength(1);
+    });
+
+    it("continues the sweep and still fires the completion event when the blob stage throws", () => {
+      insertEvent(dbHandle.db, daysAgo(100)); // old event — should still be pruned
+      // Drop observations so the blob-reference json_extract query (collectReferencedBlobRefs) throws.
+      // The observations table cleanup throws first (isolated); the blob stage then throws on the same
+      // missing table — both are caught, and the sweep proceeds to vacuum + the completion event.
+      dbHandle.db.exec("DROP TABLE observations");
+
+      const manager = createDataLifecycleManager({
+        db: dbHandle.db,
+        eventBus: ebHandle.eventBus,
+        config: defaultConfig(),
+        blobsDir: "/tmp/engineer-blob-isolation-test", // non-null so the blob stage runs
+        clock: createFakeClock(),
+        observer: createTestObserverFacade("data-lifecycle"),
+      });
+
+      const stats = manager.runCleanup();
+
+      // The events table still pruned despite the blob stage (and the observations table) throwing.
+      expect(stats.tables["events"]?.deleted).toBe(1);
+      expect(stats.blobsDeleted).toBe(0); // blob stage threw → its tally stays 0, sweep not aborted
+      expect(manager.getLastRun()).toBe(stats);
+      ebHandle.assertEventEmitted("system.cleanup_completed");
+      expect(ebHandle.getEmittedEvents("system.cleanup_completed")).toHaveLength(1);
+    });
   });
 });
 

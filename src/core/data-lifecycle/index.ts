@@ -6,12 +6,15 @@ import type Database from "better-sqlite3";
 import { runIncrementalVacuum } from "../../db/database.js";
 import type { DataLifecycleConfig } from "../../schemas/config.js";
 import { SystemCleanupCompletedPayloadSchema } from "../../schemas/events.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { TaskStates } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { IObserver } from "../observer/index.js";
+
+export { MONTHLY_REPLAY_FLOOR_DAYS, inspectRetentionConfig } from "./inspect.js";
 
 // ── Event Declarations ────────────────────────────────────────────────────────
 
@@ -73,12 +76,12 @@ interface TableDefinition {
 }
 
 const MANAGED_TABLES: TableDefinition[] = [
-  { name: "events", timestampColumn: "timestamp", configKey: "events", excludeActiveTasks: false },
+  { name: "events", timestampColumn: "timestamp", configKey: "events", excludeActiveTasks: true },
   {
     name: "observations",
     timestampColumn: "start_time",
     configKey: "observations",
-    excludeActiveTasks: false,
+    excludeActiveTasks: true,
   },
   {
     name: "journal_entries",
@@ -112,9 +115,15 @@ export interface CleanupTableOptions {
 export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
   const { db, tableName, timestampColumn, cutoffISO, excludeActiveTasks } = opts;
 
-  // Age-based deletion
+  // Age-based deletion.
+  // NULL-safe active-task protection. `events` and `observations` carry system rows with task_id IS NULL
+  // (the cost / health / trigger / cleanup audit trail). A bare `task_id NOT IN (active set)` would never
+  // match those rows — SQL `NULL NOT IN (non-empty set)` evaluates to NULL, not TRUE — so a system row would
+  // be RETAINED whenever any task is active and pruned only when none are: non-deterministic per tick, and an
+  // unbounded leak on the two highest-volume tables. The explicit `task_id IS NULL OR ...` arm prunes system
+  // rows and terminal-task rows by age; only live-task rows are protected.
   const activeTaskClause = excludeActiveTasks
-    ? ` AND task_id NOT IN (SELECT id FROM tasks WHERE state IN (${ACTIVE_STATES.map(() => "?").join(", ")}))`
+    ? ` AND (task_id IS NULL OR task_id NOT IN (SELECT id FROM tasks WHERE state IN (${ACTIVE_STATES.map(() => "?").join(", ")})))`
     : "";
 
   const ageDeleteSql = `DELETE FROM "${tableName}" WHERE "${timestampColumn}" < ?${activeTaskClause}`;
@@ -247,92 +256,161 @@ export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<strin
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
+/**
+ * The data-lifecycle manager — a daemon-resident periodic service that prunes aged rows from the
+ * local SQLite tables (events, observations, journal entries, checkpoints), sweeps orphaned blob
+ * files, and runs an incremental vacuum.
+ *
+ * It shares its shape with the {@link createWorkspaceReaper workspace reaper} ({ start, stop, a
+ * single run method, getLastRun }, an injected clock, a setInterval loop, a durable per-sweep
+ * `system.*_completed` event for the dashboard's separate process). The two are deliberately kept
+ * independent — no shared sweep helper — because their failure envelopes differ. The deliberate
+ * asymmetry: this manager has NO re-entrancy guard, while the reaper has one. That is correct, not a
+ * gap. `runCleanup` is fully synchronous — better-sqlite3 is synchronous and the blob sweep is
+ * synchronous `fs`, so the event loop cannot re-enter `runCleanup` between a `setInterval` tick and
+ * its completion. The reaper does async git + network I/O, so its sweep can overlap a later tick and
+ * genuinely needs the `running` guard. Adding a guard here would be dead defensive code for a
+ * re-entry that cannot occur.
+ */
 export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): DataLifecycleManager {
   const { db, eventBus, config, blobsDir, clock, observer } = deps;
   let interval: ReturnType<typeof setInterval> | null = null;
   let lastRun: CleanupStats | null = null;
 
+  /**
+   * Run one cleanup sweep. Each stage is failure-isolated (§5): one table's throw, or the blob
+   * stage's throw, no longer aborts the sweep — the other stages still run. Stats, `lastRun`, the
+   * info log, and the durable `system.cleanup_completed` event are computed and published from a
+   * `finally` block (mirroring the reaper) so the completion event and the dashboard liveness card
+   * stay truthful even on a mid-sweep failure. Sweep ordering is preserved: blob cleanup runs after
+   * table pruning, since it reads the just-pruned `observations` for live blob references.
+   */
   function runCleanup(): CleanupStats {
     observer.debug("Data lifecycle cleanup starting");
     const startMs = clock.now();
     const tables: Record<string, TableCleanupResult> = {};
-
-    for (const tableDef of MANAGED_TABLES) {
-      const retention = config.retention[tableDef.configKey];
-      const cutoff = new Date(clock.now() - retention.max_age_days * 24 * 60 * 60 * 1_000);
-      const cutoffISO = cutoff.toISOString();
-
-      tables[tableDef.name] = cleanupTable({
-        db,
-        tableName: tableDef.name,
-        timestampColumn: tableDef.timestampColumn,
-        cutoffISO,
-        excludeActiveTasks: tableDef.excludeActiveTasks,
-      });
-    }
-
-    // Blob orphan cleanup after observation pruning
     let blobsDeleted = 0;
-    if (blobsDir) {
-      const blobsDirPath = path.join(blobsDir, "blobs");
-      const referencedRefs = collectReferencedBlobRefs(db);
-      blobsDeleted = cleanupOrphanedBlobs(blobsDirPath, referencedRefs);
-    }
-
-    // Incremental vacuum (non-critical — failure should not halt cleanup)
     let vacuumRan = false;
+
     try {
-      runIncrementalVacuum(db);
-      vacuumRan = true;
-    } catch (err) {
-      observer.warn("Incremental vacuum failed", { error: sanitizeErrorMessage(err) });
+      for (const tableDef of MANAGED_TABLES) {
+        // Per-table isolation: one table's failure is non-fatal to the sweep; the rest still prune.
+        try {
+          const retention = config.retention[tableDef.configKey];
+          const cutoffISO = new Date(clock.now() - retention.max_age_days * 24 * 60 * 60 * 1_000).toISOString();
+          tables[tableDef.name] = cleanupTable({
+            db,
+            tableName: tableDef.name,
+            timestampColumn: tableDef.timestampColumn,
+            cutoffISO,
+            excludeActiveTasks: tableDef.excludeActiveTasks,
+          });
+        } catch (err) {
+          observer.warn("Table cleanup failed — skipping it, continuing the sweep", {
+            table: tableDef.name,
+            error: sanitizeErrorMessage(err),
+          });
+        }
+      }
+
+      // Blob orphan cleanup after observation pruning — isolated, because collectReferencedBlobRefs
+      // runs a real json_extract query that can throw and must not abort the sweep before vacuum.
+      if (blobsDir) {
+        try {
+          const blobsDirPath = path.join(blobsDir, "blobs");
+          const referencedRefs = collectReferencedBlobRefs(db);
+          blobsDeleted = cleanupOrphanedBlobs(blobsDirPath, referencedRefs);
+        } catch (err) {
+          observer.warn("Blob cleanup failed — skipping it, continuing the sweep", {
+            error: sanitizeErrorMessage(err),
+          });
+        }
+      }
+
+      // Incremental vacuum (non-critical — failure should not halt cleanup)
+      try {
+        runIncrementalVacuum(db);
+        vacuumRan = true;
+      } catch (err) {
+        observer.warn("Incremental vacuum failed", { error: sanitizeErrorMessage(err) });
+      }
+    } finally {
+      lastRun = finalizeSweep({ tables, blobsDeleted, vacuumRan, startMs });
     }
 
-    const durationMs = clock.now() - startMs;
-    const timestamp = new Date(clock.now()).toISOString();
+    return lastRun;
+  }
 
+  /**
+   * Compute the sweep stats, log them, emit the rich liveness observation, and publish the durable
+   * completion event. Called from `runCleanup`'s `finally` so liveness never lies — even a sweep that
+   * threw mid-way emits its completion record (with whatever stages did finish), the same way the
+   * reaper publishes from its own `finally`.
+   */
+  function finalizeSweep(partial: {
+    tables: Record<string, TableCleanupResult>;
+    blobsDeleted: number;
+    vacuumRan: boolean;
+    startMs: number;
+  }): CleanupStats {
+    const { tables, blobsDeleted, vacuumRan, startMs } = partial;
+    const durationMs = clock.now() - startMs;
     const stats: CleanupStats = {
-      timestamp,
+      timestamp: new Date(clock.now()).toISOString(),
       tables,
       blobsDeleted,
       vacuumRan,
       durationMs,
     };
 
-    lastRun = stats;
+    observer.info("Data lifecycle cleanup completed", { durationMs, tables, blobsDeleted, vacuumRan });
 
-    observer.info("Data lifecycle cleanup completed", {
-      durationMs,
-      tables: Object.fromEntries(
-        Object.entries(tables).map(([n, r]) => [n, { deleted: r.deleted, remaining: r.remaining }]),
-      ),
-      blobsDeleted,
-      vacuumRan,
-    });
+    // Liveness observation for the dashboard: the durable event below is the cross-process record the
+    // separate dashboard reads; this observation lands the same sweep on the task-less trace timeline.
+    // A 0-row sweep still emits (correct for liveness — not noise): it proves the service is alive.
+    emitSweepObservation(stats);
+    publishCleanupCompleted(stats);
+    return stats;
+  }
 
-    // Emit cleanup event (fire-and-forget — cleanup already completed)
+  function emitSweepObservation(stats: CleanupStats): void {
+    try {
+      // No task_id — a cleanup sweep is task-less (system-scoped), so the observation lands on the
+      // task-less trace timeline rather than under any one task.
+      observer.observe(
+        ObservationTypes.state_transition,
+        "data_lifecycle_sweep_completed",
+        {
+          tables: stats.tables,
+          blobs_deleted: stats.blobsDeleted,
+          vacuum_ran: stats.vacuumRan,
+          duration_ms: stats.durationMs,
+        },
+        { level: "info" },
+      );
+    } catch (err) {
+      observer.warn("Failed to record the cleanup observation", { error: sanitizeErrorMessage(err) });
+    }
+  }
+
+  function publishCleanupCompleted(stats: CleanupStats): void {
+    // Fire-and-forget — the sweep already completed, so a publish failure is logged and swallowed
+    // rather than allowed to surface as a sweep failure.
     try {
       eventBus.publish({
         type: "system.cleanup_completed",
         source: "data-lifecycle",
         task_id: null,
         payload: {
-          duration_ms: durationMs,
-          tables: Object.fromEntries(
-            Object.entries(tables).map(([name, result]) => [
-              name,
-              { deleted: result.deleted, remaining: result.remaining },
-            ]),
-          ),
-          blobs_deleted: blobsDeleted,
-          vacuum_ran: vacuumRan,
+          duration_ms: stats.durationMs,
+          tables: stats.tables,
+          blobs_deleted: stats.blobsDeleted,
+          vacuum_ran: stats.vacuumRan,
         },
       } satisfies PublishInput<"system.cleanup_completed">);
     } catch (err) {
       observer.warn("Failed to publish cleanup event", { error: sanitizeErrorMessage(err) });
     }
-
-    return stats;
   }
 
   function start(): void {

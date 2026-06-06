@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 
 import type { ObservationStore } from "../../core/observer/index.js";
+import { type CostBreach, formatCostBreach } from "../../core/safety-layer/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 
 /** Dependencies injected into error API route handlers. */
@@ -97,16 +98,37 @@ function collectObservationErrors(store: ObservationStore, level: string | undef
  * The real error-bearing event types (verified against `EventTypeSchema` in src/schemas/events.ts). The
  * old query named `health.check_failed` and `task.failed` — neither exists, so it silently returned fewer
  * errors than it should. A task failure surfaces via `collectFailedTasks` (the `failed` task state), not an
- * event, so it is intentionally absent here.
+ * event, so it is intentionally absent here. `cost.limit_reached` is the live cost-breach event — its detail
+ * is structured, not prose, so `errorEventMessage` composes its message from the payload.
  */
-const ERROR_EVENT_TYPES = ["cost.quota_exhausted", "health.plugin_failed", "health.plugin_unhealthy", "timeout.alert"];
+const ERROR_EVENT_TYPES = ["cost.limit_reached", "health.plugin_failed", "health.plugin_unhealthy", "timeout.alert"];
 
 /**
- * Best-effort human message for an error event. Each error-event payload names its cause under a different
- * key — health.* under `error`, timeout.alert under `escalation` — so we probe the known carriers in turn
- * and fall back to the event type (e.g. cost.quota_exhausted, whose detail is structured, not prose).
+ * Compose a human message for a `cost.limit_reached` event from its stored payload, delegating the prose to
+ * the shared {@link formatCostBreach} (the single money-prose source, keeping this list in step with the
+ * daemon's owner alert). Reads only the four message-relevant fields from the untyped store, so a missing
+ * unrelated field never blanks a real breach to the bare token.
+ */
+function costLimitReachedMessage(payload: Record<string, unknown>): string {
+  const limitType = payload["limit_type"];
+  const breach: CostBreach = {
+    limit_type: limitType === "daily" || limitType === "monthly" ? limitType : "per_task",
+    limit_scope: typeof payload["limit_scope"] === "string" ? payload["limit_scope"] : null,
+    current_spend: typeof payload["current_spend"] === "number" ? payload["current_spend"] : 0,
+    limit_value: typeof payload["limit_value"] === "number" ? payload["limit_value"] : 0,
+  };
+  return formatCostBreach(breach);
+}
+
+/**
+ * Best-effort human message for an error event. `cost.limit_reached` composes from its structured payload;
+ * the others name their cause under a different key — health.* under `error`, timeout.alert under
+ * `escalation` — so we probe the known carriers in turn and fall back to the event type.
  */
 function errorEventMessage(payload: Record<string, unknown>, eventType: string): string {
+  if (eventType === "cost.limit_reached") {
+    return costLimitReachedMessage(payload);
+  }
   for (const key of ["error", "reason", "message", "escalation"]) {
     const value = payload[key];
     if (typeof value === "string" && value.length > 0) {

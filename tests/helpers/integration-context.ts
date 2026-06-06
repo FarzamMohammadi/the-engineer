@@ -135,7 +135,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   });
 
   // 3. Registry + fake plugins (needs eventBus from core components)
-  const registryHandle = createTestRegistry(eventBus as import("../../src/core/event-bus/index.js").EventBus);
+  const registryHandle = createTestRegistry(eventBus as import("../../src/core/event-bus/index.js").EventBus, db);
   const { registry, fakes } = registryHandle;
 
   // 9. People Directory

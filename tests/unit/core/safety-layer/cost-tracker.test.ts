@@ -67,6 +67,59 @@ function getEmittedEvents(db: import("better-sqlite3").Database, type: string): 
   return rows.map(rowToEvent);
 }
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * Insert a cost.incurred row directly with a chosen timestamp — the only way to place an event in a
+ * past or future daily window, since `EventBus.publish` always stamps `now`. Returns its sequence.
+ */
+function insertRawCostEvent(
+  db: import("better-sqlite3").Database,
+  timestamp: Date,
+  overrides: Partial<CostIncurredPayload> = {},
+): number {
+  const payload: CostIncurredPayload = {
+    task_id: "task-1",
+    repo: "owner/repo",
+    provider_id: "claude-api",
+    operation: "agent_call",
+    spend_usd: 0.01,
+    duration_ms: null,
+    input_tokens: null,
+    output_tokens: null,
+    total_tokens: null,
+    cache_read_tokens: null,
+    model_id: null,
+    ...overrides,
+  };
+  const result = db
+    .prepare("INSERT INTO events (id, type, source, task_id, timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(
+      `evt-${timestamp.getTime()}-${Math.random().toString(36).slice(2)}`,
+      EventTypes["cost.incurred"],
+      "test",
+      payload.task_id,
+      timestamp.toISOString(),
+      JSON.stringify(payload),
+    );
+  return Number(result.lastInsertRowid);
+}
+
+/** An observer that records every instant observation, so a test can assert how many times one fires. */
+function createRecordingObserver(): {
+  observer: ReturnType<typeof createTestObserverFacade>;
+  observations: { type: string; name: string }[];
+} {
+  const observer = createTestObserverFacade("safety-layer");
+  const observations: { type: string; name: string }[] = [];
+  const original = observer.observe.bind(observer);
+  observer.observe = (type, name, data, options) => {
+    observations.push({ type, name });
+    return original(type, name, data, options);
+  };
+  return { observer, observations };
+}
+
 // ── Pure Functions ───────────────────────────────────────────────────────────
 
 describe("getDailyWindowStart", () => {
@@ -258,6 +311,171 @@ describe("CostTracker — limit detection", () => {
     const events = getEmittedEvents(db, "cost.limit_reached");
     expect(events.some((e) => e.payload["limit_scope"] === "claude-code")).toBe(true);
   });
+
+  it("publishes the provider breach once per window, not on every event past the cap", () => {
+    const { eventBus: eb, db } = createTracker({
+      cost_limits: { providers: { "claude-code": { daily_requests: 2 } } },
+    });
+
+    // Four requests today against a cap of 2: the breach publishes once on the crossing (request 2),
+    // then stays latched for requests 3 and 4 — an edge-trigger, not one owner alert per event past the cap.
+    for (let i = 0; i < 4; i++) {
+      simulateCostEvent(eb, { provider_id: "claude-code", spend_usd: null });
+    }
+
+    const breaches = getEmittedEvents(db, "cost.limit_reached").filter(
+      (e) => e.payload["limit_scope"] === "claude-code",
+    );
+    expect(breaches).toHaveLength(1);
+  });
+
+  it("publishes a per-task breach once, not on every event past the limit", () => {
+    const { eventBus: eb, db } = createTracker({
+      cost_limits: { per_task: { cost_usd: 0.1 } },
+    });
+
+    // Three over-limit events on one task: the breach publishes once on the crossing,
+    // then stays latched — an edge-trigger, not one owner alert per event past the limit.
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.12 });
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.05 });
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.05 });
+
+    const breaches = getEmittedEvents(db, "cost.limit_reached").filter((e) => e.payload["limit_type"] === "per_task");
+    expect(breaches).toHaveLength(1);
+  });
+
+  it("publishes a daily breach once, not on every event past the limit", () => {
+    const { eventBus: eb, db } = createTracker({
+      cost_limits: { daily: { cost_usd: 0.2 } },
+    });
+
+    // Three events that together exceed the daily limit and then stay above it: one breach only.
+    simulateCostEvent(eb, { spend_usd: 0.12 });
+    simulateCostEvent(eb, { spend_usd: 0.12 });
+    simulateCostEvent(eb, { spend_usd: 0.12 });
+
+    const breaches = getEmittedEvents(db, "cost.limit_reached").filter((e) => e.payload["limit_type"] === "daily");
+    expect(breaches).toHaveLength(1);
+  });
+
+  it("re-arms the daily breach after a UTC daily rollover", () => {
+    const {
+      tracker,
+      eventBus: eb,
+      db,
+    } = createTracker({
+      cost_limits: { daily: { cost_usd: 0.2 } },
+    });
+
+    // Today: cross the daily limit — one breach published, then latched.
+    simulateCostEvent(eb, { spend_usd: 0.12 });
+    const todaySeq = simulateCostEvent(eb, { spend_usd: 0.12 }).sequence;
+    expect(getEmittedEvents(db, "cost.limit_reached").filter((e) => e.payload["limit_type"] === "daily")).toHaveLength(
+      1,
+    );
+
+    // A next-day event rolls the daily window over, which resets the accumulator and re-arms the
+    // breach latch. (A breach published mid-replay would not persist — better-sqlite3 forbids
+    // writing through a live read iterator — so this event stays under the limit and only drives
+    // the rollover; its effect is observed through the reset accumulator, not a breach event.)
+    insertRawCostEvent(db, new Date(Date.now() + ONE_DAY_MS), { spend_usd: 0.12 });
+    eb.replay(todaySeq);
+    expect(tracker.getCostStatus().daily_usd).toBeCloseTo(0.12);
+
+    // Fresh live spend opens a clean daily window and crosses the limit again. Because the latch
+    // re-armed on the rollover, this publishes a second daily breach — proving the latch does not
+    // suppress every later breach forever once the first one fires.
+    simulateCostEvent(eb, { spend_usd: 0.12 });
+    simulateCostEvent(eb, { spend_usd: 0.12 });
+    expect(getEmittedEvents(db, "cost.limit_reached").filter((e) => e.payload["limit_type"] === "daily")).toHaveLength(
+      2,
+    );
+  });
+});
+
+// ── CostTracker — Provider Daily Window Reset ────────────────────────────────
+
+describe("CostTracker — provider daily window", () => {
+  it("resets provider requests on UTC daily rollover", () => {
+    const { eventBus: eb, db } = createTracker({
+      cost_limits: { providers: { "claude-api": { daily_requests: 2 } } },
+    });
+
+    // One request today — under the cap of 2, so no breach yet.
+    const todaySeq = simulateCostEvent(eb, { provider_id: "claude-api", spend_usd: null }).sequence;
+    expect(getEmittedEvents(db, "cost.limit_reached")).toHaveLength(0);
+
+    // A request dated tomorrow crosses the day boundary: rollover resets the provider counter to 0,
+    // so this counts as request 1 of the new day — not request 2 — and stays under the cap.
+    insertRawCostEvent(db, new Date(Date.now() + ONE_DAY_MS), { provider_id: "claude-api", spend_usd: null });
+    eb.replay(todaySeq);
+
+    expect(getEmittedEvents(db, "cost.limit_reached")).toHaveLength(0);
+  });
+
+  it("drops yesterday's provider count on restore across a rollover (window_start mismatch)", () => {
+    const { eventBus: eb, db } = createTracker({
+      cost_limits: { providers: { "claude-api": { daily_requests: 2 } } },
+    });
+
+    // Seed a snapshot whose provider already sits at its cap of 2 — but in yesterday's window.
+    const yesterdayStart = getDailyWindowStart(new Date(Date.now() - ONE_DAY_MS));
+    const todayStart = getDailyWindowStart(new Date());
+    const snapshot = {
+      per_task: {},
+      daily: { cost_usd: 0, window_start: todayStart },
+      monthly: { cost_usd: 0, window_start: getMonthlyWindowStart(new Date()) },
+      providers: { "claude-api": { requests_used: 2, window_start: yesterdayStart } },
+      last_sequence: 0,
+      snapshot_at: new Date().toISOString(),
+    };
+    db.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)").run(
+      "safety_snapshot",
+      JSON.stringify(snapshot),
+    );
+
+    // A fresh tracker restores the snapshot; the provider's window is yesterday's, so its count is dropped
+    // to 0 in today's window. A single new request today must NOT breach the cap of 2.
+    const config = SafetyConfigSchema.parse({ cost_limits: { providers: { "claude-api": { daily_requests: 2 } } } });
+    createCostTracker({
+      db,
+      eventBus: eb,
+      costLimits: config.cost_limits,
+      observer: createTestObserverFacade("safety-layer"),
+    });
+    simulateCostEvent(eb, { provider_id: "claude-api", spend_usd: null });
+
+    expect(getEmittedEvents(db, "cost.limit_reached")).toHaveLength(0);
+  });
+
+  it("counts only today's provider requests on a snapshot-loss full replay across midnight", () => {
+    testDb = createTestDatabase();
+    const observer = createTestObserverFacade("event-bus");
+    eventBus = new EventBus(testDb.db, { observer });
+    const db = testDb.db;
+
+    // Two requests yesterday, one request today — all in the event log, no snapshot.
+    insertRawCostEvent(db, new Date(Date.now() - ONE_DAY_MS), { provider_id: "claude-api", spend_usd: null });
+    insertRawCostEvent(db, new Date(Date.now() - ONE_DAY_MS), { provider_id: "claude-api", spend_usd: null });
+    insertRawCostEvent(db, new Date(), { provider_id: "claude-api", spend_usd: null });
+    db.prepare("DELETE FROM _meta WHERE key = 'safety_snapshot'").run();
+
+    // Full replay from sequence 0 (snapshot loss). Only today's single request counts; yesterday's two
+    // are excluded by window. A breach payload reports requests_used, so one more live request today must
+    // bring the count to 2 (today's replayed 1 + this 1) — proving yesterday's 2 were NOT folded in.
+    const config = SafetyConfigSchema.parse({ cost_limits: { providers: { "claude-api": { daily_requests: 2 } } } });
+    createCostTracker({
+      db,
+      eventBus,
+      costLimits: config.cost_limits,
+      observer: createTestObserverFacade("safety-layer"),
+    });
+    simulateCostEvent(eventBus, { provider_id: "claude-api", spend_usd: null });
+
+    const breaches = getEmittedEvents(db, "cost.limit_reached");
+    expect(breaches).toHaveLength(1);
+    expect(breaches[0]?.payload["current_spend"]).toBe(2);
+  });
 });
 
 // ── CostTracker — checkCostLimits & isAnyLimitBreached ───────────────────────
@@ -422,5 +640,26 @@ describe("CostTracker — getCostStatus warnings", () => {
     simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
 
     expect(tracker.getCostStatus("task-1").warnings).toHaveLength(0);
+  });
+});
+
+// ── CostTracker — 80%-Crossing Observation (edge-triggered) ──────────────────
+
+describe("CostTracker — warning-threshold observation", () => {
+  it("emits the 80%-crossing observation exactly once while spend stays above 80%", () => {
+    testDb = createTestDatabase();
+    const busObserver = createTestObserverFacade("event-bus");
+    const eb = new EventBus(testDb.db, { observer: busObserver });
+    const config = SafetyConfigSchema.parse({ cost_limits: { daily: { cost_usd: 1.0 } } });
+    const { observer, observations } = createRecordingObserver();
+    createCostTracker({ db: testDb.db, eventBus: eb, costLimits: config.cost_limits, observer });
+
+    // First event crosses 80% of the daily limit; the next two stay above it without crossing again.
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.85 });
+    simulateCostEvent(eb, { task_id: "task-2", spend_usd: 0.05 });
+    simulateCostEvent(eb, { task_id: "task-3", spend_usd: 0.05 });
+
+    const crossings = observations.filter((o) => o.name === "cost_warning_threshold_crossed");
+    expect(crossings).toHaveLength(1);
   });
 });

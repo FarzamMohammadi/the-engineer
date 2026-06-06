@@ -115,5 +115,32 @@ export function systemRoutes(deps: SystemRoutesDeps): Hono {
     return c.json({ events });
   });
 
+  // Current per-plugin health STATE (display-only / advisory). The registry's live `getAllHealthRecords()`
+  // is in the daemon process and unreachable from this read-only dashboard process, so the registry caches a
+  // full snapshot every health-check cycle in the `_meta` table (key `plugin_health_snapshot`, overwritten
+  // each cycle, mirroring the cost tracker's `safety_snapshot`) — we read it back here. Distinct from `/health`
+  // above, which returns the last-20 health *events* (the trail of changes); this returns the always-current
+  // *state*. These records are ADVISORY: plugin selection never reads health (see the invariant test in
+  // tests/unit/core/registry/index.test.ts), so this surface is purely informational.
+  app.get("/plugin-health", (c) => {
+    const row = deps.db.prepare(`SELECT value FROM _meta WHERE key = 'plugin_health_snapshot'`).get() as
+      | { value: string }
+      | undefined;
+
+    if (!row) {
+      // No snapshot yet — the daemon hasn't run a health-check cycle (or there are no plugins). Return an
+      // empty, well-formed shape so the client renders "no data" rather than erroring.
+      return c.json({ records: [], checked_at: null });
+    }
+
+    const snapshot = (fromSqliteJson(row.value) ?? {}) as { records?: unknown; updated_at?: unknown };
+
+    return c.json({
+      records: Array.isArray(snapshot.records) ? snapshot.records : [],
+      // The snapshot's own `updated_at` doubles as the health loop's last-run liveness marker.
+      checked_at: typeof snapshot.updated_at === "string" ? snapshot.updated_at : null,
+    });
+  });
+
   return app;
 }

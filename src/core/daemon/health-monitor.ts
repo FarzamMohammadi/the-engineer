@@ -1,12 +1,16 @@
 import { TimeoutStageActions } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { BlockCategories, BlockReasons, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { HealthMonitorContext } from "./types.js";
 
 // ── Pure Functions ────────────────────────────────────────────────────────────
+
+/** The condition under which an active task is judged stuck. */
+type StuckCondition = "no_journal_entries" | "stale_journal" | "no_state_transition";
 
 /** Check if an active task is stuck based on journal entry staleness. Returns null if not stuck. */
 export function evaluateTaskStuckness(
@@ -15,10 +19,7 @@ export function evaluateTaskStuckness(
   nowMs: number,
   stuckThresholdMs: number,
   maxActiveDurationMs: number,
-): {
-  condition: "no_journal_entries" | "stale_journal" | "no_state_transition";
-  elapsedMs: number;
-} | null {
+): { condition: StuckCondition; elapsedMs: number } | null {
   if (activeElapsedMs > maxActiveDurationMs) {
     return { condition: "no_state_transition", elapsedMs: activeElapsedMs };
   }
@@ -60,12 +61,27 @@ export function createDaemonHealthMonitor(
   // ── Internal State ──────────────────────────────────────────────────────
   const blockedEscalationState = new Map<string, { lastStageIndex: number; lastActionAt: number }>();
   const reviewReminderTimes = new Map<string, number>();
+  // Edge-trigger latch for stuck detection: the condition a task is currently latched as stuck on, or absent
+  // when it is not latched. `checkStuckTasks` runs every tick, so without this latch a still-stuck task would
+  // re-publish `health.stuck_detected` and re-warn EVERY tick — the heartbeat anti-pattern §14 forbids
+  // ("every tick a plugin is still down buries the real transition under repeats"). We emit once on the
+  // crossing into stuck (or when the condition escalates, e.g. stale_journal → no_state_transition) and
+  // re-arm only when the task is no longer active or no longer stuck.
+  const stuckLatch = new Map<string, StuckCondition>();
 
   // ── Stuck Detection ─────────────────────────────────────────────────────
 
   function checkStuckTasks(now: number): void {
-    for (const taskId of getActiveTaskIds()) {
+    const activeTaskIds = new Set(getActiveTaskIds());
+    for (const taskId of activeTaskIds) {
       checkSingleTaskStuck(taskId, now);
+    }
+    // Re-arm the latch for any task that left the active set (completed, blocked, terminated): its next stuck
+    // episode must emit a fresh crossing. Prevents the map from leaking entries for long-gone tasks, too.
+    for (const taskId of stuckLatch.keys()) {
+      if (!activeTaskIds.has(taskId)) {
+        stuckLatch.delete(taskId);
+      }
     }
   }
 
@@ -88,16 +104,32 @@ export function createDaemonHealthMonitor(
       config.max_active_duration_ms,
     );
 
-    if (result) {
-      emitStuckDetected(taskId, result.condition, result.elapsedMs);
+    if (!result) {
+      // No longer stuck — re-arm so a future stuck episode emits a fresh crossing.
+      stuckLatch.delete(taskId);
+      return;
     }
+
+    // Edge-trigger: emit only on the crossing into stuck, or when the condition genuinely escalates to a
+    // different (worse) condition. A still-stuck task on the same condition stays silent until it changes.
+    if (stuckLatch.get(taskId) === result.condition) {
+      return;
+    }
+    stuckLatch.set(taskId, result.condition);
+    // last_activity is meaningful only for stale_journal — the timestamp of the last journal entry that went
+    // stale. no_journal_entries has no activity to point at, and no_state_transition fires on total runtime,
+    // not journal staleness, so both stay null rather than report a misleading time.
+    const lastActivity = result.condition === "stale_journal" ? latestTimestampStr : null;
+    emitStuckDetected(taskId, result.condition, result.elapsedMs, lastActivity);
   }
 
   function emitStuckDetected(
     taskId: string,
-    condition: "no_journal_entries" | "stale_journal" | "no_state_transition",
+    condition: StuckCondition,
     elapsedMs: number,
+    lastActivity: string | null,
   ): void {
+    const thresholdMs = condition === "no_state_transition" ? config.max_active_duration_ms : config.stuck_threshold_ms;
     eventBus.publish({
       type: EventTypes["health.stuck_detected"],
       source: "daemon",
@@ -105,12 +137,20 @@ export function createDaemonHealthMonitor(
       payload: {
         task_id: taskId,
         condition,
-        threshold_ms: condition === "no_state_transition" ? config.max_active_duration_ms : config.stuck_threshold_ms,
+        threshold_ms: thresholdMs,
         elapsed_ms: elapsedMs,
-        last_activity: null,
+        last_activity: lastActivity,
       },
     } satisfies PublishInput<"health.stuck_detected">);
-    observer.warn("Stuck task detected", { taskId, condition, elapsedMs });
+    // Dashboard-observer surface: the stuck verdict on the task's trace timeline (the durable event is the
+    // audit trail; this is what the owner watching the dashboard sees). Edge-triggered with the event above.
+    observer.observe(
+      ObservationTypes.state_transition,
+      "task_stuck_detected",
+      { task_id: taskId, condition, elapsed_ms: elapsedMs, threshold_ms: thresholdMs, last_activity: lastActivity },
+      { task_id: taskId, level: "warn" },
+    );
+    observer.warn("Stuck task detected", { taskId, condition, elapsedMs, thresholdMs });
   }
 
   // ── Blocked Escalation ──────────────────────────────────────────────────

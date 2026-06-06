@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { checkEnvFilePermissions, loadEnvFile } from "../../config/env.js";
 import { loadConfigSafe } from "../../config/loader.js";
 import type { ConfigBundle } from "../../config/loader.js";
+import { MONTHLY_REPLAY_FLOOR_DAYS, inspectRetentionConfig } from "../../core/data-lifecycle/index.js";
 import type { PeopleDirectoryWarning } from "../../core/people-directory/index.js";
 import { inspectPeopleDirectory } from "../../core/people-directory/index.js";
 import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
@@ -687,12 +688,26 @@ function checkDataLifecycleCoherence(bundle: ConfigBundle, checks: DoctorCheck[]
     });
   }
 
+  // Events retention has a hard floor: the cost tracker replays events back to the start of the month
+  // after a snapshot loss (see MONTHLY_REPLAY_FLOOR_DAYS). Reuse the same pure check the daemon runs at
+  // startup so doctor and startup never disagree (single source of truth, §11).
+  for (const warning of inspectRetentionConfig(data_lifecycle)) {
+    checks.push({
+      label: "Data retention: events",
+      status: "warn",
+      message: warning.message,
+      remedy: `Set data_lifecycle.retention.events.max_age_days to at least ${String(MONTHLY_REPLAY_FLOOR_DAYS)} in daemon.yaml`,
+    });
+  }
+
+  // The other tables have no replay floor; a live task's rows are protected from pruning regardless of
+  // retention (active-task protection), so a very short window only shortens terminal-task forensics.
   for (const [table, retention] of Object.entries(data_lifecycle.retention)) {
-    if (retention.max_age_days < 7) {
+    if (table !== "events" && retention.max_age_days < 7) {
       checks.push({
         label: `Data retention: ${table}`,
         status: "warn",
-        message: `data_lifecycle.retention.${table}.max_age_days is ${String(retention.max_age_days)} — retention under 7 days may delete data for in-progress tasks`,
+        message: `data_lifecycle.retention.${table}.max_age_days is ${String(retention.max_age_days)} — under 7 days leaves little history to inspect a completed or failed task`,
         remedy: `Set data_lifecycle.retention.${table}.max_age_days to at least 7 in daemon.yaml`,
       });
     }

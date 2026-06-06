@@ -1,3 +1,5 @@
+import type Database from "better-sqlite3";
+
 import type { EventBus } from "../../src/core/event-bus/index.js";
 import { Registry } from "../../src/core/registry/index.js";
 import { AdapterTypes } from "../../src/schemas/adapters.js";
@@ -31,10 +33,11 @@ export interface TestRegistryHandle {
  * Plugins are registered but NOT initialized — call `initializePlugin()`
  * on individual plugins if your test needs initialized state.
  */
-export function createTestRegistry(eventBus: EventBus): TestRegistryHandle {
+export function createTestRegistry(eventBus: EventBus, db: Database.Database): TestRegistryHandle {
   const registry = new Registry({
     eventBus,
     observer: createTestObserverFacade("registry"),
+    db,
     createStateStore: createTestStateStoreFactory(),
     healthCheckIntervalMs: 60_000,
     healthCheckTimeoutMs: 1_000,

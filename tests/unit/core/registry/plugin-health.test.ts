@@ -45,12 +45,34 @@ function createMonitor(
   return createPluginHealthMonitor({
     observer,
     eventBus: handle.eventBus,
+    db: handle.db,
     getRecord: (id) => recordMap.get(id),
     getAllRecords: () => [...recordMap.values()],
     healthCheckTimeoutMs: 1_000,
     consecutiveFailuresThreshold: 3,
     ...overrides,
   });
+}
+
+/** The current-state snapshot cached in `_meta` each cycle (overwritten, not appended). */
+interface HealthSnapshot {
+  records: Array<{ plugin_id: string; state: string }>;
+  updated_at: string;
+}
+
+/** Read back the single `_meta` plugin-health snapshot row the monitor overwrites each cycle. */
+function readSnapshot(handle: TestEventBusHandle): HealthSnapshot | null {
+  const row = handle.db.prepare("SELECT value FROM _meta WHERE key = 'plugin_health_snapshot'").get() as
+    | { value: string }
+    | undefined;
+  return row ? (JSON.parse(row.value) as HealthSnapshot) : null;
+}
+
+/** The change events the ledger keeps (the snapshot is no longer an event). A `health.*` subscription catches them. */
+const TRANSITION_EVENT_TYPES = new Set(["health.plugin_unhealthy", "health.plugin_failed", "health.plugin_recovered"]);
+
+function transitionEventsOnly(events: Event[]): Event[] {
+  return events.filter((e) => TRANSITION_EVENT_TYPES.has(e.type));
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -130,8 +152,9 @@ describe("createPluginHealthMonitor", () => {
 
       await monitor.healthCheckAll();
 
-      expect(events).toHaveLength(1);
-      expect(events[0]!.type).toBe("health.plugin_unhealthy");
+      const transitions = transitionEventsOnly(events);
+      expect(transitions).toHaveLength(1);
+      expect(transitions[0]!.type).toBe("health.plugin_unhealthy");
     });
 
     it("emits health.plugin_recovered on recovery", async () => {
@@ -148,11 +171,12 @@ describe("createPluginHealthMonitor", () => {
       instance.setUnhealthy(false);
       await monitor.healthCheckAll(); // unhealthy → healthy
 
-      expect(events).toHaveLength(1);
-      expect(events[0]!.type).toBe("health.plugin_recovered");
+      const transitions = transitionEventsOnly(events);
+      expect(transitions).toHaveLength(1);
+      expect(transitions[0]!.type).toBe("health.plugin_recovered");
     });
 
-    it("does not emit events on healthy → healthy", async () => {
+    it("does not emit a transition event on healthy → healthy", async () => {
       const record = createRecord("t1");
       const monitor = createMonitor([record], handle, observer);
       const events: Event[] = [];
@@ -160,7 +184,7 @@ describe("createPluginHealthMonitor", () => {
 
       await monitor.healthCheckAll();
 
-      expect(events).toHaveLength(0);
+      expect(transitionEventsOnly(events)).toHaveLength(0);
     });
 
     it("does not emit repeated events on failed → failed", async () => {
@@ -177,9 +201,9 @@ describe("createPluginHealthMonitor", () => {
       const events: Event[] = [];
       handle.eventBus.subscribe("health-test", "health.*", (e) => events.push(e));
 
-      await monitor.healthCheckAll(); // failed → failed (no event)
+      await monitor.healthCheckAll(); // failed → failed (no transition event)
 
-      expect(events).toHaveLength(0);
+      expect(transitionEventsOnly(events)).toHaveLength(0);
     });
 
     it("updates last_check_at on every check", async () => {
@@ -189,6 +213,69 @@ describe("createPluginHealthMonitor", () => {
       await monitor.healthCheckAll();
 
       expect(record.health.last_check_at).not.toBeNull();
+    });
+
+    it("caches the current records in the _meta snapshot each cycle", async () => {
+      // The snapshot is the durable, cross-process surface for current state — a single `_meta` row the
+      // monitor overwrites each cycle (mirroring the cost tracker's safety_snapshot), so the dashboard can
+      // read current plugin state without reaching into the daemon's memory.
+      const r1 = createRecord("t1");
+      const r2 = createRecord("t2");
+      const monitor = createMonitor([r1, r2], handle, observer);
+
+      await monitor.healthCheckAll(); // all healthy
+
+      const snapshot = readSnapshot(handle);
+      expect(snapshot).not.toBeNull();
+      expect(snapshot!.records.map((r) => r.plugin_id).sort()).toEqual(["t1", "t2"]);
+      // `updated_at` is the health loop's liveness marker — an ISO-8601 timestamp of the cycle.
+      expect(snapshot!.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it("carries the current state of each plugin in the snapshot", async () => {
+      const instance = new FakeTriggerPlugin();
+      instance.setUnhealthy(true);
+      const record = createRecord("t1", instance);
+      const monitor = createMonitor([record], handle, observer);
+
+      await monitor.healthCheckAll(); // healthy → unhealthy
+
+      const snapshot = readSnapshot(handle);
+      expect(snapshot!.records[0]).toMatchObject({ plugin_id: "t1", state: "unhealthy" });
+    });
+
+    it("overwrites the single snapshot row on a second cycle (no append)", async () => {
+      const instance = new FakeTriggerPlugin();
+      const record = createRecord("t1", instance);
+      const monitor = createMonitor([record], handle, observer);
+
+      await monitor.healthCheckAll(); // healthy
+      const firstUpdatedAt = readSnapshot(handle)!.updated_at;
+
+      instance.setUnhealthy(true);
+      await monitor.healthCheckAll(); // healthy → unhealthy — overwrites the same row
+
+      // Exactly one row exists (overwrite, not append) and it holds the latest state.
+      const rowCount = handle.db
+        .prepare("SELECT COUNT(*) as count FROM _meta WHERE key = 'plugin_health_snapshot'")
+        .get() as { count: number };
+      expect(rowCount.count).toBe(1);
+      const snapshot = readSnapshot(handle)!;
+      expect(snapshot.records[0]).toMatchObject({ plugin_id: "t1", state: "unhealthy" });
+      expect(new Date(snapshot.updated_at).getTime()).toBeGreaterThanOrEqual(new Date(firstUpdatedAt).getTime());
+    });
+
+    it("never publishes a snapshot as an event (only the _meta cache is written)", async () => {
+      const record = createRecord("t1");
+      const monitor = createMonitor([record], handle, observer);
+
+      await monitor.healthCheckAll();
+      await monitor.healthCheckAll();
+
+      // The snapshot lives in `_meta`, not the events ledger — no health event fires on a healthy cycle.
+      expect(handle.getEmittedEvents("health.plugin_health_snapshot")).toHaveLength(0);
+      const allHealthEvents = handle.getEmittedEvents().filter((e) => e.type.startsWith("health."));
+      expect(allHealthEvents).toHaveLength(0);
     });
 
     it("treats timeout as a failed check", async () => {
@@ -249,8 +336,9 @@ describe("createPluginHealthMonitor", () => {
 
       await monitor.healthCheckAll();
 
-      expect(events).toHaveLength(1);
-      const payload = events[0]!.payload as { error: string };
+      const transitions = transitionEventsOnly(events);
+      expect(transitions).toHaveLength(1);
+      const payload = transitions[0]!.payload as { error: string };
       expect(payload.error).not.toContain(secretToken);
       expect(payload.error).toContain("[REDACTED:token]");
     });

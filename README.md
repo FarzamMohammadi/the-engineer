@@ -92,7 +92,7 @@ Autonomous operation requires the CLI to skip its own permission prompts — Cla
 
 **State machine.** Every agent invocation passes through the Task Engine, which permits or denies it based on the task's current state. A task in `requirements_gathering` can't trigger execution; a `failed` task can't run until you `engineer retry`.
 
-**Cost ceilings.** Every agent call emits a `cost.incurred` event. Spending accumulates per task, per day, per month, plus per-provider request budgets. At 80% of any limit, The Engineer warns. At 100%, it terminates the in-flight dispatch and notifies you immediately — before the agent's current call settles.
+**Cost ceilings.** Every agent call emits a `cost.incurred` event. Spending accumulates per task, per day, per month, plus per-provider request budgets. At 80% of any limit, The Engineer warns. At 100%, it terminates the in-flight work and notifies you immediately — before the next agent call can accrue more spend. A per-task or per-provider breach terminates that one task and DMs you about it; a global daily or monthly breach terminates every in-flight task at once and sends a single alert naming the limit and how many tasks it stopped — never one DM per task.
 
 **Autonomy escalation.** The agent surfaces discretionary decisions it makes (a rename, a new dependency, a structural change), and Core consults your `safety.yaml` autonomy policy per decision: it proceeds silently where you let it, and pauses to ask you where you said to — by category, with size thresholds. (See [autonomy configuration](docs/configuration/safety.md#autonomy).)
 

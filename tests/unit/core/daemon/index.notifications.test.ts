@@ -274,6 +274,49 @@ describe("Daemon Notifications", () => {
       const costComment = commentCalls.find((call: unknown[]) => (call[1] as string).includes("cost limit"));
       expect(costComment).toBeDefined();
     });
+
+    it("fires one global alert naming the limit for a daily breach with no task_id", async () => {
+      // A global daily/monthly breach carries task_id=null. The daemon must send EXACTLY ONE owner alert
+      // that names the global limit (keyed on a stable cost:daily source for dedup) — never a per-task
+      // cost_limit DM. With no in-flight dispatches, the alert still fires (the owner must hear the budget
+      // is exhausted even when nothing is running).
+      const commPlugin = createMockCommPlugin();
+      handle.peopleDirectory.getOwner.mockReturnValue({
+        id: "farzam",
+        contacts: [{ channel: "telegram", handle: "@farzam" }],
+      });
+      handle.registry.getPluginsByType.mockReturnValue([commPlugin]);
+
+      await handle.daemon.start();
+
+      const costCallback = handle.getSubscriptionCallback(EventTypes["cost.limit_reached"]);
+      costCallback!({
+        id: "evt-global-cost",
+        sequence: 1,
+        type: EventTypes["cost.limit_reached"],
+        source: "safety_layer",
+        task_id: null,
+        timestamp: new Date().toISOString(),
+        payload: {
+          task_id: null,
+          limit_type: "daily",
+          limit_scope: null,
+          current_spend: 52.4,
+          limit_value: 50,
+          resets_at: null,
+        },
+      });
+
+      await handle.daemon.tick();
+      await flush();
+      await handle.daemon.stop();
+
+      const sentContents = commPlugin.formatMessage.mock.calls.map((call: unknown[]) => call[0] as string);
+      const globalAlerts = sentContents.filter((content) => content.includes("Global daily cost limit reached"));
+      // Exactly one global alert, naming the limit and its real numbers.
+      expect(globalAlerts).toHaveLength(1);
+      expect(globalAlerts[0]).toContain("$52.4 of $50");
+    });
   });
 
   // ── commentOnTaskTicket helper ─────────────────────────────────────────
@@ -461,6 +504,89 @@ describe("Daemon Notifications", () => {
           call[1] === "alert",
       );
       expect(alertCall).toBeDefined();
+    });
+
+    // ── Plugin Recovery (D8) ──────────────────────────────────────────────
+    // A failed→healthy recovery is the slice's one new notification. It is gated: only a recovery from the
+    // `failed` state DMs the owner (a real outage cleared), never a transient `unhealthy` blip. The dedup keys
+    // on the plugin source so one flapping plugin does not re-spam, while two distinct plugins both notify.
+
+    function recoveredEvent(pluginId: string, previousState: "unhealthy" | "failed", id: string) {
+      return {
+        id,
+        sequence: 1,
+        type: "health.plugin_recovered" as const,
+        source: "registry",
+        task_id: null,
+        timestamp: new Date().toISOString(),
+        payload: {
+          plugin_id: pluginId,
+          plugin_type: "trigger",
+          previous_state: previousState,
+        },
+      };
+    }
+
+    function recoveryDmCount(commPlugin: ReturnType<typeof createMockCommPlugin>, pluginId: string): number {
+      return commPlugin.formatMessage.mock.calls.filter(
+        (call: unknown[]) => (call[0] as string).includes(pluginId) && (call[0] as string).includes("recovered"),
+      ).length;
+    }
+
+    it("notifies the owner when a plugin recovers from failed", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.plugin_recovered");
+      expect(callback).toBeDefined();
+      callback!(recoveredEvent("github-trigger", "failed", "evt-rec-1"));
+      await flush();
+      await handle.daemon.stop();
+
+      expect(recoveryDmCount(commPlugin, "github-trigger")).toBe(1);
+    });
+
+    it("does NOT notify the owner when a plugin recovers from unhealthy (not failed)", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.plugin_recovered");
+      callback!(recoveredEvent("github-trigger", "unhealthy", "evt-rec-2"));
+      await flush();
+      await handle.daemon.stop();
+
+      expect(recoveryDmCount(commPlugin, "github-trigger")).toBe(0);
+    });
+
+    it("sends at most one DM when one plugin flaps failed→healthy repeatedly in the window", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.plugin_recovered");
+      // failed → healthy → (fails again, not seen here) → failed → healthy, all inside the suppress window.
+      callback!(recoveredEvent("github-trigger", "failed", "evt-flap-1"));
+      callback!(recoveredEvent("github-trigger", "failed", "evt-flap-2"));
+      callback!(recoveredEvent("github-trigger", "failed", "evt-flap-3"));
+      await flush();
+      await handle.daemon.stop();
+
+      // The plugin-source-keyed dedup collapses the repeats to a single DM.
+      expect(recoveryDmCount(commPlugin, "github-trigger")).toBe(1);
+    });
+
+    it("notifies for two distinct plugins recovering in the same window (not collapsed)", async () => {
+      const commPlugin = setupCommAndOwner(handle);
+      await handle.daemon.start();
+
+      const callback = handle.getSubscriptionCallback("health.plugin_recovered");
+      callback!(recoveredEvent("github-trigger", "failed", "evt-a"));
+      callback!(recoveredEvent("telegram-comm", "failed", "evt-b"));
+      await flush();
+      await handle.daemon.stop();
+
+      // Distinct sources → distinct dedup keys → both notify.
+      expect(recoveryDmCount(commPlugin, "github-trigger")).toBe(1);
+      expect(recoveryDmCount(commPlugin, "telegram-comm")).toBe(1);
     });
 
     it("deduplicates health notifications within cooldown period", async () => {

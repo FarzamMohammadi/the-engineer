@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { metricsRoutes } from "../../../../src/dashboard/api/metrics.js";
 import { systemRoutes } from "../../../../src/dashboard/api/system.js";
 import { ObservationTypes } from "../../../../src/schemas/observer.js";
+import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 import { type TestObserverHandle, createTestObserver } from "../../../helpers/test-observer.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
@@ -25,7 +26,11 @@ describe("metricsRoutes — GET /cost", () => {
 
   beforeEach(() => {
     handle = createTestObserver();
-    app = metricsRoutes({ db: handle.db.db, observationStore: handle.observer });
+    app = metricsRoutes({
+      db: handle.db.db,
+      observationStore: handle.observer,
+      observer: createTestObserverFacade("cli"),
+    });
   });
 
   afterEach(() => {

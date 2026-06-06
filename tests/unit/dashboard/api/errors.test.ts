@@ -49,7 +49,13 @@ describe("errorRoutes — GET / error events", () => {
   }
 
   it("surfaces the real error-bearing event types", async () => {
-    insertEvent(handle.db, "e1", 1, "cost.quota_exhausted", { provider_id: "anthropic", window_type: "daily" });
+    insertEvent(handle.db, "e1", 1, "cost.limit_reached", {
+      task_id: null,
+      limit_type: "daily",
+      limit_scope: null,
+      current_spend: 52.4,
+      limit_value: 50,
+    });
     insertEvent(handle.db, "e2", 2, "health.plugin_failed", {
       plugin_id: "github",
       plugin_type: "trigger",
@@ -66,7 +72,7 @@ describe("errorRoutes — GET / error events", () => {
     const detailTypes = errors.map((e) => e["detail"]).sort();
 
     expect(detailTypes).toEqual([
-      "cost.quota_exhausted",
+      "cost.limit_reached",
       "health.plugin_failed",
       "health.plugin_unhealthy",
       "timeout.alert",
@@ -89,14 +95,47 @@ describe("errorRoutes — GET / error events", () => {
       error: "auth expired",
     });
     insertEvent(handle.db, "msg2", 2, "timeout.alert", { task_id: "t1", escalation: "paged owner" }, "t1");
-    insertEvent(handle.db, "msg3", 3, "cost.quota_exhausted", { provider_id: "anthropic", window_type: "daily" });
 
     const errors = await listErrors();
     const byType = new Map(errors.map((e) => [e["detail"] as string, e["message"] as string]));
 
     expect(byType.get("health.plugin_failed")).toBe("auth expired");
     expect(byType.get("timeout.alert")).toBe("paged owner");
-    // No prose carrier on the payload — falls back to the event type.
-    expect(byType.get("cost.quota_exhausted")).toBe("cost.quota_exhausted");
+  });
+
+  it("renders a USD cost.limit_reached breach with its spend and limit dollars, not the bare type", async () => {
+    // A daily/monthly/per-task breach has no limit_scope; current_spend and limit_value are dollars.
+    insertEvent(handle.db, "usd1", 1, "cost.limit_reached", {
+      task_id: null,
+      limit_type: "monthly",
+      limit_scope: null,
+      current_spend: 512.5,
+      limit_value: 500,
+    });
+
+    const errors = await listErrors();
+    const message = errors.find((e) => e["detail"] === "cost.limit_reached")?.["message"];
+
+    expect(message).toBe("monthly cost limit reached: $512.5 of $500");
+    // Not the bare token.
+    expect(message).not.toBe("cost.limit_reached");
+  });
+
+  it("renders a provider cost.limit_reached breach as a request-count cap, not dollars", async () => {
+    // A provider breach carries limit_scope (the provider id); current_spend and limit_value are daily
+    // request counts, not USD — so the message must not prefix them with a dollar sign.
+    insertEvent(handle.db, "prov1", 1, "cost.limit_reached", {
+      task_id: "t-prov",
+      limit_type: "daily",
+      limit_scope: "claude-code-agent",
+      current_spend: 200,
+      limit_value: 200,
+    });
+
+    const errors = await listErrors();
+    const message = errors.find((e) => e["detail"] === "cost.limit_reached")?.["message"];
+
+    expect(message).toBe("claude-code-agent daily request cap reached: 200 of 200");
+    expect(message).not.toContain("$");
   });
 });

@@ -65,6 +65,7 @@ describe("loadBuiltinPlugins", () => {
     registry = new Registry({
       eventBus,
       observer: createTestObserverFacade("registry"),
+      db: dbHandle.db,
       createStateStore: createTestStateStoreFactory(),
       healthCheckIntervalMs: 60_000,
       healthCheckTimeoutMs: 1_000,

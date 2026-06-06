@@ -59,7 +59,9 @@ export const DAEMON_TEMPLATE = `# Daemon configuration for The Engineer
 #   interval_ms: "1h"                  # Cleanup check interval (default: 1h)
 #   retention:
 #     events:
-#       max_age_days: 90               # Event retention in days (default: 90)
+#       max_age_days: 90               # Event retention in days (default: 90). Keep >= 31: the cost
+#                                      # tracker replays events back to the start of the month after a
+#                                      # snapshot loss; a shorter window undercounts monthly spend.
 #     observations:
 #       max_age_days: 90
 #     journal_entries:
@@ -124,14 +126,13 @@ export const SAFETY_TEMPLATE = `# Safety configuration for The Engineer
 # --- Cost limits ---
 # Uncomment and adjust to prevent runaway spending.
 cost_limits:
-  api:
-    per_task:
-      cost_usd: 5.0                   # Per-task USD limit (null = unlimited)
-    daily:
-      cost_usd: 25.0                  # Daily USD limit
-    monthly:
-      cost_usd: 250.0                 # Monthly USD limit
-#   cli: {}                           # Per-CLI-provider limits (keyed by plugin ID, e.g. "claude-code-agent")
+  per_task:
+    cost_usd: 5.0                     # Per-task USD limit (null = unlimited)
+  daily:
+    cost_usd: 25.0                    # Daily USD limit
+  monthly:
+    cost_usd: 250.0                   # Monthly USD limit
+  providers: {}                       # Per-provider daily_requests caps, keyed by plugin ID (e.g. "claude-code-agent")
 
 # --- Scope boundaries ---
 # scope:
@@ -433,14 +434,13 @@ export const EXAMPLE_SAFETY = `# ┌──────────────�
 
 # ── Cost Limits ──────────────────────────────────────────────────────────────
 cost_limits:
-  api:
-    per_task:
-      cost_usd: 5.0                       # Per-task USD limit, null = unlimited (default: null)
-    daily:
-      cost_usd: 25.0                      # Daily USD limit (default: null)
-    monthly:
-      cost_usd: 250.0                     # Monthly USD limit (default: null)
-  cli: {}                                 # Per-CLI-provider limits, keyed by plugin ID (e.g. "claude-code-agent")
+  per_task:
+    cost_usd: 5.0                         # Per-task USD limit, null = unlimited (default: null)
+  daily:
+    cost_usd: 25.0                        # Daily USD limit (default: null)
+  monthly:
+    cost_usd: 250.0                       # Monthly USD limit (default: null)
+  providers: {}                           # Per-provider daily_requests caps, keyed by plugin ID (e.g. "claude-code-agent")
 
 # ── Scope Boundaries ────────────────────────────────────────────────────────
 scope:

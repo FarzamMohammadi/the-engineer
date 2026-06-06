@@ -28,6 +28,7 @@ import type { EventDeclaration } from "../event-bus/topology.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type ExecuteTaskResult, Outcomes } from "../orchestrator/index.js";
 import { createRetryPolicy } from "../retry-policy/index.js";
+import { formatCostBreach } from "../safety-layer/index.js";
 import { createWorkspaceReaper } from "../workspace-reaper/index.js";
 import { createCostLimitQueue } from "./cost-limit-queue.js";
 import { DaemonAlreadyRunningError } from "./errors.js";
@@ -294,8 +295,25 @@ export function createDaemon(ctx: DaemonContext): Daemon {
   function registerSubscriptions(): void {
     eventBus.subscribe("daemon:cost", EventTypes["cost.limit_reached"], (event: Event) => {
       const payload = event.payload as EventPayloads["cost.limit_reached"];
+      // A task-attributed breach (per-task or provider) carries a task_id — enqueue that one task, with the
+      // owner DM. A global daily/monthly breach carries task_id=null — it has no single task to blame, so
+      // fire exactly ONE owner alert (keyed on a stable `cost:<limit_type>` source so the router's alert
+      // dedup keeps a flapping breach from re-spamming) and then enqueue every in-flight dispatch for
+      // termination with ownerAlert=false, so the owner is told once, not once per terminated task.
       if (payload.task_id) {
-        costLimitQueue.add(payload.task_id);
+        costLimitQueue.add(payload.task_id, true);
+        return;
+      }
+
+      const ids = scheduler.getActiveTaskIds();
+      notifications.notify({
+        kind: NotificationKinds.alert,
+        taskId: null,
+        source: `cost:${payload.limit_type}`,
+        message: `Global ${formatCostBreach(payload)}. Terminating ${String(ids.length)} in-flight task(s).`,
+      });
+      for (const id of ids) {
+        costLimitQueue.add(id, false);
       }
     });
 
@@ -370,6 +388,25 @@ export function createDaemon(ctx: DaemonContext): Daemon {
       });
     });
 
+    eventBus.subscribe("daemon:health-plugin-recovered", EventTypes["health.plugin_recovered"], (event: Event) => {
+      const p = event.payload as EventPayloads["health.plugin_recovered"];
+      // The recovery EVENT publishes for ALL transitions (unhealthy→healthy and failed→healthy) and shows in
+      // the /health event stream + the PluginHealthCard. The owner DM is deliberately gated to failed→healthy:
+      // a plugin can oscillate around the unhealthy threshold, so DMing every unhealthy→healthy blip would be
+      // noise (the owner still sees those transitions on the card, and the unhealthy alert itself is already
+      // dedup-suppressed). A failed→healthy recovery clears a real outage — rare and meaningful, worth one DM.
+      // Keyed on the plugin source so a flapping plugin does not re-spam within the suppress window.
+      if (p.previous_state !== PluginHealthStates.failed) {
+        return;
+      }
+      notifications.notify({
+        kind: NotificationKinds.plugin_recovered,
+        taskId: null,
+        source: `plugin:${p.plugin_id}`,
+        message: `Plugin "${p.plugin_id}" (${p.plugin_type}) has recovered and is healthy again after a failure.`,
+      });
+    });
+
     observer.debug("Event subscriptions registered");
   }
 
@@ -381,6 +418,7 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     eventBus.unsubscribe("daemon:hard-cap");
     eventBus.unsubscribe("daemon:health-plugin-failed");
     eventBus.unsubscribe("daemon:health-plugin-unhealthy");
+    eventBus.unsubscribe("daemon:health-plugin-recovered");
   }
 
   // ── Startup: Protocol P1 ──────────────────────────────────────────────

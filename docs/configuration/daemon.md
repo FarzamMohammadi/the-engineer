@@ -110,14 +110,44 @@ The Engineer drops a duplicate outbound notification — one with the same kind 
 
 ## Data Lifecycle
 
+The data-lifecycle manager is a daemon-resident periodic service that prunes aged rows from the local
+SQLite tables, sweeps orphaned blob files, and runs an incremental vacuum. It is the local-DB sibling of
+the [workspace reaper](#workspace-reaper) below — same shape, different work (pure local cleanup, no git
+or network), and deliberately kept independent.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `data_lifecycle.enabled` | boolean | `true` | Enable automatic data cleanup (retention policies). |
 | `data_lifecycle.interval_ms` | integer (ms) | `3600000` (1h) | How often to run retention cleanup. |
-| `data_lifecycle.retention.events.max_age_days` | integer | `90` | Days to retain event records. |
+| `data_lifecycle.retention.events.max_age_days` | integer | `90` | Days to retain event records. See the retention-floor invariant below. |
 | `data_lifecycle.retention.observations.max_age_days` | integer | `90` | Days to retain observation records. |
 | `data_lifecycle.retention.journal_entries.max_age_days` | integer | `90` | Days to retain journal entries. |
 | `data_lifecycle.retention.checkpoints.max_age_days` | integer | `90` | Days to retain checkpoint records. |
+
+**Active-task protection.** A sweep prunes by age, but never prunes a row belonging to a task that is still
+live (`requirements_gathering`, `queued`, `active`, `blocked`) — that task may still need its own events,
+observations, journal, and checkpoints. System rows with no owning task (the cost, health, trigger, and
+cleanup audit trail, stored with `task_id` NULL) and rows of terminal tasks (`completed`, `failed`,
+`cancelled`) prune by age like everything else. This protection is deterministic: a system row prunes the
+same way whether or not any task happens to be active at sweep time.
+
+**Per-stage isolation.** Each stage of a sweep — each table, the blob sweep, the vacuum — is failure-isolated.
+One table's error (or the blob-reference query throwing) is logged loudly and skipped; the remaining stages
+still run, and the sweep still publishes its completion record. Liveness never lies: the
+`system.cleanup_completed` event and the dashboard's **Data Lifecycle** card are emitted even on a mid-sweep
+failure, carrying whatever stages did finish. A 0-row sweep still emits — that is the liveness signal that
+the service is alive, not noise.
+
+**Retention-floor invariant.** Keep `data_lifecycle.retention.events.max_age_days` at **31 or more**. The cost
+tracker is the only component that full-replays the `events` table to rebuild its spend accumulators after a
+snapshot loss, and the longest window it folds is the current calendar month — every `cost.incurred` event
+back to the first of the month. On the last day of a 31-day month that span is just under 31 days, so an
+`events` retention below 31 can prune this month's earlier cost events before a replay reads them, and the
+rebuilt monthly total comes out short — under-enforcing the monthly cost limit. The Engineer **warns at
+startup** when `events.max_age_days` is below this floor, naming that consequence. It is a warning, not a
+hard-fail: the daemon still starts. Daemon config is [restart-only](#daemon-configuration) (not
+hot-reloadable), so this startup check is the whole story — there is no reload path that could lower the
+value at runtime.
 
 ## Workspace Reaper
 

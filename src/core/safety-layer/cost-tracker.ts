@@ -5,6 +5,7 @@ import type { CostLimits } from "../../schemas/config.js";
 import { EventTypes } from "../../schemas/events.js";
 import type { CostIncurredPayload, Event, TaskStateChangedPayload } from "../../schemas/events.js";
 import { isTerminal } from "../../schemas/task.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { CostStatus, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { IObserver } from "../observer/index.js";
@@ -16,8 +17,14 @@ interface SpendWindow {
   window_start: string;
 }
 
+/**
+ * Provider request counter scoped to a daily UTC window. `window_start` mirrors
+ * `SpendWindow` so the count resets at the day boundary like daily cost does —
+ * `daily_requests` is a per-day cap, not an all-time one (see {@link rolloverWindows}).
+ */
 interface ProviderUsageRecord {
   requests_used: number;
+  window_start: string;
 }
 
 interface SpendAccumulators {
@@ -25,7 +32,6 @@ interface SpendAccumulators {
   daily: SpendWindow;
   monthly: SpendWindow;
   providers: Map<string, ProviderUsageRecord>;
-  token_totals: { input: number; output: number; total: number };
 }
 
 interface AccumulatorSnapshot {
@@ -33,9 +39,15 @@ interface AccumulatorSnapshot {
   daily: SpendWindow;
   monthly: SpendWindow;
   providers: Record<string, ProviderUsageRecord>;
-  token_totals: { input: number; output: number; total: number };
   last_sequence: number;
   snapshot_at: string;
+}
+
+/** Per-window latch tracking which cost limits have already crossed 80% (so the crossing emits once). */
+interface WindowedThresholdLatch {
+  per_task: Set<string>;
+  daily: boolean;
+  monthly: boolean;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -58,6 +70,11 @@ export function getDailyWindowStart(now: Date): string {
 export function getMonthlyWindowStart(now: Date): string {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   return d.toISOString();
+}
+
+/** Whether spend has reached the warning threshold (80%) of a limit. */
+function hasCrossedWarning(spent: number, limit: number): boolean {
+  return spent / limit >= COST_WARNING_THRESHOLD;
 }
 
 // ── ICostTracker Interface ──────────────────────────────────────────────────
@@ -109,8 +126,15 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     daily: { cost_usd: 0, window_start: getDailyWindowStart(now) },
     monthly: { cost_usd: 0, window_start: getMonthlyWindowStart(now) },
     providers: new Map(),
-    token_totals: { input: 0, output: 0, total: 0 },
   };
+
+  // Edge-trigger latches: each transition emits/publishes once, then re-arms on the
+  // relevant rollover (or on terminal-task prune for per_task). Without these, a naive
+  // per-event check would spam the observation trail and the breach event past the
+  // threshold — the noise the observability discipline forbids (§14, observability.md).
+  const crossed80: WindowedThresholdLatch = { per_task: new Set<string>(), daily: false, monthly: false };
+  const spendBreached: WindowedThresholdLatch = { per_task: new Set<string>(), daily: false, monthly: false };
+  const providerBreached = new Set<string>();
 
   // ── Initialization ──────────────────────────────────────────────────────
 
@@ -162,7 +186,6 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       daily_usd: dailyUsd,
       monthly_usd: monthlyUsd,
       warnings,
-      daily_tokens: accumulators.token_totals,
     };
   }
 
@@ -243,11 +266,13 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     const eventTime = new Date(event.timestamp);
 
     rolloverWindows(eventTime);
-    accumulateSpend(payload);
+    // After rollover, daily.window_start is the current daily window — the one a provider count belongs to.
+    accumulateSpend(payload, accumulators.daily.window_start);
 
     lastSequence = event.sequence;
     maybeSaveSnapshot();
 
+    emitThresholdCrossings(payload.task_id);
     checkAndEmitLimitBreaches(payload);
   }
 
@@ -255,27 +280,16 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     const payload = event.payload as unknown as TaskStateChangedPayload;
     if (isTerminal(payload.to_state)) {
       accumulators.per_task.delete(payload.task_id);
+      crossed80.per_task.delete(payload.task_id);
+      spendBreached.per_task.delete(payload.task_id);
     }
   }
 
-  function accumulateSpend(payload: CostIncurredPayload): void {
+  function accumulateSpend(payload: CostIncurredPayload, windowStart: string): void {
     const spend = payload.spend_usd ?? 0;
 
-    // Track provider request count regardless of spend
-    const existing = accumulators.providers.get(payload.provider_id) ?? { requests_used: 0 };
-    existing.requests_used += 1;
-    accumulators.providers.set(payload.provider_id, existing);
-
-    // Accumulate token counts regardless of spend
-    if (payload.input_tokens !== null) {
-      accumulators.token_totals.input += payload.input_tokens;
-    }
-    if (payload.output_tokens !== null) {
-      accumulators.token_totals.output += payload.output_tokens;
-    }
-    if (payload.total_tokens !== null) {
-      accumulators.token_totals.total += payload.total_tokens;
-    }
+    // Track provider request count regardless of spend, scoped to the current daily window.
+    incrementProviderUsage(payload.provider_id, windowStart);
 
     if (spend <= 0) {
       return;
@@ -287,18 +301,100 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     accumulators.monthly.cost_usd += spend;
   }
 
+  /** Increment a provider's request count within the given daily window, seeding the window on first sight. */
+  function incrementProviderUsage(providerId: string, windowStart: string): void {
+    const existing = accumulators.providers.get(providerId) ?? { requests_used: 0, window_start: windowStart };
+    existing.requests_used += 1;
+    accumulators.providers.set(providerId, existing);
+  }
+
   function rolloverWindows(nowDate: Date): void {
     const dailyStart = getDailyWindowStart(nowDate);
     if (dailyStart !== accumulators.daily.window_start) {
-      observer.debug("Cost window rolled over", { window: "daily", newStart: dailyStart });
+      const previousStart = accumulators.daily.window_start;
       accumulators.daily = { cost_usd: 0, window_start: dailyStart };
+      // Provider request caps are per-day too — reset every provider into the new window so a
+      // provider that hit its cap yesterday is usable again today (the daily_requests contract).
+      resetProviderWindows(dailyStart);
+      crossed80.daily = false;
+      spendBreached.daily = false;
+      providerBreached.clear();
+      emitWindowRollover("daily", previousStart, dailyStart);
     }
 
     const monthlyStart = getMonthlyWindowStart(nowDate);
     if (monthlyStart !== accumulators.monthly.window_start) {
-      observer.debug("Cost window rolled over", { window: "monthly", newStart: monthlyStart });
+      const previousStart = accumulators.monthly.window_start;
       accumulators.monthly = { cost_usd: 0, window_start: monthlyStart };
+      crossed80.monthly = false;
+      spendBreached.monthly = false;
+      emitWindowRollover("monthly", previousStart, monthlyStart);
     }
+  }
+
+  /** Reset every provider's request counter into the new daily window (mirrors daily.cost_usd reset). */
+  function resetProviderWindows(windowStart: string): void {
+    for (const providerId of accumulators.providers.keys()) {
+      accumulators.providers.set(providerId, { requests_used: 0, window_start: windowStart });
+    }
+  }
+
+  // ── Private: Observability Emissions (edge-triggered) ──────────────────────
+
+  /** Record a window rollover once per boundary, so the owner sees a day/month reset on the trace. */
+  function emitWindowRollover(window: "daily" | "monthly", previousStart: string, newStart: string): void {
+    observer.observe("state_transition", "cost_window_rolled_over", {
+      window,
+      previous_window_start: previousStart,
+      new_window_start: newStart,
+    });
+  }
+
+  /** Emit a cost-limit 80%-crossing once per window per limit, re-armed on the window's rollover. */
+  function emitThresholdCrossings(taskId: string): void {
+    if (taskId) {
+      emitCrossingOnce("per_task", accumulators.per_task.get(taskId) ?? 0, costLimits.per_task.cost_usd, taskId, {
+        isLatched: () => crossed80.per_task.has(taskId),
+        latch: () => crossed80.per_task.add(taskId),
+      });
+    }
+    emitCrossingOnce("daily", accumulators.daily.cost_usd, costLimits.daily.cost_usd, null, {
+      isLatched: () => crossed80.daily,
+      latch: () => {
+        crossed80.daily = true;
+      },
+    });
+    emitCrossingOnce("monthly", accumulators.monthly.cost_usd, costLimits.monthly.cost_usd, null, {
+      isLatched: () => crossed80.monthly,
+      latch: () => {
+        crossed80.monthly = true;
+      },
+    });
+  }
+
+  /** Record one window's 80%-of-limit crossing as a state transition, but only on the first crossing. */
+  function emitCrossingOnce(
+    limitType: "per_task" | "daily" | "monthly",
+    spent: number,
+    limit: number | null,
+    taskId: string | null,
+    latch: { isLatched: () => boolean; latch: () => void },
+  ): void {
+    if (limit === null || !hasCrossedWarning(spent, limit) || latch.isLatched()) {
+      return;
+    }
+    latch.latch();
+    observer.observe(
+      "state_transition",
+      "cost_warning_threshold_crossed",
+      {
+        limit_type: limitType,
+        spent_usd: spent,
+        limit_usd: limit,
+        percent: Math.round((spent / limit) * 100),
+      },
+      taskId ? { task_id: taskId } : undefined,
+    );
   }
 
   function checkAndEmitLimitBreaches(payload: CostIncurredPayload): void {
@@ -323,62 +419,92 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       spent = accumulators.monthly.cost_usd;
     }
 
-    if (spent >= limitConfig.cost_usd) {
-      observer.warn("Cost limit breached", {
-        limitType,
-        spent,
-        limit: limitConfig.cost_usd,
-        taskId,
-      });
-      eventBus.publish({
-        type: EventTypes["cost.limit_reached"],
-        source: "safety_layer",
+    if (spent < limitConfig.cost_usd) {
+      return;
+    }
+
+    // Edge-trigger: warn + publish once on the crossing, then latch. Daily/monthly re-arm on their
+    // window rollover; per_task re-arms when the task reaches a terminal state — mirroring crossed80
+    // and providerBreached. Without this latch, every event past the limit re-fires the breach,
+    // spamming the observation trail and the cost.limit_reached event (§14, observability.md).
+    if (isSpendBreachLatched(limitType, taskId)) {
+      return;
+    }
+    latchSpendBreach(limitType, taskId);
+
+    observer.warn("Cost limit breached", {
+      limitType,
+      spent,
+      limit: limitConfig.cost_usd,
+      taskId,
+    });
+    eventBus.publish({
+      type: EventTypes["cost.limit_reached"],
+      source: "safety_layer",
+      task_id: limitType === "per_task" ? taskId : null,
+      payload: {
         task_id: limitType === "per_task" ? taskId : null,
-        payload: {
-          task_id: limitType === "per_task" ? taskId : null,
-          limit_type: limitType,
-          limit_scope: null,
-          current_spend: spent,
-          limit_value: limitConfig.cost_usd,
-          resets_at: null,
-        },
-      } satisfies PublishInput<"cost.limit_reached">);
+        limit_type: limitType,
+        limit_scope: null,
+        current_spend: spent,
+        limit_value: limitConfig.cost_usd,
+        resets_at: null,
+      },
+    } satisfies PublishInput<"cost.limit_reached">);
+  }
+
+  /** Whether a spend-limit breach has already been emitted for this window/task (so it emits once). */
+  function isSpendBreachLatched(limitType: "per_task" | "daily" | "monthly", taskId: string): boolean {
+    return limitType === "per_task" ? spendBreached.per_task.has(taskId) : spendBreached[limitType];
+  }
+
+  /** Latch a spend-limit breach after its single emission, re-armed by rollover or terminal-task prune. */
+  function latchSpendBreach(limitType: "per_task" | "daily" | "monthly", taskId: string): void {
+    if (limitType === "per_task") {
+      spendBreached.per_task.add(taskId);
+    } else {
+      spendBreached[limitType] = true;
     }
   }
 
   function checkProviderLimitBreach(providerId: string, taskId: string): void {
     const providerConfig = costLimits.providers[providerId];
-    if (!providerConfig) {
+    if (!providerConfig || providerConfig.daily_requests === null) {
       return;
     }
 
     const usage = accumulators.providers.get(providerId);
-    if (!usage) {
+    if (!usage || usage.requests_used < providerConfig.daily_requests) {
       return;
     }
 
-    if (providerConfig.daily_requests !== null && usage.requests_used >= providerConfig.daily_requests) {
-      observer.warn("Provider usage limit breached", {
-        providerId,
-        limitType: "daily_requests",
-        used: usage.requests_used,
-        limit: providerConfig.daily_requests,
-        taskId,
-      });
-      eventBus.publish({
-        type: EventTypes["cost.limit_reached"],
-        source: "safety_layer",
-        task_id: taskId,
-        payload: {
-          task_id: taskId,
-          limit_type: "daily" as const,
-          limit_scope: providerId,
-          current_spend: usage.requests_used,
-          limit_value: providerConfig.daily_requests,
-          resets_at: null,
-        },
-      } satisfies PublishInput<"cost.limit_reached">);
+    // Edge-trigger: publish once on the crossing, then latch until the daily rollover re-arms it
+    // (providerBreached.clear() in rolloverWindows) — not on every event past the cap.
+    if (providerBreached.has(providerId)) {
+      return;
     }
+    providerBreached.add(providerId);
+
+    observer.warn("Provider usage limit breached", {
+      providerId,
+      limitType: "daily_requests",
+      used: usage.requests_used,
+      limit: providerConfig.daily_requests,
+      taskId,
+    });
+    eventBus.publish({
+      type: EventTypes["cost.limit_reached"],
+      source: "safety_layer",
+      task_id: taskId,
+      payload: {
+        task_id: taskId,
+        limit_type: "daily" as const,
+        limit_scope: providerId,
+        current_spend: usage.requests_used,
+        limit_value: providerConfig.daily_requests,
+        resets_at: null,
+      },
+    } satisfies PublishInput<"cost.limit_reached">);
   }
 
   // ── Private: Single Limit Check ────────────────────────────────────────────
@@ -429,7 +555,6 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       daily: accumulators.daily,
       monthly: accumulators.monthly,
       providers: Object.fromEntries(accumulators.providers),
-      token_totals: accumulators.token_totals,
       last_sequence: lastSequence,
       snapshot_at: new Date().toISOString(),
     };
@@ -437,10 +562,15 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       saveSnapshotStmt.run(META_KEY, toSqliteJson(snapshot));
       snapshotDirty = false;
       lastSnapshotAt = Date.now();
-    } catch {
-      // Snapshot save failed — keep snapshotDirty=true so next event triggers retry.
-      // In-memory accumulators remain authoritative; replay covers the gap on restart.
-      observer.debug("Cost snapshot save failed — will retry on next event");
+    } catch (error) {
+      // A persistent snapshot failure means crash recovery degrades from fast snapshot+replay
+      // to a full replay from sequence 0 — slower, and undercounting if the events table has
+      // since pruned below the monthly window. Loud so the operator can act, not a silent debug.
+      // snapshotDirty stays true so the next event retries; in-memory accumulators stay authoritative.
+      observer.warn("Cost snapshot save failed — crash recovery degrades to full event replay", {
+        error: sanitizeErrorMessage(error),
+        lastSequence,
+      });
     }
   }
 
@@ -472,21 +602,40 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       }
 
       if (snapshot.providers) {
-        accumulators.providers = new Map(Object.entries(snapshot.providers));
-      }
-      if (snapshot.token_totals) {
-        accumulators.token_totals = snapshot.token_totals;
+        accumulators.providers = restoreProviderWindows(snapshot.providers, currentDailyStart);
       }
       lastSequence = snapshot.last_sequence;
       observer.debug("Cost snapshot restored", {
         lastSequence,
         perTaskEntries: accumulators.per_task.size,
       });
-    } catch {
+    } catch (error) {
       // Corrupt or old-format snapshot — fall back to zero accumulators + full replay
-      observer.warn("Cost snapshot corrupted — falling back to full replay");
+      observer.warn("Cost snapshot corrupted — falling back to full replay", {
+        error: sanitizeErrorMessage(error),
+      });
       lastSequence = 0;
     }
+  }
+
+  /**
+   * Adopt a provider's snapshot count only when its window is still today's (mirrors the daily-cost
+   * restore guard); a stale or window-less (old-format) record starts fresh in the current window —
+   * so a count from yesterday never carries forward past midnight on restart.
+   */
+  function restoreProviderWindows(
+    snapshotProviders: Record<string, ProviderUsageRecord>,
+    currentDailyStart: string,
+  ): Map<string, ProviderUsageRecord> {
+    const restored = new Map<string, ProviderUsageRecord>();
+    for (const [providerId, record] of Object.entries(snapshotProviders)) {
+      if (record.window_start === currentDailyStart) {
+        restored.set(providerId, record);
+      } else {
+        restored.set(providerId, { requests_used: 0, window_start: currentDailyStart });
+      }
+    }
+    return restored;
   }
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: paginated event replay with window-aware accumulation
@@ -537,10 +686,13 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     dailyStart: string,
     monthlyStart: string,
   ): void {
-    // Track provider request count
-    const existing = accumulators.providers.get(payload.provider_id) ?? { requests_used: 0 };
-    existing.requests_used += 1;
-    accumulators.providers.set(payload.provider_id, existing);
+    const eventDailyStart = getDailyWindowStart(eventTime);
+
+    // Provider request counts are per-day — only events within today's window count toward the
+    // current cap, so a full replay spanning midnight excludes yesterday (mirrors the daily-cost filter).
+    if (eventDailyStart === dailyStart) {
+      incrementProviderUsage(payload.provider_id, dailyStart);
+    }
 
     const spend = payload.spend_usd ?? 0;
     if (spend <= 0) {
@@ -550,7 +702,7 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     const taskCurrent = accumulators.per_task.get(payload.task_id) ?? 0;
     accumulators.per_task.set(payload.task_id, taskCurrent + spend);
 
-    if (getDailyWindowStart(eventTime) === dailyStart) {
+    if (eventDailyStart === dailyStart) {
       accumulators.daily.cost_usd += spend;
     }
     if (getMonthlyWindowStart(eventTime) === monthlyStart) {

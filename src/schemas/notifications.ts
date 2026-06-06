@@ -11,6 +11,7 @@ export const NotificationKindSchema = z.enum([
   "blocked_reminder",
   "escalation_alert",
   "review_reminder",
+  "plugin_recovered",
   // Orchestrator + direct
   "question",
   "milestone",
@@ -25,7 +26,15 @@ export const NotificationKinds = NotificationKindSchema.enum;
 
 // ── Notification Discriminated Union ────────────────────────────────────────
 
-/** Typed notification payload. Each kind carries exactly the fields it needs. */
+/**
+ * Typed notification payload. Each kind carries exactly the fields it needs.
+ *
+ * This union is a purely in-process message contract — built and consumed inside the daemon, never parsed
+ * from YAML, an API, or a plugin return — so it never crosses a parse boundary. A hand-typed (compiler
+ * enforced) union is deliberate here, not a Schema-First violation: Parse-Don't-Validate puts Zod at the
+ * edges, and there is no edge for these. `NotificationKindSchema` above stays a Zod enum because the kind
+ * string does reach durable storage and config-facing surfaces.
+ */
 export type Notification =
   // Daemon lifecycle — resolved from taskId (title looked up internally)
   | { kind: "completion"; taskId: string }
@@ -35,6 +44,12 @@ export type Notification =
   | { kind: "blocked_reminder"; taskId: string }
   | { kind: "escalation_alert"; taskId: string }
   | { kind: "review_reminder"; taskId: string; elapsedMs: number }
+  // Plugin recovery — a previously failed plugin passed its health check again. Non-alert (the outage is
+  // over, so this is good news, not an alarm). `taskId` is null — plugin health is not task-scoped — so the
+  // dedup window keys on `source` (a stable "plugin:<plugin_id>" per the origin plugin), the same way alerts
+  // do: one flapping plugin does not re-DM within the window, and two distinct plugins recovering do not
+  // collapse to one key. `dedupKeyFor` reads `source` for this kind for exactly that reason.
+  | { kind: "plugin_recovered"; taskId: null; message: string; source: string }
   // Orchestrator + direct — custom message or person-targeted
   | { kind: "question"; taskId: string; personId: string; message: string }
   | { kind: "milestone"; taskId: string; message: string }

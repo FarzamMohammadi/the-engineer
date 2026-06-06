@@ -1,3 +1,5 @@
+import type Database from "better-sqlite3";
+
 import type { BaseAdapter, StateStore } from "../../adapters/base.js";
 import type {
   AdapterType,
@@ -40,7 +42,9 @@ export const EVENTS: EventDeclaration[] = [
     description: "Emitted when a previously unhealthy/failed plugin passes a health check",
     payloadSchema: HealthPluginRecoveredPayloadSchema,
     publishers: ["registry"],
-    subscribers: [],
+    // The daemon subscribes and notifies the owner ONLY on a failed→healthy recovery (a real outage cleared);
+    // the event itself still publishes for every transition for the /health stream and the health card.
+    subscribers: ["daemon"],
   },
 ];
 
@@ -49,6 +53,8 @@ export const EVENTS: EventDeclaration[] = [
 export interface RegistryOptions {
   eventBus: IEventBus;
   observer: IObserver;
+  /** Database handle, used by the health monitor for the `_meta` snapshot cache the dashboard reads back. */
+  db: Database.Database;
   /** Builds a per-plugin state store. Injected so the Registry stays decoupled from the database. */
   createStateStore: (pluginId: string) => StateStore;
   healthCheckIntervalMs?: number;
@@ -82,6 +88,7 @@ export class Registry implements IPluginLookup {
     this.healthMonitor = createPluginHealthMonitor({
       observer: options.observer,
       eventBus: options.eventBus,
+      db: options.db,
       getRecord: (pluginId) => this.lifecycle.getRecord(pluginId),
       getAllRecords: () => this.lifecycle.getAllRecords(),
       healthCheckTimeoutMs: options.healthCheckTimeoutMs ?? 5_000,

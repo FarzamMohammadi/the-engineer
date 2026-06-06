@@ -4,15 +4,17 @@ import type Database from "better-sqlite3";
  */
 import { Hono } from "hono";
 
+import type { IObserver } from "../../core/observer/facade.js";
 import type { ObservationStore } from "../../core/observer/index.js";
-import { fromSqliteJson } from "../../db/serialize.js";
 import { ObservationTypes } from "../../schemas/observer.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import { aggregateAgentCost } from "./agent-cost-aggregation.js";
 
 /** Dependencies injected into metrics API route handlers. */
 export interface MetricsRoutesDeps {
   db: Database.Database;
   observationStore: ObservationStore;
+  observer: IObserver;
 }
 
 /** Registers cost aggregation, quota status, and phase execution endpoints. */
@@ -45,9 +47,9 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
   });
 
   /**
-   * Quota status — pure data reader. Reads from:
-   * 1. quota_status observations (emitted by the daemon's periodic agent-quota poll)
-   * 2. cost.quota_exhausted events (hard limit breaches)
+   * Quota status — pure data reader. Reads the latest `quota_status` observation (emitted by the daemon's
+   * periodic agent-quota poll). Cost-limit breaches surface on the errors page (via `cost.limit_reached`),
+   * not here.
    *
    * Dashboard never fetches data itself. The daemon asks the plugin, Core stores it, the dashboard reads it.
    */
@@ -67,32 +69,18 @@ export function metricsRoutes(deps: MetricsRoutesDeps): Hono {
             }
           : null;
 
-      // Recent exhaustion events (hard limit breaches)
-      let exhaustionEvents: Record<string, unknown>[] = [];
-      try {
-        const rows = deps.db
-          .prepare(
-            `SELECT payload, timestamp FROM events
-             WHERE type = 'cost.quota_exhausted'
-             ORDER BY sequence DESC LIMIT 10`,
-          )
-          .all() as { payload: string; timestamp: string }[];
-
-        exhaustionEvents = rows.map((row) => {
-          const p = fromSqliteJson<Record<string, unknown>>(row.payload) ?? {};
-          return { ...p, observed_at: row.timestamp };
-        });
-      } catch {
-        // events table may not exist yet
-      }
-
       return c.json({
-        available: liveQuota !== null || exhaustionEvents.length > 0,
+        available: liveQuota !== null,
         live: liveQuota,
-        exhaustion_events: exhaustionEvents,
       });
-    } catch {
-      return c.json({ available: false, live: null, exhaustion_events: [] });
+    } catch (error) {
+      // A read failure here is not "no quota yet" — surface it instead of silently returning the empty
+      // shape, so the observer can tell a broken reader from an idle one (Fail Loud).
+      deps.observer.warn("Quota endpoint read failed — returning empty quota", {
+        endpoint: "/api/metrics/quota",
+        error: sanitizeErrorMessage(error),
+      });
+      return c.json({ available: false, live: null });
     }
   });
 

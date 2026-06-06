@@ -42,6 +42,8 @@ export type { SafetyQuery, SafetyVerdict, CostStatus } from "../interfaces/safet
 export type { ParsedThreshold, ThresholdOutcome } from "./policy-engine.js";
 export { matchesPathPattern, parseThreshold, evaluateThreshold } from "./policy-engine.js";
 export { getDailyWindowStart, getMonthlyWindowStart } from "./cost-tracker.js";
+export { formatCostBreach } from "./cost-breach-message.js";
+export type { CostBreach } from "./cost-breach-message.js";
 
 export { createCostTracker } from "./cost-tracker.js";
 export type { ICostTracker, CostLimitCheckResult, CostTrackerDeps } from "./cost-tracker.js";

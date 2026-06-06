@@ -4,6 +4,8 @@ import { BlockedTasksCard } from "./blocked-tasks-card";
 import { CleanupCard } from "./cleanup-card";
 import { CostTicker } from "./cost-ticker";
 import { DaemonStatus } from "./daemon-status";
+import { DataLifecycleCard } from "./data-lifecycle-card";
+import { PluginHealthCard } from "./plugin-health-card";
 import { RecentErrors } from "./recent-errors";
 
 /** Dashboard home page with status cards and activity snapshot. */
@@ -23,6 +25,11 @@ export function OverviewPage(): React.JSX.Element {
         <ActiveTasksCard />
         <ActivitySnapshot />
         <CleanupCard />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <DataLifecycleCard />
+        <PluginHealthCard />
       </div>
     </div>
   );

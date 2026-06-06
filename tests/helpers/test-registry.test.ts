@@ -14,7 +14,7 @@ describe("createTestRegistry", () => {
 
   beforeEach(() => {
     eventBusHandle = createTestEventBus();
-    registryHandle = createTestRegistry(eventBusHandle.eventBus);
+    registryHandle = createTestRegistry(eventBusHandle.eventBus, eventBusHandle.db);
   });
 
   afterEach(() => {

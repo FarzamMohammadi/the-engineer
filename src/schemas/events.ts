@@ -34,7 +34,6 @@ export const EventTypeSchema = z.enum([
   "action.rejected",
   "cost.incurred",
   "cost.limit_reached",
-  "cost.quota_exhausted",
   "preemption.requested",
   "preemption.completed",
   "timeout.reminder",
@@ -131,14 +130,6 @@ export const CostLimitReachedPayloadSchema = z.object({
   resets_at: z.string().datetime().nullable(),
 });
 export type CostLimitReachedPayload = z.infer<typeof CostLimitReachedPayloadSchema>;
-
-export const CostQuotaExhaustedPayloadSchema = z.object({
-  provider_id: z.string(),
-  window_type: z.string(),
-  resets_at: z.number().int().nullable(),
-  task_id: z.string().nullable(),
-});
-export type CostQuotaExhaustedPayload = z.infer<typeof CostQuotaExhaustedPayloadSchema>;
 
 // preemption.*
 
@@ -289,6 +280,12 @@ export const HealthPluginRecoveredPayloadSchema = z.object({
 });
 export type HealthPluginRecoveredPayload = z.infer<typeof HealthPluginRecoveredPayloadSchema>;
 
+// The CURRENT per-plugin health snapshot is NOT an event. It is a single-row `_meta` cache the registry
+// overwrites each health-check cycle (mirroring the cost tracker's `safety_snapshot`), keeping this
+// high-frequency state off the audit ledger. The transition events above
+// (`plugin_unhealthy`/`plugin_failed`/`plugin_recovered`) remain the audit trail of *changes*. See
+// `src/core/registry/plugin-health.ts` for the writer and `src/dashboard/api/system.ts` for the reader.
+
 // comm.*
 
 export const CommMessageReceivedPayloadSchema = z.object({
@@ -404,7 +401,6 @@ export type EventPayloads = {
   "action.rejected": ActionRejectedPayload;
   "cost.incurred": CostIncurredPayload;
   "cost.limit_reached": CostLimitReachedPayload;
-  "cost.quota_exhausted": CostQuotaExhaustedPayload;
   "preemption.requested": PreemptionRequestedPayload;
   "preemption.completed": PreemptionCompletedPayload;
   "timeout.reminder": TimeoutReminderPayload;
@@ -447,7 +443,6 @@ export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "action.rejected": ActionRejectedPayloadSchema,
   "cost.incurred": CostIncurredPayloadSchema,
   "cost.limit_reached": CostLimitReachedPayloadSchema,
-  "cost.quota_exhausted": CostQuotaExhaustedPayloadSchema,
   "preemption.requested": PreemptionRequestedPayloadSchema,
   "preemption.completed": PreemptionCompletedPayloadSchema,
   "timeout.reminder": TimeoutReminderPayloadSchema,

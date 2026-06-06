@@ -127,6 +127,32 @@ export interface SystemStatus {
   telemetry_ui_base: string;
 }
 
+// ── Plugin Health ──────────────────────────────────────────────────────────────
+
+/** Current health state of one plugin (advisory — never gates selection). Mirrors `PluginHealthRecordSchema`. */
+export type PluginHealthState = "healthy" | "unhealthy" | "failed";
+
+/** One plugin's current health record, read from the registry's `_meta` plugin-health snapshot. */
+export interface PluginHealthRecord {
+  plugin_id: string;
+  state: PluginHealthState;
+  consecutive_failures: number;
+  last_check_at: string | null;
+  last_healthy_at: string | null;
+  last_error: string | null;
+}
+
+/**
+ * Current per-plugin health, served by `/api/system/plugin-health`. The records are ADVISORY: plugin
+ * selection never reads health, so this is a signal to the owner, not a gate. `checked_at` is the snapshot's
+ * `updated_at` — the health loop's liveness marker. Records empty and `checked_at` null when no snapshot
+ * exists yet.
+ */
+export interface PluginHealthResponse {
+  records: PluginHealthRecord[];
+  checked_at: string | null;
+}
+
 // ── Metrics ──────────────────────────────────────────────────────────────────
 
 /** Cost and token aggregations for the metrics page. */
@@ -149,11 +175,10 @@ export interface CostMetrics {
   };
 }
 
-/** Agent provider quota status and exhaustion history. */
+/** Agent provider quota status (live usage windows from the daemon's quota poll). */
 export interface QuotaStatus {
   available: boolean;
   live: Record<string, unknown> | null;
-  exhaustion_events: Record<string, unknown>[];
 }
 
 // ── Observations ─────────────────────────────────────────────────────────────

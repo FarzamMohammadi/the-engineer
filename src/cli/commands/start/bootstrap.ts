@@ -6,7 +6,11 @@ import type { ConfigBundle } from "../../../config/loader.js";
 import type { Daemon } from "../../../core/daemon/index.js";
 import { EVENTS as DAEMON_EVENTS, createDaemon } from "../../../core/daemon/index.js";
 import { createNotificationRouter } from "../../../core/daemon/notification-router.js";
-import { EVENTS as DATA_LIFECYCLE_EVENTS, createDataLifecycleManager } from "../../../core/data-lifecycle/index.js";
+import {
+  EVENTS as DATA_LIFECYCLE_EVENTS,
+  createDataLifecycleManager,
+  inspectRetentionConfig,
+} from "../../../core/data-lifecycle/index.js";
 import type { AuthUrlProvider } from "../../../core/interfaces/workspace-manager.interface.js";
 import type { IObserver, TraceExportHandle } from "../../../core/observer/index.js";
 import {
@@ -136,6 +140,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     registry = new Registry({
       eventBus,
       observer: observer.child("registry"),
+      db,
       createStateStore: (pluginId) => createPluginStateStore(db, pluginId),
       healthCheckIntervalMs: config.daemon.plugins.health_check_interval_ms,
       healthCheckTimeoutMs: config.daemon.plugins.health_check_timeout_ms,
@@ -202,6 +207,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
     // 8. Data Lifecycle Manager
     eventTopology.registerPublisher("data-lifecycle", DATA_LIFECYCLE_EVENTS);
+    // Warn (never block) if event retention is too short for the cost tracker's monthly replay.
+    // Daemon config is restart-only (docs/configuration/daemon.md), so this startup warn is the whole
+    // story — there is no hot-reload path to re-validate.
+    for (const warning of inspectRetentionConfig(config.daemon.data_lifecycle)) {
+      observer.warn(warning.message, { kind: warning.kind, ...warning.data });
+    }
     const dataLifecycleManager = createDataLifecycleManager({
       db: dbHandle.db,
       eventBus,
@@ -306,10 +317,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       daemon,
       observer,
       cleanup() {
-        // Stop the exporter before the db closes — it reads the observations table.
-        traceExport?.stop();
-        dbHandle?.close();
-        loggerHandle.close();
+        // Stop the exporter before the db closes — it reads the observations table. Each step is
+        // isolated so a failing stop() still lets the db and logger handles close (no leak).
+        safeClose(observer, "trace exporter stop", () => traceExport?.stop());
+        safeClose(observer, "database close", () => dbHandle?.close());
+        safeClose(observer, "logger close", () => loggerHandle.close());
       },
       hints: pluginResult.hints,
     };
@@ -327,10 +339,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
         });
       }
     }
-    // Stop the exporter (if started) before the db closes — it reads the db.
-    traceExport?.stop();
-    dbHandle?.close();
-    loggerHandle.close();
+    // Stop the exporter (if started) before the db closes — it reads the db. Each step is isolated so a
+    // failing stop() still lets the db and logger handles close, and the original error still propagates.
+    safeClose(observer, "trace exporter stop", () => traceExport?.stop());
+    safeClose(observer, "database close", () => dbHandle?.close());
+    safeClose(observer, "logger close", () => loggerHandle.close());
     throw error;
   }
 }
@@ -354,5 +367,18 @@ function warnPeopleDirectoryHealth(
 
   for (const warning of inspectPeopleDirectory(people, availableChannels)) {
     observer.warn(warning.message, { kind: warning.kind, ...warning.data });
+  }
+}
+
+/**
+ * Run one teardown step in isolation: a throw is warned and swallowed so the next handle still closes.
+ * Mirrors the isolation already around `registry.shutdownAll` — without it, a failing `stop()` would leak
+ * the db and logger handles queued behind it (coding-standards § Isolated Failure Boundaries).
+ */
+function safeClose(observer: IObserver, label: string, close: () => void): void {
+  try {
+    close();
+  } catch (error) {
+    observer.warn(`Bootstrap teardown step failed: ${label}`, { err: sanitizeErrorMessage(error) });
   }
 }

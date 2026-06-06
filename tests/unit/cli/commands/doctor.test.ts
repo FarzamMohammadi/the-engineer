@@ -290,11 +290,21 @@ describe("checkRiskyConfig", () => {
     expect(warn).toBeUndefined();
   });
 
-  it("warns when retention max_age_days is under 7", () => {
+  it("warns when events retention is below the monthly cost-replay floor", () => {
     const bundle = makeSafeBundle();
     bundle.daemon.data_lifecycle.retention.events.max_age_days = 3;
     const result = checkRiskyConfig(bundle);
     const warn = result.checks.find((c) => c.label === "Data retention: events");
+    expect(warn?.status).toBe("warn");
+    expect(warn?.message).toContain("3");
+    expect(warn?.message).toContain("undercount monthly spend");
+  });
+
+  it("warns when a non-events table retention is under 7 days", () => {
+    const bundle = makeSafeBundle();
+    bundle.daemon.data_lifecycle.retention.observations.max_age_days = 3;
+    const result = checkRiskyConfig(bundle);
+    const warn = result.checks.find((c) => c.label === "Data retention: observations");
     expect(warn?.status).toBe("warn");
     expect(warn?.message).toContain("3");
   });

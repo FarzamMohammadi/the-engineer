@@ -1,6 +1,7 @@
 /** Centralized React Query cache key factories for all dashboard queries. */
 export const queryKeys = {
   systemStatus: ["system-status"] as const,
+  pluginHealth: ["plugin-health"] as const,
   tasks: {
     all: ["tasks"] as const,
     list: (state?: string) => ["tasks", "list", state ?? "all"] as const,

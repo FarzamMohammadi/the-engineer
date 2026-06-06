@@ -13,7 +13,7 @@ An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code
 > **Status: Preview — refinement toward `v1.0.0`.**
 > Every preview tag is a working checkpoint. We're now in refinement, shipping vertical slices ([see what's in flight](docs/archived/implementation-docs/9-oss-ready/active.md)). Interfaces, configuration, and behavior **will change** before `v1.0.0`. Use it, read the code, file issues — just don't depend on it for production yet. The [build journal](docs/archived/) traces the path that got us here.
 
-> **AI coding agents:** if you're an AI agent working *on* this codebase — not just reading about it — [`AGENT-README.md`](AGENT-README.md) is your required entry point. Read and follow it before making any change.
+> **AI coding agents:** if you're an AI agent working *on* this codebase — not just reading about it — [`AGENTS.md`](AGENTS.md) is your required entry point. Read and follow it before making any change.
 
 ---
 
@@ -43,6 +43,8 @@ engineer start    # first-run setup, then start the daemon
 
 > **Dev mode (without a global install):** use `pnpm dev <command>` in place of `engineer`.
 
+> **AI agents (no TTY):** `engineer start` prompts interactively and can't be driven headless. Configure non-interactively with `engineer start --seed <dir>` — copy [`seed-example/`](seed-example/), fill in values, pass the directory. Start at [`AGENTS.md`](AGENTS.md), your entry point.
+
 ## Commands
 
 ```bash
@@ -54,6 +56,7 @@ engineer logs               # View daemon logs (--follow, --raw)
 engineer doctor             # Health checks
 engineer why <task-id>      # Explain a task's decision trail
 engineer retry <task-id>    # Re-queue a blocked or failed task
+engineer cancel <task-id>   # Cancel a task that hasn't finished
 ```
 
 `<task-id>` accepts a full ULID or a unique prefix — copy the short form from `engineer status`.
@@ -123,7 +126,7 @@ Every plugin built against The Engineer multiplies what it can do. Core defines 
 
 Build a plugin once, and every existing Core capability — audit trail, retries, cost tracking, observability — applies automatically.
 
-See [docs/plugins/](docs/plugins/) for adapter contracts and [docs/contribution-docs/](docs/contribution-docs/) for agent-executable plugin development how-tos.
+See [docs/plugins/](docs/plugins/) for adapter contracts, and **[Authoring a Plugin](docs/contribution-docs/how-tos/plugins/authoring.md)** for the one executable, agent-drivable methodology that takes any of the four adapter types from idea to a contributed-back plugin.
 
 ## Philosophy
 
@@ -147,7 +150,7 @@ User-facing documentation lives in [`docs/`](docs/) — the system blueprint. An
 - [Coding Standards](docs/coding-standards.md) — the law for all code
 - [Configuration](docs/configuration/) — daemon, orchestrator, safety, workspaces
 - [Plugins](docs/plugins/) — adapter contracts and per-plugin references
-- [Contribution Guides](docs/contribution-docs/) — agent-executable how-tos for adding plugins
+- [Contribution Guides](docs/contribution-docs/) — guided how-tos for adding plugins
 - [Build Journal — Archive](docs/archived/) — phase-by-phase development history (not authoritative; read the code and `docs/` for ground truth)
 
 ## Development

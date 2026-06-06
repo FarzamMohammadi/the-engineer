@@ -6,25 +6,22 @@ Welcome! Whether you're fixing a typo, reporting a bug, or building a new plugin
 
 **Prerequisites:** Node.js 22+, pnpm, git
 
-```bash
-git clone https://github.com/FarzamMohammadi/the-engineer.git
-cd the-engineer
-pnpm install
-```
+First, get a working install the same way a user does — clone, then `pnpm run setup` and `engineer start`. The canonical getting-started lives in the [README](README.md#get-running); follow it once so `engineer` is built and linked.
 
-**Start (and restart):**
+For contributor iteration, the reset script gives you a fast clean rebuild on top of that install:
 
 ```bash
-./scripts/reset.sh                    # Full wipe — rebuild, re-seed, start fresh
+./scripts/reset.sh                    # Full wipe — rebuild, relink, re-seed, start fresh
 ./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — re-seed config & plugins
+./scripts/reset.sh <seed-dir>         # Full wipe, then non-interactive setup from a seed directory
 ```
 
-The reset script builds, links the CLI globally, seeds configs/plugins from [`seed-example/`](seed-example/), and starts the daemon.
+The reset script builds, links the CLI globally, seeds configs/plugins from [`seed-example/`](seed-example/), and starts the daemon. Full CLI and reset reference: [docs/cli.md](docs/cli.md).
 
 **Dev mode (without global install):**
 
 ```bash
-npx tsx src/index.ts
+pnpm dev <command>    # Run the CLI without building or linking
 ```
 
 ## Project Structure
@@ -33,9 +30,9 @@ npx tsx src/index.ts
 src/
   core/         # Invariant components (EventBus, TaskEngine, Orchestrator, Daemon, etc.)
   adapters/     # Abstract base classes + SDK boundary (plugin authors import from here)
-  plugins/      # Implementations grouped by adapter type (trigger/, communication/, agent/, tool/, git-hosting/)
+  plugins/      # Implementations grouped by adapter type (trigger/, communication/, agent/, git-hosting/)
   schemas/      # Centralized Zod schemas
-  cli/          # Commander CLI (start, stop, status, logs, doctor, why)
+  cli/          # Commander CLI (start, stop, status, logs, doctor, why, retry, cancel)
   config/       # Config loader + hot-reload watcher
   db/           # SQLite database layer + migrations
   dashboard/    # War room dashboard (Hono + SSE)
@@ -108,12 +105,13 @@ When changes span multiple concerns, split into separate commits — one logical
 3. Include tests for new functionality
 4. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md)
 5. Ensure all checks pass: `pnpm test:all && pnpm run lint && pnpm run typecheck`
+6. If you edited any `docs/plugins/**/*.md`, regenerate the bundled plugin docs and commit the result: `pnpm run docs:bundle`. CI fails if the bundle is out of sync with the source docs.
 
 ## Writing Plugins
 
-The Engineer's plugin system lets you add new triggers, communication channels, agent plugins, tools, and git hosting integrations.
+The Engineer's plugin system has four adapter types — triggers, communication channels, agents, and git hosting — and you can add a plugin behind any of them.
 
-See [Plugin Documentation](docs/plugins/) — each adapter type has its own directory with contract and per-plugin references. For guided plugin development, see the [contribution how-tos](docs/contribution-docs/) — these are agent-executable prompts that walk you through the process interactively.
+Start with **[Authoring a Plugin](docs/contribution-docs/how-tos/plugins/authoring.md)** — the one executable methodology that covers all four adapter types. It owns the common sequence (identify the adapter, scaffold, implement, register, run the contract suite, configure, verify, contribute back) and sends you into the right [adapter contract](docs/plugins/) for the adapter-specific detail. Each adapter's `README.md` carries its contract, key types, and a short "Developing a New Plugin" section with that adapter's specifics.
 
 ## Reporting Bugs
 
@@ -136,4 +134,4 @@ Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md). E
 
 - **Questions:** Open a [GitHub Issue](https://github.com/FarzamMohammadi/the-engineer/issues) with the `question` label
 - **Architecture:** See [docs/architecture/](docs/architecture/) for system design
-- **Plugin development:** See [docs/plugins/](docs/plugins/) for adapter contracts and [docs/contribution-docs/](docs/contribution-docs/) for guided how-tos
+- **Plugin development:** See [Authoring a Plugin](docs/contribution-docs/how-tos/plugins/authoring.md) for the methodology and [docs/plugins/](docs/plugins/) for the adapter contracts

@@ -316,18 +316,6 @@ emits.
 
 ---
 
-## Plugin How-To Guides
-
-Each adapter type needs an agent-executable "How to build a plugin" guide so contributors can add new integrations without reading Core code. The **AgentAdapter** guide exists and is the reference pattern. Three remain:
-
-- **TriggerAdapter** — poll for events, produce `TriggerEvent[]` with a stable `idempotency_key` (identity/dedup) and optional `external_ref` (descriptive), plus watermarks. Example: a GitLab MR trigger, a Jira ticket trigger, or a webhook receiver.
-- **CommunicationAdapter** — send messages, format for your platform, capability gates for send/receive/sync/ticket_management. Example: a Slack, Discord, or email plugin.
-- **GitHostingAdapter** — PR lifecycle (create, update, merge, get status, list comments). Example: a GitLab hosting plugin.
-
-**Format:** follow the AgentAdapter guide — adapter interface, required vs optional methods, capability gates, manifest format, config schema, a minimal working example, and how to register/test, written as an agent-executable prompt. Guides live alongside the existing AgentAdapter guide in the contribution docs.
-
----
-
 ## Interactive Reconfiguration via `engineer start`
 
 **Current state:** First-run setup is handled by `engineer start` with auto-detection + guided plugin selection. To change configuration after initial setup, users must `engineer stop`, manually edit YAML files in `~/.engineer/config/`, and `engineer start` again.
@@ -532,5 +520,19 @@ This is also a philosophical gap. The Engineer's philosophy demands that "every 
 **What it enables:** `telemetry.enabled: true` with no manual backend step — The Engineer fetches a pinned Jaeger v2 (verified), runs it bound to localhost, supervises its lifecycle alongside the daemon, and tears it down on stop. The flame graph is one config flag away with nothing to install.
 
 **Migration path (high-level):** Solve binary fetch once (ideally shared with the project's general binary-distribution story): a pinned version, a checksum, a cross-platform extract-and-cache, and a localhost-only run with supervised lifecycle and clean teardown. The existing OS detection already classifies the platform; the existing best-effort reachability probe already tells whether a backend is up. The deferred-with-the-fetch pieces — version pin, checksum, and the soak/verification ceremony — return together, not piecemeal.
+
+---
+
+## Setup-Completeness for Channel Handshakes
+
+**Current state:** Setup verification confirms that configuration is valid, secrets resolve, and a communication plugin is installed for the owner's channel — but it cannot confirm a channel is actually *deliverable*. Some channels require a one-time, human-initiated handshake before the system can reach the owner (a chat bot, for instance, cannot message a person until that person has opened the conversation first). The setup runbook relays this to the human as a manual step, but the daemon has no way to verify it happened — so a setup can pass every automated check and still be unable to notify the owner.
+
+**Why deferred:** A generic, plugin-opaque check is the hard part. Core must not learn channel-specific concepts — that would breach Plugin Opacity. The check would have to be expressed *through the adapter contract* (a communication adapter reporting its own deliverability/readiness), not hardcoded per channel. Designing that contract surface is more than a documentation fix, so v1 handles it as a clearly-relayed human step.
+
+**When it becomes relevant:** When silent first-notification failures become real operator pain, or when more channels with handshake requirements ship.
+
+**What it enables:** Setup that verifies *deliverability*, not just *configuration* — so whoever finishes setup is told "the owner channel is reachable" with the same confidence as "the token is valid," closing the gap between a green health check and a daemon that can actually reach the owner.
+
+**Key context:** Surfaced by blind cold-agent validation — two independent agents reached a green health check and declared setup done, while the owner's chat channel was silently undeliverable until the human sent the bot a one-time message. The runbook now relays the handshake explicitly, but it remains an unverifiable human step. The constraint is the lesson: any future check must read deliverability *from the adapter*, generically, never branching on a specific channel.
 
 ---

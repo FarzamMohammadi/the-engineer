@@ -1,4 +1,4 @@
-# Claude Code LLM plugin
+# Claude Code agent plugin
 
-model: claude-opus-4-7
-cli_path: /Users/farzammohammadi/.local/bin/claude
+# model: <id>         # defaults to claude-sonnet-4-6; set to a model your Claude Code can use
+# cli_path: claude    # Path to the Claude Code CLI. Defaults to "claude" on your PATH; set only if it lives elsewhere.

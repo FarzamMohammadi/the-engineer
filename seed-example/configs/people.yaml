@@ -8,7 +8,9 @@ people:
     roles: [owner]
     contacts:
       - channel: telegram
-        handle: "your-telegram-handle"
+        # For telegram, this is your exact Telegram username (case-insensitive, no leading @).
+        # Send /start to the bot once before delivery works — the bot can't message you until you do.
+        handle: "your_telegram_username"
       - channel: github
         handle: "your-github-username"
     preferences:

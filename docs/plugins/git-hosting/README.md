@@ -117,14 +117,7 @@ type PrEvent =
 
 ## Developing a New Plugin
 
-### Directory structure
-
-```
-src/plugins/git-hosting/
-  your-hosting/
-    your-hosting.ts    # Plugin class
-    config.ts          # Zod config schema
-```
+The full authoring flow — scaffold, register, run the contract suite, configure, verify, and contribute back — is the same for every adapter and lives in **[Authoring a Plugin](../../contribution-docs/how-tos/plugins/authoring.md)**. This section covers only what is specific to a git-hosting plugin: the class skeleton, the manifest fields, and the contract suite. Note the adapter-unique rules: **every method is required** (no capability gating), and a plugin must **never force-merge** — return an error in `MergeResult` when branch protection blocks a merge, rather than bypassing it.
 
 ### Class skeleton
 
@@ -194,7 +187,7 @@ export class YourHostingPlugin extends GitHostingAdapter {
 
 ### Config schema
 
-Create a Zod schema in `config.ts`:
+A git-hosting config typically reuses the shared `MergeStrategySchema` for its default merge strategy:
 
 ```typescript
 import { z } from "zod";
@@ -208,16 +201,12 @@ export const YourConfigSchema = z.object({
 export type YourConfig = z.output<typeof YourConfigSchema>;
 ```
 
-### Registration
+### Git-hosting manifest fields
 
-Add your plugin to `src/plugins/builtin.ts`:
-
-1. Import your class.
-2. Add a manifest entry to the `manifests` array with `type: "git_hosting"`.
-3. Add a factory entry to the `factories` map.
+When you register in `builtin.ts` (authoring guide Step 5), a git-hosting manifest uses `type: "git_hosting"` and declares its **`action_classes`** in `adapter_meta` (the kinds of outside-world actions it performs, e.g. `"git-remote"`, `"merge"`):
 
 ```typescript
-// In manifests array:
+// Manifest entry (in the manifests array)
 {
   id: "your-hosting",
   type: "git_hosting",
@@ -230,14 +219,11 @@ Add your plugin to `src/plugins/builtin.ts`:
   adapter_meta: { action_classes: ["git-remote", "merge"] },
   contributes: { events: ["git.pr_merged"] },
 }
-
-// In factories map:
-"your-hosting": () => new YourHostingPlugin(),
 ```
 
 ### Contract tests
 
-Use the reusable contract suite in `tests/helpers/contract-suites/git-hosting-contract.ts`:
+The git-hosting suite is **`runGitHostingContractSuite`** from `tests/helpers/contract-suites/git-hosting-contract.ts`. Beyond the standard valid/invalid config and manifest, it needs a git-hosting-specific `prOptions` fixture:
 
 ```typescript
 // tests/unit/plugins/git-hosting/your-hosting/your-hosting.test.ts

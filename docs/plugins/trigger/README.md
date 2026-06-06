@@ -36,6 +36,12 @@ Defined in `src/schemas/adapters.ts` (`TriggerEventSchema`).
 | `thoughts_id` | `string \| null` | Identifier for the thoughts directory (e.g. `issue-42`). |
 | `metadata` | `Record<string, unknown> \| null` | Arbitrary platform-specific data (labels, assignees, timestamps). |
 
+#### Mapping a non-git source
+
+`TriggerEvent` requires both `repo` and an HTTPS `clone_url`, which is natural when the source *is* the code host (a GitHub issue lives in a repo). A pure tracker — Linear, Jira, a queue — names *what* work to do but is not bound to *which* codebase to do it in. The trigger answers "what"; the codebase is a separate fact the plugin must carry. Put it in **the plugin's own config**: add a `repo` and `clone_url` field (or a small repo map) that the human sets in the plugin's YAML, then stamp every event your `doPoll()` emits with those values. The trigger schema stays satisfied and the codebase binding becomes an explicit, human-set decision instead of a guess.
+
+The nested `external_ref` may be `null` for a pure tracker — leave it out if you have nothing to link back to. If you do set it, `ExternalRefSchema` requires `type`, `repo`, and `id` (all strings): reuse the config `repo` you stamped above for `repo`, and use the tracker's own values for `id` and `type` (e.g. `{ type: "linear-issue", repo, id: "ENG-512" }`). `url` is optional — include it when the tracker exposes a web link to the item.
+
 ### InitResult
 
 | Field | Type | Description |
@@ -48,23 +54,12 @@ Defined in `src/schemas/adapters.ts` (`TriggerEventSchema`).
 | Field | Type | Description |
 |-------|------|-------------|
 | `healthy` | `boolean` | Whether the adapter is operational. |
-| `message` | `string` | Human-readable status message. |
+| `message` | `string \| null` | Human-readable status message (`null` when there is nothing to report). |
 | `details` | `Record<string, unknown> \| null` | Optional structured details (e.g. API rate limit remaining). |
 
 ## Developing a New Plugin
 
-### Directory structure
-
-Source and tests live in mirrored trees — source under `src/`, tests under `tests/unit/` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
-
-```
-src/plugins/trigger/my-trigger/
-  my-trigger.ts       # Plugin class extending TriggerAdapter
-  config.ts           # Zod config schema
-
-tests/unit/plugins/trigger/my-trigger/
-  my-trigger.test.ts  # Tests including contract suite
-```
+The full authoring flow — scaffold, register, run the contract suite, configure, verify, and contribute back — is the same for every adapter and lives in **[Authoring a Plugin](../../contribution-docs/how-tos/plugins/authoring.md)**. This section covers only what is specific to a trigger plugin: the class skeleton, watermark state, the manifest fields, and the contract suite. Follow the authoring guide top to bottom and return here when it points you at the trigger contract.
 
 ### Minimal class skeleton
 
@@ -120,9 +115,9 @@ protected doShutdown(): Promise<void> {
 
 See [Plugin Context](../plugin-context.md) for the full contract, the parse-don't-trust pattern for reading state back, and error handling. Watermarks are an efficiency optimization — Core deduplicates tasks itself, so losing one only means re-fetching.
 
-### Config schema pattern
+### Config schema
 
-Use Zod with `z.output` for the type (resolves defaults, required for `exactOptionalPropertyTypes`).
+A trigger config holds only what the plugin needs to reach its source — **not** the poll interval. Poll cadence is declared on the manifest (`poll_interval_ms`); the Daemon owns poll timing, so plugins never track it themselves.
 
 ```typescript
 // my-trigger/config.ts
@@ -136,21 +131,12 @@ export const MyTriggerConfigSchema = z.object({
 export type MyTriggerConfig = z.output<typeof MyTriggerConfigSchema>;
 ```
 
-Note: poll interval is declared on the manifest (`poll_interval_ms`), not in plugin config. The Daemon manages poll timing -- plugins do not need to track it themselves.
+### Trigger manifest fields
 
-### Registration in builtin.ts
-
-Add three things to `src/plugins/builtin.ts`:
-
-1. Import your plugin class.
-2. Add a manifest to the `manifests` array.
-3. Add a factory to the `factories` map.
+When you register in `builtin.ts` (authoring guide Step 5), a trigger manifest is the only one that declares **`poll_interval_ms`** — the Daemon owns poll timing, so the cadence lives on the manifest, not in plugin config:
 
 ```typescript
-// 1. Import
-import { MyTriggerPlugin } from "./trigger/my-trigger/my-trigger.js";
-
-// 2. Manifest (in manifests array)
+// Manifest entry (in the manifests array)
 {
   id: "my-trigger",
   type: "trigger",
@@ -164,12 +150,9 @@ import { MyTriggerPlugin } from "./trigger/my-trigger/my-trigger.js";
   adapter_meta: {},
   contributes: { events: ["trigger.new_event"] },
 },
-
-// 3. Factory (in factories map)
-"my-trigger": () => new MyTriggerPlugin(),
 ```
 
-If your plugin needs interactive setup (e.g. asking for a project ID), add a `promptForConfig` entry:
+If your plugin needs interactive setup (e.g. asking for a project ID), add a `promptForConfig` entry alongside the factory:
 
 ```typescript
 // In promptFunctions map
@@ -182,7 +165,7 @@ If your plugin needs interactive setup (e.g. asking for a project ID), add a `pr
 
 ### Contract test suite
 
-Run the shared contract suite in your test file. Path: `tests/helpers/contract-suites/trigger-contract.ts`.
+The trigger suite is **`runTriggerContractSuite`** from `tests/helpers/contract-suites/trigger-contract.ts`. Its fixtures are a valid config, an invalid config, and a manifest (no adapter-specific fixtures):
 
 ```typescript
 // tests/unit/plugins/trigger/my-trigger/my-trigger.test.ts
@@ -208,6 +191,29 @@ runTriggerContractSuite(
     validConfig: { api_token: "tok_123", project_id: "proj_1" },
     invalidConfig: {},  // triggers safeParse failure
   },
+);
+```
+
+This example spells `contributes` out in full; the short `{ events: ["trigger.new_event"] }` form in the registration example above is also valid — the other sub-fields (`commands`, `config_keys`, `hooks`) default when omitted.
+
+**Keep the suite offline — inject a mock API client.** The suite calls `poll()` three times, and `poll()` runs your real `doPoll()` against the live API. With the bare example above, those calls hit the network with a fake token and the suite fails or flakes. Override `doInitialize` in the factory to swap in a fake client *after* your real init runs — exactly what the reference test (`tests/unit/plugins/trigger/github-trigger/github-trigger.test.ts`) does:
+
+```typescript
+runTriggerContractSuite(
+  () => {
+    const plugin = new MyTriggerPlugin();
+    const origInit = plugin["doInitialize"].bind(plugin);
+    plugin["doInitialize"] = async (config: Record<string, unknown>) => {
+      const result = await origInit(config);
+      if (result.success) {
+        // Replace the real client your doPoll() calls with a fake that returns canned data.
+        (plugin as unknown as { apiClient: unknown }).apiClient = createMockApiClient();
+      }
+      return result;
+    };
+    return plugin;
+  },
+  { manifest, validConfig: { api_token: "tok_123", project_id: "proj_1" }, invalidConfig: {} },
 );
 ```
 

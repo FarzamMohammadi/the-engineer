@@ -8,7 +8,7 @@ import {
 } from "../../../src/schemas/adapters.js";
 import { createTestPluginContext } from "../test-plugin-context.js";
 
-export interface LLMContractFixtures {
+export interface AgentContractFixtures {
   validConfig: Record<string, unknown>;
   invalidConfig: Record<string, unknown>;
   manifest: PluginManifest;
@@ -21,7 +21,7 @@ export interface LLMContractFixtures {
  * Tests behavioral expectations: lifecycle, usage data always present,
  * capabilities shape.
  */
-export function runContractSuite(factory: () => AgentAdapter, fixtures: LLMContractFixtures): void {
+export function runAgentContractSuite(factory: () => AgentAdapter, fixtures: AgentContractFixtures): void {
   describe("Agent Adapter Contract", () => {
     let adapter: AgentAdapter;
 
@@ -68,9 +68,9 @@ export function runContractSuite(factory: () => AgentAdapter, fixtures: LLMContr
       });
     });
 
-    // ── infer() ────────────────────────────────────────────────────────
+    // ── run() ──────────────────────────────────────────────────────────
 
-    describe("infer()", () => {
+    describe("run()", () => {
       it("returns a valid AgentRunResult", async () => {
         await adapter.initialize(fixtures.validConfig);
         const result = await adapter.run(fixtures.request);

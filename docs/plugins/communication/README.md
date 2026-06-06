@@ -157,18 +157,7 @@ All public methods on `CommunicationAdapter` use `wrapAsync()` which rethrows `A
 
 ## Developing a New Plugin
 
-### Directory structure
-
-Source and tests live in mirrored trees — source under `src/`, tests under `tests/unit/` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
-
-```
-src/plugins/communication/my-comm/
-  my-comm.ts       # Plugin class extending CommunicationAdapter
-  config.ts        # Zod config schema
-
-tests/unit/plugins/communication/my-comm/
-  my-comm.test.ts  # Tests including contract suite
-```
+The full authoring flow — scaffold, register, run the contract suite, configure, verify, and contribute back — is the same for every adapter and lives in **[Authoring a Plugin](../../contribution-docs/how-tos/plugins/authoring.md)**. This section covers only what is specific to a communication plugin: the class skeleton, the capability system, the manifest fields, and the contract suite. Communication has the largest surface of any adapter — start send-only and add capabilities as you need them.
 
 ### Minimal class skeleton
 
@@ -264,49 +253,31 @@ protected async doPollMessages(
 }
 ```
 
-### Config schema pattern
+### Communication manifest fields
+
+When you register in `builtin.ts` (authoring guide Step 5), a communication manifest declares its **`capabilities`** and **`channel`** in `adapter_meta`, and is typically `critical: false` (a comm outage degrades notifications, it does not stop work):
 
 ```typescript
-// my-comm/config.ts
-import { z } from "zod";
-
-export const MyCommConfigSchema = z.object({
-  api_token: z.string().min(1),
-  default_channel: z.string().default("general"),
-});
-
-export type MyCommConfig = z.output<typeof MyCommConfigSchema>;
-```
-
-Use `z.output<typeof Schema>` (not `z.infer`) -- resolves defaults and transforms, required for `exactOptionalPropertyTypes`.
-
-### Registration in builtin.ts
-
-```typescript
-// 1. Import
-import { MyCommPlugin } from "./communication/my-comm/my-comm.js";
-
-// 2. Manifest (in manifests array)
+// Manifest entry (in the manifests array)
 {
   id: "my-comm",
   type: "communication",
   version: "1.0.0",
   name: "My Communication",
   description: "Sends notifications via My Platform",
-  critical: false,  // communication plugins are typically non-critical
+  critical: false,
   requirements: [{ type: "env", name: "MY_API_TOKEN" }],
   entry: "builtin",
   adapter_meta: { capabilities: ["send"], channel: "my-platform" },
   contributes: { events: ["comm.message_sent"] },
 },
-
-// 3. Factory (in factories map)
-"my-comm": () => new MyCommPlugin(),
 ```
+
+The `capabilities` array must match what your plugin actually implements (and what `hasCapability()` returns) — Core checks it before calling any optional method.
 
 ### Contract test suite
 
-Path: `tests/helpers/contract-suites/communication-contract.ts`.
+The communication suite is **`runCommunicationContractSuite`** from `tests/helpers/contract-suites/communication-contract.ts`. Beyond the standard valid/invalid config and manifest, it needs two communication-specific fixtures — a `target` and a `message`:
 
 ```typescript
 // tests/unit/plugins/communication/my-comm/my-comm.test.ts

@@ -1,5 +1,5 @@
 import { PluginManifestSchema } from "../../../../src/schemas/adapters.js";
-import { runContractSuite } from "../../contract-suites/agent-contract.js";
+import { runAgentContractSuite } from "../../contract-suites/agent-contract.js";
 import { createMockAgentRunRequest } from "../../mock-factories.js";
 import { FakeAgentPlugin } from "./index.js";
 
@@ -12,7 +12,7 @@ const manifest = PluginManifestSchema.parse({
   adapter_meta: { provider_type: "cli" },
 });
 
-runContractSuite(() => new FakeAgentPlugin(), {
+runAgentContractSuite(() => new FakeAgentPlugin(), {
   validConfig: {},
   invalidConfig: { _force_fail: true },
   manifest,

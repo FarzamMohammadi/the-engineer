@@ -9,7 +9,7 @@ import {
   activityEventsFromLine,
 } from "../../../../../src/plugins/agent/opencode-agent/opencode-agent.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
-import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
+import { runAgentContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { createMockAgentRunRequest } from "../../../../helpers/mock-factories.js";
 import { createTestPluginContext } from "../../../../helpers/test-plugin-context.js";
 
@@ -61,7 +61,7 @@ const manifest = PluginManifestSchema.parse({
 
 // ── Contract Suite ───────────────────────────────────────────────────────────
 
-runContractSuite(() => new OpenCodeAgentPlugin(), {
+runAgentContractSuite(() => new OpenCodeAgentPlugin(), {
   validConfig: { cli_path: mockCliPath },
   invalidConfig: { command_timeout_ms: -1 },
   manifest,

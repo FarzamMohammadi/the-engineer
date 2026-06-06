@@ -136,18 +136,7 @@ Core gates the whole feed on your `supports_activity_streaming` flag **and** an 
 
 ## Developing a New Plugin
 
-### Directory structure
-
-Source and tests live in mirrored trees — source under `src/`, tests under `tests/unit/` (see [coding standards § 7 — Test Location](../../coding-standards.md#test-location)):
-
-```
-src/plugins/agent/my-agent/
-  my-agent.ts       # Plugin class extending AgentAdapter
-  config.ts       # Zod config schema
-
-tests/unit/plugins/agent/my-agent/
-  my-agent.test.ts  # Tests including contract suite
-```
+The full authoring flow — scaffold, register, run the contract suite, configure, verify, and contribute back — is the same for every adapter and lives in **[Authoring a Plugin](../../contribution-docs/how-tos/plugins/authoring.md)**. This section covers what is specific to an agent plugin, and the agent has the strictest adapter-unique rules of the four: **always pipe the prompt via stdin** (never a CLI arg), **always sanitize the subprocess environment** with `buildAgentEnv`, and **kill infinite-retry CLIs immediately on rate-limit detection**. The class skeleton, those critical rules, the manifest fields, and the contract suite are below.
 
 ### Minimal class skeleton
 
@@ -339,7 +328,7 @@ child.stderr?.on("data", (chunk: Buffer) => {
 child.stdin?.on("error", () => {});  // suppress EPIPE
 ```
 
-### Config schema pattern
+### Config schema
 
 ```typescript
 // my-agent/config.ts
@@ -354,15 +343,14 @@ export const MyAgentConfigSchema = z.object({
 export type MyAgentConfig = z.output<typeof MyAgentConfigSchema>;
 ```
 
-Use `z.output<typeof Schema>` (not `z.infer`) -- this resolves defaults and transforms, required for `exactOptionalPropertyTypes`.
+An agent config carries agent-specific fields a CLI subprocess needs: a `cli_path` (so the binary can live anywhere) and a `command_timeout_ms` (agent runs are long).
 
-### Registration in builtin.ts
+### Agent manifest fields
+
+When you register in `builtin.ts` (authoring guide Step 5), an agent manifest declares a **binary** requirement (the CLI on `PATH`) rather than an `env` secret, and sets **`provider_type`** in `adapter_meta`:
 
 ```typescript
-// 1. Import
-import { MyAgentPlugin } from "./agent/my-agent/my-agent.js";
-
-// 2. Manifest (in manifests array)
+// Manifest entry (in the manifests array)
 {
   id: "my-agent",
   type: "agent",
@@ -375,18 +363,15 @@ import { MyAgentPlugin } from "./agent/my-agent/my-agent.js";
   adapter_meta: { provider_type: "cli" },
   contributes: { events: ["cost.incurred"] },
 },
-
-// 3. Factory (in factories map)
-"my-agent": () => new MyAgentPlugin(),
 ```
 
 ### Contract test suite
 
-Path: `tests/helpers/contract-suites/agent-contract.ts`.
+The agent suite is **`runAgentContractSuite`** from `tests/helpers/contract-suites/agent-contract.ts`. Beyond the standard valid/invalid config and manifest, it needs an agent-specific `request` fixture:
 
 ```typescript
 // tests/unit/plugins/agent/my-agent/my-agent.test.ts
-import { runContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
+import { runAgentContractSuite } from "../../../../helpers/contract-suites/agent-contract.js";
 import { MyAgentPlugin } from "./my-agent.js";
 
 const manifest = {
@@ -401,7 +386,7 @@ const manifest = {
   contributes: { events: [], commands: [], config_keys: [], hooks: [] },
 };
 
-runContractSuite(
+runAgentContractSuite(
   () => new MyAgentPlugin(),
   {
     manifest,
@@ -479,4 +464,4 @@ Each CLI has a different event schema. Research your CLI's actual output before 
 | `src/plugins/agent/gemini-cli-agent/gemini-cli-agent.ts` | Reference: free tier, no cost, stdout+stderr rate limit detection |
 | `src/plugins/builtin.ts` | Plugin registration (manifests + factories) |
 | `tests/helpers/contract-suites/agent-contract.ts` | Contract compliance test suite |
-| `contribution-docs/how-tos/plugins/agent-adapter/prompt.md` | Interactive agent-facing setup prompt |
+| `contribution-docs/how-tos/plugins/authoring.md` | The unified plugin-authoring methodology (pick the agent adapter) |
